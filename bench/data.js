@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792378799033,
+  "lastUpdate": 1792380789068,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18060,6 +18060,48 @@ window.BENCHMARK_DATA = {
             "value": 104.85141899999999,
             "unit": "ms",
             "extra": "median of 5 runs: 103.586, 104.183, 104.851, 104.877, 104.998 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cb31e95f40b6ebd89f76b20d4562c1e05e38889c",
+          "message": "Browsers: a chat without the sandbox is given what a sandboxed chat of its persona lists (#2677)\n\n* Browsers: a chat without the sandbox is given what a sandboxed chat of its persona lists\n\nA chat started without the sandbox has no record of a compiled sandbox,\nso its browser's listing is compiled at each call from the project's\nsettings for its persona, never the floor's reach. Its sites ask as any\nchat's do, and its posture Ask says what each answer gives it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\nAssisted-by: claude-code:claude-opus-5-5\n\n* Browsers: a chat without the sandbox is one with none compiled and none holding it\n\nA sandboxed chat reattached under a sandbox whose compile was not\nrecorded is given nothing listed, and its Ask is a sandboxed chat's.\nWhether a chat started without the sandbox is the chat's, not its\npersona's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a chat's sites ask offers everyone in the project only where the sandbox is on\n\nA committed browser site reaches a browser only where the project's\nsandbox is in force, so a chat's sites ask offers it only there, and an\nAllow at that level is refused elsewhere, as for the person's own\nbrowser.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T07:31:54+04:00",
+          "tree_id": "957b790ddd50ff509b46bca1376baef954a5bcdd",
+          "url": "https://github.com/purlis/purlis/commit/cb31e95f40b6ebd89f76b20d4562c1e05e38889c"
+        },
+        "date": 1792380787721,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2730785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.268, 0.269, 0.273, 0.282, 0.285 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.540308500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.390, 16.498, 16.540, 16.548, 16.575 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1297495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.837, 101.116, 101.130, 101.135, 101.251 ms"
           }
         ]
       }
