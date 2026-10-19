@@ -5676,6 +5676,7 @@ dependencies = [
  "purlis-session-protocol",
  "purlis-terminal",
  "regex",
+ "ring",
  "rustix",
  "secrecy",
  "security-framework",
@@ -5687,6 +5688,7 @@ dependencies = [
  "signal-hook",
  "stand-in",
  "subtle",
+ "tar",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -5703,6 +5705,7 @@ dependencies = [
  "ureq",
  "uuid",
  "wiremock",
+ "xattr",
  "zeroize",
  "zip 9.0.3",
 ]

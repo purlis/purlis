@@ -554,6 +554,8 @@ pub struct Shown {
     pub size: (u16, u16),
     /// The address of each login purlis performed in it, in order (#2016): never its values.
     pub logins: Vec<String>,
+    /// The kept login it was opened from, where it was (#2021).
+    pub kept: Option<purlis_session_protocol::browsing::KeptLogin>,
     /// What it answers its next acts with, in order; once none is left, a settled page.
     answers: std::collections::VecDeque<Result<purlis_session_protocol::browsing::Browsed, String>>,
     sink: Option<crate::browsers::FrameSink>,
@@ -792,11 +794,13 @@ impl crate::browsers::Browsers for StandInBrowsers {
         &self,
         data: &std::path::Path,
         reach: Option<&purlis_session_protocol::browsing::BrowserReach>,
+        kept: Option<&purlis_session_protocol::browsing::KeptLogin>,
     ) -> Result<Arc<dyn crate::browsers::Screen>, String> {
         std::fs::create_dir_all(data).map_err(|why| why.to_string())?;
         let screen = StandInScreen::default();
         screen.shown().data = data.to_path_buf();
         screen.shown().reach = reach.cloned();
+        screen.shown().kept = kept.cloned();
         self.started.lock().unwrap().push(screen.clone());
         Ok(Arc::new(screen))
     }

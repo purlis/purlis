@@ -25,6 +25,7 @@ impl Driver for Host {
         &self,
         _root: &Path,
         _reach: BrowserReach,
+        _kept: Option<purlis_session_protocol::browsing::KeptLogin>,
     ) -> Result<String, crate::chatbrowsers::NotStarted> {
         let mut started = self.started.lock().unwrap();
         *started += 1;
@@ -136,7 +137,7 @@ impl Project {
                 &BrowserReach::default,
                 true,
                 &AsPersona::default,
-                &|_| Err("no login here".into()),
+                &|_| Err("no login here".to_owned()),
                 1000,
             )
             .0;

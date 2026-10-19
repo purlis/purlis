@@ -699,3 +699,71 @@ fn a_sandbox_only_profiles_folder_another_user_owns_is_no_home() {
         None
     );
 }
+
+/// A removed profile's kept browser logins go with it, and this device's key for them once no
+/// store is left (#2021).
+#[test]
+fn removing_a_profile_wipes_its_kept_browser_logins_and_their_key() {
+    let mut machine = Machine::new();
+    let data = machine._dir.path().join("data");
+    let keyring = machine._dir.path().join("keyring.json");
+    machine.store = machine.store.clone().keyring_in(keyring.clone());
+    machine.create("work", "claude", 100).unwrap();
+    let browser = machine._dir.path().join("browser");
+    fs::create_dir_all(browser.join("Default")).unwrap();
+    fs::write(browser.join("Default/Cookies"), "session=fixture-cookie").unwrap();
+    let file = crate::secrets::keyring::FileStore::at(keyring.clone());
+    let keys = crate::browserlogins::Keys {
+        store: &file,
+        device: "test-device".into(),
+    };
+    let kept = crate::browserlogins::Store::new(
+        "work",
+        "steward",
+        "shop-login",
+        &crate::browserlogins::identity_of(
+            "steward",
+            "project-1",
+            &crate::browserlogins::Declared {
+                vault: "shop",
+                user_key: None,
+                password_key: "pass",
+                page: "https://shop.test/login",
+            },
+        ),
+    )
+    .unwrap();
+    crate::browserlogins::hold(&data, &kept)
+        .unwrap()
+        .unwrap()
+        .keep(&browser, &keys)
+        .unwrap();
+    assert!(kept.exists(&data));
+    // A browser of it that ended outright, its folder and the one it was being opened into.
+    let left = crate::browsers::browsers_in(&data).join("01JLEFT");
+    fs::create_dir_all(left.join("Default")).unwrap();
+    fs::write(left.join("Default/Cookies"), "session=fixture-cookie").unwrap();
+    drop(crate::browserlogins::mark(&left, &kept).unwrap());
+    let opening = crate::browsers::browsers_in(&data).join("01JOPEN.opening");
+    fs::create_dir_all(&opening).unwrap();
+
+    let removal = removal(&machine.store, "work").unwrap();
+    remove(&machine.store, "work", &removal).unwrap();
+
+    assert!(!kept.exists(&data));
+    assert!(!data.join(crate::browserlogins::DIR).join("work").exists());
+    assert!(!left.exists(), "a browser folder it left behind goes too");
+    assert!(!left.with_extension(crate::browserlogins::MARK).exists());
+    assert!(!opening.exists(), "and one it was being opened into");
+    assert_eq!(
+        crate::secrets::keyring::Store::get(
+            &file,
+            &format!("{}/test-device", crate::browserlogins::SERVICE),
+            "key"
+        )
+        .unwrap()
+        .map(crate::secrets::keyring::Secret::into_inner),
+        None,
+        "no store left, no key"
+    );
+}

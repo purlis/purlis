@@ -43,7 +43,8 @@
 //! word: a client's `take_back` is refused.
 //!
 //! **A login's values are never relayed** (#2016): `log_in` is refused at the relay for every
-//! client, so a vault's value never reaches another host this way.
+//! client, so a vault's value never reaches another host this way; nor is a browser's start
+//! from kept logins (#2021), which stay on this device.
 //!
 //! **What only the window may send, the relay sends on for the window alone** (ruled
 //! 2026-10-15, #2042): holding a project, dealing its numbers, a start with the window's own
@@ -1025,7 +1026,8 @@ impl session::Host for Relay {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
         // A login's values never leave this host (#2016): not for any client, the window's
         // included.
-        if command.power() == Power::LogIn {
+        let kept = matches!(&command, Command::StartProgram(start) if start.kept.is_some());
+        if command.power() == Power::LogIn || kept {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "a browser on another host is logged in to nothing: a login's values are \

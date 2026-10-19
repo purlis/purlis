@@ -245,8 +245,9 @@ mod hosted {
             &self,
             root: &Path,
             reach: BrowserReach,
+            kept: Option<purlis_session_protocol::browsing::KeptLogin>,
         ) -> Result<String, crate::chatbrowsers::NotStarted> {
-            self.open_reaching(root, Some(reach))
+            self.open_reaching(root, Some(reach), kept)
         }
 
         fn act(
@@ -439,19 +440,22 @@ mod hosted {
 
         /// Starts a browser in the project at `root`, and answers its id.
         pub(crate) fn open(&self, root: &Path) -> Result<String, String> {
-            self.open_reaching(root, None).map_err(|not| match not {
-                NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
-                NotStarted::Failed(why) => why,
-            })
+            self.open_reaching(root, None, None)
+                .map_err(|not| match not {
+                    NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
+                    NotStarted::Failed(why) => why,
+                })
         }
 
         /// Starts a browser in the project at `root` reaching `reach` (#2013), or with none,
-        /// nothing listed and every site new to the project refused; answers its id. Refused
-        /// where the device runs its budget of browsers already (#2023).
+        /// nothing listed and every site new to the project refused; opened from the kept login
+        /// `kept` where one is named (#2021); answers its id. Refused where the device runs its
+        /// budget of browsers already (#2023).
         pub(crate) fn open_reaching(
             &self,
             root: &Path,
             reach: Option<BrowserReach>,
+            kept: Option<purlis_session_protocol::browsing::KeptLogin>,
         ) -> Result<String, NotStarted> {
             let (link, project) = self.held(root).map_err(NotStarted::Failed)?;
             let _one_at_a_time = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
@@ -473,6 +477,7 @@ mod hosted {
             match link
                 .call(Command::StartProgram(Box::new(StartProgram {
                     reach,
+                    kept,
                     ..StartProgram::of(project, ProgramKind::Browser)
                 })))
                 .map_err(NotStarted::Failed)?

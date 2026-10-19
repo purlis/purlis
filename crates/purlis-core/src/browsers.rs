@@ -264,8 +264,25 @@ impl Browsers for EngineBrowsers {
         self.places().map(|(data, _)| browsers_in(&data))
     }
 
-    fn start(&self, data: &Path, reach: Option<&BrowserReach>) -> Result<Arc<dyn Screen>, String> {
+    fn start(
+        &self,
+        data: &Path,
+        reach: Option<&BrowserReach>,
+        kept: Option<&wire::KeptLogin>,
+    ) -> Result<Arc<dyn Screen>, String> {
         let (home, program) = self.places()?;
+        // Its folder's own, made before anything of a browser is written into it.
+        made_private_and_unbacked(&browsers_in(&home))?;
+        // A browser opened from kept logins holds a login from its first moment (#2021): it is
+        // a chat's, judged, and bound to the login's site before its engine starts.
+        let kept_site = kept
+            .map(|kept| {
+                if reach.is_none() {
+                    return Err("a browser given no reach opens no kept logins".to_owned());
+                }
+                site_of_login(&kept.address)
+            })
+            .transpose()?;
         let platform = Platform::current()
             .ok_or_else(|| "no browser engine is made for this platform".to_owned())?;
         let engines = engines_here(&home, platform);
@@ -283,6 +300,12 @@ impl Browsers for EngineBrowsers {
             .map_or_else(Bound::default, |sites| sites.bound().clone());
         let proxy = ReachProxy::bound_by(Lane::of(listed), new_sites, bound)
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
+        let mut keeping = Keeping::new(&home, data);
+        if let (Some(kept), Some(site), Some(sites)) = (kept, &kept_site, &sites) {
+            proxy.bind(site)?;
+            sites.bound_to(site);
+            keeping.open(kept)?;
+        }
         let launch = Launch::new(&ready, data, launch::ReachProxy(proxy.address()));
         let engine =
             Engine::start(&launch, &Self::keeper(program)).map_err(|why| why.to_string())?;
@@ -300,6 +323,7 @@ impl Browsers for EngineBrowsers {
         .map_err(|why| why.to_string())?;
         Ok(Arc::new(EngineScreen {
             process: browser.process(),
+            keeping: Arc::new(Mutex::new(keeping)),
             sites,
             held: Mutex::new(Some(Held {
                 browser: Arc::new(browser),
@@ -619,6 +643,7 @@ pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, Site), String> {
                 .as_ref()
                 .map(|user| zeroize::Zeroizing::new(user.expose().to_owned())),
             password: zeroize::Zeroizing::new(login.password.expose().to_owned()),
+            only_if_asked: false,
         },
         Site::of(&host, port),
     ))
@@ -660,6 +685,170 @@ pub fn performed<T>(
     Ok(done)
 }
 
+/// **`<data>/browsers/`, made this user's alone and left out of this device's backups** (#2021):
+/// a running browser's folder holds its cookies and storage as plainly as the engine writes them.
+fn made_private_and_unbacked(folders: &Path) -> Result<(), String> {
+    purlis_same_user::private_directory(folders)
+        .map_err(|e| format!("the browsers' folder could not be made ({e})"))?;
+    crate::browserlogins::exclude_from_backups(folders)
+}
+
+/// The site a kept login's page is on, as a login's is ([`login_of`]).
+fn site_of_login(address: &str) -> Result<Site, String> {
+    let origin = crate::sandbox::tools::login::origin_of(address)?;
+    let (host, port) = judge::site_of(&origin)
+        .ok_or_else(|| "the login's address names no origin purlis can fill on".to_owned())?;
+    Ok(Site::of(&host, port))
+}
+
+/// **What a browser keeps of a kept login** (#2021): the store it writes back as it ends, if it
+/// holds one, and the kept login it opened from. A browser opened from a store another browser
+/// holds is a copy: what it changes is discarded.
+struct Keeping {
+    /// `<data>`.
+    home: PathBuf,
+    /// The browser's own data folder.
+    folder: PathBuf,
+    /// The store it writes back, and its hold on it.
+    writes: Option<(wire::KeptLogin, crate::browserlogins::Hold)>,
+    /// The kept login it opened from, where it did.
+    opened_from: Option<wire::KeptLogin>,
+    /// The mark beside its folder, held while it runs, which says to a later browser and to a
+    /// profile's removal that it is no folder left behind.
+    _live: Option<crate::browserlogins::Mark>,
+    /// This device's keyring, and its id, where a test names them: this machine's otherwise.
+    keyring: Arc<dyn crate::secrets::keyring::Store>,
+    device: Option<String>,
+}
+
+/// The store `kept` names.
+fn store_of(kept: &wire::KeptLogin) -> Result<crate::browserlogins::Store, String> {
+    crate::browserlogins::Store::new(&kept.profile, &kept.persona, &kept.login, &kept.identity)
+}
+
+impl Keeping {
+    fn new(home: &Path, folder: &Path) -> Self {
+        Keeping {
+            home: home.to_path_buf(),
+            folder: folder.to_path_buf(),
+            writes: None,
+            opened_from: None,
+            _live: None,
+            keyring: Arc::new(crate::secrets::keyring::OsStore),
+            device: None,
+        }
+    }
+
+    /// This device's key for kept logins.
+    fn keys(&self) -> Result<crate::browserlogins::Keys<'_>, String> {
+        Ok(crate::browserlogins::Keys {
+            store: &*self.keyring,
+            device: match &self.device {
+                Some(device) => device.clone(),
+                None => crate::machine::this_device_id()?,
+            },
+        })
+    }
+
+    /// **Opens `kept` into the browser's folder**, before its engine starts: once every folder
+    /// an earlier browser of the same store left behind is swept, the folder marked as `kept`'s,
+    /// and holding the store where no other browser does.
+    fn open(&mut self, kept: &wire::KeptLogin) -> Result<(), String> {
+        let store = store_of(kept)?;
+        let place = store.place();
+        crate::browserlogins::sweep(&browsers_in(&self.home), Some(&self.folder), &|_, of| {
+            of == place
+        });
+        // Marked, and the mark held, before a byte of the store is written into the folder.
+        self.mark(&store)?;
+        let hold = crate::browserlogins::hold(&self.home, &store)?;
+        let keys = self.keys()?;
+        // A store that does not open is never half opened: the browser starts fresh, and the
+        // login fills it as any.
+        if let Err(why) = crate::browserlogins::open_into(&self.home, &store, &self.folder, &keys) {
+            tracing::warn!(
+                "purlis: the kept logins of {}'s {} were not opened, so the browser starts \
+                 fresh: {why}",
+                kept.profile,
+                kept.login
+            );
+        }
+        self.opened_from = Some(kept.clone());
+        self.writes = hold.map(|hold| (kept.clone(), hold));
+        Ok(())
+    }
+
+    /// Marks the folder as `store`'s, held while the browser runs.
+    fn mark(&mut self, store: &crate::browserlogins::Store) -> Result<(), String> {
+        self._live = None;
+        self._live = Some(crate::browserlogins::mark(&self.folder, store)?);
+        Ok(())
+    }
+
+    /// **The browser keeps `keep` from now on**, a login that went through in it: what it holds
+    /// is written back as it ends, where no other browser holds that store, and only where it
+    /// started fresh or from that very store. What to tell the chat, where anything.
+    fn keep(&mut self, keep: &wire::KeptLogin) -> Option<String> {
+        if self
+            .writes
+            .as_ref()
+            .is_some_and(|(writes, _)| writes == keep)
+        {
+            return None;
+        }
+        if self.writes.is_some()
+            || self
+                .opened_from
+                .as_ref()
+                .is_some_and(|opened| opened != keep)
+        {
+            return Some(
+                "this browser keeps another login's logins already, so this one's are not kept"
+                    .to_owned(),
+            );
+        }
+        let a_copy = self.opened_from.as_ref() == Some(keep);
+        let Ok(store) = store_of(keep) else {
+            return Some("its logins could not be kept".to_owned());
+        };
+        if !a_copy && self.mark(&store).is_err() {
+            return Some("its logins could not be kept".to_owned());
+        }
+        match crate::browserlogins::hold(&self.home, &store) {
+            Ok(Some(hold)) => {
+                self.writes = Some((keep.clone(), hold));
+                None
+            }
+            Ok(None) if a_copy => Some(
+                "another browser holds these kept logins, so this one opened a copy of them: \
+                 what it changes is not kept"
+                    .to_owned(),
+            ),
+            Ok(None) => Some(
+                "another browser keeps these logins, so what this one holds is not kept".to_owned(),
+            ),
+            Err(_) => Some("its logins could not be kept".to_owned()),
+        }
+    }
+
+    /// Writes the store back from the browser's folder, where it holds one: once its engine has
+    /// ended. A store that cannot be written keeps what it held before; one whose profile was
+    /// removed meanwhile is not made again.
+    fn write_back(&mut self) {
+        let Some((kept, hold)) = self.writes.take() else {
+            return;
+        };
+        let written = self.keys().and_then(|keys| hold.keep(&self.folder, &keys));
+        if let Err(why) = written {
+            tracing::warn!(
+                "purlis: the kept logins of {}'s {} were not written back: {why}",
+                kept.profile,
+                kept.login
+            );
+        }
+    }
+}
+
 /// Who drives a browser after a login, in the protocol's words: never purlis, which hands every
 /// browser back; were it to say so, the browser is held from the agent.
 fn driver_of(driver: drive::Driver) -> wire::Driver {
@@ -686,6 +875,8 @@ struct Held {
 /// One browser on its engine, as the host drives it.
 struct EngineScreen {
     process: Option<u32>,
+    /// What it keeps of a kept login (#2021): written back as its engine ends.
+    keeping: Arc<Mutex<Keeping>>,
     /// Its judge, shared with its reach proxy (#2018): none for a browser given no reach.
     sites: Option<Arc<judge::SiteJudge>>,
     held: Mutex<Option<Held>>,
@@ -761,8 +952,16 @@ impl Screen for EngineScreen {
             .map_err(not_acted)
     }
 
-    fn log_in(&self, login: &wire::LogIn) -> Result<LoginEnded, NotActed> {
-        let (login, site) = login_of(login).map_err(NotActed::Refused)?;
+    fn log_in(&self, asked: &wire::LogIn) -> Result<LoginEnded, NotActed> {
+        let (mut login, site) = login_of(asked).map_err(NotActed::Refused)?;
+        // Opened from this very kept login, a page that asks for nothing is signed in already.
+        let opened_from = self
+            .keeping
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .opened_from
+            .clone();
+        login.only_if_asked = asked.keep.is_some() && opened_from == asked.keep;
         let Some(sites) = &self.sites else {
             return Err(NotActed::Refused(
                 "this browser was started with no reach, so purlis logs nothing in to it"
@@ -780,13 +979,28 @@ impl Screen for EngineScreen {
         .map_err(NotActed::Refused)?
         .map_err(not_acted)?;
         drop(login);
+        let mut outcome = ended
+            .outcome
+            .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
+            .map_err(not_acted);
+        // A login that went through keeps what its browser holds, where it is to (#2021).
+        if let (Ok(browsed), Some(keep)) = (&mut outcome, &asked.keep) {
+            let said = self
+                .keeping
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .keep(keep);
+            if let Some(said) = said {
+                browsed.note = Some(match browsed.note.take() {
+                    Some(note) => format!("{note}; {said}"),
+                    None => said,
+                });
+            }
+        }
         Ok(LoginEnded {
             driver: driver_of(ended.driver),
             epoch: ended.epoch,
-            outcome: ended
-                .outcome
-                .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
-                .map_err(not_acted),
+            outcome,
         })
     }
 
@@ -814,6 +1028,16 @@ impl Screen for EngineScreen {
 
     /// Told once the engine has ended, however it ended; at once when it was stopped already.
     fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>) {
+        // A kept login is written back once its engine has ended and before the host removes
+        // the browser's folder (#2021).
+        let keeping = Arc::clone(&self.keeping);
+        let tell: Box<dyn FnOnce(Exit) + Send> = Box::new(move |exit| {
+            keeping
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .write_back();
+            tell(exit);
+        });
         let held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         match held.as_ref() {
             Some(Held { browser, .. }) => {

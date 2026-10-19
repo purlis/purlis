@@ -40,6 +40,7 @@ fn login_at(origin: &str) -> Login {
         origin: origin.to_owned(),
         user: None,
         password: FILLED.to_owned().into(),
+        only_if_asked: false,
     }
 }
 
@@ -60,6 +61,8 @@ enum Twist {
     Shortens,
     /// The field cannot be asked whether it has the focus.
     Unread,
+    /// The page asks for no password at all: signed in already.
+    AsksNothing,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -121,7 +124,7 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                 Some(Ok(json!({ "result": { "type": "number", "value": held } })))
             }
             "Runtime.evaluate" if p["expression"] == PASSWORD_FIELD => {
-                Some(Ok(if goes && seen.load(Ordering::SeqCst) {
+                Some(Ok(if twist == Twist::AsksNothing || (goes && seen.load(Ordering::SeqCst)) {
                     json!({ "result": { "type": "object", "subtype": "null", "value": null } })
                 } else {
                     json!({ "result": { "type": "object", "subtype": "node", "objectId": "PASSWORD-1" } })
@@ -437,4 +440,38 @@ fn a_field_that_keeps_less_than_purlis_typed_ends_the_browser() {
 #[test]
 fn a_field_that_cannot_be_asked_whether_it_has_the_focus_ends_the_browser() {
     ends_the_browser(Twist::Unread);
+}
+
+/// A browser opened from kept logins (#2021): where its page asks for no password, purlis
+/// fills nothing and says so; where it asks, purlis fills it as for any login.
+#[test]
+fn a_page_that_asks_for_nothing_is_signed_in_from_kept_logins_and_nothing_is_filled() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::AsksNothing);
+    let login = Login {
+        only_if_asked: true,
+        ..login_at(ORIGIN)
+    };
+    let ended = browser
+        .log_in(&login, &|| {
+            panic!("nothing is bound for a fill that never happens")
+        })
+        .unwrap();
+    let answer = ended.outcome.unwrap();
+    let note = answer.note.unwrap_or_default();
+    assert!(note.contains("asks for no password"), "{note}");
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+#[test]
+fn a_page_that_asks_is_filled_though_the_browser_opened_from_kept_logins() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    let login = Login {
+        only_if_asked: true,
+        ..login_at(ORIGIN)
+    };
+    let ended = browser.log_in(&login, &|| Ok(())).unwrap();
+    assert!(ended.outcome.is_ok());
+    assert_eq!(inserted(&engine), vec![FILLED.to_owned()]);
 }

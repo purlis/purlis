@@ -43,6 +43,10 @@ const DEEPEST: usize = 8;
 pub struct Homes {
     config_root: PathBuf,
     folders: PathBuf,
+    /// The data home, where a profile's kept browser logins are (#2021).
+    data: PathBuf,
+    /// The keyring those logins' key is in: this machine's, or a file a test names.
+    keyring: Option<PathBuf>,
 }
 
 impl Homes {
@@ -51,7 +55,56 @@ impl Homes {
         Self {
             config_root: config_root.to_path_buf(),
             folders: data.join(DIR),
+            data: data.to_path_buf(),
+            keyring: None,
         }
+    }
+
+    /// These homes, the key of kept browser logins kept in the file `keyring` in place of this
+    /// machine's keyring: for a test.
+    #[cfg(test)]
+    #[must_use]
+    pub fn keyring_in(mut self, keyring: PathBuf) -> Self {
+        self.keyring = Some(keyring);
+        self
+    }
+
+    /// **Wipes profile `name`'s kept browser logins** (#2021): every browser folder of it a
+    /// browser left behind, its stores, and the key once no store is left. A keyring that cannot
+    /// be asked is warned of, and the stores are wiped all the same.
+    fn wipe_kept_logins(&self, name: &str) -> Result<(), String> {
+        let folders = crate::browsers::browsers_in(&self.data);
+        crate::browserlogins::sweep(&folders, None, &|of, _| of == name);
+        // Nothing to wipe asks no keyring for a device id or a key.
+        let dir = self.data.join(crate::browserlogins::DIR).join(name);
+        if !dir.exists() {
+            return Ok(());
+        }
+        let store: Box<dyn crate::secrets::keyring::Store> = match &self.keyring {
+            Some(file) => Box::new(crate::secrets::keyring::FileStore::at(file.clone())),
+            None => Box::new(crate::secrets::keyring::OsStore),
+        };
+        let device = match &self.keyring {
+            Some(_) => Ok("test-device".to_owned()),
+            None => crate::machine::this_device_id(),
+        };
+        let device = device.unwrap_or_else(|why| {
+            tracing::warn!(
+                "purlis: this device's id was not read ({why}); profile {name}'s kept logins \
+                 are wiped all the same"
+            );
+            String::new()
+        });
+        crate::browserlogins::wipe_profile(
+            &self.data,
+            &folders,
+            name,
+            &crate::browserlogins::Keys {
+                store: &*store,
+                device,
+            },
+        )
+        .map(|_| ())
     }
 
     /// This process's config home and data home, to write: none where either is missing, or
@@ -426,6 +479,8 @@ pub fn remove(homes: &Homes, name: &str, shown: &Removal) -> Result<Removal, Str
             }
         }
         store.profiles.retain(|p| p.name != name);
+        // Its kept browser logins go with it, made or adopted (#2021).
+        homes.wipe_kept_logins(name)?;
         Ok(now)
     })?
 }
