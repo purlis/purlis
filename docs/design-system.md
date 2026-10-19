@@ -362,7 +362,9 @@ it so (`purlis_tests.rs`). Where its values come from:
   record uses are core's already.
 - **Light is derived from dark by one rule**: each colour's OKLCH lightness is reflected about
   the record's deepest colour (`#121215`, L 0.184), so L becomes 1 − (L − 0.184), keeping its
-  hue, chroma and alpha.
+  hue, chroma and alpha. A reflected colour that misses a floor of the check steps its
+  lightness away from its ground by 0.01 until it clears: today only the comment and punctuation
+  grey, on the editor's current line (`#7c7a84`).
 - **High-contrast dark** moves each text step up one (primary to white), each edge up to a text
   grey, and the accent to the record's lighter lavender `#c3baf5`.
 
