@@ -136,10 +136,25 @@ export async function untilTheStripLists(
       },
       { timeout, interval: 250 },
     )
-    .catch(() => {
+    .catch(async () => {
       throw new Error(
         `the strip never listed the fixture plane (${wanted}); it drew ` +
-          JSON.stringify(last ?? "nothing it could read"),
+          JSON.stringify(last ?? "nothing it could read") +
+          `; the core's pins for it: ${await pinsSaid(last?.project ?? null)}`,
       );
     });
+}
+
+/** What the core answers `plane_pins` with for `plane`, as text for a failure's message. */
+export async function pinsSaid(plane: string | null): Promise<string> {
+  if (plane === null) return "no project in front";
+  const said = await browser
+    .executeAsync((id: string, done: (out: string) => void) => {
+      void window.__TAURI__.core
+        .invoke("plane_pins", { plane: id })
+        .then((ok) => done(JSON.stringify(ok)))
+        .catch((e: unknown) => done(`refused: ${String(e)}`));
+    }, plane)
+    .catch((e: unknown) => `not asked: ${String(e)}`);
+  return said;
 }
