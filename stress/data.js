@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792450113804,
+  "lastUpdate": 1792452250903,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3340,6 +3340,42 @@ window.BENCHMARK_DATA = {
             "value": 361.4,
             "unit": "MB",
             "extra": "median of 6 samples: 314, 365.8, 368.8, 361, 361.9, 249.9 MB; window 153.1 MB, session host 208.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "47bf0e46d96473f4c2b59a356c586562a56459f9",
+          "message": "Purlis (preview): the new theme from the foundation (#2701)\n\n* Purlis (preview): the new theme from the foundation\n\nPurlis ships as a second built-in theme beside Purlis Classic, which is\nunchanged and stays the default. Its folder is compiled into the core and\nread as any theme folder is: a dark appearance from the foundation record,\na light one derived from it by one rule, and a high-contrast dark, in IBM\nPlex Sans and JetBrains Mono (bundled unmodified, OFL) with Lucide's icons.\nEvery combination clears the theme check and holds no consent floor.\n\nA pick names it `purlis`; the gallery marks its card Preview and `purlis\ntheme list` names it \"Purlis (preview)\". Its faces are served from the\nbytes compiled in, by digest.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Purlis (preview): the CLI and the app list it second\n\nThe listing, check and export of `purlis`, and the gallery tests, hold\nPurlis beside Purlis Classic as a preview.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Purlis (preview): light's comment grey clears the current line\n\nThe theme check now holds syntax colours on the editor's current line\n(#2700). Light's reflected comment and punctuation grey stepped darker\nuntil it clears 3:1 there, by the rule the docs state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Purlis (preview): the operator's rulings and the review's fixes\n\n- `purlis theme list --json` says `preview` on each built-in theme.\n- The changes entry says a folder of your own named `purlis` is now\n  behind the built-in, and to rename it.\n- A test re-derives light from dark by its rule; another holds the\n  check of `purlis` to no note.\n- `radius.xl` draws the Welcome doors, not panels; the foundation\n  record says Lucide draws the icons; NOTICE points at the bundled\n  font and icon licences; two doc comments rewrapped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T02:37:19+04:00",
+          "tree_id": "94e1e949543e044d658679bf6fe3dda1166165e5",
+          "url": "https://github.com/purlis/purlis/commit/47bf0e46d96473f4c2b59a356c586562a56459f9"
+        },
+        "date": 1792452249019,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 934,
+            "unit": "MB",
+            "extra": "median of 3 samples: 756, 934, 1004 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 360.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 410.8, 364.3, 365.6, 356.1, 356.7, 238.6 MB; window 165.7 MB, session host 194.7 MB"
           }
         ]
       }
