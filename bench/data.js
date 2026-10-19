@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792449525447,
+  "lastUpdate": 1792451153651,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18312,6 +18312,48 @@ window.BENCHMARK_DATA = {
             "value": 102.18817200000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.520, 101.984, 102.188, 102.832, 105.329 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0a4e93c92b38a227368edc8ac32d6940246c068c",
+          "message": "fix: a failed strip wait says what the strip drew and what the core pinned (#2710)\n\n* e2e: a strip that never lists the fixture plane says what it drew\n\nregions, status-line and title-bar each waited for the workspace strip to\ndraw alpha,beta and failed with one fixed sentence. They share one wait\nnow (reading.ts untilTheStripLists), which says the names drawn and held,\nthe project and tab in front, and the window's size.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* e2e: a strip that lists the wrong workspaces says what the core pinned\n\nThe strip draws the pinned workspaces and the one in front, so a wait for\nalpha,beta that fails says the core's plane_pins answer too.\nworkspace-lifecycle's wait made its message before its first read, so it\nalways said the strip stayed []; it says what the strip drew now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T03:02:22+04:00",
+          "tree_id": "4818eab048538ec915ca7fa60407de1535e5e663",
+          "url": "https://github.com/purlis/purlis/commit/0a4e93c92b38a227368edc8ac32d6940246c068c"
+        },
+        "date": 1792451151998,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4415845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.424, 0.432, 0.442, 0.457, 0.471 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.436279,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.366, 16.414, 16.436, 16.602, 16.713 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.199115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.207, 101.023, 101.199, 101.515, 101.651 ms"
           }
         ]
       }
