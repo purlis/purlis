@@ -91,6 +91,8 @@ struct World {
     /// The workspaces a chat asked the person to remove, with what each holds (qw356).
     removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
     locks: Locks,
+    /// Whether the project's sandbox is in force, so a browser site for everyone counts (#2443).
+    everyone: bool,
     names: Vec<(u32, &'static str)>,
     askers: Vec<(u32, u32)>,
     /// Chats in the queue only for what is an update (#1693, #1694): tasks of theirs that came
@@ -124,6 +126,7 @@ impl World {
             blocks: Vec::new(),
             removals: Vec::new(),
             locks: Locks::none(),
+            everyone: true,
             names: Vec::new(),
             askers: Vec::new(),
             only_updates: Vec::new(),
@@ -172,6 +175,7 @@ impl World {
             blocks: self.blocks.clone(),
             removals: self.removals.clone(),
             locks: &self.locks,
+            everyone: self.everyone,
             declared: &self.declared,
             name_of: &name_of,
             asker_of: &asker_of,
@@ -1212,6 +1216,7 @@ fn a_chats_first_browser_call_is_one_ask_of_what_its_browser_may_reach() {
         session: 8,
         since: 40,
         as_persona: crate::chatbrowsers::AsPersona::default(),
+        unsandboxed: false,
     }];
     world.since = vec![("browser:8", 40)];
 
@@ -1241,6 +1246,34 @@ fn a_chats_first_browser_call_is_one_ask_of_what_its_browser_may_reach() {
     assert_eq!(ask.since, Some(40));
 }
 
+#[test]
+fn a_chat_without_the_sandbox_is_told_what_each_answer_gives_its_browser() {
+    // #2242: its browser is held to what a sandboxed chat of its persona lists, and the Ask
+    // says so; the answers are the same, in the same place.
+    let mut world = World::new();
+    world.queue = vec![8];
+    world.names = vec![(8, "qa 8")];
+    world.browsers = vec![crate::chatbrowsers::Waits {
+        session: 8,
+        since: 40,
+        as_persona: crate::chatbrowsers::AsPersona {
+            persona: Some("qa".to_owned()),
+            ..crate::chatbrowsers::AsPersona::default()
+        },
+        unsandboxed: true,
+    }];
+    world.since = vec![("browser:8", 40)];
+
+    let ask = world.asks().remove(0);
+
+    assert_eq!(
+        ask.says,
+        "Wants a browser. This chat has no sandbox, but its browser does: this project's sites \
+         are the hosts a sandboxed qa chat lists and the services on this machine you allowed"
+    );
+    assert_eq!(&ids(&ask)[..2], ["project", "open-web"]);
+}
+
 /// A chat as `persona`, declaring `declared`, waiting on its browser Ask (#2241).
 fn browser_waits(
     world: &mut World,
@@ -1257,6 +1290,7 @@ fn browser_waits(
             declared,
             always: None,
         },
+        unsandboxed: false,
     }];
     world.since = vec![("browser:8", 40)];
 }
@@ -1652,4 +1686,31 @@ fn a_runners_service_is_asked_by_its_runner_and_offers_once_and_this_chat_alone(
         "{}",
         unnamed.says
     );
+}
+
+#[test]
+fn a_chats_browser_sites_ask_offers_everyone_only_where_the_projects_sandbox_is_on() {
+    // #2443: a committed browser site reaches a browser only where the project's sandbox is on,
+    // so elsewhere the ask does not offer it.
+    use purlis_core::sandbox::browser_reach::Site;
+    let ids = |everyone: bool| {
+        let mut world = World::new();
+        world.everyone = everyone;
+        world.browser_sites = vec![crate::chatbrowsers::SitesWait {
+            session: 5,
+            since: 1_700_000_000,
+            sites: vec![Site::parse("news.example.org:443").unwrap()],
+        }];
+        world
+            .asks()
+            .into_iter()
+            .find(|one| one.source == AskSource::BrowserSite)
+            .unwrap()
+            .options
+            .into_iter()
+            .map(|one| one.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(true), ["chat", "you", "project", KEEP]);
+    assert_eq!(ids(false), ["chat", "you", KEEP]);
 }

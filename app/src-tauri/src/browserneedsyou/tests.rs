@@ -135,7 +135,7 @@ impl Project {
                 Path::new("/p"),
                 asked,
                 &BrowserReach::default,
-                true,
+                false,
                 &AsPersona::default,
                 &|_| Err("no login here".to_owned()),
                 1000,
