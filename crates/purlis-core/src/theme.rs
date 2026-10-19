@@ -140,6 +140,8 @@ pub use warnings::{
 #[cfg(test)]
 mod choice_tests;
 #[cfg(test)]
+mod default_values_tests;
+#[cfg(test)]
 mod drafts_tests;
 #[cfg(test)]
 mod floors_tests;

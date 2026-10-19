@@ -1725,6 +1725,14 @@ fn a_chat_s_theme_draft_is_checked_as_the_window_draws_it() {
         "{}",
         checked.out
     );
+    // No level chooses a draft: its check names none (#2707).
+    let as_json = rig.run_in(&["check", "draft:dusk", "--json"], Some(&chat));
+    assert_eq!(
+        as_json.json()["chosen"],
+        serde_json::json!([]),
+        "{}",
+        as_json.out
+    );
 
     std::fs::write(
         path.join("theme.json"),
@@ -1782,4 +1790,193 @@ fn a_save_too_large_for_one_ask_is_refused_before_it_is_sent() {
     let at = rig.run_in(&["draft", "dusk", "--save", "--from", from], Some(&chat));
     assert_eq!(at.code, 1, "{}{}", at.out, at.err);
     assert!(at.err.contains("no app took this"), "{}", at.err);
+}
+
+// Each level's choice (#2707) ----------------------------------------------------------------
+
+const PROJECT_ID: &str = "01JABCDEFGHJKMNPQRSTVWXYZ0";
+
+/// A plane whose project keeps a theme folder `accented` with two options, and where every
+/// level chose: the person's machine default (Purlis Classic, light), their choice for the
+/// project (`accented`, lavender), the project's committed default (`accented`, teal) and the
+/// workspace `alpha`'s pick, which is the person's choice there while `alpha` is LOCAL.
+fn every_level_chose(rig: &Rig) {
+    rig.folder(
+        &rig.project_themes(),
+        "accented",
+        &serde_json::json!({
+            "name": "Accented",
+            "appearances": [{ "id": "dark", "appearance": "dark" }],
+            "options": [
+                { "id": "accent", "kind": "choice", "label": "Accent", "default": "lavender",
+                  "values": [
+                    { "id": "lavender", "label": "Lavender", "tokens": { "accent.base": "#b4a7f5" } },
+                    { "id": "teal", "label": "Teal", "tokens": { "accent.base": "#2bb3a3" } }
+                  ] },
+                { "id": "loud", "kind": "toggle", "label": "Loud", "default": false,
+                  "on": { "tokens": { "border.subtle": "#808080" } } }
+            ]
+        }),
+    );
+    std::fs::write(
+        rig.plane().join("charter.toml"),
+        format!(
+            "schema = 1\n\n[project]\nid = \"{PROJECT_ID}\"\n\n[theme]\nuse = \"accented\"\n\
+             options = {{ accent = \"teal\" }}\n"
+        ),
+    )
+    .expect("a manifest");
+    std::fs::write(
+        rig.plane().join("workspaces/alpha/workspace.json"),
+        r#"{"name": "alpha", "settings": {"theme": {"use": "accented", "appearance": "dark", "options": {"loud": "on"}}}}"#,
+    )
+    .expect("a workspace manifest");
+    let held = purlis_core::machine::dir(&rig.config());
+    std::fs::create_dir_all(&held).expect("the config folder");
+    std::fs::write(
+        held.join(purlis_core::theme::choices::FILE),
+        serde_json::json!({
+            "version": 1,
+            "machine": { "theme": "purlis-classic", "appearance": "light" },
+            "projects": {
+                PROJECT_ID: { "theme": "accented", "from": "project",
+                              "options": { "accent": "lavender" } }
+            }
+        })
+        .to_string(),
+    )
+    .expect("the choices");
+}
+
+#[test]
+fn the_listing_as_json_names_each_level_s_choice_its_from_level_and_option_values() {
+    let rig = Rig::new();
+    every_level_chose(&rig);
+
+    let ran = rig.run(&["list", "--json"]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    assert_eq!(ran.json()["schema"], 1);
+    assert_eq!(
+        ran.json()["choices"],
+        serde_json::json!([
+            { "level": "workspace-choice", "workspace": "alpha", "theme": "accented",
+              "id": "project:accented", "from": "project", "appearance": "dark",
+              "options": { "loud": "on" } },
+            { "level": "project-choice", "workspace": null, "theme": "accented",
+              "id": "project:accented", "from": "project", "appearance": null,
+              "options": { "accent": "lavender" } },
+            { "level": "project-default", "workspace": null, "theme": "accented",
+              "id": "project:accented", "from": "project", "appearance": null,
+              "options": { "accent": "teal" } },
+            { "level": "machine-default", "workspace": null, "theme": "purlis-classic",
+              "id": "purlis-classic", "from": null, "appearance": "light", "options": {} }
+        ])
+    );
+}
+
+#[test]
+fn the_listing_shows_each_level_s_choice_after_the_themes() {
+    let rig = Rig::new();
+    every_level_chose(&rig);
+
+    let ran = rig.run(&["list"]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    let chosen: Vec<Vec<&str>> = ran
+        .out
+        .lines()
+        .skip_while(|line| *line != "chosen, nearest first:")
+        .map(|line| line.split_whitespace().collect())
+        .collect();
+    assert_eq!(
+        chosen,
+        [
+            vec!["chosen,", "nearest", "first:"],
+            vec!["CHOSEN", "BY", "THEME", "FROM", "APPEARANCE", "OPTIONS"],
+            vec![
+                "workspace",
+                "alpha,",
+                "yours",
+                "accented",
+                "project",
+                "dark",
+                "loud=on"
+            ],
+            vec![
+                "project,",
+                "yours",
+                "accented",
+                "project",
+                "-",
+                "accent=lavender"
+            ],
+            vec![
+                "project,",
+                "committed",
+                "accented",
+                "project",
+                "-",
+                "accent=teal"
+            ],
+            vec!["machine,", "yours", "purlis-classic", "-", "light", "-"],
+        ],
+        "{}",
+        ran.out
+    );
+}
+
+#[test]
+fn a_listing_where_nothing_chose_shows_no_choices() {
+    let rig = Rig::new();
+
+    let ran = rig.run(&["list", "--json"]);
+
+    assert_eq!(ran.json()["choices"], serde_json::json!([]));
+    assert!(!rig.run(&["list"]).out.contains("chosen"));
+}
+
+#[test]
+fn the_check_names_each_level_that_chose_the_theme_with_its_values() {
+    let rig = Rig::new();
+    every_level_chose(&rig);
+
+    let ran = rig.run(&["check", "project:accented", "--json"]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    let chosen = ran.json()["chosen"].clone();
+    let levels: Vec<&str> = chosen
+        .as_array()
+        .expect("a list")
+        .iter()
+        .filter_map(|one| one["level"].as_str())
+        .collect();
+    assert_eq!(
+        levels,
+        ["workspace-choice", "project-choice", "project-default"]
+    );
+    assert_eq!(
+        chosen[2],
+        serde_json::json!({ "level": "project-default", "workspace": null, "theme": "accented",
+                            "id": "project:accented", "from": "project", "appearance": null,
+                            "options": { "accent": "teal" } })
+    );
+    // Purlis Classic is chosen by the machine default alone.
+    let classic = rig.run(&["check", "purlis-classic", "--json"]);
+    assert_eq!(
+        classic.json()["chosen"][0]["level"],
+        "machine-default",
+        "{}",
+        classic.out
+    );
+
+    let text = rig.run(&["check", "project:accented"]);
+    assert!(
+        text.out.contains(
+            "chosen by: workspace alpha, yours (loud=on); project, yours (accent=lavender); \
+             project, committed (accent=teal)\n"
+        ),
+        "{}",
+        text.out
+    );
 }

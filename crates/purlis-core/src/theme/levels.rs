@@ -310,12 +310,14 @@ pub struct Project<'a> {
     pub workspace: Option<(&'a str, bool)>,
 }
 
-/// The choice the layer `source` of `said` makes: a theme it picks, in the appearance it says.
-/// An appearance with no theme chooses nothing.
+/// The choice the layer `source` of `said` makes: a theme it picks, in the appearance it says,
+/// with the option values it names (#2707). An appearance or option values with no theme choose
+/// nothing.
 fn said_choice(said: &Said, source: Source) -> Option<Choice> {
     let (theme, appearance) = said.picked_in(source);
     let theme = theme?;
     Choice::new(theme, appearance.filter(|it| is_appearance(it)))
+        .map(|choice| choice.with_options(said.options_in(source)))
 }
 
 /// **The key the person's choices for the project at `root` are kept under**: its stable id

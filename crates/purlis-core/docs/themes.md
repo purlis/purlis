@@ -62,6 +62,32 @@ or `{"kind": "extension", "extension"}`, `level` is `built-in`, `machine`, `proj
 `workspace` or `extension` (`null` for a theme named by its path), and `refused` is `null` or
 why (`name`, `appearances`, `options` and `combinations` are then `null`).
 
+**Each level's choice** follows the themes, nearest first, when any level chose: the person's
+choice and the committed default of each workspace, by name; then the project's; then the
+person's machine default (outside a plane, that alone):
+
+```
+chosen, nearest first:
+  CHOSEN BY               THEME           FROM     APPEARANCE  OPTIONS
+  workspace alpha, yours  dusk            project  dark        borders=on
+  project, yours          dusk            project  -           accent=lavender
+  project, committed      dusk            project  -           accent=teal
+  machine, yours          purlis-classic  -        light       -
+```
+
+`yours` is the person's choice on this machine; `committed` the default the project's manifest
+or a LIVE workspace's `workspace.json` commits. FROM is the level of the theme folder a choice
+reads (`-` for a theme that is no folder). In a level, the person's choice beats the committed
+default, and its option values are its own. `--json` has them as `choices`:
+`[{"level", "workspace", "theme", "id", "from", "appearance", "options"}]`, where `level` is
+`workspace-choice`, `workspace-default`, `project-choice`, `project-default` or
+`machine-default`, `workspace` names the workspace of the first two (`null` otherwise), `theme`
+is the pick as written, `id` is the id this list names its theme by (`null` for a folder no
+level within the choice's reach has), `from` is `workspace`, `project`, `machine` or `null`,
+`appearance` is `null` when none was chosen, and `options` is the value of each option by its id
+(`{}` for none). Whether a choice is drawn where it is made also hangs on the extensions in force
+there and the system's appearance; Settings › Theme says what is drawn.
+
 ## Theme options
 
 A theme may declare **options**: toggles and choices a person sets, each value a layer of token
@@ -81,7 +107,10 @@ free-number options.
 ]
 ```
 
-An option nothing chose draws its default. The check covers **every combination** of
+An option nothing chose draws its default. The person chooses values in Settings › Theme, and a
+project or a LIVE workspace may commit them with its default theme, by each option's id:
+`[theme] options = { accent = "teal" }` in `charter.toml`, `settings.theme.options` in a
+`workspace.json`. The check covers **every combination** of
 appearance and option values, so a theme has at most 64: the appearances times each option's
 number of values (a toggle has two). A theme past that is refused with its count.
 
@@ -113,7 +142,8 @@ distinguishable from primary — purlis draws its own danger.base`). Last, `hard
 a combination breaks as the window draws it, the consent floors held first, with the pair, its
 ratio and the tint it was found in (`hard floors: broken in 1 of 4 combinations:`, then
 `dark, ember on: primary text is readable on every surface: text.primary on surface.sunken is
-1.12, under 3`), or `none broken in 4 combinations`.
+1.12, under 3`), or `none broken in 4 combinations`. A theme some level chose says so under its name: `chosen by: project, committed
+(accent=teal); machine, yours`, each level with its option values.
 
 - **Refused**: a theme that breaks its grammar anywhere is not drawn at all, and each value
   that refused it is listed: a colour that is not hex or a palette name, a duration or an
@@ -192,7 +222,9 @@ as purlis's own. `hard_floors` has one entry for each hard floor a combination b
 error, no note, no warning and no floor held; it covers those only, never hard floors, which
 `hard_floors` reports on its own. `schema` is the version of this shape, in both
 answers: a reader checks it first. A theme folder's `from` is `{"kind": "folder", "path"}`, a
-theme file's `{"kind": "file", "path"}`.
+theme file's `{"kind": "file", "path"}`. `chosen` lists each level that chose the theme checked,
+nearest first, as `list --json`'s `choices` does (`[]` for none, and always for a chat's
+`draft:<folder>`, which no level chooses).
 
 ## Theme drafts
 
