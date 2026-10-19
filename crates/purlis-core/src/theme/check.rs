@@ -427,7 +427,7 @@ pub const PAIRS: &[Pair] = &[
 /// **`black` is held lower, and that is not a loophole.** ANSI black on a dark terminal is dim in
 /// every theme there has ever been: it is the colour a program picks when it means "recede". It
 /// still has to be visible, because `ESC[30m` must not be an invisible line, so it clears 1.5.
-fn ansi_floor(token: &str) -> f64 {
+pub(super) fn ansi_floor(token: &str) -> f64 {
     if token == "terminal.ansi.black" {
         1.5
     } else {
@@ -699,7 +699,7 @@ pub(super) fn contrast(a: &str, b: &str) -> f64 {
 }
 
 /// The opaque `top` laid over the opaque `under` at `opacity`, as the screen draws it.
-fn mix(top: &str, under: &str, opacity: f64) -> String {
+pub(super) fn mix(top: &str, under: &str, opacity: f64) -> String {
     let (top, bottom) = (long(top), long(under));
     let mixed: String = [0, 2, 4]
         .iter()

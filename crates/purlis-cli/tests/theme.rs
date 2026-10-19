@@ -1182,6 +1182,24 @@ fn what_a_source_has_that_no_token_takes_is_listed() {
 }
 
 #[test]
+fn a_base16_scheme_imports_tuned_to_read_with_no_warnings() {
+    let rig = Rig::new();
+    let source = rig.fixture("harbor.yaml");
+    let themes = rig.themes();
+
+    let ran = rig.run(&[
+        "import",
+        source.to_str().expect("a path"),
+        "--into",
+        themes.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    assert!(ran.out.contains("warnings: none\n"), "{}", ran.out);
+    assert!(ran.out.contains("consent floors: none held"), "{}", ran.out);
+}
+
+#[test]
 fn an_import_with_no_folder_named_goes_into_your_own_themes() {
     let rig = Rig::new();
     let source = rig.fixture("moss");

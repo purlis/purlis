@@ -227,15 +227,26 @@ not taken (2):
   base06: no token takes it
 Harbor — /home/me/.config/purlis/themes/harbor, dark
 left out: nothing
-warnings (22):
-  text.muted on surface.base: 2.94, under 4.5; in every workspace tint too, down to 2.94
-  …
+warnings: none
 the theme is in /home/me/.config/purlis/themes/harbor: `purlis theme check /home/me/.config/purlis/themes/harbor` checks it again, and `purlis theme export /home/me/.config/purlis/themes/harbor` makes a zip of it to share
 ```
 
 - **Each kind goes through a fixed table** (below): each token takes the first of its source
   keys that the source has. A token no row fills is Purlis Classic's of the same appearance, as
   in any theme that leaves a token out.
+- **Then each kind's recipes tune the tokens the table filled** (below each table), so the
+  theme reads where the source's own colours allow it. A base16 scheme makes some roles one
+  colour (ANSI black is the background; the selected row is the row under the pointer) and
+  names hues, not words on a ground. So the row under the pointer is a colour halfway between
+  two of the scheme's, selected text is the source's words, and a muted word, a comment or a
+  hue that does not read on the grounds it is drawn on walks toward the source's words, a tenth
+  of a step at a time along its own scale, and takes the nearest point that leaves the theme
+  check the fewest findings (the consent floors it would hold counted with them). A colour that
+  reads already is left as the source wrote it, and a walked one is written as hex. A
+  terminal's own colours (its background, its words, its sixteen ANSI colours, its cursor and
+  its selection) are what it draws, and are never tuned: what the check finds in them is the
+  source's own. The window draws every imported theme through the consent floors, as it draws
+  any theme.
 - **Nothing is dropped silently.** `not taken` lists every key of the source that gave no token a
   value, with why: no token takes it, a nearer key gave its token the value, it is not a colour, it names another file (a VS Code
   theme's `include`, which import never reads), or `theme.json` has no place for it.
@@ -345,6 +356,12 @@ A VS Code theme's `colors`:
 | `chart.8` | `terminal.ansiMagenta` |
 | `window.background` | `titleBar.activeBackground`, `editor.background` |
 
+Tuned after the table (#2589): a VS Code theme names a colour for nearly every role, and those are taken as they are. Selected text it leaves to the selection is the editor's words.
+
+| Token | Tuned |
+|---|---|
+| `selection.text` | when the table left it and the source fills `selection.background`: `editor.foreground`, `foreground` |
+
 Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
 token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
 between rules of one scope, the last; a scope with a space in it (`meta.embedded string`) is
@@ -388,6 +405,8 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `accent.base` | `base0d` |
 | `focus.ring` | `base0d` |
 | `list.selected` | `base02` |
+| `needs-you.base` | `base08` |
+| `needs-you.text` | `base00` |
 | `danger.base` | `base08` |
 | `icon.red` | `base08` |
 | `icon.orange` | `base09` |
@@ -401,6 +420,7 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `state.waiting` | `base0a` |
 | `state.failed` | `base08` |
 | `state.success` | `base0b` |
+| `state.unreadable` | `base09` |
 | `terminal.background` | `base00` |
 | `terminal.foreground` | `base05` |
 | `terminal.cursor` | `base05` |
@@ -456,6 +476,72 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `chart.8` | `base0f` |
 | `window.background` | `base00` |
 
+Tuned after the table (#2589), in this order. base16 makes some roles one colour, and names hues on a scale rather than words on a ground, so these take a nearer step on the scheme's own scale, or a colour between two of its own:
+
+| Token | Tuned |
+|---|---|
+| `surface.hover` | halfway between `base01` and `base02` |
+| `selection.text` | when the table left it and the source fills `selection.background`: `base05` |
+| `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
+| `text.muted` | toward `base04`, then `base05` |
+| `syntax.comment` | toward `base04`, then `base05` |
+| `terminal.ansi.bright-black` | toward `base04`, then `base05` |
+| `text.secondary` | toward `base05` |
+| `placeholder` | toward `base05` |
+| `danger.base` | toward `base05` |
+| `accent.base` | toward `base05` |
+| `focus.ring` | toward `base05` |
+| `icon.red` | toward `base05` |
+| `icon.orange` | toward `base05` |
+| `icon.yellow` | toward `base05` |
+| `icon.green` | toward `base05` |
+| `icon.teal` | toward `base05` |
+| `icon.blue` | toward `base05` |
+| `icon.purple` | toward `base05` |
+| `icon.pink` | toward `base05` |
+| `state.running` | toward `base05` |
+| `state.waiting` | toward `base05` |
+| `state.failed` | toward `base05` |
+| `state.success` | toward `base05` |
+| `state.unreadable` | toward `base05` |
+| `needs-you.base` | toward `base05` |
+| `syntax.keyword` | toward `base05` |
+| `syntax.string` | toward `base05` |
+| `syntax.number` | toward `base05` |
+| `syntax.constant` | toward `base05` |
+| `syntax.function` | toward `base05` |
+| `syntax.type` | toward `base05` |
+| `syntax.property` | toward `base05` |
+| `syntax.attribute` | toward `base05` |
+| `syntax.tag` | toward `base05` |
+| `syntax.heading` | toward `base05` |
+| `syntax.invalid` | toward `base05` |
+| `syntax.variable` | toward `base05` |
+| `markdown.link` | toward `base05` |
+| `markdown.code` | toward `base05` |
+| `markdown.quote` | toward `base05` |
+| `markdown.heading` | toward `base05` |
+| `chart.1` | toward `base05` |
+| `chart.2` | toward `base05` |
+| `chart.3` | toward `base05` |
+| `chart.4` | toward `base05` |
+| `chart.5` | toward `base05` |
+| `chart.6` | toward `base05` |
+| `chart.7` | toward `base05` |
+| `chart.8` | toward `base05` |
+| `terminal.ansi.red` | toward `base05` |
+| `terminal.ansi.green` | toward `base05` |
+| `terminal.ansi.yellow` | toward `base05` |
+| `terminal.ansi.blue` | toward `base05` |
+| `terminal.ansi.magenta` | toward `base05` |
+| `terminal.ansi.cyan` | toward `base05` |
+| `terminal.ansi.bright-red` | toward `base05` |
+| `terminal.ansi.bright-green` | toward `base05` |
+| `terminal.ansi.bright-yellow` | toward `base05` |
+| `terminal.ansi.bright-blue` | toward `base05` |
+| `terminal.ansi.bright-magenta` | toward `base05` |
+| `terminal.ansi.bright-cyan` | toward `base05` |
+
 ### base24
 
 | Token | Takes, nearest first |
@@ -476,6 +562,8 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `accent.base` | `base0d` |
 | `focus.ring` | `base0d` |
 | `list.selected` | `base02` |
+| `needs-you.base` | `base08` |
+| `needs-you.text` | `base00` |
 | `danger.base` | `base08` |
 | `icon.red` | `base08` |
 | `icon.orange` | `base09` |
@@ -489,6 +577,7 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `state.waiting` | `base0a` |
 | `state.failed` | `base08` |
 | `state.success` | `base0b` |
+| `state.unreadable` | `base09` |
 | `terminal.background` | `base00` |
 | `terminal.foreground` | `base05` |
 | `terminal.cursor` | `base05` |
@@ -543,6 +632,72 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `chart.7` | `base09` |
 | `chart.8` | `base0f` |
 | `window.background` | `base00` |
+
+Tuned as a base16 scheme is, after the table (#2589):
+
+| Token | Tuned |
+|---|---|
+| `surface.hover` | halfway between `base01` and `base02` |
+| `selection.text` | when the table left it and the source fills `selection.background`: `base05` |
+| `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
+| `text.muted` | toward `base04`, then `base05` |
+| `syntax.comment` | toward `base04`, then `base05` |
+| `terminal.ansi.bright-black` | toward `base04`, then `base05` |
+| `text.secondary` | toward `base05` |
+| `placeholder` | toward `base05` |
+| `danger.base` | toward `base05` |
+| `accent.base` | toward `base05` |
+| `focus.ring` | toward `base05` |
+| `icon.red` | toward `base05` |
+| `icon.orange` | toward `base05` |
+| `icon.yellow` | toward `base05` |
+| `icon.green` | toward `base05` |
+| `icon.teal` | toward `base05` |
+| `icon.blue` | toward `base05` |
+| `icon.purple` | toward `base05` |
+| `icon.pink` | toward `base05` |
+| `state.running` | toward `base05` |
+| `state.waiting` | toward `base05` |
+| `state.failed` | toward `base05` |
+| `state.success` | toward `base05` |
+| `state.unreadable` | toward `base05` |
+| `needs-you.base` | toward `base05` |
+| `syntax.keyword` | toward `base05` |
+| `syntax.string` | toward `base05` |
+| `syntax.number` | toward `base05` |
+| `syntax.constant` | toward `base05` |
+| `syntax.function` | toward `base05` |
+| `syntax.type` | toward `base05` |
+| `syntax.property` | toward `base05` |
+| `syntax.attribute` | toward `base05` |
+| `syntax.tag` | toward `base05` |
+| `syntax.heading` | toward `base05` |
+| `syntax.invalid` | toward `base05` |
+| `syntax.variable` | toward `base05` |
+| `markdown.link` | toward `base05` |
+| `markdown.code` | toward `base05` |
+| `markdown.quote` | toward `base05` |
+| `markdown.heading` | toward `base05` |
+| `chart.1` | toward `base05` |
+| `chart.2` | toward `base05` |
+| `chart.3` | toward `base05` |
+| `chart.4` | toward `base05` |
+| `chart.5` | toward `base05` |
+| `chart.6` | toward `base05` |
+| `chart.7` | toward `base05` |
+| `chart.8` | toward `base05` |
+| `terminal.ansi.red` | toward `base05` |
+| `terminal.ansi.green` | toward `base05` |
+| `terminal.ansi.yellow` | toward `base05` |
+| `terminal.ansi.blue` | toward `base05` |
+| `terminal.ansi.magenta` | toward `base05` |
+| `terminal.ansi.cyan` | toward `base05` |
+| `terminal.ansi.bright-red` | toward `base05` |
+| `terminal.ansi.bright-green` | toward `base05` |
+| `terminal.ansi.bright-yellow` | toward `base05` |
+| `terminal.ansi.bright-blue` | toward `base05` |
+| `terminal.ansi.bright-magenta` | toward `base05` |
+| `terminal.ansi.bright-cyan` | toward `base05` |
 
 ### iTerm2
 
@@ -615,6 +770,55 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `chart.8` | `Ansi 13 Color` |
 | `window.background` | `Background Color` |
 
+Tuned after the table (#2589). The terminal's own colours (its background, its words, its sixteen ANSI colours, its cursor and its selection) are what it draws, and are taken as they are:
+
+| Token | Tuned |
+|---|---|
+| `selection.text` | when the table left it and the source fills `selection.background`: `Foreground Color` |
+| `text.muted` | toward `Foreground Color` |
+| `syntax.comment` | toward `Foreground Color` |
+| `danger.base` | toward `Foreground Color` |
+| `accent.base` | toward `Foreground Color` |
+| `focus.ring` | toward `Foreground Color` |
+| `icon.red` | toward `Foreground Color` |
+| `icon.orange` | toward `Foreground Color` |
+| `icon.yellow` | toward `Foreground Color` |
+| `icon.green` | toward `Foreground Color` |
+| `icon.teal` | toward `Foreground Color` |
+| `icon.blue` | toward `Foreground Color` |
+| `icon.purple` | toward `Foreground Color` |
+| `icon.pink` | toward `Foreground Color` |
+| `state.running` | toward `Foreground Color` |
+| `state.waiting` | toward `Foreground Color` |
+| `state.failed` | toward `Foreground Color` |
+| `state.success` | toward `Foreground Color` |
+| `state.unreadable` | toward `Foreground Color` |
+| `needs-you.base` | toward `Foreground Color` |
+| `syntax.keyword` | toward `Foreground Color` |
+| `syntax.string` | toward `Foreground Color` |
+| `syntax.number` | toward `Foreground Color` |
+| `syntax.constant` | toward `Foreground Color` |
+| `syntax.function` | toward `Foreground Color` |
+| `syntax.type` | toward `Foreground Color` |
+| `syntax.property` | toward `Foreground Color` |
+| `syntax.attribute` | toward `Foreground Color` |
+| `syntax.tag` | toward `Foreground Color` |
+| `syntax.heading` | toward `Foreground Color` |
+| `syntax.invalid` | toward `Foreground Color` |
+| `syntax.variable` | toward `Foreground Color` |
+| `markdown.link` | toward `Foreground Color` |
+| `markdown.code` | toward `Foreground Color` |
+| `markdown.quote` | toward `Foreground Color` |
+| `markdown.heading` | toward `Foreground Color` |
+| `chart.1` | toward `Foreground Color` |
+| `chart.2` | toward `Foreground Color` |
+| `chart.3` | toward `Foreground Color` |
+| `chart.4` | toward `Foreground Color` |
+| `chart.5` | toward `Foreground Color` |
+| `chart.6` | toward `Foreground Color` |
+| `chart.7` | toward `Foreground Color` |
+| `chart.8` | toward `Foreground Color` |
+
 ### Ghostty
 
 | Token | Takes, nearest first |
@@ -685,6 +889,55 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `chart.7` | `palette 12` |
 | `chart.8` | `palette 13` |
 | `window.background` | `background` |
+
+Tuned as an iTerm2 preset is, after the table (#2589):
+
+| Token | Tuned |
+|---|---|
+| `selection.text` | when the table left it and the source fills `selection.background`: `foreground` |
+| `text.muted` | toward `foreground` |
+| `syntax.comment` | toward `foreground` |
+| `danger.base` | toward `foreground` |
+| `accent.base` | toward `foreground` |
+| `focus.ring` | toward `foreground` |
+| `icon.red` | toward `foreground` |
+| `icon.orange` | toward `foreground` |
+| `icon.yellow` | toward `foreground` |
+| `icon.green` | toward `foreground` |
+| `icon.teal` | toward `foreground` |
+| `icon.blue` | toward `foreground` |
+| `icon.purple` | toward `foreground` |
+| `icon.pink` | toward `foreground` |
+| `state.running` | toward `foreground` |
+| `state.waiting` | toward `foreground` |
+| `state.failed` | toward `foreground` |
+| `state.success` | toward `foreground` |
+| `state.unreadable` | toward `foreground` |
+| `needs-you.base` | toward `foreground` |
+| `syntax.keyword` | toward `foreground` |
+| `syntax.string` | toward `foreground` |
+| `syntax.number` | toward `foreground` |
+| `syntax.constant` | toward `foreground` |
+| `syntax.function` | toward `foreground` |
+| `syntax.type` | toward `foreground` |
+| `syntax.property` | toward `foreground` |
+| `syntax.attribute` | toward `foreground` |
+| `syntax.tag` | toward `foreground` |
+| `syntax.heading` | toward `foreground` |
+| `syntax.invalid` | toward `foreground` |
+| `syntax.variable` | toward `foreground` |
+| `markdown.link` | toward `foreground` |
+| `markdown.code` | toward `foreground` |
+| `markdown.quote` | toward `foreground` |
+| `markdown.heading` | toward `foreground` |
+| `chart.1` | toward `foreground` |
+| `chart.2` | toward `foreground` |
+| `chart.3` | toward `foreground` |
+| `chart.4` | toward `foreground` |
+| `chart.5` | toward `foreground` |
+| `chart.6` | toward `foreground` |
+| `chart.7` | toward `foreground` |
+| `chart.8` | toward `foreground` |
 
 ## Exporting a theme
 
