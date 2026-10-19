@@ -38,9 +38,12 @@ fn the_machines_gallery_is_classic_and_the_persons_folders_and_says_what_is_draw
     let place = machine(home.path());
     let shown = gallery_of(&place, None);
     let ids: Vec<&str> = shown.cards.iter().map(|one| one.id.as_str()).collect();
-    assert_eq!(ids, ["purlis-classic", "dusk"]);
-    assert_eq!(shown.cards[1].from, "machine");
+    assert_eq!(ids, ["purlis-classic", "purlis", "dusk"]);
+    assert_eq!(shown.cards[2].from, "machine");
     assert_eq!(shown.cards[0].from, "built-in");
+    // Purlis is built in and ships as a preview (#2336); Purlis Classic stays what is drawn.
+    assert_eq!(shown.cards[1].from, "built-in");
+    assert!(shown.cards[1].preview && !shown.cards[0].preview);
     assert_eq!(shown.yours, None);
     assert_eq!(shown.drawn.as_deref(), Some("purlis-classic"));
     assert_eq!(shown.level, "purlis");

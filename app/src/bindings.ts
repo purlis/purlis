@@ -6215,6 +6215,8 @@ export type GalleryCard = {
 	name: string,
 	/**  `built-in`, `machine`, `project`, `workspace` or `extension`. */
 	from: string,
+	/**  Whether it ships as a preview: Purlis, until it becomes the default (#2336). */
+	preview: boolean,
 	/**  The extension it comes from, for an extension's theme. */
 	extension: string | null,
 	/**  Its appearances, the first what it draws when nothing chose one. */

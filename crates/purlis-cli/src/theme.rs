@@ -5,12 +5,12 @@
 //! available on this machine and where it comes from, the theme check of any one of them, a
 //! theme folder made from a theme of another program, and a theme folder as a zip.
 //!
-//! **Nothing here judges a theme.** The theme engine (`purlis_core::theme`) reads it, refuses it
-//! or says what it left out, and checks each appearance; this module finds the themes there are,
-//! asks the engine about each, and prints its answer, as a table for a person or as JSON for a
-//! chat. `list` and `check` write nothing: they read Purlis Classic, the person's `theme.json`,
-//! the theme folders of every level and the approved extensions' themes, and leave every file
-//! as they found it.
+//! **Nothing here judges a theme.** The theme engine (`purlis_core::theme`) reads it, refuses it or
+//! says what it left out, and checks each appearance; this module finds the themes there are, asks
+//! the engine about each, and prints its answer, as a table for a person or as JSON for a chat.
+//! `list` and `check` write nothing: they read the built-in themes, the person's `theme.json`, the
+//! theme folders of every level and the approved extensions' themes, and leave every file as they
+//! found it.
 //!
 //! **`import` and `export`** (#2334): the engine makes a theme folder's files from a VS Code
 //! colour theme, a base16 or base24 scheme, an iTerm2 or a Ghostty palette or a theme folder's
@@ -22,16 +22,16 @@
 //! folder is named by its id (#2612) and found by the engine at that level alone. A staged import
 //! is read only to check (#2587): none of its fonts is left registered once it moves or goes.
 //!
-//! **Where a theme comes from, and its level** (#2518): built in (Purlis Classic,
-//! `purlis-classic`); the person's own `theme.json` (its id is [`MINE`]) and the theme folders
-//! in the person's `themes/`, at the machine level; the project's `themes/` at the plane root;
-//! each workspace's `themes/`; or an approved extension that is on (its id is
-//! `<extension>/<theme>`, as a project's pick names it). A theme folder's id names its level
-//! and its folder: `machine:<folder>`, `project:<folder>`, `workspace:<workspace>:<folder>`.
-//! The levels' folders are read by the engine exactly as the window reads them
-//! ([`theme::Folders`]: through handles, refusing a link, under the caps, each extending the
-//! folders of its own level and the levels farther out), and nothing here reads them another
-//! way. A theme file or a theme folder anywhere else can be checked by its path.
+//! **Where a theme comes from, and its level** (#2518): built in (Purlis Classic, `purlis-classic`,
+//! and Purlis, `purlis`, which the table names as a preview); the person's own `theme.json` (its id
+//! is [`MINE`]) and the theme folders in the person's `themes/`, at the machine level; the
+//! project's `themes/` at the plane root; each workspace's `themes/`; or an approved extension that
+//! is on (its id is `<extension>/<theme>`, as a project's pick names it). A theme folder's id names
+//! its level and its folder: `machine:<folder>`, `project:<folder>`,
+//! `workspace:<workspace>:<folder>`. The levels' folders are read by the engine exactly as the
+//! window reads them ([`theme::Folders`]: through handles, refusing a link, under the caps, each
+//! extending the folders of its own level and the levels farther out), and nothing here reads them
+//! another way. A theme file or a theme folder anywhere else can be checked by its path.
 //!
 //! **The check is of what the window draws**: each combination says the consent floors the
 //! window holds when it draws it, and the tokens it draws as purlis's own for them.
@@ -333,15 +333,34 @@ impl Found {
     }
 
     fn classic() -> Self {
+        Self::built_in(theme::CLASSIC, theme::classic())
+    }
+
+    /// Purlis (#2336), a preview until it becomes the default.
+    fn purlis() -> Self {
+        Self::built_in(theme::PURLIS, theme::purlis())
+    }
+
+    fn built_in(id: &str, theme: &Theme) -> Self {
         Self::of(
-            theme::CLASSIC.to_owned(),
+            id.to_owned(),
             From::BuiltIn,
             Resolved {
-                theme: theme::classic().clone(),
+                theme: theme.clone(),
                 complaints: Vec::new(),
                 refused: false,
             },
         )
+    }
+
+    /// Its name as the table says it: a built-in theme that ships as a preview says so.
+    fn name_said(&self, theme: &Theme) -> String {
+        let name = shown::short(&theme.name);
+        if matches!(self.from, From::BuiltIn) && theme::is_preview(&self.id) {
+            format!("{name} (preview)")
+        } else {
+            name
+        }
     }
 
     fn summary_json(&self) -> Value {
@@ -371,7 +390,7 @@ impl Found {
             ),
             None => (Value::Null, Value::Null),
         };
-        json!({
+        let mut summary = json!({
             "id": self.id,
             "name": name,
             "appearances": appearances,
@@ -380,7 +399,12 @@ impl Found {
             "level": self.from.level(),
             "from": self.from.json(),
             "refused": self.refused,
-        })
+        });
+        // A built-in theme says whether it ships as a preview (#2336); no other theme has the key.
+        if matches!(self.from, From::BuiltIn) {
+            summary["preview"] = Value::from(theme::is_preview(&self.id));
+        }
+        summary
     }
 }
 
@@ -638,10 +662,21 @@ fn imported_json(
 /// imported back sits beside it and never in its place.
 const CLASSIC_COPY: &str = "purlis-classic-copy";
 
-/// `purlis theme export`: Purlis Classic as its copy, a level's theme folder by its id, or a
+/// The folder Purlis is exported as, for the same reason.
+const PURLIS_COPY: &str = "purlis-copy";
+
+/// `purlis theme export`: a built-in theme as its copy, a level's theme folder by its id, or a
 /// theme folder by its path.
 fn export(here: Here<'_>, asked: &str, to: Option<&str>, force: bool) -> ExitCode {
-    let packed = if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
+    let packed = if asked == theme::PURLIS {
+        let files = theme::purlis_files();
+        theme::pack(PURLIS_COPY, &files).map(|bytes| theme::Packed {
+            name: PURLIS_COPY.to_owned(),
+            bytes,
+            files: files.len(),
+            left_out: Vec::new(),
+        })
+    } else if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
         let files = theme::Files::from([(
             theme::THEME_JSON.to_owned(),
             theme::CLASSIC_THEME_JSON.as_bytes().to_vec(),
@@ -789,11 +824,11 @@ fn plane() -> Option<std::path::PathBuf> {
     place.is_plane.then_some(place.root)
 }
 
-/// Every theme there is here, in the order a person reads them: Purlis Classic; the machine's
+/// Every theme there is here, in the order a person reads them: the built-in themes; the machine's
 /// (the person's own, then their theme folders); the project's; each workspace's, by name; then
 /// each approved extension's in the order the survey found them.
 fn available(here: Here<'_>) -> Vec<Found> {
-    let mut found = vec![Found::classic()];
+    let mut found = vec![Found::classic(), Found::purlis()];
     if let Some(config) = here.config {
         found.extend(mine(config));
     }
@@ -930,11 +965,14 @@ fn extensions(config: &Path) -> Vec<Found> {
     found
 }
 
-/// The theme `asked` names: Purlis Classic by its id or any id its appearances have had, the
-/// person's own, a level's theme folder by `<level>:<folder>`, an extension's by
+/// The theme `asked` names: Purlis by its id, Purlis Classic by its id or any id its appearances
+/// have had, the person's own, a level's theme folder by `<level>:<folder>`, an extension's by
 /// `<extension>/<theme>`, or else a theme file or a theme folder by its path. `Err` when there
 /// is none, with what reading a level had to say.
 fn find(here: Here<'_>, asked: &str) -> Result<Found, Vec<Complaint>> {
+    if asked == theme::PURLIS {
+        return Ok(Found::purlis());
+    }
     if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
         return Ok(Found::classic());
     }
@@ -1051,7 +1089,7 @@ fn table(found: &[Found]) -> String {
         match (&one.theme, &one.refused) {
             (Some(theme), None) => rows.push([
                 shown::short(&one.id),
-                shown::short(&theme.name),
+                one.name_said(theme),
                 appearances(theme),
                 one.from.said(),
             ]),
