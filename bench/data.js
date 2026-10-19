@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792380789068,
+  "lastUpdate": 1792432118176,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18102,6 +18102,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1297495,
             "unit": "ms",
             "extra": "median of 5 runs: 100.837, 101.116, 101.130, 101.135, 101.251 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "23855fecf4c5607c66f61363ef92e225af663d84",
+          "message": "The theme check holds the remaining pairs and geometry across tokens (#2700)\n\nEvery syntax role is held on the editor's current line, and the window's\nsecondary, muted, accent and state words on a theme's selection while\nselected text is the platform's. A line of words has to fit the control\nor strip it is drawn in, in both densities: the check names the sizes\nof one that does not (`line-does-not-fit`). Each chart point is its own\nseries, the chart palette in turn, so every chart colour is drawn.\nPurlis Classic light's property and attribute colours are a shade\ndarker so they read on the current line.\n\nCloses #2522\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-19T21:46:47+04:00",
+          "tree_id": "896380d54561775f0fe75f21502dbbf40c0ccf0a",
+          "url": "https://github.com/purlis/purlis/commit/23855fecf4c5607c66f61363ef92e225af663d84"
+        },
+        "date": 1792432116756,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6660630000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.634, 0.652, 0.666, 0.683, 0.701 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.543307,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.297, 16.412, 16.543, 16.620, 16.929 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.65308049999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.893, 101.637, 101.653, 102.279, 102.715 ms"
           }
         ]
       }
