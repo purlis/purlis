@@ -2763,13 +2763,28 @@ fn running_sessions(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<
     Ok(planes.held(&plane)?.chats().sessions().running())
 }
 
-/// Hands `ipc_commands.rs`'s list, both classes of it, to `tauri-specta`.
+/// Hands `ipc_commands.rs`'s list, both classes of it, to `tauri-specta`. Its `e2e_only` is
+/// left out of every build but the `e2e` one.
+#[cfg(not(feature = "e2e"))]
 macro_rules! register {
     (
         value_free: [$($($free:ident)::+),* $(,)?],
-        vault_values: [$($($value:ident)::+),* $(,)?] $(,)?
+        vault_values: [$($($value:ident)::+),* $(,)?],
+        e2e_only: [$($($e2e:ident)::+),* $(,)?] $(,)?
     ) => {
         collect_commands![$($($free)::+,)* $($($value)::+),*]
+    };
+}
+
+/// Hands `ipc_commands.rs`'s list to `tauri-specta`, with what only a scenario test asks.
+#[cfg(feature = "e2e")]
+macro_rules! register {
+    (
+        value_free: [$($($free:ident)::+),* $(,)?],
+        vault_values: [$($($value:ident)::+),* $(,)?],
+        e2e_only: [$($($e2e:ident)::+),* $(,)?] $(,)?
+    ) => {
+        collect_commands![$($($free)::+,)* $($($value)::+,)* $($($e2e)::+),*]
     };
 }
 
@@ -2833,9 +2848,11 @@ fn commands() -> Builder<tauri::Wry> {
 /// relative path scatters a `src/bindings.ts` beside every plane, every temp directory a
 /// test runs in, and anywhere else the app is launched from. One such file was committed
 /// before this was noticed.
+#[cfg(any(test, all(debug_assertions, not(feature = "e2e"))))]
 const BINDINGS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/bindings.ts");
 
 /// How the TypeScript is written, so that the app and the test that guards it agree.
+#[cfg(any(test, all(debug_assertions, not(feature = "e2e"))))]
 fn typescript() -> specta_typescript::Typescript {
     specta_typescript::Typescript::default()
 }
@@ -3225,7 +3242,9 @@ pub fn run() {
     refuse_beside_the_old_app();
     let commands = commands();
 
-    #[cfg(debug_assertions)]
+    // Not by the `e2e` build, whose commands are more than the ones the TypeScript is made from
+    // (`ipc_commands.rs`'s `e2e_only`): what it writes would differ from the committed file.
+    #[cfg(all(debug_assertions, not(feature = "e2e")))]
     commands
         .export(typescript(), BINDINGS)
         .expect("the TypeScript bindings are written");
