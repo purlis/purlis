@@ -531,7 +531,8 @@ fn a_fresh_repository_is_checked_out_at_the_branch_with_its_uncommitted_work_and
     assert_eq!(read("fix.txt").as_deref(), Some("fixed better\n"));
     assert_eq!(read("new.txt").as_deref(), Some("brand new\n"));
     assert_eq!(read("README"), None);
-    let status = git(&runner, &["status", "--porcelain"]);
+    // Read untrimmed: a line's first column says whether the change is staged.
+    let status = crate::testgit::run(&runner, &["status", "--porcelain"]).out;
     assert!(status.contains(" M fix.txt"), "{status}");
     assert!(status.contains("?? new.txt"), "{status}");
     assert!(status.contains(" D README"), "{status}");
