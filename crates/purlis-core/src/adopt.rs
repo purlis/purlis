@@ -133,13 +133,20 @@ pub fn build_profile() -> &'static str {
     env!("PURLIS_BUILD_PROFILE")
 }
 
+/// **The version this build says it is** (#2749): the one its release stamped it with, a dev
+/// build's `<version>-dev.<run>` as its app announces it, else [`app_version`]. What a pool's
+/// runner is held to: the runner image a release builds is stamped as its desktop is.
+pub fn release_version() -> &'static str {
+    env!("PURLIS_RELEASE_VERSION")
+}
+
 /// What `purlis --version` prints after the program's name: the version, then the profile.
 ///
 /// A dev channel build and a stable build of the same source are not the same binary, and a
 /// report of a slow or a crashing one has to say which it was. The release workflow reads this
 /// line off the binary it built and refuses a build whose profile is not the one it asked for.
 pub const VERSION_LINE: &str = concat!(
-    env!("CARGO_PKG_VERSION"),
+    env!("PURLIS_RELEASE_VERSION"),
     " (",
     env!("PURLIS_BUILD_PROFILE"),
     " profile)"

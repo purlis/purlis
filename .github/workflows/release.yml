@@ -465,6 +465,10 @@ jobs:
     env:
       VERSION: ${{ needs.plan.outputs.version }}
       PUBLISH: ${{ needs.plan.outputs.publish }}
+      # Every binary says the version the app announces (#2749): `purlis --version` of a dev
+      # build is `<version>-dev.<run>`, as its runner image's is (`runner-image.yml`), so a
+      # pool's runner is held to the desktop's own version.
+      PURLIS_VERSION_STAMP: ${{ needs.plan.outputs.version }}
       # The Cargo profile every binary of this build is compiled with, and so the directory
       # under `target/` they and the bundles land in: `release` for a stable build, `dev-release`
       # for a dev channel build (ADR 0092).
@@ -1099,6 +1103,68 @@ jobs:
             "$dir/$name" --version
           done
 
+  # **The runner image of this release** (#2749, ruled 2026-10-20): `runner-image.yml`, called
+  # for the commit and the version this run publishes, so purlis's runner image says the
+  # version its desktop does. Built, checked, pushed, signed keyless and verified there; its
+  # line (`<image>@sha256:<digest>`) comes back as `image`. The permissions are the most the
+  # called workflow's jobs ask for; each of its jobs holds only its own.
+  runner-image:
+    name: runner image
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/runner-image.yml
+    with:
+      sha: ${{ needs.plan.outputs.sha }}
+      version: ${{ needs.plan.outputs.version }}
+
+  # **The runner image's line, signed with the updater's key** (#2749), for the update manifest
+  # to name it: the manifest is not signed, so the line is, by the key every app checks its
+  # bundles with (ADR 0042), with this release's version in its trusted comment. In the
+  # `release` environment, the one place the key is; it holds nothing else, and writes no
+  # release.
+  runner-image-signature:
+    name: runner image signature
+    needs: [plan, runner-image]
+    if: needs.plan.outputs.publish == 'true'
+    environment: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      RUNNER_IMAGE: ${{ needs.runner-image.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - name: The runner image's line, signed for this version
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          case "$RUNNER_IMAGE" in
+            ghcr.io/*/purlis-runner@sha256:*) ;;
+            *) echo "::error::runner-image.yml handed back '$RUNNER_IMAGE'"; exit 1 ;;
+          esac
+          mkdir -p runner
+          printf '%s\n' "$RUNNER_IMAGE" > runner/runner-image.txt
+          cargo run --locked --release -p release-manifest --bin sign-runner-image -- \
+            runner/runner-image.txt "$VERSION"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: purlis-runner-image-${{ needs.plan.outputs.version }}
+          path: runner/
+          if-no-files-found: error
+          retention-days: 90
+
   # **A CycloneDX SBOM for each platform a release ships** (#584). What it covers, exactly:
   #
   #   - The Rust crates of the purlis binaries (the app, the `purlis` command beside it with
@@ -1207,7 +1273,7 @@ jobs:
   # would reject.
   manifest:
     name: update manifest
-    needs: [plan, build]
+    needs: [plan, build, runner-image-signature]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -1237,6 +1303,12 @@ jobs:
           name: purlis-linux-x86_64-${{ needs.plan.outputs.version }}
           path: dist
 
+      # The runner image this release built, its line and its signature (#2749).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-runner-image-${{ needs.plan.outputs.version }}
+          path: runner
+
       - name: The manifest, and every check it has to pass first
         run: |
           set -euo pipefail
@@ -1258,6 +1330,7 @@ jobs:
             --entry darwin-aarch64=purlis-darwin-aarch64.app.tar.gz \
             --entry linux-x86_64-appimage=purlis-linux-x86_64-appimage.AppImage \
             --tauri-config app/src-tauri/tauri.conf.json \
+            --runner-image runner/runner-image.txt \
             --out manifest
           cat manifest/*.json
 

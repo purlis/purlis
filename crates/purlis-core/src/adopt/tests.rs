@@ -90,8 +90,7 @@ fn the_rows_name_the_apps_version_and_the_pin_and_nothing_from_the_news_corpus()
 #[test]
 fn the_python_lines_last_release_is_not_the_apps_version() {
     assert!(
-        crate::version::version_key(app_version())
-            != crate::version::version_key(PYTHON_LINE_LAST),
+        crate::version::version_key(app_version()) != crate::version::version_key(PYTHON_LINE_LAST),
         "the app's version and the Python line's last are the same number; the verdict \
          for that pin would be `Met` and the tests below would say less than they claim"
     );
@@ -291,4 +290,16 @@ fn a_word_that_is_not_a_channel_exits_one_and_moves_nothing() {
             "{word:?} moved the channel"
         );
     }
+}
+
+#[test]
+fn the_version_a_build_says_is_its_releases_stamp_of_the_workspaces_one() {
+    // Unstamped, the crate's own; stamped by a release, that version or a prerelease of it.
+    let own = env!("CARGO_PKG_VERSION");
+    assert!(
+        release_version() == own || release_version().starts_with(&format!("{own}-")),
+        "{}",
+        release_version()
+    );
+    assert!(VERSION_LINE.starts_with(&format!("{} (", release_version())));
 }

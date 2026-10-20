@@ -70,6 +70,24 @@ pub enum PoolLink {
     Down { why: String },
 }
 
+/// **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
+/// when they differ, and whether purlis moves the pool along with the desktop.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolVersion {
+    /// The version its runner's `purlis --version` says; none where it could not be read.
+    pub runner: Option<String>,
+    /// Why it could not be read, in Docker's or purlis's words.
+    pub why: Option<String>,
+    /// This desktop's version.
+    pub desktop: String,
+    /// Whether the pool is of purlis's own runner image, which purlis moves to the desktop's
+    /// version after an update; a team's own image is never moved.
+    pub follows: bool,
+    /// How many of its older runners drain: each keeps its chats until they end, then is
+    /// removed.
+    pub draining: u32,
+}
+
 #[cfg(unix)]
 fn shown(limits: Limits) -> PoolLimitsShown {
     let (whole, part) = (limits.millicpus() / 1000, limits.millicpus() % 1000);
@@ -223,8 +241,9 @@ pub async fn remove_docker_pool(name: String) -> Result<Option<String>, String> 
 #[cfg(unix)]
 /// [`remove_docker_pool`], on `machine`.
 pub fn remove_on(machine: &Machine, name: &str) -> Result<Option<String>, String> {
-    let unpair = |_: &purlis_core::runners::Kept| {
-        let to = ToARunner::of(machine, name)?;
+    // Each runner of the pool is unpaired over a link to it, a draining one too (#2749).
+    let unpair = |kept: &purlis_core::runners::Kept| {
+        let to = ToARunner::of_kept(machine, kept)?;
         crate::runnerlinks::unpair(&to)
     };
     let removed = purlis_core::pools::remove(&machine.config, &machine.docker, name, Some(&unpair))
@@ -249,6 +268,51 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
     {
         Err(NOT_HERE.to_owned())
     }
+}
+
+/// **Which version the pool `name`'s runner runs, against this desktop's** (#2749).
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_version(name: String) -> Result<PoolVersion, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("asking a pool's runner its version", move || {
+            version_on(&Machine::here(&config_root()?)?, &name)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+#[cfg(unix)]
+/// [`docker_pool_version`], on `machine`.
+pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> {
+    let kept =
+        purlis_core::runners::runner_for(&machine.config, name).map_err(|why| why.to_string())?;
+    let pool = purlis_core::runners::pools(&machine.config)
+        .map_err(|why| why.to_string())?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| format!("no pool named {name} is on this machine"))?;
+    let draining = purlis_core::runners::draining(&machine.config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .filter(|kept| kept.pool() == name)
+        .count();
+    let (runner, why) = match machine.docker.version_of(&kept.made) {
+        Ok(version) => (Some(version), None),
+        Err(why) => (None, Some(why.0)),
+    };
+    Ok(PoolVersion {
+        runner,
+        why,
+        desktop: crate::runnerlinks::desktop_version().to_owned(),
+        follows: pool.image().is_purlis_own(),
+        draining: u32::try_from(draining).unwrap_or(u32::MAX),
+    })
 }
 
 #[cfg(test)]

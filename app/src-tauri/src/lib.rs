@@ -106,6 +106,7 @@ mod piecefiles;
 mod pin;
 mod planes;
 mod planewatch;
+mod poolfollow;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
 mod projectsettings;
@@ -4071,6 +4072,9 @@ pub fn run() {
             // The automatic half of updating: a timer that checks, never one that installs.
             // Off in a test build and a development build (`updates::watch` says why).
             updates::watch(app.handle());
+            // A Docker pool's runner follows this version, side by side, after an update
+            // (#2749): off where the updater is.
+            poolfollow::watch(app.handle());
             // This machine's sandbox policy, read again now and then (#1431): a policy that
             // lands is told to the window, which asks again which chats it leaves behind.
             sandboxing::watch_policy(app.handle().clone());

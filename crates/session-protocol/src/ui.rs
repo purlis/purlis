@@ -597,6 +597,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "add_docker_pool",
     "remove_docker_pool",
     "docker_pool_link",
+    "docker_pool_version",
     // Taking a browser over, driving it and handing it back (#2014): what the person types into
     // a page is theirs, and only the window, where they see it, sends it.
     "take_over_browser",

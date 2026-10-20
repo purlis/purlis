@@ -5,8 +5,7 @@ use super::*;
 
 /// Base64, for building the fixtures the decoder is then pointed at.
 fn encode(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for chunk in bytes.chunks(3) {
         let b = [
@@ -81,11 +80,7 @@ impl Signer {
             .collect()
     }
 
-    fn assemble(
-        &self,
-        version: &str,
-        rows: &[Entry],
-    ) -> Result<(&'static str, String), Refused> {
+    fn assemble(&self, version: &str, rows: &[Entry]) -> Result<(&'static str, String), Refused> {
         assemble(Channel::Stable, &self.pubkey(), version, "x", "", rows)
     }
 }
@@ -138,8 +133,7 @@ fn every_channel_publishes_its_weekly_manifest_as_the_manifest_byte_for_byte() {
     let signer = Signer::new();
     let rows = signer.entries("0.2.0");
     for channel in Channel::ALL {
-        let (name, text) =
-            assemble(channel, &signer.pubkey(), "0.2.0", "x", "", &rows).unwrap();
+        let (name, text) = assemble(channel, &signer.pubkey(), "0.2.0", "x", "", &rows).unwrap();
         let files = published(channel, &text);
         let names: Vec<&str> = files.iter().map(|(name, _)| *name).collect();
         assert_eq!(names, [name, channel.weekly_manifest()]);
@@ -396,4 +390,68 @@ fn a_signature_the_real_cli_wrote_is_read_as_the_cli_meant_it() {
         signed_version(&encode(real.as_bytes())).as_deref(),
         Ok("0.2.0")
     );
+}
+
+const RUNNER: &str = "ghcr.io/purlis/purlis-runner@sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+#[test]
+fn a_release_names_the_runner_image_it_built_signed_for_its_version() {
+    let signer = Signer::new();
+    let runner = RunnerImage {
+        line: RUNNER.into(),
+        signature: signer.sign(RUNNER.as_bytes(), Some("0.2.0")),
+    };
+    let (_, text) = assemble_with(
+        Channel::Stable,
+        &signer.pubkey(),
+        "0.2.0",
+        "x",
+        "",
+        &signer.entries("0.2.0"),
+        Some(&runner),
+    )
+    .expect("a release and its runner image");
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(doc["runnerImage"]["image"], RUNNER);
+    assert_eq!(
+        purlis_core::runnerimage::of_this_version(&doc, &signer.pubkey(), "0.2.0")
+            .unwrap()
+            .unwrap()
+            .as_str(),
+        RUNNER
+    );
+    // A release with none names none, as before.
+    let (_, text) = signer.assemble("0.2.0", &signer.entries("0.2.0")).unwrap();
+    assert!(!text.contains("runnerImage"));
+}
+
+#[test]
+fn a_runner_image_the_app_would_not_take_stops_the_release() {
+    let (signer, other) = (Signer::new(), Signer::new());
+    for runner in [
+        RunnerImage {
+            line: RUNNER.into(),
+            signature: other.sign(RUNNER.as_bytes(), Some("0.2.0")),
+        },
+        RunnerImage {
+            line: RUNNER.into(),
+            signature: signer.sign(RUNNER.as_bytes(), Some("0.1.9")),
+        },
+        RunnerImage {
+            line: "ghcr.io/purlis/purlis-runner:main".into(),
+            signature: signer.sign(b"ghcr.io/purlis/purlis-runner:main", Some("0.2.0")),
+        },
+    ] {
+        let refused = assemble_with(
+            Channel::Stable,
+            &signer.pubkey(),
+            "0.2.0",
+            "x",
+            "",
+            &signer.entries("0.2.0"),
+            Some(&runner),
+        )
+        .unwrap_err();
+        assert!(matches!(refused, Refused::RunnerImage(_)), "{refused}");
+    }
 }

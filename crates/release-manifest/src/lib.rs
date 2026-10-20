@@ -41,6 +41,7 @@
 
 use std::collections::BTreeMap;
 
+pub mod sign;
 pub mod weekly;
 
 use purlis_core::updates::{Channel, TARGETS};
@@ -82,6 +83,8 @@ pub enum Refused {
     NoKey(&'static str),
     /// A signature that is well formed and does not verify against the app's public key.
     DoesNotVerify { target: String, why: String },
+    /// The runner image the release names is not one the app would take (#2749).
+    RunnerImage(String),
     /// A signature that was made for a different version than the one being announced.
     SignedForAnother {
         target: String,
@@ -110,6 +113,10 @@ impl std::fmt::Display for Refused {
                  platform updating without saying so"
             ),
             Self::TargetTwice(t) => write!(f, "{t:?} appears twice, so one of the two is lost"),
+            Self::RunnerImage(why) => write!(
+                f,
+                "the release's runner image cannot be named in the manifest: {why}"
+            ),
             Self::NotHttps { target, url } => write!(
                 f,
                 "{target}'s url {url:?} is not https, and a release build's updater refuses one"
@@ -160,6 +167,31 @@ pub fn assemble(
     pub_date: &str,
     notes: &str,
     entries: &[Entry],
+) -> Result<(&'static str, String), Refused> {
+    assemble_with(channel, pubkey, version, pub_date, notes, entries, None)
+}
+
+/// **The runner image a release built, as its manifest names it** (#2749): the image's line,
+/// `<name>@sha256:<digest>`, and the `.sig` the updater's key made over it, with the release's
+/// version in its trusted comment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnerImage {
+    pub line: String,
+    pub signature: String,
+}
+
+/// [`assemble`], the manifest also naming the release's runner image, `runner_image`, as
+/// `runnerImage` (#2749): only where it is purlis's own, named by its digest, and signed by the
+/// key the app ships over its exact line for this version, as the app checks it
+/// (`purlis_core::runnerimage::of_this_version`).
+pub fn assemble_with(
+    channel: Channel,
+    pubkey: &str,
+    version: &str,
+    pub_date: &str,
+    notes: &str,
+    entries: &[Entry],
+    runner_image: Option<&RunnerImage>,
 ) -> Result<(&'static str, String), Refused> {
     purlis_core::updates::pubkey_usable(pubkey).map_err(|not| Refused::NoKey(not.why()))?;
     let public_key = decode_base64_text(pubkey.trim())
@@ -217,12 +249,22 @@ pub fn assemble(
         }
     }
 
-    let doc = serde_json::json!({
+    let mut doc = serde_json::json!({
         "version": version,
         "notes": notes,
         "pub_date": pub_date,
         "platforms": platforms,
     });
+    if let Some(runner_image) = runner_image {
+        doc[purlis_core::runnerimage::KEY] = serde_json::json!({
+            "image": runner_image.line,
+            "signature": runner_image.signature.trim(),
+        });
+        // Checked exactly as the app checks it, so a manifest no app would take an image from
+        // is refused here.
+        purlis_core::runnerimage::of_this_version(&doc, pubkey, version)
+            .map_err(Refused::RunnerImage)?;
+    }
     let mut text = serde_json::to_string_pretty(&doc).expect("plain data serde can always write");
     text.push('\n');
     Ok((channel.manifest(), text))

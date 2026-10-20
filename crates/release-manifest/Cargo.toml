@@ -19,10 +19,9 @@ serde_json.workspace = true
 # The verifier tauri-plugin-updater itself uses, at the version already in Cargo.lock through
 # it — so what this refuses at release time is exactly what the app would refuse on a laptop.
 minisign-verify = "0.3"
-
-[dev-dependencies]
-# Signing, for the tests only: each run makes a keypair in memory and throws it away, so no
-# key and nothing derived from one is ever committed to this repository.
+# `sign-runner-image` signs the runner image's line with the updater's key in the release
+# environment (#2749); the tests make a keypair in memory and throw it away, so no key and
+# nothing derived from one is ever committed to this repository.
 minisign = "0.10"
 
 [lints]

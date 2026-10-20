@@ -345,6 +345,31 @@ terminal does not, until they are put there:
 - **Linux**: the `.deb` installs `/usr/bin/purlis` and `/usr/bin/charter`. The AppImage runs from
   a mount point that changes at every launch, so there is nothing stable to link to.
 
+## The runner image a release names
+
+Each release builds purlis's runner image with its own version (`runner-image.yml`, called by
+`release.yml`), and its manifest names it, beside `version`:
+
+```json
+"runnerImage": {
+  "image": "ghcr.io/purlis/purlis-runner@sha256:<digest>",
+  "signature": "<base64 minisign signature>"
+}
+```
+
+The manifest itself is not signed, so the image's line is: the `runner-image-signature` job
+signs it with the updater key (step 1), in the `release` environment, with the release's
+version in the signature's trusted comment, as a bundle's is. `release-manifest` refuses a
+release whose line does not verify against the public key the app ships, is signed for another
+version, is not named by its digest, or is not purlis's own image.
+
+A while after each launch, and as often as it looks for updates, the app reads its channel's
+manifest for **its own** version and checks the image in it the same way. A Docker pool of
+purlis's own image then gets a runner of that image beside its old one. New chats start on the
+new runner, and the old one keeps its chats until they end, then is removed. A pool of a team's
+own image is never moved: its row in the window says its runner is behind. A manifest of another
+version, or one from before the image was named, moves nothing.
+
 ## Counting weekly users, without an identifier
 
 purlis estimates how many machines use it each week from a download count, and from nothing

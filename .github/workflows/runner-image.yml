@@ -16,12 +16,14 @@ run-name: ${{ github.event_name == 'workflow_run' && format('ci {0} ({1}) of {2}
 #
 # Three ways in, and what each makes:
 #
-#   `ci` green on `main`   -> the image of that commit: built, checked against the contract,
-#                             pushed, tagged `sha-<commit>` (and `main` when that moves it
-#                             forward), signed, verified, and
-#                             its digest recorded in the run's summary and its `runner-image`
-#                             artifact. The same gate as the dev channel's build (`release.yml`),
-#                             so the image and the dev build are of the same commits.
+#   called by `release.yml` -> the image of the release it publishes (#2749): its `purlis`
+#                             stamped with the release's version (`PURLIS_VERSION_STAMP`), as the
+#                             desktop's is, built, checked against the contract, pushed, tagged
+#                             `sha-<commit>` (and `main` when that moves it forward), signed,
+#                             verified, and its line (`<image>@sha256:<digest>`) handed back as
+#                             `image`, which the release signs with the updater's key and its
+#                             update manifest names as `runnerImage`. So a dev or stable build
+#                             and its runner image are one version, and a pool follows it.
 #   a pull request         -> touching the image's own files only: the same build and contract
 #                             check, for both architectures, pushed nowhere.
 #   `workflow_dispatch`    -> the same, for any branch, pushed nowhere.
@@ -46,10 +48,19 @@ on:
       - tools/runner-image-*
       - tools/image-registry*
       - .github/workflows/runner-image.yml
-  workflow_run:
-    workflows: [ci]
-    types: [completed]
-    branches: [main]
+  workflow_call:
+    inputs:
+      # The commit the release builds, and the version it stamps every binary with.
+      sha:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+    outputs:
+      image:
+        description: The runner image's line, `<image>@sha256:<digest>`, signed and verified.
+        value: ${{ jobs.index.outputs.image }}
   workflow_dispatch:
 
 # One publish at a time, never cancelled once started, as `release.yml`'s dev builds; a run
@@ -72,8 +83,8 @@ jobs:
     name: what this run makes
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    # The same rule as `release.yml`'s `plan`: only a green `ci` on a push to THIS repository's
-    # `main` publishes, and `workflow_run.head_sha` is the one commit such a run builds.
+    # The same rule as `release.yml`'s `plan`, which calls this for each release it publishes:
+    # the release's event is the one this run sees.
     if: >-
       github.event_name != 'workflow_run' || (
         github.event.workflow_run.conclusion == 'success' &&
@@ -84,21 +95,29 @@ jobs:
     outputs:
       publish: ${{ steps.plan.outputs.publish }}
       sha: ${{ steps.plan.outputs.sha }}
+      version: ${{ steps.plan.outputs.version }}
     steps:
       - id: plan
         env:
           EVENT: ${{ github.event_name }}
-          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          # Set only when `release.yml` calls this, for the release it publishes (#2749).
+          CALLED_SHA: ${{ inputs.sha }}
+          VERSION: ${{ inputs.version }}
           PR_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          case "$EVENT" in
-            workflow_run) publish=true; sha=$RUN_SHA ;;
-            pull_request) publish=false; sha=$PR_SHA ;;
-            *) publish=false; sha=$GITHUB_SHA ;;
-          esac
+          # A release's call is the one way in that publishes.
+          if [ -n "$VERSION" ]; then
+            publish=true; sha=$CALLED_SHA
+          else
+            case "$EVENT" in
+              pull_request) publish=false; sha=$PR_SHA ;;
+              *) publish=false; sha=$GITHUB_SHA ;;
+            esac
+          fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Runner image of \`$sha\`: $([ "$publish" = true ] && echo 'built, checked, pushed and signed' || echo 'built and checked, pushed nowhere')." >> "$GITHUB_STEP_SUMMARY"
 
   binary:
@@ -131,9 +150,15 @@ jobs:
         env:
           CARGO_AUDITABLE_VERSION: 0.7.6
         run: cargo install --locked cargo-auditable --version "$CARGO_AUDITABLE_VERSION"
+      # Stamped with the release's version, as the desktop's binaries are (#2749), so the
+      # runner says the version its desktop does. A run that publishes nothing is unstamped.
       - name: The purlis binary
+        env:
+          PURLIS_VERSION_STAMP: ${{ needs.plan.outputs.version }}
         run: cargo auditable build --profile dev-release --locked -p purlis-cli
-      - name: It says which profile built it
+      - name: It says which profile built it, and the release's version
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
           set -euo pipefail
           line=$(target/dev-release/purlis --version)
@@ -142,6 +167,10 @@ jobs:
             "purlis "*"(dev-release profile)") ;;
             *) echo "::error::the binary says: $line"; exit 1 ;;
           esac
+          if [ -n "$VERSION" ] && [ "$line" != "purlis $VERSION (dev-release profile)" ]; then
+            echo "::error::the release is $VERSION and the binary says: $line"
+            exit 1
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: purlis-linux-${{ matrix.arch }}
@@ -286,6 +315,8 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    outputs:
+      image: ${{ steps.index.outputs.image }}
     env:
       SHA: ${{ needs.plan.outputs.sha }}
     steps:
@@ -360,6 +391,7 @@ jobs:
             exit 1
           fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE@$digest" >> "$GITHUB_OUTPUT"
           case "$order" in main:*) echo "main=true" ;; *) echo "main=false" ;; esac >> "$GITHUB_OUTPUT"
 
       # Keyless: the certificate names this workflow on `main` as the signer, and the
@@ -369,13 +401,16 @@ jobs:
         env:
           DIGEST: ${{ steps.index.outputs.digest }}
         run: cosign sign --yes --recursive "$IMAGE@$DIGEST"
-      - name: The signature verifies as this workflow's on main
+      # Signed as this workflow, called by the release on the ref it releases: `main` for a
+      # dev build, the tag for a stable one.
+      - name: The signature verifies as this workflow's on the ref it releases
         env:
           DIGEST: ${{ steps.index.outputs.digest }}
+          RELEASED_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           cosign verify "$IMAGE@$DIGEST" \
-            --certificate-identity "${{ github.server_url }}/${{ github.repository }}/.github/workflows/runner-image.yml@refs/heads/main" \
+            --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/runner-image.yml@$RELEASED_REF" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /dev/null
 

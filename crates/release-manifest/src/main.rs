@@ -14,8 +14,13 @@
 //!                  --dir dist --base-url https://github.com/…/releases/download/dev \
 //!                  --entry darwin-aarch64=charter.app.tar.gz \
 //!                  --entry linux-x86_64-appimage=charter_0.2.0_amd64.AppImage \
-//!                  --tauri-config app/src-tauri/tauri.conf.json --out dist
+//!                  --tauri-config app/src-tauri/tauri.conf.json --out dist \
+//!                  [--runner-image dist/runner-image.txt]
 //! ```
+//!
+//! `--runner-image` names the file holding the line of the runner image the release built, and
+//! its `.sig` beside it, which `sign-runner-image` made (#2749): the manifest names it as
+//! `runnerImage`.
 //!
 //! Each `--entry` names a file in `--dir`; its signature is read from `<file>.sig` beside it,
 //! which is where the bundler puts one — and **a missing `.sig` is an error rather than an
@@ -25,7 +30,7 @@
 use std::path::{Path, PathBuf};
 
 use purlis_core::updates::Channel;
-use release_manifest::{Entry, assemble, published};
+use release_manifest::{Entry, RunnerImage, assemble_with, published};
 
 fn main() -> std::process::ExitCode {
     match run(std::env::args().skip(1).collect()) {
@@ -52,6 +57,7 @@ fn run(args: Vec<String>) -> Result<Vec<PathBuf>, String> {
     let mut out = PathBuf::new();
     let mut config = PathBuf::new();
     let mut entries: Vec<(String, String)> = Vec::new();
+    let mut runner_image: Option<PathBuf> = None;
 
     let mut rest = args.into_iter();
     while let Some(flag) = rest.next() {
@@ -74,6 +80,8 @@ fn run(args: Vec<String>) -> Result<Vec<PathBuf>, String> {
             "--base-url" => base_url = value()?,
             "--out" => out = PathBuf::from(value()?),
             "--tauri-config" => config = PathBuf::from(value()?),
+            // The runner image this release built (#2749): its line, its `.sig` beside it.
+            "--runner-image" => runner_image = Some(PathBuf::from(value()?)),
             "--entry" => {
                 let pair = value()?;
                 let (target, file) = pair
@@ -103,8 +111,32 @@ fn run(args: Vec<String>) -> Result<Vec<PathBuf>, String> {
         .collect::<Result<Vec<_>, String>>()?;
 
     let pubkey = pubkey_in(&config)?;
-    let (_, text) = assemble(channel, &pubkey, &version, &pub_date, &notes, &rows)
-        .map_err(|refused| refused.to_string())?;
+    let runner_image = runner_image
+        .map(|path| -> Result<RunnerImage, String> {
+            let line = std::fs::read_to_string(&path)
+                .map_err(|why| format!("{} could not be read: {why}", path.display()))?;
+            let (dir, file) = (
+                path.parent().unwrap_or(Path::new(".")),
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default(),
+            );
+            Ok(RunnerImage {
+                line: line.trim().to_owned(),
+                signature: signature_beside(dir, file)?,
+            })
+        })
+        .transpose()?;
+    let (_, text) = assemble_with(
+        channel,
+        &pubkey,
+        &version,
+        &pub_date,
+        &notes,
+        &rows,
+        runner_image.as_ref(),
+    )
+    .map_err(|refused| refused.to_string())?;
     // The manifest and its weekly twin (OB-17), from one string.
     published(channel, &text)
         .into_iter()

@@ -8,7 +8,8 @@
 //!
 //! What these tests hold both workflows and the images' Dockerfiles to:
 //! - only a green run of the image's gate on a push to this repository's `main` publishes, by
-//!   the same rule as the dev channel's build (`release.yml`'s `plan`);
+//!   the same rule as the dev channel's build (`release.yml`'s `plan`); the runner image is
+//!   published only by the release that calls it, with the release's version (#2749);
 //! - the workflow grants nothing, the compile holds no write permission, the image jobs may
 //!   write packages and nothing more, and only `index` may mint the OIDC token cosign signs
 //!   with; no job restores a cache, since what it builds is signed;
@@ -34,6 +35,9 @@ struct Image {
     package: &'static str,
     /// Each check of the image job, as its one `run:` line, run on the candidate image.
     checks: &'static [&'static str],
+    /// Published by `release.yml`'s call, for each release, rather than by its own gate's
+    /// green run (#2749).
+    released: bool,
 }
 
 const RUNNER: Image = Image {
@@ -50,6 +54,7 @@ const RUNNER: Image = Image {
         "node tools/runner-image-contract.mjs purlis-runner:candidate",
         "node tools/runner-image-contract.mjs purlis-runner-team-example:candidate",
     ],
+    released: true,
 };
 
 const OPERATOR: Image = Image {
@@ -65,6 +70,7 @@ const OPERATOR: Image = Image {
     ],
     package: "purlis-cluster-operator",
     checks: &["node tools/operator-image-check.mjs purlis-cluster-operator:candidate \"$ARCH\""],
+    released: false,
 };
 
 const IMAGES: [Image; 2] = [RUNNER, OPERATOR];
@@ -132,7 +138,7 @@ fn only_a_green_gate_on_a_push_to_this_repositorys_main_publishes() {
     let release = workflow::release_jobs();
     let gate = folded_condition(job_named(&release, "plan", "release.yml"));
     assert!(gate.contains("workflow_run.event == 'push'"), "{gate}");
-    for image in &IMAGES {
+    for image in IMAGES.iter().filter(|image| !image.released) {
         let (text, jobs) = workflow(image);
         let on = triggers(&text);
         let run = format!("workflows: [{}]", image.gate);
@@ -173,6 +179,72 @@ fn only_a_green_gate_on_a_push_to_this_repositorys_main_publishes() {
             Some("needs.plan.outputs.publish == 'true'")
         );
     }
+}
+
+/// **The runner image is the release's** (#2749, ruled 2026-10-20): `release.yml` calls
+/// `runner-image.yml` for each release it publishes, with its commit and version, and nothing
+/// else publishes it; the image's `purlis` is stamped with that version.
+#[test]
+fn the_runner_image_is_published_only_by_the_release_it_belongs_to() {
+    let release = workflow::release_jobs();
+    let gate = folded_condition(job_named(&release, "plan", "release.yml"));
+    let call = job_named(&release, "runner-image", "release.yml");
+    assert_eq!(
+        call.condition(),
+        Some("needs.plan.outputs.publish == 'true'")
+    );
+    assert!(
+        call.body
+            .iter()
+            .any(|l| l.trim() == "uses: ./.github/workflows/runner-image.yml"),
+        "{:#?}",
+        call.body
+    );
+    for (input, from) in [
+        ("sha", "${{ needs.plan.outputs.sha }}"),
+        ("version", "${{ needs.plan.outputs.version }}"),
+    ] {
+        assert!(
+            call.body
+                .iter()
+                .any(|l| l.trim() == format!("{input}: {from}")),
+            "{input}: {:#?}",
+            call.body
+        );
+    }
+
+    let (text, jobs) = workflow(&RUNNER);
+    let on = triggers(&text);
+    assert!(on.contains(&"workflow_call:"), "{on:?}");
+    assert!(!on.contains(&"workflow_run:"), "{on:?}");
+    let plan = job_named(&jobs, "plan", RUNNER.file);
+    assert_eq!(folded_condition(plan), gate, "the release's own rule");
+    let decide = &plan.steps()[0];
+    let script = run_lines(decide).join("\n");
+    assert!(script.contains("publish=true; sha=$CALLED_SHA"), "{script}");
+    assert_eq!(script.matches("publish=true").count(), 1, "{script}");
+    assert_eq!(
+        step_value(decide, "env", "VERSION"),
+        Some("${{ inputs.version }}")
+    );
+    assert_eq!(
+        step_value(decide, "env", "CALLED_SHA"),
+        Some("${{ inputs.sha }}")
+    );
+    let binary = job_named(&jobs, "binary", RUNNER.file);
+    let build = binary
+        .steps()
+        .into_iter()
+        .find(|s| s[0].contains("name: The purlis binary"))
+        .expect("the binary's build");
+    assert_eq!(
+        step_value(&build, "env", "PURLIS_VERSION_STAMP"),
+        Some("${{ needs.plan.outputs.version }}")
+    );
+    assert_eq!(
+        job_named(&jobs, "index", RUNNER.file).condition(),
+        Some("needs.plan.outputs.publish == 'true'")
+    );
 }
 
 #[test]
@@ -426,10 +498,22 @@ fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
             "{file}: signed by digest, never by tag"
         );
         let verifying = run_lines(&steps[verify]).join("\n");
+        // The runner image is signed on the ref its release releases (#2749).
+        let on = if image.released {
+            "$RELEASED_REF"
+        } else {
+            "refs/heads/main"
+        };
         assert!(
-            verifying.contains(&format!("/.github/workflows/{file}@refs/heads/main\" \\")),
-            "{file}: verified as this workflow's signature on main: {verifying}"
+            verifying.contains(&format!("/.github/workflows/{file}@{on}\" \\")),
+            "{file}: verified as this workflow's signature on {on}: {verifying}"
         );
+        if image.released {
+            assert_eq!(
+                step_value(&steps[verify], "env", "RELEASED_REF"),
+                Some("${{ github.ref }}")
+            );
+        }
     }
 }
 
