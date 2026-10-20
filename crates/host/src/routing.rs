@@ -128,8 +128,10 @@ impl Routed {
         // by it to the runner.
         let named = lock(&self.named).take();
         if let Some(named) = named
-            && let Err(refused) = session::Host::call(&relay, named, peer).await
+            && let Err(refused) = session::Host::call(&relay, named.clone(), peer).await
         {
+            // Kept again, so a `relay_to` sent again still carries it.
+            *lock(&self.named) = Some(named);
             *lock(&self.route) = Route::Undecided;
             return Err(refused);
         }
@@ -166,7 +168,16 @@ impl session::Host for Routed {
         if let Command::NameWindow { .. } = &command {
             let route = lock(&self.route);
             if matches!(*route, Route::Undecided) {
-                *lock(&self.named) = Some(command);
+                let mut named = lock(&self.named);
+                if named.is_some() {
+                    return Err(Refusal {
+                        code: session::MALFORMED.into(),
+                        why: "a window names itself as its link's first command, and this link \
+                              has sent one before"
+                            .into(),
+                    });
+                }
+                *named = Some(command);
                 return Ok(Answer::Done);
             }
             drop(route);
@@ -203,7 +214,10 @@ impl session::Host for Routed {
         peer: &Peer,
     ) -> Result<mpsc::Receiver<Pushed>, Refusal> {
         match self.goes() {
-            Goes::Here => session::Host::subscribe(&self.hosting, since, peer).await,
+            Goes::Here => {
+                self.named_here(peer).await;
+                session::Host::subscribe(&self.hosting, since, peer).await
+            }
             Goes::There(relay) => session::Host::subscribe(&relay, since, peer).await,
             Goes::Refused(refusal) => Err(refusal),
         }

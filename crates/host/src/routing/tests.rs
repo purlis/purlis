@@ -266,10 +266,46 @@ async fn a_window_that_names_itself_first_is_still_relayed_and_its_name_goes_wit
         .await
         .unwrap()
         .unwrap();
+    // The relay holds the name now: a second one is refused as the relay refuses it.
+    let again = window
+        .call(Command::NameWindow {
+            name: purlis_session_protocol::browsing::Secret::new(
+                "fedcba9876543210fedcba9876543210".into(),
+            ),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(code(&again), Some(session::MALFORMED), "{again}");
     tokio::time::timeout(PATIENCE, window.stop_all())
         .await
         .unwrap()
         .unwrap();
     assert!(stopped(&b).await);
     assert!(!stopped(&a).await);
+}
+
+#[tokio::test]
+async fn a_second_name_while_the_link_is_undecided_is_refused_and_the_first_stays() {
+    let (a, _b) = a_desktop(Kept::pinned);
+    let window = routed(Scope::LocalUi, a).await;
+    let name = |text: &str| Command::NameWindow {
+        name: purlis_session_protocol::browsing::Secret::new(text.into()),
+    };
+    window
+        .call(name("0123456789abcdef0123456789abcdef"))
+        .await
+        .unwrap();
+    let refused = window
+        .call(name("fedcba9876543210fedcba9876543210"))
+        .await
+        .unwrap_err();
+    assert_eq!(code(&refused), Some(session::MALFORMED), "{refused}");
+    // A relay_to refused keeps the name for the next one.
+    assert!(window.relay_to("nobody").await.is_err());
+    window.relay_to("builds").await.unwrap();
+    let again = window
+        .call(name("0123456789abcdef0123456789abcdef"))
+        .await
+        .unwrap_err();
+    assert_eq!(code(&again), Some(session::MALFORMED), "{again}");
 }
