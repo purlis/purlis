@@ -843,7 +843,7 @@ fn serve() -> ExitCode {
             |place| {
                 // The event log of this machine, opened as the host first holds a project.
                 let log = purlis_core::hookchannel::EventLog::on_this_machine();
-                purlis_core::browsers::given_to(
+                kept_in_the_data_home(purlis_core::browsers::given_to(
                     purlis_host::Hosting::kept(
                         &place.credentials,
                         Composes(purlis_core::hoststart::Kit::installed_beside_this_binary()),
@@ -856,8 +856,11 @@ fn serve() -> ExitCode {
                     // What a chat's end leaves, kept as the window's own host keeps it (#2494).
                     .recording_with(log)
                     // `purlis stop --all` is heard with no window there (#2190).
-                    .heeding(purlis_core::halt::OnDisk(config.clone())),
-                )
+                    .heeding(purlis_core::halt::OnDisk(config.clone()))
+                    // The projects it holds for its desktop, each in `<data>/projects/<id>`,
+                    // and the code the desktop moves in them over the link (#2046).
+                    .moving_code_with(MovesCode),
+                ))
             },
             pairing,
         ))
@@ -928,6 +931,96 @@ impl purlis_host::Compose for Composes {
             purlis_core::sandbox::Os::this(),
         )
     }
+}
+
+/// **How `purlis serve` moves code in the projects it keeps for its desktop** (#2046): the
+/// core's ([`purlis_core::codelink`]), in the repository's folder of the project the host
+/// holds, which is never anywhere but the project's own folder or a workspace's repository in
+/// it.
+#[cfg(unix)]
+struct MovesCode;
+
+#[cfg(unix)]
+fn code_refused(why: purlis_core::codelink::Refused) -> purlis_host::protocol::session::Refusal {
+    use purlis_core::codelink::Refused;
+    use purlis_host::protocol::session;
+    let code = match &why {
+        Refused::NotAllowed(_) => session::NOT_ALLOWED,
+        Refused::Git(_) => session::NOT_STARTED,
+    };
+    session::Refusal {
+        code: code.into(),
+        why: why.to_string(),
+    }
+}
+
+#[cfg(unix)]
+fn refs_of(refs: Vec<purlis_core::codelink::Ref>) -> Vec<purlis_host::protocol::session::CodeRef> {
+    refs.into_iter()
+        .map(|one| purlis_host::protocol::session::CodeRef {
+            name: one.name,
+            oid: one.oid,
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+impl purlis_host::Code for MovesCode {
+    fn take(
+        &self,
+        project: &std::path::Path,
+        repo: &str,
+        bundle: Option<&std::path::Path>,
+        refs: &[purlis_host::protocol::session::CodeRef],
+        checkout: Option<&str>,
+    ) -> Result<Vec<purlis_host::protocol::session::CodeRef>, purlis_host::protocol::session::Refusal>
+    {
+        let at = purlis_core::codelink::repo_in(project, repo).map_err(code_refused)?;
+        let refs: Vec<purlis_core::codelink::Ref> = refs
+            .iter()
+            .map(|one| purlis_core::codelink::Ref {
+                name: one.name.clone(),
+                oid: one.oid.clone(),
+            })
+            .collect();
+        purlis_core::codelink::receive(&at, bundle, &refs, checkout)
+            .map(refs_of)
+            .map_err(code_refused)
+    }
+
+    fn give(
+        &self,
+        project: &std::path::Path,
+        repo: &str,
+        have: &[String],
+        into: &std::path::Path,
+    ) -> Result<
+        (Vec<purlis_host::protocol::session::CodeRef>, bool),
+        purlis_host::protocol::session::Refusal,
+    > {
+        let at = purlis_core::codelink::repo_in(project, repo).map_err(code_refused)?;
+        let (heads, bundled) =
+            purlis_core::codelink::give(&at, have, into).map_err(code_refused)?;
+        Ok((
+            refs_of(heads),
+            bundled == purlis_core::codelink::Bundled::Wrote,
+        ))
+    }
+}
+
+/// `purlis serve`'s host, keeping the projects it holds for its desktop in `<data>/projects`
+/// (#2046), where there is a data home.
+#[cfg(unix)]
+fn kept_in_the_data_home(hosting: purlis_host::Hosting) -> purlis_host::Hosting {
+    let Some(data) = purlis_core::datahome::root() else {
+        return hosting;
+    };
+    // A data home inside a work tree or a project keeps nothing (ADR 0075 §6).
+    if let Some(why) = purlis_core::datahome::refusal(&data) {
+        voice::err(&format!("this host keeps no projects of its own: {why}"));
+        return hosting;
+    }
+    hosting.keeping_projects_in(data.join(purlis_core::datahome::PROJECTS))
 }
 
 /// **How `purlis serve` starts a chat's confinement** (#2217): the core's start of the plan it

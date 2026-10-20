@@ -1,0 +1,564 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! Code over the link against real repositories: a desktop's clone, and a runner's repository
+//! made for it. Each bundle is moved as a file, as the link's code stream carries its bytes.
+
+use std::path::{Path, PathBuf};
+
+use super::*;
+
+fn git(dir: &Path, args: &[&str]) -> String {
+    let done = crate::testgit::run(dir, args);
+    assert!(done.ok(), "git {args:?} failed: {done:?}");
+    done.out.trim().to_string()
+}
+
+/// A commit in `dir` with `file` holding `text`, by a test's own identity, never signed.
+fn commit(dir: &Path, file: &str, text: &str) -> String {
+    std::fs::write(dir.join(file), text).unwrap();
+    git(dir, &["add", file]);
+    git(
+        dir,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            text,
+        ],
+    );
+    git(dir, &["rev-parse", "HEAD"])
+}
+
+struct World {
+    _dir: tempfile::TempDir,
+    top: PathBuf,
+    /// The desktop's clone.
+    desktop: PathBuf,
+    /// The runner's held project, where its repositories are made.
+    project: PathBuf,
+}
+
+impl World {
+    /// A desktop clone on `fix`, cut from `main`, one commit each.
+    fn new() -> World {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path().canonicalize().unwrap();
+        let desktop = top.join("desktop/workspaces/app/web");
+        std::fs::create_dir_all(&desktop).unwrap();
+        git(&desktop, &["init", "-q", "-b", "main", "."]);
+        commit(&desktop, "README", "one\n");
+        git(&desktop, &["checkout", "-q", "-b", "fix"]);
+        commit(&desktop, "fix.txt", "fixed\n");
+        let project = top.join("runner/projects/01J9PRJCT00000000000000000");
+        std::fs::create_dir_all(&project).unwrap();
+        World {
+            _dir: dir,
+            top,
+            desktop,
+            project,
+        }
+    }
+
+    fn runner_repo(&self) -> PathBuf {
+        repo_in(&self.project, "workspaces/app/web").unwrap()
+    }
+
+    fn scratch(&self) -> PathBuf {
+        let scratch = self.top.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        scratch
+    }
+
+    fn bundle_path(&self, name: &str) -> PathBuf {
+        self.scratch().join(name)
+    }
+
+    /// The desktop sends `fix`, with its work tree's uncommitted work, to the runner.
+    fn push_fix(&self, have: &[String]) -> Vec<Ref> {
+        let into = self.bundle_path("fix.bundle");
+        let sent = bundle_branch(
+            &self.desktop,
+            Some(&self.desktop),
+            "fix",
+            have,
+            &into,
+            &self.scratch(),
+        )
+        .unwrap();
+        let bundle = (sent.bundled == Bundled::Wrote).then_some(into.as_path());
+        receive(&self.runner_repo(), bundle, &sent.refs, None).unwrap()
+    }
+}
+
+fn named<'a>(refs: &'a [Ref], name: &str) -> Option<&'a Ref> {
+    refs.iter().find(|one| one.name == name)
+}
+
+#[test]
+fn a_branch_and_its_uncommitted_work_reach_the_runner_under_the_refs_named() {
+    let world = World::new();
+    let fix = git(&world.desktop, &["rev-parse", "fix"]);
+    // Uncommitted: a changed file, a staged one and a new one git does not track yet.
+    std::fs::write(world.desktop.join("fix.txt"), "fixed better\n").unwrap();
+    std::fs::write(world.desktop.join("README"), "two\n").unwrap();
+    git(&world.desktop, &["add", "README"]);
+    std::fs::write(world.desktop.join("new.txt"), "brand new\n").unwrap();
+    let status_before = git(&world.desktop, &["status", "--porcelain"]);
+
+    let held = world.push_fix(&[]);
+
+    assert_eq!(
+        named(&held, "refs/heads/fix").map(|r| r.oid.as_str()),
+        Some(fix.as_str())
+    );
+    let snapshot = named(&held, "refs/purlis/snapshots/fix").expect("the snapshot is held");
+    let runner = world.runner_repo();
+    let shown = |path: &str| git(&runner, &["show", &format!("{}:{path}", snapshot.oid)]);
+    assert_eq!(shown("fix.txt"), "fixed better");
+    assert_eq!(shown("README"), "two");
+    assert_eq!(shown("new.txt"), "brand new");
+    assert_eq!(
+        git(&runner, &["rev-parse", &format!("{}^", snapshot.oid)]),
+        fix,
+        "the snapshot sits on the branch it is of"
+    );
+    // The desktop's branch, index and work tree are as they were, and it keeps no snapshot ref.
+    assert_eq!(git(&world.desktop, &["rev-parse", "fix"]), fix);
+    assert_eq!(
+        git(&world.desktop, &["status", "--porcelain"]),
+        status_before
+    );
+    assert_eq!(
+        git(&world.desktop, &["for-each-ref", "refs/purlis/"]),
+        "",
+        "the snapshot's ref is kept only while its bundle is made"
+    );
+    // Nothing but what was named: no `main`, which the bundle never carried as a ref.
+    assert!(named(&held, "refs/heads/main").is_none(), "{held:?}");
+}
+
+#[test]
+fn a_second_push_sends_only_what_the_runner_lacks_and_none_when_it_lacks_nothing() {
+    let world = World::new();
+    let first = world.push_fix(&[]);
+    let have: Vec<String> = first.iter().map(|one| one.oid.clone()).collect();
+
+    let newer = commit(&world.desktop, "fix.txt", "fixed again\n");
+    let held = world.push_fix(&have);
+    assert_eq!(named(&held, "refs/heads/fix").unwrap().oid, newer);
+
+    // Nothing new to send: the bundle is empty, and the ref is moved from what the runner holds.
+    let have: Vec<String> = held.iter().map(|one| one.oid.clone()).collect();
+    let into = world.bundle_path("none.bundle");
+    let sent = bundle_branch(&world.desktop, None, "fix", &have, &into, &world.scratch()).unwrap();
+    assert_eq!(sent.bundled, Bundled::Nothing);
+    assert!(!into.exists());
+    let other = Ref {
+        name: "refs/heads/also".into(),
+        oid: newer.clone(),
+    };
+    let held = receive(&world.runner_repo(), None, &[other], None).unwrap();
+    assert_eq!(named(&held, "refs/heads/also").unwrap().oid, newer);
+}
+
+#[test]
+fn a_bundle_that_carries_a_ref_it_did_not_name_is_refused_and_nothing_moves() {
+    let world = World::new();
+    let into = world.bundle_path("both.bundle");
+    assert_eq!(
+        bundle(
+            &world.desktop,
+            &["refs/heads/fix", "refs/heads/main"],
+            &[],
+            &into
+        )
+        .unwrap(),
+        Bundled::Wrote
+    );
+    let fix = Ref {
+        name: "refs/heads/fix".into(),
+        oid: git(&world.desktop, &["rev-parse", "fix"]),
+    };
+    let refused = receive(&world.runner_repo(), Some(&into), &[fix], None).unwrap_err();
+    assert!(
+        matches!(&refused, Refused::NotAllowed(why) if why.contains("refs/heads/main")),
+        "{refused:?}"
+    );
+    assert_eq!(held_refs(&world.runner_repo()).unwrap(), Vec::new());
+}
+
+#[test]
+fn a_bundle_naming_a_ref_at_another_commit_than_the_bundle_carries_is_refused() {
+    let world = World::new();
+    let into = world.bundle_path("fix.bundle");
+    bundle(&world.desktop, &["refs/heads/fix"], &[], &into).unwrap();
+    let wrong = Ref {
+        name: "refs/heads/fix".into(),
+        oid: git(&world.desktop, &["rev-parse", "main"]),
+    };
+    assert!(matches!(
+        receive(&world.runner_repo(), Some(&into), &[wrong], None),
+        Err(Refused::NotAllowed(_))
+    ));
+    assert_eq!(held_refs(&world.runner_repo()).unwrap(), Vec::new());
+}
+
+#[test]
+fn only_branches_and_their_snapshots_are_carried_under_names_git_takes() {
+    for fine in [
+        "refs/heads/fix",
+        "refs/heads/team/fix-2",
+        "refs/purlis/snapshots/fix",
+    ] {
+        assert_eq!(carried(fine), Ok(()), "{fine}");
+    }
+    for refused in [
+        "HEAD",
+        "refs/heads/",
+        "refs/tags/v1",
+        "refs/remotes/origin/main",
+        "refs/purlis/other/fix",
+        "refs/heads/../config",
+        "refs/heads/a..b",
+        "refs/heads/fix.lock",
+        "refs/heads/.hidden",
+        "refs/heads/a b",
+        "refs/heads/a~1",
+        "refs/heads/a:b",
+        "refs/heads/a//b",
+        "refs/heads/a/",
+        "refs/heads/@{-1}",
+        "refs/heads/purlis/held",
+        "refs/heads/a\u{7f}",
+    ] {
+        assert!(
+            matches!(carried(refused), Err(Refused::NotAllowed(_))),
+            "{refused}"
+        );
+    }
+}
+
+#[test]
+fn a_ref_whose_commit_is_not_a_full_name_is_refused() {
+    let world = World::new();
+    let short = Ref {
+        name: "refs/heads/fix".into(),
+        oid: "HEAD".into(),
+    };
+    assert!(matches!(
+        receive(&world.runner_repo(), None, &[short], None),
+        Err(Refused::NotAllowed(_))
+    ));
+}
+
+#[test]
+fn a_branch_checked_out_on_the_runner_is_never_moved_under_it() {
+    let world = World::new();
+    world.push_fix(&[]);
+    let runner = world.runner_repo();
+    let tree = world.project.join("workspaces/app/.worktrees/web/fix");
+    git(
+        &runner,
+        &["worktree", "add", "-q", tree.to_str().unwrap(), "fix"],
+    );
+    let main = Ref {
+        name: "refs/heads/fix".into(),
+        oid: git(&world.desktop, &["rev-parse", "main"]),
+    };
+    // `main`'s commit came with `fix`'s history, so only the checkout holds the ref back.
+    let refused = receive(&runner, None, &[main], None).unwrap_err();
+    assert!(
+        matches!(&refused, Refused::NotAllowed(why) if why.contains("checked out")),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn no_hook_of_the_runners_repository_runs_as_it_takes_a_bundle() {
+    let world = World::new();
+    world.push_fix(&[]);
+    let runner = world.runner_repo();
+    let mark = world.top.join("hook-ran");
+    let hooks = world.top.join("planted-hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    for hook in [
+        "reference-transaction",
+        "post-checkout",
+        "post-merge",
+        "pre-auto-gc",
+    ] {
+        let script = hooks.join(hook);
+        std::fs::write(&script, format!("#!/bin/sh\ntouch '{}'\n", mark.display())).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    git(
+        &runner,
+        &["config", "core.hooksPath", hooks.to_str().unwrap()],
+    );
+    let held = held_refs(&runner).unwrap();
+    let have: Vec<String> = held.iter().map(|one| one.oid.clone()).collect();
+    commit(&world.desktop, "fix.txt", "more\n");
+    world.push_fix(&have);
+    assert!(!mark.exists(), "a hook of the runner's repository ran");
+}
+
+#[test]
+fn the_desktop_takes_a_runners_branches_back_under_its_pool_and_touches_nothing_of_its_own() {
+    let world = World::new();
+    world.push_fix(&[]);
+    let runner = world.runner_repo();
+    // The runner's chat commits on `fix`, in a work tree of its own there.
+    let tree = world.project.join("workspaces/app/.worktrees/web/fix");
+    git(
+        &runner,
+        &["worktree", "add", "-q", tree.to_str().unwrap(), "fix"],
+    );
+    let on_the_runner = commit(&tree, "fix.txt", "fixed on the runner\n");
+
+    // The desktop: a hook planted where its fetch would run one, and work of its own.
+    let mark = world.top.join("hook-ran");
+    let hooks = world.top.join("desktop-hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    let script = hooks.join("reference-transaction");
+    std::fs::write(&script, format!("#!/bin/sh\ntouch '{}'\n", mark.display())).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    git(
+        &world.desktop,
+        &["config", "core.hooksPath", hooks.to_str().unwrap()],
+    );
+    std::fs::write(world.desktop.join("fix.txt"), "the person's own work\n").unwrap();
+    let fix_here = git(&world.desktop, &["rev-parse", "fix"]);
+    let status_here = git(&world.desktop, &["status", "--porcelain"]);
+
+    let have = vec![fix_here.clone()];
+    let into = world.bundle_path("back.bundle");
+    let (heads, bundled) = give(&runner, &have, &into).unwrap();
+    assert_eq!(bundled, Bundled::Wrote);
+    let kept = take_back(&world.desktop, "builds", Some(&into), &heads).unwrap();
+
+    assert_eq!(
+        named(&kept, "refs/remotes/builds/fix").map(|r| r.oid.as_str()),
+        Some(on_the_runner.as_str())
+    );
+    assert_eq!(git(&world.desktop, &["rev-parse", "fix"]), fix_here);
+    assert_eq!(git(&world.desktop, &["status", "--porcelain"]), status_here);
+    assert_eq!(
+        std::fs::read_to_string(world.desktop.join("fix.txt")).unwrap(),
+        "the person's own work\n"
+    );
+    assert!(!mark.exists(), "a hook of the desktop's repository ran");
+
+    // A branch the runner no longer has goes from the pool's refs, and only from there.
+    let kept = take_back(&world.desktop, "builds", None, &[]).unwrap();
+    assert_eq!(kept, Vec::new());
+    assert_eq!(git(&world.desktop, &["rev-parse", "fix"]), fix_here);
+}
+
+#[test]
+fn a_bundle_from_the_runner_that_carries_a_ref_it_did_not_name_is_refused() {
+    let world = World::new();
+    let into = world.bundle_path("sneaky.bundle");
+    bundle(
+        &world.desktop,
+        &["refs/heads/fix", "refs/heads/main"],
+        &[],
+        &into,
+    )
+    .unwrap();
+    let fix = Ref {
+        name: "refs/heads/fix".into(),
+        oid: git(&world.desktop, &["rev-parse", "fix"]),
+    };
+    assert!(matches!(
+        take_back(&world.desktop, "builds", Some(&into), &[fix]),
+        Err(Refused::NotAllowed(_))
+    ));
+    assert_eq!(git(&world.desktop, &["for-each-ref", "refs/remotes/"]), "");
+}
+
+#[test]
+fn a_runner_naming_anything_but_a_branch_is_refused_by_the_desktop() {
+    let world = World::new();
+    let main = git(&world.desktop, &["rev-parse", "main"]);
+    for name in [
+        "refs/purlis/snapshots/fix",
+        "refs/tags/v1",
+        "HEAD",
+        "refs/heads/../x",
+    ] {
+        let one = Ref {
+            name: name.into(),
+            oid: main.clone(),
+        };
+        assert!(
+            matches!(
+                take_back(&world.desktop, "builds", None, &[one]),
+                Err(Refused::NotAllowed(_))
+            ),
+            "{name}"
+        );
+    }
+    for pool in ["", "../x", "a b", "a..b", ".hidden"] {
+        assert!(
+            matches!(
+                take_back(&world.desktop, pool, None, &[]),
+                Err(Refused::NotAllowed(_))
+            ),
+            "{pool:?}"
+        );
+    }
+    assert_eq!(git(&world.desktop, &["for-each-ref", "refs/remotes/"]), "");
+}
+
+#[test]
+fn a_repositorys_folder_is_the_projects_own_or_a_workspaces_repo_reached_through_no_link() {
+    let world = World::new();
+    assert_eq!(repo_in(&world.project, "").unwrap(), world.project);
+    assert_eq!(
+        repo_in(&world.project, "workspaces/app/web").unwrap(),
+        world.project.join("workspaces/app/web")
+    );
+    for refused in [
+        "..",
+        "../other",
+        "/etc",
+        "workspaces",
+        "workspaces/app",
+        "workspaces/app/web/.git",
+        "workspaces/../web",
+        "workspaces/app/..",
+        "personas/steward/web",
+        "workspaces/.hidden/web",
+    ] {
+        assert!(
+            matches!(
+                repo_in(&world.project, refused),
+                Err(Refused::NotAllowed(_))
+            ),
+            "{refused}"
+        );
+    }
+    // A link a chat put in the project's folders sends nothing elsewhere.
+    let elsewhere = world.top.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::create_dir_all(world.project.join("workspaces")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, world.project.join("workspaces/linked")).unwrap();
+    assert!(matches!(
+        repo_in(&world.project, "workspaces/linked/web"),
+        Err(Refused::NotAllowed(_))
+    ));
+}
+
+#[test]
+fn no_filter_the_work_tree_names_runs_on_its_snapshot() {
+    let world = World::new();
+    let mark = world.top.join("filter-ran");
+    std::fs::write(world.desktop.join(".gitattributes"), "*.txt filter=mark\n").unwrap();
+    git(
+        &world.desktop,
+        &[
+            "config",
+            "filter.mark.clean",
+            &format!("sh -c 'touch {}; cat'", mark.display()),
+        ],
+    );
+    std::fs::write(world.desktop.join("fix.txt"), "dirty\n").unwrap();
+    let snapshot = snapshot(&world.desktop, &world.scratch())
+        .unwrap()
+        .expect("dirty");
+    assert!(!mark.exists(), "a clean filter ran on the snapshot");
+    assert_eq!(
+        git(&world.desktop, &["show", &format!("{snapshot}:fix.txt")]),
+        "dirty"
+    );
+}
+
+#[test]
+fn a_clean_work_tree_has_no_snapshot() {
+    let world = World::new();
+    assert_eq!(snapshot(&world.desktop, &world.scratch()).unwrap(), None);
+}
+
+#[test]
+fn a_fresh_repository_is_checked_out_at_the_branch_with_its_uncommitted_work_and_never_again() {
+    let world = World::new();
+    std::fs::write(world.desktop.join("fix.txt"), "fixed better\n").unwrap();
+    std::fs::write(world.desktop.join("new.txt"), "brand new\n").unwrap();
+    std::fs::remove_file(world.desktop.join("README")).unwrap();
+    let fix = git(&world.desktop, &["rev-parse", "fix"]);
+    let into = world.bundle_path("fix.bundle");
+    let sent = bundle_branch(
+        &world.desktop,
+        Some(&world.desktop),
+        "fix",
+        &[],
+        &into,
+        &world.scratch(),
+    )
+    .unwrap();
+    let runner = world.runner_repo();
+    receive(&runner, Some(&into), &sent.refs, Some("refs/heads/fix")).unwrap();
+
+    assert_eq!(git(&runner, &["rev-parse", "HEAD"]), fix);
+    assert_eq!(
+        git(&runner, &["symbolic-ref", "-q", "HEAD"]).len(),
+        0,
+        "on no branch"
+    );
+    let read = |file: &str| std::fs::read_to_string(runner.join(file)).ok();
+    assert_eq!(read("fix.txt").as_deref(), Some("fixed better\n"));
+    assert_eq!(read("new.txt").as_deref(), Some("brand new\n"));
+    assert_eq!(read("README"), None);
+    let status = git(&runner, &["status", "--porcelain"]);
+    assert!(status.contains(" M fix.txt"), "{status}");
+    assert!(status.contains("?? new.txt"), "{status}");
+    assert!(status.contains(" D README"), "{status}");
+
+    // A runner chat's own work there is never checked out over.
+    std::fs::write(runner.join("fix.txt"), "the runner chat's work\n").unwrap();
+    let newer = commit(&world.desktop, "other.txt", "later\n");
+    let have: Vec<String> = sent.refs.iter().map(|one| one.oid.clone()).collect();
+    let into = world.bundle_path("later.bundle");
+    let later = bundle_branch(&world.desktop, None, "fix", &have, &into, &world.scratch()).unwrap();
+    let bundle = (later.bundled == Bundled::Wrote).then_some(into.as_path());
+    let held = receive(&runner, bundle, &later.refs, Some("refs/heads/fix")).unwrap();
+    assert_eq!(named(&held, "refs/heads/fix").unwrap().oid, newer);
+    assert_eq!(read("fix.txt").as_deref(), Some("the runner chat's work\n"));
+    assert_eq!(git(&runner, &["rev-parse", "HEAD"]), fix);
+}
+
+#[test]
+fn a_checkout_naming_a_ref_the_transfer_does_not_carry_is_refused_and_nothing_moves() {
+    let world = World::new();
+    let into = world.bundle_path("fix.bundle");
+    let sent = bundle_branch(&world.desktop, None, "fix", &[], &into, &world.scratch()).unwrap();
+    for checkout in ["refs/heads/main", "refs/purlis/snapshots/fix", "HEAD"] {
+        assert!(
+            matches!(
+                receive(
+                    &world.runner_repo(),
+                    Some(&into),
+                    &sent.refs,
+                    Some(checkout)
+                ),
+                Err(Refused::NotAllowed(_))
+            ),
+            "{checkout}"
+        );
+    }
+    assert_eq!(
+        held_refs(&world.runner_repo()).unwrap_or_default(),
+        Vec::new()
+    );
+}

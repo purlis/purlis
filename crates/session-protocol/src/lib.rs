@@ -65,6 +65,10 @@
 //! 6. [`ui`]: the UI RPC beside it, the app's own commands for its own build and the `local-ui`
 //!    scope only, excluded from that promise.
 //!
+//! **Code** ([`code`], 1.34): a repository's history crosses as a git bundle on a stream of its
+//! own, which the host opens as it opens a view, so a transfer takes turns with the views and
+//! never holds up the control lane.
+//!
 //! **Between two hosts** ([`hostlink`]), a connector's stream carries the link of ADR 0078 §3
 //! first: its own version, a handshake that proves both hosts' pinned link keys, then sealed
 //! frames with the link's own ping, inside which all of the above runs as `remote-link`.
@@ -76,6 +80,7 @@
 
 pub mod auth;
 pub mod browsing;
+pub mod code;
 pub mod grants;
 pub mod hostlink;
 pub mod link;
