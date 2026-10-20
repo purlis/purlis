@@ -569,6 +569,8 @@ struct Confinement {
 }
 
 /// Whose a confinement is: the link that made it, until a start names it, then that program's.
+/// One a relayed window's link made is that window's on each of its links while nothing runs in
+/// it, and passes to another of them as the link that made it ends (#2624).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Owner {
     Link(u64),
@@ -582,7 +584,7 @@ enum Owner {
 fn may_act_on(state: &State, held: &Confinement, link: u64) -> bool {
     held.named_to.contains(&link)
         && match &held.owner {
-            Owner::Link(made_by) => *made_by == link,
+            Owner::Link(made_by) => of_one_window(state, *made_by, link),
             Owner::Program(program) => state.programs.get(program).is_some_and(|hosted| {
                 held_by(state, &held.project, link).is_some_and(|at| *at == hosted.at)
             }),
@@ -619,6 +621,40 @@ fn links_of_window(state: &State, window: Option<&str>) -> Vec<u64> {
         .filter(|(_, named)| named.as_str() == window)
         .map(|(link, _)| *link)
         .collect()
+}
+
+/// **Whether links `one` and `other` are the same, or links between hosts that named one
+/// window** (#2624): a renewal's two links, while both last.
+fn of_one_window(state: &State, one: u64, other: u64) -> bool {
+    one == other
+        || state
+            .relayed_for
+            .get(&one)
+            .is_some_and(|window| state.relayed_for.get(&other) == Some(window))
+}
+
+/// **Each confinement `link` made that nothing runs in yet passes to another link of its
+/// window** (#2624), as `link` ends: a renewal's new link starts its chat in it. One whose
+/// window has no other link, or that names no window, stays `link`'s, to end with it.
+fn hand_on(state: &mut State, link: u64) {
+    let mut handed: Vec<(String, u64)> = Vec::new();
+    for (id, held) in &state.confinements {
+        if held.owner != Owner::Link(link) {
+            continue;
+        }
+        let other = links_of_window(state, held.window.as_deref())
+            .into_iter()
+            .find(|other| *other != link);
+        if let Some(other) = other {
+            handed.push((id.clone(), other));
+        }
+    }
+    for (id, other) in handed {
+        if let Some(held) = state.confinements.get_mut(&id) {
+            held.owner = Owner::Link(other);
+            held.named_to.insert(other);
+        }
+    }
 }
 
 /// A place: a project, by its stable id, at the folder it is held at on this machine, by the
@@ -1350,10 +1386,13 @@ impl Hosting {
             // yet.
             if let Some(confinement) = start.launch.as_ref().and_then(|l| l.confinement.as_ref()) {
                 let links = links_of_window(&state, relayed_for(&state, peer).as_deref());
+                let link = link_of(peer);
                 match state.confinements.get_mut(confinement) {
+                    // Made by this link, or by another link of its window (#2624).
                     Some(held)
                         if held.project == start.project
-                            && held.owner == Owner::Link(link_of(peer)) =>
+                            && matches!(held.owner, Owner::Link(made_by)
+                                if made_by == link || links.contains(&made_by)) =>
                     {
                         held.owner = Owner::Program(program.clone());
                         // A chat is its window's on each of that window's links (#2511).
@@ -1849,9 +1888,9 @@ impl Hosting {
     /// **`peer`'s link is `window`'s** (#2511, ruled 2026-10-17): the relaying host names the
     /// window on each link it makes for it, and the host names this link each confinement of a
     /// chat that window started here over the links before, made or composed for them, and
-    /// answers with their ids. It names no other: not one the host's own window made, nor one
-    /// made or composed for another window's link, nor one nothing runs in yet, which goes
-    /// with the link that made it. A link that named another window is refused.
+    /// answers with their ids, and one a link of that window made that nothing runs in yet, while
+    /// that link lasts (#2624). It names no other: not one the host's own window made, nor one
+    /// made or composed for another window's link. A link that named another window is refused.
     fn take_back(&self, window: String, peer: &Peer) -> Result<Answer, Refusal> {
         let link = link_of(peer);
         let mut state = self.state();
@@ -1868,10 +1907,17 @@ impl Hosting {
             }
         }
         let mut taken: Vec<String> = Vec::new();
+        let relayed_for = state.relayed_for.clone();
         for (id, held) in &mut state.confinements {
-            if held.window.as_deref() == Some(window.as_str())
-                && matches!(held.owner, Owner::Program(_))
-            {
+            if held.window.as_deref() != Some(window.as_str()) {
+                continue;
+            }
+            // A chat's, or one a link of this window made that nothing runs in yet (#2624).
+            let its_windows = match &held.owner {
+                Owner::Program(_) => true,
+                Owner::Link(made_by) => relayed_for.get(made_by) == Some(&window),
+            };
+            if its_windows {
                 held.named_to.insert(link);
                 taken.push(id.clone());
             }
@@ -2068,12 +2114,15 @@ impl Hosting {
                 return Err(already_confined(&id));
             }
             let window = relayed_for(&state, peer);
+            // A window's on each of that window's links (#2624), as a chat is (#2511).
+            let mut named_to: HashSet<u64> = std::iter::once(link_of(peer)).collect();
+            named_to.extend(links_of_window(&state, window.as_deref()));
             state.confinements.insert(
                 id.clone(),
                 Confinement {
                     project,
                     owner: Owner::Link(link_of(peer)),
-                    named_to: std::iter::once(link_of(peer)).collect(),
+                    named_to,
                     confining,
                     plan,
                     window,
@@ -2701,6 +2750,8 @@ impl session::Host for Hosting {
         let (ending, unheld) = {
             let mut state = self.state();
             let unheld = unname(&mut state, peer, |_| true);
+            // What it made for a relayed window passes to that window's other link (#2624).
+            hand_on(&mut state, link);
             let ending = take_confinements(&mut state, |owner| *owner == Owner::Link(link));
             state.relayed_for.remove(&link);
             (ending, unheld)
