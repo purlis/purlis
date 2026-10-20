@@ -36,10 +36,14 @@ impl Compose for Echo {
     }
 }
 
-/// What the runner's binary was handed: each take, with the bundle's bytes where one came.
+/// One take the runner's binary was handed: the project's folder, the repository's in it, the
+/// bundle's bytes where one came, and the refs named.
+type Taken = (PathBuf, String, Option<Vec<u8>>, Vec<CodeRef>);
+
+/// What the runner's binary was handed: each take.
 #[derive(Default, Clone)]
 struct Recorded {
-    taken: Arc<Mutex<Vec<(PathBuf, String, Option<Vec<u8>>, Vec<CodeRef>)>>>,
+    taken: Arc<Mutex<Vec<Taken>>>,
 }
 
 const GIVEN: &[u8] = b"a bundle of the runner's branches";
