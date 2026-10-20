@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792495927629,
+  "lastUpdate": 1792498701236,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3878,6 +3878,42 @@ window.BENCHMARK_DATA = {
             "value": 322.3,
             "unit": "MB",
             "extra": "median of 6 samples: 322.4, 364.5, 324.5, 322.2, 322.3, 266.1 MB; window 153.8 MB, session host 168.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "823e8e9ec2e19f52d758e2a2fd9610e608d6daaf",
+          "message": "Runners: a pool is kept beside its runners, and a workspace names it per machine (#2679, 1/3) (#2743)\n\n* Runners: a pool is kept beside its runners, and a workspace names it per machine (#2679)\n\n- runners.json gains `pools`, as the person ruled on 2026-10-20: each a Docker\n  pool's name, kind, image by digest and the limits the person set, the rest\n  purlis's defaults. A file of an unknown shape is refused whole.\n- purlis_core::pools adds a pool: records it, makes, checks and pairs its one\n  runner, and keeps it. A failure takes back what was made. Removing a pool\n  removes its runner whole, then the pool.\n- runners::runner_for answers a workspace's runner only where the pool and its\n  runner are both kept.\n- machine.json keeps which pool each workspace runs its chats on (chatsRunOn),\n  per machine, as ruled; a rename carries it.\n- This desktop's link key is kept in the keyring as purlis/@link-key/<device>.\n\nADR 0078 is amended with the rulings and the decisions taken.\n\nRefs #2679\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a failed run takes its container back, a pool is added under one lock, and a link only reads the desktop's key\n\n- Docker::make refuses a runner whose container name is taken, and a run that fails removes what Docker made of it.\n- pools::add and pools::remove hold runners.json's lock across the whole act.\n- runners::keep refuses a runner named as a pool; a pool's runner is kept as the pool is added.\n- runner_for answers only a runner of its pool's image.\n- linkkey::kept reads the desktop's key for a link and never makes one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T15:26:55+04:00",
+          "tree_id": "a580406762a71ec43bf525e7482e10cacc60fc58",
+          "url": "https://github.com/purlis/purlis/commit/823e8e9ec2e19f52d758e2a2fd9610e608d6daaf"
+        },
+        "date": 1792498699341,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 886,
+            "unit": "MB",
+            "extra": "median of 3 samples: 816, 886, 1005 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 359.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 397.4, 352.4, 359.2, 359.3, 360.1, 269.5 MB; window 165.9 MB, session host 193.4 MB"
           }
         ]
       }
