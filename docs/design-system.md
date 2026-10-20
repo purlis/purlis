@@ -90,8 +90,14 @@ selection, caret, placeholder and scrollbars, and each terminal cell's own colou
 The window writes no rule for one left to the platform (`data-theme-draws`), and the contrast
 check does not measure what the platform draws. A colour is drawn as given, so a transparent
 thumb hides the scrollbars. Selected text is coloured only on a selection the theme colours too,
-and the check says so when a theme colours one without the other. No palette may name a colour
-`platform`. The window's rules stop at the light editor, which draws its own selection and caret.
+and the check says so when a theme colours one without the other. A see-through selection is
+measured laid over each ground it is drawn on: the window, a field, a pane, a Notice, a dialog
+and a trouble Notice. While selected text keeps its own colour, the window's words, a markdown
+render's and the danger words are held on the selection at the floor for words, the danger words
+as a consent floor. Selected text a theme colours is held as a consent floor on a trouble Notice
+and a dialog; a theme that breaks it is drawn with the platform's selection. No palette may name
+a colour `platform`. The window's rules stop at the light editor, which draws its own selection
+and caret.
 Purlis Classic leaves all six to the platform.
 Purlis Classic gives every other new token the colour the window drew before it: a syntax role
 the ANSI colour the editor borrowed for it (but light's `property` and `attribute`, `#1283ff`
@@ -616,6 +622,11 @@ left out of it, each appearance's contrast findings with the pair and ratio as w
 consent floors the window holds in each combination with the tokens it draws as purlis's own,
 and the hard floors, as text or as `--json` for a chat. It
 exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such theme.
+**A chat's theme draft** (#2332) is a theme folder in the plane's local folder, read by the same
+engine (`theme::drafts`) and drawn only in its chat's workspace while it holds every hard floor
+(primary text, the focus ring and the terminal's words at 3:1, as drawn, in every tint); the
+window's draft strip (`ThemeDraftStrip.tsx`) has Keep, Revert and Compare, and the revert key
+is ⌘⇧⌫ (Ctrl+Shift+Backspace elsewhere).
 `purlis docs show themes` has the JSON's shape. **`purlis theme import <file>`** (#2334)
 makes a theme folder from a VS Code colour theme, a base16 or base24 scheme, an iTerm2 colour
 preset, a Ghostty theme or a theme folder's zip: the engine's `import` maps each kind through a
@@ -727,6 +738,16 @@ are at least 400 ms apart, so the window is drawn again within a second of the l
 the platform will not watch a folder, the core looks at it every two seconds instead. A theme
 the engine refuses on a reload draws Purlis, with a Notice saying why; a project's font file
 that changed since the project was approved is refused until the project is approved again.
+That Notice offers **Review and allow** (#2647) when the engine says the approval is all that
+stands in the way (`Drawn::awaits_approval`): it shows the project's trust ask in place, what
+changed first and then its font files by theme folder, and a yes approves exactly what the ask
+showed and draws the theme again. A file changed after the ask was drawn approves nothing; a
+no leaves the theme refused. The press is the person's alone. It is offered only when what the
+project asks for again is font files alone; when it asks for more, or was never approved on
+this machine, the Notice has no button and says to close the project and open it again, where
+its whole trust ask is shown. The ask names the themes and workspaces the font files belong
+to, and says that the system's font engine reads them. Whether to offer it is found once for
+each set of faces a refusal waits on, so a redraw that changed no face reads nothing again.
 
 **A workspace switch repaints with a short crossfade**: colours ease across `duration.enter`
 with `easing.standard`, from a rule in the base layer at no specificity, so a surface with a

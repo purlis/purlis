@@ -544,6 +544,8 @@ fn card_drawn_of(
         crate::extensions::contrast_of(more_contrast),
     )?;
     Some(ThemeInForce {
+        // The gallery's card says it is refused; only the window's theme offers the review.
+        review: None,
         refused: drawn.refused.then(|| crate::extensions::ThemeTrouble {
             name: id.to_owned(),
             complaints: drawn
@@ -562,6 +564,7 @@ fn card_drawn_of(
         complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
         follows_system: drawn.follows_system,
         floors: drawn.held.map(|held| held.said()),
+        draft: None,
     })
 }
 

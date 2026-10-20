@@ -3,7 +3,7 @@
 
 import { useRef } from "react";
 import * as Dialog from "./overlays/dialog";
-import type { Ask } from "./bindings";
+import type { Ask, FontTheme } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
 
 /**
@@ -41,8 +41,16 @@ export function ApprovePlane({
   ask,
   onApprove,
   onCancel,
+  yes,
+  fonts,
 }: {
   ask: Ask;
+  /** The theme folders an ask about font files alone is about (#2647): the dialog names them,
+   *  and says what a font file is read by. Absent for an open's ask. */
+  fonts?: readonly FontTheme[];
+  /** What the yes is called, where it opens nothing: a project already open, whose refused
+   *  theme the ask can let be drawn (#2647). An open's own words by default. */
+  yes?: string;
   /** The operator's yes, carrying back the contribution they were shown — so the approval is
    *  for what was on screen and not for whatever the project says by the time it is clicked. */
   onApprove: (ask: Ask) => void;
@@ -202,6 +210,20 @@ export function ApprovePlane({
               leaves a `<button>` out of the tab sequence unless its `tabindex` is written
               down, and a dialog should not depend on having exactly two answers to be
               reachable. */}
+          {fonts !== undefined && (
+            <>
+              {fonts.length > 0 && (
+                <p className="where" id="approve-plane-fonts-of">
+                  {fontsOf(fonts)}
+                </p>
+              )}
+              <p className="came-back">
+                Font files are read by your system&rsquo;s font engine; allow only fonts you or your
+                team added.
+              </p>
+            </>
+          )}
+
           <AnswerBar>
             <button
               className="ui-button"
@@ -213,13 +235,23 @@ export function ApprovePlane({
               Cancel
             </button>
             <button className="ui-button" type="button" tabIndex={0} onClick={() => onApprove(ask)}>
-              {ask.first ? "Open project" : "Open it anyway"}
+              {yes ?? (ask.first ? "Open project" : "Open it anyway")}
             </button>
           </AnswerBar>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
   );
+}
+
+/** The sentence naming the theme folders an ask about font files is about. */
+function fontsOf(fonts: readonly FontTheme[]): string {
+  const each = fonts.map(({ theme, workspace }) =>
+    workspace === null
+      ? `the theme ${theme} in the project`
+      : `the theme ${theme} in workspace ${workspace}`,
+  );
+  return `These font files belong to ${each.join(", ")}.`;
 }
 
 /** How many font files the ask draws before it says how many more there are. */

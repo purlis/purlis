@@ -70,6 +70,9 @@ pub struct Watched {
     levels: BTreeSet<PathBuf>,
     /// How many folders were not watched, past [`MOST_WATCHED`].
     left_out: usize,
+    /// For a chat's theme drafts not there yet (#2332): the nearest folder on the way to them
+    /// that is, in every spelling, and the name made in it that is the next step.
+    awaiting_named: BTreeSet<(PathBuf, String)>,
 }
 
 /// One extension that contributes only themes: its folder, and its themes' files inside it.
@@ -142,6 +145,34 @@ impl Watched {
             out.extension(one);
         }
         out
+    }
+
+    /// **And the theme drafts of the chats at the window's place** (#2332, `super::drafts`):
+    /// each chat's drafts folder is watched as a level is, nearest of all; while it is not
+    /// there, the nearest folder on the way to it is, for the next step's name alone. So a
+    /// draft's save redraws through the one path a theme is ever drawn by.
+    #[must_use]
+    pub fn with_drafts(mut self, drafts: &[ThemesFolder]) -> Self {
+        for level in drafts {
+            self.draft(level);
+        }
+        self
+    }
+
+    fn draft(&mut self, level: &ThemesFolder) {
+        if matches!(walk::level(level), Found::Themes(_)) {
+            self.level(level);
+            return;
+        }
+        let Some((parent, next)) = walk::deepest(level) else {
+            return;
+        };
+        self.levels.extend(spellings(&level.root, &level.below));
+        if self.take(&level.root, &parent, Kind::Awaiting) {
+            for one in spellings(&level.root, &parent) {
+                self.awaiting_named.insert((one, next.clone()));
+            }
+        }
     }
 
     /// Every folder to watch, non-recursively.
@@ -223,6 +254,12 @@ impl Watched {
             return redraw(true);
         }
         if name == super::folders::THEMES && self.awaiting.contains(parent) {
+            return redraw(false);
+        }
+        if self
+            .awaiting_named
+            .contains(&(parent.to_path_buf(), name.into_owned()))
+        {
             return redraw(false);
         }
         Reload::Nothing
@@ -396,6 +433,26 @@ mod walk {
         Found::Themes(inside)
     }
 
+    /// The nearest folder on the way from the root to `level` that is there, below the root,
+    /// opened refusing a link at every step, and the name of the next step, which is not there:
+    /// `None` when the level is there whole, or a step is a link or not a folder.
+    pub(super) fn deepest(level: &ThemesFolder) -> Option<(PathBuf, String)> {
+        let mut at = root(&level.root)?;
+        let mut below = PathBuf::new();
+        for step in level.below.components() {
+            let Component::Normal(name) = step else {
+                return None;
+            };
+            match openat(&at, name, DIRECTORY, Mode::empty()) {
+                Ok(fd) => at = fd,
+                Err(Errno::NOENT) => return Some((below, name.to_str()?.to_owned())),
+                Err(_) => return None,
+            }
+            below.push(name);
+        }
+        None
+    }
+
     /// The extension's folder, `""`, and each folder on the way to its themes' files, below it.
     pub(super) fn extension(one: &ThemesOnly) -> Vec<PathBuf> {
         let Ok(top) = rustix::fs::open(&one.dir, DIRECTORY, Mode::empty()) else {
@@ -528,6 +585,10 @@ mod walk {
 
     pub(super) fn entries(_root: &Path, _below: &Path) -> BTreeMap<String, Stamp> {
         BTreeMap::new()
+    }
+
+    pub(super) fn deepest(_level: &ThemesFolder) -> Option<(PathBuf, String)> {
+        None
     }
 
     pub(super) fn extension(_one: &ThemesOnly) -> Vec<PathBuf> {

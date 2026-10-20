@@ -1297,8 +1297,10 @@ purlis neither writes nor reads them (#2575).
 - **Status:** **purlis only** (spec #2313, ADR 0097, ADR 0098). A reserved name: purlis reads
   only theme folders under it.
 - **Tier:** Plane — committed by `purlis save`, so the team gets the project's themes.
-- **Written by:** the person. Decided by ADR 0098 and the spec, built by #2332: a chat's theme
-  draft, once the person keeps it. purlis creates none of it.
+- **Written by:** the person; and purlis on the person's press alone (#2332): **Keep** of a
+  chat's theme draft that is a draft of a folder here (or a new theme of a chat at the plane
+  root), and **Use in the whole project**, which moves a workspace's theme folder here, never
+  over one of the same name (`crates/purlis-core/src/theme/drafts.rs`).
 - **Read by:** the theme engine (`crates/purlis-core/src/theme/folders.rs`), for a pick the
   project's `[theme]` or the person's choice makes, and for a workspace's (#2323); and
   `purlis doctor`'s `themes` row (`crates/purlis-core/src/doctor/themes.rs`),
@@ -2371,8 +2373,10 @@ beside a purlis one is removed when the record is published (V93i).
   purlis's own in a workspace, so no extension may keep a folder under it.
 - **Tier:** Plane when LIVE, Clone state when LOCAL — a workspace's themes travel with it.
   Committed by `purlis save` if the workspace is LIVE; kept in this clone if it is LOCAL.
-- **Written by:** the person. Decided by ADR 0098 and the spec, built by #2332: a chat's theme
-  draft, once the person keeps it. purlis creates none of it.
+- **Written by:** the person; and purlis on the person's press alone (#2332): **Keep** of a
+  theme draft of a chat working in the workspace, of a folder here or a new theme
+  (`crates/purlis-core/src/theme/drafts.rs`). **Use in the whole project** moves a folder from
+  here to the plane root's `themes/`.
 - **Read by:** the theme engine (`crates/purlis-core/src/theme/folders.rs`), for that
   workspace's choices and committed default alone (#2323); and `purlis doctor`'s `themes` row,
   as at the plane root, for every workspace.
@@ -5118,6 +5122,30 @@ Same directory shape, name minted by `frame_id(workspace, pid)`
 (`charter/frame/state.py:121`). Only `gather.json` + `version` are typically present.
 
 ---
+
+### `theme-drafts/<chat>/<folder>/` — a chat's theme drafts
+
+- **What:** a chat's draft of a theme folder (#2332, spec #2313, ADR 0098 §4): a theme folder, as
+  the plane root's [`themes/`](#themes--the-projects-theme-folders) holds one, under a folder
+  named by the chat's id (its ULID, ADR 0066).
+- **Status:** **purlis only**. **Written by the app alone**: a chat's `purlis theme draft
+  <folder>` (`--save` to hand over its working copy) asks the app that started it, which writes
+  the draft in the folder of the chat whose token asked, by its own record of that chat. The
+  sandbox holds the whole folder from every chat (the integrity class), so no chat writes or
+  deletes a draft, its own or another's. What a save hands over is bounded: `theme.json` and icon
+  sets under `icons/`, each under the cap of a theme file. Read by the theme engine
+  (`crates/purlis-core/src/theme/drafts.rs`) as a project's theme folder is read: through handles
+  refusing a link, under the caps of a theme folder, its fonts gated by the project's approval
+  where the draft is kept to.
+- **Who reads it:** the app, for the chats it has open where the window is (never by a path a
+  chat names): the draft is drawn in that chat's workspace alone while it holds every hard floor.
+  The window's strip offers Keep, Revert and Compare; `purlis theme check draft:<folder>` and the
+  answer to a save tell the chat what the window draws of it.
+- **Who removes it:** the person's Keep (which copies it into the theme folder it is a draft of
+  first), Revert, the revert key, or their answer as its chat closes. A chat's drafts folder
+  goes with its last draft.
+- **Tier:** Clone state — a draft is this clone's alone.
+- **Git:** gitignored (under `/.purlis/`).
 
 ### `app/` — the desktop app's own state
 

@@ -323,12 +323,15 @@ fn a_chat_never_writes_charters_integrity_state() {
         paths(&denied, Class::Integrity, Access::Write),
         [
             plane.path().join(".purlis/app"),
+            // Every chat's theme drafts (#2332): only the app writes one, for the chat that asks.
+            plane.path().join(".purlis/theme-drafts"),
             plane.path().join(".purlis/harness-profiles-launched.json"),
             plane
                 .path()
                 .join(".purlis/harness-declarations-approved.json"),
             plane.path().join(".purlis/mcp-approved.json"),
             plane.path().join(".charter/app"),
+            plane.path().join(".charter/theme-drafts"),
             plane.path().join(".charter/harness-profiles-launched.json"),
             plane
                 .path()
@@ -356,6 +359,13 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
         paths(&denied, Class::Integrity, Access::Write).contains(&std::path::PathBuf::from(
             "/srv/purlis-state/mcp-approved.json"
         )),
+        "{:?}",
+        denied.paths
+    );
+    // And the theme drafts the app writes there (#2332).
+    assert!(
+        paths(&denied, Class::Integrity, Access::Write)
+            .contains(&std::path::PathBuf::from("/srv/purlis-state/theme-drafts")),
         "{:?}",
         denied.paths
     );

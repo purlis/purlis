@@ -103,6 +103,13 @@ pub(crate) enum FontGate {
     /// holds with that digest, keyed by its path in the project. Empty when the project is not
     /// approved here.
     Approved(std::sync::Arc<BTreeMap<String, String>>),
+    /// One chat's theme drafts (`super::drafts`): a face is read only when the project's
+    /// approval holds it, with that digest, where the draft is kept to: `kept_at` names, for
+    /// each draft's folder name, the `themes/` folder in the project it is kept in.
+    Draft {
+        files: std::sync::Arc<BTreeMap<String, String>>,
+        kept_at: std::sync::Arc<BTreeMap<String, PathBuf>>,
+    },
 }
 
 impl ThemesFolder {
@@ -123,6 +130,24 @@ pub struct Folders {
     pub machine: Option<ThemesFolder>,
 }
 
+/// **The font files this machine's approval of the project at `plane` holds**, by their path in
+/// the project, read from `config_root`'s store: empty when it is not approved here.
+pub(crate) fn approved_fonts(
+    config_root: Option<&Path>,
+    plane: Option<&Path>,
+) -> BTreeMap<String, String> {
+    config_root
+        .zip(plane)
+        .and_then(|(config, plane)| {
+            crate::machine::read(config)
+                .store
+                .recent(plane)
+                .and_then(|entry| entry.trust.as_ref())
+                .map(|trust| trust.contributed.fonts.clone())
+        })
+        .unwrap_or_default()
+}
+
 /// What [`Folders::find`] found.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Found {
@@ -138,18 +163,7 @@ impl Folders {
     /// out. The project's and the workspace's faces are read only as this machine's approval
     /// of the project, read here from `config_root`'s store, holds them.
     pub fn of(config_root: Option<&Path>, plane: Option<&Path>, workspace: Option<&str>) -> Self {
-        let approved = std::sync::Arc::new(
-            config_root
-                .zip(plane)
-                .and_then(|(config, plane)| {
-                    crate::machine::read(config)
-                        .store
-                        .recent(plane)
-                        .and_then(|entry| entry.trust.as_ref())
-                        .map(|trust| trust.contributed.fonts.clone())
-                })
-                .unwrap_or_default(),
-        );
+        let approved = std::sync::Arc::new(approved_fonts(config_root, plane));
         let machine = config_root.map(|root| {
             let dir = crate::machine::dir(root);
             ThemesFolder {
@@ -270,6 +284,36 @@ impl Folders {
             .keys()
             .map(|name| (name.clone(), load(&library, name, said.clone())))
             .collect()
+    }
+
+    /// **The theme draft `name` among `drafts`** (one chat's drafts, `super::drafts`), read as
+    /// the nearest level of all, with a library of the drafts and every level a workspace's
+    /// choice reaches: what it may extend. `checking` reads it only to check
+    /// ([`Library::checking`]), so none of its faces is registered to be served. `Missing` when
+    /// the chat has no draft of that name.
+    pub fn find_draft(&self, drafts: &ThemesFolder, name: &str, checking: bool) -> Found {
+        let mut said = Vec::new();
+        let draft = read_level(drafts, &mut said);
+        if !draft.contains_key(name) {
+            return Found::Missing(said);
+        }
+        let (mut levels, more) = self.read_within(Reach::Workspace);
+        said.extend(more);
+        levels.insert(0, draft);
+        let library = library_of(&levels);
+        let library = if checking {
+            library.checking()
+        } else {
+            library
+        };
+        Found::Read(load(&library, name, said))
+    }
+
+    /// **The library of every level `reach` reaches**, nearest first: what a theme folder read at
+    /// that reach may extend.
+    pub(crate) fn library_within(&self, reach: Reach) -> Library {
+        let (levels, _) = self.read_within(reach);
+        library_of(&levels)
     }
 
     /// The `themes/` folder of the level `at`, when there is one.
@@ -513,6 +557,15 @@ mod read {
                                 FontGate::Approved(files) => held.approved_only(
                                     files.clone(),
                                     in_project(&folder.below.join(name)),
+                                ),
+                                // A draft is kept to nowhere else: a face is read as approved
+                                // there, never at the draft's own path.
+                                FontGate::Draft { files, kept_at } => held.approved_only(
+                                    files.clone(),
+                                    kept_at
+                                        .get(name)
+                                        .map(|below| in_project(&below.join(name)))
+                                        .unwrap_or_default(),
                                 ),
                             };
                             (document, icons, held)

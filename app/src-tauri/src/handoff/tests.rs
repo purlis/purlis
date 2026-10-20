@@ -3007,6 +3007,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Propose(_) => 13,
             Ask::Browse(_) => 14,
             Ask::ThemePreview(_) => 15,
+            Ask::ThemeDraft(_) => 16,
         }
     }
     let asks = vec![
@@ -3091,10 +3092,16 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
                 appearance: None,
             }],
         }),
+        // A theme draft (#2332): it names a theme folder, written for the asking chat alone.
+        Ask::ThemeDraft(Box::new(purlis_core::hookwire::ThemeDraftAsk {
+            chat,
+            folder: "dusk".to_owned(),
+            files: None,
+        })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=15).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=16).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
