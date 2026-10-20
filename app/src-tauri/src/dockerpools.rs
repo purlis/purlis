@@ -302,9 +302,9 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         .iter()
         .filter(|kept| kept.pool() == name)
         .count();
-    let (runner, why) = match machine.docker.version_of(&kept.made) {
+    let (runner, why) = match crate::runnerlinks::version_of(machine, &kept) {
         Ok(version) => (Some(version), None),
-        Err(why) => (None, Some(why.0)),
+        Err(why) => (None, Some(why)),
     };
     Ok(PoolVersion {
         runner,

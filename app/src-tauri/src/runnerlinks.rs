@@ -156,7 +156,7 @@ pub fn desktop_version() -> &'static str {
 /// another, or could not be read; `None` where it is this desktop's own.
 pub fn behind(machine: &Machine, kept: &Kept) -> Option<String> {
     let ours = desktop_version();
-    match machine.docker.version_of(&kept.made) {
+    match version_of(machine, kept) {
         Ok(theirs) if theirs == ours => None,
         Ok(theirs) => Some(format!(
             "runner {} runs purlis {theirs}, and this desktop runs {ours}",
@@ -168,6 +168,44 @@ pub fn behind(machine: &Machine, kept: &Kept) -> Option<String> {
             kept.name()
         )),
     }
+}
+
+/// **The version `kept`'s runner runs**, read once for each container and image and kept for the
+/// rest of this run (#2749): a container runs one image by digest, so what it says does not
+/// change, and a link need not ask it again. What could not be read is asked again next time.
+pub fn version_of(machine: &Machine, kept: &Kept) -> Result<String, String> {
+    once_for(
+        kept.made.container.as_str(),
+        kept.made.runner.image().as_str(),
+        || machine.docker.version_of(&kept.made).map_err(|why| why.0),
+    )
+}
+
+/// What `read` says of the container `container` of `image`, read the first time it answers
+/// and kept from then on; one that could not be read is read again next time.
+fn once_for(
+    container: &str,
+    image: &str,
+    read: impl FnOnce() -> Result<String, String>,
+) -> Result<String, String> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, PoisonError};
+    static READ: Mutex<Option<HashMap<(String, String), String>>> = Mutex::new(None);
+    let key = (container.to_owned(), image.to_owned());
+    let kept = READ
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .and_then(|read| read.get(&key).cloned());
+    if let Some(kept) = kept {
+        return Ok(kept);
+    }
+    let version = read()?;
+    READ.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_or_insert_with(HashMap::new)
+        .insert(key, version.clone());
+    Ok(version)
 }
 
 /// **Whether a chat still runs on the runner `to`** (#2749): what a draining runner waits on

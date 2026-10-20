@@ -42,8 +42,12 @@ own, as long as it keeps the contract below.
   ```bash
   cosign verify ghcr.io/purlis/purlis-runner@sha256:<digest> \
     --certificate-identity https://github.com/purlis/purlis/.github/workflows/runner-image.yml@refs/heads/main \
+    --certificate-github-workflow-repository purlis/purlis \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
+
+  `runner-image.yml` is a workflow a release calls, so the certificate is checked to come from a
+  run in `purlis/purlis` itself, and not only to name the workflow.
 
   The image of a stable release is signed on its tag: use
   `runner-image.yml@refs/tags/v<version>` as the identity.

@@ -513,6 +513,12 @@ fn the_check_runs_on_the_pushed_bytes_before_any_tag_or_signature() {
                 step_value(&steps[verify], "env", "RELEASED_REF"),
                 Some("${{ github.ref }}")
             );
+            // A workflow any repository may call: the run must be this repository's own.
+            assert!(
+                verifying
+                    .contains("--certificate-github-workflow-repository \"$GITHUB_REPOSITORY\" \\"),
+                "{file}: {verifying}"
+            );
         }
     }
 }
