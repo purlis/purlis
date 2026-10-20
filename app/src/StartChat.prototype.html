@@ -1,0 +1,304 @@
+<title>Start-a-chat Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* PROTOTYPE (wayfinder #2798, M66). Throwaway: three structurally different Start-a-chat dialogs
+   over a mock purlis window, drawn in the Purlis (Figma) palette. Layout concept: one dimmed app
+   window, the dialog centred on it, a floating switcher bar at the bottom. */
+:root {
+  --behind: #f1efea; --window: #fcfbf8; --panel: #f4f2ee; --card: #ebe8e2; --hover: #e3e0d9;
+  --line: #d9d5cd; --text: #1d1c22; --text-2: #3d3b45; --muted: #5c5a66; --quiet: #6b6976;
+  --accent: #5b4bc4; --accent-text: #4a3cae; --wash: rgba(91,75,196,.12); --scrim: rgba(20,18,28,.36);
+  --amber: #8a5a12; --ok: #2f6b3a; --switch-bg: #1d1c22; --switch-fg: #fcfbf8;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --r-control: 7px; --r-field: 8px; --r-card: 10px; --r-panel: 12px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --behind: #121215; --window: #17171b; --panel: #1d1d22; --card: #24242a; --hover: #2a2a31;
+  --line: #2f2f37; --text: #e6e4ec; --text-2: #c9c7d2; --muted: #a09eab; --quiet: #8a8896;
+  --accent: #a99cf0; --accent-text: #c3baf5; --wash: rgba(169,156,240,.12); --scrim: rgba(8,8,10,.6);
+  --amber: #e5c08a; --ok: #8fc79a; --switch-bg: #e6e4ec; --switch-fg: #17171b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --behind: #121215; --window: #17171b; --panel: #1d1d22; --card: #24242a; --hover: #2a2a31;
+  --line: #2f2f37; --text: #e6e4ec; --text-2: #c9c7d2; --muted: #a09eab; --quiet: #8a8896;
+  --accent: #a99cf0; --accent-text: #c3baf5; --wash: rgba(169,156,240,.12); --scrim: rgba(8,8,10,.6);
+  --amber: #e5c08a; --ok: #8fc79a; --switch-bg: #e6e4ec; --switch-fg: #17171b; color-scheme: dark }
+
+html, body { height: 100%; }
+body { background: var(--behind); color: var(--text); font: 13px/1.45 var(--font-ui); margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px; box-sizing: border-box; }
+* { box-sizing: border-box; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* the mock window */
+.app { position: relative; height: calc(100% - 64px); min-height: 560px; background: var(--window); border-radius: var(--r-panel); overflow: hidden; display: grid; grid-template-rows: 40px 1fr; }
+.app-bar { display: flex; align-items: center; gap: 8px; padding: 0 14px; color: var(--muted); font-weight: 500; }
+.app-bar .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+.app-body { display: grid; grid-template-columns: 220px 1fr; gap: 8px; padding: 0 8px 8px; }
+.app-panel { background: var(--panel); border-radius: var(--r-panel); padding: 14px; color: var(--quiet); }
+.app-panel p { margin: 0 0 10px; }
+@media (max-width: 640px) { .app-body { grid-template-columns: 1fr; } .app-panel:first-child { display: none; } }
+
+/* overlay and dialog */
+.scrim { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: center; padding: 16px; }
+/* The dialog's width is fixed by its size, never by its content: the mount spans the scrim so `width: min(…, 100%)` resolves against it. */
+.scrim { display: block; }
+#mount { position: absolute; inset: 0; padding: 6vh 16px 16px; display: flex; justify-content: center; align-items: flex-start; }
+#mount > .dialog { max-height: 100%; }
+/* Two panes: one fixed height, whatever the list holds; each pane scrolls on its own and the footer never leaves. */
+.dialog.wide { height: min(620px, 100%); }
+.panes { height: 100%; }
+.panes .left .list, .panes .right { min-height: 0; overflow: auto; }
+/* The dialog is anchored at a fixed top, so a change in its content only grows or shrinks its bottom edge,
+   and text that changes with a choice reserves its room, so the dialog does not move at all. */
+.help.reserve { min-height: calc(2 * 1.45em); }
+.dialog { background: var(--panel); border-radius: var(--r-panel); width: min(560px, 100%); max-height: min(85%, calc(100% - 32px));
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; box-shadow: 0 18px 48px rgba(0,0,0,.28); }
+.dialog.wide { width: min(780px, 100%); }
+.dialog.quick { width: min(520px, 100%); grid-template-rows: auto minmax(0, 1fr) auto; }
+.d-head { padding: 18px 20px 6px; }
+.d-head h2 { margin: 0; font-size: 16px; font-weight: 600; text-wrap: balance; }
+.d-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.d-body { overflow: auto; padding: 10px 20px 14px; display: grid; gap: 16px; align-content: start; scroll-padding-bottom: 16px; }
+.d-foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px 16px; border-top: 1px solid var(--line); }
+.d-foot .grow { flex: 1; color: var(--quiet); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hicon { width: 14px; height: 14px; flex: none; vertical-align: -2px; margin-right: 6px; }
+.seg button { display: inline-flex; align-items: center; }
+.seg button[aria-checked="true"] .hicon, .hcard[aria-checked="true"] .hicon { color: var(--accent-text); }
+.hname { display: inline-flex; align-items: center; }
+.summary .hicon { margin: 0 4px 0 2px; }
+.label { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+.help { color: var(--quiet); font-size: 12px; margin-top: 6px; }
+
+/* controls (as the shared component set would draw them) */
+.btn { height: 28px; padding: 0 12px; border-radius: var(--r-control); border: 0; background: var(--hover); color: var(--text); cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--line); }
+.btn.primary { background: var(--wash); color: var(--accent-text); font-weight: 500; }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.btn.ghost { background: transparent; color: var(--muted); }
+.btn.ghost:hover { background: var(--card); }
+.kbd { font: 11px var(--font-mono); color: var(--quiet); margin-left: 6px; }
+.seg { display: inline-flex; background: var(--window); border-radius: var(--r-control); padding: 2px; gap: 2px; flex-wrap: wrap; }
+.seg button { height: 26px; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: var(--quiet); cursor: pointer; }
+.seg button[aria-checked="true"] { background: var(--hover); color: var(--text); font-weight: 500; }
+.field { width: 100%; height: 32px; border: 0; border-radius: var(--r-field); background: var(--window); padding: 0 10px; color: var(--text); }
+.field::placeholder { color: var(--quiet); }
+.list { background: var(--window); border-radius: var(--r-field); padding: 4px; overflow: auto; }
+.row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 4px 8px; border: 0; border-radius: var(--r-field); background: transparent; text-align: left; cursor: pointer; color: var(--text-2); }
+.row:hover { background: var(--card); }
+.row[aria-selected="true"] { background: var(--wash); color: var(--text); }
+.row .mark { width: 22px; height: 22px; flex: none; border-radius: 6px; display: grid; place-items: center; font: 600 10px var(--font-ui); background: var(--card); color: var(--muted); }
+.row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .note { font-size: 11px; color: var(--quiet); white-space: nowrap; }
+.chip { font-size: 11px; color: var(--accent-text); background: var(--wash); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.notice { background: var(--card); border-radius: var(--r-card); padding: 10px 12px; color: var(--text-2); font-size: 12px; }
+.check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.check input { margin-top: 2px; accent-color: var(--accent); }
+details summary { cursor: pointer; color: var(--muted); font-weight: 500; list-style: none; display: flex; gap: 6px; align-items: center; }
+details summary::before { content: "›"; display: inline-block; transition: transform .15s; }
+details[open] summary::before { transform: rotate(90deg); }
+details > div { display: grid; gap: 14px; margin-top: 12px; }
+.empty { padding: 14px 8px; color: var(--quiet); text-align: center; }
+
+/* variant B */
+.panes { display: grid; grid-template-columns: 260px minmax(0,1fr); gap: 16px; min-height: 0; }
+.panes .left { display: grid; grid-template-rows: auto minmax(0,1fr); gap: 8px; min-height: 0; }
+.panes .right { display: grid; gap: 16px; align-content: start; min-width: 0; }
+/* Harness options: no radio circles; every option is the same height (the tallest), and the chosen one is marked
+   by its wash, an accent edge and a check, so the choice never rests on colour alone (WCAG 1.4.1). */
+.cards { display: grid; gap: 6px; grid-auto-rows: 1fr; }
+.hcard { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto 1fr; gap: 2px 10px; padding: 10px 12px; border-radius: var(--r-card); background: var(--window); border: 0; box-shadow: inset 0 0 0 1.5px transparent; text-align: left; cursor: pointer; color: var(--text-2); }
+.hcard:hover { background: var(--card); }
+.hcard[aria-checked="true"] { background: var(--wash); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.hcard small { grid-column: 1; }
+.hcard .tick { grid-row: 1 / span 2; grid-column: 2; align-self: center; width: 16px; height: 16px; color: var(--accent-text); visibility: hidden; }
+.hcard[aria-checked="true"] .tick { visibility: visible; }
+.hcard small { color: var(--quiet); font-size: 12px; }
+.who { display: flex; gap: 12px; align-items: center; }
+.who .mark { width: 36px; height: 36px; font-size: 13px; }
+.who h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.who p { margin: 2px 0 0; color: var(--quiet); font-size: 12px; }
+@media (max-width: 700px) { .panes { grid-template-columns: 1fr; } .panes .left .list { max-height: 180px; } }
+
+/* variant C */
+.q-input { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.q-input input { flex: 1; border: 0; background: transparent; font-size: 15px; outline: none; min-width: 0; }
+.q-input .as { color: var(--quiet); white-space: nowrap; }
+.q-list { overflow: auto; padding: 6px; }
+.q-group { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--quiet); padding: 8px 10px 4px; }
+
+/* switcher, not part of the design under review */
+.switcher { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 4px;
+  background: var(--switch-bg); color: var(--switch-fg); border-radius: 999px; padding: 4px; box-shadow: 0 6px 24px rgba(0,0,0,.35); font: 500 12px var(--font-ui); z-index: 50; max-width: calc(100% - 32px); }
+.switcher button { border: 0; background: transparent; color: inherit; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 15px; }
+.switcher button:hover { background: color-mix(in srgb, var(--switch-fg) 16%, transparent); }
+.switcher span { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast { position: absolute; left: 50%; top: 52px; transform: translateX(-50%); background: var(--card); color: var(--text); padding: 8px 14px; border-radius: var(--r-card); font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.2); z-index: 5; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app" id="app">
+  <div class="app-bar"><span class="dot"></span> charter · smart-ide</div>
+  <div class="app-body">
+    <div class="app-panel"><p>Chats</p><p>steward 9</p><p>issues</p><p>skills</p></div>
+    <div class="app-panel"><p>build the browser program's ready tickets</p></div>
+  </div>
+  <div class="scrim"><div id="mount"></div></div>
+  <div class="toast" id="toast" hidden></div>
+</div>
+
+<div class="switcher" role="toolbar" aria-label="Prototype variants">
+  <button id="prev" aria-label="Previous variant">‹</button>
+  <span id="vlabel"></span>
+  <button id="next" aria-label="Next variant">›</button>
+</div>
+
+<script>
+// Stand-in glyphs, drawn here: the real ones come from each harness's definition (a vendor's own mark needs its licence checked first).
+const svg = d => `<svg class="hicon" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const HARNESSES = [
+  { id: "claude", name: "Claude Code", icon: svg('<path d="M8 1.8v12.4M1.8 8h12.4M3.6 3.6l8.8 8.8M12.4 3.6l-8.8 8.8"/>'),
+    detail: "Billed to whatever Claude Code is signed in with. Runs in a terminal; it has no ACP agent purlis can talk to." },
+  { id: "opencode", name: "opencode", icon: svg('<path d="M5.5 3C3.8 3 4.6 7 2.6 8c2 1 1.2 5 2.9 5M10.5 3c1.7 0 .9 4 2.9 5-2 1-1.2 5-2.9 5"/>'),
+    detail: "Billed to whatever opencode is signed in with. The harness's default model." },
+  { id: "codex", name: "Codex", icon: svg('<rect x="1.8" y="2.6" width="12.4" height="10.8" rx="2.2"/><path d="M4.6 6.4 6.8 8l-2.2 1.6M8.6 10h2.8"/>'),
+    detail: "Billed to whatever Codex is signed in with. The harness's default model." },
+];
+const PERSONAS = ["steward","devops","domain-authority-master","elastic-logs-master","email-investigation-master","email-verification-master","entri-master","esp-integrations-master","grafana-master","inbox-placement-master","integrations-master","jira-git-flow-master","keycloak-master","limits-master","marketplace-integrations-master","messaging-integrations-master","nestjs-developer","organizations-master","pending-actions-master","performance-investigator","platform-and-authz-master","psa-integrations-master","public-api-master","reporting-master","security-reviewer","sending-domains-master","support-triage","ui-designer"];
+const RECENT = ["steward", "keycloak-master", "nestjs-developer"];
+const initials = p => p.split("-").slice(0, 2).map(w => w[0]).join("").toUpperCase();
+
+const state = { harness: "claude", persona: "steward", filter: "", name: "", footer: false };
+const VARIANTS = [
+  { key: "A", name: "One column, filtered list, sticky footer", render: renderA },
+  { key: "B", name: "Two panes: persona list beside the details", render: renderB },
+  { key: "C", name: "Quick start, then all options", render: renderC },
+];
+let current = 0;
+try { const saved = localStorage.getItem("proto-start-chat-variant"); if (saved !== null) current = Math.max(0, Math.min(2, +saved)); } catch (e) {}
+
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const matches = () => PERSONAS.filter(p => p.includes(state.filter.trim().toLowerCase()));
+
+function personaRows(list) {
+  if (!list.length) return `<div class="empty">No persona is called “${esc(state.filter)}”.</div>`;
+  return list.map(p => `<button class="row" role="option" aria-selected="${p === state.persona}" data-persona="${p}">
+    <span class="mark">${initials(p)}</span><span class="name">${p}</span>${p === "steward" ? '<span class="chip">project default</span>' : ""}</button>`).join("");
+}
+function harnessSeg() {
+  return `<div class="seg" role="radiogroup" aria-label="Harness">${HARNESSES.map(h =>
+    `<button role="radio" aria-checked="${h.id === state.harness}" data-harness="${h.id}">${h.icon}${h.name}</button>`).join("")}</div>
+    <div class="help reserve">${HARNESSES.find(h => h.id === state.harness).detail}</div>`;
+}
+function options() {
+  return `<div><label class="label" for="chat-name">Name</label>
+      <input class="field" id="chat-name" placeholder="${state.persona} 10" value="${esc(state.name)}">
+      <div class="help">Left empty, the chat is named after its persona and its number. You can rename it from its tab later.</div></div>
+    <label class="check"><input type="checkbox" id="chat-footer" ${state.footer ? "checked" : ""}>
+      <span>Draw purlis's footer in this chat<div class="help" style="margin-top:2px">The footer names the chat's workspace, which the panels name only for the focused chat.</div></span></label>`;
+}
+function footer(extra = "") {
+  const hh = HARNESSES.find(h => h.id === state.harness);
+  return `<div class="d-foot"><span class="grow summary">${extra || `${esc(state.persona)} on ${hh.icon}${hh.name}`}</span>
+    <button class="btn ghost" data-act="cancel">Cancel</button>
+    <button class="btn primary" data-act="start">Start chat<span class="kbd">⏎</span></button></div>`;
+}
+
+function renderA() {
+  return `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="t">
+    <div class="d-head"><h2 id="t">Start a chat</h2><p>In smart-ide. This project declares no profiles, so these are purlis's built-ins.</p></div>
+    <div class="d-body">
+      <div><div class="label">Harness</div>${harnessSeg()}</div>
+      <div><label class="label" for="filter">Persona · ${PERSONAS.length}</label>
+        <input class="field" id="filter" placeholder="Filter personas" value="${esc(state.filter)}" autocomplete="off">
+        <div class="list" role="listbox" aria-label="Persona" style="max-height: 216px; margin-top: 6px">${personaRows(matches())}</div></div>
+      <details><summary>More options</summary><div>${options()}</div></details>
+    </div>${footer()}</div>`;
+}
+function renderB() {
+  const h = HARNESSES;
+  return `<div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="t">
+    <div class="d-head"><h2 id="t">Start a chat</h2><p>In smart-ide · purlis's built-in profiles</p></div>
+    <div class="d-body" style="overflow:hidden; grid-template-rows: minmax(0,1fr)">
+      <div class="panes">
+        <div class="left"><input class="field" id="filter" placeholder="Filter ${PERSONAS.length} personas" value="${esc(state.filter)}" autocomplete="off">
+          <div class="list" role="listbox" aria-label="Persona">${personaRows(matches())}</div></div>
+        <div class="right" style="overflow:auto">
+          <div class="who"><span class="row" style="padding:0;width:auto;cursor:default"><span class="mark" style="width:36px;height:36px;font-size:13px">${initials(state.persona)}</span></span>
+            <div><h3>${esc(state.persona)}</h3><p>${state.persona === "steward" ? "Project default · Control Plane Steward" : "Persona of this project"}</p></div></div>
+          <div><div class="label">Harness</div><div class="cards" role="radiogroup" aria-label="Harness">${h.map(x =>
+            `<button class="hcard" role="radio" aria-checked="${x.id === state.harness}" data-harness="${x.id}"><span class="hname">${x.icon}${x.name}</span><svg class="tick" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg><small>${x.detail}</small></button>`).join("")}</div></div>
+          ${options()}
+        </div>
+      </div>
+    </div>${footer()}</div>`;
+}
+function renderC() {
+  const q = state.filter.trim().toLowerCase();
+  const pick = p => `<button class="row" role="option" aria-selected="${p === state.persona}" data-persona="${p}">
+      <span class="mark">${initials(p)}</span><span class="name">${p}</span><span class="note">${HARNESSES.find(h => h.id === state.harness).name}</span></button>`;
+  const recent = RECENT.filter(p => p.includes(q));
+  const rest = PERSONAS.filter(p => !RECENT.includes(p) && p.includes(q));
+  return `<div class="dialog quick" role="dialog" aria-modal="true" aria-label="Start a chat">
+    <div class="q-input"><span class="as">Start a chat as</span>
+      <input id="filter" placeholder="persona…" value="${esc(state.filter)}" autocomplete="off" aria-label="Persona"></div>
+    <div class="q-list" role="listbox" aria-label="Persona">
+      ${recent.length ? `<div class="q-group">Recent</div>${recent.map(pick).join("")}` : ""}
+      ${rest.length ? `<div class="q-group">All personas</div>${rest.map(pick).join("")}` : ""}
+      ${!recent.length && !rest.length ? `<div class="empty">No persona is called “${esc(state.filter)}”.</div>` : ""}
+    </div>
+    <div class="d-foot"><div class="seg" role="radiogroup" aria-label="Harness">${HARNESSES.map(x =>
+      `<button role="radio" aria-checked="${x.id === state.harness}" data-harness="${x.id}">${x.icon}${x.name}</button>`).join("")}</div>
+      <span class="grow"></span>
+      <button class="btn ghost" data-act="all">All options…</button>
+      <button class="btn primary" data-act="start">Start<span class="kbd">⏎</span></button></div></div>`;
+}
+
+function render(keepFocus) {
+  const active = document.activeElement && document.activeElement.id;
+  const caret = active === "filter" ? document.activeElement.selectionStart : null;
+  $("#mount").innerHTML = VARIANTS[current].render();
+  $("#vlabel").textContent = `${VARIANTS[current].key} · ${VARIANTS[current].name}`;
+  if (keepFocus && active && document.getElementById(active)) {
+    const el = document.getElementById(active); el.focus();
+    if (caret !== null && el.setSelectionRange) el.setSelectionRange(caret, caret);
+  }
+  const sel = $('#mount [aria-selected="true"]'); if (sel && !keepFocus) sel.scrollIntoView({ block: "nearest" });
+}
+function go(i) { current = (i + VARIANTS.length) % VARIANTS.length; try { localStorage.setItem("proto-start-chat-variant", current); } catch (e) {} render(false); }
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2200); }
+function start() { const h = HARNESSES.find(h => h.id === state.harness).name; toast(`Prototype: would start ${state.name || state.persona + " 10"} as ${state.persona} on ${h}.`); }
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.id === "prev") return go(current - 1);
+  if (b.id === "next") return go(current + 1);
+  if (b.dataset.harness) { state.harness = b.dataset.harness; return render(false); }
+  if (b.dataset.persona) { state.persona = b.dataset.persona; return render(false); }
+  if (b.dataset.act === "start") return start();
+  if (b.dataset.act === "cancel") return toast("Prototype: Cancel closes the dialog.");
+  if (b.dataset.act === "all") return go(0);
+});
+document.addEventListener("input", e => {
+  if (e.target.id === "filter") { state.filter = e.target.value; const m = matches(); if (m.length && !m.includes(state.persona)) state.persona = m[0]; render(true); }
+  if (e.target.id === "chat-name") state.name = e.target.value;
+  if (e.target.id === "chat-footer") state.footer = e.target.checked;
+});
+document.addEventListener("keydown", e => {
+  const typing = e.target.closest && e.target.closest("input, textarea, [contenteditable]");
+  if (e.key === "Enter" && (!typing || e.target.id === "filter")) { e.preventDefault(); return start(); }
+  if (e.key === "Escape") return toast("Prototype: Esc closes the dialog.");
+  if (typing && e.target.id === "filter" && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+    e.preventDefault(); const m = matches(); const i = m.indexOf(state.persona);
+    const n = m[Math.max(0, Math.min(m.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))]; if (n) { state.persona = n; render(true); } return;
+  }
+  if (typing) return;
+  if (e.key === "ArrowLeft") go(current - 1);
+  if (e.key === "ArrowRight") go(current + 1);
+});
+render(false);
+</script>
