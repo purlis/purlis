@@ -386,13 +386,21 @@ it so (`purlis_tests.rs`). Where its values come from:
   grey, and the accent to the record's lighter lavender `#c3baf5`.
 
 **The fonts are bundled as their projects publish them**, unmodified: IBM Plex Sans 3.005
-Regular, Medium and SemiBold (IBM's complete woff2, which covers Latin, Greek and Cyrillic), and
-JetBrains Mono 2.304 Regular. Both are under the SIL Open Font License 1.1, whose text is in the
-folder's `LICENSE` beside Lucide's ISC licence. Only the weights the foundation draws are
-shipped, 289 KB in all. They are not cut down further: IBM Plex reserves its name, so a cut-down
-copy could not be called Plex, and the terminal needs JetBrains Mono's box-drawing and arrows.
-The window is served each face from the bytes compiled in, by its digest, as it is any theme
-folder's.
+Regular, Medium and SemiBold, each upright and italic (IBM's complete woff2, which covers Latin,
+Greek and Cyrillic), and JetBrains Mono 2.304 Regular, Italic and Bold. Both are under the SIL
+Open Font License 1.1, whose text is in the folder's `LICENSE` beside Lucide's ISC licence. Only
+the weights and styles the theme draws are shipped, 689 KB in all. They are not cut down
+further: IBM Plex reserves its name, so a cut-down copy could not be called Plex, and the
+terminal needs JetBrains Mono's box-drawing and arrows. The window is served each face from the
+bytes compiled in, by its digest, as it is any theme folder's.
+
+**Each style Purlis draws has a face of its own** (#2709), so the window never slants or
+thickens a face to make one. `theme::styles_drawn` names every style a resolved theme draws:
+the interface at each of its three weights, upright and italic for emphasis; code upright, and
+each syntax role at its italic and bold (comments italic, tags and headings bold, at
+`theme::BOLD`, 700); the terminal upright, bold and italic. `theme::without_a_face` names those
+its fonts have no face for, and a test holds it empty for every appearance of Purlis. A font
+with no face is the platform's own, as Purlis Classic's are, and brings its own styles.
 
 ## What a theme looks like
 

@@ -105,8 +105,8 @@ pub use archive::{
 pub use check::{FITS, Finding, Fit, PAIRS, Pair, Report};
 pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
 pub use fonts::{
-    CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES, MOST_FONT_BYTES,
-    Style, served,
+    BOLD, CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES,
+    MOST_FONT_BYTES, NORMAL, Style, StyleDrawn, served, styles_drawn, without_a_face,
 };
 pub use format::{Library, MOST_APPEARANCES, Named, THEME_JSON};
 pub use geometry::Geometry;
@@ -576,24 +576,45 @@ mod purlis_folder {
     pub(super) const THEME: &str = include_str!("theme/built-in/purlis/theme.json");
     pub(super) const ICONS: &str = include_str!("theme/built-in/purlis/icons/icons.json");
     pub(super) const LICENSE: &str = include_str!("theme/built-in/purlis/LICENSE");
-    /// The faces its `fonts` names, by their names in its `fonts/`: IBM Plex Sans and JetBrains
-    /// Mono, as their projects publish them, under the SIL Open Font License (its `LICENSE`).
+    /// The faces its `fonts` names, by their names in its `fonts/`: IBM Plex Sans upright and
+    /// italic at each weight the theme draws, and JetBrains Mono regular, italic and bold (#2709),
+    /// as their projects publish them, under the SIL Open Font License (its `LICENSE`).
     pub(super) const FONTS: &[(&str, &[u8])] = &[
         (
             "IBMPlexSans-Regular.woff2",
             include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-Regular.woff2"),
         ),
         (
+            "IBMPlexSans-Italic.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-Italic.woff2"),
+        ),
+        (
             "IBMPlexSans-Medium.woff2",
             include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-Medium.woff2"),
+        ),
+        (
+            "IBMPlexSans-MediumItalic.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-MediumItalic.woff2"),
         ),
         (
             "IBMPlexSans-SemiBold.woff2",
             include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-SemiBold.woff2"),
         ),
         (
+            "IBMPlexSans-SemiBoldItalic.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-SemiBoldItalic.woff2"),
+        ),
+        (
             "JetBrainsMono-Regular.woff2",
             include_bytes!("theme/built-in/purlis/fonts/JetBrainsMono-Regular.woff2"),
+        ),
+        (
+            "JetBrainsMono-Italic.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/JetBrainsMono-Italic.woff2"),
+        ),
+        (
+            "JetBrainsMono-Bold.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/JetBrainsMono-Bold.woff2"),
         ),
     ];
 }
