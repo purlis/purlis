@@ -73,6 +73,8 @@ fn every_ask_pair_is_one_the_check_measures() {
         asked.into_iter().collect::<Vec<_>>(),
         [
             ("needs-you.text", "needs-you.base"),
+            // Selected text a theme colours, on its selection over a dialog (#2706).
+            ("selection.text", "selection.background"),
             ("text.primary", "control.base"),
             ("text.primary", "control.hover"),
             ("text.primary", "danger.wash"),

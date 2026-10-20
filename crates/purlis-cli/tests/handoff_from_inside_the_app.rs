@@ -264,7 +264,8 @@ fn opens_as_nine(tickets: &Tickets, connection: u64, ask: Ask) -> Answer {
         | Ask::Task(_)
         | Ask::Removal(_)
         | Ask::Browse(_)
-        | Ask::ThemePreview(_) => Answer::No {
+        | Ask::ThemePreview(_)
+        | Ask::ThemeDraft(_) => Answer::No {
             why: "not a handoff".to_owned(),
         },
     }

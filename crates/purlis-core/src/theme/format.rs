@@ -430,9 +430,7 @@ impl Library {
         );
         let mut tuned = parent_tuned;
         tuned.extend(compact_layer(from.get("compact"), &mut complaints));
-        let mut said = Vec::new();
-        let fonts = super::fonts::read(from.get("fonts"), &parent_fonts, folder, &mut said);
-        complaints.extend(said.into_iter().map(Complaint::said));
+        let fonts = super::fonts::read(from.get("fonts"), &parent_fonts, folder, &mut complaints);
         let inherited = appearances.len();
         // Every appearance of a theme carries its one set, so the parent's first has it.
         let parents_icons = appearances

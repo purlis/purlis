@@ -301,6 +301,10 @@ pub fn answer(
             crate::specimen::painter().as_deref(),
             &asks,
         ),
+        // A theme draft (#2332): no ticket, for the record's reason. The line names a theme
+        // folder; whose draft it is, and where that chat works, are this app's record of the
+        // chat whose token it carries.
+        Ask::ThemeDraft(draft) => crate::themedrafts::asked(held, &draft),
     }
 }
 
