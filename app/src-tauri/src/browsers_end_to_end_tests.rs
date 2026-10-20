@@ -174,12 +174,15 @@ impl Site {
         purlis_core::sandbox::browser_reach::Site::of("127.0.0.1", self.port)
     }
 
-    /// The paths it was sent, in order.
+    /// The paths it was sent, in order: its pages, not the icon an engine asks for by itself.
     pub(crate) fn heard(&self) -> Vec<String> {
         self.heard
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+            .iter()
+            .filter(|path| *path != "favicon.ico")
+            .cloned()
+            .collect()
     }
 }
 
