@@ -672,7 +672,7 @@ fn a_sweep_deletes_only_this_clone_s_drafts_in_a_drafts_folder_two_planes_share(
     // Two clones whose state folder is one (`$PURLIS_HOME`): each chat's drafts folder names
     // the clone whose app made it, and a sweep deletes only its own clone's.
     let (one, two) = (Places::new(), Places::new());
-    let (mine, theirs, nobody_s) = (chat(), chat(), chat());
+    let (mine, theirs) = (chat(), chat());
     one.start(None, &mine, "dawn");
     two.start(None, &theirs, "dusk");
     // The other clone's chat folder, where the shared state folder holds it: beside this one's.
@@ -686,11 +686,6 @@ fn a_sweep_deletes_only_this_clone_s_drafts_in_a_drafts_folder_two_planes_share(
         shared.join(&theirs),
     )
     .unwrap();
-    // A chat folder that names no clone is not this one's either.
-    put(
-        &shared.join(&nobody_s).join("noon"),
-        &dark("Noon", json!({})),
-    );
     assert_eq!(drafts::sweep(&one.plane, &[]), 1);
     assert!(
         !shared.join(&mine).exists(),
@@ -700,12 +695,65 @@ fn a_sweep_deletes_only_this_clone_s_drafts_in_a_drafts_folder_two_planes_share(
         shared.join(&theirs).join("dusk").is_dir(),
         "the other clone's stay"
     );
-    assert!(
-        shared.join(&nobody_s).join("noon").is_dir(),
-        "an unowned folder stays"
-    );
     // The other clone sweeps its own, where it now is.
     assert_eq!(drafts::sweep(&two.plane, &[]), 0);
+}
+
+#[test]
+fn a_sweep_adopts_an_ownerless_folder_inside_the_plane_and_deletes_it_once_its_chat_is_gone() {
+    // A chat's drafts folder made before folders named their clone (#2708) is this plane's,
+    // where the state folder is the plane's own: the sweep adopts it (#2761).
+    let places = Places::new();
+    let (open, other) = (chat(), chat());
+    places.start(None, &other, "dawn");
+    let folder = drafts::folder_of(&places.plane, &open).unwrap();
+    put(&folder.join("noon"), &dark("Noon", json!({})));
+    assert!(!folder.join(".owner").exists());
+    let owner = std::fs::read_to_string(
+        drafts::folder_of(&places.plane, &other)
+            .unwrap()
+            .join(".owner"),
+    )
+    .unwrap();
+    // Its chat open: adopted, and kept.
+    assert_eq!(drafts::sweep(&places.plane, &[&open, &other]), 0);
+    assert!(folder.join("noon").join(THEME_JSON).is_file());
+    assert_eq!(
+        std::fs::read_to_string(folder.join(".owner")).unwrap(),
+        owner,
+        "it names this clone now"
+    );
+    // Its chat gone: deleted, as any of this clone's.
+    assert_eq!(drafts::sweep(&places.plane, &[&other]), 1);
+    assert!(!folder.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_sweep_adopts_no_folder_whose_owner_record_is_a_link() {
+    let places = Places::new();
+    let id = chat();
+    let folder = drafts::folder_of(&places.plane, &id).unwrap();
+    put(&folder.join("noon"), &dark("Noon", json!({})));
+    let target = places.plane.join("elsewhere-owner");
+    std::os::unix::fs::symlink(&target, folder.join(".owner")).unwrap();
+    assert_eq!(drafts::sweep(&places.plane, &[]), 0);
+    assert!(folder.join("noon").join(THEME_JSON).is_file());
+    assert!(!target.exists(), "nothing is written through the link");
+}
+
+#[test]
+fn a_chat_has_drafts_only_while_its_folder_holds_a_theme_folder() {
+    let places = Places::new();
+    let (drafting, none) = (chat(), chat());
+    assert!(!drafts::has_drafts(&places.plane, &drafting));
+    places.start(Some("alpha"), &drafting, "dusk");
+    assert!(drafts::has_drafts(&places.plane, &drafting));
+    assert!(!drafts::has_drafts(&places.plane, &none));
+    assert!(!drafts::has_drafts(&places.plane, "not-a-chat"));
+    let draft = places.drafts(Some("alpha"), &[&drafting]).remove(0);
+    drafts::revert(&places.plane, &draft).unwrap();
+    assert!(!drafts::has_drafts(&places.plane, &drafting));
 }
 
 #[test]

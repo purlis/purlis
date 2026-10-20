@@ -844,6 +844,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "get_project",
     "git_presence",
     "grantable_folders",
+    // A link's close of chats with theme drafts, handed to the window that holds the project
+    // (#2761): the window asks the person Keep or Revert, and closes nothing unasked. Answered
+    // only whether it was handed.
+    "hand_drafts_close_to_the_window",
     "harness_cards",
     "harness_setup_found",
     "hide_window",

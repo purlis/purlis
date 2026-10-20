@@ -796,6 +796,14 @@ fn serve() -> ExitCode {
 /// one finds the other serving and leaves it be.
 #[cfg(unix)]
 fn serve() -> ExitCode {
+    // A service: its standard error is its log, the journal or the container's (#2753), so the
+    // core's `info` is said there too, redacted as the app's log is.
+    purlis_core::applog::widen_for_a_service();
+    #[cfg(debug_assertions)]
+    if std::env::var_os(CORE_INFORMS_ON_PURPOSE_ENV).is_some() {
+        purlis_core::applog::inform_on_purpose();
+        return ExitCode::SUCCESS;
+    }
     let Some(config) = purlis_core::machine::config_root() else {
         voice::err("there is no home folder to keep the session host's credentials in");
         return ExitCode::FAILURE;
@@ -1729,6 +1737,13 @@ const PANIC_ON_PURPOSE_ENV: &str = "CHARTER_TEST_HOOK_PANICS";
 /// a release build.
 #[cfg(debug_assertions)]
 const CORE_WARNS_ON_PURPOSE_ENV: &str = "CHARTER_TEST_CORE_WARNS";
+
+/// Set in a debug build, `purlis serve` raises one `info` line from `purlis-core` and ends
+/// before it serves: the test suite's way to watch where the core's `info` goes under a
+/// runner's host (#2753). Compiled out of a release build.
+#[cfg(debug_assertions)]
+#[cfg(unix)]
+const CORE_INFORMS_ON_PURPOSE_ENV: &str = "PURLIS_TEST_CORE_INFORMS";
 
 /// Set in a debug build, `purlis` says whose process group the gits it runs are in, and does
 /// nothing else: the test suite's way to hold that this command keeps them in its own

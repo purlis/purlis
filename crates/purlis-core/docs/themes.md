@@ -429,12 +429,17 @@ over theme files only.
   it replaces; neither close is offered until it is answered. A close that ends several chats
   asks about the drafts of each, and Keep then asks who draws each theme it kept. Where purlis
   cannot tell whether a chat has a draft, the close is refused, with why. A chat is closed in
-  purlis's own window, and a link is told nothing of its drafts.
+  purlis's own window, and a link is told nothing of its drafts: a link's close of a chat that
+  has drafts is handed to the window, which asks Keep or Revert there and says a link asked,
+  never over a question already on screen.
 - **The drafts of a chat that is no longer open are deleted**: once purlis's record of the open
   chats no longer holds it (it was closed, or a launch did not reopen it), nothing names its
   drafts, and they go. Each chat's drafts folder names the clone whose purlis made it, and only
   that clone deletes it: clones that share one state folder (`$PURLIS_HOME`) keep each other's
-  drafts.
+  drafts. A drafts folder that names no clone is adopted only in the plane's own state folder,
+  never under `$PURLIS_HOME`: purlis records this clone as its owner, and deletes it once its
+  chat is gone. A `$PURLIS_HOME` another clone sets to this plane's own state folder counts as
+  this clone's own.
 - **Moving a theme up a level**: in Settings › Theme, **Use in the whole project** moves a
   workspace's theme folder to the project's `themes/`, and **Copy to my machine** copies a
   project's or a workspace's to your own, carrying only the font files you approved with the

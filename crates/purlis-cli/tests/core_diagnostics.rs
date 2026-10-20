@@ -27,3 +27,27 @@ fn a_warning_raised_in_the_core_under_the_cli_is_said_on_standard_error() {
         "the core's warning, as the message alone"
     );
 }
+
+/// `purlis serve` is a runner's host: its standard error is the service's journal or its
+/// container's log, so the core's `info` is said there too, as the message alone (#2753).
+#[cfg(unix)]
+#[test]
+fn an_info_line_raised_in_the_core_under_purlis_serve_is_said_on_standard_error() {
+    let dir = tempfile::tempdir().expect("a directory");
+
+    let said = support::purlis()
+        .arg("serve")
+        .current_dir(dir.path())
+        .env_remove("CHARTER_ROOT")
+        .env("CHARTER_CONFIG_HOME", dir.path())
+        .env("PURLIS_TEST_CORE_INFORMS", "1")
+        .output()
+        .expect("the binary runs");
+
+    assert!(said.status.success(), "{said:?}");
+    let stderr = String::from_utf8_lossy(&said.stderr);
+    assert_eq!(
+        stderr, "purlis: an info line purlis-core raised on purpose, for a test\n",
+        "the core's info, as the message alone"
+    );
+}

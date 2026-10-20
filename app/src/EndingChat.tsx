@@ -89,6 +89,7 @@ export function EndingChat({
   back = [],
   ownTabs = 0,
   drafts = [],
+  fromALink = false,
   onEnd,
   onSmartClose,
   onCancel,
@@ -122,6 +123,9 @@ export function EndingChat({
   /** The chat's theme drafts, by theme folder (#2332): the dialog asks Keep or Revert, and
    *  neither close is offered until it is answered, so nothing is kept or dropped silently. */
   drafts?: readonly DraftClosing[];
+  /** Whether a link asked for this close (#2761): the dialog says so, and closes nothing until
+   *  it is answered here. */
+  fromALink?: boolean;
   /** `stop` is the answer about the running persona chats: stop them, or keep them running.
    *  `keepDrafts` is the answer about its theme drafts, where it has any. */
   onEnd: (stop: boolean, keepDrafts?: boolean) => void;
@@ -139,7 +143,9 @@ export function EndingChat({
   const close = useRef<HTMLButtonElement>(null);
   const smartClose = useRef<HTMLButtonElement>(null);
   const handBack = useFocusBack();
-  const first = firstAnswer(smart);
+  // A close a link asked for starts on Cancel: a Return the person meant for something else
+  // never ends a chat they did not ask to close here.
+  const first = fromALink ? "cancel" : firstAnswer(smart);
   return (
     <Alert.Root
       open
@@ -173,6 +179,7 @@ export function EndingChat({
           <Alert.Description className="honest mid-turn">
             {ENDS_IT} {smart?.available ? SMART_CLOSE_SAYS : null}
           </Alert.Description>
+          {fromALink && <p className="honest">{FROM_A_LINK_SAYS}</p>}
           {smart?.why && (
             <p className="honest" id="smart-close-why">
               {smart.why}
@@ -283,6 +290,10 @@ export function EndingChat({
     </Alert.Root>
   );
 }
+
+/** What the dialog says of a close a link asked for (#2761). */
+export const FROM_A_LINK_SAYS =
+  "A link asked for this close. Nothing closes until you answer here.";
 
 /**
  * **What the dialog says of the tasks whose tabs go with this close, in one line** (#1488,

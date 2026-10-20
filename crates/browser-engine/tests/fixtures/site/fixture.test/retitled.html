@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Before</title></head>
+<body>
+  <h1>A page that retitles itself</h1>
+  <p id="state">Waiting</p>
+  <script>
+    // A script that sets the title a while after the load, as a page that shows a count of
+    // unread messages does: the engine may or may not tell of it.
+    addEventListener('load', () => {
+      setTimeout(() => {
+        document.title = 'Retitled after the load';
+        document.getElementById('state').textContent = 'Title set';
+      }, 200);
+    });
+  </script>
+</body></html>
