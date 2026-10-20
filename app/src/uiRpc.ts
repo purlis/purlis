@@ -8852,7 +8852,7 @@ export type ThemeInForce = {
 
 /**  One theme a project may pick, as the Theme select lists it. */
 export type ThemeOption = {
-	/**  What the file holds: `purlis-dark`, `purlis-light`, `system`, or `<extension>/<theme>`. */
+	/**  What the file holds: a built-in theme's id, `system`, or `<extension>/<theme>`. */
 	value: string,
 	/**  What the select shows. */
 	label: string,

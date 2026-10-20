@@ -1563,8 +1563,7 @@ fn facts_in(
 /// One theme a project may pick, as the Theme select lists it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ThemeOption {
-    /// What the file holds: `purlis-classic`, `purlis`, `purlis-dark`, `purlis-light`, `system`,
-    /// or `<extension>/<theme>`.
+    /// What the file holds: a built-in theme's id, `system`, or `<extension>/<theme>`.
     pub value: String,
     /// What the select shows.
     pub label: String,
