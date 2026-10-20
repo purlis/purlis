@@ -421,6 +421,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "Harness, a sandbox it cannot apply offers its install, and a start's refusal is ACTION's",
   },
   "TabRename.tsx": { count: 1, why: "a rename's refusal, beside the box being typed in" },
+  "ThemeDraftStrip.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". Three: the draft strip's line that a save is not drawn and which hard floor it " +
+      "breaks (#2332), what Keep or Revert answered, and Keep's question's refusal",
+  },
   "TaskEnd.tsx": {
     count: 2,
     why: ACTION + ". Twice: in the one modal question, and in the second step asked in place",

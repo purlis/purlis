@@ -493,6 +493,8 @@ function Cards({
           {gallery.cards.map((card) => {
             const isChosen = card.key === chosen?.key;
             const marks = [
+              // A built-in theme that is not the default yet says so (#2336).
+              card.preview ? "Preview" : undefined,
               isChosen ? (gallery.yours !== null ? "Chosen here" : "Drawn here") : undefined,
               card.refused
                 ? "Refused"
@@ -806,12 +808,17 @@ function checkRow(group: string, at: ThemeAt | null): LiveSetting {
   };
 }
 
-/** **What a card does to the person's own themes**: Duplicate as my theme, and Open folder. */
+/**
+ * **What a card does to the person's own themes**: Duplicate as my theme, and Open folder; and
+ * the moves up a level (#2332): **Use in the whole project** moves a workspace's theme to the
+ * project, and **Copy to my machine** copies a project's or a workspace's theme to the person's
+ * own, with only the font files approved with the project.
+ */
 function folderRow(group: string, at: ThemeAt | null): LiveSetting {
   return {
     id: `${group}.folder`,
     label: "This theme",
-    help: "Duplicate the chosen theme as a theme folder of your own that extends it, or open its folder.",
+    help: "Duplicate the chosen theme as a theme folder of your own that extends it, open its folder, or move it up a level: a workspace's to the whole project, a project's or a workspace's to your machine.",
     writes: "this machine",
     useControl: function useThemeFolder() {
       const read = useGallery(at);
@@ -836,6 +843,29 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
         void commands
           .themeOpenFolder(at, card.id, card.level)
           .then((done) => setError(done.status === "error" ? [done.error] : undefined));
+      };
+      const moved = (done: { status: "ok"; data: string } | { status: "error"; error: string }) => {
+        if (done.status === "error") {
+          setError([done.error]);
+          return;
+        }
+        setError(undefined);
+        setSaid(done.data);
+        reread(at);
+        void drawWhatIsInForce();
+      };
+      const workspace = at?.workspace ?? null;
+      const inWorkspace = card?.from === "workspace" && workspace !== null;
+      const inProject = card?.from === "project" || inWorkspace;
+      const toProject = () => {
+        if (card === undefined || at === null || workspace === null) return;
+        void commands.themeMoveToProject(at.plane, workspace, card.id).then(moved);
+      };
+      const toMachine = () => {
+        if (card === undefined || at === null) return;
+        void commands
+          .themeCopyToMachine(at.plane, inWorkspace ? workspace : null, card.id)
+          .then(moved);
       };
       return {
         grouped: true,
@@ -877,6 +907,36 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
                 onClick={open}
               >
                 Open folder
+              </button>
+              <button
+                type="button"
+                className="ui-button"
+                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+                tabIndex={0}
+                disabled={!inWorkspace}
+                title={
+                  card !== undefined && !inWorkspace
+                    ? `${card.name} is not a theme of this workspace.`
+                    : undefined
+                }
+                onClick={toProject}
+              >
+                Use in the whole project
+              </button>
+              <button
+                type="button"
+                className="ui-button"
+                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+                tabIndex={0}
+                disabled={!inProject}
+                title={
+                  card !== undefined && !inProject
+                    ? `${card.name} is not a theme of this project.`
+                    : undefined
+                }
+                onClick={toMachine}
+              >
+                Copy to my machine
               </button>
             </SettingActions>
             {said !== undefined && (

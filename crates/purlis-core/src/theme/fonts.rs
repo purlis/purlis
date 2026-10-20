@@ -182,12 +182,56 @@ fn face_file(file: &str) -> Option<&str> {
     plain.then_some(name)
 }
 
+/// **Where a theme folder's font files are read from**: the folder, held by the handle its
+/// `theme.json` was read through, or the files of a theme built into purlis, compiled in with it
+/// (#2336). A built-in theme's faces are purlis's own: they are read and served as any folder's
+/// are, under the same cap and signature, and never from a path.
+#[derive(Clone)]
+pub(crate) enum Store {
+    /// A folder on disk, held.
+    Held(held::Handle),
+    /// A built-in theme's files, each by its name in `fonts/`.
+    BuiltIn(&'static [(&'static str, &'static [u8])]),
+}
+
+impl std::fmt::Debug for Store {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Held(_) => f.write_str("Store::Held"),
+            Self::BuiltIn(files) => f
+                .debug_list()
+                .entries(files.iter().map(|(name, _)| name))
+                .finish(),
+        }
+    }
+}
+
+impl Store {
+    /// The folder's `fonts/`: opened from a held folder's handle refusing a link; a built-in
+    /// theme's files are its `fonts/` already.
+    fn fonts(&self) -> Result<Self, Missed> {
+        match self {
+            Self::Held(dir) => held::fonts(dir).map(Self::Held),
+            Self::BuiltIn(files) => Ok(Self::BuiltIn(files)),
+        }
+    }
+
+    /// How many face names in this `fonts/` sort before `name`, as a project's contribution
+    /// lists them: only a project's or a workspace's folder, which is held, is ever asked.
+    fn names_before(&self, name: &str) -> usize {
+        match self {
+            Self::Held(fonts) => held::names_before(fonts, name),
+            Self::BuiltIn(_) => 0,
+        }
+    }
+}
+
 /// **A theme folder, held**: where it is, for a sentence, and the handle its fonts are opened
 /// from, or why its fonts are not read.
 #[derive(Debug, Clone)]
 pub(crate) struct ThemeDir {
     path: PathBuf,
-    handle: Result<held::Handle, String>,
+    handle: Result<Store, String>,
     /// For a project's or a workspace's folder: the font files the person approved with the
     /// project, path to digest, and this folder's path in the project. `None` for the person's
     /// own folders, whose faces need no approval.
@@ -207,7 +251,17 @@ impl ThemeDir {
     pub(crate) fn held(path: PathBuf, handle: std::os::fd::OwnedFd) -> Self {
         Self {
             path,
-            handle: Ok(std::sync::Arc::new(handle)),
+            handle: Ok(Store::Held(std::sync::Arc::new(handle))),
+            approved: None,
+        }
+    }
+
+    /// A theme built into purlis, `path` its folder in purlis's source for a sentence, whose
+    /// `fonts/` holds `files`, compiled in (#2336).
+    pub(crate) fn built_in(path: PathBuf, files: &'static [(&'static str, &'static [u8])]) -> Self {
+        Self {
+            path,
+            handle: Ok(Store::BuiltIn(files)),
             approved: None,
         }
     }
@@ -258,9 +312,13 @@ impl ThemeDir {
     pub(crate) fn dir(&self) -> Result<&super::opened::Held, String> {
         match &self.handle {
             #[cfg(unix)]
-            Ok(handle) => Ok(handle.as_ref()),
+            Ok(Store::Held(handle)) => Ok(handle.as_ref()),
             #[cfg(not(unix))]
-            Ok(handle) => match *handle {},
+            Ok(Store::Held(handle)) => match *handle {},
+            Ok(Store::BuiltIn(_)) => Err(format!(
+                "{} is built into purlis, and is not a folder on disk",
+                self.path.display()
+            )),
             Err(why) => Err(why.clone()),
         }
     }
@@ -286,7 +344,7 @@ enum Missed {
 /// the `fonts/` it was opened from, and its name there.
 #[derive(Debug, Clone)]
 pub(crate) struct Kept {
-    fonts: held::Handle,
+    fonts: Store,
     name: String,
     /// Where it is, for a sentence.
     file: PathBuf,
@@ -376,16 +434,20 @@ pub(crate) fn measured(
 
 /// Why a face of a project's or a workspace's theme folder that is read is not drawn: `named`,
 /// its path in the project, of `size` bytes, whose digest is not the one the approval `files`
-/// holds for it, in a folder whose `fonts/` lists `before` face names ahead of it.
-fn unapproved(named: &str, size: u64, files: &Approved, before: usize) -> String {
+/// holds for it, in a folder whose `fonts/` lists `before` face names ahead of it. And whether
+/// the project's contribution lists it, so approving the project again can let it be drawn: a
+/// face past a listing limit is never listed, so never approved.
+fn unapproved(named: &str, size: u64, files: &Approved, before: usize) -> (String, bool) {
+    let past = |why: String| (why, false);
     match files.files.get(named) {
-        Some(_) => {
-            format!("{named} has changed since you approved this project, so it is not read")
-        }
-        None if before >= MOST_FOLDER_FONTS => format!(
+        Some(_) => (
+            format!("{named} has changed since you approved this project, so it is not read"),
+            true,
+        ),
+        None if before >= MOST_FOLDER_FONTS => past(format!(
             "{named} is past the {MOST_FOLDER_FONTS} font files purlis lists in a theme \
              folder's fonts/, so it is not read"
-        ),
+        )),
         None => {
             let bytes: u64 = files
                 .files
@@ -393,18 +455,27 @@ fn unapproved(named: &str, size: u64, files: &Approved, before: usize) -> String
                 .filter_map(|listed| listed.split(' ').nth(1)?.parse::<u64>().ok())
                 .sum();
             if files.files.len() >= MOST_PROJECT_FONTS || bytes + size > MOST_PROJECT_FONT_BYTES {
-                format!(
+                past(format!(
                     "{named} is past the {MOST_PROJECT_FONTS} font files ({} MiB) purlis lists \
                      in a project, so it is not read",
                     MOST_PROJECT_FONT_BYTES / 1024 / 1024
-                )
+                ))
             } else {
-                format!(
-                    "{named} is not a font file you approved with this project, so it is not read"
+                (
+                    format!(
+                        "{named} is not a font file you approved with this project, so it is \
+                         not read"
+                    ),
+                    true,
                 )
             }
         }
     }
+}
+
+/// The digest a project's approval holds for a font file of these bytes.
+pub(crate) fn digest(bytes: &[u8]) -> String {
+    hex(bytes)
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -429,8 +500,27 @@ fn missed(shown: &str, why: Missed) -> String {
 
 /// The face `name` in the folder `fonts` holds, opened from that handle refusing a link, read
 /// whole under the cap, and a woff2 file by its signature: its bytes, or why not.
-fn read_face(fonts: &held::Handle, name: &str, shown: &str) -> Result<Vec<u8>, String> {
+fn read_face(fonts: &Store, name: &str, shown: &str) -> Result<Vec<u8>, String> {
     use std::io::Read;
+    let fonts = match fonts {
+        Store::Held(fonts) => fonts,
+        Store::BuiltIn(files) => {
+            let (_, bytes) = files
+                .iter()
+                .find(|(one, _)| *one == name)
+                .ok_or_else(|| missed(shown, Missed::Gone))?;
+            if bytes.len() as u64 > MOST_FONT_BYTES {
+                return Err(format!(
+                    "{shown} is {} bytes, and a font is never larger than {MOST_FONT_BYTES}",
+                    bytes.len()
+                ));
+            }
+            if !bytes.starts_with(WOFF2) {
+                return Err(format!("{shown} is not a woff2 file"));
+            }
+            return Ok(bytes.to_vec());
+        }
+    };
     let mut open = held::face(fonts, name).map_err(|why| missed(shown, why))?;
     let found = open
         .metadata()
@@ -511,12 +601,35 @@ fn face_name(slot: &str, faces: &[Face]) -> String {
 }
 
 /// **Reads a theme's `fonts`** over `base` (its parent's, or core's), from `folder`, the theme's
-/// own folder when it is read from one. Says in `complaints` what refuses the theme.
+/// own folder when it is read from one. Says in `complaints` what refuses the theme; a face the
+/// project's approval does not hold is said as awaiting it (#2647), so the window can offer the
+/// project's trust ask.
 pub(super) fn read(
     raw: Option<&Value>,
     base: &Fonts,
     folder: Option<&ThemeDir>,
+    complaints: &mut Vec<super::Complaint>,
+) -> Fonts {
+    let mut said = Vec::new();
+    let mut awaiting: Vec<(usize, String)> = Vec::new();
+    let fonts = read_said(raw, base, folder, &mut said, &mut awaiting);
+    complaints.extend(said.into_iter().enumerate().map(|(at, one)| {
+        match awaiting.iter().find(|(place, _)| *place == at) {
+            Some((_, face)) => super::Complaint::awaiting_approval(one, face.clone()),
+            None => super::Complaint::said(one),
+        }
+    }));
+    fonts
+}
+
+/// [`read`], in sentences: `awaiting` gets the place in `complaints` of each that awaits the
+/// project's approval, with its face as `<path> <sha-256>`.
+fn read_said(
+    raw: Option<&Value>,
+    base: &Fonts,
+    folder: Option<&ThemeDir>,
     complaints: &mut Vec<String>,
+    awaiting: &mut Vec<(usize, String)>,
 ) -> Fonts {
     let mut fonts = base.clone();
     let Some(raw) = raw else {
@@ -546,9 +659,10 @@ pub(super) fn read(
     };
     // `fonts/`, from the handle the folder's `theme.json` was read through, once for every face.
     let inside = Inside {
-        fonts: held::fonts(dir),
+        fonts: dir.fonts(),
         folder: folder.path(),
         approved: folder.approved.as_ref(),
+        awaiting: std::cell::RefCell::new(Vec::new()),
     };
     for (slot, font) in given {
         if !SLOTS.contains(&slot.as_str()) {
@@ -561,15 +675,19 @@ pub(super) fn read(
             *fonts.slot_mut(slot) = read;
         }
     }
+    awaiting.extend(inside.awaiting.into_inner());
     fonts
 }
 
 /// A theme folder's `fonts/`, opened from the folder's handle, or why not; and the folder, for a
 /// sentence.
 struct Inside<'a> {
-    fonts: Result<held::Handle, Missed>,
+    fonts: Result<Store, Missed>,
     approved: Option<&'a Approved>,
     folder: &'a Path,
+    /// The place in the complaints of each face the approval does not hold but would, once the
+    /// project is approved again.
+    awaiting: std::cell::RefCell<Vec<(usize, String)>>,
 }
 
 /// One slot's font, or `None` (and why).
@@ -734,8 +852,15 @@ fn face_of(
                 let named = format!("{}/fonts/{file}", approved.folder);
                 let approved_digest = approved.files.get(&named).map(|listed| digest_of(listed));
                 if approved_digest != Some(asset.as_str()) {
-                    let before = held::names_before(fonts, &file);
-                    complaints.push(unapproved(&named, bytes.len() as u64, approved, before));
+                    let before = fonts.names_before(&file);
+                    let (why, listed) = unapproved(&named, bytes.len() as u64, approved, before);
+                    if listed {
+                        folder
+                            .awaiting
+                            .borrow_mut()
+                            .push((complaints.len(), format!("{named} {asset}")));
+                    }
+                    complaints.push(why);
                     return None;
                 }
             }

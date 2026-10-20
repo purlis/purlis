@@ -90,8 +90,14 @@ selection, caret, placeholder and scrollbars, and each terminal cell's own colou
 The window writes no rule for one left to the platform (`data-theme-draws`), and the contrast
 check does not measure what the platform draws. A colour is drawn as given, so a transparent
 thumb hides the scrollbars. Selected text is coloured only on a selection the theme colours too,
-and the check says so when a theme colours one without the other. No palette may name a colour
-`platform`. The window's rules stop at the light editor, which draws its own selection and caret.
+and the check says so when a theme colours one without the other. A see-through selection is
+measured laid over each ground it is drawn on: the window, a field, a pane, a Notice, a dialog
+and a trouble Notice. While selected text keeps its own colour, the window's words, a markdown
+render's and the danger words are held on the selection at the floor for words, the danger words
+as a consent floor. Selected text a theme colours is held as a consent floor on a trouble Notice
+and a dialog; a theme that breaks it is drawn with the platform's selection. No palette may name
+a colour `platform`. The window's rules stop at the light editor, which draws its own selection
+and caret.
 Purlis Classic leaves all six to the platform.
 Purlis Classic gives every other new token the colour the window drew before it: a syntax role
 the ANSI colour the editor borrowed for it (but light's `property` and `attribute`, `#1283ff`
@@ -253,18 +259,27 @@ window keeps no list of its own (#2393). Purlis Classic's recipe, the one a them
 The strip shades (`layer.workspace`, `layer.chat`, `layer.selected`, `layer.divider`) are only
 ever tinted on a workspace's own tab and chat strip, never on the window. `app/src/theme/tint.ts`
 does the arithmetic in OKLCH, the same as the engine's (`purlis_core::theme::tint`, held to one
-another by `theme/tint-cases.json`), and then keeps each token's **relative luminance** exactly,
-so a tinted shade clears every contrast floor the theme's own cleared, up to one channel's
-rounding; the contrast check runs every hue of the theme's recipe, and holds two pairs the tint
-adds — the mark (`accent.base`) and a tab's primary text on `layer.workspace`. **Every tint
-holds two consent floors itself, at every hue, custom colours included** (`tint::APART`, OKLab
-0.1 each): the accent stays apart from the danger colour, and Allow and Keep blocked stay apart
-(`accent.base` from `border.strong`, as the tint draws it); every rule holds whichever side a
-theme tints. At a hue that would bring either pair
+another by `theme/tint-cases.json`), and then keeps each token's **relative luminance**: each
+channel is rounded to the byte that keeps the luminance nearest the original on its own side of
+WCAG's middle (where black and white contrast with a colour alike), so a dark shade is never
+rounded lighter and a light one never darker, and a tinted shade keeps every contrast floor the
+theme's own kept against a colour across the middle, at every hue (#2526). The contrast check
+runs every hue of the theme's recipe, and holds two pairs the tint adds — the mark
+(`accent.base`) and a tab's primary text on `layer.workspace`. **Every tint holds the consent
+floors that keep colours apart itself, at every hue, custom colours included** (`tint::APART`,
+OKLab 0.1 each): the accent and the accent-hued tokens drawn beside danger (`focus.ring`,
+`list.selected-edge`, `accent.surface`, `tab.active`, `tint::ACCENT_KIN`) stay apart from the
+danger colour, and Allow and Keep blocked stay apart (`accent.base` from `border.strong`, as the
+tint draws it); every rule holds whichever side a theme tints. At a hue that would bring a pair
 nearer, the tint keeps the hue and gives less colour, in steps of 0.005 chroma, so a red
-workspace stays red; a colour no amount holds apart is drawn untinted. Purlis Classic's light
-appearance gives less colour at `red`, `orange` and `pink`. The consent floors are also measured
-under every tint of the theme's own recipe, and a token whose tint breaks one is drawn
+workspace stays red, and a grey accent keeps as much of its small tint as holds it apart; a
+colour no amount holds apart is drawn untinted. Purlis Classic's light appearance gives less
+colour at `red`, `orange` and `pink`. The consent floors are also measured under every tint of
+the theme's own recipe, danger apart from the accent and its kin included, and a pair a tint can
+move from one hue to another (words on a wash, faded words, a colour written see-through, or a
+shade read against one on its own side of the middle) at every whole degree of a workspace's own colour. A theme that clears
+the floors as written and would fall under one only in a tinted workspace keeps its values, and
+the tokens of that pair are drawn
 untinted. A neutral grey is given a small fixed chroma,
 felt rather than noticed, as the strips are meant to be; white stays white. No colour is written
 for this anywhere but `app/src/theme/`: a component asks `tabTint` and sets what it answers.
@@ -324,6 +339,60 @@ in Settings.
 else in the window; `no_old_name_is_spelled_outside_the_name_module` does the same for the Rust.
 A file that still names an old id is shown in Settings under the renamed theme's label. Nothing
 rewrites the file; the next pick made in Settings writes the new id.
+
+### Purlis, the preview theme
+
+**Purlis** (#2336) is the second built-in theme, built from the designer's foundation
+(`docs/design/foundation/README.md`): a lavender accent on cool dark neutrals, in IBM Plex Sans
+for the interface and JetBrains Mono for code, paths and the terminal, with Lucide's icons. Its
+folder is `crates/purlis-core/src/theme/built-in/purlis/`, compiled into the core and read by
+the same reader as any theme folder, its fonts and icon set included (`theme::purlis`). A pick
+names it `purlis`; no theme folder takes that id, and a theme may `extend` it. It ships as a
+**preview**: the gallery marks its card Preview, `purlis theme list` names it "Purlis
+(preview)", each built-in theme's entry in `purlis theme list --json` has `"preview"` (true for
+Purlis, false for Purlis Classic, absent on every other theme), and Purlis Classic stays the
+theme the window comes up in until the switch-over (#2338).
+
+It has three appearances, `dark`, `light` and `dark-high-contrast` (dark, high contrast), each
+naming every token itself, so nothing in it is Purlis Classic's by falling back. Every
+combination clears the theme check with no warning and holds no consent floor, and a test keeps
+it so (`purlis_tests.rs`). Where its values come from:
+
+- **Dark is the foundation's.** Each colour the record proposes for a token is that token's.
+  Where the record lacks a value, one rule derives it from the record's palette:
+  - a wash the record gives with alpha is laid over the surface the record draws it on, so the
+    selected row is `#2b2a37`, the colour the record read off the frame;
+  - a colour the record has no role for (running, failed, unreadable, danger, needs-you, the
+    file icons' hues, most of the terminal's sixteen) is Purlis Classic's hue for that role at
+    the lightness and chroma of the record's two state colours, `#e5c08a` and `#8fc79a`
+    (OKLCH L 0.803, C 0.084); a bright ANSI colour is one step lighter, the step between the
+    record's two greens;
+  - the needs-you count is the window's base on its chip, which is light;
+  - the code colours the record names are the syntax roles they draw (keys, strings, literals,
+    punctuation), and the other roles take Classic's ANSI colour for them.
+  `text.muted` is the record's `#a09eab`, the grey it names as the nearest, because its
+  quieter `#8a8896` measures 4.44 on a card; `#8a8896` is the placeholder.
+- **Geometry is the foundation's where a core token draws the same thing**: controls' corners
+  7, menus' and dialogs' 10, a control 26 high and a chrome row 24, body text at a line height
+  of 1.55, and no shadow under a raised surface. `radius.xl` is 12, the record's largest card
+  corner: it draws the Welcome screen's doors. Panels' 12 has no token yet. The type sizes and
+  the spacing the record uses are core's already.
+- **Light is derived from dark by one rule**: each colour's OKLCH lightness is reflected about
+  the record's deepest colour (`#121215`, L 0.184), so L becomes 1 − (L − 0.184), keeping its
+  hue, chroma and alpha. A reflected colour that misses a floor of the check steps its
+  lightness away from its ground by 0.01 until it clears: today only the comment and punctuation
+  grey, on the editor's current line (`#7c7a84`).
+- **High-contrast dark** moves each text step up one (primary to white), each edge up to a text
+  grey, and the accent to the record's lighter lavender `#c3baf5`.
+
+**The fonts are bundled as their projects publish them**, unmodified: IBM Plex Sans 3.005
+Regular, Medium and SemiBold (IBM's complete woff2, which covers Latin, Greek and Cyrillic), and
+JetBrains Mono 2.304 Regular. Both are under the SIL Open Font License 1.1, whose text is in the
+folder's `LICENSE` beside Lucide's ISC licence. Only the weights the foundation draws are
+shipped, 289 KB in all. They are not cut down further: IBM Plex reserves its name, so a cut-down
+copy could not be called Plex, and the terminal needs JetBrains Mono's box-drawing and arrows.
+The window is served each face from the bytes compiled in, by its digest, as it is any theme
+folder's.
 
 ## What a theme looks like
 
@@ -553,6 +622,11 @@ left out of it, each appearance's contrast findings with the pair and ratio as w
 consent floors the window holds in each combination with the tokens it draws as purlis's own,
 and the hard floors, as text or as `--json` for a chat. It
 exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such theme.
+**A chat's theme draft** (#2332) is a theme folder in the plane's local folder, read by the same
+engine (`theme::drafts`) and drawn only in its chat's workspace while it holds every hard floor
+(primary text, the focus ring and the terminal's words at 3:1, as drawn, in every tint); the
+window's draft strip (`ThemeDraftStrip.tsx`) has Keep, Revert and Compare, and the revert key
+is ⌘⇧⌫ (Ctrl+Shift+Backspace elsewhere).
 `purlis docs show themes` has the JSON's shape. **`purlis theme import <file>`** (#2334)
 makes a theme folder from a VS Code colour theme, a base16 or base24 scheme, an iTerm2 colour
 preset, a Ghostty theme or a theme folder's zip: the engine's `import` maps each kind through a
@@ -664,6 +738,16 @@ are at least 400 ms apart, so the window is drawn again within a second of the l
 the platform will not watch a folder, the core looks at it every two seconds instead. A theme
 the engine refuses on a reload draws Purlis, with a Notice saying why; a project's font file
 that changed since the project was approved is refused until the project is approved again.
+That Notice offers **Review and allow** (#2647) when the engine says the approval is all that
+stands in the way (`Drawn::awaits_approval`): it shows the project's trust ask in place, what
+changed first and then its font files by theme folder, and a yes approves exactly what the ask
+showed and draws the theme again. A file changed after the ask was drawn approves nothing; a
+no leaves the theme refused. The press is the person's alone. It is offered only when what the
+project asks for again is font files alone; when it asks for more, or was never approved on
+this machine, the Notice has no button and says to close the project and open it again, where
+its whole trust ask is shown. The ask names the themes and workspaces the font files belong
+to, and says that the system's font engine reads them. Whether to offer it is found once for
+each set of faces a refusal waits on, so a redraw that changed no face reads nothing again.
 
 **A workspace switch repaints with a short crossfade**: colours ease across `duration.enter`
 with `easing.standard`, from a rule in the base layer at no specificity, so a surface with a
@@ -1462,20 +1546,38 @@ and a name that holds one of those). An
 assignment to one of its properties (`st.padding = "7px"`, `st["padding-top"]`,
 ``st[`padding`]``), its CSS text set or added to (`st.cssText = "…"`, `st.cssText += "…"`), a
 `style` attribute set as text, and every `setProperty(…)` call are read, each declaration in
-CSS text on its own. A value is read where it is written out, and where a ternary picks
-between values written out.
+CSS text on its own.
+
+A value is read where it is written out, and the reader follows a value as it follows a style,
+under the same bounds (#2684): each branch of a ternary and each side of `||`, `??` and `&&`; a
+variable that holds it (`const pad = "7px"`, then `padding: pad`), and one that holds that one;
+a parameter's default (`({ pad = "7px" }) =>`, `({ edge: pad = "7px" })`,
+`function A(pad = "7px")`), for a style as for a value; a member of a local object (`sizes.pad`,
+`sizes["pad"]`) or of a destructuring; the operand of a unary `-` (`margin: -pad`); what a local
+function, an arrow or `useMemo` returns (`padding: padOf(on)`); and what a relative import gives,
+an export under another name (`export { pad as gap }`) among them. This holds for a style
+object's key, an assignment (`el.style.padding = pad`) and the value a `setProperty(…)` call
+sets. Each use is read on its own, so a value held once and used twice is two findings, and a
+finding says where a value not written at its use came from: `style padding: "7px" (held as
+pad)`, `style margin: "2px" (returned by edgeOf())`. A name is matched across its file, not by
+its block, so a parameter that shares a held value's name is read as that value: rename one of
+them.
 
 **The reader fails closed.** A style it cannot finish following fails the guard with a
 sentence that names the file and the style, and is never passed over:
 
-- a style handed on more than `FOLLOW_LIMIT` (24) times, hop by hop, from where it is used;
-- a style that comes from a relative import the guard cannot open: one above `src`, one whose
-  file is not found, or one in a file that is not script (`./box.css`).
+- a style or a value handed on more than `FOLLOW_LIMIT` (24) times, hop by hop, from where it
+  is used;
+- a style or a value that comes from a relative import the guard cannot open: one above `src`,
+  one whose file is not found, or one in a file that is not script (`./box.css`).
 
-What they do not read: a value held in a variable on its own (`const pad = "7px"`, then
-`padding: pad`), or any other value worked out; a member reached by a computed key
-(`styles[name]`), and a method of a local object (`styles.box()`); a wrapper other than
-`useMemo` and `useCallback`; a style a component is handed through its parameters, or hands on
+What they do not read: a value worked out (`${n}px`, `n * 4`), a member of a value
+(`pad.length`), or a value given after its declaration: only a `let`'s declaration is read
+(`let pad = "0"; pad = "7px"` reads `"0"`); an enum member (`P.s`), an array's item (`P[0]`), a
+class field (`this.pad`), a comma expression (`(0, "7px")`), a default of a method's parameter,
+and a `setProperty(…)` whose property name is held (`setProperty(name, "7px")`); a member
+reached by a computed key (`styles[name]`), and a method of a local object (`styles.box()`); a
+wrapper other than `useMemo` and `useCallback`; a style a component is handed through its parameters, or hands on
 in a prop with another name (`boxStyle={…}`) or under an object's `style` key
 (`createElement("div", { style })`); an element's style handed to a function as a parameter
 (`g(el.style)`), or held by a name assigned after it is declared (`let st; st = el.style`);

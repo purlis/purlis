@@ -15,6 +15,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { menuNames, ROW } from "../menus.js";
 import { anEmptyRecord, cloneTheFixtureRepos, copyFixturePlane } from "../harness.js";
 import { openThroughTheTrustQuestion } from "../opening.js";
+import { pinsSaid, stripSeen } from "../reading.js";
 
 /**
  * Making a workspace and deleting one, in the built app, against the real core.
@@ -93,13 +94,23 @@ async function stripNames(): Promise<string[]> {
 
 async function stripBecomes(want: string[]): Promise<void> {
   let saw: string[] = [];
-  await browser.waitUntil(
-    async () => {
-      saw = await stripNames();
-      return JSON.stringify(saw) === JSON.stringify(want);
-    },
-    { timeout: 30_000, timeoutMsg: `the workspace strip stayed ${JSON.stringify(saw)}` },
-  );
+  // The message is made once the wait has failed: a `timeoutMsg` is made when the wait starts,
+  // and said the strip "stayed" whatever it held before the first read.
+  await browser
+    .waitUntil(
+      async () => {
+        saw = await stripNames();
+        return JSON.stringify(saw) === JSON.stringify(want);
+      },
+      { timeout: 30_000 },
+    )
+    .catch(async () => {
+      const seen = await stripSeen();
+      throw new Error(
+        `the workspace strip stayed ${JSON.stringify(saw)}, not ${JSON.stringify(want)}; ` +
+          `it drew ${JSON.stringify(seen)}; the core's pins for it: ${await pinsSaid(seen.project)}`,
+      );
+    });
 }
 
 /**

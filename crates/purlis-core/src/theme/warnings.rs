@@ -14,22 +14,36 @@ use crate::shown;
 /// **Every warning the check found in `checked`**, each a line: a combination is named at the
 /// front of its lines only when the theme has more than one to tell apart.
 pub fn said(theme: &Theme, checked: &[Checked]) -> Vec<String> {
+    said_naming(theme, checked, |_, _| None)
+}
+
+/// [`said`], with each terminal colour's line naming where to change it: `entry` answers, for
+/// an appearance's id and a `terminal.ansi.*` token, the palette entry that holds its colour
+/// (an imported terminal's own, which import never tunes, #2589).
+pub fn said_naming(
+    theme: &Theme,
+    checked: &[Checked],
+    entry: impl Fn(&str, &str) -> Option<String>,
+) -> Vec<String> {
     let named = checked.len() > 1;
-    checked
-        .iter()
-        .flat_map(|one| {
-            let called = combination(theme, one);
-            warnings(&one.report.findings)
-                .into_iter()
-                .map(move |warning| {
-                    if named {
-                        format!("{called}: {}", warning.line())
-                    } else {
-                        warning.line()
-                    }
-                })
-        })
-        .collect()
+    let mut out = Vec::new();
+    for one in checked {
+        let called = combination(theme, one);
+        for warning in warnings(&one.report.findings) {
+            let mut line = warning.line();
+            if let Some(entry) = warning.ansi.and_then(|token| entry(&one.appearance, token)) {
+                line.push_str(&format!(
+                    "; it is the palette's `{entry}`: change `{entry}` in theme.json to lift it"
+                ));
+            }
+            out.push(if named {
+                format!("{called}: {line}")
+            } else {
+                line
+            });
+        }
+    }
+    out
 }
 
 /// **What a combination is called** at the front of a line about it: its appearance, and each
@@ -57,6 +71,8 @@ struct Warning {
     plain: Option<Option<f64>>,
     /// Each workspace tint it was found in, with its ratio when it has one.
     tints: Vec<(&'static str, Option<f64>)>,
+    /// The terminal colour it is about, for a terminal colour too near its background.
+    ansi: Option<&'static str>,
 }
 
 impl Warning {
@@ -169,6 +185,10 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                     floor,
                     plain: None,
                     tints: Vec::new(),
+                    ansi: match finding {
+                        Finding::Ansi { token, .. } => Some(*token),
+                        _ => None,
+                    },
                 });
                 found.len() - 1
             }

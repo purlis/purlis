@@ -1,14 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The theme check's pairs and fits of #2522, at the engine's interface: a theme in, the report
-//! out.
+//! The theme check's pairs and fits of #2522 and #2706, at the engine's interface: a theme in,
+//! the report out.
 
 use serde_json::{Value, json};
 
 use super::super::{
-    Density, FITS, Finding, PAIRS, Report, ResolvedTheme, built_in, built_ins, check, check_every,
-    load, warnings_said,
+    Density, FITS, Finding, Floor, PAIRS, Report, ResolvedTheme, built_in, built_ins, check,
+    check_every, draw, load, warnings_said,
 };
 
 /// The syntax roles the editor draws.
@@ -40,6 +40,43 @@ const SELECTED_WORDS: [&str; 8] = [
     "state.failed",
     "state.success",
     "state.unreadable",
+];
+
+/// The grounds a selection is drawn on (#2706): the window, a field, a pane and a Notice, a
+/// dialog, and a trouble Notice.
+const GROUNDS: [&str; 5] = [
+    "surface.base",
+    "surface.sunken",
+    "surface.raised",
+    "surface.overlay",
+    "danger.surface",
+];
+
+/// The grounds the window's words are selected on in their own colour: the window, a sunken box
+/// (a release's notes, a finished report), a pane and a Notice, and a dialog.
+const WORD_GROUNDS: [&str; 4] = [
+    "surface.base",
+    "surface.sunken",
+    "surface.raised",
+    "surface.overlay",
+];
+
+/// A markdown render's words.
+const MARKDOWN_WORDS: [&str; 5] = [
+    "markdown.link",
+    "markdown.code",
+    "markdown.code-block",
+    "markdown.quote",
+    "markdown.heading",
+];
+
+/// The danger words, and the grounds they are selected on: those, and a trouble Notice's.
+const DANGER_WORDS: [&str; 2] = ["danger.text", "danger.base"];
+const DANGER_GROUNDS: [&str; 4] = [
+    "surface.base",
+    "surface.raised",
+    "surface.overlay",
+    "danger.surface",
 ];
 
 fn classic_dark() -> &'static ResolvedTheme {
@@ -75,6 +112,32 @@ fn found(report: &Report, front: &str, back: &str) -> Option<f64> {
         } if pair.front == front && pair.back == back => Some(*ratio),
         _ => None,
     })
+}
+
+/// The ratio the check found `front` on a selection laid over `ground` at, as the theme is.
+fn found_over(report: &Report, front: &str, ground: &str) -> Option<f64> {
+    report.findings.iter().find_map(|one| match one {
+        Finding::Contrast {
+            tint: None,
+            pair,
+            ratio,
+        } if pair.front == front
+            && pair.back == "selection.background"
+            && pair.under == Some(ground) =>
+        {
+            Some(*ratio)
+        }
+        _ => None,
+    })
+}
+
+/// A dark theme whose selection is clear and sets `front` to `ground`'s colour: selected, it is
+/// drawn on that ground alone, and vanishes into it.
+fn clear_selection_with(front: &str, ground: &str) -> ResolvedTheme {
+    let mut tokens = serde_json::Map::new();
+    tokens.insert("selection.background".to_owned(), json!("#00000000"));
+    tokens.insert(front.to_owned(), json!(classic_dark().value(ground)));
+    dark(Value::Object(tokens), json!({}))
 }
 
 fn lines(report: &Report) -> Vec<&Finding> {
@@ -193,6 +256,165 @@ fn a_selection_left_to_the_platform_is_not_measured() {
     let report = check(classic_dark());
     for word in SELECTED_WORDS {
         assert_eq!(found(&report, word, "selection.background"), None);
+    }
+}
+
+#[test]
+fn a_see_through_selection_is_measured_over_every_ground_it_is_drawn_on() {
+    // Selected text in the theme's colour, on a clear selection: it is drawn on the ground under
+    // the selection, so each ground is measured on its own.
+    for ground in GROUNDS {
+        let report = check(&clear_selection_with("selection.text", ground));
+        assert_eq!(
+            found_over(&report, "selection.text", ground),
+            Some(1.0),
+            "{ground}"
+        );
+    }
+}
+
+#[test]
+fn words_selected_in_their_own_colour_are_measured_over_every_ground() {
+    for word in SELECTED_WORDS {
+        for ground in WORD_GROUNDS {
+            let report = check(&clear_selection_with(word, ground));
+            assert_eq!(
+                found_over(&report, word, ground),
+                Some(1.0),
+                "{word} over {ground}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_markdown_render_s_words_are_measured_on_the_selection_over_every_ground() {
+    for word in MARKDOWN_WORDS {
+        for ground in WORD_GROUNDS {
+            let report = check(&clear_selection_with(word, ground));
+            assert_eq!(
+                found_over(&report, word, ground),
+                Some(1.0),
+                "{word} over {ground}"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// Danger words on a theme's selection
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn danger_words_are_held_on_the_theme_s_selection_at_the_text_floor() {
+    for word in DANGER_WORDS {
+        for ground in DANGER_GROUNDS {
+            let pair = PAIRS
+                .iter()
+                .find(|pair| {
+                    pair.front == word
+                        && pair.back == "selection.background"
+                        && pair.under == Some(ground)
+                })
+                .unwrap_or_else(|| panic!("{word} over {ground} is held"));
+            assert_eq!(pair.floor, 4.5, "{word} over {ground}");
+            assert!(
+                pair.selected,
+                "{word} over {ground} is drawn in its own colour"
+            );
+            let report = check(&clear_selection_with(word, ground));
+            assert_eq!(
+                found_over(&report, word, ground),
+                Some(1.0),
+                "{word} over {ground}"
+            );
+        }
+    }
+}
+
+#[test]
+fn danger_words_on_a_selection_that_colours_its_text_are_held_by_that_colour() {
+    let report = check(&dark(
+        json!({
+            "selection.background": classic_dark().value("danger.text"),
+            "selection.text": "#000000",
+        }),
+        json!({}),
+    ));
+    for word in DANGER_WORDS {
+        assert_eq!(found(&report, word, "selection.background"), None, "{word}");
+    }
+}
+
+#[test]
+fn a_selection_danger_words_vanish_into_is_drawn_as_purlis_s_own() {
+    // A selection the colour of the danger words: the danger floor holds, and the window draws
+    // purlis's own selection, so a Notice's trouble stays readable while selected.
+    let mine = load(&json!({
+        "name": "Blush",
+        "appearance": "dark",
+        "tokens": { "selection.background": classic_dark().value("danger.text") }
+    }))
+    .theme;
+    let drawn = draw(mine.first());
+    let held = drawn.held.expect("the floor was held");
+    assert!(held.floors.contains(&Floor::Danger), "{:?}", held.floors);
+    let theme = drawn.theme.expect("a theme is always drawn");
+    assert_eq!(
+        theme.value("selection.background"),
+        classic_dark().value("selection.background")
+    );
+    for word in DANGER_WORDS {
+        assert_eq!(found(&check(&theme), word, "selection.background"), None);
+    }
+}
+
+#[test]
+fn selected_text_a_theme_colours_is_held_on_a_trouble_notice_and_a_dialog() {
+    // Selected text barely apart from its selection: a trouble Notice's danger words and a
+    // dialog's ask vanish while selected. The floors draw purlis's own selection, the
+    // platform's, so the pair is not drawn, and the theme's own danger surface stays.
+    let mine = load(&json!({
+        "name": "Haze",
+        "appearance": "dark",
+        "tokens": {
+            "selection.background": "#3a3a3a",
+            "selection.text": "#404040",
+            "danger.surface": "#241414",
+        }
+    }))
+    .theme;
+    let report = check(mine.first());
+    for ground in ["danger.surface", "surface.overlay"] {
+        assert!(
+            found_over(&report, "selection.text", ground).is_some(),
+            "{ground}"
+        );
+    }
+    let drawn = draw(mine.first());
+    let held = drawn.held.expect("the floors were held");
+    assert_eq!(held.floors, [Floor::Ask, Floor::Danger]);
+    assert_eq!(held.tokens, ["selection.background", "selection.text"]);
+    let theme = drawn.theme.expect("a theme is always drawn");
+    for token in ["selection.background", "selection.text"] {
+        assert_eq!(theme.value(token), classic_dark().value(token), "{token}");
+    }
+    assert_eq!(theme.value("danger.surface"), "#241414");
+}
+
+#[test]
+fn purlis_and_purlis_classic_clear_every_selection_pair() {
+    for theme in built_ins() {
+        let report = check(theme);
+        assert!(
+            !report.findings.iter().any(|one| matches!(
+                one,
+                Finding::Contrast { pair, .. } if pair.back == "selection.background"
+            )),
+            "{}: {:#?}",
+            theme.name,
+            report.findings
+        );
     }
 }
 

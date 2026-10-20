@@ -1334,6 +1334,29 @@ pub enum Ask {
     /// picture comes back as an image. No ticket, for a record's reason: nothing is made or
     /// moved, and the picture is of the specimen's own content, never the window's.
     ThemePreview(ThemePreviewAsk),
+    /// Start or save this chat's theme draft (#2332, [`crate::theme::drafts`]): what `purlis
+    /// theme draft` hands over. **A brokered write**: no chat writes the drafts folder, and the app
+    /// writes this one in the drafts folder of the chat whose token the line carries, by its own
+    /// record of that chat, never a chat a line names. It answers [`Answer::Said`] with what the
+    /// window draws of the draft, or [`Answer::No`] with the refusal. No ticket, for a record's
+    /// reason. Boxed: it carries the draft's theme files.
+    ThemeDraft(Box<ThemeDraftAsk>),
+}
+
+/// **A chat's theme draft, started or saved** ([`Ask::ThemeDraft`], #2332).
+///
+/// **It names a theme folder and its files, and no chat**: whose draft it is, and where that
+/// chat works, are the app's record of the chat whose token the line carries.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ThemeDraftAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The theme folder's name.
+    pub folder: String,
+    /// The draft's theme files to save, by their path in the folder (`theme.json`, and icon
+    /// sets under `icons/`); `None` starts the draft and saves nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<std::collections::BTreeMap<String, String>>,
 }
 
 /// **The theme specimens a chat asks for** ([`Ask::ThemePreview`], #2330): one, or two side by
@@ -2079,6 +2102,7 @@ impl Ask {
             Self::Propose(proposed) => proposed.chat,
             Self::Browse(browse) => browse.chat,
             Self::ThemePreview(asks) => asks.chat,
+            Self::ThemeDraft(draft) => draft.chat,
         }
     }
 }
@@ -3551,7 +3575,7 @@ const A_CONNECTION_SAYS_AT_MOST: usize = 4;
 /// the brief holds control characters (`\u001b`). This is that, with room, and it is still
 /// a bound: the reason the cap exists is a client that never sends a newline.
 #[cfg(unix)]
-const A_LINE_IS_AT_MOST: u64 = 6 * crate::handoff::FIRST_MESSAGE_MAX_BYTES as u64 + 4096;
+pub(crate) const A_LINE_IS_AT_MOST: u64 = 6 * crate::handoff::FIRST_MESSAGE_MAX_BYTES as u64 + 4096;
 
 /// How long a brokered `secret exec`'s frame may take to write before its asker counts as gone.
 #[cfg(unix)]
@@ -6972,7 +6996,8 @@ mod tests {
                     | Ask::Removal(_)
                     | Ask::Propose(_)
                     | Ask::Browse(_)
-                    | Ask::ThemePreview(_) => Answer::No {
+                    | Ask::ThemePreview(_)
+                    | Ask::ThemeDraft(_) => Answer::No {
                         why: "not here".to_owned(),
                     },
                 }

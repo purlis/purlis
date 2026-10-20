@@ -73,12 +73,14 @@ use serde_json::Value;
 mod archive;
 mod check;
 pub mod choices;
+pub mod drafts;
 mod floors;
 mod folders;
 mod fonts;
 mod format;
 pub mod gallery;
 pub mod geometry;
+mod hard;
 mod icons;
 mod import;
 pub mod levels;
@@ -108,10 +110,11 @@ pub use fonts::{
 };
 pub use format::{Library, MOST_APPEARANCES, Named, THEME_JSON};
 pub use geometry::Geometry;
+pub use hard::{Broken, HardFloor, LEAST as HARD_LEAST};
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use import::{
-    Files, Imported, LeftOut, MOST_SOURCE_BYTES, SCOPES, SourceKind, detect, folder_name, import,
-    scopes_markdown, table, table_markdown,
+    Files, Imported, LeftOut, MOST_SOURCE_BYTES, Recipe, SCOPES, SourceKind, TOWARD_STEPS, detect,
+    folder_name, import, recipes, recipes_markdown, scopes_markdown, table, table_markdown,
 };
 pub use levels::{Choice, Folders, FoundFolder, Level, LevelInputs, Levels, resolve_levels};
 pub use native::{Native, first_frame};
@@ -123,17 +126,21 @@ pub use published::{SCHEMA_FILE, SCHEMA_URL};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
 pub use tint::{
-    APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, hue_of, tint_hex,
-    tint_hex_within, tinted,
+    ACCENT_KIN, APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, hue_of,
+    tint_hex, tint_hex_within, tinted,
 };
 pub use typed::Typed;
 use vocabulary::{
     DURATIONS, EASINGS, LONGEST, TOKENS, is_colour, is_platform, is_token, names_geometry,
 };
-pub use warnings::{combination as combination_said, said as warnings_said};
+pub use warnings::{
+    combination as combination_said, said as warnings_said, said_naming as warnings_said_naming,
+};
 
 #[cfg(test)]
 mod choice_tests;
+#[cfg(test)]
+mod drafts_tests;
 #[cfg(test)]
 mod floors_tests;
 #[cfg(test)]
@@ -158,6 +165,8 @@ mod native_tests;
 mod options_tests;
 #[cfg(test)]
 mod published_tests;
+#[cfg(test)]
+mod purlis_tests;
 #[cfg(test)]
 mod reload_tests;
 #[cfg(test)]
@@ -383,6 +392,12 @@ pub struct Complaint {
     /// The token it was about, when it was about one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    /// When it is a font file of the project's or a workspace's theme folder that this
+    /// machine's approval of the project does not hold (#2647), that face: its path in the
+    /// project and the sha-256 of the bytes read, as `<path> <sha-256>`. The project's trust
+    /// ask lists it, so a yes there lets it be drawn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub awaits_approval: Option<String>,
 }
 
 impl Complaint {
@@ -390,6 +405,7 @@ impl Complaint {
         Self {
             said: said.into(),
             token: None,
+            awaits_approval: None,
         }
     }
 
@@ -397,6 +413,16 @@ impl Complaint {
         Self {
             said: said.into(),
             token: Some(token.to_owned()),
+            awaits_approval: None,
+        }
+    }
+
+    /// [`Self::said`] of a project's font file the approval does not hold: `face` is its path
+    /// in the project and its digest.
+    fn awaiting_approval(said: impl Into<String>, face: String) -> Self {
+        Self {
+            awaits_approval: Some(face),
+            ..Self::said(said)
         }
     }
 }
@@ -533,6 +559,102 @@ fn motion_of(raw: Option<&Value>) -> Result<Motion, &'static str> {
     Ok(Motion { durations, easings })
 }
 
+/// Purlis's id (#2336): its folder's name, which a pick names it by and a theme `extends` it
+/// by. No theme folder takes it.
+pub const PURLIS: &str = "purlis";
+
+/// Whether the built-in theme `id` ships as a preview: Purlis, until it becomes the default
+/// (spec #2313, "Preview theme"). The gallery and `purlis theme list` say so beside its name.
+pub fn is_preview(id: &str) -> bool {
+    id == PURLIS
+}
+
+/// Purlis's folder, compiled in: its `theme.json`, its icon set and its fonts.
+mod purlis_folder {
+    /// Where its folder is in purlis's source, for a sentence.
+    pub(super) const PATH: &str = "crates/purlis-core/src/theme/built-in/purlis";
+    pub(super) const THEME: &str = include_str!("theme/built-in/purlis/theme.json");
+    pub(super) const ICONS: &str = include_str!("theme/built-in/purlis/icons/icons.json");
+    pub(super) const LICENSE: &str = include_str!("theme/built-in/purlis/LICENSE");
+    /// The faces its `fonts` names, by their names in its `fonts/`: IBM Plex Sans and JetBrains
+    /// Mono, as their projects publish them, under the SIL Open Font License (its `LICENSE`).
+    pub(super) const FONTS: &[(&str, &[u8])] = &[
+        (
+            "IBMPlexSans-Regular.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-Regular.woff2"),
+        ),
+        (
+            "IBMPlexSans-Medium.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-Medium.woff2"),
+        ),
+        (
+            "IBMPlexSans-SemiBold.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-SemiBold.woff2"),
+        ),
+        (
+            "JetBrainsMono-Regular.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/JetBrainsMono-Regular.woff2"),
+        ),
+    ];
+}
+
+/// **Purlis** (#2336), built from the designer's foundation (`docs/design/foundation/`): a dark
+/// appearance, a light one derived from it and a high-contrast dark, in IBM Plex Sans and
+/// JetBrains Mono with Lucide's icons. It ships as a preview ([`is_preview`]) and is not the
+/// default: [`default_theme`] is Purlis Classic's until the switch-over. Its folder is read as
+/// any theme folder is, from the files compiled in; a test proves it complete and clean, so a gap
+/// here is a defect of this build.
+pub fn purlis() -> &'static Theme {
+    static BUILT: OnceLock<Theme> = OnceLock::new();
+    BUILT.get_or_init(|| {
+        let document: Value =
+            serde_json::from_str(purlis_folder::THEME).expect("Purlis's theme.json is JSON");
+        let folder = fonts::ThemeDir::built_in(
+            std::path::PathBuf::from(purlis_folder::PATH),
+            purlis_folder::FONTS,
+        );
+        let read =
+            Library::new().load_built_in(PURLIS, &document, Some(purlis_folder::ICONS), folder);
+        assert!(
+            !read.refused,
+            "the built-in theme Purlis is refused: {:?}",
+            read.complaints
+        );
+        read.theme
+    })
+}
+
+/// **Purlis's folder, file by file**, as `purlis theme export purlis` packs it.
+pub fn purlis_files() -> Files {
+    let mut files = Files::from([
+        (
+            THEME_JSON.to_owned(),
+            purlis_folder::THEME.as_bytes().to_vec(),
+        ),
+        (
+            "icons/icons.json".to_owned(),
+            purlis_folder::ICONS.as_bytes().to_vec(),
+        ),
+        (
+            "LICENSE".to_owned(),
+            purlis_folder::LICENSE.as_bytes().to_vec(),
+        ),
+    ]);
+    for (name, bytes) in purlis_folder::FONTS {
+        files.insert(format!("fonts/{name}"), bytes.to_vec());
+    }
+    files
+}
+
+/// **The theme built into purlis that `id` names**: Purlis Classic by its id or an id its
+/// appearances have had, or Purlis by its id; `None` for any other.
+pub fn shipped(id: &str) -> Option<&'static Theme> {
+    if id == PURLIS {
+        return Some(purlis());
+    }
+    built_in(id).map(|_| classic())
+}
+
 /// The appearance purlis draws when nothing has said otherwise: Purlis Classic's dark.
 pub fn default_theme() -> &'static ResolvedTheme {
     classic().first()
@@ -546,12 +668,16 @@ pub fn built_in_for(appearance: Appearance) -> &'static ResolvedTheme {
 
 /// The built-in appearance `id` names, by its id or by an id it had before the rename (#1838):
 /// the old ids map as the spec's table says, each to Purlis Classic's appearance of its tag
-/// until the switch-over to Purlis.
+/// until the switch-over to Purlis. Purlis Classic and Purlis by their own ids are each theme's
+/// first appearance.
 pub fn built_in(id: &str) -> Option<&'static ResolvedTheme> {
     // Purlis Classic by its own id is the theme, which draws its first appearance when nothing
-    // chose another.
+    // chose another; so is Purlis by its own (#2336).
     if id == CLASSIC {
         return Some(classic().first());
+    }
+    if id == PURLIS {
+        return Some(purlis().first());
     }
     let id = [crate::names::THEME_DARK, crate::names::THEME_LIGHT]
         .into_iter()
@@ -1035,6 +1161,8 @@ pub struct Checked {
     /// The consent floors the window holds when it draws this combination, and the tokens it
     /// draws as purlis's own for them ([`draw`]); `None` when it clears them.
     pub held: Option<Held>,
+    /// The hard floors it breaks as the window draws it (#2332): empty when it holds them.
+    pub hard: Vec<Broken>,
 }
 
 /// **Checks every combination of a theme's appearances and option values** (#2325): [`check`]
@@ -1055,11 +1183,13 @@ pub fn check_every(theme: &Theme) -> Vec<Checked> {
     for at in 0..theme.bases.len() {
         for (values, drawn) in &drawn {
             let one = &drawn.appearances[at];
+            let (shown, held) = floors::hold(one);
             out.push(Checked {
                 appearance: one.id.clone(),
                 options: values.clone(),
                 report: check::check(one),
-                held: floors::hold(one).1,
+                held,
+                hard: hard::broken(&shown),
             });
         }
     }

@@ -138,6 +138,7 @@ mod taskblocks;
 mod taskbrief;
 mod taskchanges;
 mod tasksused;
+mod themedrafts;
 mod themegallery;
 mod themewatch;
 mod thismachine;
