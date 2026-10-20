@@ -1,130 +1,80 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::{Path, PathBuf};
-
 use super::*;
-
-/// The skills directory the app ships.
-fn bundled() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills")
-}
-
-fn skill(dir: &Path, folder: &str, text: &str) {
-    std::fs::create_dir_all(dir.join(folder)).unwrap();
-    std::fs::write(dir.join(folder).join("SKILL.md"), text).unwrap();
-}
+use crate::updates::Channel;
 
 #[test]
-fn every_bundled_skill_is_read_with_its_name_description_and_file() {
-    let skills = read(&bundled());
-    let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
-    for name in [
-        "safe-remove",
-        "compact",
-        "add-curation-action",
-        "handoff",
-        "secrets",
-        "smart-close",
-        "theme",
-    ] {
-        assert!(names.contains(&name), "{name} is missing from {names:?}");
-    }
-    let mut sorted = names.clone();
-    sorted.sort_unstable();
-    assert_eq!(names, sorted, "listed by name");
-    // Every folder in the bundle is a skill a harness would load: none is dropped.
-    let folders = std::fs::read_dir(bundled()).unwrap().count();
-    assert_eq!(skills.len(), folders, "{names:?}");
-    let safe = skills.iter().find(|s| s.name == "safe-remove").unwrap();
-    assert!(
-        safe.description
-            .starts_with("Remove a purlis workspace or persona")
-    );
-    assert_eq!(safe.path, bundled().join("safe-remove/SKILL.md"));
-}
-
-#[test]
-fn a_folder_that_is_not_a_whole_skill_is_left_out() {
-    let dir = tempfile::tempdir().unwrap();
-    skill(
-        dir.path(),
-        "whole",
-        "---\nname: whole\ndescription: Does it.\n---\n\nbody\n",
-    );
-    skill(dir.path(), "nameless", "---\ndescription: Does it.\n---\n");
-    skill(dir.path(), "undescribed", "---\nname: undescribed\n---\n");
-    skill(dir.path(), "no-frontmatter", "# just a page\n");
-    std::fs::create_dir_all(dir.path().join("empty")).unwrap();
-    std::fs::write(
-        dir.path().join("stray.md"),
-        "---\nname: stray\ndescription: x\n---\n",
-    )
-    .unwrap();
-
-    let names: Vec<String> = read(dir.path()).into_iter().map(|s| s.name).collect();
-
-    assert_eq!(names, ["whole"]);
-}
-
-#[test]
-fn a_directory_that_is_not_there_has_no_skills() {
-    assert!(read(Path::new("/nonexistent/charter/skills")).is_empty());
-    assert_eq!(in_bundle(Path::new("/nonexistent/charter/plugin")), None);
-}
-
-#[test]
-fn the_bundle_holds_its_skills_in_its_own_skills_folder() {
-    let plugin = bundled().parent().unwrap().to_path_buf();
-    assert_eq!(in_bundle(&plugin), Some(plugin.join("skills")));
-}
-
-#[test]
-fn the_listing_names_each_skill_when_to_use_it_and_where_to_read_it() {
-    let skills = vec![
-        Skill {
-            name: "compact".to_owned(),
-            description: "Compact a memory. Use when asked to tidy.".to_owned(),
-            path: PathBuf::from("/app/plugin/skills/compact/SKILL.md"),
-        },
-        Skill {
-            name: "safe-remove".to_owned(),
-            description: "Remove a workspace safely.".to_owned(),
-            path: PathBuf::from("/app/plugin/skills/safe-remove/SKILL.md"),
-        },
-    ];
-
-    let text = listing(&skills).expect("a listing");
-
-    assert!(text.starts_with("⬢ **purlis's skills**"), "{text}");
-    // The model is told what a skill is here: a file to read and follow, by its name.
-    assert!(text.contains("read its `SKILL.md`"), "{text}");
-    assert!(text.contains(
-        "- `compact` — Compact a memory. Use when asked to tidy. \
-         (`/app/plugin/skills/compact/SKILL.md`)"
-    ));
-    assert!(text.ends_with(
-        "- `safe-remove` — Remove a workspace safely. \
-         (`/app/plugin/skills/safe-remove/SKILL.md`)"
-    ));
-}
-
-#[test]
-fn no_skills_is_no_listing_not_an_empty_one() {
-    assert_eq!(listing(&[]), None);
-}
-
-#[test]
-fn only_a_chat_started_with_the_variable_is_briefed_on_the_skills() {
+fn the_skill_studio_flag_is_off_by_default_and_on_for_the_dev_channel() {
     let unset = |_: &str| None;
-    assert_eq!(listed_from(&unset), None);
-    let empty = |name: &str| (name == LISTED_ENV).then(String::new);
-    assert_eq!(listed_from(&empty), None);
+    assert!(!studio_shown(Channel::Stable, &unset));
+    assert!(studio_shown(Channel::Dev, &unset));
+    assert!(
+        !studio_shown(Channel::default(), &unset),
+        "stable is the default"
+    );
+}
 
-    let dir = bundled().display().to_string();
-    let set = move |name: &str| (name == LISTED_ENV).then(|| dir.clone());
-    let text = listed_from(&set).expect("listed");
+#[test]
+fn the_variable_turns_the_skill_studio_flag_on_or_off_on_either_channel() {
+    let set =
+        |value: &'static str| move |name: &str| (name == STUDIO_ENV).then(|| value.to_owned());
+    for channel in Channel::ALL {
+        assert!(studio_shown(channel, &set("1")), "{channel:?}");
+        assert!(!studio_shown(channel, &set("0")), "{channel:?}");
+        // A value it does not know leaves the channel to decide.
+        assert_eq!(
+            studio_shown(channel, &set("yes")),
+            channel == Channel::Dev,
+            "{channel:?}"
+        );
+    }
+    // Under its old name too, as every product variable is read.
+    let old = |name: &str| (name == "CHARTER_SKILL_STUDIO").then(|| "1".to_owned());
+    assert!(studio_shown(Channel::Stable, &old));
+}
 
-    assert!(text.contains("`safe-remove`"), "{text}");
-    assert!(text.contains(&bundled().join("safe-remove/SKILL.md").display().to_string()));
+#[test]
+fn a_skills_frontmatter_is_read_as_a_personas_is() {
+    // purlis-skills keeps its own copy of the frontmatter rule; this holds it to the persona's.
+    for text in [
+        "---\nname: a\ndescription: b\n---\nbody",
+        "---\r\nname:  spaced \r\ndescription:\tTabbed: with a colon\r\n---\r\n",
+        "---\nname: a\u{1f}\n\u{2028}description: b\u{85}key-only\n: no key\n---",
+        "no frontmatter\n---\nname: a\n---\n",
+        "---\nname: unterminated\n",
+        "---\n\u{1c}name\u{1d}:\u{1e}x\u{1f}\n---",
+    ] {
+        assert_eq!(
+            purlis_skills::frontmatter(text),
+            crate::personas::frontmatter(text),
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
+    let plugin = crate::harness::testing::bundled_plugin();
+    let kit = Kit {
+        binary: std::path::Path::new("/bin/purlis"),
+        plugin: Some(&plugin),
+        persona: None,
+    };
+    for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
+        let set = for_chat(kit, harness);
+
+        assert!(
+            set.effective.iter().any(|e| e.skill.name == "secrets"),
+            "{harness:?}"
+        );
+        assert!(
+            set.effective
+                .iter()
+                .all(|e| e.route == harness.skills() && e.origin == Origin::BuiltIn),
+            "{harness:?}"
+        );
+        assert!(set.left_out.is_empty(), "{:?}", set.left_out);
+        assert_eq!(set.dirs(), [plugin.join("skills").as_path()]);
+    }
 }

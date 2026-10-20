@@ -27,6 +27,10 @@ impl HarnessAdapter for ClaudeCode {
     /// the environment. Without the plugin there is nothing to arm: a chat reads `unknown`,
     /// rather than being half-armed from a second place.
     ///
+    /// Its skills take [`crate::skills::Route::Plugin`]: every skill in its set
+    /// ([`crate::skills::for_chat`]) is a built-in skill, and those are the plugin's own
+    /// `skills/`, which `--plugin-dir` already loads. So nothing more is handed over for them.
+    ///
     /// `--settings` MERGES with the settings already in force rather than replacing them
     /// (measured on claude 2.1.276), and a key it names wins over the project's (measured on
     /// 2.1.280). It carries the plugin pins, the project's plugin choice, the status line where

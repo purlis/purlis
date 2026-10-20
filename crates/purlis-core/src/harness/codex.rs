@@ -80,8 +80,9 @@ impl HarnessAdapter for Codex {
     ///
     /// Its skills ride on the `SessionStart` hook above: Codex can take no skills
     /// directory for one session ([`Harness::skills`]), so the chat is started with the
-    /// bundle's in [`crate::skills::LISTED_ENV`], which a Codex hook inherits, and the
-    /// briefing lists them.
+    /// directory of the skills its set holds ([`crate::skills::for_chat`]) in
+    /// [`crate::skills::LISTED_ENV`], which a Codex hook inherits, and the briefing lists
+    /// them. Built-in skills sit in one directory, the bundle's, so there is one to name.
     ///
     /// Its sandbox, where the plane turned it on, is not here: charter's wrap runs the whole
     /// line ([`crate::sandbox::Applied::line`], and [`crate::sandbox::codex`] has the
@@ -99,9 +100,9 @@ impl HarnessAdapter for Codex {
         args.extend(["-c".to_owned(), crate::chattools::codex_flag(kit.binary)]);
         StateHooks::ThisSessionOnly {
             args,
-            env: kit
-                .plugin
-                .and_then(crate::skills::in_bundle)
+            env: crate::skills::for_chat(kit, Harness::Codex)
+                .dirs()
+                .first()
                 .map(|dir| {
                     (
                         crate::skills::LISTED_ENV.to_owned(),
