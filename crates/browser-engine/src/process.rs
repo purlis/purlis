@@ -177,7 +177,7 @@ impl Engine {
         let group = EngineGroup::start(keeper).map_err(StartError::Spawn)?;
         let (engine_reads, host_writes) = io::pipe().map_err(StartError::Spawn)?;
         let (host_reads, engine_writes) = io::pipe().map_err(StartError::Spawn)?;
-        let log = File::create(launch.log()).map_err(StartError::Spawn)?;
+        let log = engine_log(&launch.log()).map_err(StartError::Spawn)?;
         let null = File::open("/dev/null").map_err(StartError::Spawn)?;
         let environment = launch.environment(std::env::vars_os());
         let pid = spawn_engine(
@@ -332,6 +332,20 @@ impl Drop for Engine {
     fn drop(&mut self) {
         self.end_now();
     }
+}
+
+/// **The engine's log at `path`, this user's alone** (#2745): made `0600`, emptied, and set to
+/// `0600` where an earlier one was looser. It outlives its browser.
+pub(crate) fn engine_log(path: &std::path::Path) -> io::Result<File> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let log = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    log.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    Ok(log)
 }
 
 /// How a process ended, as `waitpid` said it: `None` for a status that is no end.

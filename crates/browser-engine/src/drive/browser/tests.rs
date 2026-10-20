@@ -2403,3 +2403,75 @@ fn one_who_asks_after_the_end_is_told_at_once_how_it_ended() {
         Some(EndedBy::Itself)
     );
 }
+
+/// An engine the stand-in browser holds: what was done to it, and how long it takes to end by
+/// itself once its pipe has closed.
+struct StandHold {
+    stopped: Arc<Mutex<Option<Duration>>>,
+    ends_after: Duration,
+}
+
+impl super::EngineHold for StandHold {
+    fn pid(&self) -> u32 {
+        4242
+    }
+
+    fn stop(self: Box<Self>, grace: Duration) -> Option<crate::ending::EngineExit> {
+        *super::lock(&self.stopped) = Some(grace);
+        Some(crate::ending::EngineExit::Code(0))
+    }
+
+    fn wait_or_end(self: Box<Self>, _grace: Duration) -> (Option<crate::ending::EngineExit>, bool) {
+        std::thread::sleep(self.ends_after);
+        (Some(crate::ending::EngineExit::Code(0)), true)
+    }
+}
+
+#[test]
+fn a_browser_dropped_unstopped_ends_its_engine_and_says_purlis_stopped_it() {
+    // #2745: its event reader keeps what the engine lives in until the pipe closes, so the
+    // drop is what ends it.
+    let (browser, _engine) = browser();
+    let stopped: Arc<Mutex<Option<Duration>>> = Arc::default();
+    browser.holding(Box::new(StandHold {
+        stopped: Arc::clone(&stopped),
+        ends_after: Duration::ZERO,
+    }));
+    let told: Arc<Mutex<Option<Ending>>> = Arc::default();
+    let telling = told.clone();
+    browser.when_it_ends(Box::new(move |ending| {
+        *super::lock(&telling) = Some(ending)
+    }));
+
+    drop(browser);
+
+    assert_eq!(*super::lock(&stopped), Some(Duration::ZERO));
+    assert_eq!(
+        super::lock(&told).as_ref().map(|ending| ending.by),
+        Some(EndedBy::Stopped)
+    );
+}
+
+#[test]
+fn a_stop_while_the_engine_ends_by_itself_returns_once_its_end_is_told() {
+    // #2745: a quit's stop waits for the end its pipe began, so a kept login's write-back in
+    // the teller is not skipped.
+    let (browser, engine) = browser();
+    browser.holding(Box::new(StandHold {
+        stopped: Arc::default(),
+        ends_after: Duration::from_millis(400),
+    }));
+    let told = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let telling = Arc::clone(&told);
+    browser.when_it_ends(Box::new(move |_| {
+        telling.store(true, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let (closed, _) = mpsc::sync_channel(1);
+    *super::lock(&engine.events) = closed;
+    // The event reader has taken the engine, and waits for it to end by itself.
+    wait_for("taken", || browser.process().is_none());
+
+    browser.stop(Duration::from_millis(100));
+
+    assert!(told.load(std::sync::atomic::Ordering::SeqCst));
+}

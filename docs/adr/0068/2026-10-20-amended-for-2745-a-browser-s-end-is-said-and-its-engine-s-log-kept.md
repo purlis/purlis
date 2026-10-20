@@ -17,8 +17,9 @@ engine's log is kept. The session protocol does not change.
 3. **A connection's end ends its engine.** When the DevTools connection ends, the driver ends
    the engine's process group before anyone is told: an engine whose pipe closed has two seconds
    to end by itself, and one whose connection closed on a message is ended at once. The host
-   removes the browser's folder only after. *D-2745-3, decided in implementation, to be
-   confirmed.*
+   removes the browser's folder only after. A stop made while an engine ends by itself returns
+   once its end is told, so a quit waits for a kept login's write-back; a browser dropped
+   unstopped ends its engine. *D-2745-3, decided in implementation, to be confirmed.*
 4. **Every end is said.** Whoever waits on a browser's end is told who ended it (purlis stopping
    it, the engine by itself, or purlis because its connection closed), its engine's exit code or
    signal, and why its connection closed, naming a message by its DevTools method alone. The
@@ -28,7 +29,7 @@ engine's log is kept. The session protocol does not change.
    The session host's warnings from the core reach the window's log as its other lines do.
    *D-2745-4, decided in implementation, to be confirmed.*
 5. **An engine's log outlives its browser.** The engine writes its standard output and error to
-   `<data>/browsers/<program>.engine.log`, beside the browser's folder, and the newest 20 are kept,
+   `<data>/browsers/<program>.engine.log`, `0600`, beside the browser's folder, and the newest 20 are kept,
    swept as a browser starts; a running browser's log is never removed. It stays inside
    `<data>/browsers/`, which a chat's sandbox denies. *D-2745-5, decided in implementation, to be
    confirmed.*

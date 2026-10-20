@@ -137,7 +137,10 @@ pub fn sweep_engine_logs(folders: &Path, kept: usize) {
     logs.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
     for (_, log) in logs.into_iter().skip(kept) {
         let name = log.file_name().unwrap_or_default().to_string_lossy();
-        let folder = folders.join(name.trim_end_matches(ENGINE_LOG));
+        let Some(program) = name.strip_suffix(ENGINE_LOG) else {
+            continue;
+        };
+        let folder = folders.join(program);
         if !folder.exists() {
             let _ = std::fs::remove_file(&log);
         }
