@@ -272,10 +272,15 @@ pub fn built_in_here() -> Option<PathBuf> {
     crate::plugin_install::bundle_beside(&exe).and_then(|plugin| in_bundle(&plugin))
 }
 
-/// [`studio_on`] for this process: this machine's store, and this process's environment.
+/// [`studio_on`] for this process: this machine's store, and this process's environment. Asked
+/// at every chat's start, so it never holds the fence: a fenced test build reads a store outside
+/// its fence as holding no flag, as [`crate::profilestore::listed_here`] does.
 pub fn studio_on_here() -> bool {
-    let flags = crate::machine::config_root()
-        .map(|root| crate::machine::read(&root).store.flags)
+    let flags = crate::machine::config_root_unheld()
+        .filter(|config| {
+            !crate::fence::FENCED || crate::fence::inside(config, &crate::fence::fence())
+        })
+        .map(|config| crate::machine::read(&config).store.flags)
         .unwrap_or_default();
     studio_on(&flags, &|name| std::env::var(name).ok())
 }
