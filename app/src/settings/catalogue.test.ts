@@ -33,6 +33,7 @@ const BUILDERS = [
   "you.tsx",
   "thisMachine.tsx",
   "browserLimits.tsx",
+  "pools.tsx",
   "notifications.tsx",
   "accounts.tsx",
   "profiles.tsx",

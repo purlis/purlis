@@ -221,3 +221,43 @@ fn a_pool_with_no_runner_is_forgotten_and_one_never_added_is_refused() {
     assert!(runners::pools(config.path()).unwrap().is_empty());
     assert_eq!(fake.file("log"), "");
 }
+
+#[test]
+fn a_workspace_set_to_run_on_a_pool_starts_nothing_here_and_says_why() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    crate::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store.set_chats_run_on(plane, "ide", Some("first")).unwrap();
+    })
+    .unwrap();
+    // Another workspace, and a chat at the project's root, start here.
+    assert_eq!(starts_here(config.path(), plane, Some("fleet")), Ok(()));
+    assert_eq!(starts_here(config.path(), plane, None), Ok(()));
+    // A pool this machine does not keep starts nothing, and says it is missing.
+    let refused = starts_here(config.path(), plane, Some("ide")).unwrap_err();
+    assert!(refused.contains("not on this machine"), "{refused}");
+    // A pool it keeps starts nothing either, and says how to run the chats here.
+    let fake = a_docker(&runner_answers());
+    add(
+        config.path(),
+        &fake.docker(),
+        &pool("first", Set::default()),
+        &desktop(),
+    )
+    .unwrap();
+    let refused = starts_here(config.path(), plane, Some("ide")).unwrap_err();
+    assert!(
+        refused.contains("Remove pool first in Settings › This machine › Pools"),
+        "{refused}"
+    );
+    // Removing the pool runs the workspace's chats here again.
+    remove(config.path(), &fake.docker(), "first", None).unwrap();
+    assert_eq!(starts_here(config.path(), plane, Some("ide")), Ok(()));
+    assert_eq!(
+        crate::machine::read(config.path())
+            .store
+            .chats_run_on(plane, "ide"),
+        None
+    );
+}

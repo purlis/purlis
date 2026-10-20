@@ -1,0 +1,205 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { useState } from "react";
+import * as Dialog from "./overlays/dialog";
+import type { PoolAdding, PoolLimitsShown } from "./bindings";
+import { Field, SettingActions, SettingRow } from "./settings/components";
+import { addPool, stopAddingAPool, usePools } from "./pools";
+
+/**
+ * **Add a Docker pool…** (#2679, spec #2041: a Docker pool in one step): its name, the runner
+ * image by digest, and its limits, each left empty for purlis's default, which its box shows.
+ * Add pool makes the pool's runner from the image on this machine's Docker, confined and held
+ * to those limits, and pairs it with this machine, which takes a moment; a refusal stays in the
+ * dialog, in the core's words, with what was typed.
+ *
+ * Drawn wherever the window is, while the palette's row or the Pools group asked for it
+ * ({@link AddDockerPoolHost}).
+ */
+export function AddDockerPoolHost() {
+  const pools = usePools();
+  if (!pools.adding) return null;
+  const defaults = pools.read.state === "read" ? pools.read.shown.defaults : undefined;
+  return <AddDockerPool defaults={defaults} />;
+}
+
+/** A count typed, or `null` for the default; `undefined` when it is not a count. */
+function count(typed: string): number | null | undefined {
+  const trimmed = typed.trim();
+  if (trimmed === "") return null;
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : undefined;
+}
+
+function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) {
+  const [name, setName] = useState("");
+  const [image, setImage] = useState("");
+  const [cpus, setCpus] = useState("");
+  const [memory, setMemory] = useState("");
+  const [processes, setProcesses] = useState("");
+  const [tmp, setTmp] = useState("");
+  const [trouble, setTrouble] = useState<string | undefined>();
+  const [adding, setAdding] = useState(false);
+
+  const add = async () => {
+    if (adding) return;
+    const [memoryMib, processesCount, tmpMib] = [count(memory), count(processes), count(tmp)];
+    if (memoryMib === undefined || processesCount === undefined || tmpMib === undefined) {
+      setTrouble("Nothing was added: memory, processes and /tmp are whole numbers.");
+      return;
+    }
+    const asked: PoolAdding = {
+      name,
+      image,
+      cpus: cpus.trim() === "" ? null : cpus,
+      memory_mib: memoryMib,
+      processes: processesCount,
+      tmp_mib: tmpMib,
+    };
+    setTrouble(undefined);
+    setAdding(true);
+    const refused = await addPool(asked);
+    setAdding(false);
+    if (refused !== undefined) setTrouble(refused);
+  };
+
+  const limit = (
+    label: string,
+    help: string,
+    value: string,
+    onChange: (to: string) => void,
+    shown: string | undefined,
+  ) => (
+    <SettingRow
+      label={label}
+      help={help}
+      control={(ids) => (
+        <Field
+          kind="text"
+          ids={ids}
+          inputMode="numeric"
+          size={8}
+          value={value}
+          placeholder={shown}
+          disabled={adding}
+          onChange={onChange}
+        />
+      )}
+    />
+  );
+
+  return (
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        // Not while the runner is being made: the answer would land where nobody is looking.
+        if (!open && !adding) stopAddingAPool();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="ui-scrim" />
+        <Dialog.Content
+          className="ui-dialog"
+          aria-describedby={undefined}
+          // A click outside answers nothing (`docs/ui-primitives.md`). Escape is Cancel.
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          <Dialog.Title>Add a Docker pool</Dialog.Title>
+          <p className="where">
+            on this machine; its runner is a container of the image, run on your Docker
+          </p>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void add();
+            }}
+          >
+            <SettingRow
+              label="Name"
+              help="Lower-case letters, digits and dashes. Its runner is called by it too."
+              control={(ids) => (
+                <Field
+                  kind="text"
+                  ids={ids}
+                  value={name}
+                  placeholder="builds"
+                  maxLength={40}
+                  disabled={adding}
+                  onChange={setName}
+                />
+              )}
+            />
+            <SettingRow
+              label="Image"
+              help="The runner image, named by its digest, so it cannot move under the pool."
+              control={(ids) => (
+                <Field
+                  kind="text"
+                  ids={ids}
+                  value={image}
+                  placeholder="ghcr.io/purlis/purlis-runner@sha256:…"
+                  disabled={adding}
+                  onChange={setImage}
+                />
+              )}
+            />
+            {limit(
+              "CPUs",
+              "How many CPUs its runner may use, to the thousandth. Empty is the default.",
+              cpus,
+              setCpus,
+              defaults?.cpus,
+            )}
+            {limit(
+              "Memory in MiB",
+              "The memory its runner may use, with no swap beyond it. Empty is the default.",
+              memory,
+              setMemory,
+              defaults === undefined ? undefined : String(defaults.memory_mib),
+            )}
+            {limit(
+              "Processes",
+              "How many processes its runner may run at once. Empty is the default.",
+              processes,
+              setProcesses,
+              defaults === undefined ? undefined : String(defaults.processes),
+            )}
+            {limit(
+              "/tmp in MiB",
+              "The size of its runner's /tmp, which counts against its memory. Empty is the default.",
+              tmp,
+              setTmp,
+              defaults === undefined ? undefined : String(defaults.tmp_mib),
+            )}
+
+            {trouble !== undefined && (
+              <p className="trouble" role="alert">
+                {trouble}
+              </p>
+            )}
+
+            <SettingActions>
+              <button
+                className="ui-button ui-button-primary"
+                type="submit"
+                tabIndex={0}
+                disabled={adding}
+              >
+                {adding ? "Making its runner…" : "Add pool"}
+              </button>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                disabled={adding}
+                onClick={stopAddingAPool}
+              >
+                Cancel
+              </button>
+            </SettingActions>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
