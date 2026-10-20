@@ -67,7 +67,7 @@ use purlis_session_protocol::session::{
     self, Answer, Client, Command, Events, Exit, HeldProgram, Launch, ProgramKind, Pushed,
     StartProgram, Told, ViewKind,
 };
-use purlis_session_protocol::view::{Chunk, Reader, Viewer};
+use purlis_session_protocol::view::{Chunk, Opened, Reader, Viewer};
 
 use purlis_core::hookwire::relay::{Heard, Replied, Reply};
 
@@ -406,6 +406,11 @@ impl Connection {
     }
 }
 
+/// What a transfer says when the host answered without opening its code stream.
+fn no_code_stream() -> String {
+    "the host did not open a stream for the code".to_owned()
+}
+
 /// What a chat start says when there is no host to run it (ADR 0068, Ruled 3).
 fn no_host(why: &str) -> String {
     format!(
@@ -497,6 +502,10 @@ struct Shared {
     /// Who holds each project again once the host says the runner it relays this link to no
     /// longer holds it, by the project's id (#2645).
     not_held: Mutex<HashMap<String, NotHeld>>,
+    /// Who takes each code stream the host opens, by the transfer number the window named in its
+    /// `take_code` or `give_code` (1.34, #2046).
+    transfers:
+        Mutex<HashMap<u64, tokio::sync::oneshot::Sender<purlis_session_protocol::link::Stream>>>,
 }
 
 /// What a link hears of the runner its host relays it to (#2496).
@@ -714,6 +723,128 @@ impl HostLink {
                 tracing::warn!("purlis: the session host refused `{word}`: {why}");
             }
         });
+    }
+
+    /// **Has the host take `refs` into `repo` of `project`, from the bundle at `bundle`** (1.34,
+    /// #2046): an empty code stream where there is none, so the refs are moved from what the
+    /// repository holds. `checkout` is checked out where the repository has nothing checked out
+    /// yet. Answers every branch and snapshot the repository holds after it, from any thread but
+    /// the link's runtime.
+    pub(crate) fn send_code(
+        &self,
+        project: &str,
+        repo: &str,
+        refs: Vec<session::CodeRef>,
+        checkout: Option<String>,
+        bundle: Option<&Path>,
+    ) -> Result<Vec<session::CodeRef>, String> {
+        let transfer = self.next_transfer();
+        let stream = self.stream_for(transfer);
+        let client = Arc::clone(&self.client);
+        let (project, repo, bundle) = (
+            project.to_owned(),
+            repo.to_owned(),
+            bundle.map(Path::to_path_buf),
+        );
+        self.transfer(transfer, async move {
+            let asked = client.take_code(&project, &repo, transfer, refs, checkout);
+            let writing = async move {
+                let mut stream = stream.await.map_err(|_| no_code_stream())?;
+                if let Some(bundle) = bundle {
+                    let mut file = tokio::fs::File::open(&bundle)
+                        .await
+                        .map_err(|why| format!("the bundle could not be read: {why}"))?;
+                    purlis_session_protocol::code::copy_held_to(
+                        &mut file,
+                        &mut stream,
+                        purlis_session_protocol::code::MOST_BUNDLE_BYTES,
+                    )
+                    .await
+                    .map_err(|why| why.to_string())?;
+                }
+                tokio::io::AsyncWriteExt::shutdown(&mut stream)
+                    .await
+                    .map_err(|why| format!("the code stream broke: {why}"))
+            };
+            let (answered, written) = tokio::join!(asked, writing);
+            let heads = answered.map_err(|why| why.to_string())?;
+            written?;
+            Ok(heads)
+        })
+    }
+
+    /// **Has the host write a bundle of `repo`'s branches in `project` into `into`** (1.34,
+    /// #2046), leaving out what `have` reaches. Answers its branches, and whether a bundle came:
+    /// none where the window lacks nothing.
+    pub(crate) fn fetch_code(
+        &self,
+        project: &str,
+        repo: &str,
+        have: Vec<String>,
+        into: &Path,
+    ) -> Result<(Vec<session::CodeRef>, bool), String> {
+        let transfer = self.next_transfer();
+        let stream = self.stream_for(transfer);
+        let client = Arc::clone(&self.client);
+        let (project, repo, into) = (project.to_owned(), repo.to_owned(), into.to_path_buf());
+        self.transfer(transfer, async move {
+            let asked = client.give_code(&project, &repo, transfer, have);
+            let reading = async move {
+                let mut stream = stream.await.map_err(|_| no_code_stream())?;
+                let mut file = tokio::fs::File::create(&into)
+                    .await
+                    .map_err(|why| format!("the bundle could not be kept: {why}"))?;
+                let read = purlis_session_protocol::code::copy_held_to(
+                    &mut stream,
+                    &mut file,
+                    purlis_session_protocol::code::MOST_BUNDLE_BYTES,
+                )
+                .await
+                .map_err(|why| why.to_string())?;
+                tokio::io::AsyncWriteExt::flush(&mut file)
+                    .await
+                    .map_err(|why| format!("the bundle could not be kept: {why}"))?;
+                Ok::<u64, String>(read)
+            };
+            let (answered, read) = tokio::join!(asked, reading);
+            let heads = answered.map_err(|why| why.to_string())?;
+            Ok((heads, read? > 0))
+        })
+    }
+
+    /// A transfer number this link has not named before.
+    fn next_transfer(&self) -> u64 {
+        static TRANSFERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        TRANSFERS.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// The code stream the host will open for `transfer`, once it does: asked for before the
+    /// command goes, so a stream that comes first is never missed.
+    fn stream_for(
+        &self,
+        transfer: u64,
+    ) -> tokio::sync::oneshot::Receiver<purlis_session_protocol::link::Stream> {
+        let (taker, stream) = tokio::sync::oneshot::channel();
+        lock(&self.shared.transfers).insert(transfer, taker);
+        stream
+    }
+
+    /// Run one transfer on the link's runtime and wait for it, at most the host's own bound
+    /// on a transfer; the stream it waited for is let go of whatever the outcome.
+    fn transfer<T: Send + 'static>(
+        &self,
+        transfer: u64,
+        moving: impl std::future::Future<Output = Result<T, String>> + Send + 'static,
+    ) -> Result<T, String> {
+        let (moved, outcome) = std::sync::mpsc::channel();
+        self.runtime.spawn(async move {
+            let _ = moved.send(moving.await);
+        });
+        let outcome = outcome
+            .recv_timeout(purlis_host::TRANSFER_WITHIN + ANSWER_WITHIN)
+            .unwrap_or_else(|_| Err("the host did not finish moving the code in time".into()));
+        lock(&self.shared.transfers).remove(&transfer);
+        outcome
     }
 
     /// Draw view `view` with `sink`: its stream may already be here.
@@ -964,8 +1095,17 @@ fn within_a_frame(replied: Replied) -> serde_json::Value {
 async fn take_views(mut views: Acceptor, shared: Arc<Shared>) {
     let mut viewer = Viewer::default();
     while let Ok(stream) = views.accept().await {
-        let Ok(reader) = viewer.accept(stream).await else {
-            continue;
+        let reader = match viewer.accept_any(stream).await {
+            Ok(Opened::View(reader)) => reader,
+            // A code stream goes to the transfer that asked for it (1.34, #2046); one nobody
+            // asked for is dropped, which ends it for the host.
+            Ok(Opened::Code(header, stream)) => {
+                if let Some(taker) = lock(&shared.transfers).remove(&header.transfer) {
+                    let _ = taker.send(stream);
+                }
+                continue;
+            }
+            Err(_) => continue,
         };
         let view = reader.view().0;
         let mut views = lock(&shared.views);
@@ -1262,6 +1402,12 @@ pub struct HostedSessions {
     /// the window's link over (#2446): it composes each harness chat, and its proxies listen on
     /// the runner's ports.
     on_a_runner: bool,
+    /// Whether the runner holds the project where it keeps its projects, sent the project's code
+    /// by the window (#2046): a pool's runner. A runner a test runs on this machine's disk holds
+    /// it at the window's own path, and is sent nothing.
+    kept_on_the_runner: bool,
+    /// What the runner held of each repository after the window last sent it (#2046).
+    sent: Arc<crate::runnercode::Sent>,
 }
 
 /// The chats the window was told are reconnecting, until each is reconnected, and who is told
@@ -1298,6 +1444,8 @@ impl HostedSessions {
             untaken: Arc::default(),
             reconnecting,
             on_a_runner: false,
+            kept_on_the_runner: false,
+            sent: Arc::default(),
         }
     }
 
@@ -1314,6 +1462,46 @@ impl HostedSessions {
         HostedSessions {
             on_a_runner: true,
             ..Self::new(connection, root)
+        }
+    }
+
+    /// [`Self::on_a_runner`], for a pool's runner (#2046): the runner holds the project where it
+    /// keeps its projects, `<data>/projects/<project id>`, and the window sends it the project's
+    /// code as it holds it there and each workspace's clones before a chat starts in it.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the window runs a workspace's chats on a pool's runner (#2046, 3/4)"
+        )
+    )]
+    pub fn on_a_pools_runner(connection: Arc<Connection>, root: &Path) -> Self {
+        HostedSessions {
+            kept_on_the_runner: true,
+            ..Self::on_a_runner(connection, root)
+        }
+    }
+
+    /// **Fetches the branches of `workspace`'s clones back from the runner** this project is held
+    /// on (#2046), into each clone's `refs/remotes/<pool>/*`: what Changes shows of the runner's
+    /// chats' commits. Answers what could not be fetched, in sentences. Nothing where the project
+    /// is not held on a runner.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the window fetches a pool's branches once its chats run there (#2046, 3/4)"
+        )
+    )]
+    pub(crate) fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
+        if !self.kept_on_the_runner {
+            return Vec::new();
+        }
+        match self.link() {
+            Ok((link, project)) => {
+                crate::runnercode::fetch_workspace(&link, &project, &self.root, workspace, pool)
+            }
+            Err(why) => vec![why],
         }
     }
 
@@ -1359,6 +1547,8 @@ impl HostedSessions {
             untaken: Arc::clone(&self.untaken),
             root: self.root.clone(),
             reconnects: Arc::clone(&self.reconnects),
+            kept_on_the_runner: self.kept_on_the_runner,
+            sent: Arc::clone(&self.sent),
         }
     }
 
@@ -1503,6 +1693,8 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         untaken,
         root,
         reconnects,
+        kept_on_the_runner,
+        sent,
     } = holding;
     let link = connection.of_project(root, LINK_WITHIN)?;
     let mut held = lock(held);
@@ -1518,11 +1710,20 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         link.hear_project(&project, relayed);
     }
     link.when_reconnecting(Arc::clone(reconnects));
+    // A runner holds it where it keeps its projects, `<data>/projects/<project id>`, and is
+    // sent the project's own code to check out there (#2046).
     link.call(Command::HoldProject {
         project: project.clone(),
-        project_path: root.display().to_string(),
+        project_path: if *kept_on_the_runner {
+            String::new()
+        } else {
+            root.display().to_string()
+        },
     })
     .map_err(|why| format!("{NOT_HELD} {why}"))?;
+    if *kept_on_the_runner {
+        crate::runnercode::send(&link, &project, root, "", sent)?;
+    }
     link.when_not_held(&project, holds_again(holding, link.id, &project));
     // The numbers that went out before the host held the project are never dealt again.
     let dealt = opened.load(Ordering::Relaxed);
@@ -1612,6 +1813,8 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
         untaken,
         root,
         reconnects,
+        kept_on_the_runner,
+        sent,
         ..
     } = holding;
     let project = project.to_owned();
@@ -1642,6 +1845,8 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
             untaken: Arc::clone(&untaken),
             root: root.clone(),
             reconnects: Arc::clone(&reconnects),
+            kept_on_the_runner,
+            sent: Arc::clone(&sent),
         };
         if let Err(again) = held_on(&holding) {
             tracing::warn!("purlis: project {project} is not held where its chats run: {again}");
@@ -1687,6 +1892,10 @@ struct Holding {
     root: PathBuf,
     /// Told what the project's link hears of the runner its host relays it to (#2496).
     reconnects: Reconnects,
+    /// Whether the project is held on a runner where it keeps it, with its code sent (#2046).
+    kept_on_the_runner: bool,
+    /// What the runner held of each repository after the window last sent it.
+    sent: Arc<crate::runnercode::Sent>,
 }
 
 /// A project the session host saves for the window (#2002): asked for once the link is ready,
@@ -2055,6 +2264,11 @@ impl SessionHost for HostedSessions {
             return Err(SANDBOXED_ON_A_RUNNER.to_owned());
         }
         let (link, project) = self.link()?;
+        // The workspace's clones as they are here, uncommitted work and all, before the chat
+        // starts on them there (#2046).
+        if let (true, Some(workspace)) = (self.kept_on_the_runner, &named.workspace) {
+            crate::runnercode::send_workspace(&link, &project, &self.root, workspace, &self.sent)?;
+        }
         let id = self.number_for(wanted)?;
         // The confinement the host composes for it, named to this window where its proxy is to
         // ask here (#2407), and heard before the start, so nothing its proxy does is missed.

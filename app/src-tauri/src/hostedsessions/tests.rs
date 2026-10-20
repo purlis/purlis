@@ -1644,7 +1644,7 @@ impl purlis_host::Compose for ComposesConfined {
     }
 }
 
-fn by_its_names() -> Named {
+pub(crate) fn by_its_names() -> Named {
     Named {
         chat: None,
         run: None,
