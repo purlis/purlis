@@ -28,7 +28,8 @@ use super::{
     PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
 };
 use crate::WebAddress;
-use crate::cdp::{CALL_TIMEOUT, CallError, Connection, Event};
+use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event};
+use crate::ending::{EndedBy, Ending, EngineExit};
 
 mod changes;
 mod drawing;
@@ -68,6 +69,11 @@ pub(crate) trait DevTools: Send + Sync {
     /// How many of the engine's events were dropped because nobody read them in time.
     fn dropped_events(&self) -> u64;
 
+    /// Why the connection closed, once it has (#2745).
+    fn closed(&self) -> Option<Closed> {
+        None
+    }
+
     fn call(&self, method: &str, params: Value, session: Option<&str>) -> Result<Value, CallError> {
         self.call_within(method, params, session, CALL_TIMEOUT)
     }
@@ -98,6 +104,20 @@ impl DevTools for Connection {
     fn dropped_events(&self) -> u64 {
         Connection::dropped_events(self)
     }
+
+    fn closed(&self) -> Option<Closed> {
+        Connection::closed(self)
+    }
+}
+
+/// How long an engine whose DevTools pipe closed has to end by itself before purlis ends it
+/// (#2745): its process ends just after its pipe closes.
+pub const ENDS_BY_ITSELF_WITHIN: Duration = Duration::from_secs(2);
+
+/// Who is told once the engine has ended, or how it ended, once it has.
+enum Ends {
+    Waiting(Option<Box<dyn FnOnce(Ending) + Send>>),
+    Ended(Ending),
 }
 
 /// The script that says whether a document has loaded: a constant, never the caller's words.
@@ -655,8 +675,14 @@ pub(crate) struct Inner {
     limits: Limits,
     /// Frames for the person to watch (#2012).
     pub(crate) cast: Screencast,
-    /// Who is told once the engine has ended, however it ended.
-    ends: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    /// Who is told once the engine has ended, however it ended, and how it ended (#2745).
+    ends: Mutex<Ends>,
+    /// The engine, until it is stopped or has ended: behind a lock of its own, so a stop never
+    /// waits for a call in flight. Whoever takes it out tells how it ended.
+    #[cfg(unix)]
+    engine: Mutex<Option<crate::process::Engine>>,
+    /// Whether purlis is stopping the engine: its pipe's end is then the stop's to tell.
+    stopping: AtomicBool,
     /// Who judges where its pages may go (#2018), when anyone does.
     judge: Option<Judge>,
     /// Whether the person drives (#2014): every request is then theirs (#2018).
@@ -722,10 +748,6 @@ pub struct Browser {
     to_clear: Mutex<Vec<(String, String, Vec<NodeKey>)>>,
     /// Each page's tree as it was last read, to say what changed since (#2137).
     read_last: changes::ReadLast,
-    /// The engine, until it is stopped: behind a lock of its own, so a stop never waits for a
-    /// call in flight.
-    #[cfg(unix)]
-    engine: Mutex<Option<crate::process::Engine>>,
 }
 
 impl Browser {
@@ -755,8 +777,8 @@ impl Browser {
     ) -> Result<Self, Refusal> {
         let events = engine.take_events().ok_or(Refusal::Ended)?;
         let devtools: Arc<dyn DevTools> = engine.devtools_shared();
-        let mut browser = Self::over(devtools, events, limits, judge)?;
-        browser.engine = Mutex::new(Some(engine));
+        let browser = Self::over(devtools, events, limits, judge)?;
+        *lock(&browser.inner.engine) = Some(engine);
         Ok(browser)
     }
 
@@ -774,7 +796,10 @@ impl Browser {
             changed: Condvar::new(),
             limits: limits.clone(),
             cast: Screencast::new(),
-            ends: Mutex::new(None),
+            ends: Mutex::new(Ends::Waiting(None)),
+            #[cfg(unix)]
+            engine: Mutex::new(None),
+            stopping: AtomicBool::new(false),
             judge,
             person_drives: AtomicBool::new(false),
             purlis_drives: AtomicBool::new(false),
@@ -822,10 +847,7 @@ impl Browser {
                 }
                 lock(&reading.state).ended = true;
                 reading.changed.notify_all();
-                let tell = lock(&reading.ends).take();
-                if let Some(tell) = tell {
-                    tell();
-                }
+                reading.connection_ended();
             })
             .map_err(|e| Refusal::Engine(e.to_string()))?;
         // Held browser-wide, before any page is known, so no page sends anything unjudged:
@@ -881,18 +903,29 @@ impl Browser {
             typing: Mutex::new(Typing::default()),
             to_clear: Mutex::new(Vec::new()),
             read_last: changes::ReadLast::default(),
-            #[cfg(unix)]
-            engine: Mutex::new(None),
         })
     }
 
     /// Asks the engine to close, waits up to `grace`, then ends it. A call in flight then
-    /// answers that the browser has ended.
+    /// answers that the browser has ended. Whoever waits on its end is told purlis stopped it
+    /// (#2745); an engine that had ended already was told of as it ended.
     #[cfg(unix)]
     pub fn stop(&self, grace: Duration) {
-        let engine = lock(&self.engine).take();
+        let engine = {
+            let mut engine = lock(&self.inner.engine);
+            let taken = engine.take();
+            if taken.is_some() {
+                self.inner.stopping.store(true, Ordering::SeqCst);
+            }
+            taken
+        };
         if let Some(engine) = engine {
-            engine.stop(grace);
+            let exit = engine.stop(grace);
+            self.inner.ended_with(Ending {
+                by: EndedBy::Stopped,
+                exit,
+                closed: None,
+            });
         }
     }
 
@@ -1011,22 +1044,26 @@ impl Browser {
     /// The engine's own pid, while this browser holds its engine.
     #[cfg(unix)]
     pub fn process(&self) -> Option<u32> {
-        lock(&self.engine).as_ref().map(crate::process::Engine::pid)
+        lock(&self.inner.engine)
+            .as_ref()
+            .map(crate::process::Engine::pid)
     }
 
-    /// Calls `tell` once the engine has ended, however it ended: at once if it has.
-    pub fn when_it_ends(&self, tell: Box<dyn FnOnce() + Send>) {
+    /// Calls `tell` once the engine has ended, however it ended, with how it ended (#2745): at
+    /// once if it has.
+    pub fn when_it_ends(&self, tell: Box<dyn FnOnce(Ending) + Send>) {
         let now = {
-            let state = lock(&self.inner.state);
-            if state.ended {
-                Some(tell)
-            } else {
-                *lock(&self.inner.ends) = Some(tell);
-                None
+            let mut ends = lock(&self.inner.ends);
+            match &mut *ends {
+                Ends::Ended(ending) => Some(ending.clone()),
+                Ends::Waiting(waiting) => {
+                    *waiting = Some(tell);
+                    return;
+                }
             }
         };
-        if let Some(tell) = now {
-            tell();
+        if let Some(ending) = now {
+            tell(ending);
         }
     }
 
@@ -2898,6 +2935,76 @@ fn hull(a: &Rect, b: &Rect) -> Rect {
         y: top,
         width: (a.x + a.width).max(b.x + b.width) - left,
         height: (a.y + a.height).max(b.y + b.height) - top,
+    }
+}
+
+impl Inner {
+    /// **Its DevTools connection ended** (#2745): unless purlis is stopping the engine, which
+    /// tells of it itself, the engine is given a moment to end by itself where its pipe closed,
+    /// and ended at once where the connection closed on a message, and whoever waits is told how.
+    fn connection_ended(&self) {
+        let closed = self.devtools.closed();
+        let pipe_ended = matches!(
+            closed,
+            None | Some(Closed::PipeEnded | Closed::ReadFailed(_))
+        );
+        let Some((exit, by_itself)) = self.engine_ended(pipe_ended) else {
+            return;
+        };
+        self.ended_with(Ending {
+            by: if by_itself {
+                EndedBy::Itself
+            } else {
+                EndedBy::LostConnection
+            },
+            exit,
+            closed,
+        });
+    }
+
+    /// The engine's exit, and whether it ended by itself, once it has ended: `None` where a
+    /// stop has it. One whose pipe closed has a moment to end by itself; one whose connection
+    /// closed on a message is ended at once. With no engine held (a stand-in's), it ended by
+    /// itself where its pipe did.
+    #[cfg(unix)]
+    fn engine_ended(&self, pipe_ended: bool) -> Option<(Option<EngineExit>, bool)> {
+        let engine = {
+            let mut engine = lock(&self.engine);
+            if self.stopping.load(Ordering::SeqCst) {
+                return None;
+            }
+            engine.take()
+        };
+        Some(match engine {
+            Some(engine) => engine.wait_or_end(if pipe_ended {
+                ENDS_BY_ITSELF_WITHIN
+            } else {
+                Duration::ZERO
+            }),
+            None => (None, pipe_ended),
+        })
+    }
+
+    #[cfg(not(unix))]
+    fn engine_ended(&self, pipe_ended: bool) -> Option<(Option<EngineExit>, bool)> {
+        Some((None, pipe_ended))
+    }
+
+    /// Tells whoever waits how the engine ended, once: the first word of it stands.
+    fn ended_with(&self, ending: Ending) {
+        let tell = {
+            let mut ends = lock(&self.ends);
+            match std::mem::replace(&mut *ends, Ends::Ended(ending.clone())) {
+                Ends::Waiting(tell) => tell,
+                Ends::Ended(first) => {
+                    *ends = Ends::Ended(first);
+                    None
+                }
+            }
+        };
+        if let Some(tell) = tell {
+            tell(ending);
+        }
     }
 }
 

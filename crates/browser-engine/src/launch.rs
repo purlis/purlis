@@ -65,6 +65,9 @@ pub struct Launch {
     program: PathBuf,
     data_dir: PathBuf,
     reach_proxy: ReachProxy,
+    /// Where the engine's standard output and error go, where not its data folder's
+    /// `engine.log`.
+    log: Option<PathBuf>,
 }
 
 /// The variables the engine is given from the host's environment, and no others: where home
@@ -83,7 +86,25 @@ impl Launch {
             program: ready.program().to_owned(),
             data_dir: data_dir.into(),
             reach_proxy,
+            log: None,
         }
+    }
+
+    /// The same start, the engine's standard output and error written to `log` (#2745): a
+    /// file outside the data folder outlives the folder's removal.
+    pub fn logging_to(self, log: impl Into<PathBuf>) -> Self {
+        Self {
+            log: Some(log.into()),
+            ..self
+        }
+    }
+
+    /// Where the engine's standard output and error go: the file [`Launch::logging_to`] named,
+    /// or `engine.log` in its data folder.
+    pub fn log(&self) -> PathBuf {
+        self.log
+            .clone()
+            .unwrap_or_else(|| self.data_dir.join("engine.log"))
     }
 
     /// The engine's executable.

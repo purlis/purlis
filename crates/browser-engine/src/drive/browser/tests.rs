@@ -15,10 +15,11 @@ use serde_json::{Value, json};
 
 use super::{ACTIVE_ELEMENT, Browser, DevTools, READ_VALUE, READY_STATE, SELECT_OPTIONS};
 use crate::WebAddress;
-use crate::cdp::{CallError, Event};
+use crate::cdp::{CallError, Closed, Event};
 use crate::drive::{
     Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, Ref, Refusal, Settled,
 };
+use crate::ending::{EndedBy, Ending};
 
 mod aim;
 mod drawn;
@@ -91,6 +92,8 @@ struct Engine {
     /// Ids of ended worlds that now name the page's own world, by session: what a process the
     /// page moved to may give the same number.
     reused: Mutex<Vec<(String, i64)>>,
+    /// Why its connection closed, as the real one says it (#2745).
+    closed: Mutex<Option<Closed>>,
 }
 
 /// A world of purlis's own the stand-in made.
@@ -458,6 +461,10 @@ impl DevTools for Stand {
         Ok(answer)
     }
 
+    fn closed(&self) -> Option<Closed> {
+        super::lock(&self.0.closed).clone()
+    }
+
     fn dropped_events(&self) -> u64 {
         *super::lock(&self.0.dropped)
     }
@@ -544,6 +551,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
         dropped: Mutex::new(0),
         worlds: Mutex::new(Vec::new()),
         reused: Mutex::new(Vec::new()),
+        closed: Mutex::new(None),
     });
     let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits, judge).unwrap();
     // Set up means both sessions resumed: every frame is known by then.
@@ -2333,11 +2341,65 @@ fn whoever_asked_is_told_once_the_engine_ends() {
     let (browser, engine) = browser();
     let told = Arc::new(Mutex::new(0));
     let counting = told.clone();
-    browser.when_it_ends(Box::new(move || *super::lock(&counting) += 1));
+    browser.when_it_ends(Box::new(move |_| *super::lock(&counting) += 1));
 
     // The engine's pipe closes: its events end.
     let (closed, _) = mpsc::sync_channel(1);
     *super::lock(&engine.events) = closed;
 
     wait_for("told", || *super::lock(&told) == 1);
+}
+
+#[test]
+fn whoever_asked_is_told_the_connection_closed_and_why() {
+    // #2745: a message the connection could not read ended it while the engine still ran.
+    let (browser, engine) = browser();
+    let told: Arc<Mutex<Option<Ending>>> = Arc::default();
+    let telling = told.clone();
+    browser.when_it_ends(Box::new(move |ending| {
+        *super::lock(&telling) = Some(ending)
+    }));
+
+    let why = Closed::TooLarge {
+        method: Some("Page.frameNavigated".into()),
+        most: 64 << 20,
+    };
+    *super::lock(&engine.closed) = Some(why.clone());
+    let (closed, _) = mpsc::sync_channel(1);
+    *super::lock(&engine.events) = closed;
+
+    wait_for("told", || super::lock(&told).is_some());
+    assert_eq!(
+        super::lock(&told).clone(),
+        Some(Ending {
+            by: EndedBy::LostConnection,
+            exit: None,
+            closed: Some(why),
+        })
+    );
+}
+
+#[test]
+fn one_who_asks_after_the_end_is_told_at_once_how_it_ended() {
+    let (browser, engine) = browser();
+    let first: Arc<Mutex<Option<Ending>>> = Arc::default();
+    let telling = first.clone();
+    browser.when_it_ends(Box::new(move |ending| {
+        *super::lock(&telling) = Some(ending)
+    }));
+    *super::lock(&engine.closed) = Some(Closed::PipeEnded);
+    let (closed, _) = mpsc::sync_channel(1);
+    *super::lock(&engine.events) = closed;
+    wait_for("told", || super::lock(&first).is_some());
+
+    let later: Arc<Mutex<Option<Ending>>> = Arc::default();
+    let telling = later.clone();
+    browser.when_it_ends(Box::new(move |ending| {
+        *super::lock(&telling) = Some(ending)
+    }));
+    assert_eq!(*super::lock(&later), *super::lock(&first));
+    assert_eq!(
+        super::lock(&later).as_ref().map(|ending| ending.by),
+        Some(EndedBy::Itself)
+    );
 }
