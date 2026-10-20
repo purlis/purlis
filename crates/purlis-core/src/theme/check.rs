@@ -686,11 +686,6 @@ pub const FITS: &[Fit] = &[
 const SELECTED_APART_FROM: [&str; 3] = ["surface.hover", "layer.selected", "surface.base"];
 
 /// What [`check`] found: nothing, for a theme whose words can be read.
-///
-/// **This shape is today's (format 1) and will change for format 2** (spec #2313): typed values
-/// beyond colour and motion (geometry, fonts, icons), keys for each appearance × option
-/// combination, and schema errors beside the findings. Its users are the window's wire types and
-/// the engine's own tests, which change with it.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Report {
     pub findings: Vec<Finding>,
@@ -705,11 +700,6 @@ impl Report {
 
 /// One floor a theme does not clear, and where: `tint` is the workspace colour it was tinted by,
 /// `None` for the theme as it is.
-///
-/// **This shape is today's (format 1) and will change for format 2** (spec #2313): typed values
-/// beyond colour and motion (geometry, fonts, icons), keys for each appearance × option
-/// combination, and schema errors beside the findings. Its users are the window's wire types and
-/// the engine's own tests, which change with it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Finding {
