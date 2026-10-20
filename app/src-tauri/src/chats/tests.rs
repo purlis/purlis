@@ -7194,6 +7194,43 @@ fn a_composed_runner_chat_is_judged_by_the_runner_host_s_record_of_its_run() {
     }
 }
 
+/// #2692: a runner's word that a run is off is taken only where this window's own reading of
+/// the chat's start is off too. For a start this window compiled a sandbox for, it is no record:
+/// the chat is held by the runner's sandbox, and nothing that lets a chat with no sandbox reach
+/// more takes it as one.
+#[test]
+fn a_runners_off_for_a_start_this_window_compiled_a_sandbox_for_is_no_record() {
+    use purlis_session_protocol::session::RunSandbox;
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    host.on_a_runner();
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        plane.path().to_path_buf(),
+    );
+    host.records_composed_runs_as(Some(RunSandbox::Off));
+    let session = chats
+        .start_ready(
+            &on_the_profile_work(),
+            &purlis_core::start::Ready {
+                sandbox: Some(a_claude_sandbox(plane.path())),
+                ..a_harness_ready(None)
+            },
+            SIZE,
+        )
+        .expect("it starts on the runner");
+
+    assert!(!chats.started_unsandboxed(session));
+    assert!(chats.sandboxed_by_its_host(session));
+    assert_eq!(
+        chats
+            .login_asker(plane.path(), session)
+            .map(|(_, free)| free),
+        Some(false)
+    );
+}
+
 /// #2692: each path reads the record of how a run started in the direction that fails closed
 /// for it. Where a sandboxed chat is allowed more (dispatching to another persona, a handoff's
 /// crossing, a dispatch while you are away, the network record), only a run recorded in a

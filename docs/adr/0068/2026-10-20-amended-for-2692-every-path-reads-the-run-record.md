@@ -12,7 +12,10 @@ D-2692-5).
    answers, read by the host from what it started and never from the start. A runner's chat is
    started over a link between hosts, which may not ask for `programs`, so the start's answer is
    the one place the window hears it. The window keeps it for a chat its host composed by its
-   names. A host before 1.29 says nothing, and its run is taken as sandboxed. *D-2692-1.*
+   names. A host before 1.29 says nothing, and its run is taken as sandboxed. The window takes
+   a host's word that a run is off only where its own reading of the start is off too: for a
+   start it compiled a sandbox for, an `off` is kept as no record, so no chat is allowed more
+   on another host's word alone. *D-2692-1.*
 2. **Each path reads the record in the direction that fails closed for it.** Where a sandboxed
    chat is allowed more (dispatching to another persona, a handoff's crossing, a dispatch while
    you are away, and the network record), a chat counts as sandboxed only where its run is

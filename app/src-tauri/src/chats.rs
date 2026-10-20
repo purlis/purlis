@@ -2956,6 +2956,9 @@ impl Chats {
             .and_then(purlis_core::sandbox::Applied::plan)
             .map(|plan| plan.given_for_this_chat_alone())
             .unwrap_or_default();
+        // Whether this window's own reading of the chat's start compiled a sandbox for it, which
+        // a runner's record of its run is held to below (#2692).
+        let compiled_here = sandbox.is_some();
         let sandbox = sandbox.filter(|_| !on_the_runner);
         // What it is armed with, never written by it, and never where it writes. A chat
         // reattached is not started, so it is never refused here: it is compared with the
@@ -3430,8 +3433,13 @@ impl Chats {
                 .map(|composed| {
                     // How the runner applied the sandbox to the run it composed, by the runner
                     // host's own record as its start answered it (#2692): none from a runner
-                    // that keeps no such record, which is taken as sandboxed.
-                    ran = composed.ran;
+                    // that keeps no such record, which is taken as sandboxed. Its word that the
+                    // run is off is taken only where this window's own reading starts the chat
+                    // without a sandbox too: any other is no record, so this window never
+                    // allows a chat more on a runner's word alone.
+                    ran = composed.ran.filter(|ran| {
+                        *ran != purlis_session_protocol::session::RunSandbox::Off || !compiled_here
+                    });
                     confinement = composed.confinement;
                     composed.number
                 }),
