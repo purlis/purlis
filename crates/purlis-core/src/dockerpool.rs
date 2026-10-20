@@ -711,7 +711,49 @@ fn is_no_new_privileges(option: &str) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Docker(pub std::path::PathBuf);
 
+/// Where a `docker` command is looked for past `PATH`, for a window started from the Finder
+/// whose `PATH` names none: Docker Desktop's own, Homebrew's and `/usr/local`'s, and, in the
+/// home folder, where Docker Desktop, OrbStack and Rancher Desktop link it.
+const DOCKER_ELSEWHERE: &[&str] = &[
+    "/usr/local/bin/docker",
+    "/opt/homebrew/bin/docker",
+    "/Applications/Docker.app/Contents/Resources/bin/docker",
+];
+const DOCKER_IN_HOME: &[&str] = &[
+    ".docker/bin/docker",
+    ".orbstack/bin/docker",
+    ".rd/bin/docker",
+];
+
 impl Docker {
+    /// **The `docker` command on this machine** (#2679): the first on `path`, of its absolute
+    /// folders alone, else the first of the places Docker's installers put it (`DOCKER_ELSEWHERE`,
+    /// and under `home`). Refused, saying how to get one, where there is none.
+    pub fn on_this_machine(
+        path: Option<&str>,
+        home: Option<&std::path::Path>,
+    ) -> Result<Docker, Refused> {
+        let on_path = path
+            .into_iter()
+            .flat_map(|path| path.split(':'))
+            .filter(|dir| dir.starts_with('/'))
+            .map(|dir| std::path::Path::new(dir).join("docker"));
+        let elsewhere = DOCKER_ELSEWHERE.iter().map(std::path::PathBuf::from);
+        let in_home = home
+            .into_iter()
+            .flat_map(|home| DOCKER_IN_HOME.iter().map(move |at| home.join(at)));
+        on_path
+            .chain(elsewhere)
+            .chain(in_home)
+            .find(|candidate| crate::secrets::run::which(&candidate.display().to_string(), None).is_some())
+            .map(Docker)
+            .ok_or_else(|| {
+                refused(
+                    "purlis found no docker command on this machine; install Docker Desktop, or                      another Docker, and try again",
+                )
+            })
+    }
+
     /// Runs `docker` with `args`, handing it `input`, and answers what it printed, read up to
     /// `most` bytes: one that prints more is ended and refused. What it says on standard error
     /// is kept only to be shown, up to [`MOST_SAID`], and never read to decide anything.

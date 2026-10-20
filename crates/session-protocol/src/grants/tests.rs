@@ -144,3 +144,14 @@ fn only_a_human_scope_answers() {
         .collect();
     assert_eq!(answer, [Scope::LocalUi, Scope::Approval]);
 }
+
+#[test]
+fn only_the_window_asks_its_host_to_relay_its_link_to_a_runner() {
+    for scope in Scope::ALL {
+        assert_eq!(
+            scope.may(Power::RelayTo),
+            scope == Scope::LocalUi,
+            "{scope}"
+        );
+    }
+}

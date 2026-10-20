@@ -82,7 +82,7 @@ use futures::future::BoxFuture;
 use purlis_session_protocol::auth::Scope;
 use purlis_session_protocol::browsing::Secret;
 use purlis_session_protocol::grants::Power;
-use purlis_session_protocol::hostlink::{Linked, Links};
+use purlis_session_protocol::hostlink::{Down, Linked, Links};
 use purlis_session_protocol::link::{Acceptor, Link, Opener, Stream};
 use purlis_session_protocol::session::{
     self, Answer, Attached, CallError, Client, Command, Events, Peer, Pushed, Refusal, Since,
@@ -129,8 +129,8 @@ impl Taken for Dialed {
             let made = self.0.take()?.await;
             Some(match made {
                 Ok(Ok(link)) => Linked::Up(Box::new(link)),
-                Ok(Err(why)) => Linked::Down(why),
-                Err(_) => Linked::Down("the dial was let go of".into()),
+                Ok(Err(why)) => Linked::Down(Down::because(why)),
+                Err(_) => Linked::Down(Down::because("the dial was let go of")),
             })
         })
     }
@@ -289,7 +289,7 @@ enum Standing {
     /// A link is up, and carries what the client's link stands on.
     Up(Arc<Upstream>),
     /// No link is up, and why.
-    Down(String),
+    Down(Down),
     /// No link is up and no more will come of the links being taken: the next command takes
     /// links anew.
     Over,
@@ -345,7 +345,7 @@ impl Relayed {
             match standing.borrow_and_update().clone() {
                 Standing::Up(_) if peer.has_ended() => return Err(ended()),
                 Standing::Up(upstream) => return Ok(upstream),
-                Standing::Down(why) => return Err(not_linked(&why)),
+                Standing::Down(down) => return Err(not_linked(&down)),
                 Standing::Over => self.again.notify_one(),
                 Standing::Linking => {}
             }
@@ -372,7 +372,16 @@ impl Relayed {
     }
 }
 
-fn not_linked(why: &str) -> Refusal {
+fn not_linked(down: &Down) -> Refusal {
+    let why = &down.why;
+    if down.key_changed {
+        return Refusal {
+            code: session::KEY_CHANGED.into(),
+            why: format!(
+                "Runner refused ({why}). purlis sent it nothing and does not link to it until it                  is removed and added again"
+            ),
+        };
+    }
     Refusal {
         code: session::NOT_STARTED.into(),
         why: format!(
@@ -439,17 +448,17 @@ async fn keep(
                                 }
                                 None => {
                                     let why = "the link to it ended as it came up";
-                                    tell.send_replace(Standing::Down(why.into()));
-                                    told.down(&client, why);
+                                    tell.send_replace(Standing::Down(Down::because(why)));
+                                    told.down(&client, why, false);
                                 }
                             },
                         }
                     }
-                    Some(Linked::Down(why)) => {
+                    Some(Linked::Down(down)) => {
                         up = None;
                         retiring = None;
-                        told.down(&client, &why);
-                        tell.send_replace(Standing::Down(why));
+                        told.down(&client, &down.why, down.key_changed);
+                        tell.send_replace(Standing::Down(down));
                     }
                     None => no_more = true,
                 },
@@ -460,8 +469,8 @@ async fn keep(
                 () = link_ended => {
                     up = None;
                     let why = "the link to it ended";
-                    tell.send_replace(Standing::Down(why.into()));
-                    told.down(&client, why);
+                    tell.send_replace(Standing::Down(Down::because(why)));
+                    told.down(&client, why, false);
                 }
             }
         }
@@ -483,9 +492,12 @@ enum LinkTold {
 
 impl LinkTold {
     /// No link is up, for `why`: the client is told, unless it was told already.
-    fn down(&mut self, client: &ClientLink, why: &str) {
+    fn down(&mut self, client: &ClientLink, why: &str, key_changed: bool) {
         if std::mem::replace(self, LinkTold::Down) == LinkTold::Up {
-            client.tell_now(Pushed::LinkDown { why: why.into() });
+            client.tell_now(Pushed::LinkDown {
+                why: why.into(),
+                key_changed,
+            });
         }
     }
 
@@ -1123,6 +1135,14 @@ impl session::Host for Relay {
                 why: "a browser on another host is logged in to nothing: a login's values are \
                       not sent to another host"
                     .into(),
+            });
+        }
+        // A window's link is relayed to a runner by its own host alone (#2679): a relaying host
+        // never asks the host it relays to to relay again.
+        if let Command::RelayTo { .. } = command {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this link is relayed to a runner already, and is relayed to no other".into(),
             });
         }
         // A runner is unpaired by the desktop that removes it, on a link of its own (#2525):

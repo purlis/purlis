@@ -2125,6 +2125,7 @@ fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
     pushes
         .send(session::Pushed::LinkDown {
             why: "the link to it ended".into(),
+            key_changed: false,
         })
         .unwrap();
     for seq in 1..=3000 {

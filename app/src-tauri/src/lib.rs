@@ -118,6 +118,8 @@ mod removalasks;
 mod repolist;
 mod restored;
 mod restoring;
+#[cfg(unix)]
+mod runnerlinks;
 mod sandboxchoose;
 mod sandboxing;
 mod savefix;
@@ -3068,7 +3070,10 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
         .saving_with(hostsaving::InTheHost);
         // `purlis stop --all` is heard with no window there (#2190).
         let hosting = match purlis_core::machine::config_root() {
-            Some(config) => hosting.heeding(purlis_core::halt::OnDisk(config)),
+            // A window's link is relayed to a pool's runner this machine keeps (#2679).
+            Some(config) => hosting
+                .heeding(purlis_core::halt::OnDisk(config.clone()))
+                .relaying_with(runnerlinks::relays_to(config)),
             None => hosting,
         };
         purlis_core::browsers::given_to(hosting)

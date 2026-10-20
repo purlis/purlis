@@ -136,3 +136,6 @@
 {"call":{"id":100,"command":"name_window","name":"0123456789abcdef0123456789abcdef"}}
 {"call":{"id":101,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser"}}
 {"reply":{"re":101,"refused":{"code":"device_full","why":"This device runs at most 4 browsers at once, and that many run now: close one first, or raise the budget in Settings › This machine › Browsers"}}}
+{"call":{"id":133,"command":"relay_to","runner":"builds"}}
+{"pushed":{"link_down":{"why":"host 01JB0RUNNER0000000000000000 offered another link key than the one pinned when it was paired","key_changed":true}}}
+{"reply":{"re":134,"refused":{"code":"key_changed","why":"Runner refused (host 01JB0RUNNER0000000000000000 offered another link key than the one pinned when it was paired). purlis sent it nothing and does not link to it until it is removed and added again"}}}

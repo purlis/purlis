@@ -98,6 +98,18 @@ pub fn kept(config_root: &Path, store: &dyn keyring::Store) -> Result<Desktop, S
     Ok(Desktop(Identity { device, key }))
 }
 
+/// The keyring this build keeps the link key in: the operating system's, or, in a fenced
+/// build, a stub file in the machine store, so a test never reaches the person's keyring.
+pub fn this_builds_keyring(config_root: &Path) -> Box<dyn keyring::Store> {
+    if crate::fence::FENCED {
+        Box::new(keyring::FileStore::at(
+            crate::machine::dir(config_root).join(keyring::STUB_FILE),
+        ))
+    } else {
+        Box::new(keyring::OsStore)
+    }
+}
+
 /// The key in `service`, or `None` when the keyring provably holds none.
 fn read(store: &dyn keyring::Store, service: &str) -> Result<Option<LinkKey>, String> {
     let Some(kept) = store

@@ -982,3 +982,22 @@ fn a_runner_is_not_made_where_a_container_of_its_name_is_already_there() {
     assert!(!log.contains("run "), "{log}");
     assert!(!log.contains(" rm "), "{log}");
 }
+
+fn docker_is_found_on_the_path_first_and_then_where_its_installers_put_it() {
+    let (on_path, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let path = format!("relative:{}", on_path.path().display());
+    // None on the path, none at home: the error says how to get one (unless this machine has
+    // Docker where an installer puts it, which a test cannot take away).
+    if let Err(refused) = Docker::on_this_machine(Some(&path), Some(home.path())) {
+        assert!(refused.0.contains("install Docker"), "{refused}");
+    }
+    std::fs::create_dir_all(home.path().join(".orbstack/bin")).unwrap();
+    stand_in::program(&home.path().join(".orbstack/bin"), "docker", "#!/bin/sh\n");
+    let found = Docker::on_this_machine(Some(&path), Some(home.path())).unwrap();
+    assert!(found.0.exists());
+    stand_in::program(on_path.path(), "docker", "#!/bin/sh\n");
+    assert_eq!(
+        Docker::on_this_machine(Some(&path), Some(home.path())).unwrap(),
+        Docker(on_path.path().join("docker"))
+    );
+}

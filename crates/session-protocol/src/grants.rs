@@ -44,6 +44,7 @@
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | |
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
+//! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -172,6 +173,10 @@
 //!   `local-ui` sends it: a name another scope gave would take the window's chats. A relaying host
 //!   never sends it on, and says only a digest of it to the other host, so `remote-link` is never
 //!   granted it, and a runner never learns the name.
+//! - **`relay_to` is the window's alone** (1.33, #2679). It has the desktop's host link to a
+//!   runner with this device's key and run the runner's connector, which is a human act (ADR
+//!   0078 §2 and §4): no agent's scope reaches a link. A relaying host refuses it, so a window
+//!   whose link is relayed never asks the runner to relay again.
 
 use crate::auth::Scope;
 
@@ -247,6 +252,8 @@ pub enum Power {
     /// `name_window` (1.31, #2623): the window names itself on a link to its own host, by the
     /// name it keeps for that link. The window's alone.
     NameWindow,
+    /// `relay_to` (1.33, #2679): the window's link relayed by its own host to a runner it keeps.
+    RelayTo,
 }
 
 impl Scope {

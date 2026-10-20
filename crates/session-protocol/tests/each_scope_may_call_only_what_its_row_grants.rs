@@ -357,6 +357,10 @@ fn every_command() -> Vec<Command> {
                 "0123456789abcdef0123456789abcdef".into(),
             ),
         },
+        // The window asks its own host to relay its link to a runner it keeps (1.33, #2679).
+        Command::RelayTo {
+            runner: "builds".into(),
+        },
     ]
 }
 
@@ -413,6 +417,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "log_in",
             "start_program", // a browser opened from kept logins
             "name_window",
+            "relay_to",
         ],
         Scope::Terminal => &[
             "list",

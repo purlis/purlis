@@ -209,9 +209,14 @@ use crate::view::{Limits, Views};
 /// 1.32 added the host holding every client to its device's browser budget (#2611): a browser's
 /// start past it is refused `device_full`. A host before 1.32 starts it; the window's own count
 /// kept its starts within the budget there.
+///
+/// 1.33 added the window reaching a pool's runner through its own host (#2679, ADR 0078 §4):
+/// `relay_to`, the first command on a window's link, has the desktop's host relay that link to
+/// the runner it keeps under the name, and `link_down` says when the runner answered with
+/// another key than the one pinned for it (`key_changed`).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 32,
+    minor: 33,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -285,6 +290,11 @@ pub const TOO_LARGE: &str = "too_large";
 /// every browser it runs, whoever started it, and starts no more. Its `why` names the budget.
 pub const DEVICE_FULL: &str = "device_full";
 
+/// The runner a relaying host links to answered with another key than the one pinned at its
+/// pairing (1.33, #2679): nothing was sent to it, and it is not linked until the person removes
+/// it and adds it anew.
+pub const KEY_CHANGED: &str = "key_changed";
+
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
 pub const REFUSALS: &[&str] = &[
@@ -302,6 +312,7 @@ pub const REFUSALS: &[&str] = &[
     NOT_DRIVING,
     INPUT_MISSED,
     DEVICE_FULL,
+    KEY_CHANGED,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
@@ -532,6 +543,14 @@ pub enum Command {
     /// do with it. The window's alone ([`crate::grants::Power::NameWindow`]), never sent on, and
     /// never shown by `Debug`.
     NameWindow { name: crate::browsing::Secret },
+    /// The window asks the desktop's host to relay this link to `runner` (1.33, #2679, ADR 0078
+    /// §4): the runner this machine keeps under that name, reached through its connector and
+    /// linked with the key pinned at its pairing. Sent only as a link's first command, before
+    /// `subscribe`; from then on the host relays every command on the link to that runner, as a
+    /// relaying host does. Answered [`Answer::Done`], or refused [`NOT_ALLOWED`] on a link that
+    /// has sent anything else and [`NOT_STARTED`] for a runner this machine does not keep. The
+    /// window's alone ([`crate::grants::Power::RelayTo`]).
+    RelayTo { runner: String },
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -1190,6 +1209,10 @@ pub enum Pushed {
     /// link goes down, to every subscriber of the relaying host.
     LinkDown {
         why: String,
+        /// The other host answered with another key than the one pinned at its pairing (1.33,
+        /// #2679): it is not linked again until the person removes it and adds it anew.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        key_changed: bool,
     },
     /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
     /// client's link stands on carried over to it: its views draw again, each from a snapshot.
@@ -1251,6 +1274,7 @@ wire_words!(Command {
     TakeBack => "take_back",
     NameWindow => "name_window",
     Unpair => "unpair",
+    RelayTo => "relay_to",
 });
 
 impl Command {
@@ -1297,6 +1321,7 @@ impl Command {
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
+            Command::RelayTo { .. } => Power::RelayTo,
         }
     }
 }
@@ -1764,7 +1789,8 @@ impl Lane {
             | Command::Quit
             | Command::TakeBack { .. }
             | Command::NameWindow { .. }
-            | Command::Unpair => None,
+            | Command::Unpair
+            | Command::RelayTo { .. } => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -2356,6 +2382,15 @@ impl Client {
     /// is admitted. Refused by every host but a runner's, on its link from that desktop.
     pub async fn unpair(&self) -> Result<(), CallError> {
         self.done(Command::Unpair).await
+    }
+
+    /// Ask the desktop's host to relay this link to the runner it keeps as `runner` (1.33,
+    /// #2679): the link's first command, before [`Client::subscribe`].
+    pub async fn relay_to(&self, runner: &str) -> Result<(), CallError> {
+        self.done(Command::RelayTo {
+            runner: runner.to_owned(),
+        })
+        .await
     }
 
     /// Throw the kill switch: every program the host runs ends, and none starts until the
