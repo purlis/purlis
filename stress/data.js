@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792485471404,
+  "lastUpdate": 1792485490202,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7506,6 +7506,40 @@ window.BENCHMARK_DATA = {
             "value": 675.5,
             "unit": "MB",
             "extra": "median of 6 samples: 628, 661.2, 670.2, 680.8, 681.6, 784.8 MB; window 402.2 MB, session host 273.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide",
+            "email": "aaron.yor@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "dda1333adab1b807ba8298e9fcac672542bb63e2",
+          "message": "After a re-link, a runner chat's withdrawn ports are given back (#2734)\n\n* After a re-link, a runner chat's withdrawn ports are given back\n\nThe runner keeps which given ports it withdrew from a confinement as\nits last link ended, and gives each back, as the plan gave it, once a\nlink of the chat's window names it again. A port the window withdrew\nis recorded as withdrawn in the plan and is never given back. A\nwithdrawal and a give-back run on one lane and act only on ports still\nwithdrawn for want of a window, so they never cross.\n\nConfining gains give_back; the core's reach, proxy, confinement and\nhosted confinement carry a withdrawn port again on the runner's own\nproxy only.\n\nADR 0078 amended 2026-10-20 for #2625.\n\nCloses #2625\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A port the person withdraws while it is given back ends withdrawn\n\nThe window's withdrawal now marks its port withdrawn, and no longer one\nto give back, under the host's state lock before the proxy hears it.\nA give-back checks, gives back and marks each port under the same lock.\nWhichever lands first, the port ends withdrawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T07:54:58Z",
+          "url": "https://github.com/purlis/purlis/commit/dda1333adab1b807ba8298e9fcac672542bb63e2"
+        },
+        "date": 1792485488736,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1482.9,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1334.5, 1482.9, 1512.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 645.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 597.6, 628.2, 644.6, 645.7, 646.4, 746.1 MB; window 393.1 MB, session host 251.6 MB"
           }
         ]
       }
