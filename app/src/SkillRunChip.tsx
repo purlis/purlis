@@ -34,7 +34,7 @@ export const SkillRunChip = memo(function SkillRunChip({
     <span className="tab-tasks tab-skill-run">
       <button
         type="button"
-        className="tab-tasks-counts"
+        className="ui-button ui-button-ghost ui-button-sm tab-tasks-counts"
         data-testid="tab-skill-run"
         title={`Using the skill ${run.skill}: ${calls} so far. Open its runs.`}
         aria-label={`Using the skill ${run.skill}, ${calls} so far. Open its runs`}

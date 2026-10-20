@@ -136,10 +136,8 @@ pub struct StudioRun {
 /// Every run of `skill` the project at `root` has recorded, newest first, at most `limit`.
 pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<StudioRun> {
     let small = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
-    purlis_core::skilluse::runs(root)
+    purlis_core::skills::studio_runs(root, Some(skill), limit)
         .into_iter()
-        .filter(|run| run.is_of(skill))
-        .take(limit)
         .map(|run| {
             let end = run.end.as_ref();
             StudioRun {

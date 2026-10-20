@@ -511,6 +511,17 @@ pub fn studio_rows(set: &SkillSet, plane: &Path) -> Vec<StudioRow> {
     rows
 }
 
+/// **The studio's runs** (SK-3): every run the plane at `plane`'s skill log holds, newest first,
+/// of skill `skill` where one is named (by its name, with or without the namespace a harness
+/// used it by), at most `limit`. The one list a skill's Runs panel and `purlis skill runs` draw.
+pub fn studio_runs(plane: &Path, skill: Option<&str>, limit: usize) -> Vec<crate::skilluse::Run> {
+    crate::skilluse::runs(plane)
+        .into_iter()
+        .filter(|run| skill.is_none_or(|name| run.is_of(name)))
+        .take(limit)
+        .collect()
+}
+
 /// The built-in skills' directory of the plugin installed beside this binary, where there is one
 /// ([`crate::plugin_install::bundle_beside`]): what the Skill studio and `purlis skill` list,
 /// found the one way in the window and on the command line.

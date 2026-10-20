@@ -205,11 +205,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
         }
         SkillCommand::Runs { name, limit, json } => {
-            let runs: Vec<_> = purlis_core::skilluse::runs(root)
-                .into_iter()
-                .filter(|run| name.as_deref().is_none_or(|name| run.is_of(name)))
-                .take(limit)
-                .collect();
+            let runs = purlis_core::skills::studio_runs(root, name.as_deref(), limit);
             if json {
                 println!("{}", json!({ "runs": runs }));
             } else {

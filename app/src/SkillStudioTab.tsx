@@ -179,7 +179,7 @@ export function SkillStudioTab({
                 ) : (
                   <button
                     type="button"
-                    className="said-link"
+                    className="ui-button ui-button-ghost ui-button-sm"
                     aria-label={`Open ${skill.name}`}
                     onClick={() => onOpenView(skillView(skill.name), skillTitle(skill.name))}
                   >
