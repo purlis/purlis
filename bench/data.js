@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792474253961,
+  "lastUpdate": 1792475594825,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18522,6 +18522,48 @@ window.BENCHMARK_DATA = {
             "value": 101.625804,
             "unit": "ms",
             "extra": "median of 5 runs: 101.213, 101.456, 101.626, 101.680, 101.976 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d67e2b664c5235bc0a905d498c0332cb83caa756",
+          "message": "Theme drafts, hard floors and the revert key (#2705)\n\n* Theme drafts, hard floors and the revert key (#2332)\n\nA chat's theme changes are a draft, written by the app for the chat that\nasks, in the plane's local folder, and drawn only in that chat's\nworkspace while it holds every hard floor; the last good version stays\notherwise, and the chat is told which floor.\n\n- theme::hard: primary text, the focus ring and the terminal's words at\n  3:1 as drawn, in every tint; `purlis theme check` reports them per\n  combination in `hard_floors`.\n- theme::drafts: start, save, read, drafted, keep (as the person was\n  shown it, reading each file once), revert, move to the project, copy to\n  the machine. No chat writes the drafts folder.\n- `purlis theme draft <folder> [--save]`, `check draft:<folder>`.\n- The window: the draft strip with Keep, Revert and Compare, the revert\n  key, Keep or Revert when a chat closes, the gallery's moves up a level.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme drafts: a draft refused for a font is reviewed by a refused theme's rules (#2332)\n\nIts Notice offers Review and allow only where the project brings that face,\nwith those bytes, where the draft is kept to, and asks about font files alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T09:31:24+04:00",
+          "tree_id": "1a9565d4ac92507d1b951ae8bed4c9546ea6372c",
+          "url": "https://github.com/purlis/purlis/commit/d67e2b664c5235bc0a905d498c0332cb83caa756"
+        },
+        "date": 1792475593570,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.530832,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.517, 0.526, 0.531, 0.531, 0.537 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3393845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.304, 16.318, 16.339, 16.701, 16.770 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.94235499999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.100, 101.545, 101.942, 102.087, 102.126 ms"
           }
         ]
       }
