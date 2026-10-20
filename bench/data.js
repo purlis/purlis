@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792516168169,
+  "lastUpdate": 1792517783483,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19404,6 +19404,48 @@ window.BENCHMARK_DATA = {
             "value": 101.48325600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.210, 101.383, 101.483, 102.392, 102.892 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7f003d7b5b0708880c40df2efc87c7233666eb84",
+          "message": "Theme skill: teach geometry, and say which token draws a tab (#2819)\n\n* Theme skill: teach geometry, and say which token draws a tab\n\nThe theme skill now names every geometry token with its bounds, Purlis\nClassic's value and what it reaches, says which surfaces the window still\ndraws square (strip tabs, the tab closer, the strip gear, list and tree\nrows), and names layer.selected as the token that colours a selected tab;\ntab.active colours menu highlights and button hovers. The check's report\ntypes lose the comment that called geometry future format-2 work.\n\nCloses #2808\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme skill: say what each geometry token reaches, and pin the table\n\nThe table now gives each corner and height token its own row with what it\nreaches, Classic's compact values beside the comfortable ones, and the\nline-fits rule in both densities with a compact example. It says geometry\nis set in each appearance and that the project strip's height is not a\ntoken yet. A CLI skill test reads the table and compares it with the\nengine's STEPS, so a changed bound or value turns it red.\n\nPart of #2808\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme skill: say which tokens compact moves when its layer leaves them out\n\nA token the top-level compact layer leaves out keeps the appearance's own\nvalue; only the ones Classic's compact moves (space.2 to space.8,\nsize.control, size.chrome, line-height.body) take the smaller of the two.\n\nPart of #2808\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T21:20:39+04:00",
+          "tree_id": "8c1023567a40cc82c9048a79dab8d79bd0cdb80d",
+          "url": "https://github.com/purlis/purlis/commit/7f003d7b5b0708880c40df2efc87c7233666eb84"
+        },
+        "date": 1792517781605,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5021695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.485, 0.499, 0.502, 0.529, 0.538 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.13294,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.449, 16.675, 17.133, 17.416, 17.421 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.5775045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.860, 103.361, 104.578, 105.881, 106.057 ms"
           }
         ]
       }
