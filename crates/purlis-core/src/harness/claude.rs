@@ -29,8 +29,8 @@ impl HarnessAdapter for ClaudeCode {
     ///
     /// Its skills take [`crate::skills::Route::Plugin`]: the built-in skills of its set
     /// ([`crate::skills::for_chat`]) are the plugin's own `skills/`, which `--plugin-dir`
-    /// already loads; the plane's are a second `--plugin-dir`, their folder of links
-    /// ([`crate::skills::linked`]), where the set holds any.
+    /// already loads; the plane's are a second `--plugin-dir`, the folder of links the host laid
+    /// out for them ([`crate::skills::linked`]), where the set holds any.
     ///
     /// `--settings` MERGES with the settings already in force rather than replacing them
     /// (measured on claude 2.1.276), and a key it names wins over the project's (measured on

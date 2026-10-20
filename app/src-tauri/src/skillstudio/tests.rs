@@ -28,13 +28,13 @@ fn the_studio_lists_built_in_and_project_skills_with_their_level_and_why_one_is_
     let studio = studio(&root, Some(&built_in), true);
 
     assert!(studio.on);
-    let rows: Vec<(&str, &str, bool, Option<&str>, &str)> = studio
+    let rows: Vec<(&str, Level, bool, Option<&str>, &str)> = studio
         .skills
         .iter()
         .map(|s| {
             (
                 s.name.as_str(),
-                s.level.as_str(),
+                s.level,
                 s.on,
                 s.left_out.as_deref(),
                 s.folder.as_str(),
@@ -44,10 +44,10 @@ fn the_studio_lists_built_in_and_project_skills_with_their_level_and_why_one_is_
     assert_eq!(
         rows[..2],
         [
-            ("deploy", "project", true, None, "skills/deploy"),
+            ("deploy", Level::Project, true, None, "skills/deploy"),
             (
                 "half",
-                "project",
+                Level::Project,
                 false,
                 Some("not a skill: its SKILL.md names no `description`"),
                 "skills/half"
@@ -55,7 +55,7 @@ fn the_studio_lists_built_in_and_project_skills_with_their_level_and_why_one_is_
         ]
     );
     assert_eq!(rows[2].0, "secrets");
-    assert_eq!(rows[2].1, "built-in");
+    assert_eq!(rows[2].1, Level::BuiltIn);
 }
 
 #[test]

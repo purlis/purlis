@@ -295,8 +295,9 @@ pub fn binary_in(text: &str) -> Option<PathBuf> {
 /// else. A `file://` URL, percent-encoded, so no character of a path can end it early.
 ///
 /// With `skills`, the shim is named in opencode's `[spec, options]` form and handed those
-/// directories as its option (one as a string, as before; more as a list), which it adds to the skills opencode discovers (ADR 0063). Not a
-/// `skills` key beside `plugin`: opencode merges its configs with arrays replaced, so one here
+/// directories as its option: one as a string, as before, and several as a list, the built-in
+/// skills' first and then the folder of links to the plane's (ADR 0063 as amended 2026-10-20).
+/// The shim adds each to the skills opencode discovers. Not a `skills` key beside `plugin`: opencode merges its configs with arrays replaced, so one here
 /// would drop every skills path the operator's own config names (measured on 1.18.32).
 ///
 /// With `binary`, charter's MCP server is named under `mcp` too (HP-7). `mcp` is an object, and

@@ -58,12 +58,28 @@ fn kit<'a>(here: &'a Here, skills: Option<PlaneSkills<'a>>) -> Kit<'a> {
     }
 }
 
-fn at_the_root(here: &Here) -> Option<PlaneSkills<'_>> {
-    Some(PlaneSkills {
+/// What the host does before an adapter arms a chat, with the flag on: lay out the folder of
+/// links (`hoststart::plane_skills_laid_out`), then arm the chat with it.
+fn host_armed(
+    harness: Harness,
+    here: &Here,
+    workspace: Option<&str>,
+    cwd: &Path,
+) -> (Vec<String>, Vec<(String, String)>) {
+    let host = purlis_core::hoststart::Kit {
+        binary: Some(PathBuf::from("/bin/purlis")),
+        plugin: Some(here.plugin.clone()),
+        git_hooks: None,
+        skill_sets: Some(here.sets.clone()),
+    };
+    let linked =
+        purlis_core::hoststart::plane_skills_laid_out(true, &here.plane, workspace, None, &host);
+    let skills = PlaneSkills {
         plane: &here.plane,
-        workspace: None,
-        sets: Some(&here.sets),
-    })
+        workspace,
+        linked: linked.as_deref(),
+    };
+    armed(harness, kit(here, Some(skills)), cwd)
 }
 
 fn armed(harness: Harness, kit: Kit<'_>, cwd: &Path) -> (Vec<String>, Vec<(String, String)>) {
@@ -112,11 +128,7 @@ fn tree(dir: &Path) -> Vec<PathBuf> {
 fn a_claude_code_chat_at_the_plane_root_loads_the_project_skill_as_a_plugin_of_links() {
     purlis_core::unsteered!();
     let here = here();
-    let (args, _) = armed(
-        Harness::ClaudeCode,
-        kit(&here, at_the_root(&here)),
-        &here.plane,
-    );
+    let (args, _) = host_armed(Harness::ClaudeCode, &here, None, &here.plane);
 
     let dirs = plugin_dirs(&args);
     assert_eq!(dirs.len(), 2, "{args:?}");
@@ -144,11 +156,7 @@ fn a_claude_code_chat_at_the_plane_root_loads_the_project_skill_as_a_plugin_of_l
 fn an_opencode_chat_at_the_plane_root_is_handed_the_built_in_and_the_project_skills_folders() {
     purlis_core::unsteered!();
     let here = here();
-    let (_, env) = armed(
-        Harness::Opencode,
-        kit(&here, at_the_root(&here)),
-        &here.plane,
-    );
+    let (_, env) = host_armed(Harness::Opencode, &here, None, &here.plane);
 
     let config: serde_json::Value =
         serde_json::from_str(var(&env, purlis_core::opencode::CONFIG_ENV).unwrap()).unwrap();
@@ -172,7 +180,7 @@ fn an_opencode_chat_at_the_plane_root_is_handed_the_built_in_and_the_project_ski
 fn a_codex_chat_at_the_plane_root_is_briefed_on_the_project_skill_from_its_folder_in_the_plane() {
     purlis_core::unsteered!();
     let here = here();
-    let (_, env) = armed(Harness::Codex, kit(&here, at_the_root(&here)), &here.plane);
+    let (_, env) = host_armed(Harness::Codex, &here, None, &here.plane);
 
     let built_in = here.plugin.join("skills").display().to_string();
     assert_eq!(var(&env, LISTED_ENV), Some(built_in.as_str()));
@@ -222,18 +230,32 @@ fn with_the_flag_off_every_harness_is_armed_as_before_with_the_built_in_skills_a
 fn a_chat_in_a_workspace_the_skill_was_not_granted_to_gets_the_built_in_skills_alone() {
     purlis_core::unsteered!();
     let here = here();
-    let in_a_workspace = Some(PlaneSkills {
-        plane: &here.plane,
-        workspace: Some("smart-ide"),
-        sets: Some(&here.sets),
-    });
     let cwd = here.plane.join("workspaces/smart-ide");
 
-    let (claude, _) = armed(Harness::ClaudeCode, kit(&here, in_a_workspace), &cwd);
+    let (claude, _) = host_armed(Harness::ClaudeCode, &here, Some("smart-ide"), &cwd);
     assert_eq!(plugin_dirs(&claude), std::slice::from_ref(&here.plugin));
-    let (_, codex) = armed(Harness::Codex, kit(&here, in_a_workspace), &cwd);
+    let (_, codex) = host_armed(Harness::Codex, &here, Some("smart-ide"), &cwd);
     assert_eq!(var(&codex, PLANE_LISTED_ENV), None);
     assert!(!here.sets.exists(), "nothing laid out");
+}
+
+#[test]
+fn an_adapter_lays_nothing_out_itself_and_with_no_folder_hands_the_built_in_skills_alone() {
+    purlis_core::unsteered!();
+    // ADR 0063 as amended 2026-10-20: an adapter only turns the set into words. The host lays
+    // the folder out; an adapter handed none writes none and names none.
+    let here = here();
+    let no_folder = Some(PlaneSkills {
+        plane: &here.plane,
+        workspace: None,
+        linked: None,
+    });
+
+    let (claude, _) = armed(Harness::ClaudeCode, kit(&here, no_folder), &here.plane);
+    armed(Harness::Opencode, kit(&here, no_folder), &here.plane);
+
+    assert_eq!(plugin_dirs(&claude), std::slice::from_ref(&here.plugin));
+    assert!(!here.sets.exists(), "nothing laid out by an adapter");
 }
 
 #[test]
@@ -242,22 +264,10 @@ fn arming_every_harness_writes_nothing_in_the_plane_and_two_chats_share_one_fold
     let here = here();
     let before = tree(&here.plane);
 
-    let (first, _) = armed(
-        Harness::ClaudeCode,
-        kit(&here, at_the_root(&here)),
-        &here.plane,
-    );
-    armed(
-        Harness::Opencode,
-        kit(&here, at_the_root(&here)),
-        &here.plane,
-    );
-    armed(Harness::Codex, kit(&here, at_the_root(&here)), &here.plane);
-    let (second, _) = armed(
-        Harness::ClaudeCode,
-        kit(&here, at_the_root(&here)),
-        &here.plane,
-    );
+    let (first, _) = host_armed(Harness::ClaudeCode, &here, None, &here.plane);
+    host_armed(Harness::Opencode, &here, None, &here.plane);
+    host_armed(Harness::Codex, &here, None, &here.plane);
+    let (second, _) = host_armed(Harness::ClaudeCode, &here, None, &here.plane);
 
     assert_eq!(
         tree(&here.plane),
@@ -277,18 +287,10 @@ fn arming_every_harness_writes_nothing_in_the_plane_and_two_chats_share_one_fold
 fn a_new_project_skill_is_laid_out_in_a_folder_of_its_own_and_the_old_one_is_left_alone() {
     purlis_core::unsteered!();
     let here = here();
-    let (first, _) = armed(
-        Harness::ClaudeCode,
-        kit(&here, at_the_root(&here)),
-        &here.plane,
-    );
+    let (first, _) = host_armed(Harness::ClaudeCode, &here, None, &here.plane);
     skill(&here.plane.join("skills"), "review");
 
-    let (second, _) = armed(
-        Harness::ClaudeCode,
-        kit(&here, at_the_root(&here)),
-        &here.plane,
-    );
+    let (second, _) = host_armed(Harness::ClaudeCode, &here, None, &here.plane);
 
     let (old, new) = (&plugin_dirs(&first)[1], &plugin_dirs(&second)[1]);
     assert_ne!(old, new);

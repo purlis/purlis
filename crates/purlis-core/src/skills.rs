@@ -21,7 +21,7 @@ pub use purlis_skills::{
 use crate::harness::{Harness, Kit};
 
 /// The variable a chat whose harness cannot load its skills is started with: the directory of
-/// the skills its set holds ([`SkillSet::dir`]), whose skills its `SessionStart` briefing then
+/// the built-in skills its set holds ([`SkillSet::built_in_dir`]), whose skills its `SessionStart` briefing then
 /// lists ([`briefed`]). Set by the app for such a chat alone, so a harness that loads the skills
 /// itself is never briefed on them twice.
 pub const LISTED_ENV: &str = "PURLIS_SKILLS_DIR";
@@ -39,10 +39,10 @@ pub struct PlaneSkills<'a> {
     pub plane: &'a Path,
     /// The workspace the chat works in, or `None` for a chat at the plane root.
     pub workspace: Option<&'a str>,
-    /// Where a set's folder of links is laid out ([`lay_out`]): `<app data>/skill-sets`, where
-    /// purlis has a data folder. Without it, a harness that needs the folder is handed the
-    /// built-in skills alone.
-    pub sets: Option<&'a Path>,
+    /// The folder of links to the plane's skills of the chat's set, which the host laid out
+    /// before arming it ([`lay_out_for_chat`]), or `None` where it laid out none. A harness that
+    /// needs the folder is then handed the built-in skills alone.
+    pub linked: Option<&'a Path>,
 }
 
 /// The skill set of a chat on `harness` armed with `kit`, asked of [`purlis_skills::skill_set`].
@@ -53,19 +53,41 @@ pub fn for_chat(kit: Kit<'_>, harness: Harness) -> SkillSet {
     let built_in = kit.plugin.and_then(in_bundle);
     ask(
         built_in.as_deref(),
-        kit.skills.map(|skills| (skills.plane, skills.workspace)),
+        kit.skills,
         kit.persona.map(|persona| persona.persona),
         harness.skills(),
     )
 }
 
 /// The folder of links a harness on [`Route::Plugin`] or [`Route::Config`] is handed the plane's
-/// skills of `set` by, laid out under `kit.skills`' `sets`, or `None` where the set holds none or
-/// the folder could not be laid out (said in the log: the chat then has the built-in skills
-/// alone).
-pub fn linked(set: &SkillSet, kit: Kit<'_>) -> Option<PathBuf> {
-    let sets = kit.skills?.sets?;
-    match lay_out(set, sets) {
+/// skills of `set` by: the one the host laid out (`kit.skills`' `linked`), where the set holds a
+/// plane skill. Nothing is read or written here: an adapter only turns the set into argv, env and
+/// config (ADR 0063 as amended 2026-10-20).
+pub fn linked<'a>(set: &SkillSet, kit: Kit<'a>) -> Option<&'a Path> {
+    set.from_the_plane().next()?;
+    kit.skills?.linked
+}
+
+/// **The host's part of arming a chat with the plane's skills**: the folder of links for the
+/// plane's skills of the set of a chat in `plane`, at its root or in `workspace`, running as
+/// `persona`, with the built-in skills in `built_in`, laid out under `sets`. `None` where the set
+/// holds no plane skill, or the folder could not be laid out (said in the log: the chat then has
+/// the built-in skills alone). The set is the one [`for_chat`] works out for that chat, whatever
+/// its harness: the route changes how a skill is handed over, never which.
+pub fn lay_out_for_chat(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    built_in: Option<&Path>,
+    sets: &Path,
+) -> Option<PathBuf> {
+    let at = PlaneSkills {
+        plane,
+        workspace,
+        linked: None,
+    };
+    let set = ask(built_in, Some(at), persona, Route::Plugin);
+    match lay_out(&set, sets) {
         Ok(folder) => folder,
         Err(why) => {
             tracing::warn!(
@@ -210,7 +232,11 @@ pub fn briefed(
     let plane = env(PLANE_LISTED_ENV).is_some_and(|on| on == "1");
     let set = ask(
         Some(Path::new(&dir)),
-        plane.then_some((root, workspace)),
+        plane.then_some(PlaneSkills {
+            plane: root,
+            workspace,
+            linked: None,
+        }),
         persona.as_deref(),
         Route::Briefing,
     );
@@ -223,15 +249,15 @@ pub fn briefed(
 /// chat's route.
 fn ask(
     built_in: Option<&Path>,
-    plane: Option<(&Path, Option<&str>)>,
+    plane: Option<PlaneSkills<'_>>,
     persona: Option<&str>,
     route: Route,
 ) -> SkillSet {
     purlis_skills::skill_set(
-        plane.map(|(root, _)| root),
+        plane.map(|at| at.plane),
         &Machine { built_in },
         &Chat {
-            workspace: plane.and_then(|(_, workspace)| workspace),
+            workspace: plane.and_then(|at| at.workspace),
             persona,
             harness: HarnessSkills { route },
         },
@@ -262,11 +288,69 @@ pub fn studio_on(flags: &crate::machine::Flags, env: &dyn Fn(&str) -> Option<Str
 /// from `built_in`. Every skill with its level, and every one left out with its reason. Read as a
 /// Claude Code chat's: the route is not what they show.
 pub fn in_the_studio(built_in: Option<&Path>, plane: &Path, workspace: Option<&str>) -> SkillSet {
-    ask(built_in, Some((plane, workspace)), None, Route::Plugin)
+    let at = PlaneSkills {
+        plane,
+        workspace,
+        linked: None,
+    };
+    ask(built_in, Some(at), None, Route::Plugin)
+}
+
+/// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,
+/// the one a chat gets and each left out with why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StudioRow {
+    /// Its name, or its folder's where it names none.
+    pub name: String,
+    pub origin: Origin,
+    /// Why a chat does not get it, in one line, or `None` where it does.
+    pub left_out: Option<String>,
+    /// What it does: its `description`, empty for a copy left out.
+    pub description: String,
+    /// Its folder, relative to the plane where it is inside it.
+    pub folder: String,
+}
+
+/// **The studio's rows of `set`**, a set of a chat in the plane at `plane`: every skill it gets
+/// and every one left out, by name and then level, each folder relative to the plane. The one
+/// list the window and the command line draw.
+pub fn studio_rows(set: &SkillSet, plane: &Path) -> Vec<StudioRow> {
+    let relative = |path: &Path| {
+        path.strip_prefix(plane)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .into_owned()
+    };
+    let mut rows: Vec<StudioRow> = set
+        .effective
+        .iter()
+        .map(|e| StudioRow {
+            name: e.skill.name.clone(),
+            origin: e.origin,
+            left_out: None,
+            description: e.skill.description.clone(),
+            folder: relative(e.skill.path.parent().unwrap_or(&e.skill.path)),
+        })
+        .chain(set.left_out.iter().map(|l| StudioRow {
+            name: l.name.clone(),
+            origin: l.origin,
+            left_out: Some(l.reason.to_string()),
+            description: String::new(),
+            folder: relative(&l.folder),
+        }))
+        .collect();
+    rows.sort_by(|a, b| {
+        a.name
+            .cmp(&b.name)
+            .then(a.origin.level().cmp(b.origin.level()))
+            .then(a.folder.cmp(&b.folder))
+    });
+    rows
 }
 
 /// The built-in skills' directory of the plugin installed beside this binary, where there is one
-/// ([`crate::plugin_install::bundle_beside`]).
+/// ([`crate::plugin_install::bundle_beside`]): what the Skill studio and `purlis skill` list,
+/// found the one way in the window and on the command line.
 pub fn built_in_here() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     crate::plugin_install::bundle_beside(&exe).and_then(|plugin| in_bundle(&plugin))

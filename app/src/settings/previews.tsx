@@ -25,8 +25,8 @@ export const PREVIEWS = "you.previews";
 
 const skillStudio: LiveSetting = {
   id: `${PREVIEWS}.skill-studio`,
-  label: "Preview: Skill studio",
-  help: "Lists every skill your chats get, and hands the project's skills to every harness. Opens from the palette: Open Skill studio. PURLIS_SKILL_STUDIO, if it is set, decides over this.",
+  label: "Skill studio",
+  help: "Lists every skill your chats get, and gives each chat the project's own skills. Open it from the palette: Open Skill studio.",
   writes: "this machine",
   useControl: function useSkillStudioPreview() {
     const on = useSkillStudioOn();

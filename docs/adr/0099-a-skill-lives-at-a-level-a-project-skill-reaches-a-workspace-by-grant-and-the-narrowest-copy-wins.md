@@ -39,9 +39,10 @@ The levels are plane folders:
 | Workspace | `workspaces/<ws>/skills/<name>/` | that workspace's chats |
 | Persona | `personas/<p>/skills/<name>/` | that persona's chats, in any workspace |
 
-Each plane level can also be **local**: `skills.local/<name>/` beside the level's `skills/`,
-kept on this machine and never committed, read only while git ignores it, as
-`charter.local.toml` is (ADR 0048). Sharing a local skill moves its folder into `skills/`.
+Each plane level can also be **local**: kept on this machine and never committed, so the team
+never gets it, and shared by moving it to the level's `skills/`. Where a local skill lives and
+how purlis tells it is not committed are settled by #2767, under the same live/local rule as
+`charter.local.toml` (ADR 0048).
 
 **Harness skills** (the person's harness folders and harness plugins) and **repo skills** (what a
 clone commits, such as its `.claude/skills`) are listed and can be turned off where the harness
@@ -52,13 +53,14 @@ folders**: every route below hands a chat its skills for that chat alone.
 
 A project skill's `grant`, in `skills/<name>.toml`, is one of:
 
-- `"master"`, the default, also what a missing file says: chats at the plane root only, the
-  spec's master workspace. Nothing is shared until the project shares it.
+- `"root"`, the default, also what a missing file says: chats at the project's root only (the
+  plane root; the spec calls it the master workspace, a word CONTEXT.md avoids). Nothing is
+  shared until the project shares it.
 - `"all"`: every workspace's chats too.
 - a list of workspace names: those workspaces' chats too.
 
-A workspace may turn off a project skill granted to it (`settings.skills.off` in its
-`workspace.json`, #2767), and can never turn on one it was not granted. A persona's skills and
+A workspace may turn off a project skill granted to it, and can never turn on one it was not
+granted; where it records that is settled by #2767. A persona's skills and
 the skills a persona names reach its chats whatever the workspace was granted (#2768): a persona
 brings its tools with it when it is dispatched.
 
@@ -74,8 +76,10 @@ workspace, `refs/skills-research/harness-skill-mechanics.md`): Claude Code prefe
 skill over a project one, Codex keeps both copies, and opencode picked either of two same-named
 skills at random over eight identical runs. A rule only holds where one copy reaches the harness.
 
-**A built-in skill's name is never taken.** A plane skill named as a built-in one is left out,
-"a built-in skill has this name": a curation action that names `safe-remove` must get purlis's.
+**A built-in skill's name is never taken**, an addition this record makes (the spec says the
+narrower copy wins and is silent on built-in skills; the call was delegated to SK-2). A plane
+skill named as a built-in one is left out, "a built-in skill has this name": a curation action
+that names `safe-remove` must get purlis's, in every project.
 **A harness or repo skill's tie is the harness's** where purlis cannot keep the harness from
 reading it: both load, and the studio marks the clash and offers to rename the plane copy
 (#2769).
@@ -91,13 +95,14 @@ a sentence.
 
 ### 5. A running chat keeps the skills it started with, except where its harness reloads
 
-How each harness takes a change to its skills during a chat, measured on the versions installed
-on 2026-10-20 for the routes ADR 0063 and its amendment use:
+How each harness takes a change to its skills during a chat, on the versions installed on
+2026-10-20, for the routes ADR 0063 and its amendment use. Claude Code and opencode were measured;
+Codex's row is inferred from source and the route, and says why:
 
-| Harness | Through purlis's route | Measured |
+| Harness | Through purlis's route | How it is known |
 |---|---|---|
 | Claude Code 2.1.304 | **No reload.** A skill added to, or edited in, a `--plugin-dir` plugin during the chat is not seen: a new skill is unknown, and an edited one answers with the body it had at the start. Typing `/reload-plugins` into the chat reloads both. | Twice, independently: a `stream-json` chat with a symlinked skill edited between turns kept its old body and description; the research run saw `Unknown skill` for a new one and the old body for an edited one, and both after `/reload-plugins`. |
-| Codex 0.163.0 | **The list, no; the files, yes.** The briefing that lists the skills runs once, at `SessionStart`, so a skill added during the chat is not listed and a changed description is not shown. The model reads a skill's `SKILL.md` with its own tools when the skill applies, so an edit to a listed skill's body is read. | From the route: the briefing is a `SessionStart` hook (ADR 0063), and the listing gives the file's path, not its text. Codex's own skill watcher (`app-server/src/skills_watcher.rs`) watches only its own roots, which purlis does not write. |
+| Codex 0.163.0 | **The list, no; the files, yes.** The briefing that lists the skills runs once, at `SessionStart`, so a skill added during the chat is not listed and a changed description is not shown. The model reads a skill's `SKILL.md` with its own tools when the skill applies, so an edit to a listed skill's body is read. | **Inferred from source, not measured.** The briefing is a `SessionStart` hook (ADR 0063) and its listing gives each file's path, not its text. Codex's own skill watcher (`app-server/src/skills_watcher.rs`) watches only its own roots, which purlis does not write. A live run was tried on 2026-10-20 and could not start: the sandbox the measuring chat ran in refused Codex's in-process app-server, and the machine's Codex sign-in had been revoked. #2770 measures it before it offers Codex a restart. |
 | opencode 1.18.33 | **No reload.** Neither a new skill nor an edited one reaches a running chat: discovery is cached per directory and the body is cached with it. | The research run: a skill created mid-chat was `not found`, and an edited one returned its old body, in one `opencode run`. opencode's own built-in `customize-opencode` skill says the same: config, skills included, "is loaded once when opencode starts and is not hot-reloaded". |
 
 So a chat whose skills changed is told so and offered a restart on the same conversation

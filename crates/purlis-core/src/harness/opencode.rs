@@ -45,8 +45,8 @@ impl HarnessAdapter for Opencode {
     /// No plugin choice: opencode has no switch that turns one plugin off.
     ///
     /// Its skills are its set's ([`crate::skills::for_chat`]): the built-in skills' directory,
-    /// and the `skills/` of the folder of links to the plane's ([`crate::skills::linked`]), are
-    /// handed to the shim as its option, which adds them to the skills opencode discovers for
+    /// and the `skills/` of the folder of links to the plane's that the host laid out
+    /// ([`crate::skills::linked`]), are handed to the shim as its option, which adds them to the skills opencode discovers for
     /// this process ([`Harness::skills`]).
     ///
     /// It cannot report `SessionEnd`: quitting opencode fires no event and runs no exit

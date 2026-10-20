@@ -200,7 +200,6 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`README.md` — the generated persona roster block](#readmemd--the-generated-persona-roster-block)
   - [`themes/` — the project's theme folders](#themes--the-projects-theme-folders)
   - [`skills/` — the project's skills](#skills--the-projects-skills)
-  - [`skills.local/` — the project's local skills](#skillslocal--the-projects-local-skills)
   - [`workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills](#workspaceswsskills-and-personasnameskills--workspace-and-persona-skills)
   - [Plane-root files that exist but are **not** this area](#plane-root-files-that-exist-but-are-not-this-area)
 - [Workspaces](#workspaces)
@@ -1344,24 +1343,12 @@ outside the project and removes it when the flow ends, so it adds none of them (
 
 | Key of `skills/<name>.toml` | Type | Required / default | Meaning | Status | Source |
 |---|---|---|---|---|---|
-| `grant` | `"master"`, `"all"`, or a list of workspace names | optional, default `"master"` (also what a missing file says) | Where the project skill may be used: chats at the plane root only (`"master"`, the spec's master workspace), every workspace's chats too (`"all"`), or the named workspaces' chats too. A workspace may turn a granted skill off, never on one it was not granted. **Decided by ADR 0099; read from #2767.** Until then every project skill has the default. | experimental | ADR 0099 §2 |
-
-### `skills.local/` — the project's local skills
-
-- **Format:** as [`skills/`](#skills--the-projects-skills): `skills.local/<name>/SKILL.md`.
-- **Status:** **purlis only**, **decided, not yet read** (ADR 0099 §1; read from #2767). A
-  local skill wins a same-name tie with a shared one at the same level. Sharing it moves its
-  folder into `skills/`.
-- **Tier:** Clone state — kept on this machine and never committed: read only while git ignores
-  it, as `charter.local.toml` is (ADR 0048).
-- **Written by:** the person, and the Skill studio from #2770.
-- **Read by:** nothing yet.
-- **Git:** must be ignored; a `skills.local/` git would carry is not read.
+| `grant` | `"root"`, `"all"`, or a list of workspace names | optional, default `"root"` (also what a missing file says) | Where the project skill may be used: chats at the project's root only (`"root"`), every workspace's chats too (`"all"`), or the named workspaces' chats too. A workspace may turn a granted skill off, never on one it was not granted. **Decided by ADR 0099; read from #2767.** Until then every project skill has the default. | experimental | ADR 0099 §2 |
 
 ### `workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills
 
-- **Format:** as [`skills/`](#skills--the-projects-skills), one folder per skill, with a
-  `skills.local/` beside each for that level's local skills.
+- **Format:** as [`skills/`](#skills--the-projects-skills), one folder per skill. Where each
+  level's local skills live is settled by #2767 (ADR 0099 §1).
 - **Status:** **purlis only**, **decided, not yet read** (ADR 0099 §1). A workspace skill is
   usable only in that workspace's chats (#2767). A persona skill goes with the persona into every
   workspace, whatever that workspace was granted (#2768). On a same-name tie the narrowest copy
@@ -7041,7 +7028,7 @@ refuses a `<data>` under a project or inside any git work tree.
 | `<data>/local-project/` | Plane | the **local project** the first run makes on a machine that has none (FR-4, #603), so nobody is asked where it goes. In the data home and never the config home, which a chat's sandbox denies whole, so a sandboxed chat starts in it (#1670). A machine whose local project is still at the old place, `<config>/local-plane/`, has it moved here at the app's next launch: one rename, a link left at the old place until the clones' worktree links, the record of open chats, the records of its tasks, its sandbox grants (each only to the same folder in the new place, never through a link there) and the remembered projects name the new one, then the link taken away; while the link is kept, the doctor says why. A journal beside the machine store, `<config>/local-project-move`, holds the moved folder's device and inode from before the rename until the link is gone, so a launch that stopped between the rename and the link is finished by the next one, for that same folder only. One something works in, or whose new place is taken, is left where it is, and the app's log and the doctor say so (`localproject`). A Claude Code conversation of a chat that ran in the old place is not found by Resume in the new one (Claude Code keys its conversations by the folder); its file is left where the harness wrote it, and the chat starts fresh with its session record. An ordinary plane in every respect this document records — its own `charter.toml`, its own git — opened through the same trust gate as any other; only its location is fixed. It has **no remote**, so the Plane tier's backup (the remote) does not exist for it until the operator shares it: **FR-10 must cover it** or it has no backup at all. A repo opened from the first run or from New project is cloned into its `workspaces/<name>/<name>/`, `<name>` being the repo's, with `-2`, `-3`… when a different repo already holds that name | `firstrun::ensure_local_plane`, `firstrun::take_in` (`crates/purlis-core/src/firstrun.rs`); the move, `localproject::at_launch` |
 | `<app data>/shims/` | Machine, device-bound, rebuildable | the `PATH` shims that warn when a harness is started by hand in a shell tab (ADR 0062) | `shellguard`, rewritten at every launch |
 | `<app data>/git-hooks/` | Machine, device-bound, rebuildable | the git hooks a harness chat's git runs through `core.hooksPath`: purlis's scan of a commit and of what a push sends, then the repository's own hook of each name (ADR 0074) | `githooks`, rewritten at every launch |
-| `<app data>/skill-sets/<digest>/` | Machine, device-bound, rebuildable | a chat's plane skills as Claude Code and opencode are handed them (ADR 0063 as amended 2026-10-20): `.claude-plugin/plugin.json` naming a plugin `skills`, and `skills/<name>`, a link to each skill's folder in the plane. `<digest>` is a SHA-256 over the set's names and the folders they link to, so a set's folder never changes once made and a running chat's is never rewritten. Held from a sandboxed chat's writes as the git hooks beside it are. Deleting one costs only its re-making at the next chat start. **experimental** behind the `skill-studio` flag | `skills::lay_out`, at a chat's start, when its set holds a plane skill |
+| `<app data>/skill-sets/<digest>/` | Machine, device-bound, rebuildable | a chat's plane skills as Claude Code and opencode are handed them (ADR 0063 as amended 2026-10-20): `.claude-plugin/plugin.json` naming a plugin `skills`, and `skills/<name>`, a link to each skill's folder in the plane. `<digest>` is a SHA-256 over the set's names and the folders they link to, so a set's folder never changes once made and a running chat's is never rewritten. Held from a sandboxed chat's writes as the git hooks beside it are. Deleting one costs only its re-making at the next chat start. **experimental** behind the `skill-studio` flag | the host, before a chat is armed, when its set holds a plane skill (`hoststart::plane_skills_laid_out`, `skills::lay_out`); never a harness adapter |
 | `<app log>/panics.log` | Machine, device-bound, transient | panic records: thread, place, message, backtrace, version. `$CHARTER_PANIC_LOG` moves it | `app/src-tauri/src/panics.rs`; `purlis report` reads it |
 | `<app log>/charter.<YYYY-MM-DD>.log` | Machine, device-bound, transient | the app's diagnostic log (#647): one line per thing the app or the core noticed and nobody asked to see, with its time, level and source, from purlis's own code at `info` and up and from its libraries at `warn` and up. A new file each day, the newest seven kept. An event that looks like it holds a credential or personal data (`secretshape::found`, `secretshape::leaks` per line, a field named for a token or a secret, a forge token the process holds, or a vault value it read or stored, `secrets::seen`, #1872) is replaced whole by a line naming its kind. The same messages, without time or level, also go to standard error. Not the audit and not telemetry (O1, ADR 0075): nothing reads it but a person. `$CHARTER_LOG_DIR` moves it | `purlis_core::applog`, installed first thing by the app |
 | `<extension dir>/<state>/facts.json` | None | an extension's footer facts, written by the extension's own program wherever the operator installed it; purlis only reads it | the extension |

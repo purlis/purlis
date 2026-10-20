@@ -9,7 +9,7 @@ import type { LiveSetting } from "./groups";
 import { previewsGroup } from "./previews";
 
 /**
- * **Settings › You › Previews** (#2765): "Preview: Skill studio" writes this machine's flag, and
+ * **Settings › You › Previews** (#2765): "Skill studio" writes this machine's flag, and
  * the switch shows what the core then says is in force.
  */
 
@@ -45,7 +45,7 @@ describe("the Skill studio preview", () => {
       throw new Error(`unexpected ${cmd}`);
     });
     render(<Row />);
-    const toggle = screen.getByRole("switch", { name: "Preview: Skill studio" });
+    const toggle = screen.getByRole("switch", { name: "Skill studio" });
     expect(toggle).not.toBeChecked();
 
     await userEvent.click(toggle);
@@ -63,7 +63,7 @@ describe("the Skill studio preview", () => {
     });
     render(<Row />);
 
-    await userEvent.click(screen.getByRole("switch", { name: "Preview: Skill studio" }));
+    await userEvent.click(screen.getByRole("switch", { name: "Skill studio" }));
 
     expect(await screen.findByText(/nothing was changed: disk full/)).toBeInTheDocument();
   });

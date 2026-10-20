@@ -103,7 +103,7 @@ fn a_chat_in_a_workspace_is_told_a_project_skill_was_not_granted_to_it() {
         [(
             "deploy",
             Origin::Project,
-            "not granted to this workspace: a project skill is for chats at the plane root \
+            "not granted to this workspace: a project skill is for chats at the project's root \
              until the project grants it"
                 .to_owned()
         )]

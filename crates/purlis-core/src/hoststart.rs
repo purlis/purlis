@@ -103,7 +103,7 @@ impl Kit {
             binary: Some(binary),
             plugin,
             git_hooks,
-            skill_sets: Some(data.join(crate::names::BUNDLE_ID.write).join(SKILL_SETS)),
+            skill_sets: Some(skill_sets_in(data)),
         }
     }
 
@@ -131,7 +131,30 @@ pub const SKILL_SETS: &str = "skill-sets";
 
 /// [`SKILL_SETS`] in this user's app data folder, beside the git hooks the window writes there.
 pub fn skill_sets_here() -> Option<PathBuf> {
-    dirs::data_dir().map(|data| data.join(crate::names::BUNDLE_ID.write).join(SKILL_SETS))
+    dirs::data_dir().map(|data| skill_sets_in(&data))
+}
+
+/// [`SKILL_SETS`] in the app data folder of the data home `data`: the one spelling of its path.
+pub fn skill_sets_in(data: &Path) -> PathBuf {
+    data.join(crate::names::BUNDLE_ID.write).join(SKILL_SETS)
+}
+
+/// **The folder of links a chat in `root` is handed the plane's skills by**, laid out by the host
+/// before the chat is armed, where the Skill studio's flag is `on` and `kit` says where folders
+/// go ([`crate::skills::lay_out_for_chat`]). `None` otherwise, and for a set with no plane skill.
+pub fn plane_skills_laid_out(
+    on: bool,
+    root: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    kit: &Kit,
+) -> Option<PathBuf> {
+    if !on {
+        return None;
+    }
+    let sets = kit.skill_sets.as_deref()?;
+    let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
+    crate::skills::lay_out_for_chat(root, workspace, persona, built_in.as_deref(), sets)
 }
 
 /// The host's [`Beside`], as two calls: what starts a confinement and what writes the log.
@@ -552,12 +575,16 @@ pub fn armed(
             None => Ok((Vec::new(), Vec::new())),
         };
     };
-    // The plane's skills, only while the Skill studio's flag is on (ADR 0099, #2786).
+    // The plane's skills, only while the Skill studio's flag is on (ADR 0099, #2786): their
+    // folder of links laid out here, by the host, as the git hooks are, so the adapter only
+    // turns the set into words (ADR 0063 as amended 2026-10-20).
     let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
-    let skills = crate::skills::studio_on_here().then_some(crate::skills::PlaneSkills {
+    let on = crate::skills::studio_on_here();
+    let linked = plane_skills_laid_out(on, root, workspace.as_deref(), persona, kit);
+    let skills = on.then_some(crate::skills::PlaneSkills {
         plane: root,
         workspace: workspace.as_deref(),
-        sets: kit.skill_sets.as_deref(),
+        linked: linked.as_deref(),
     });
     let armed = crate::harness::Kit {
         binary,

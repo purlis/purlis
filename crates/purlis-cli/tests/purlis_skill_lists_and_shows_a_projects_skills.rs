@@ -111,7 +111,7 @@ fn skill_list_for_a_workspace_says_a_project_skill_was_not_granted_there() {
     assert_eq!(deploy["on"], false);
     assert_eq!(
         deploy["left_out"],
-        "not granted to this workspace: a project skill is for chats at the plane root until \
+        "not granted to this workspace: a project skill is for chats at the project's root until \
          the project grants it"
     );
 }
@@ -135,12 +135,58 @@ fn skill_show_prints_one_skill_and_exits_2_for_a_name_no_skill_has() {
 }
 
 #[test]
+fn skill_show_shows_every_copy_of_a_name_and_why_the_hidden_one_is_left_out() {
+    let project = Project::new();
+    // A second folder naming `deploy`, after `deploy/` by folder name.
+    let dir = project.root().join("skills/deploy-copy");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Deploys again.\n---\n",
+    )
+    .unwrap();
+
+    let out = project.run(&["skill", "show", "deploy", "--json"], "1");
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    let doc: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+    let copies: Vec<(&str, bool, &str)> = doc["copies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|copy| {
+            (
+                copy["folder"].as_str().unwrap(),
+                copy["on"].as_bool().unwrap(),
+                copy["left_out"].as_str().unwrap_or(""),
+            )
+        })
+        .collect();
+    assert_eq!(
+        copies,
+        [
+            ("skills/deploy", true, ""),
+            (
+                "skills/deploy-copy",
+                false,
+                "hidden by another project skill of this name"
+            ),
+        ]
+    );
+}
+
+#[test]
 fn skill_list_says_the_studio_is_not_on_while_its_flag_is_off_and_writes_nothing() {
     let project = Project::new();
 
     let out = project.run(&["skill", "list"], "0");
 
     assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stderr(&out).contains("Settings › You › Previews"),
+        "{}",
+        stderr(&out)
+    );
     assert!(
         stderr(&out).contains("PURLIS_SKILL_STUDIO=1"),
         "{}",

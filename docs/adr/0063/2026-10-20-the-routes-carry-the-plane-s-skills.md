@@ -26,6 +26,10 @@ to), and is complete before it is put in place under that name. Two chats with d
 never share one, and laying out a set never changes the folder a running chat was started with.
 It is rebuilt whenever it is missing, and it holds nothing that cannot be rebuilt from the plane.
 
+**The host lays it out, never the adapter**, as it writes the git hooks: `hoststart::armed` lays
+the folder out before it asks the adapter, and hands it over in the chat's `PlaneSkills`. An
+adapter reads and writes nothing; it only turns the set into argv, env and config.
+
 **It is outside every project**, in purlis's app data folder beside the git hooks the window
 writes there, and held as they are (`sandbox::Applied::hold_kit`): outside every place a
 sandboxed chat writes, and kept from writes past the floor's grants. A plugin folder a chat could

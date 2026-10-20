@@ -1547,8 +1547,7 @@ lists it and may turn it off, but never edits it.
 
 **Project skill**:
 A skill owned by the project, a folder in the plane's `skills/`. It is usable in chats at the
-plane root, the spec's master workspace, and in a workspace's chats only where the project
-grants it (ADR 0099).
+**plane root**, and in a workspace's chats only where the project grants it (ADR 0099).
 
 **Workspace skill**:
 A skill owned by one workspace, in its `skills/`, usable only in that workspace's chats.
@@ -1563,7 +1562,7 @@ makes it an ordinary skill at the same level.
 _Avoid_: private skill, draft
 
 **Grant** (of a project skill):
-A project skill's statement of where it may be used: the plane root only (`master`, the
+A project skill's statement of where it may be used: the plane root only (`root`, the
 default), every workspace (`all`), or a named list. A workspace can turn a granted skill off,
 never on one it was not granted (ADR 0099).
 _Avoid_: permission, share, scope

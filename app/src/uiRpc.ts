@@ -5307,6 +5307,9 @@ export type LeftOut = {
 	why: string,
 };
 
+/**  The level a skill comes from, as the studio draws it. */
+export type Level = "built-in" | "project";
+
 /**  A level the file says that waits for your Confirm. */
 export type LevelWaiting = {
 	/**  The persona's level, or the project's for `None`. */
@@ -8663,19 +8666,18 @@ export type Studio = {
 	skills: StudioSkill[],
 };
 
-/**  One skill the studio lists. */
+/**  One skill the studio lists: [`purlis_core::skills::StudioRow`], for the window. */
 export type StudioSkill = {
 	/**  Its name, or its folder's where it names none. */
 	name: string,
-	/**  `built-in` or `project`. */
-	level: string,
-	/**  Whether a chat at the plane root gets it. */
+	level: Level,
+	/**  Whether a chat at the project's root gets it. */
 	on: boolean,
 	/**  Why it is left out, in one line, where it is. */
 	left_out: string | null,
 	/**  What it does and when to use it: its frontmatter's `description`. */
 	description: string,
-	/**  Its folder, relative to the plane where it is inside it. */
+	/**  Its folder, relative to the project where it is inside it. */
 	folder: string,
 };
 

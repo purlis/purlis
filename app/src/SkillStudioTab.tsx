@@ -47,7 +47,7 @@ export function SkillStudioTab({ plane, changed }: { plane: string; changed: num
     return (
       <EmptyState
         headline="The Skill studio is not on yet"
-        body="It is being built behind a flag, and opens here once it is turned on on this machine."
+        body="Turn it on in Settings › You › Previews to try it while it is being built."
         mark={Sparkles}
         testid="skill-studio-off"
       />
@@ -56,12 +56,7 @@ export function SkillStudioTab({ plane, changed }: { plane: string; changed: num
     return (
       <EmptyState
         headline="This project has no skills yet"
-        body={
-          <>
-            A project skill is a folder in <code>skills/</code> at the project's root, holding its{" "}
-            <code>SKILL.md</code>.
-          </>
-        }
+        body="The skills this project's chats get are listed here, with any that are left out and why."
         mark={Sparkles}
         testid="skill-studio-empty"
       />

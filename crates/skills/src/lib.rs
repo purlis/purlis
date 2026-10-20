@@ -155,7 +155,7 @@ impl std::fmt::Display for Reason {
                 f.write_str("not a skill: its SKILL.md names no `description`")
             }
             Self::NotGranted => f.write_str(
-                "not granted to this workspace: a project skill is for chats at the plane root \
+                "not granted to this workspace: a project skill is for chats at the project's root \
                  until the project grants it",
             ),
             Self::NameTaken(Origin::BuiltIn) => f.write_str(

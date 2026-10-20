@@ -8,20 +8,38 @@
 use serde::Serialize;
 use specta::Type;
 
-/// One skill the studio lists.
+/// The level a skill comes from, as the studio draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum Level {
+    BuiltIn,
+    Project,
+}
+
+impl From<purlis_core::skills::Origin> for Level {
+    fn from(origin: purlis_core::skills::Origin) -> Level {
+        match origin {
+            purlis_core::skills::Origin::BuiltIn => Level::BuiltIn,
+            purlis_core::skills::Origin::Project => Level::Project,
+            // A level a later slice adds is drawn as the project's until the studio names it.
+            _ => Level::Project,
+        }
+    }
+}
+
+/// One skill the studio lists: [`purlis_core::skills::StudioRow`], for the window.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct StudioSkill {
     /// Its name, or its folder's where it names none.
     pub name: String,
-    /// `built-in` or `project`.
-    pub level: String,
-    /// Whether a chat at the plane root gets it.
+    pub level: Level,
+    /// Whether a chat at the project's root gets it.
     pub on: bool,
     /// Why it is left out, in one line, where it is.
     pub left_out: Option<String>,
     /// What it does and when to use it: its frontmatter's `description`.
     pub description: String,
-    /// Its folder, relative to the plane where it is inside it.
+    /// Its folder, relative to the project where it is inside it.
     pub folder: String,
 }
 
@@ -33,7 +51,7 @@ pub struct Studio {
 }
 
 /// The studio of the project at `root`, with the built-in skills in `built_in`: nothing while
-/// the flag is off.
+/// the flag is off. Its rows are the command line's (`purlis_core::skills::studio_rows`).
 pub(crate) fn studio(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
@@ -46,33 +64,17 @@ pub(crate) fn studio(
         };
     }
     let set = purlis_core::skills::in_the_studio(built_in, root, None);
-    let folder = |path: &std::path::Path| {
-        path.strip_prefix(root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .into_owned()
-    };
-    let mut skills: Vec<StudioSkill> = set
-        .effective
-        .iter()
-        .map(|e| StudioSkill {
-            name: e.skill.name.clone(),
-            level: e.origin.level().to_owned(),
-            on: true,
-            left_out: None,
-            description: e.skill.description.clone(),
-            folder: folder(e.skill.path.parent().unwrap_or(&e.skill.path)),
+    let skills = purlis_core::skills::studio_rows(&set, root)
+        .into_iter()
+        .map(|row| StudioSkill {
+            name: row.name,
+            level: row.origin.into(),
+            on: row.left_out.is_none(),
+            left_out: row.left_out,
+            description: row.description,
+            folder: row.folder,
         })
-        .chain(set.left_out.iter().map(|l| StudioSkill {
-            name: l.name.clone(),
-            level: l.origin.level().to_owned(),
-            on: false,
-            left_out: Some(l.reason.to_string()),
-            description: String::new(),
-            folder: folder(&l.folder),
-        }))
         .collect();
-    skills.sort_by(|a, b| a.name.cmp(&b.name).then(a.level.cmp(&b.level)));
     Studio { on, skills }
 }
 
