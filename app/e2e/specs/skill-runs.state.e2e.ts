@@ -12,12 +12,12 @@ import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
  * **A chat uses a skill, and its tab shows the run** (SK-3, #2766), in the built app against the
  * real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
  *
- * Nothing is faked past the harness: the reporting harness runs the `PostToolUse` hook of a
- * Skill tool call through the real binary (`USES_A_SKILL`), the hook logs the run's start in
- * the project's skill log and tells the app over the socket the app opened, and the app opens
- * the run on the chat's tab. The harness holds its turn, so the run stays open. Pressing the chip
- * opens the skill's own tab, whose Runs panel lists that run. Ending the chat ends the run, and
- * the chip goes.
+ * Nothing is faked past the harness: the reporting harness, a Codex, reads a skill it was
+ * briefed on and runs Codex's hook for that shell command through the real binary
+ * (`USES_A_SKILL`); the hook tells the app over the socket the app opened, and the app opens
+ * the run on the chat's tab and logs its start in the project's skill log. The harness holds
+ * its turn, so the run stays open. Pressing the chip opens the skill's own tab, whose Runs panel
+ * lists that run. Ending the chat ends the run, and the chip goes.
  */
 
 const CHIP = '[data-testid="tab-skill-run"]';
@@ -66,7 +66,7 @@ describe("a skill run on a chat's tab", function () {
     await runs.waitForExist({ timeout: 20_000, timeoutMsg: "the skill's tab did not open" });
     const shown = await runs.$('tr[aria-current="true"]');
     await shown.waitForExist({ timeout: 20_000, timeoutMsg: "the run was not in its Runs panel" });
-    await expect(shown).toHaveText(expect.stringContaining("The chat's Skill tool"));
+    await expect(shown).toHaveText(expect.stringContaining("The chat read the skill"));
     expect(await tabNames()).toContain(USED_SKILL);
     await browser.saveScreenshot(join(SHOTS, "skill-runs-panel.png"));
 

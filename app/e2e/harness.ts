@@ -379,15 +379,17 @@ export const ASKS_A_PERMISSION = join(THE_RUNS_TREE, "asks-a-permission");
 
 /**
  * **While this file is in the run's tree, the reporting harness uses a skill and holds its turn**
- * (SK-3, #2766): after its output it runs the `PostToolUse` hook of a Skill tool call naming
- * {@link USED_SKILL} through the real binary, so the window opens a skill run on the chat's tab,
- * and it does not say its turn ended, so the run stays open until the chat ends. A spec writes
- * it before it starts its chat and removes it after.
+ * (SK-3, #2766). It behaves as the Codex it is declared as: a Codex chat is briefed on its skills
+ * (`PURLIS_SKILLS_DIR`) and starts one by reading its `SKILL.md`, so after its output it runs the
+ * block word Codex runs after a shell command, for a `cat` of {@link USED_SKILL}'s `SKILL.md`,
+ * through the real binary. The window opens a skill run on the chat's tab, and since the harness
+ * does not say its turn ended, the run stays open until the chat ends. A spec writes the file
+ * before it starts its chat and removes it after.
  */
 export const USES_A_SKILL = join(THE_RUNS_TREE, "uses-a-skill");
 
-/** The skill the reporting harness uses while {@link USES_A_SKILL} is there. */
-export const USED_SKILL = "e2e-run-probe";
+/** The built-in skill the reporting harness reads while {@link USES_A_SKILL} is there. */
+export const USED_SKILL = "secrets";
 
 /** What the reporting harness says once the window allowed its permission ask. */
 export const INBOX_ALLOWED = "carried on: the window allowed it";
@@ -448,19 +450,21 @@ export function writeReportingShell(fakeHarness: string, charter: string): strin
 
 /**
  * The reporting harness's skill hook: nothing unless {@link USES_A_SKILL} is there, and then the
- * end of one Skill tool call, as Claude Code's `PostToolUse` says it.
+ * end of one shell command that reads {@link USED_SKILL}'s `SKILL.md` from the directory the
+ * chat was briefed on, as Codex's `PostToolUse` says it.
  */
 function skillHook(charter: string): string {
   const payload = JSON.stringify({
     session_id: "scenario",
     hook_event_name: "PostToolUse",
-    tool_name: "Skill",
-    tool_use_id: "toolu_e2e_skill",
-    tool_input: { skill: USED_SKILL },
+    tool_name: "Bash",
+    tool_use_id: "call_e2e_skill",
+    tool_input: { command: `cat %s/${USED_SKILL}/SKILL.md` },
+    tool_response: "",
   });
   return [
     `if [ -f ${singleQuoted(USES_A_SKILL)} ]; then`,
-    `  printf '%s' ${singleQuoted(payload)} | ${singleQuoted(charter)} hook posttooluse-skill`,
+    `  printf ${singleQuoted(payload)} "$PURLIS_SKILLS_DIR" | ${singleQuoted(charter)} hook posttooluse-blocked`,
     "fi",
   ].join("\n");
 }
