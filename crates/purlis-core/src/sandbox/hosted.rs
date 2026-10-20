@@ -189,6 +189,20 @@ pub(crate) fn fits_with(
     .map_err(refused)
 }
 
+/// **Whether this machine's sandbox for the project at `project_path` gives a chat the service
+/// on `port` now** (#2738), as [`fits_here`] holds a plan's services to it, or why not, in a
+/// sentence: what a port withdrawn for want of a window is checked against before it is given
+/// back after a re-link.
+pub fn gives_here(project_path: &Path, port: u16) -> Result<(), String> {
+    if given_here(project_path).contains(&port) {
+        Ok(())
+    } else {
+        Err(format!(
+            "this machine's sandbox for the project no longer gives the service on port {port}"
+        ))
+    }
+}
+
 /// The services on this machine every chat of the project at `root` is given here: yours for
 /// the project on this machine, at the scope policy leaves open, as a start compiles them
 /// ([`super::Widened::and_ports`]).
