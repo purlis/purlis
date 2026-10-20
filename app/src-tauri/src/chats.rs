@@ -2970,6 +2970,17 @@ impl Chats {
         // for a start; what a start begins (a run, its trust event, a first message, the
         // credentials it is handed) is not, since nothing starts: it is the run it was.
         let reattaching = self.reattaches(chat, why);
+        // **A workspace set to run its chats on a pool starts none here** (#2679): this
+        // machine's store says where its chats run, and a pool's runner does not hold the
+        // project yet, so the start is refused in words, never run on this machine instead.
+        #[cfg(unix)]
+        if !reattaching && let Some(config) = purlis_core::machine::config_root() {
+            purlis_core::pools::starts_here(
+                &config,
+                &self.project,
+                workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
+            )?;
+        }
         // **A harness chat on a runner is started by its names** (#2446): the runner composes
         // it, with the sandbox, hooks and line it makes for itself, and writes its run and its
         // sandbox's audit in its own event log. The window composes none of it, and carries on

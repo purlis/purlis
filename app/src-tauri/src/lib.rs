@@ -46,6 +46,7 @@ mod dispatches;
 mod dispatchgrants;
 mod dispatchlimits;
 mod dispatchunattended;
+mod dockerpools;
 mod doctor;
 mod doing;
 #[cfg(feature = "e2e")]

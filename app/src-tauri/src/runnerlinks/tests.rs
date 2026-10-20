@@ -137,7 +137,6 @@ fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
     );
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine(config.path(), docker.clone());
-    let desktop = machine.desktop_made().unwrap().pinned();
     let name = format!(
         "test-{}",
         std::time::SystemTime::now()
@@ -146,8 +145,7 @@ fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
             .as_nanos()
     );
     let pool = Pool::new(&name, Image::pinned(&image).unwrap(), Set::default()).unwrap();
-    purlis_core::pools::add(config.path(), &docker, &pool, &desktop)
-        .expect("the pool is added and its runner paired");
+    crate::dockerpools::add_on(&machine, &pool).expect("the pool is added and its runner paired");
     let removes = scopeguard(config.path().to_path_buf(), docker.clone(), name.clone());
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -182,11 +180,36 @@ fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
         let mine = a_window_of(host).await;
         assert!(!mine.kill_switch().await.unwrap().stopped);
         // A pool this machine does not keep is refused.
-        let other = a_window_of(here.relaying_with(relaying(move || Ok(machine.clone())))).await;
+        let other = a_window_of(here.relaying_with(relaying({
+            let machine = machine.clone();
+            move || Ok(machine.clone())
+        })))
+        .await;
         assert!(other.relay_to("not-kept").await.is_err());
     });
     runtime.shutdown_timeout(Duration::from_secs(5));
-    drop(removes);
+    // Its runner answers with the key pinned for it, and removing the pool unpairs it over a
+    // link of its own, then removes its container, home and record.
+    assert_eq!(
+        link_state(&ToARunner::of(&machine, &name).unwrap()),
+        Ok(crate::dockerpools::PoolLink::Linked)
+    );
+    let to = ToARunner::of(&machine, &name).unwrap();
+    assert_eq!(
+        crate::dockerpools::remove_on(&machine, &name),
+        Ok(None),
+        "the pool is removed whole"
+    );
+    assert!(
+        purlis_core::runners::pools(config.path())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!matches!(
+        link_state(&to),
+        Ok(crate::dockerpools::PoolLink::Linked)
+    ));
+    std::mem::forget(removes);
 }
 
 /// Removes the pool `name` and its runner however the test ends.

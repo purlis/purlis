@@ -112,8 +112,48 @@ pub fn remove(
     };
     if removed.as_ref().is_none_or(|removed| removed.forgotten) {
         runners::forget_pool_locked(config_root, name, &locked)?;
+        // Every workspace that ran its chats on it runs them on this machine again.
+        crate::machine::update(config_root, |store| {
+            for recent in &mut store.recents {
+                recent.chats_run_on.retain(|_, pool| pool != name);
+            }
+        })
+        .map_err(|why| {
+            Refused::Other(format!(
+                "pool {name} was removed, but the workspaces that ran their chats on it could \
+                 not be set back to this machine: {why}"
+            ))
+        })?;
     }
     Ok(removed)
+}
+
+/// Where the person removes a pool, as Settings names it.
+pub const SETTING: &str = "Settings › This machine › Pools";
+
+/// **Whether a chat may start in `workspace` of the plane at `plane` on this machine**
+/// (#2679): `Ok` where the workspace runs its chats here, and refused, in words, where this
+/// machine's store says they run on a pool. A pool's runner does not hold a workspace's project
+/// yet (#2046), so a chat set to run on one starts nowhere, and is never started here in its
+/// place.
+pub fn starts_here(
+    config_root: &Path,
+    plane: &Path,
+    workspace: Option<&str>,
+) -> Result<(), String> {
+    let Some(workspace) = workspace else {
+        return Ok(());
+    };
+    let loaded = crate::machine::read(config_root);
+    let Some(pool) = loaded.store.chats_run_on(plane, workspace) else {
+        return Ok(());
+    };
+    if let Err(missing) = runners::runner_for(config_root, pool) {
+        return Err(format!("{missing}."));
+    }
+    Err(format!(
+        "Workspace {workspace} runs its chats on pool {pool}, which cannot hold this project's          code yet, so nothing was started. Remove pool {pool} in {SETTING} to run them on this          machine again."
+    ))
 }
 
 #[cfg(test)]

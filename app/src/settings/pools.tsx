@@ -1,0 +1,139 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { useEffect } from "react";
+import type { PoolLink, PoolRow } from "../bindings";
+import { Notice } from "../Notice";
+import { askLink, removePool, startAddingAPool, usePools } from "../pools";
+import type { LiveSetting, SettingsGroup } from "./groups";
+
+/**
+ * **You › This machine › Pools** (#2679, the person's rulings of 2026-10-20): the Docker pools
+ * added on this machine, each with its image, its limits and Remove, and Add a Docker pool….
+ * Offered only while this machine keeps a pool (`SettingsTab`'s You level, and the palette): the
+ * first is added from the palette's Add a Docker pool….
+ *
+ * **Each pool's runner is asked once whether it answers with the key pinned for it**, as the
+ * group comes on screen. One whose key changed is refused on every link, so its row has a
+ * Notice with Remove, which removes its runner whole, the pool with it. A runner that does not
+ * answer says why, in Docker's or purlis's words.
+ */
+export function poolsGroup(): SettingsGroup {
+  return {
+    id: POOLS,
+    label: "Pools",
+    help: "The Docker pools on this machine. Each runs a runner: a container of its image on your Docker, held to its limits and paired with this machine.",
+    sub: true,
+    settings: [poolsList],
+  };
+}
+
+/** The group's address. */
+export const POOLS = "you.machine.pools";
+
+/** The limits a row says, in a line. */
+function limitsSaid(pool: PoolRow): string {
+  const { cpus, memory_mib, processes, tmp_mib } = pool.limits;
+  const cpusSaid = cpus === "1" ? "1 CPU" : `${cpus} CPUs`;
+  return `${cpusSaid}, ${memory_mib} MiB, ${processes} processes, ${tmp_mib} MiB of /tmp`;
+}
+
+/** What a row says of its runner, beside its name. */
+function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
+  if (link === undefined || link === "asking") return "asking its runner…";
+  if (link.state === "linked") return "linked";
+  if (link.state === "key_changed") return "key changed";
+  return "not linked";
+}
+
+function PoolEntry({
+  pool,
+  link,
+  removing,
+}: {
+  pool: PoolRow;
+  link: PoolLink | "asking" | undefined;
+  removing: boolean;
+}) {
+  const remove = () => void removePool(pool.name);
+  return (
+    <li className="ui-machine-entry">
+      <span className="ui-machine-name">{pool.name}</span>
+      <span className="ui-machine-path" title={pool.image}>
+        {limitsSaid(pool)}
+      </span>
+      <span className="ui-setting-badge">{linkSaid(link)}</span>
+      <button
+        type="button"
+        className="ui-button ui-button-sm"
+        // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+        tabIndex={0}
+        aria-label={`Remove pool ${pool.name}`}
+        aria-disabled={removing}
+        onClick={removing ? undefined : remove}
+      >
+        {removing ? "Removing…" : "Remove"}
+      </button>
+      {typeof link === "object" && link.state === "key_changed" && (
+        <Notice
+          cause={`pool-key-changed:${pool.name}`}
+          tone="trouble"
+          fixes={[{ label: "Remove", onPress: remove, busy: removing }]}
+        >
+          Pool {pool.name}&apos;s runner answered with another key than the one this machine paired
+          with, so purlis links to it no more. Remove it, then add the pool again.
+        </Notice>
+      )}
+      {typeof link === "object" && link.state === "down" && (
+        <p className="ui-setting-help">{link.why}</p>
+      )}
+    </li>
+  );
+}
+
+const poolsList: LiveSetting = {
+  id: `${POOLS}.list`,
+  label: "Docker pools",
+  help: "Remove takes this machine out of the runner's peers while it answers, then removes its container and home. There is no undo.",
+  useControl: function usePoolsList() {
+    const now = usePools();
+    const names = now.read.state === "read" ? now.read.shown.pools.map((one) => one.name) : [];
+    const asked = names.join("\u0000");
+    // Each runner is asked once, as the group comes on screen or a pool is added.
+    useEffect(() => {
+      for (const name of asked === "" ? [] : asked.split("\u0000")) void askLink(name);
+    }, [asked]);
+    return {
+      grouped: true,
+      error: now.said === undefined ? undefined : [now.said],
+      control: (ids) => (
+        <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
+          {now.read.state === "reading" && <p className="ui-setting-help">Reading…</p>}
+          {now.read.state === "trouble" && (
+            <p className="ui-setting-help" role="alert">
+              {now.read.trouble}
+            </p>
+          )}
+          {now.read.state === "read" &&
+            (now.read.shown.pools.length === 0 ? (
+              <p className="ui-setting-help">No pool is on this machine.</p>
+            ) : (
+              <ul className="ui-machine-list">
+                {now.read.shown.pools.map((pool) => (
+                  <PoolEntry
+                    key={pool.name}
+                    pool={pool}
+                    link={now.links[pool.name]}
+                    removing={now.removing === pool.name}
+                  />
+                ))}
+              </ul>
+            ))}
+          <button type="button" className="ui-button" tabIndex={0} onClick={startAddingAPool}>
+            Add a Docker pool…
+          </button>
+        </div>
+      ),
+    };
+  },
+};
