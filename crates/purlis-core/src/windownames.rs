@@ -75,25 +75,8 @@ struct KeptName {
 /// keeps, or one minted now and kept. A file that cannot be read as one is started again. The
 /// roots in `open`, whose links are open now, are never let go of to make room.
 pub fn name_for(config_root: &Path, root: &Path, open: &[std::path::PathBuf]) -> io::Result<Name> {
-    let folder = purlis_same_user::PrivateDirectory::open(&crate::machine::charterd(config_root))?;
-    let lock = {
-        use std::os::unix::fs::OpenOptionsExt;
-        std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(folder.path().join(LOCK))?
-    };
-    lock.lock()?;
-    let path = folder.path().join(FILE);
-    let mut kept: Kept = match purlis_same_user::read_private_file(&path) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
-        Err(err) if err.kind() == io::ErrorKind::NotFound => Kept::default(),
-        Err(err) => return Err(err),
-    };
-    kept.version = 1;
+    let (folder, _lock) = locked(config_root)?;
+    let mut kept = read(&folder)?;
     let key = key_of(root);
     let used = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -126,9 +109,58 @@ pub fn name_for(config_root: &Path, root: &Path, open: &[std::path::PathBuf]) ->
         };
         kept.names.remove(&oldest);
     }
-    let text = serde_json::to_vec(&kept).map_err(io::Error::other)?;
-    folder.replace_file(FILE, &text)?;
+    write(&folder, &kept)?;
     Ok(Name(name))
+}
+
+/// **Lets go of the name kept for `root`'s link** (#2738), as the person forgets the project:
+/// a link of the root that opens again names itself anew, and takes nothing back. Every other
+/// root's name is kept. Where no names are kept, nothing is written.
+pub fn forget(config_root: &Path, root: &Path) -> io::Result<()> {
+    if !crate::machine::charterd(config_root).join(FILE).exists() {
+        return Ok(());
+    }
+    let (folder, _lock) = locked(config_root)?;
+    let mut kept = read(&folder)?;
+    if kept.names.remove(&key_of(root)).is_some() {
+        write(&folder, &kept)?;
+    }
+    Ok(())
+}
+
+/// The session host's folder, and the [`LOCK`] held on it: what makes a read-modify-write of
+/// [`FILE`] one act, until the file is dropped.
+fn locked(config_root: &Path) -> io::Result<(purlis_same_user::PrivateDirectory, std::fs::File)> {
+    let folder = purlis_same_user::PrivateDirectory::open(&crate::machine::charterd(config_root))?;
+    let lock = {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(folder.path().join(LOCK))?
+    };
+    lock.lock()?;
+    Ok((folder, lock))
+}
+
+/// What [`FILE`] in `folder` keeps: nothing where there is none, or where it does not read as
+/// one, which starts it again.
+fn read(folder: &purlis_same_user::PrivateDirectory) -> io::Result<Kept> {
+    let mut kept: Kept = match purlis_same_user::read_private_file(&folder.path().join(FILE)) {
+        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Kept::default(),
+        Err(err) => return Err(err),
+    };
+    kept.version = 1;
+    Ok(kept)
+}
+
+fn write(folder: &purlis_same_user::PrivateDirectory, kept: &Kept) -> io::Result<()> {
+    let text = serde_json::to_vec(kept).map_err(io::Error::other)?;
+    folder.replace_file(FILE, &text)
 }
 
 /// What the file keeps `root`'s name under: a SHA-256 of its path, in hex.

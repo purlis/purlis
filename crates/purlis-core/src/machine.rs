@@ -1733,13 +1733,23 @@ impl Store {
 }
 
 /// Forget `plane` on this machine (You › This machine, ST-2): the recent, its approval, its
-/// pins and any tab a window would put back. Answers whether it was remembered.
+/// pins, any tab a window would put back, and the name its window link kept (#2738). Answers
+/// whether it was remembered.
 ///
 /// One call for the window and the CLI alike. A project that is gone from the disk is
 /// forgotten the same way, which is how a gone recent stops coming back at every launch.
 pub fn forget_project(config_root: &Path, plane: &Path) -> io::Result<bool> {
     let mut forgot = false;
     update(config_root, |store| forgot = store.forget(plane))?;
+    // The name its window's link kept goes with it (#2738), so the project, opened again, takes
+    // back no runner chat of the one forgotten. A name that cannot be let go of leaves the
+    // project forgotten all the same: the name only ages out.
+    if let Err(why) = crate::windownames::forget(config_root, plane) {
+        tracing::warn!(
+            "purlis: the window's name for the link of {} is still kept: {why}",
+            plane.display()
+        );
+    }
     Ok(forgot)
 }
 

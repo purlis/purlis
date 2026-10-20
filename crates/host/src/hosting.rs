@@ -563,6 +563,9 @@ struct Subscriber {
 /// A chat's confinement the host holds (#1999), whose it is, and who may act on it (#2444).
 struct Confinement {
     project: String,
+    /// Where its project is on this machine, as the host held it when it was started: what a
+    /// port given back is checked against this machine's policy for (#2738).
+    path: std::path::PathBuf,
     owner: Owner,
     /// The links the host named it to ([`may_act_on`]): the link that made it, from the first;
     /// none, for one the host made for a chat it composed; each window that took its chat
@@ -2134,6 +2137,7 @@ impl Hosting {
             }
             held_at(&state, &confine.project, link_of(peer))?.path
         };
+        let project_path = path.clone();
         let (tell, askable) = self.heard_as(&id);
         let hosting = self.clone();
         // A plan from any link but this machine's window was made on another machine: it is
@@ -2185,6 +2189,7 @@ impl Hosting {
                 id.clone(),
                 Confinement {
                     project,
+                    path: project_path,
                     owner: Owner::Link(link_of(peer)),
                     named_to,
                     confining,
@@ -2406,6 +2411,7 @@ impl Beside for ForTheProgram {
                 id,
                 Confinement {
                     project: self.at.project.clone(),
+                    path: self.at.path.clone(),
                     owner: Owner::Program(self.program.clone()),
                     named_to,
                     confining,
@@ -2529,19 +2535,32 @@ fn lock_porting(inner: &Inner) -> std::sync::MutexGuard<'_, ()> {
 /// back and marked so under the host's state lock, which a window's withdrawal marks its port
 /// under before its proxy hears it: whichever comes first, a port the window withdrew ends
 /// withdrawn. A port the proxy cannot give back stays withdrawn. Blocking, on the porting lane.
+///
+/// **Each port is first checked against this machine's policy as it is now** (#2738), not as
+/// it was when the plan was made: one the policy no longer gives stays withdrawn for want of a
+/// window, so a later take-back, once the policy gives it again, gives it back.
 fn give_back(hosting: &Weak<Inner>, id: &str) {
     let Some(inner) = hosting.upgrade() else {
         return;
     };
     let _porting = lock_porting(&inner);
     let hosting = hosting_of(&inner);
-    let ports = hosting
+    let Some((ports, path)) = hosting
         .state()
         .confinements
         .get(id)
-        .map(|held| held.unheld.clone())
-        .unwrap_or_default();
+        .map(|held| (held.unheld.clone(), held.path.clone()))
+    else {
+        return;
+    };
     for port in ports {
+        // The policy is read off the state lock.
+        if let Err(why) = inner.confine.gives_now(&path, port) {
+            crate::say(&format!(
+                "port {port} stays withdrawn from confinement {id}: {why}"
+            ));
+            continue;
+        }
         let mut state = hosting.state();
         let Some(held) = state.confinements.get_mut(id) else {
             return;
