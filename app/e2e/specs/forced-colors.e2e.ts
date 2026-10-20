@@ -178,7 +178,7 @@ describe("forced colours", () => {
       const before = read();
       const was = document.activeElement as HTMLElement | null;
       try {
-        if (!already && document.title === "mutation check: never") {
+        if (!already) {
           for (const sheet of [...document.styleSheets]) {
             try {
               place(sheet);
