@@ -607,6 +607,14 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The value of a theme option at a level (#2527): it writes how the person's window looks
     // on this machine, so only their press in Settings › Theme makes it.
     "theme_choose_option",
+    // A chat's theme draft (#2332): Keep writes it into a theme folder, Revert and the revert key
+    // delete drafts, and the moves up a level write the project's or the person's themes. Each
+    // is the person's command, never a chat's.
+    "theme_draft_keep",
+    "theme_draft_revert",
+    "theme_drafts_revert_here",
+    "theme_move_to_project",
+    "theme_copy_to_machine",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -923,6 +931,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // What Settings › Theme's gallery reads (#2331): its cards, and what a card draws while the
     // pointer is on it. Nothing is written.
     "theme_card_drawn",
+    // The theme drafts of a chat, asked before it closes (#2332). Nothing is written.
+    "theme_drafts_of_chat",
     "theme_gallery",
     "theme_in_force",
     // The person's density and font override, read by the engine (#2326): no file, no state.

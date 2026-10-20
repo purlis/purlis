@@ -564,6 +564,7 @@ fn card_drawn_of(
         complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
         follows_system: drawn.follows_system,
         floors: drawn.held.map(|held| held.said()),
+        draft: None,
     })
 }
 

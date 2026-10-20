@@ -109,9 +109,11 @@ and option values is checked against the consent floors as the window draws it, 
 values layered first, and the line says in how many of them the window holds one (`none held
 in 4 combinations`, `held in 1 of 4 combinations:`). Under it, each combination that breaks one names the floors it breaks and
 the tokens the window draws as purlis's own for them (`dark, ember on: danger is
-distinguishable from primary — purlis draws its own danger.base`). A last `hard floors:` line
-follows. Until purlis keeps hard floors (#2332), it says they are not checked by
-this purlis yet.
+distinguishable from primary — purlis draws its own danger.base`). Last, `hard floors:` says each hard floor
+a combination breaks as the window draws it, the consent floors held first, with the pair, its
+ratio and the tint it was found in (`hard floors: broken in 1 of 4 combinations:`, then
+`dark, ember on: primary text is readable on every surface: text.primary on surface.sunken is
+1.12, under 3`), or `none broken in 4 combinations`.
 
 - **Refused**: a theme that breaks its grammar anywhere is not drawn at all, and each value
   that refused it is listed: a colour that is not hex or a palette name, a duration or an
@@ -132,8 +134,13 @@ this purlis yet.
   from primary, the state marks meet the mark floor) hold in every combination. A combination
   that breaks one, an option value's included, is drawn with purlis's own values for those
   tokens and the rest as written, and the window says so in a Notice.
-- **Hard floors** are the few rules a theme can never break. This purlis does not check them
-  yet (#2332), and says so rather than reporting a pass.
+- **Hard floors** are the few rules that keep the window readable whatever a theme says, each
+  at 3:1 as the window draws the theme, as it is and in every workspace tint: **primary text is
+  readable on every surface** (`text.primary` on each ground it is drawn on), **the focus ring is
+  seen on its surfaces** (`focus.ring`), and **the terminal's words are readable**
+  (`terminal.foreground` on the terminal and its find matches). A theme draft that breaks one is
+  not drawn (below); for a kept theme, a broken hard floor is a finding, and the theme is
+  drawn.
 
 The exit is a linter's: **0** when the theme is drawn (notes and warnings or not), **1** when it
 is refused, **2** when there is no such theme.
@@ -156,7 +163,7 @@ is refused, **2** when there is no such theme.
                 "pair": {"front": "text.muted", "back": "surface.base", "floor": 4.5},
                 "ratio": 2.38}],
   "held": [],
-  "hard_floors": null,
+  "hard_floors": [],
   "clean": false
 }
 ```
@@ -178,11 +185,76 @@ text size). A field (`.ui-input`, `size.control` tall) holds the window's words
 wherever a field's text does. `tint` is the workspace colour it was found in, or `null` for the theme as it is and for a line. `held` has one entry for each combination
 in which the window holds a consent floor: its `appearance` and `options` as a warning's, the
 `floors` (`ask`, `allow-apart`, `danger`, `danger-apart`, `state-marks`) and the `tokens` drawn
-as purlis's own. `hard_floors` is `null` until purlis checks them. `clean` is true with no
+as purlis's own. `hard_floors` has one entry for each hard floor a combination breaks: its
+`appearance` and `options` as a warning's, the `floor` (`primary-text`, `focus-ring`,
+`terminal-text`), the `front` and `back` tokens (`under` for a wash), the `ratio` and the
+`tint`, `null` for the theme as it is; `[]` means none is broken. `clean` is true with no
 error, no note, no warning and no floor held; it covers those only, never hard floors, which
 `hard_floors` reports on its own. `schema` is the version of this shape, in both
 answers: a reader checks it first. A theme folder's `from` is `{"kind": "folder", "path"}`, a
 theme file's `{"kind": "file", "path"}`.
+
+## Theme drafts
+
+A chat's writes to a theme go to a **theme draft**: a copy of a theme folder in purlis's
+git-ignored local folder in the plane, one folder for each chat, named by the chat's id:
+
+```
+.purlis/theme-drafts/<chat id>/<theme folder>/theme.json
+```
+
+Nothing there is committed, and **no chat writes it**: the app that started a chat writes that
+chat's drafts, in its folder, when the chat asks. In a chat purlis started:
+
+- `purlis theme draft <folder>` starts the draft (a copy of the workspace's or the project's
+  theme folder of that name, or a new theme that extends Purlis Classic) and makes a working copy
+  for the chat to edit, in its temporary folder under the chat's id (`--from <dir>` names
+  another), made again from the draft whenever the draft is made anew;
+- `purlis theme draft <folder> --save` hands the working copy's `theme.json` and icon sets to the
+  app, which writes them into the draft and says what the window draws of it: drawn, or not
+  drawn and which hard floor it breaks (exit 1). A save carries at most 64 KiB as JSON writes
+  it (Purlis Classic's whole `theme.json` is about a fifth of that), and a larger one is refused
+  before it is sent;
+- `purlis theme check draft:<folder>` checks the draft exactly as the window draws it, and exits
+  1 when it breaks a hard floor.
+
+A draft's fonts are the ones its folder already has, as approved with the project; a save hands
+over theme files only.
+
+- **A draft is drawn only in its chat's workspace** (the plane root for a chat there), in place
+  of what the levels choose, while that chat is open. purlis knows where each of its chats works;
+  other workspaces and the plane root draw as before. A save repaints, as any theme folder's
+  does.
+- **A draft is read as a project's theme folder is**: through handles refusing a link, under the
+  caps of a theme folder. Its fonts follow the project's approval: a face is drawn only when the
+  project's approval holds that file, with that digest, in the folder the draft is kept to. A
+  draft refused for such a face is said in a Notice, which offers Review and allow by the rules
+  of any refused theme, and only where the project itself brings that file, with those bytes, in
+  the folder the draft is kept to: a face only the draft has is no project's to allow.
+- **A draft that breaks a hard floor is not drawn**, in any combination of its appearances and
+  option values: the last good version of it stays drawn, or the kept theme when there is none,
+  and the chat is told which floor (by `--save`'s answer, and by `purlis
+  theme check draft:<folder>`). The consent floors hold on a draft as on any theme.
+- **A strip on the workspace** says `Theme draft — <folder>, edited by <chat>`, with **Keep**,
+  **Revert** and **Compare**. **Keep** copies the draft into the real folder it is a draft of (the
+  workspace's theme folder of that name, else the project's; a new theme goes in the chat's own
+  level) and deletes the draft, then asks once whether the theme becomes the workspace's (or the
+  project's) committed default or stays your own choice there. The strip says where Keep puts it
+  before you press it (`Keep puts it in the project's themes, for every workspace`), and Keep asks
+  before it replaces a theme folder that is there. Keep does what you were shown, or nothing:
+  when where it puts the draft, or the folder there, changed since, it is refused. Only a draft the window draws is kept, with
+  the files that were checked, and only the font files the theme names and the project
+  approved. **Revert** deletes the draft. **Compare** draws the theme as kept while it is held.
+- **The revert key**, ⌘⇧⌫ on macOS and Ctrl+Shift+Backspace elsewhere, deletes every draft
+  drawn where the window is, at once.
+- **Closing a chat** that owns a draft asks Keep or Revert, saying where Keep puts each and what
+  it replaces; neither close is offered until it is answered. A close that ends several chats
+  asks about the drafts of each. Where purlis cannot tell whether a chat has a draft, the close
+  is refused, with why.
+- **Moving a theme up a level**: in Settings › Theme, **Use in the whole project** moves a
+  workspace's theme folder to the project's `themes/`, and **Copy to my machine** copies a
+  project's or a workspace's to your own, carrying only the font files you approved with the
+  project. Neither replaces a folder of that name that is there.
 
 ## The schema a theme names
 

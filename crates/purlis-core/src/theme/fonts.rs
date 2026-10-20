@@ -473,6 +473,11 @@ fn unapproved(named: &str, size: u64, files: &Approved, before: usize) -> (Strin
     }
 }
 
+/// The digest a project's approval holds for a font file of these bytes.
+pub(crate) fn digest(bytes: &[u8]) -> String {
+    hex(bytes)
+}
+
 fn hex(bytes: &[u8]) -> String {
     use sha2::Digest;
     sha2::Sha256::digest(bytes)
