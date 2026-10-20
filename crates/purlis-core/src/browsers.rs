@@ -1110,7 +1110,11 @@ impl Screen for EngineScreen {
     fn show(&self, frames: FrameSink) {
         self.with(|browser| {
             browser.show(Arc::new(move |painted: drive::Painted| {
-                frames(aim_of(&painted.aim), Bytes::from(painted.jpeg));
+                frames(
+                    aim_of(&painted.aim),
+                    painted.address,
+                    Bytes::from(painted.jpeg),
+                );
             }));
         });
     }

@@ -286,6 +286,8 @@ pub struct ChatBrowsers {
     limits: LimitsNow,
     /// The browsers the person drives now, by program (#2023): never stopped for going unused.
     person_drives: Mutex<Vec<String>>,
+    /// The browsers purlis performs a login in now, by program (#2300).
+    logging_in: Mutex<Vec<String>>,
     /// The pinned browsers whose chat has closed (#2022), each listed by what its chat was
     /// called: the workspace's, until the person stops it or hands it to a chat, Stop all, or a
     /// quit. Never counted toward the project's chats' browsers: they are the person's now.
@@ -370,6 +372,7 @@ impl Default for ChatBrowsers {
         ChatBrowsers {
             limits: Arc::new(|| purlis_core::browserlimits::Limits::for_memory(None)),
             person_drives: Mutex::default(),
+            logging_in: Mutex::default(),
             kept: Mutex::default(),
             addresses: Mutex::default(),
             at_quit: Mutex::default(),
@@ -505,6 +508,20 @@ pub struct ChatBrowser {
     pub was: Option<String>,
     /// The login purlis performed in it, where it holds one (#2022).
     pub login: Option<String>,
+    /// Who drives it, where the agent does not (#2300): the person, who took it over, or
+    /// purlis, while it performs a login.
+    pub driver: Option<BrowserDriver>,
+}
+
+/// **Who drives a browser, where its chat's agent does not** (#2300), as its row and thumbnail
+/// mark it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserDriver {
+    /// The person took it over.
+    Person,
+    /// purlis performs a login in it (#2016).
+    Purlis,
 }
 
 /// **Why the window ends a chat's browser** (#2745), for the line each end leaves in its log.
@@ -658,15 +675,21 @@ impl ChatBrowsers {
     /// **The person took browser `program` over, or handed it back** (#2023), at `now`: while
     /// they drive it, it never stops for going unused, and either is a use of it.
     pub fn driven(&self, program: &str, by_the_person: bool, now: u64) {
-        {
+        let moved = {
             let mut driving = self
                 .person_drives
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
+            let was = driving.iter().any(|one| one == program);
             driving.retain(|one| one != program);
             if by_the_person {
                 driving.push(program.to_owned());
             }
+            was != by_the_person
+        };
+        // Its row and thumbnail say who drives it (#2300).
+        if moved {
+            self.relisted();
         }
         if by_the_person {
             let mut typed = self
@@ -1158,6 +1181,26 @@ impl ChatBrowsers {
                 .map(|held| held.login.clone());
         }
         drop(held);
+        // And who drives each, where the agent does not (#2300).
+        let person = self
+            .person_drives
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let purlis = self
+            .logging_in
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        for one in &mut listed {
+            one.driver = if person.contains(&one.program) {
+                Some(BrowserDriver::Person)
+            } else if purlis.contains(&one.program) {
+                Some(BrowserDriver::Purlis)
+            } else {
+                None
+            };
+        }
         listed
     }
 
@@ -1170,6 +1213,26 @@ impl ChatBrowsers {
 
     fn relisted(&self) {
         self.listing.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// **purlis performs a login in `program` now, or has handed it back** (#2300): its row and
+    /// thumbnail say so, and the window reads the listing again at once, as a login may take a
+    /// while.
+    fn purlis_drives(&self, program: &str, now: bool) {
+        {
+            let mut logging_in = self
+                .logging_in
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            logging_in.retain(|one| one != program);
+            if now {
+                logging_in.push(program.to_owned());
+            }
+        }
+        self.relisted();
+        if now && let Some(told) = &self.told {
+            told();
+        }
     }
 
     /// What the person said chat `session`'s browser may reach.
@@ -2068,10 +2131,14 @@ impl ChatBrowsers {
                         identity,
                     },
                 );
-                driver.log_in(&program, login).map(|mut browsed| {
+                // Its row says purlis drives it while it logs in (#2300).
+                self.purlis_drives(&program, true);
+                let logged_in = driver.log_in(&program, login).map(|mut browsed| {
                     browsed.note = Some(logged_in_said(&declared, browsed.note.as_deref()));
                     browsed
-                })
+                });
+                self.purlis_drives(&program, false);
+                logged_in
             }
         };
         match acted {
@@ -3345,7 +3412,10 @@ pub fn say(
 pub fn person_drove(projects: &[Arc<crate::planes::Held>], program: &str, driving: bool) {
     let now = crate::sandboxing::now_secs();
     for held in projects {
+        let listing = held.browsers().listing();
         held.browsers().driven(program, driving, now);
+        // Its row and thumbnail say who drives it (#2300).
+        held.browsers_listed_since(listing);
     }
 }
 

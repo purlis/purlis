@@ -306,6 +306,28 @@ pub struct KeptLogin {
     pub address: String,
 }
 
+/// **The origin of `address`** (1.35, #2300): `scheme://host[:port]`, lower-cased, for an http
+/// or https address whose host is written in ASCII, as the engine records a page's; nothing for
+/// any other. Never its user, path, query or fragment: what a browser view's chip may name.
+pub fn origin_of(address: &str) -> Option<String> {
+    let (scheme, rest) = address.split_once("://")?;
+    let scheme = scheme.to_ascii_lowercase();
+    if scheme != "http" && scheme != "https" {
+        return None;
+    }
+    let authority = rest.split(['/', '?', '#', '\\']).next()?;
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    let plain = host
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b"-._:[]".contains(&b));
+    if host.is_empty() || !plain || host.starts_with(':') {
+        return None;
+    }
+    Some(format!("{scheme}://{}", host.to_ascii_lowercase()))
+}
+
 /// Who drives a browser (1.14): the agent, through its acts, or the person who took it over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

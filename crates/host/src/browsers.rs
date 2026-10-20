@@ -41,18 +41,47 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures::StreamExt;
 use purlis_session_protocol::browsing::{
-    Act, Aim, Browsed, BrowserReach, Driver, Input, KeptLogin, LogIn,
+    Act, Aim, Browsed, BrowserReach, Driver, Input, KeptLogin, LogIn, origin_of,
 };
 use purlis_session_protocol::session::{self, Exit, Readiness, Refusal, ViewKind, ViewRole};
-use purlis_session_protocol::view::frames::{JPEG, aimed, frame};
+use purlis_session_protocol::view::frames::{JPEG, aimed, frame, origin};
 use purlis_session_protocol::view::{Attachment, Source};
 use tokio::sync::watch;
 
 use crate::hosting::Running;
 use crate::recording::Stopped;
 
-/// Where a browser's engine hands each frame it makes: what it shows, and a JPEG image of it.
-pub type FrameSink = Arc<dyn Fn(Aim, Bytes) + Send + Sync>;
+/// Where a browser's engine hands each frame it makes: what it shows, the address of the
+/// document its page has loaded as the engine records it (#2300), and a JPEG image of it. The
+/// host keeps only the address's origin ([`origin_of`]).
+pub type FrameSink = Arc<dyn Fn(Aim, String, Bytes) + Send + Sync>;
+
+/// **How a view's link reads a browser's frames**: whether they name what they show (1.14),
+/// and whether it is sent the page's origin (1.35, #2300).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Reads {
+    pub aims: bool,
+    pub origins: bool,
+}
+
+impl Reads {
+    /// How a link that agreed on `version` reads them.
+    pub fn of(version: purlis_session_protocol::version::Version) -> Reads {
+        use purlis_session_protocol::version::Version;
+        Reads {
+            aims: version
+                >= Version {
+                    major: 1,
+                    minor: 14,
+                },
+            origins: version
+                >= Version {
+                    major: 1,
+                    minor: 35,
+                },
+        }
+    }
+}
 
 /// The least time between two frames sent to a thumbnail: about one a second.
 pub const THUMBNAIL_EVERY: Duration = Duration::from_secs(1);
@@ -207,23 +236,35 @@ impl Browsers for NoBrowsers {
     }
 }
 
-/// What a browser view is sent: nothing yet, the latest frame (what it shows, and its image),
-/// or the end.
+/// What a browser view is sent: nothing yet, the latest frame (what it shows, its page's
+/// origin, and its image), or the end.
 #[derive(Clone)]
 enum Latest {
     Nothing,
-    Frame(Aim, Bytes),
+    Frame(Aim, Option<String>, Bytes),
     Ended,
 }
 
 impl Latest {
-    /// The latest frame, framed as a view that `aims` (1.14) or one before it reads it.
-    fn framed(&self, aims: bool) -> Option<Bytes> {
-        match self {
-            Latest::Frame(aim, image) if aims => Some(aimed(aim, image)),
-            Latest::Frame(_, image) => Some(frame(JPEG, image)),
-            Latest::Nothing | Latest::Ended => None,
+    /// The latest frame, framed as a view whose link `reads` it: for one sent origins (1.35),
+    /// after an origin frame where its origin is not `sent`, the one the view was sent last,
+    /// which it becomes.
+    fn framed(&self, reads: Reads, sent: &mut Option<Option<String>>) -> Option<Bytes> {
+        let Latest::Frame(aim, at, image) = self else {
+            return None;
+        };
+        let image = if reads.aims {
+            aimed(aim, image)
+        } else {
+            frame(JPEG, image)
+        };
+        if !reads.origins || sent.as_ref() == Some(at) {
+            return Some(image);
         }
+        *sent = Some(at.clone());
+        let mut both = bytes::BytesMut::from(&origin(at.as_deref())[..]);
+        both.extend_from_slice(&image);
+        Some(both.freeze())
     }
 }
 
@@ -255,15 +296,18 @@ impl Hub {
         Self::repace(&self.screen, &viewers);
         if viewers.len() == 1 {
             let latest = self.latest.clone();
-            self.screen.show(Arc::new(move |aim: Aim, image: Bytes| {
-                latest.send_if_modified(|now| {
-                    if matches!(now, Latest::Ended) {
-                        return false;
-                    }
-                    *now = Latest::Frame(aim, image);
-                    true
-                });
-            }));
+            self.screen
+                .show(Arc::new(move |aim: Aim, address: String, image: Bytes| {
+                    // Its origin alone, cut here: never a path, a query or a user.
+                    let at = origin_of(&address);
+                    latest.send_if_modified(|now| {
+                        if matches!(now, Latest::Ended) {
+                            return false;
+                        }
+                        *now = Latest::Frame(aim, at, image);
+                        true
+                    });
+                }));
         }
         drop(viewers);
         Watching {
@@ -303,23 +347,30 @@ impl Drop for Watching {
 }
 
 /// A browser as one view of it shows it: the latest frame, then each newer one, no more often
-/// than `every`; each naming what it shows when the view `aims` (1.14).
+/// than `every`; each naming what it shows, and its page's origin where it changed, as the
+/// view's link `reads` them.
 struct BrowserSource {
     hub: Arc<Hub>,
     every: Duration,
-    aims: bool,
+    reads: Reads,
 }
 
 impl Source for BrowserSource {
     fn attach(&self) -> Attachment {
         let watching = self.hub.watched(self.every);
         let mut latest = self.hub.latest.subscribe();
-        let aims = self.aims;
-        let snapshot = latest.borrow_and_update().framed(aims).unwrap_or_default();
+        let reads = self.reads;
+        // The snapshot says the page's origin whatever this view was sent before it: a view
+        // attached again starts from nothing.
+        let mut origin_sent = None;
+        let snapshot = latest
+            .borrow_and_update()
+            .framed(reads, &mut origin_sent)
+            .unwrap_or_default();
         let every = self.every;
         let live = futures::stream::unfold(
-            (latest, watching, None::<tokio::time::Instant>),
-            move |(mut latest, watching, sent)| async move {
+            (latest, watching, None::<tokio::time::Instant>, origin_sent),
+            move |(mut latest, watching, sent, mut origin_sent)| async move {
                 loop {
                     latest.changed().await.ok()?;
                     if let Some(sent) = sent {
@@ -328,9 +379,9 @@ impl Source for BrowserSource {
                     let next = latest.borrow_and_update().clone();
                     match next {
                         Latest::Frame(..) => {
-                            let framed = next.framed(aims).unwrap_or_default();
+                            let framed = next.framed(reads, &mut origin_sent).unwrap_or_default();
                             let now = tokio::time::Instant::now();
-                            return Some((framed, (latest, watching, Some(now))));
+                            return Some((framed, (latest, watching, Some(now), origin_sent)));
                         }
                         Latest::Ended => return None,
                         Latest::Nothing => {}
@@ -423,7 +474,7 @@ impl Running for Browser {
         Arc::new(BrowserSource {
             hub: Arc::clone(&self.hub),
             every: Duration::ZERO,
-            aims: false,
+            reads: Reads::default(),
         })
     }
 
@@ -432,13 +483,13 @@ impl Running for Browser {
         kind: ViewKind,
         role: Option<ViewRole>,
         rate: Option<u32>,
-        aims: bool,
+        reads: Reads,
     ) -> Option<Arc<dyn Source>> {
         (kind == ViewKind::Browser).then(|| {
             Arc::new(BrowserSource {
                 hub: Arc::clone(&self.hub),
                 every: every(role, rate),
-                aims,
+                reads,
             }) as Arc<dyn Source>
         })
     }

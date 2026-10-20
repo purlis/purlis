@@ -4386,6 +4386,16 @@ export type BriefOf =
 ({ dispatch: string }) & { chat?: never };
 
 /**
+ *  **Who drives a browser, where its chat's agent does not** (#2300), as its row and thumbnail
+ *  mark it.
+ */
+export type BrowserDriver = 
+/**  The person took it over. */
+"person" | 
+/**  purlis performs a login in it (#2016). */
+"purlis";
+
+/**
  *  One frame of a browser view, as the window is sent it (#2014): what it shows (`p1:5`, the
  *  page and its document), which the person's input names back, and the JPEG in base64. An
  *  empty `jpeg` says the view has ended for good.
@@ -4393,6 +4403,8 @@ export type BriefOf =
  *  Or, with `reconnection` and no image, where the view stands while the link to the runner it
  *  is drawn from is down and back (#2542): its last frame stays, dimmed, until it is
  *  reconnected.
+ * 
+ *  Or, with `page` and no image, where the browser's page is (#2300): its origin alone.
  */
 export type BrowserFrame = {
 	aim: string,
@@ -4402,6 +4414,11 @@ export type BrowserFrame = {
 	 *  own, with no image; `null` on every frame.
 	 */
 	reconnection: Reconnection | null,
+	/**
+	 *  Where the browser's page is (#2300): said on its own, with no image, where it changed
+	 *  and before the first frame of each snapshot; `null` on every frame.
+	 */
+	page: PageAt | null,
 };
 
 /**
@@ -4712,6 +4729,11 @@ export type ChatBrowser = {
 	was: string | null,
 	/**  The login purlis performed in it, where it holds one (#2022). */
 	login: string | null,
+	/**
+	 *  Who drives it, where the agent does not (#2300): the person, who took it over, or
+	 *  purlis, while it performs a login.
+	 */
+	driver: BrowserDriver | null,
 };
 
 /**
@@ -7858,6 +7880,15 @@ export type OwnerRow = {
 	title: string,
 	/**  Whether it is the account itself. */
 	mine: boolean,
+};
+
+/**
+ *  **Where a browser's page is** (#2300): the origin of the document it has loaded
+ *  (`http://localhost:5173`), from the engine's own record, or `null` for no page or a page
+ *  with no origin of its own (`about:blank`). Never its path, query, title or text.
+ */
+export type PageAt = {
+	origin: string | null,
 };
 
 /**  One part of a panel's body. */

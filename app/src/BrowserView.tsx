@@ -1,7 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Channel } from "@tauri-apps/api/core";
 import { Globe } from "lucide-react";
 import type {
   FormEvent,
@@ -12,8 +11,8 @@ import type {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CHAT_KEYBOARD } from "./actions";
 import {
-  type BrowserFrame,
   type BrowserInput,
+  type BrowserWatching,
   commands,
   type GrantLevel,
   type Offered,
@@ -28,9 +27,8 @@ import {
   pagePoint,
   wheelInput,
 } from "./browserDriving";
-import { frameBytes, latestOnly, paint } from "./browserFrames";
-import { addressChip, takeGoWhenShown, thisDevice } from "./browsers";
-import { useWindowSeen } from "./browserWatch";
+import { addressChip, originOfAddress, takeGoWhenShown, thisDevice } from "./browsers";
+import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { programsOf, useChatBrowsers } from "./chatBrowsers";
 import { EmptyState } from "./EmptyState";
 import { Notice, type NoticeAction, NoticePaneRow } from "./Notice";
@@ -42,13 +40,6 @@ import { onAMac } from "./tabKeys";
 
 /** The keys that are only held with another. */
 const ONLY_HELD = new Set(["Shift", "Control", "Alt", "Meta"]);
-
-/** Where a browser view stands: opening, drawing, ended, or refused with the host's words. */
-type Shown =
-  | { kind: "opening" }
-  | { kind: "live"; width: number; height: number }
-  | { kind: "ended" }
-  | { kind: "refused"; why: string };
 
 /** What the bar says when the person's key or click was dropped because the page moved on
  *  (#2304): the page, or a frame inside it, loaded another document after the frame they acted
@@ -164,9 +155,7 @@ function useSender(
  */
 export function BrowserView({ plane, program }: { plane: string; program: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [shown, setShown] = useState<Shown>({ kind: "opening" });
   const [driving, setDriving] = useState(false);
-  const [reconnecting, setReconnecting] = useState(false);
   const [said, setSaid] = useState<string | undefined>();
   const [dropped, setDropped] = useState(false);
   const [size, setSize] = useState<string>(SIZE_PRESETS[0].id);
@@ -185,9 +174,12 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   /** Whether it is one the person opened: no chat of the project's uses it, and it is no chat's
    *  pinned past its chat (#2022), which only the window that opened it sends anywhere. */
   const theirs = chatBrowsersRead && !programsOf(chatBrowsers, kept).has(program);
-  /** The address the person typed, the page's address once it went, and the sites it asks. */
+  /** The address the person typed, the origin it went to, and the sites it asks. */
   const [typed, setTyped] = useState("");
-  const [address, setAddress] = useState<string | null>(null);
+  const [wentTo, setWentTo] = useState<string | null>(null);
+  /** Where its page is, as its views are told (#2300); before a host says, where it went. */
+  const told = useBrowserOrigin(program);
+  const origin = told === undefined ? wentTo : told;
   const [asking, setAsking] = useState<SitesAsked | null>(null);
   const [going, setGoing] = useState(false);
 
@@ -196,56 +188,35 @@ export function BrowserView({ plane, program }: { plane: string; program: string
     setDriving(now);
   }, []);
 
+  // A view watched again starts with nothing queued (`useSender`).
   useEffect(() => {
-    if (!seen) return;
-    clear();
-    let gone = false;
-    let view: number | undefined;
-    const draw = latestOnly((jpeg) =>
-      canvas.current === null ? Promise.resolve() : paint(canvas.current, jpeg),
-    );
-    const frames = new Channel<BrowserFrame>();
-    frames.onmessage = (frame) => {
-      if (gone) return;
-      // Where the view stands while its runner's link is down and back: no image of its own.
-      if (frame.reconnection !== null) {
-        setReconnecting(frame.reconnection === "reconnecting");
-        return;
-      }
-      // An empty frame is the host's word that the view has ended for good.
-      if (frame.jpeg === "") {
-        setShown({ kind: "ended" });
-        return;
-      }
-      // A frame comes only over a link that is up: a view watched again after its runner's
-      // link came back is drawn as it comes.
-      setReconnecting(false);
-      aim.current = frame.aim;
-      draw(frameBytes(frame.jpeg));
-    };
-    void commands.watchBrowser(program, "focused", frames).then((watched) => {
-      if (watched.status === "error") {
-        if (!gone) setShown({ kind: "refused", why: watched.error });
-        return;
-      }
-      view = watched.data.view;
-      if (gone) {
-        void commands.unwatchBrowser(program, view);
-        return;
-      }
-      page.current = { width: watched.data.width, height: watched.data.height };
+    if (seen) clear();
+  }, [program, seen, clear]);
+
+  const attached = useCallback(
+    (watching: BrowserWatching) => {
+      page.current = { width: watching.width, height: watching.height };
       const sized = SIZE_PRESETS.find(
-        (one) => one.width === watched.data.width && one.height === watched.data.height,
+        (one) => one.width === watching.width && one.height === watching.height,
       );
       if (sized !== undefined) setSize(sized.id);
-      drivingNow(watched.data.person_drives);
-      setShown({ kind: "live", width: watched.data.width, height: watched.data.height });
-    });
-    return () => {
-      gone = true;
-      if (view !== undefined) void commands.unwatchBrowser(program, view);
-    };
-  }, [program, seen, drivingNow, clear]);
+      drivingNow(watching.person_drives);
+    },
+    [drivingNow],
+  );
+  const { watched: shown, reconnecting } = useBrowserWatch(
+    program,
+    "focused",
+    canvas,
+    seen,
+    undefined,
+    {
+      aimed: (at) => {
+        aim.current = at;
+      },
+      attached,
+    },
+  );
 
   /** Takes the browser over, once: answers whether the person drives it now. */
   const takeOver = useCallback((): Promise<boolean> => {
@@ -401,7 +372,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           return;
         }
         setAsking(null);
-        if (went.data.address !== null) setAddress(went.data.address);
+        if (went.data.address !== null) setWentTo(originOfAddress(went.data.address));
       });
     },
     [going, after, plane, program, drivingNow],
@@ -513,7 +484,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
       <div className="browser-bar" data-driving={driving ? "person" : "agent"}>
         {/* **Where the page is, and on which device** (#2024): drawn by purlis, outside the
             page, so a page cannot fake it. */}
-        <BrowserChip mac={mac} address={address} />
+        <BrowserChip mac={mac} origin={origin} />
         <p className="browser-bar-said" role="status">
           {/* The bar is the view's one status: what is said over the page is said here too. */}
           {reconnecting && `${RECONNECTING_SAID} `}
@@ -583,9 +554,10 @@ type SitesAsked = { address: string; sites: string[]; answers: Offered[] };
 /** Keep blocked, where the core offered no answer that refuses. */
 const KEEP_SAID = "Keep blocked";
 
-/** A browser's address and device, as its view says them above its page (#2024). */
-function BrowserChip({ mac, address }: { mac: boolean; address: string | null }) {
-  const chip = addressChip(address, thisDevice(mac));
+/** Where a browser's page is and on which device, as its view says them above its page
+ *  (#2024, #2300): its origin alone, never its path or title. */
+function BrowserChip({ mac, origin }: { mac: boolean; origin: string | null }) {
+  const chip = addressChip(origin, thisDevice(mac));
   return (
     <span className="browser-chip" data-testid="browser-chip" title={chip.whole ?? undefined}>
       {chip.said}

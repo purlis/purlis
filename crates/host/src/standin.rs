@@ -633,6 +633,8 @@ pub struct Shown {
     pub inputs: Vec<purlis_session_protocol::browsing::Input>,
     /// The document its page shows: input aimed at another is missed, and each frame names it.
     pub document: u64,
+    /// The address of that document, as an engine records it: what each frame names (#2300).
+    pub address: String,
     /// Its pages' size.
     pub size: (u16, u16),
     /// The address of each login purlis performed in it, in order (#2016): never its values.
@@ -652,13 +654,13 @@ impl StandInScreen {
 
     /// It makes `image` as its next frame, when the host is asking for frames.
     pub fn makes(&self, image: &[u8]) {
-        let (sink, document) = {
+        let (sink, document, address) = {
             let mut shown = self.shown();
             if !shown.showing {
                 return;
             }
             shown.made += 1;
-            (shown.sink.clone(), shown.document)
+            (shown.sink.clone(), shown.document, shown.address.clone())
         };
         if let Some(sink) = sink {
             sink(
@@ -666,6 +668,7 @@ impl StandInScreen {
                     page: "p1".into(),
                     document,
                 },
+                address,
                 Bytes::copy_from_slice(image),
             );
         }

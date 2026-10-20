@@ -4,11 +4,12 @@
 import { memo, useRef } from "react";
 import { Globe } from "lucide-react";
 import type { Catalogued, Offer } from "./actions";
-import type { ChatBrowser } from "./bindings";
-import { chatBrowserTitle } from "./browsers";
+import type { BrowserDriver, ChatBrowser } from "./bindings";
+import { addressChip, chatBrowserTitle, thisDevice } from "./browsers";
 import { Menued } from "./Menus";
-import { THUMBNAIL_ACROSS, useBrowserWatch, useWindowSeen } from "./browserWatch";
+import { THUMBNAIL_ACROSS, useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { useProjectShown } from "./projectShown";
+import { onAMac } from "./tabKeys";
 
 /**
  * **A chat's browsers, where the window draws them besides their view tab** (#2024, spec
@@ -25,6 +26,33 @@ export type BrowserShown = { browser: ChatBrowser; chat: string };
 const PINNED =
   "Pinned: it outlives its chat, until you stop it, Stop all ends it, or purlis quits.";
 
+/** What a row's mark says of who drives its browser, and its whole words on hover (#2300). */
+export const DRIVEN: Record<BrowserDriver, { mark: string; said: string }> = {
+  person: {
+    mark: "you are driving",
+    said: "You are driving this browser. Its agent is paused until you press Done in its view.",
+  },
+  purlis: {
+    mark: "purlis is signing in",
+    said: "purlis is signing in to a page in this browser. Its agent waits until purlis hands it back.",
+  },
+};
+
+/** **What a browser's row and thumbnail say on hover** (#2300): which browser of which chat,
+ *  where its page is on which device, and who drives it where its agent does not. */
+export function browserSaid(
+  shown: BrowserShown,
+  origin: string | null | undefined,
+  mac: boolean,
+): string[] {
+  const driver = shown.browser.driver;
+  return [
+    chatBrowserTitle(shown.chat, shown.browser.name),
+    addressChip(origin ?? null, thisDevice(mac)).said,
+    ...(driver !== null ? [DRIVEN[driver].said] : []),
+  ];
+}
+
 /** No rows of the catalogue: rows drawn without a menu, in a test. */
 const NO_OFFERS: Catalogued = new Map();
 const NO_CHATS: readonly number[] = [];
@@ -34,14 +62,25 @@ const NO_CHATS: readonly number[] = [];
  * a canvas while it can be seen (its project in front and the window not hidden), and nothing
  * asked of the browser while it cannot.
  */
-const BrowserThumbnail = memo(function BrowserThumbnail({ program }: { program: string }) {
+const BrowserThumbnail = memo(function BrowserThumbnail({
+  program,
+  driver,
+}: {
+  program: string;
+  /** Who drives it, where its agent does not: marked on it (#2300). */
+  driver: BrowserDriver | null;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const inFront = useProjectShown();
   const windowSeen = useWindowSeen();
   const seen = inFront && windowSeen;
-  const watched = useBrowserWatch(program, "thumbnail", canvas, seen, THUMBNAIL_ACROSS);
+  const { watched } = useBrowserWatch(program, "thumbnail", canvas, seen, THUMBNAIL_ACROSS);
   return (
-    <span className="browser-thumbnail" data-watched={watched.kind}>
+    <span
+      className="browser-thumbnail"
+      data-watched={watched.kind}
+      data-driver={driver ?? undefined}
+    >
       {/* Its mark until its first frame, and after its view ends. */}
       {watched.kind !== "live" && <Globe aria-hidden="true" />}
       <canvas ref={canvas} aria-hidden="true" hidden={watched.kind !== "live"} />
@@ -84,19 +123,35 @@ export function TabBrowsers({
         </span>
       </span>
       {used.map((shown) => (
-        <button
-          key={shown.browser.program}
-          type="button"
-          className="ui-button ui-button-ghost tab-browser"
-          tabIndex={-1}
-          aria-label={`Open browser ${shown.browser.name} of ${shown.chat}`}
-          title={chatBrowserTitle(shown.chat, shown.browser.name)}
-          onClick={() => onOpen(shown)}
-        >
-          <BrowserThumbnail program={shown.browser.program} />
-        </button>
+        <TabBrowser key={shown.browser.program} shown={shown} onOpen={onOpen} />
       ))}
     </span>
+  );
+}
+
+/** One browser's live thumbnail on its chat's tab, pressed to open its view (#2024). */
+function TabBrowser({
+  shown,
+  onOpen,
+}: {
+  shown: BrowserShown;
+  onOpen: (shown: BrowserShown) => void;
+}) {
+  const origin = useBrowserOrigin(shown.browser.program);
+  const driver = shown.browser.driver;
+  return (
+    <button
+      type="button"
+      className="ui-button ui-button-ghost tab-browser"
+      tabIndex={-1}
+      aria-label={`Open browser ${shown.browser.name} of ${shown.chat}${
+        driver !== null ? `, ${DRIVEN[driver].mark}` : ""
+      }`}
+      title={browserSaid(shown, origin, onAMac()).join("\n")}
+      onClick={() => onOpen(shown)}
+    >
+      <BrowserThumbnail program={shown.browser.program} driver={driver} />
+    </button>
   );
 }
 
@@ -134,56 +189,93 @@ export const BrowserRows = memo(function BrowserRows({
     <li role="none" className="chat-browsers" data-level={level}>
       <div role="group" aria-label={label ?? `Browsers of ${chat}`}>
         {browsers.map((shown) => (
-          <Menued
+          <BrowserRow
             key={shown.browser.program}
-            on={{ on: "browser", program: shown.browser.program, handTo }}
+            shown={shown}
+            onOpen={onOpen}
             offers={offers}
-            onPress={onPress ?? (() => undefined)}
-          >
-            <button
-              key={shown.browser.program}
-              type="button"
-              className="ui-row ui-tree-row chat-browser"
-              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-              tabIndex={0}
-              title={[
-                chatBrowserTitle(shown.chat, shown.browser.name),
-                ...(shown.browser.unended ? [NOT_ENDED_YET] : []),
-                ...(shown.browser.pinned ? [PINNED] : []),
-              ].join("\n")}
-              onClick={() => onOpen(shown)}
-            >
-              <Globe className="node-icon" aria-hidden="true" />
-              <span className="session ui-text-secondary">Browser {shown.browser.name}</span>
-              {/* A pinned one whose chat closed says which chat it was of (#2022). */}
-              {shown.browser.was !== null && (
-                <span className="chat-browser-was ui-text-meta">{shown.browser.was}</span>
-              )}
-              {/* Signed in with a login purlis performed (#2022): it goes only to a chat that may
-                log in with it. */}
-              {shown.browser.login !== null && (
-                <span
-                  className="chat-browser-login ui-text-meta"
-                  title={`Signed in with ${shown.browser.login}`}
-                >
-                  signed in
-                </span>
-              )}
-              {shown.browser.pinned && (
-                <span className="chat-browser-pinned ui-text-meta" title={PINNED}>
-                  pinned
-                </span>
-              )}
-              {/* Could not be ended yet (D-2013-16): its chat no longer uses it. */}
-              {shown.browser.unended && (
-                <span className="chat-browser-unended ui-text-meta" title={NOT_ENDED_YET}>
-                  not ended yet
-                </span>
-              )}
-            </button>
-          </Menued>
+            onPress={onPress}
+            handTo={handTo}
+          />
         ))}
       </div>
     </li>
   );
 });
+
+/** **One browser's row under its chat** (#2024), with its catalogue menu (#2022): where its
+ *  page is on its hover, and who drives it where its agent does not (#2300). */
+function BrowserRow({
+  shown,
+  onOpen,
+  offers,
+  onPress,
+  handTo,
+}: {
+  shown: BrowserShown;
+  onOpen: (shown: BrowserShown) => void;
+  offers: Catalogued;
+  onPress?: (offer: Offer) => void;
+  handTo: readonly number[];
+}) {
+  const origin = useBrowserOrigin(shown.browser.program);
+  const driver = shown.browser.driver;
+  return (
+    <Menued
+      on={{ on: "browser", program: shown.browser.program, handTo }}
+      offers={offers}
+      onPress={onPress ?? (() => undefined)}
+    >
+      <button
+        type="button"
+        className="ui-row ui-tree-row chat-browser"
+        // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+        tabIndex={0}
+        title={[
+          ...browserSaid(shown, origin, onAMac()),
+          ...(shown.browser.unended ? [NOT_ENDED_YET] : []),
+          ...(shown.browser.pinned ? [PINNED] : []),
+        ].join("\n")}
+        onClick={() => onOpen(shown)}
+      >
+        <Globe className="node-icon" aria-hidden="true" />
+        <span className="session ui-text-secondary">Browser {shown.browser.name}</span>
+        {/* A pinned one whose chat closed says which chat it was of (#2022). */}
+        {shown.browser.was !== null && (
+          <span className="chat-browser-was ui-text-meta">{shown.browser.was}</span>
+        )}
+        {/* Who drives it, where its agent does not (#2300). */}
+        {driver !== null && (
+          <span
+            className="chat-browser-driver ui-text-meta"
+            data-driver={driver}
+            title={DRIVEN[driver].said}
+          >
+            {DRIVEN[driver].mark}
+          </span>
+        )}
+        {/* Signed in with a login purlis performed (#2022): it goes only to a chat that may
+          log in with it. */}
+        {shown.browser.login !== null && (
+          <span
+            className="chat-browser-login ui-text-meta"
+            title={`Signed in with ${shown.browser.login}`}
+          >
+            signed in
+          </span>
+        )}
+        {shown.browser.pinned && (
+          <span className="chat-browser-pinned ui-text-meta" title={PINNED}>
+            pinned
+          </span>
+        )}
+        {/* Could not be ended yet (D-2013-16): its chat no longer uses it. */}
+        {shown.browser.unended && (
+          <span className="chat-browser-unended ui-text-meta" title={NOT_ENDED_YET}>
+            not ended yet
+          </span>
+        )}
+      </button>
+    </Menued>
+  );
+}
