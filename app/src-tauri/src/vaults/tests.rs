@@ -150,14 +150,16 @@ fn listing_or_opening_a_keyring_vault_reads_the_index_and_never_the_store() {
     );
     assert_eq!(opened.count, 1);
     assert!(opened.health.ok, "{:?}", opened.health);
-    let [secret] = opened.secrets.as_slice() else {
-        panic!("{:?}", opened.secrets)
+    // Each entry is a key's name, size band and time, never a value: only those are printed.
+    let [entry] = opened.secrets.as_slice() else {
+        panic!("{} entries, not one", opened.secrets.len())
     };
-    assert_eq!(secret.key, "API_TOKEN");
-    assert_eq!(secret.size.as_deref(), Some("16–31 bytes"));
+    assert_eq!(entry.key, "API_TOKEN");
+    assert_eq!(entry.size.as_deref(), Some("16–31 bytes"));
     assert!(
-        secret.updated.as_deref().is_some_and(|t| t.ends_with('Z')),
-        "{secret:?}"
+        entry.updated.as_deref().is_some_and(|t| t.ends_with('Z')),
+        "updated at {:?}",
+        entry.updated
     );
     let ops = listed.iter().find(|v| v.name == "ops").unwrap();
     assert_eq!((ops.count, ops.health.ok), (Some(1), true), "{ops:?}");
