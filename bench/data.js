@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792530846582,
+  "lastUpdate": 1792533036723,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19740,6 +19740,48 @@ window.BENCHMARK_DATA = {
             "value": 102.19557,
             "unit": "ms",
             "extra": "median of 5 runs: 101.327, 101.377, 102.196, 103.149, 103.739 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0110b18bcd07a2abb616dfe6d9fa8af62e55ab48",
+          "message": "ADR 0100: a skill is installed from a git source as a pinned copy (SK-10) (#2849)\n\n* ADR 0100: a skill is installed from a git source as a pinned copy\n\nSkill sources are git repositories; an install copies the skill into a\nlevel, pinned by commit in skills.lock, behind a summary-first review.\nUpdates are never automatic, private sources sign in through purlis\nsecret exec, and ADR 0041's no-registry rule stays true for extensions.\n\nRefs #2762\nRefs #2773\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* ADR 0100: referenced skills share the review; org controls point to #2774\n\nRefs #2762\nRefs #2773\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* ADR 0100: link ADR 0099, grant root, widen Skill source\n\nRefs #2762\nRefs #2773\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T01:42:17+04:00",
+          "tree_id": "625cdc6e3618e7d58b75a18cfebd6a003f4875c2",
+          "url": "https://github.com/purlis/purlis/commit/0110b18bcd07a2abb616dfe6d9fa8af62e55ab48"
+        },
+        "date": 1792533034537,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.610967,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.587, 0.607, 0.611, 0.612, 0.626 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 15.991119999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.927, 15.989, 15.991, 16.003, 16.449 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.73237499999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.011, 101.676, 101.732, 102.192, 102.294 ms"
           }
         ]
       }
