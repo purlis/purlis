@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792493457976,
+  "lastUpdate": 1792495458906,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19026,6 +19026,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9404715,
             "unit": "ms",
             "extra": "median of 5 runs: 100.985, 101.412, 101.940, 101.993, 102.117 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1039d6689df882799b2d0fa3fe0b9b5abcf6f715",
+          "message": "The session host holds every client to the device's browser budget (#2718)\n\n* The session host holds every client to the device's browser budget\n\nThe host counts every browser it runs, whoever started it, and the\nstarts under way, and takes a place for a new one under its state lock,\nso two clients never both take the last. A start past the budget is\nrefused `device_full` (session protocol 1.32), whose words name the\nbudget and the setting. The budget is the host's own device's, read by\nthe binary's browsers at each start. The window maps the code to its\ndevice-full refusal.\n\nCloses #2611\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The host's device_full sentence starts with a capital; wrap a doc line\n\nRefs #2611\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T15:22:47+04:00",
+          "tree_id": "414732a65529bc705cf3e673dd349be4201a7d44",
+          "url": "https://github.com/purlis/purlis/commit/1039d6689df882799b2d0fa3fe0b9b5abcf6f715"
+        },
+        "date": 1792495457121,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3649555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.350, 0.364, 0.365, 0.370, 0.375 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.746419,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.124, 16.642, 16.746, 16.813, 16.905 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5655695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.179, 101.397, 101.566, 101.768, 101.963 ms"
           }
         ]
       }
