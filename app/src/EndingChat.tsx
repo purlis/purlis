@@ -300,7 +300,10 @@ export function DRAFTS_SAY(drafts: readonly string[]): string {
 }
 
 /** A closing chat's theme draft, as the close question says what Keep does with it. */
-export type DraftClosing = Pick<WindowDraft, "folder" | "kept_to" | "workspace" | "replaces">;
+export type DraftClosing = Pick<
+  WindowDraft,
+  "folder" | "kept_to" | "workspace" | "replaces" | "changed"
+>;
 
 /** What Keep does with each draft: where it puts it, and what it replaces there; then the one
  *  question who draws it. */

@@ -684,6 +684,40 @@ fn a_plane_nobody_approved_is_not_vouched_into_consent_by_its_record_being_writt
     assert!(would_ask(&config, &root), "a write became an approval");
 }
 
+#[cfg(unix)]
+#[test]
+fn writing_the_record_deletes_the_theme_drafts_of_every_chat_it_no_longer_holds() {
+    // #2708: the record holds every chat open and every one a launch has still to start, so a
+    // chat it does not hold is gone, and nothing names its drafts any more.
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let records = Records {
+        root: root.clone(),
+        config: None,
+        allowed: AtomicBool::new(true),
+        clone_seat: reopen::CloneSeat::of(&root, None),
+    };
+    let (kept, gone) = (reopen::mint(), reopen::mint());
+    let place = purlis_core::theme::drafts::Place {
+        plane: &root,
+        workspace: None,
+    };
+    for chat in [&kept, &gone] {
+        purlis_core::theme::drafts::start(None, place, chat, "dusk").expect("a draft");
+    }
+    let mut record = one_chat_on("/bin/true");
+    record.chats[0].identity.id = Some(kept.clone());
+
+    records.write(&record);
+
+    let folder = |chat: &str| purlis_core::theme::drafts::folder_of(&root, chat).expect("a chat's");
+    assert!(
+        folder(&kept).join("dusk").is_dir(),
+        "an open chat's draft stays"
+    );
+    assert!(!folder(&gone).exists(), "a gone chat's drafts are deleted");
+}
+
 /// Where the record lives, which is beside the socket in `.charter/app/`.
 fn record_of(root: &Path) -> PathBuf {
     root.join(".charter").join("app").join("reopen.json")

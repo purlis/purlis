@@ -8,7 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Offer } from "./actions";
 import type { PlaneId, WindowDraft } from "./bindings";
 import { CHOOSE_DRAFTS, DRAFTS_SAY, EndingChat } from "./EndingChat";
-import { ThemeDraftStrip } from "./ThemeDraftStrip";
+import { KEPT_REFUSED_WAITS, ThemeDraftStrip } from "./ThemeDraftStrip";
 import { forgetDraftHere, isRevertKey, setDraftHere } from "./themeDrafts";
 
 /**
@@ -31,10 +31,12 @@ const DRAFT: WindowDraft = {
   workspace: "alpha",
   kept_to: "workspace",
   replaces: false,
+  changed: false,
   drawn: true,
   broken: [],
   refused: [],
   review: null,
+  kept_refused: false,
 };
 
 function asked(): { cmd: string; args: Record<string, unknown> }[] {
@@ -74,6 +76,22 @@ describe("the theme draft strip", () => {
     render(<ThemeDraftStrip plane={PLANE} workspace="alpha" />);
     expect(screen.getByRole("region", { name: "Theme draft" }).textContent).toContain(
       "Its last save is not drawn, so its last good version is: primary text is readable",
+    );
+  });
+
+  it("says that a refused kept theme's Notice waits while the draft is drawn (#2708)", () => {
+    asked();
+    act(() =>
+      setDraftHere({ plane: PLANE, workspace: "alpha", draft: { ...DRAFT, kept_refused: true } }),
+    );
+    const { rerender } = render(<ThemeDraftStrip plane={PLANE} workspace="alpha" />);
+    expect(screen.getByRole("region", { name: "Theme draft" }).textContent).toContain(
+      KEPT_REFUSED_WAITS,
+    );
+    act(() => setDraftHere({ plane: PLANE, workspace: "alpha", draft: DRAFT }));
+    rerender(<ThemeDraftStrip plane={PLANE} workspace="alpha" />);
+    expect(screen.getByRole("region", { name: "Theme draft" }).textContent).not.toContain(
+      KEPT_REFUSED_WAITS,
     );
   });
 
@@ -127,6 +145,7 @@ describe("the theme draft strip", () => {
       folder: "dusk",
       keptTo: "workspace",
       replaces: false,
+      changed: false,
     });
   });
 });
@@ -198,6 +217,7 @@ describe("Keep into the project", () => {
         folder: "dusk",
         keptTo: "project",
         replaces: true,
+        changed: false,
       }),
     );
     // Who draws it is asked of the project, where it went.
@@ -218,5 +238,43 @@ describe("Keep into the project", () => {
     expect(document.body.textContent).toContain(
       "Keep puts it in the project's themes, for every workspace.",
     );
+  });
+});
+
+describe("Keep over a folder that changed since the draft started (#2708)", () => {
+  it("says so before it replaces it, and sends that it was shown", async () => {
+    const calls = asked();
+    const draft: WindowDraft = { ...DRAFT, replaces: true, changed: true };
+    act(() => setDraftHere({ plane: PLANE, workspace: "alpha", draft }));
+    render(<ThemeDraftStrip plane={PLANE} workspace="alpha" />);
+    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    const question = await screen.findByRole("alertdialog");
+    expect(question.textContent).toContain(
+      "replacing the dusk that is there, which changed since this draft started.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+    await waitFor(() =>
+      expect(calls.find((one) => one.cmd === "theme_draft_keep")?.args).toEqual({
+        plane: PLANE,
+        session: 3,
+        folder: "dusk",
+        keptTo: "workspace",
+        replaces: true,
+        changed: true,
+      }),
+    );
+  });
+
+  it("is said in the close question too", () => {
+    render(
+      <EndingChat
+        offer={{ id: "pane.close", title: "Close chat" } as unknown as Offer}
+        drafts={[{ ...DRAFT, replaces: true, changed: true }]}
+        onEnd={() => undefined}
+        onSmartClose={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+    expect(document.body.textContent).toContain("which changed since this draft started");
   });
 });

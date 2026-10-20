@@ -36,6 +36,16 @@
 //! chat's own level (the workspace's, or the project's at the plane root). Keep copies the draft
 //! there ([`keep`]), Revert deletes it ([`revert`]).
 //!
+//! **A draft remembers the real folder it started from**: its start records where that folder
+//! is and a digest of its files ([`changed`]). When the folder there is not what the draft
+//! started from (the person's own edit, a pull, another chat's write), Keep asks before it
+//! replaces it, as it asks before it replaces any folder.
+//!
+//! **The drafts of a chat that is gone are deleted** ([`sweep`]): no strip names them, and no
+//! close asks about them. Each chat's drafts folder names the clone whose app made it (its
+//! [`crate::plane::CloneKey`]), and a sweep deletes only its own clone's: a state folder that
+//! `$PURLIS_HOME` shares between clones keeps every other clone's drafts.
+//!
 //! # The draft's fonts and its floors
 //!
 //! - **A draft's fonts follow the project's approval gate**: a face is drawn only when the
@@ -391,7 +401,17 @@ pub fn revert(plane: &Path, draft: &Draft) -> Result<(), String> {
         )
     })?;
     if let Some(chat) = folder.parent() {
-        let _ = std::fs::remove_dir(chat);
+        let _ = std::fs::remove_file(started_record(chat, &draft.folder));
+        // A chat's folder that holds only its owner record holds no draft: it goes with it.
+        let only_owner = std::fs::read_dir(chat).is_ok_and(|listed| {
+            listed
+                .filter_map(Result::ok)
+                .all(|entry| entry.file_name() == OWNER)
+        });
+        if only_owner {
+            let _ = std::fs::remove_file(chat.join(OWNER));
+            let _ = std::fs::remove_dir(chat);
+        }
     }
     Ok(())
 }
@@ -411,6 +431,8 @@ pub struct Kept {
 pub struct Seen {
     pub kept_to: KeptTo,
     pub replaces: bool,
+    /// Whether the folder there is not what the draft started from ([`changed`]).
+    pub changed: bool,
 }
 
 /// Whether Keep of `draft` would replace a theme folder that is there: the folder it is a draft
@@ -456,16 +478,18 @@ pub fn keep(
     let folder = draft_folder(place.plane, draft)?;
     let folders = Folders::of(config_root, Some(place.plane), place.workspace);
     let kept_to = kept_to(&folders, place.workspace, &draft.folder);
-    let replace = replaces(
-        place.plane,
-        &Draft {
-            kept_to: kept_to.clone(),
-            ..draft.clone()
-        },
-    );
-    // What the person was shown is what Keep does, or nothing: a destination or a folder there
-    // that changed since is asked about again.
-    if kept_to != seen.kept_to || replace != seen.replaces {
+    let now = Draft {
+        kept_to: kept_to.clone(),
+        ..draft.clone()
+    };
+    let replace = replaces(place.plane, &now);
+    // What the person was shown is what Keep does, or nothing: a destination, a folder there, or
+    // a change to it since the draft started, that is not what they were shown is asked about
+    // again.
+    if kept_to != seen.kept_to
+        || replace != seen.replaces
+        || changed(place.plane, &now) != seen.changed
+    {
         return Err(format!(
             "where Keep puts the theme draft {} has changed since you were shown it, so it is not \
              kept: look at it again",
@@ -473,13 +497,7 @@ pub fn keep(
         ));
     }
     let (mut files, _) = super::gather(&folder)?;
-    let in_project = kept_to
-        .below()
-        .join(&draft.folder)
-        .components()
-        .map(|part| part.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/");
+    let in_project = slashed(&kept_to.below().join(&draft.folder));
     let named = files
         .get(super::THEME_JSON)
         .map(|bytes| named_faces(bytes))
@@ -592,28 +610,183 @@ pub fn start(
             kept_to,
         });
     }
-    let kept = place.plane.join(kept_to.below()).join(folder);
-    let files = if std::fs::symlink_metadata(kept.join(super::THEME_JSON)).is_ok() {
+    let below_kept = kept_to.below().join(folder);
+    let kept = place.plane.join(&below_kept);
+    // What the real folder is as the draft starts from it: the files copied, or what is there.
+    let (files, from) = if std::fs::symlink_metadata(kept.join(super::THEME_JSON)).is_ok() {
         crate::contain::no_link_on_the_way(place.plane, &kept)
             .map_err(|why| format!("{} is not read: {why}", kept.display()))?;
-        super::gather(&kept)?.0
+        let files = super::gather(&kept)?.0;
+        let from = Some(started_from(&below_kept, &digest_of(&files)));
+        (files, from)
     } else {
         let mut files = super::Files::new();
         files.insert(super::THEME_JSON.to_owned(), new_theme(folder).into_bytes());
-        files
+        (files, real_now(place.plane, &kept_to, folder))
     };
     let (root, below) = root_of(place.plane);
     let into = root.join(below).join(chat);
     crate::plane::private_dir(&root, &into)
         .map_err(|why| format!("purlis could not make {}: {why}", into.display()))?;
+    // Whose clone this chat's drafts folder is: a sweep deletes only its own (D-2708-8).
+    if std::fs::symlink_metadata(into.join(OWNER)).is_err() {
+        write_no_link(&root, &into.join(OWNER), &owner_of(place.plane))
+            .map_err(|why| format!("purlis could not make {}: {why}", into.display()))?;
+    }
     let path = super::stage(&into, folder, &files, false)
         .and_then(super::Staged::commit)
         .map_err(|why| why.to_string())?;
+    // A record not written is a draft Keep asks about: it cannot tell what it started from.
+    if let Some(from) = from {
+        let _ = write_no_link(&root, &started_record(&into, folder), &from);
+    }
     Ok(Started {
         path,
         made: true,
         kept_to,
     })
+}
+
+/// A path below the plane as the project names it: its folders joined by `/`.
+fn slashed(path: &Path) -> String {
+    path.components()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Where a chat's drafts folder `chat` records what its draft `folder` started from: a name no
+/// theme folder takes, so no read of the drafts sees it.
+fn started_record(chat: &Path, folder: &str) -> PathBuf {
+    chat.join(format!(".{folder}.started"))
+}
+
+/// The digest of a theme folder's files: each path and its bytes, in order.
+fn digest_of(files: &super::Files) -> String {
+    let mut all = Vec::new();
+    for (path, bytes) in files {
+        all.extend_from_slice(path.as_bytes());
+        all.push(0);
+        all.extend_from_slice(bytes.len().to_string().as_bytes());
+        all.push(0);
+        all.extend_from_slice(bytes);
+    }
+    super::fonts::digest(&all)
+}
+
+/// What a draft's start records of the real folder at `below` whose files have `digest`.
+fn started_from(below: &Path, digest: &str) -> String {
+    format!("{}\n{digest}\n", slashed(below))
+}
+
+/// The most a start record or an owner record is, read back.
+const MOST_RECORD_BYTES: u64 = 1024;
+
+/// The record, in a chat's drafts folder, of the clone whose app made it.
+const OWNER: &str = ".owner";
+
+/// What a chat's drafts folder made by the app of the plane at `plane` names as its owner: the
+/// clone's key.
+fn owner_of(plane: &Path) -> String {
+    format!("{}\n", crate::plane::CloneKey::of(plane))
+}
+
+/// A small record of purlis's own at `path` below `root`, read refusing a link on the way or at
+/// it, and anything that is not a plain file, at most [`MOST_RECORD_BYTES`]; `None` otherwise.
+fn read_small(root: &Path, path: &Path) -> Option<String> {
+    use std::io::Read;
+    let file = crate::contain::open_no_link(root, path).ok()?;
+    if !file.metadata().ok()?.file_type().is_file() {
+        return None;
+    }
+    let mut text = String::new();
+    file.take(MOST_RECORD_BYTES)
+        .read_to_string(&mut text)
+        .ok()?;
+    Some(text)
+}
+
+/// Writes `text` to the record of purlis's own at `path` below `root`, refusing a link on the way
+/// or at it.
+fn write_no_link(root: &Path, path: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    crate::contain::create_no_link(root, path)?.write_all(text.as_bytes())
+}
+
+/// **What the real folder `folder` kept to `kept_to` is now**, as a draft's start records it:
+/// where it is, and the digest of its files, or `none` when nothing is there. `None` when it
+/// cannot be told: a folder that is not a theme folder's, or one that is not read.
+fn real_now(plane: &Path, kept_to: &KeptTo, folder: &str) -> Option<String> {
+    let below = kept_to.below().join(folder);
+    let at = plane.join(&below);
+    match std::fs::symlink_metadata(&at) {
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {
+            Some(started_from(&below, "none"))
+        }
+        Err(_) => None,
+        Ok(_) => {
+            crate::contain::no_link_on_the_way(plane, &at).ok()?;
+            let (files, _) = super::gather(&at).ok()?;
+            Some(started_from(&below, &digest_of(&files)))
+        }
+    }
+}
+
+/// **Whether the real folder `draft` is kept to is not what the draft started from**: it was
+/// made, changed or deleted since. A draft with no record of its start, or a folder that cannot
+/// be read, counts as changed: Keep then asks.
+pub fn changed(plane: &Path, draft: &Draft) -> bool {
+    let Some(chat) = folder_of(plane, &draft.chat) else {
+        return true;
+    };
+    let (root, _) = root_of(plane);
+    let Some(recorded) = read_small(&root, &started_record(&chat, &draft.folder)) else {
+        return true;
+    };
+    real_now(plane, &draft.kept_to, &draft.folder).is_none_or(|now| now != recorded)
+}
+
+/// The most chats' drafts folders one [`sweep`] looks at.
+pub const MOST_SWEPT: usize = 256;
+
+/// **Deletes the drafts of every chat that is not open** in the plane at `plane`: each chat's
+/// drafts folder whose chat is none of `open`, the chats the app has open or reopens at its next
+/// launch. No strip names such a draft and no close asks about it. At most [`MOST_SWEPT`] are
+/// looked at in one sweep; a name that is not a chat's id is left as it is. **Only this clone's
+/// are deleted**: a folder whose owner record names another clone, or that has none, is not
+/// this plane's to delete, as in a state folder `$PURLIS_HOME` shares. Answers how many chats'
+/// drafts were deleted.
+pub fn sweep(plane: &Path, open: &[&str]) -> usize {
+    let (root, below) = root_of(plane);
+    let drafts = root.join(below);
+    if crate::contain::no_link_on_the_way(&root, &drafts).is_err() {
+        return 0;
+    }
+    let Ok(listed) = std::fs::read_dir(&drafts) else {
+        return 0;
+    };
+    let mine = owner_of(plane);
+    let mut deleted = 0;
+    for entry in listed.filter_map(Result::ok).take(MOST_SWEPT) {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !is_chat_id(&name) || open.contains(&name.as_str()) {
+            continue;
+        }
+        // The entry's own kind: a link is not followed, and not deleted through.
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        if read_small(&root, &entry.path().join(OWNER)).as_deref() != Some(mine.as_str()) {
+            continue;
+        }
+        // The standard library's removal opens each folder below refusing a link.
+        if std::fs::remove_dir_all(entry.path()).is_ok() {
+            deleted += 1;
+        }
+    }
+    deleted
 }
 
 /// The most files a save hands over: `theme.json` and the icon sets beside it.
@@ -641,6 +814,8 @@ pub fn too_large(files: &BTreeMap<String, String>) -> Option<String> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Saved {
     pub path: PathBuf,
+    /// Whether the draft was made by this save: it was not there before.
+    pub made: bool,
     /// Where it is kept to.
     pub kept_to: KeptTo,
     /// The hard floors it breaks, which keep it from being drawn.
@@ -726,6 +901,7 @@ pub fn save(
     );
     Ok(Saved {
         path,
+        made: started.made,
         kept_to: started.kept_to,
         broken: drafted.broken,
         refused: drafted.refused,
@@ -815,11 +991,7 @@ pub fn copy_to_machine(
         .map_err(|why| format!("{} is not read: {why}", from.display()))?;
     let (mut files, _) = super::gather(&from)?;
     let approved = approved_fonts(Some(config_root), Some(plane));
-    let in_project = below
-        .components()
-        .map(|part| part.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/");
+    let in_project = slashed(&below);
     let mut left_out = Vec::new();
     files.retain(|path, bytes| {
         if !path.starts_with("fonts/") {

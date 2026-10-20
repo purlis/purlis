@@ -2716,17 +2716,20 @@ export const commands = {
 	themeChat: (at: ThemeAt, theme: string | null, from: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("theme_chat", { at, theme, from, columns, rows })),
 	/**
 	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
-	 *  draft, where Keep puts it. Empty for a chat with none.
+	 *  draft, where Keep puts it. Empty for a chat with none. The window's alone: it names the chat
+	 *  and where it works, and what Keep would do, which only the window acts on, as only the
+	 *  window closes a chat.
 	 */
 	themeDraftsOfChat: (plane: PlaneId, session: number) => typedError<WindowDraft[], string>(__TAURI_INVOKE("theme_drafts_of_chat", { plane, session })),
 	/**
 	 *  **Keep** pressed: the engine copies the draft of the chat `session` into the real folder it is
 	 *  a draft of and deletes the draft. Answers what it did, in a sentence. Only a draft the window
 	 *  draws is kept, and only as the person was shown it: `kept_to` (`workspace` or `project`, as
-	 *  `WindowDraft::kept_to` says) and `replaces`, which the window sends once the person agreed to
-	 *  replace the folder there. When either has changed since, nothing is kept.
+	 *  `WindowDraft::kept_to` says), `replaces`, which the window sends once the person agreed to
+	 *  replace the folder there, and `changed`, once they agreed to replace a folder that is not what
+	 *  the draft started from. When any has changed since, nothing is kept.
 	 */
-	themeDraftKeep: (plane: PlaneId, session: number, folder: string, keptTo: string, replaces: boolean) => typedError<string, string>(__TAURI_INVOKE("theme_draft_keep", { plane, session, folder, keptTo, replaces })),
+	themeDraftKeep: (plane: PlaneId, session: number, folder: string, keptTo: string, replaces: boolean, changed: boolean) => typedError<string, string>(__TAURI_INVOKE("theme_draft_keep", { plane, session, folder, keptTo, replaces, changed })),
 	/**  **Revert** pressed: the engine deletes the draft of the chat `session`. */
 	themeDraftRevert: (plane: PlaneId, session: number, folder: string) => typedError<null, string>(__TAURI_INVOKE("theme_draft_revert", { plane, session, folder })),
 	/**
@@ -11101,6 +11104,11 @@ export type WindowDraft = {
 	kept_to: string,
 	/**  Whether Keep replaces a theme folder that is there: the window asks the person first. */
 	replaces: boolean,
+	/**
+	 *  Whether the theme folder Keep puts it in is not what the draft started from: made,
+	 *  changed or deleted since ([`drafts::changed`]). The window says so, and Keep asks first.
+	 */
+	changed: boolean,
 	/**  Whether the window draws it now: the draft, or its last good version. */
 	drawn: boolean,
 	/**  The hard floors the draft as saved breaks, in the engine's words: why it is not drawn. */
@@ -11114,6 +11122,11 @@ export type WindowDraft = {
 	 *  rules of a refused theme otherwise. `None` for a draft not refused for a font.
 	 */
 	review: ThemeReview | null,
+	/**
+	 *  Whether the theme as kept is refused while the draft is drawn: its Notice, and any
+	 *  Review and allow on it, waits until the draft is reverted, and the strip says so.
+	 */
+	kept_refused: boolean,
 };
 
 /**  One face of a font. */

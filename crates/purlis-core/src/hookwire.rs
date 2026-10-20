@@ -1337,8 +1337,8 @@ pub enum Ask {
     /// Start or save this chat's theme draft (#2332, [`crate::theme::drafts`]): what `purlis
     /// theme draft` hands over. **A brokered write**: no chat writes the drafts folder, and the app
     /// writes this one in the drafts folder of the chat whose token the line carries, by its own
-    /// record of that chat, never a chat a line names. It answers [`Answer::Said`] with what the
-    /// window draws of the draft, or [`Answer::No`] with the refusal. No ticket, for a record's
+    /// record of that chat, never a chat a line names. It answers [`Answer::Drafted`] with what
+    /// the window draws of the draft, or [`Answer::No`] with the refusal. No ticket, for a record's
     /// reason. Boxed: it carries the draft's theme files.
     ThemeDraft(Box<ThemeDraftAsk>),
 }
@@ -1856,6 +1856,15 @@ pub enum Answer {
     Said {
         lines: Vec<crate::repocmd::Say>,
         code: u8,
+    },
+    /// A chat's theme draft is started or saved ([`Ask::ThemeDraft`], #2332): every line the
+    /// app said, its exit status, and whether the draft was **made** by this ask, a copy of its
+    /// kept folder or a new theme, rather than there already. The command makes its working copy
+    /// again from a draft made now, so the edits of one kept or reverted never come back.
+    Drafted {
+        lines: Vec<crate::repocmd::Say>,
+        code: u8,
+        made: bool,
     },
     /// The project's vaults, for the chat that asked (#1430): the persona the app started it
     /// as, and each vault with whether that persona may use it. No value and no key name.

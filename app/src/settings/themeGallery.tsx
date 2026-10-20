@@ -850,6 +850,13 @@ function checkRow(group: string, at: ThemeAt | null): LiveSetting {
   };
 }
 
+/**
+ * What **Use in the whole project** does (#2708): the theme is the project's, and the project's
+ * next save commits it for everyone, even from a workspace that is local.
+ */
+export const MOVE_TO_PROJECT_SAYS =
+  "Moves this theme to the project's themes, for every workspace. The project's next save commits it for everyone, even from a local workspace.";
+
 /** Why New theme and Edit with a chat wait for a project: a chat works in one. */
 const NO_CHAT_HERE =
   "A chat makes a theme in a project: open Settings › Theme at the Project or Workspace level.";
@@ -865,7 +872,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
   return {
     id: `${group}.folder`,
     label: "This theme",
-    help: "Duplicate the chosen theme as a theme folder of your own that extends it, open its folder, have a chat edit it or make a new one, or move it up a level: a workspace's to the whole project, a project's or a workspace's to your machine.",
+    help: "Duplicate the chosen theme as a theme folder of your own that extends it, open its folder, have a chat edit it or make a new one, or move it up a level: a workspace's to the whole project, which the project's next save commits for everyone, a project's or a workspace's to your machine.",
     writes: "this machine",
     useControl: function useThemeFolder() {
       const read = useGallery(at);
@@ -1007,7 +1014,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
                 title={
                   card !== undefined && !inWorkspace
                     ? `${card.name} is not a theme of this workspace.`
-                    : undefined
+                    : MOVE_TO_PROJECT_SAYS
                 }
                 onClick={toProject}
               >
