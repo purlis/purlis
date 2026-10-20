@@ -246,6 +246,7 @@ function core(
             ...one,
             key: one.from === "project" ? `project:${one.id}` : one.id,
             level: one.from === "project" ? "project" : null,
+            preview: false,
             extension: null,
             appearances: [{ id: "dark", appearance: "dark", high_contrast: false }],
             options: [],

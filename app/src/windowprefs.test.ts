@@ -144,7 +144,7 @@ describe("the operator's own theme", () => {
     expect(atCreation().theme.complaints).toEqual([]);
   });
 
-  it("is drawn again at once for a project no level of which chooses, asking the core nothing", async () => {
+  it("is drawn again at once for a project no level of which chooses, before the core is asked", async () => {
     handed({ theme: MINE });
     // As `main.tsx` draws it: once, so drawing it again is the same theme and repaints nothing.
     const theirs = theirThemeOnce();
@@ -156,10 +156,14 @@ describe("the operator's own theme", () => {
       return cmd === "theme_levels_adopt" ? [] : null;
     });
 
-    await drawThemeFor(new Set(), null, { plane: "p-1" as PlaneId });
-
+    // No `await`: the person's own theme is drawn in the frame of the switch, before the core
+    // is asked anything. It is asked after, for a chat's theme draft there alone (#2332), and an
+    // answer that names none keeps what is drawn.
+    const drawn = drawThemeFor(new Set(), null, { plane: "p-1" as PlaneId });
     expect(inForce()).toBe(theirs);
-    expect(asked).not.toContain("theme_in_force");
+    await drawn;
+    await Promise.resolve();
+    expect(inForce()).toBe(theirs);
     forgetExtensionThemes();
   });
 

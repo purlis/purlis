@@ -175,6 +175,18 @@ pub struct ChatAt {
     pub cwd: Option<PathBuf>,
 }
 
+/// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Drafting {
+    pub session: u32,
+    /// Its ULID (ADR 0066): the name of its drafts folder.
+    pub id: String,
+    /// What the person calls it.
+    pub name: String,
+    /// The workspace it works in, `None` at the plane root.
+    pub workspace: Option<String>,
+}
+
 /// The most chats one record may start at a launch. The product's scale is fifty (the
 /// spec's limits table); this is only a backstop against a record nobody meant.
 const MOST_AT_ONCE: usize = 200;
@@ -1155,6 +1167,26 @@ impl Chats {
             id: one.chat.identity.id.clone(),
             cwd: one.chat.cwd.clone(),
         })
+    }
+
+    /// **The chats open here, each with its id, its name and the workspace it works in**, in
+    /// the order of their numbers (#2332): whose theme drafts a workspace draws, and what the
+    /// draft strip and the close of a chat name. A chat that has no id has no drafts.
+    pub fn drafting(&self) -> Vec<Drafting> {
+        let open = lock(&self.open);
+        let mut out: Vec<Drafting> = open
+            .iter()
+            .filter_map(|(session, one)| {
+                Some(Drafting {
+                    session: *session,
+                    id: one.chat.identity.id.clone()?,
+                    name: one.chat.name.clone(),
+                    workspace: one.workspace.clone(),
+                })
+            })
+            .collect();
+        out.sort_by_key(|one| one.session);
+        out
     }
 
     /// Calls `tell` when a chat that was announced never started after all.

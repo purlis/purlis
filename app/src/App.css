@@ -319,6 +319,29 @@ body {
   color: var(--state-waiting);
 }
 
+/* **The theme draft strip** (#2332, `ThemeDraftStrip.tsx`): the read-only line's shape, on the
+   project strip's shade, its words primary text there (a hard floor), beside Keep, Revert and
+   Compare. Where Keep puts it, and a save that is not drawn, are said under its name. */
+.theme-draft-strip {
+  align-items: center;
+  /* Primary words on the project strip's shade: a hard floor, so no draft hides them. */
+  color: var(--text-primary);
+}
+
+.theme-draft-words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.theme-draft-actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
+
 /* **A group of a read-only project's write controls** (#826, `ReadOnlyLine.OffWhenReadOnly`): a
    native fieldset, so `disabled` turns off every control in it at once, drawn as no box of its
    own, so the controls lay out as they would without it. */

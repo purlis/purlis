@@ -109,9 +109,11 @@ and option values is checked against the consent floors as the window draws it, 
 values layered first, and the line says in how many of them the window holds one (`none held
 in 4 combinations`, `held in 1 of 4 combinations:`). Under it, each combination that breaks one names the floors it breaks and
 the tokens the window draws as purlis's own for them (`dark, ember on: danger is
-distinguishable from primary — purlis draws its own danger.base`). A last `hard floors:` line
-follows. Until purlis keeps hard floors (#2332), it says they are not checked by
-this purlis yet.
+distinguishable from primary — purlis draws its own danger.base`). Last, `hard floors:` says each hard floor
+a combination breaks as the window draws it, the consent floors held first, with the pair, its
+ratio and the tint it was found in (`hard floors: broken in 1 of 4 combinations:`, then
+`dark, ember on: primary text is readable on every surface: text.primary on surface.sunken is
+1.12, under 3`), or `none broken in 4 combinations`.
 
 - **Refused**: a theme that breaks its grammar anywhere is not drawn at all, and each value
   that refused it is listed: a colour that is not hex or a palette name, a duration or an
@@ -132,8 +134,13 @@ this purlis yet.
   from primary, the state marks meet the mark floor) hold in every combination. A combination
   that breaks one, an option value's included, is drawn with purlis's own values for those
   tokens and the rest as written, and the window says so in a Notice.
-- **Hard floors** are the few rules a theme can never break. This purlis does not check them
-  yet (#2332), and says so rather than reporting a pass.
+- **Hard floors** are the few rules that keep the window readable whatever a theme says, each
+  at 3:1 as the window draws the theme, as it is and in every workspace tint: **primary text is
+  readable on every surface** (`text.primary` on each ground it is drawn on), **the focus ring is
+  seen on its surfaces** (`focus.ring`), and **the terminal's words are readable**
+  (`terminal.foreground` on the terminal and its find matches). A theme draft that breaks one is
+  not drawn (below); for a kept theme, a broken hard floor is a finding, and the theme is
+  drawn.
 
 The exit is a linter's: **0** when the theme is drawn (notes and warnings or not), **1** when it
 is refused, **2** when there is no such theme.
@@ -156,7 +163,7 @@ is refused, **2** when there is no such theme.
                 "pair": {"front": "text.muted", "back": "surface.base", "floor": 4.5},
                 "ratio": 2.38}],
   "held": [],
-  "hard_floors": null,
+  "hard_floors": [],
   "clean": false
 }
 ```
@@ -172,16 +179,82 @@ colour too close to the terminal's background: `token`, `ratio`, `floor`) or
 colour for selected text on a selection left to the platform) or `line-does-not-fit` (a line of
 words taller than the box it is drawn in: its `density`, the `fit` it breaks, a `size`, a
 `line_height` and a `height` token, and the `line` and the `room` it has, in px at the default
-text size). A control holds the window's words (`font-size.base`) and a strip a tab's title
-(`font-size.md`), each on the body line (`line-height.body`), in both densities. `tint` is the
-workspace colour it was found in, or `null` for the theme as it is and for a line. `held` has one entry for each combination
+text size). A field (`.ui-input`, `size.control` tall) holds the window's words
+(`font-size.base`) and a strip a tab's title (`font-size.md`), each on the body line
+(`line-height.body`), in both densities. A button's label sits on a line of 1, so it fits
+wherever a field's text does. `tint` is the workspace colour it was found in, or `null` for the theme as it is and for a line. `held` has one entry for each combination
 in which the window holds a consent floor: its `appearance` and `options` as a warning's, the
 `floors` (`ask`, `allow-apart`, `danger`, `danger-apart`, `state-marks`) and the `tokens` drawn
-as purlis's own. `hard_floors` is `null` until purlis checks them. `clean` is true with no
+as purlis's own. `hard_floors` has one entry for each hard floor a combination breaks: its
+`appearance` and `options` as a warning's, the `floor` (`primary-text`, `focus-ring`,
+`terminal-text`), the `front` and `back` tokens (`under` for a wash), the `ratio` and the
+`tint`, `null` for the theme as it is; `[]` means none is broken. `clean` is true with no
 error, no note, no warning and no floor held; it covers those only, never hard floors, which
 `hard_floors` reports on its own. `schema` is the version of this shape, in both
 answers: a reader checks it first. A theme folder's `from` is `{"kind": "folder", "path"}`, a
 theme file's `{"kind": "file", "path"}`.
+
+## Theme drafts
+
+A chat's writes to a theme go to a **theme draft**: a copy of a theme folder in purlis's
+git-ignored local folder in the plane, one folder for each chat, named by the chat's id:
+
+```
+.purlis/theme-drafts/<chat id>/<theme folder>/theme.json
+```
+
+Nothing there is committed, and **no chat writes it**: the app that started a chat writes that
+chat's drafts, in its folder, when the chat asks. In a chat purlis started:
+
+- `purlis theme draft <folder>` starts the draft (a copy of the workspace's or the project's
+  theme folder of that name, or a new theme that extends Purlis Classic) and makes a working copy
+  for the chat to edit, in its temporary folder under the chat's id (`--from <dir>` names
+  another), made again from the draft whenever the draft is made anew;
+- `purlis theme draft <folder> --save` hands the working copy's `theme.json` and icon sets to the
+  app, which writes them into the draft and says what the window draws of it: drawn, or not
+  drawn and which hard floor it breaks (exit 1). A save carries at most 64 KiB as JSON writes
+  it (Purlis Classic's whole `theme.json` is about a fifth of that), and a larger one is refused
+  before it is sent;
+- `purlis theme check draft:<folder>` checks the draft exactly as the window draws it, and exits
+  1 when it breaks a hard floor.
+
+A draft's fonts are the ones its folder already has, as approved with the project; a save hands
+over theme files only.
+
+- **A draft is drawn only in its chat's workspace** (the plane root for a chat there), in place
+  of what the levels choose, while that chat is open. purlis knows where each of its chats works;
+  other workspaces and the plane root draw as before. A save repaints, as any theme folder's
+  does.
+- **A draft is read as a project's theme folder is**: through handles refusing a link, under the
+  caps of a theme folder. Its fonts follow the project's approval: a face is drawn only when the
+  project's approval holds that file, with that digest, in the folder the draft is kept to. A
+  draft refused for such a face is said in a Notice, which offers Review and allow by the rules
+  of any refused theme, and only where the project itself brings that file, with those bytes, in
+  the folder the draft is kept to: a face only the draft has is no project's to allow.
+- **A draft that breaks a hard floor is not drawn**, in any combination of its appearances and
+  option values: the last good version of it stays drawn, or the kept theme when there is none,
+  and the chat is told which floor (by `--save`'s answer, and by `purlis
+  theme check draft:<folder>`). The consent floors hold on a draft as on any theme.
+- **A strip on the workspace** says `Theme draft — <folder>, edited by <chat>`, with **Keep**,
+  **Revert** and **Compare**. **Keep** copies the draft into the real folder it is a draft of (the
+  workspace's theme folder of that name, else the project's; a new theme goes in the chat's own
+  level) and deletes the draft, then asks once whether the theme becomes the workspace's (or the
+  project's) committed default or stays your own choice there. The strip says where Keep puts it
+  before you press it (`Keep puts it in the project's themes, for every workspace`), and Keep asks
+  before it replaces a theme folder that is there. Keep does what you were shown, or nothing:
+  when where it puts the draft, or the folder there, changed since, it is refused. Only a draft the window draws is kept, with
+  the files that were checked, and only the font files the theme names and the project
+  approved. **Revert** deletes the draft. **Compare** draws the theme as kept while it is held.
+- **The revert key**, ⌘⇧⌫ on macOS and Ctrl+Shift+Backspace elsewhere, deletes every draft
+  drawn where the window is, at once.
+- **Closing a chat** that owns a draft asks Keep or Revert, saying where Keep puts each and what
+  it replaces; neither close is offered until it is answered. A close that ends several chats
+  asks about the drafts of each. Where purlis cannot tell whether a chat has a draft, the close
+  is refused, with why.
+- **Moving a theme up a level**: in Settings › Theme, **Use in the whole project** moves a
+  workspace's theme folder to the project's `themes/`, and **Copy to my machine** copies a
+  project's or a workspace's to your own, carrying only the font files you approved with the
+  project. Neither replaces a folder of that name that is there.
 
 ## The schema a theme names
 
@@ -227,15 +300,27 @@ not taken (2):
   base06: no token takes it
 Harbor — /home/me/.config/purlis/themes/harbor, dark
 left out: nothing
-warnings (22):
-  text.muted on surface.base: 2.94, under 4.5; in every workspace tint too, down to 2.94
-  …
+warnings: none
 the theme is in /home/me/.config/purlis/themes/harbor: `purlis theme check /home/me/.config/purlis/themes/harbor` checks it again, and `purlis theme export /home/me/.config/purlis/themes/harbor` makes a zip of it to share
 ```
 
 - **Each kind goes through a fixed table** (below): each token takes the first of its source
   keys that the source has. A token no row fills is Purlis Classic's of the same appearance, as
   in any theme that leaves a token out.
+- **Then each kind's recipes tune the tokens the table filled** (below each table), so the
+  theme reads where the source's own colours allow it. A base16 scheme makes some roles one
+  colour (ANSI black is the background; the selected row is the row under the pointer) and
+  names hues, not words on a ground. So the row under the pointer is a colour halfway between
+  two of the scheme's, selected text is the source's words, and a muted word, a comment or a
+  hue that does not read on the grounds it is drawn on walks toward the source's words, a tenth
+  of a step at a time along its own scale, and takes the nearest point that leaves the theme
+  check the fewest findings (the consent floors it would hold counted with them). A colour that
+  reads already is left as the source wrote it, and a walked one is written as hex. A
+  terminal's own colours (its background, its words, its sixteen ANSI colours, its cursor and
+  its selection) are what it draws, and are never tuned: what the check finds in them is the
+  source's own, and the import's warning about one names the palette entry that holds it
+  (``…; it is the palette's `palette-0`: change `palette-0` in theme.json to lift it``). The window draws every imported theme through the consent floors, as it draws
+  any theme.
 - **Nothing is dropped silently.** `not taken` lists every key of the source that gave no token a
   value, with why: no token takes it, a nearer key gave its token the value, it is not a colour, it names another file (a VS Code
   theme's `include`, which import never reads), or `theme.json` has no place for it.
@@ -345,6 +430,12 @@ A VS Code theme's `colors`:
 | `chart.8` | `terminal.ansiMagenta` |
 | `window.background` | `titleBar.activeBackground`, `editor.background` |
 
+Tuned after the table (#2589): a VS Code theme names a colour for nearly every role, and those are taken as they are. Selected text it leaves to the selection is the editor's words.
+
+| Token | Tuned |
+|---|---|
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `editor.foreground`, `foreground` |
+
 Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
 token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
 between rules of one scope, the last; a scope with a space in it (`meta.embedded string`) is
@@ -388,6 +479,8 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `accent.base` | `base0d` |
 | `focus.ring` | `base0d` |
 | `list.selected` | `base02` |
+| `needs-you.base` | `base08` |
+| `needs-you.text` | `base00` |
 | `danger.base` | `base08` |
 | `icon.red` | `base08` |
 | `icon.orange` | `base09` |
@@ -401,6 +494,7 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `state.waiting` | `base0a` |
 | `state.failed` | `base08` |
 | `state.success` | `base0b` |
+| `state.unreadable` | `base09` |
 | `terminal.background` | `base00` |
 | `terminal.foreground` | `base05` |
 | `terminal.cursor` | `base05` |
@@ -456,6 +550,72 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `chart.8` | `base0f` |
 | `window.background` | `base00` |
 
+Tuned after the table (#2589), in this order. base16 makes some roles one colour, and names hues on a scale rather than words on a ground, so these take a nearer step on the scheme's own scale, or a colour between two of its own:
+
+| Token | Tuned |
+|---|---|
+| `surface.hover` | halfway between `base01` and `base02` |
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
+| `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
+| `text.muted` | toward `base04`, then `base05` |
+| `syntax.comment` | toward `base04`, then `base05` |
+| `terminal.ansi.bright-black` | toward `base04`, then `base05` |
+| `text.secondary` | toward `base05` |
+| `placeholder` | toward `base05` |
+| `danger.base` | toward `base05` |
+| `accent.base` | toward `base05` |
+| `focus.ring` | toward `base05` |
+| `icon.red` | toward `base05` |
+| `icon.orange` | toward `base05` |
+| `icon.yellow` | toward `base05` |
+| `icon.green` | toward `base05` |
+| `icon.teal` | toward `base05` |
+| `icon.blue` | toward `base05` |
+| `icon.purple` | toward `base05` |
+| `icon.pink` | toward `base05` |
+| `state.running` | toward `base05` |
+| `state.waiting` | toward `base05` |
+| `state.failed` | toward `base05` |
+| `state.success` | toward `base05` |
+| `state.unreadable` | toward `base05` |
+| `needs-you.base` | toward `base05` |
+| `syntax.keyword` | toward `base05` |
+| `syntax.string` | toward `base05` |
+| `syntax.number` | toward `base05` |
+| `syntax.constant` | toward `base05` |
+| `syntax.function` | toward `base05` |
+| `syntax.type` | toward `base05` |
+| `syntax.property` | toward `base05` |
+| `syntax.attribute` | toward `base05` |
+| `syntax.tag` | toward `base05` |
+| `syntax.heading` | toward `base05` |
+| `syntax.invalid` | toward `base05` |
+| `syntax.variable` | toward `base05` |
+| `markdown.link` | toward `base05` |
+| `markdown.code` | toward `base05` |
+| `markdown.quote` | toward `base05` |
+| `markdown.heading` | toward `base05` |
+| `chart.1` | toward `base05` |
+| `chart.2` | toward `base05` |
+| `chart.3` | toward `base05` |
+| `chart.4` | toward `base05` |
+| `chart.5` | toward `base05` |
+| `chart.6` | toward `base05` |
+| `chart.7` | toward `base05` |
+| `chart.8` | toward `base05` |
+| `terminal.ansi.red` | toward `base05` |
+| `terminal.ansi.green` | toward `base05` |
+| `terminal.ansi.yellow` | toward `base05` |
+| `terminal.ansi.blue` | toward `base05` |
+| `terminal.ansi.magenta` | toward `base05` |
+| `terminal.ansi.cyan` | toward `base05` |
+| `terminal.ansi.bright-red` | toward `base05` |
+| `terminal.ansi.bright-green` | toward `base05` |
+| `terminal.ansi.bright-yellow` | toward `base05` |
+| `terminal.ansi.bright-blue` | toward `base05` |
+| `terminal.ansi.bright-magenta` | toward `base05` |
+| `terminal.ansi.bright-cyan` | toward `base05` |
+
 ### base24
 
 | Token | Takes, nearest first |
@@ -476,6 +636,8 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `accent.base` | `base0d` |
 | `focus.ring` | `base0d` |
 | `list.selected` | `base02` |
+| `needs-you.base` | `base08` |
+| `needs-you.text` | `base00` |
 | `danger.base` | `base08` |
 | `icon.red` | `base08` |
 | `icon.orange` | `base09` |
@@ -489,6 +651,7 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `state.waiting` | `base0a` |
 | `state.failed` | `base08` |
 | `state.success` | `base0b` |
+| `state.unreadable` | `base09` |
 | `terminal.background` | `base00` |
 | `terminal.foreground` | `base05` |
 | `terminal.cursor` | `base05` |
@@ -543,6 +706,72 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `chart.7` | `base09` |
 | `chart.8` | `base0f` |
 | `window.background` | `base00` |
+
+Tuned as a base16 scheme is, after the table (#2589):
+
+| Token | Tuned |
+|---|---|
+| `surface.hover` | halfway between `base01` and `base02` |
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
+| `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
+| `text.muted` | toward `base04`, then `base05` |
+| `syntax.comment` | toward `base04`, then `base05` |
+| `terminal.ansi.bright-black` | toward `base04`, then `base05` |
+| `text.secondary` | toward `base05` |
+| `placeholder` | toward `base05` |
+| `danger.base` | toward `base05` |
+| `accent.base` | toward `base05` |
+| `focus.ring` | toward `base05` |
+| `icon.red` | toward `base05` |
+| `icon.orange` | toward `base05` |
+| `icon.yellow` | toward `base05` |
+| `icon.green` | toward `base05` |
+| `icon.teal` | toward `base05` |
+| `icon.blue` | toward `base05` |
+| `icon.purple` | toward `base05` |
+| `icon.pink` | toward `base05` |
+| `state.running` | toward `base05` |
+| `state.waiting` | toward `base05` |
+| `state.failed` | toward `base05` |
+| `state.success` | toward `base05` |
+| `state.unreadable` | toward `base05` |
+| `needs-you.base` | toward `base05` |
+| `syntax.keyword` | toward `base05` |
+| `syntax.string` | toward `base05` |
+| `syntax.number` | toward `base05` |
+| `syntax.constant` | toward `base05` |
+| `syntax.function` | toward `base05` |
+| `syntax.type` | toward `base05` |
+| `syntax.property` | toward `base05` |
+| `syntax.attribute` | toward `base05` |
+| `syntax.tag` | toward `base05` |
+| `syntax.heading` | toward `base05` |
+| `syntax.invalid` | toward `base05` |
+| `syntax.variable` | toward `base05` |
+| `markdown.link` | toward `base05` |
+| `markdown.code` | toward `base05` |
+| `markdown.quote` | toward `base05` |
+| `markdown.heading` | toward `base05` |
+| `chart.1` | toward `base05` |
+| `chart.2` | toward `base05` |
+| `chart.3` | toward `base05` |
+| `chart.4` | toward `base05` |
+| `chart.5` | toward `base05` |
+| `chart.6` | toward `base05` |
+| `chart.7` | toward `base05` |
+| `chart.8` | toward `base05` |
+| `terminal.ansi.red` | toward `base05` |
+| `terminal.ansi.green` | toward `base05` |
+| `terminal.ansi.yellow` | toward `base05` |
+| `terminal.ansi.blue` | toward `base05` |
+| `terminal.ansi.magenta` | toward `base05` |
+| `terminal.ansi.cyan` | toward `base05` |
+| `terminal.ansi.bright-red` | toward `base05` |
+| `terminal.ansi.bright-green` | toward `base05` |
+| `terminal.ansi.bright-yellow` | toward `base05` |
+| `terminal.ansi.bright-blue` | toward `base05` |
+| `terminal.ansi.bright-magenta` | toward `base05` |
+| `terminal.ansi.bright-cyan` | toward `base05` |
 
 ### iTerm2
 
@@ -615,6 +844,55 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `chart.8` | `Ansi 13 Color` |
 | `window.background` | `Background Color` |
 
+Tuned after the table (#2589). The terminal's own colours (its background, its words, its sixteen ANSI colours, its cursor and its selection) are what it draws, and are taken as they are:
+
+| Token | Tuned |
+|---|---|
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `Foreground Color` |
+| `text.muted` | toward `Foreground Color` |
+| `syntax.comment` | toward `Foreground Color` |
+| `danger.base` | toward `Foreground Color` |
+| `accent.base` | toward `Foreground Color` |
+| `focus.ring` | toward `Foreground Color` |
+| `icon.red` | toward `Foreground Color` |
+| `icon.orange` | toward `Foreground Color` |
+| `icon.yellow` | toward `Foreground Color` |
+| `icon.green` | toward `Foreground Color` |
+| `icon.teal` | toward `Foreground Color` |
+| `icon.blue` | toward `Foreground Color` |
+| `icon.purple` | toward `Foreground Color` |
+| `icon.pink` | toward `Foreground Color` |
+| `state.running` | toward `Foreground Color` |
+| `state.waiting` | toward `Foreground Color` |
+| `state.failed` | toward `Foreground Color` |
+| `state.success` | toward `Foreground Color` |
+| `state.unreadable` | toward `Foreground Color` |
+| `needs-you.base` | toward `Foreground Color` |
+| `syntax.keyword` | toward `Foreground Color` |
+| `syntax.string` | toward `Foreground Color` |
+| `syntax.number` | toward `Foreground Color` |
+| `syntax.constant` | toward `Foreground Color` |
+| `syntax.function` | toward `Foreground Color` |
+| `syntax.type` | toward `Foreground Color` |
+| `syntax.property` | toward `Foreground Color` |
+| `syntax.attribute` | toward `Foreground Color` |
+| `syntax.tag` | toward `Foreground Color` |
+| `syntax.heading` | toward `Foreground Color` |
+| `syntax.invalid` | toward `Foreground Color` |
+| `syntax.variable` | toward `Foreground Color` |
+| `markdown.link` | toward `Foreground Color` |
+| `markdown.code` | toward `Foreground Color` |
+| `markdown.quote` | toward `Foreground Color` |
+| `markdown.heading` | toward `Foreground Color` |
+| `chart.1` | toward `Foreground Color` |
+| `chart.2` | toward `Foreground Color` |
+| `chart.3` | toward `Foreground Color` |
+| `chart.4` | toward `Foreground Color` |
+| `chart.5` | toward `Foreground Color` |
+| `chart.6` | toward `Foreground Color` |
+| `chart.7` | toward `Foreground Color` |
+| `chart.8` | toward `Foreground Color` |
+
 ### Ghostty
 
 | Token | Takes, nearest first |
@@ -685,6 +963,55 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `chart.7` | `palette 12` |
 | `chart.8` | `palette 13` |
 | `window.background` | `background` |
+
+Tuned as an iTerm2 preset is, after the table (#2589):
+
+| Token | Tuned |
+|---|---|
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `foreground` |
+| `text.muted` | toward `foreground` |
+| `syntax.comment` | toward `foreground` |
+| `danger.base` | toward `foreground` |
+| `accent.base` | toward `foreground` |
+| `focus.ring` | toward `foreground` |
+| `icon.red` | toward `foreground` |
+| `icon.orange` | toward `foreground` |
+| `icon.yellow` | toward `foreground` |
+| `icon.green` | toward `foreground` |
+| `icon.teal` | toward `foreground` |
+| `icon.blue` | toward `foreground` |
+| `icon.purple` | toward `foreground` |
+| `icon.pink` | toward `foreground` |
+| `state.running` | toward `foreground` |
+| `state.waiting` | toward `foreground` |
+| `state.failed` | toward `foreground` |
+| `state.success` | toward `foreground` |
+| `state.unreadable` | toward `foreground` |
+| `needs-you.base` | toward `foreground` |
+| `syntax.keyword` | toward `foreground` |
+| `syntax.string` | toward `foreground` |
+| `syntax.number` | toward `foreground` |
+| `syntax.constant` | toward `foreground` |
+| `syntax.function` | toward `foreground` |
+| `syntax.type` | toward `foreground` |
+| `syntax.property` | toward `foreground` |
+| `syntax.attribute` | toward `foreground` |
+| `syntax.tag` | toward `foreground` |
+| `syntax.heading` | toward `foreground` |
+| `syntax.invalid` | toward `foreground` |
+| `syntax.variable` | toward `foreground` |
+| `markdown.link` | toward `foreground` |
+| `markdown.code` | toward `foreground` |
+| `markdown.quote` | toward `foreground` |
+| `markdown.heading` | toward `foreground` |
+| `chart.1` | toward `foreground` |
+| `chart.2` | toward `foreground` |
+| `chart.3` | toward `foreground` |
+| `chart.4` | toward `foreground` |
+| `chart.5` | toward `foreground` |
+| `chart.6` | toward `foreground` |
+| `chart.7` | toward `foreground` |
+| `chart.8` | toward `foreground` |
 
 ## Exporting a theme
 

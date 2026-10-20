@@ -12,6 +12,10 @@
 //!   fills is Purlis Classic's of the same appearance, as in any theme that leaves it out.
 //! - **Every key the source has that gave no token a value is listed**, with why: no token
 //!   takes it, it is not a colour, it names another file, `theme.json` has no place for it.
+//! - **Then each kind's recipes tune what the table filled** ([`recipes`], #2589): where the
+//!   source makes two roles one colour, or names a hue that does not read on the ground it is
+//!   drawn on, a token takes a nearer step on the source's own scale or a colour between two of
+//!   its own. A terminal's own colours are never tuned.
 //! - **A terminal palette, a base16 or a base24 scheme keeps its own colours as the theme's
 //!   palette**, each named after its source key (`base0d`, `ansi-4`, `background`), so a
 //!   colour changed once changes every token that uses it. A VS Code theme's colours are not a
@@ -30,8 +34,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
-use super::Appearance;
 use super::vocabulary::{FLAGS, TOKENS};
+use super::{Appearance, ResolvedTheme};
 
 /// The largest source file [`import`] reads: VS Code themes carry long `tokenColors` lists,
 /// and a scheme or a terminal palette is far smaller.
@@ -126,6 +130,25 @@ pub struct Imported {
     pub files: Files,
     /// Every key of the source that gave no token a value, in the source's order.
     pub left_out: Vec<LeftOut>,
+}
+
+impl Imported {
+    /// **The palette entry `token` is written as** in the appearance `appearance` (its id) of
+    /// the theme this import wrote: `None` when it is written as hex, or when the import has no
+    /// such appearance or token.
+    pub fn palette_entry(&self, appearance: &str, token: &str) -> Option<String> {
+        let document: Value = serde_json::from_slice(self.files.get(super::THEME_JSON)?).ok()?;
+        let palette = document.get("palette")?;
+        let written = document
+            .get("appearances")?
+            .as_array()?
+            .iter()
+            .find(|one| one.get("id").and_then(Value::as_str) == Some(appearance))?
+            .get("tokens")?
+            .get(token)?
+            .as_str()?;
+        palette.get(written).is_some().then(|| written.to_owned())
+    }
 }
 
 /// **The kind of `file_name` holding `bytes`**, from its extension and then its first words;
@@ -661,6 +684,9 @@ macro_rules! base16_rows {
             ("state.waiting", &["base0a"]),
             ("state.failed", &["base08"]),
             ("state.success", &["base0b"]),
+            ("state.unreadable", &["base09"]),
+            ("needs-you.base", &["base08"]),
+            ("needs-you.text", &["base00"]),
             ("terminal.background", &["base00"]),
             ("terminal.foreground", &["base05"]),
             ("terminal.cursor", &["base05"]),
@@ -877,6 +903,384 @@ const GHOSTTY: Table = terminal_rows!(
 );
 
 // ------------------------------------------------------------------------------------------
+// The recipes (#2589)
+// ------------------------------------------------------------------------------------------
+
+/// **How a token is tuned once its table row filled it**, so the theme's words read on its
+/// grounds where the source's own colours allow it. A base16 scheme makes some roles one colour
+/// (ANSI black is the background, the selected row is the row under the pointer), and a scheme
+/// or a terminal names hues, not words on a ground: the recipes take a nearer step on the
+/// source's own scale, or a colour between two of its own, for the tokens that need a
+/// difference. The tables in `purlis docs show themes` print each kind's
+/// ([`recipes_markdown`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Recipe {
+    /// A token the table left unfilled takes the first of `keys` the source has, when the
+    /// source filled `when`: selected text in the source's foreground, on a selection that is
+    /// the source's own.
+    Fill {
+        keys: &'static [&'static str],
+        when: &'static str,
+    },
+    /// The colour halfway between two the source has, as the screen mixes them: a step the
+    /// source's scale does not have, between two roles it makes one colour.
+    Between(&'static str, &'static str),
+    /// The token's own colour, or a point on the way from it toward each of these keys in turn,
+    /// a tenth of a step at a time ([`TOWARD_STEPS`]): the nearest point that leaves the theme
+    /// check the fewest findings for the token, the consent floors it holds counted with them.
+    /// A point no better than the source's own colour is never taken.
+    Toward(&'static [&'static str]),
+}
+
+/// The points [`Recipe::Toward`] tries on each step of its way.
+pub const TOWARD_STEPS: u32 = 10;
+
+/// A kind's recipes: each token and how it is tuned, in the order they are applied (the
+/// grounds before what is drawn on them).
+type Recipes = &'static [(&'static str, Recipe)];
+
+/// The tokens a scheme or a terminal fills with a hue (an accent, a state, a syntax role, an ANSI
+/// colour on the terminal) that are drawn as words or marks on a ground: each is walked toward
+/// the source's foreground when it does not read there.
+const HUES: &[&str] = &[
+    "danger.base",
+    "accent.base",
+    "focus.ring",
+    "icon.red",
+    "icon.orange",
+    "icon.yellow",
+    "icon.green",
+    "icon.teal",
+    "icon.blue",
+    "icon.purple",
+    "icon.pink",
+    "state.running",
+    "state.waiting",
+    "state.failed",
+    "state.success",
+    "state.unreadable",
+    "needs-you.base",
+    "syntax.keyword",
+    "syntax.string",
+    "syntax.number",
+    "syntax.constant",
+    "syntax.function",
+    "syntax.type",
+    "syntax.property",
+    "syntax.attribute",
+    "syntax.tag",
+    "syntax.heading",
+    "syntax.invalid",
+    "syntax.variable",
+    "markdown.link",
+    "markdown.code",
+    "markdown.quote",
+    "markdown.heading",
+    "chart.1",
+    "chart.2",
+    "chart.3",
+    "chart.4",
+    "chart.5",
+    "chart.6",
+    "chart.7",
+    "chart.8",
+];
+
+/// The ANSI colours a base16 scheme's hues fill by base16-shell's convention: a scheme names
+/// hues on a scale, not a terminal's colours, so they are tuned as the window's hues are. A
+/// terminal's own sixteen are its own statement, and are never tuned.
+const BASE16_ANSI_HUES: &[&str] = &[
+    "terminal.ansi.red",
+    "terminal.ansi.green",
+    "terminal.ansi.yellow",
+    "terminal.ansi.blue",
+    "terminal.ansi.magenta",
+    "terminal.ansi.cyan",
+    "terminal.ansi.bright-red",
+    "terminal.ansi.bright-green",
+    "terminal.ansi.bright-yellow",
+    "terminal.ansi.bright-blue",
+    "terminal.ansi.bright-magenta",
+    "terminal.ansi.bright-cyan",
+];
+
+/// **A base16 or base24 scheme's recipes.** Its scale runs from `base00` (the background) to
+/// `base07`, `base05` the words:
+///
+/// - the row under the pointer is halfway between `base01` and `base02`, so it is told apart from
+///   the selected row (`base02`) and from the panes (`base01`);
+/// - selected text is `base05`, the words' colour, as base16's editor templates draw it;
+/// - ANSI black, which base16-shell makes the background itself, takes the nearest step up the
+///   scale that the terminal shows;
+/// - the muted words, comments and bright black (`base03`) and the secondary words and
+///   placeholder (`base04`) take the nearest step toward `base05` that reads;
+/// - each hue ([`HUES`], and the ANSI colours it fills) takes the nearest step toward `base05`
+///   that reads, and stays as the scheme wrote it when it reads already.
+const BASE16_RECIPES: Recipes = &[
+    ("surface.hover", Recipe::Between("base01", "base02")),
+    (
+        "selection.text",
+        Recipe::Fill {
+            keys: &["base05"],
+            when: "selection.background",
+        },
+    ),
+    (
+        "terminal.ansi.black",
+        Recipe::Toward(&["base01", "base02", "base03"]),
+    ),
+    ("text.muted", Recipe::Toward(&["base04", "base05"])),
+    ("syntax.comment", Recipe::Toward(&["base04", "base05"])),
+    (
+        "terminal.ansi.bright-black",
+        Recipe::Toward(&["base04", "base05"]),
+    ),
+    ("text.secondary", Recipe::Toward(&["base05"])),
+    ("placeholder", Recipe::Toward(&["base05"])),
+];
+
+/// The foreground a base16 scheme's hues are walked toward.
+const BASE16_FOREGROUND: &[&str] = &["base05"];
+
+/// **A terminal palette's recipes**, iTerm2's and Ghostty's alike with each one's keys: selected
+/// text in the foreground when the palette colours the selection and not its text, and the muted
+/// words, the comments and each hue the nearest step toward the foreground that reads. The
+/// terminal's own colours (its background, its words, its sixteen ANSI colours, its cursor and
+/// its selection) are what the terminal draws, and are taken as they are.
+macro_rules! terminal_recipes {
+    ($fg:literal) => {
+        &[
+            (
+                "selection.text",
+                Recipe::Fill {
+                    keys: &[$fg],
+                    when: "selection.background",
+                },
+            ),
+            ("text.muted", Recipe::Toward(&[$fg])),
+            ("syntax.comment", Recipe::Toward(&[$fg])),
+        ]
+    };
+}
+
+/// An iTerm2 colour preset's recipes.
+const ITERM_RECIPES: Recipes = terminal_recipes!("Foreground Color");
+
+/// A Ghostty theme's recipes.
+const GHOSTTY_RECIPES: Recipes = terminal_recipes!("foreground");
+
+/// **A VS Code theme's recipe**: it names a colour for nearly every role, and those are taken as
+/// they are. Its selected text, when it colours the selection and not the text, is the editor's
+/// words, so the window's words on a selection read as the editor's do.
+const VSCODE_RECIPES: Recipes = &[(
+    "selection.text",
+    Recipe::Fill {
+        keys: &["editor.foreground", "foreground"],
+        when: "selection.background",
+    },
+)];
+
+/// **The recipes of `kind`**, in the order they are applied: its own, then each hue walked
+/// toward its foreground. A VS Code theme's hues and a zip's are taken as they are.
+pub fn recipes(kind: SourceKind) -> Vec<(&'static str, Recipe)> {
+    let (own, foreground, ansi): (Recipes, &'static [&'static str], &[&'static str]) = match kind {
+        SourceKind::Vscode => (VSCODE_RECIPES, &[], &[]),
+        SourceKind::Base16 | SourceKind::Base24 => {
+            (BASE16_RECIPES, BASE16_FOREGROUND, BASE16_ANSI_HUES)
+        }
+        SourceKind::Iterm => (ITERM_RECIPES, &["Foreground Color"], &[]),
+        SourceKind::Ghostty => (GHOSTTY_RECIPES, &["foreground"], &[]),
+        SourceKind::Zip => (&[], &[], &[]),
+    };
+    let mut out = own.to_vec();
+    if !foreground.is_empty() {
+        for token in HUES.iter().chain(ansi) {
+            out.push((*token, Recipe::Toward(foreground)));
+        }
+    }
+    out
+}
+
+/// `kind`'s recipes as the docs print them: a Markdown table of each token and how it is tuned.
+pub fn recipes_markdown(kind: SourceKind) -> String {
+    let quoted = |keys: &[&str]| -> String {
+        keys.iter()
+            .map(|key| format!("`{key}`"))
+            .collect::<Vec<_>>()
+            .join(", then ")
+    };
+    let mut out = String::from("| Token | Tuned |\n|---|---|\n");
+    for (token, recipe) in recipes(kind) {
+        let said = match recipe {
+            Recipe::Fill { keys, when } => format!(
+                "when the theme's `{when}` is filled and the table left it: {}",
+                keys.iter()
+                    .map(|key| format!("`{key}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Recipe::Between(one, other) => format!("halfway between `{one}` and `{other}`"),
+            Recipe::Toward(keys) => format!("toward {}", quoted(keys)),
+        };
+        out.push_str(&format!("| `{token}` | {said} |\n"));
+    }
+    out
+}
+
+/// **`tokens`, one appearance of the theme being written, tuned by `kind`'s recipes.** Each
+/// [`Recipe::Toward`] is measured by the theme check of the appearance as the engine reads it,
+/// and the consent floors drawing it holds. A token the table did not fill is never walked: it
+/// is Purlis Classic's, not the source's.
+fn tune(
+    kind: SourceKind,
+    look: &Look,
+    document: &Value,
+    tokens: &mut Map<String, Value>,
+    mut named: impl FnMut(&'static str, &str) -> Value,
+) {
+    let recipes = recipes(kind);
+    if recipes.is_empty() {
+        return;
+    }
+    let mut document = document.clone();
+    let resolved = |document: &mut Value, tokens: &Map<String, Value>| -> Option<ResolvedTheme> {
+        document["appearances"][0]["tokens"] = Value::Object(tokens.clone());
+        // Read only to check: a walk registers none of the theme's fonts.
+        let loaded = super::Library::new().checking().load(None, document);
+        (!loaded.refused).then(|| loaded.theme.first().clone())
+    };
+    for (token, recipe) in recipes {
+        match recipe {
+            Recipe::Fill { keys, when } => {
+                if tokens.contains_key(token) || !tokens.contains_key(when) {
+                    continue;
+                }
+                if let Some((key, hex)) = keys
+                    .iter()
+                    .find_map(|key| look.colour(key).map(|hex| (*key, hex)))
+                {
+                    tokens.insert(token.to_owned(), named(key, hex));
+                }
+            }
+            Recipe::Between(one, other) => {
+                if let (Some(one), Some(other)) = (look.colour(one), look.colour(other))
+                    && one.len() == 7
+                    && other.len() == 7
+                    && tokens.contains_key(token)
+                {
+                    let halfway = super::check::mix(one, other, 0.5);
+                    tokens.insert(token.to_owned(), Value::from(halfway));
+                }
+            }
+            Recipe::Toward(keys) => {
+                if !tokens.contains_key(token) {
+                    continue;
+                }
+                let Some(theme) = resolved(&mut document, tokens) else {
+                    return;
+                };
+                if let Some(nearer) = toward(&theme, token, keys, look) {
+                    tokens.insert(token.to_owned(), Value::from(nearer));
+                }
+            }
+        }
+    }
+}
+
+/// The point [`Recipe::Toward`] takes for `token` in `theme`: `None` when its own colour leaves
+/// as few findings as any point on the way.
+fn toward(
+    theme: &ResolvedTheme,
+    token: &'static str,
+    keys: &[&str],
+    look: &Look,
+) -> Option<String> {
+    let own = theme.value(token).to_owned();
+    if own.len() != 7 {
+        return None;
+    }
+    let mut fewest = findings_for(theme, token);
+    if fewest == 0 {
+        return None;
+    }
+    let mut taken = None;
+    let mut from = own;
+    let mut trial = theme.clone();
+    for key in keys {
+        let Some(to) = look.colour(key).filter(|it| it.len() == 7) else {
+            continue;
+        };
+        for step in 1..=TOWARD_STEPS {
+            let point = super::check::mix(to, &from, f64::from(step) / f64::from(TOWARD_STEPS));
+            trial.values.insert(token, point.clone());
+            let found = findings_for(&trial, token);
+            if found < fewest {
+                fewest = found;
+                taken = Some(point);
+                if found == 0 {
+                    return taken;
+                }
+            }
+        }
+        from = to.to_owned();
+    }
+    taken
+}
+
+/// The theme check's findings for `token` drawn on something in `theme`, as it is and tinted by
+/// each workspace colour, as [`super::check`] counts them, and the tokens the consent floors
+/// hold when it is drawn, for a token a floor names. Only the pairs `token` is drawn in are
+/// measured: a walk measures one token at a time.
+fn findings_for(theme: &ResolvedTheme, token: &'static str) -> usize {
+    let pairs: Vec<&super::check::Pair> = super::check::PAIRS
+        .iter()
+        .filter(|pair| pair.front == token)
+        .collect();
+    let ansi = token.starts_with("terminal.ansi.");
+    let count = |drawn: &ResolvedTheme| -> usize {
+        let under = pairs
+            .iter()
+            .filter(|pair| super::check::ratio(drawn, pair).is_some_and(|ratio| ratio < pair.floor))
+            .count();
+        // The check holds an ANSI colour by its ratio unrounded.
+        let ansi_under = ansi
+            && super::check::contrast(drawn.value(token), drawn.value("terminal.background"))
+                < super::check::ansi_floor(token);
+        under + usize::from(ansi_under)
+    };
+    let mut found = count(theme);
+    let tabs = theme.tint.tabs();
+    if !tabs.is_empty() {
+        let tinted_in = |it: &str| tabs.contains(&it);
+        let touched = tinted_in(token)
+            || (ansi && tinted_in("terminal.background"))
+            || pairs
+                .iter()
+                .any(|pair| tinted_in(pair.back) || pair.under.is_some_and(tinted_in));
+        for one in &theme.tint.hues {
+            // A tint that turns none of what is measured measures as the theme does.
+            found += if touched {
+                count(&super::tint::tinted(theme, one.name))
+            } else {
+                count(theme)
+            };
+        }
+    }
+    let held = if FLOORED.contains(&token) || token.starts_with("state.") {
+        super::floors::hold(theme)
+            .1
+            .map_or(0, |held| held.tokens.len() + held.untinted.len())
+    } else {
+        0
+    };
+    found + held
+}
+
+/// The tokens a walk may move that a consent floor names besides the state marks: the danger
+/// colour, Allow's edge and the needs-you mark under its count.
+const FLOORED: &[&str] = &["danger.base", "accent.base", "needs-you.base"];
+
+// ------------------------------------------------------------------------------------------
 // Writing the theme
 // ------------------------------------------------------------------------------------------
 
@@ -913,6 +1317,21 @@ fn write(name: &str, kind: SourceKind, source: Parsed) -> (Value, Vec<LeftOut>) 
     let mut used: BTreeSet<String> = BTreeSet::new();
     let mut appearances = Vec::new();
     for look in &source.looks {
+        // The value a token takes from the source's `key`: the palette's name for it, or its hex.
+        let prefix = look.id.filter(|_| several);
+        let named = |key: &str,
+                     hex: &str,
+                     palette: &mut Map<String, Value>,
+                     used: &mut BTreeSet<String>| {
+            used.insert(key.to_owned());
+            if source.palette {
+                let named = palette_name(key, prefix);
+                palette.insert(named.clone(), Value::from(hex.to_owned()));
+                Value::from(named)
+            } else {
+                Value::from(hex.to_owned())
+            }
+        };
         let mut tokens = Map::new();
         for token in TOKENS {
             if let Some(hex) = look.syntax.get(token) {
@@ -928,20 +1347,8 @@ fn write(name: &str, kind: SourceKind, source: Parsed) -> (Value, Vec<LeftOut>) 
             else {
                 continue;
             };
-            used.insert(key.to_owned());
-            let value = if source.palette {
-                let named = palette_name(key, look.id.filter(|_| several));
-                palette.insert(named.clone(), Value::from(hex.to_owned()));
-                named
-            } else {
-                hex.to_owned()
-            };
-            tokens.insert((*token).to_owned(), Value::from(value));
-        }
-        for flag in FLAGS {
-            if let Some(on) = look.flags.get(flag) {
-                tokens.insert((*flag).to_owned(), Value::Bool(*on));
-            }
+            let value = named(key, hex, &mut palette, &mut used);
+            tokens.insert((*token).to_owned(), value);
         }
         let tag = look.tag.unwrap_or_else(|| {
             tag_of(
@@ -963,6 +1370,27 @@ fn write(name: &str, kind: SourceKind, source: Parsed) -> (Value, Vec<LeftOut>) 
         appearance.insert("appearance".to_owned(), Value::from(tag_word));
         if look.high_contrast {
             appearance.insert("high-contrast".to_owned(), Value::Bool(true));
+        }
+        // The recipes measure this appearance alone, as the engine reads it.
+        let mut alone = Map::new();
+        alone.insert("$schema".to_owned(), Value::from(super::SCHEMA_URL));
+        alone.insert("name".to_owned(), Value::from(name.to_owned()));
+        alone.insert("palette".to_owned(), Value::Object(palette.clone()));
+        alone.insert(
+            "appearances".to_owned(),
+            Value::Array(vec![Value::Object(appearance.clone())]),
+        );
+        tune(
+            kind,
+            look,
+            &Value::Object(alone),
+            &mut tokens,
+            |key, hex| named(key, hex, &mut palette, &mut used),
+        );
+        for flag in FLAGS {
+            if let Some(on) = look.flags.get(flag) {
+                tokens.insert((*flag).to_owned(), Value::Bool(*on));
+            }
         }
         appearance.insert("tokens".to_owned(), Value::Object(tokens));
         appearances.push(Value::Object(appearance));

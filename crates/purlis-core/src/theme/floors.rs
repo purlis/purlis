@@ -9,8 +9,8 @@
 //! hold for them:
 //!
 //! - **an ask contrasts with its surface** ([`Floor::Ask`]): an ask's words on the dialog it is
-//!   asked in, its answers' words on their buttons, what it says on the danger wash, and the
-//!   needs-you count's number on its chip;
+//!   asked in, selected or not, its answers' words on their buttons, what it says on the danger
+//!   wash, and the needs-you count's number on its chip;
 //! - **Allow is distinguishable from Keep blocked** ([`Floor::AllowApart`]): the two carry equal
 //!   weight on the control's own ground, and Allow is edged in `accent.base` where Keep blocked
 //!   is edged in `border.strong`. The two edges are at least [`ALLOW_APART`] apart as OKLab draws
@@ -18,10 +18,12 @@
 //!   contrasts with its ground, at rest and under the pointer;
 //! - **the danger colours contrast with what they are drawn on** ([`Floor::Danger`]): the
 //!   trouble Notice's words on the danger surface, and the danger colour on each ground the
-//!   window draws it on;
-//! - **danger is distinguishable from primary** ([`Floor::DangerApart`]): the danger colour and
-//!   the accent are at least [`DANGER_APART`] apart as OKLab draws colour, as the theme writes
-//!   them;
+//!   window draws it on, a theme's selection included, and selected text a theme colours on
+//!   its selection over the danger surface;
+//! - **danger is distinguishable from primary** ([`Floor::DangerApart`]): the danger colour is
+//!   at least [`DANGER_APART`] apart as OKLab draws colour from the accent and from each
+//!   accent-hued token drawn beside it ([`tint::ACCENT_KIN`]), as the theme writes them and under
+//!   each of its own tints;
 //! - **the state marks meet the mark floor** ([`Floor::StateMarks`]): every state's colour and
 //!   the needs-you mark on each ground they are drawn on.
 //!
@@ -30,7 +32,9 @@
 //! colour a workspace can name, by the theme's own tint recipe, as [`super::check`] measures.
 //!
 //! **A theme that breaks one is drawn with purlis's own values for those tokens**: Purlis
-//! Classic's of the same appearance, for the consent and state tokens of each pair that fails.
+//! Classic's of the same appearance, for the selection's tokens of a pair drawn on a selection
+//! (the platform's, so the pair is no longer drawn), else for the consent and state tokens of
+//! each pair that fails.
 //! When Classic's colour still fails on the ground the theme draws it on, the ground is drawn as
 //! Classic's too, and a token whose workspace tint still breaks the floor is drawn untinted
 //! ([`super::Tint`]). The rest of the theme draws as written, and [`Held`] says which floors and
@@ -38,7 +42,7 @@
 
 use std::collections::BTreeSet;
 
-use super::check::{PAIRS, Pair, ratio};
+use super::check::{self, PAIRS, Pair, ratio};
 use super::{Appearance, ResolvedTheme, built_in_for, tint};
 
 /// One consent floor.
@@ -99,6 +103,14 @@ const ALLOW: [(&str, &str); 2] = [
     ("accent.base", "control.hover"),
 ];
 
+/// Selected text a theme colours, on its selection over a consent surface, by the ground and the
+/// floor it is held to (#2706): every selected word is drawn in `selection.text`, so a trouble
+/// Notice's danger words are on `danger.surface` and a dialog's ask is on `surface.overlay`.
+const SELECTED: [(&str, Floor); 2] = [
+    ("danger.surface", Floor::Danger),
+    ("surface.overlay", Floor::Ask),
+];
+
 /// Whether `token` is a consent surface's or a state mark's: what purlis draws its own value of
 /// first when a floor fails.
 fn is_consent(token: &str) -> bool {
@@ -109,7 +121,12 @@ fn is_consent(token: &str) -> bool {
 
 /// The floor a pair of [`PAIRS`] is held to as a consent floor, if it is one.
 fn floor_of(pair: &Pair) -> Option<Floor> {
-    if ASK.contains(&(pair.front, pair.back)) {
+    if (pair.front, pair.back) == ("selection.text", "selection.background") {
+        SELECTED
+            .iter()
+            .find(|(ground, _)| pair.under == Some(*ground))
+            .map(|(_, floor)| *floor)
+    } else if ASK.contains(&(pair.front, pair.back)) {
         Some(Floor::Ask)
     } else if ALLOW.contains(&(pair.front, pair.back)) {
         Some(Floor::AllowApart)
@@ -178,50 +195,142 @@ impl Held {
     }
 }
 
-/// One failure: the floor, and the tokens it is between, a wash's ground included.
+/// One failure: the floor, whether only a workspace's tint broke it, and the tokens it is
+/// between, a wash's ground included.
 struct Failure {
     floor: Floor,
+    tinted: bool,
     tokens: Vec<&'static str>,
 }
 
-/// Every consent floor `theme` breaks: the contrast floors and Allow apart from Keep blocked as
-/// it is and tinted by every workspace colour of its own recipe, and danger apart from primary
-/// as the theme writes them (the tint holds that one itself, [`tint::apart_chroma`]).
-fn failures(theme: &ResolvedTheme) -> Vec<Failure> {
+/// Every consent floor `theme` breaks, as it is and tinted by every workspace colour of its own
+/// recipe: the contrast floors, Allow apart from Keep blocked, and danger apart from the accent
+/// and from each accent-hued token drawn beside it ([`tint::APART`]).
+/// The chroma each whole degree's tint gives ([`tint::apart_chroma`]), kept for the rules it was
+/// found under: a round of [`hold`] that changes neither side of any rule asks again for nothing.
+#[derive(Default)]
+struct Chromas {
+    rules: Vec<(String, bool, String, bool)>,
+    at: Vec<Option<f64>>,
+}
+
+impl Chromas {
+    /// Each whole degree's chroma for `theme`, found again only when its rules are not the last.
+    fn of(&mut self, theme: &ResolvedTheme) -> &[Option<f64>] {
+        let held = tint::held_rules(theme);
+        let rules: Vec<(String, bool, String, bool)> = held
+            .iter()
+            .map(|rule| {
+                (
+                    rule.token.to_owned(),
+                    rule.token_tinted,
+                    rule.from.to_owned(),
+                    rule.from_tinted,
+                )
+            })
+            .collect();
+        if self.at.is_empty() || rules != self.rules {
+            self.at = (0..360)
+                .map(|degree| tint::apart_chroma_of(&held, f64::from(degree)))
+                .collect();
+            self.rules = rules;
+        }
+        &self.at
+    }
+}
+
+fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
     let mut found = Vec::new();
+    let failing = |drawn: &ResolvedTheme, tinted: bool, (floor, pair): (Floor, &Pair)| {
+        ratio(drawn, pair)
+            .is_some_and(|ratio| ratio < pair.floor)
+            .then(|| Failure {
+                floor,
+                tinted,
+                tokens: [Some(pair.front), Some(pair.back), pair.under]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
+            })
+    };
     let tints = theme
         .tint
         .hues
         .iter()
         .map(|one| tint::tinted(theme, one.name));
-    for drawn in std::iter::once(theme.clone()).chain(tints) {
-        for (floor, pair) in pairs() {
-            if ratio(&drawn, pair).is_some_and(|ratio| ratio < pair.floor) {
+    for (at, drawn) in std::iter::once(theme.clone()).chain(tints).enumerate() {
+        let tinted = at != 0;
+        found.extend(pairs().filter_map(|one| failing(&drawn, tinted, one)));
+        // Every rule the tint holds apart, as written and under each of the theme's own tints:
+        // the tint holds them itself (`tint::apart_chroma`), and the floors measure them too.
+        for rule in &tint::APART {
+            if apart_of(drawn.value(rule.token), drawn.value(rule.from)) < rule.distance {
                 found.push(Failure {
-                    floor,
-                    tokens: [Some(pair.front), Some(pair.back), pair.under]
-                        .into_iter()
-                        .flatten()
-                        .collect(),
+                    floor: apart_floor(rule),
+                    tinted,
+                    tokens: vec![rule.from, rule.token],
                 });
             }
         }
-        // Allow's edge and Keep blocked's under each of the theme's own tints too: its recipe
-        // may turn both to one hue.
-        if allow_apart(&drawn) < ALLOW_APART {
-            found.push(Failure {
-                floor: Floor::AllowApart,
-                tokens: vec!["accent.base", "border.strong"],
-            });
+    }
+    // A workspace's own colour can take any hue. A tint keeps each shade's luminance on its own
+    // side of the middle, so a pair of a dark shade and a light one holds at every hue as it does
+    // at the palette's; the pairs that can move between hues are measured at every whole degree.
+    let moving: Vec<(Floor, &Pair)> = pairs()
+        .filter(|(_, pair)| moves_with_hue(theme, pair))
+        .collect();
+    if !moving.is_empty() && !theme.tint.tabs().is_empty() {
+        // Only the tokens of those pairs are turned: each is drawn as the whole tint draws it.
+        let only: Vec<&'static str> = moving
+            .iter()
+            .flat_map(|(_, pair)| [Some(pair.front), Some(pair.back), pair.under])
+            .flatten()
+            .collect();
+        for (degree, most) in (0_u32..).zip(chromas.of(theme).to_vec()) {
+            let drawn = tint::turned_at(theme, f64::from(degree), most, &only);
+            found.extend(moving.iter().filter_map(|one| failing(&drawn, true, *one)));
         }
     }
-    if apart(theme) < DANGER_APART {
-        found.push(Failure {
-            floor: Floor::DangerApart,
-            tokens: vec!["danger.base", "accent.base"],
-        });
-    }
     found
+}
+
+/// Whether a tint can move `pair`'s contrast from one hue to another: the recipe turns one of its
+/// tokens, and the pair's colours are mixed as they are drawn (words on a wash, faded words, or a
+/// colour written see-through), or a turned shade is read against a colour on its own side of the
+/// middle and no farther from it, so rounding the shade away from the middle brings it nearer.
+pub(super) fn moves_with_hue(theme: &ResolvedTheme, pair: &Pair) -> bool {
+    let turned = |token: &str| theme.tint.tabs().contains(&token);
+    let tokens = [Some(pair.front), Some(pair.back), pair.under];
+    if !tokens.into_iter().flatten().any(turned) {
+        return false;
+    }
+    let see_through = |token: &str| matches!(theme.value(token).len(), 5 | 9);
+    if pair.under.is_some() || pair.fade.is_some() || tokens.into_iter().flatten().any(see_through)
+    {
+        return true;
+    }
+    // The two as the screen draws them, any alpha laid over what it is drawn on.
+    let Some((front, back)) = check::drawn(theme, pair) else {
+        return false;
+    };
+    let (Some(front), Some(back)) = (tint::luminance_of(&front), tint::luminance_of(&back)) else {
+        return false;
+    };
+    let nearer = |one: f64, other: f64| {
+        tint::light_side(one) == tint::light_side(other)
+            && tint::from_middle(one) <= tint::from_middle(other)
+    };
+    (turned(pair.front) && nearer(front, back)) || (turned(pair.back) && nearer(back, front))
+}
+
+/// The floor a rule of [`tint::APART`] keeps: danger apart from primary for a rule from the
+/// danger colour, Allow apart from Keep blocked for the other.
+fn apart_floor(rule: &tint::Apart) -> Floor {
+    if rule.from == "danger.base" {
+        Floor::DangerApart
+    } else {
+        Floor::AllowApart
+    }
 }
 
 /// How far two colours are in OKLab; none at all for a value that is not a colour.
@@ -233,12 +342,14 @@ fn apart_of(one: &str, other: &str) -> f64 {
 }
 
 /// How far `danger.base` is from `accent.base` in OKLab, as the theme writes them.
+#[cfg(test)]
 pub(super) fn apart(theme: &ResolvedTheme) -> f64 {
     apart_of(theme.value("danger.base"), theme.value("accent.base"))
 }
 
 /// How far Allow's edge, `accent.base`, is from Keep blocked's, `border.strong`, in OKLab, as
 /// the theme writes them.
+#[cfg(test)]
 pub(super) fn allow_apart(theme: &ResolvedTheme) -> f64 {
     apart_of(theme.value("accent.base"), theme.value("border.strong"))
 }
@@ -252,11 +363,32 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
     let mut floors = BTreeSet::new();
     let mut taken: BTreeSet<&'static str> = BTreeSet::new();
     let mut untinted: BTreeSet<&'static str> = BTreeSet::new();
+    let mut chromas = Chromas::default();
     loop {
-        let failing = failures(&drawn);
+        let failing = failures(&drawn, &mut chromas);
         if failing.is_empty() {
             break;
         }
+        // A theme that clears every floor as written, and falls under one only in a tinted
+        // workspace, keeps its own values: the tint leaves the tokens it would turn under it.
+        if failing.iter().all(|failure| failure.tinted) {
+            let turned: Vec<&'static str> = failing
+                .iter()
+                .flat_map(|failure| failure.tokens.iter().copied())
+                .filter(|token| drawn.tint.tabs().contains(token))
+                .collect();
+            if !turned.is_empty() {
+                floors.extend(failing.iter().map(|failure| failure.floor));
+                drawn.tint.leave(&turned);
+                untinted.extend(turned);
+                continue;
+            }
+        }
+        let failing: Vec<&Failure> = if failing.iter().any(|failure| !failure.tinted) {
+            failing.iter().filter(|failure| !failure.tinted).collect()
+        } else {
+            failing.iter().collect()
+        };
         // Each round decides from what was purlis's before it, so a pair failing in several
         // tints is one failure and its ground waits for the round after its consent colour.
         let mut take: BTreeSet<&'static str> = BTreeSet::new();
@@ -273,8 +405,22 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
                 .copied()
                 .filter(|token| is_consent(token))
                 .collect();
-            // Purlis's own consent colour first; the ground too only once that is not enough.
-            take.extend(if consent.is_empty() { open } else { consent });
+            // A selection that hides what it is laid on is put right first: purlis's own
+            // selection is the platform's, so the pair is no longer drawn and its consent colour
+            // and its ground stay as the theme wrote them. Otherwise purlis's own consent colour
+            // first, and the ground too only once that is not enough.
+            let selection: Vec<&'static str> = open
+                .iter()
+                .copied()
+                .filter(|token| token.starts_with("selection."))
+                .collect();
+            take.extend(if !selection.is_empty() {
+                selection
+            } else if consent.is_empty() {
+                open
+            } else {
+                consent
+            });
         }
         // Every token a failing floor names is purlis's already, and a workspace's tint still
         // breaks it: the tint leaves those tokens as they are drawn.

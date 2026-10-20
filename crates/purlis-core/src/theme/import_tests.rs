@@ -5,6 +5,7 @@
 //! table into a theme the engine draws, every key nothing took listed, and a theme folder's zip
 //! giving the folder back.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::Value;
@@ -210,9 +211,11 @@ fn an_iterm_preset_imports_its_components_and_alpha() {
     assert_eq!(dark.appearance, Appearance::Dark);
     assert_eq!(dark.value("terminal.background"), "#10141e");
     assert_eq!(dark.value("terminal.ansi.blue"), "#3366cc");
+    // No link colour: its blue, walked three tenths toward its words (#e6e6e6) to read on the
+    // window at the words' floor (#2589).
     assert_eq!(
         dark.value("markdown.link"),
-        "#3366cc",
+        tenth("#3366cc", "#e6e6e6", 3),
         "no link colour: its blue"
     );
     assert_eq!(dark.value("terminal.selection"), "#33406680");
@@ -242,7 +245,7 @@ fn an_iterm_preset_with_dark_and_light_colours_has_both_appearances() {
     assert_eq!(theme.appearances[0].value("surface.base"), "#0d0d0d");
     assert_eq!(theme.appearances[1].value("surface.base"), "#fafafa");
     assert_eq!(
-        theme.appearances[1].value("accent.base"),
+        theme.appearances[1].value("terminal.ansi.blue"),
         "#3366cc",
         "a plain colour is in both"
     );
@@ -1253,5 +1256,359 @@ fn the_folder_reader_refuses_a_device_name_and_a_font_or_icon_set_named_so() {
             .any(|it| it.said.contains("com1.json") && it.said.contains("Windows")),
         "{:?}",
         read.complaints
+    );
+}
+
+// ------------------------------------------------------------------------------------------
+// The recipes (#2589)
+// ------------------------------------------------------------------------------------------
+
+/// Each shipped fixture, its kind and its file name.
+const FIXTURES: &[(SourceKind, &str, &[u8])] = &[
+    (SourceKind::Vscode, "ember.jsonc", EMBER),
+    (SourceKind::Base16, "harbor.yaml", HARBOR),
+    (SourceKind::Base24, "dune.json", DUNE),
+    (SourceKind::Iterm, "Tide.itermcolors", TIDE),
+    (SourceKind::Iterm, "both.itermcolors", TIDE_BOTH),
+    (SourceKind::Ghostty, "moss", MOSS),
+];
+
+/// What the theme check finds in `theme`, as one line each, untinted and tinted alike.
+fn findings(theme: &Theme) -> Vec<String> {
+    check_every(theme)
+        .into_iter()
+        .flat_map(|checked| checked.report.findings)
+        .map(|finding| match finding {
+            Finding::Contrast { pair, .. } => format!("{} on {}", pair.front, pair.back),
+            Finding::Ansi { token, .. } => format!("{token} on terminal.background"),
+            other => format!("{other:?}"),
+        })
+        .collect()
+}
+
+/// Each token's value in the appearance the import wrote first, as `theme.json` holds it.
+fn written(imported: &Imported, token: &str) -> Value {
+    let document: Value = serde_json::from_slice(&imported.files[THEME_JSON]).expect("JSON");
+    document["appearances"][0]["tokens"][token].clone()
+}
+
+#[test]
+fn every_shipped_fixture_imports_with_no_finding_its_own_palette_could_avoid() {
+    for (kind, name, bytes) in FIXTURES {
+        let imported = import(*kind, name, bytes).expect("imported");
+        let found = findings(&drawn(&imported));
+        // A terminal's own sixteen colours are what it draws, and are taken as they are: the
+        // findings left are those, in the theme as it is and in each workspace tint.
+        let expected: &[&str] = match *name {
+            "Tide.itermcolors" => &["terminal.ansi.black on terminal.background"],
+            "moss" => &[
+                "terminal.ansi.black on terminal.background",
+                "terminal.ansi.bright-black on terminal.background",
+            ],
+            _ => &[],
+        };
+        let distinct: BTreeSet<&str> = found.iter().map(String::as_str).collect();
+        assert_eq!(
+            distinct,
+            expected.iter().copied().collect::<BTreeSet<_>>(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_terminal_s_own_ansi_colours_are_taken_as_they_are() {
+    let imported = import(SourceKind::Ghostty, "moss", MOSS).expect("imported");
+
+    assert_eq!(written(&imported, "terminal.ansi.black"), "palette-0");
+    assert_eq!(
+        written(&imported, "terminal.ansi.bright-black"),
+        "palette-8"
+    );
+}
+
+#[test]
+fn base16_s_row_under_the_pointer_is_halfway_between_base01_and_base02() {
+    let imported = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
+
+    let dark = drawn(&imported);
+    let dark = dark.first();
+    // base01 #232a2f and base02 #2e373d, mixed half and half and rounded as the screen does.
+    assert_eq!(dark.value("surface.hover"), "#293136");
+    assert_eq!(written(&imported, "list.selected"), "base02");
+    assert_ne!(dark.value("surface.hover"), dark.value("list.selected"));
+    assert_ne!(dark.value("surface.hover"), dark.value("surface.raised"));
+}
+
+#[test]
+fn selected_text_is_the_foreground_when_the_source_colours_only_the_selection() {
+    let harbor = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
+    assert_eq!(written(&harbor, "selection.text"), "base05");
+    assert!(
+        !harbor.left_out.iter().any(|it| it.key == "base05"),
+        "base05 gave a token its value"
+    );
+
+    let tide = import(SourceKind::Iterm, "Tide.itermcolors", TIDE).expect("imported");
+    assert_eq!(written(&tide, "selection.text"), "foreground");
+
+    let ember = import(SourceKind::Vscode, "ember.jsonc", EMBER).expect("imported");
+    assert_eq!(
+        written(&ember, "selection.text"),
+        "#e8e2d9",
+        "editor.foreground"
+    );
+
+    // Selected text the source colours itself is its own.
+    let moss = import(SourceKind::Ghostty, "moss", MOSS).expect("imported");
+    assert_eq!(written(&moss, "selection.text"), "selection-foreground");
+}
+
+#[test]
+fn selected_text_is_left_to_the_platform_with_the_selection() {
+    let source = b"background = 1a201c\nforeground = d6ddd6\npalette = 4=#6fa3c8\n";
+    let imported = import(SourceKind::Ghostty, "plain", source).expect("imported");
+
+    assert_eq!(written(&imported, "selection.text"), Value::Null);
+    let found = findings(&drawn(&imported));
+    assert!(
+        !found.iter().any(|it| it == "SelectionTextAlone"),
+        "{found:?}"
+    );
+}
+
+/// The point a [`Recipe::Toward`] walk from `from` toward `to` is at after `step` tenths.
+fn tenth(from: &str, to: &str, step: u32) -> String {
+    check::mix(to, from, f64::from(step) / f64::from(TOWARD_STEPS))
+}
+
+#[test]
+fn a_walk_takes_the_nearest_tenth_that_reads_and_no_further() {
+    let imported = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
+    let theme = drawn(&imported);
+    let dark = theme.first();
+
+    // base03 #5c6a73 is muted words at 2.94 on the window: the walk goes on to base04 #8a9aa4
+    // and from there toward base05 #c7d3da, and stops at the first tenth every pair clears.
+    let base04_reached = (1..=TOWARD_STEPS)
+        .map(|step| tenth("#8a9aa4", "#c7d3da", step))
+        .collect::<Vec<_>>();
+    let muted = dark.value("text.muted");
+    let at = base04_reached
+        .iter()
+        .position(|it| it == muted)
+        .expect("text.muted is on the way from base04 to base05");
+    // Read as the check reads it: as it is and in every workspace tint.
+    let clears = |theme: &ResolvedTheme| {
+        !check(theme).findings.iter().any(|finding| {
+            matches!(finding, Finding::Contrast { pair, .. } if pair.front == "text.muted")
+        })
+    };
+    assert!(clears(dark));
+    let mut nearer = dark.clone();
+    let before = if at == 0 {
+        "#8a9aa4".to_owned()
+    } else {
+        base04_reached[at - 1].clone()
+    };
+    nearer.values.insert("text.muted", before);
+    assert!(!clears(&nearer), "a nearer tenth would have read too");
+}
+
+#[test]
+fn base16_s_ansi_black_takes_the_nearest_step_up_the_scale_the_terminal_shows() {
+    let imported = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
+    let theme = drawn(&imported);
+    let dark = theme.first();
+
+    let black = dark.value("terminal.ansi.black");
+    assert_ne!(black, dark.value("terminal.background"));
+    // From base00 to base01 to base02 nothing clears 1.5; a tenth of the way on to base03 does.
+    assert_eq!(black, tenth("#2e373d", "#5c6a73", 2));
+    assert!(check::contrast(black, "#1b2024") >= 1.5);
+    assert!(check::contrast(&tenth("#2e373d", "#5c6a73", 1), "#1b2024") < 1.5);
+}
+
+#[test]
+fn a_hue_that_reads_already_stays_the_source_s_palette_colour() {
+    let imported = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
+
+    assert_eq!(written(&imported, "accent.base"), "base0d");
+    assert_eq!(written(&imported, "syntax.keyword"), "base0e");
+    assert_eq!(written(&imported, "terminal.ansi.red"), "base08");
+}
+
+#[test]
+fn a_light_scheme_s_hues_walk_toward_its_darker_words() {
+    let imported = import(SourceKind::Base24, "dune.json", DUNE).expect("imported");
+    let theme = drawn(&imported);
+    let light = theme.first();
+
+    // base0B #56802c is markdown code at 4.13 on the window, under 4.5: a tenth or more of the
+    // way toward base05 #3d382e reads.
+    let code = light.value("markdown.code");
+    assert!(
+        (1..=TOWARD_STEPS).any(|step| tenth("#56802c", "#3d382e", step) == code),
+        "{code}"
+    );
+    assert!(check::contrast(code, light.value("surface.base")) >= 4.5);
+    assert!(
+        check::contrast(code, "#ffffff") > check::contrast("#56802c", "#ffffff"),
+        "darker than base0B"
+    );
+}
+
+#[test]
+fn every_import_is_drawn_through_the_consent_floors() {
+    // A scheme whose every colour is one grey: no step on its scale reads, and the window
+    // still draws purlis's own values where a consent floor breaks.
+    let mut grey = String::from("scheme: \"Fog\"\n");
+    for key in [
+        "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "0A", "0B", "0C", "0D", "0E",
+        "0F",
+    ] {
+        grey.push_str(&format!("base{key}: \"808080\"\n"));
+    }
+    let imported = import(SourceKind::Base16, "fog.yaml", grey.as_bytes()).expect("imported");
+    let theme = drawn(&imported);
+
+    let held = draw(theme.first()).held.expect("the floors hold");
+    assert!(held.floors.contains(&Floor::Ask), "{held:?}");
+    assert!(
+        check_every(&theme).iter().all(|it| it.held.is_some()),
+        "each combination says what it holds"
+    );
+
+    // A VS Code theme's colours are taken as they are: Ember's accent is too near purlis's own
+    // danger red, which it does not name, and the window draws purlis's own accent there.
+    let ember = import(SourceKind::Vscode, "ember.jsonc", EMBER).expect("imported");
+    let ember = drawn(&ember);
+    let shown = draw(ember.first());
+    let held = shown.held.expect("the floors hold");
+    assert_eq!(held.floors, [Floor::DangerApart]);
+    assert_eq!(
+        shown.theme.expect("drawn").value("accent.base"),
+        built_in_for(Appearance::Dark).value("accent.base")
+    );
+}
+
+#[test]
+fn each_kind_s_recipes_tune_only_purlis_tokens_and_the_docs_print_them() {
+    let docs = include_str!("../../docs/themes.md");
+    for kind in SourceKind::ALL.iter().filter(|it| **it != SourceKind::Zip) {
+        for (token, recipe) in recipes(*kind) {
+            assert!(vocabulary::is_token(token), "{token} in {kind:?}");
+            if let Recipe::Fill { when, .. } = recipe {
+                assert!(vocabulary::is_token(when), "{when}");
+            }
+        }
+        assert!(
+            docs.contains(&recipes_markdown(*kind)),
+            "docs/themes.md does not print the {} recipes as the engine has them:\n{}",
+            kind.name(),
+            recipes_markdown(*kind)
+        );
+    }
+    assert!(recipes(SourceKind::Zip).is_empty());
+}
+
+/// How far apart two hues must stay after tuning, in OKLab: the least a person can see.
+const SEEN_APART: f64 = 0.02;
+
+#[test]
+fn the_state_and_icon_hues_stay_apart_from_each_other_after_tuning() {
+    const STATES: &[&str] = &[
+        "state.running",
+        "state.waiting",
+        "state.failed",
+        "state.success",
+        "state.unreadable",
+    ];
+    const ICONS: &[&str] = &[
+        "icon.red",
+        "icon.orange",
+        "icon.yellow",
+        "icon.green",
+        "icon.teal",
+        "icon.blue",
+        "icon.purple",
+        "icon.pink",
+    ];
+    for (kind, name, bytes) in FIXTURES {
+        let imported = import(*kind, name, bytes).expect("imported");
+        let theme = drawn(&imported);
+        let rows = table(*kind);
+        // The source key a token's row takes first, among those the source has: two tokens the
+        // source gives one colour (danger and failed are both red) are not held apart.
+        let key_of = |token: &str| {
+            rows.iter()
+                .find(|(it, _)| *it == token)
+                .and_then(|(_, keys)| keys.first().copied())
+        };
+        for one in &theme.appearances {
+            for group in [STATES, ICONS] {
+                for (at, a) in group.iter().enumerate() {
+                    for b in &group[at + 1..] {
+                        let (Some(key_a), Some(key_b)) = (key_of(a), key_of(b)) else {
+                            continue;
+                        };
+                        if key_a == key_b {
+                            continue;
+                        }
+                        let apart = tint::distance(
+                            tint::oklab_of(one.value(a)).expect("a colour"),
+                            tint::oklab_of(one.value(b)).expect("a colour"),
+                        );
+                        assert!(
+                            apart >= SEEN_APART,
+                            "{name} {}: {a} {} and {b} {} are {apart:.3} apart",
+                            one.id,
+                            one.value(a),
+                            one.value(b)
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_terminal_colour_s_warning_names_the_palette_entry_that_holds_it() {
+    let imported = import(SourceKind::Ghostty, "moss", MOSS).expect("imported");
+    let theme = drawn(&imported);
+    let checked = check_every(&theme);
+
+    assert_eq!(
+        imported
+            .palette_entry("dark", "terminal.ansi.black")
+            .as_deref(),
+        Some("palette-0")
+    );
+    assert_eq!(
+        imported.palette_entry("dark", "text.muted"),
+        None,
+        "walked: hex"
+    );
+    assert_eq!(imported.palette_entry("light", "terminal.ansi.black"), None);
+    let said = warnings_said_naming(&theme, &checked, |appearance, token| {
+        imported.palette_entry(appearance, token)
+    });
+    let black = said
+        .iter()
+        .find(|line| line.starts_with("terminal.ansi.black on terminal.background"))
+        .expect("a warning");
+    assert!(
+        black.ends_with(
+            "; it is the palette's `palette-0`: change `palette-0` in theme.json to lift it"
+        ),
+        "{black}"
+    );
+    // Without an entry, the line is the check's own.
+    assert!(
+        warnings_said(&theme, &checked)
+            .iter()
+            .all(|line| !line.contains("palette-0")),
+        "{said:?}"
     );
 }
