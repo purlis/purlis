@@ -172,6 +172,12 @@ pub trait Browsers: Send + Sync + 'static {
     /// The folder each browser's data folder is made in, under the host's store. Asked as a
     /// browser starts, never before, so a host that starts none reads no store for them.
     fn data_folders(&self) -> Result<PathBuf, String>;
+    /// **The most browsers this device runs at once** (#2611), read at each start: the host
+    /// counts every browser it runs, whoever started it, and refuses a start past it
+    /// `device_full`. `None`: no budget, as for a host whose binary starts none.
+    fn budget(&self) -> Option<usize> {
+        None
+    }
     /// Start a browser whose data folder is `data` (made by the binary, this user's alone),
     /// reaching what `reach` says, or with none, nothing listed and every site new to the
     /// project refused (#2013); opened from the kept login `kept`, where one is named (#2021).

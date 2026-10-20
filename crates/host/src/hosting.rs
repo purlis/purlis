@@ -542,6 +542,9 @@ struct State {
     /// Each process a window linked from to the host the window started, but the one that
     /// started it: a window that came back holds the chats too (#2006).
     came_back: Vec<u32>,
+    /// How many browsers are starting now (#2611): each holds a place in the device's budget
+    /// from its count to its start, so two starts never both take the last one.
+    browsers_starting: usize,
 }
 
 /// One subscriber, and whether its link may hear what a chat's sandbox does
@@ -1658,8 +1661,10 @@ impl Hosting {
         // Nothing starts while the kill switch is thrown (ADR 0071), a browser included.
         self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
-        let (program, at) = {
-            let state = self.state();
+        // Read before the lock: it may read this machine's store.
+        let budget = self.inner.browsers.budget();
+        let (program, at, place) = {
+            let mut state = self.state();
             let at = held_at(&state, &start.project, link_of(peer))?;
             let program = match &start.program {
                 Some(id) if state.programs.contains_key(id) => {
@@ -1677,7 +1682,8 @@ impl Hosting {
                 Some(id) => id.clone(),
                 None => ulid::Ulid::generate().to_string(),
             };
-            (program, at)
+            let place = PlaceInTheBudget::taken(self, &mut state, budget)?;
+            (program, at, place)
         };
         // Starting an engine forks and waits for it to answer: off the runtime.
         let hosting = self.clone();
@@ -1709,7 +1715,10 @@ impl Hosting {
         let running: Arc<dyn Running> =
             Arc::new(Browser::new(screen, program.clone(), Arc::clone(&stopping)));
         let process = running.process();
-        self.state().programs.insert(
+        let mut state = self.state();
+        // From here it counts as running: its place is given back in the same step.
+        place.started(&mut state);
+        state.programs.insert(
             program.clone(),
             Hosted {
                 kind: ProgramKind::Browser,
@@ -1729,6 +1738,7 @@ impl Hosting {
                 sandbox: session::RunSandbox::Off,
             },
         );
+        drop(state);
         let hosting = self.clone();
         let ended = program.clone();
         let run = start.run.clone();
@@ -3000,6 +3010,59 @@ fn not_recorded(why: String) -> Refusal {
     Refusal {
         code: session::NOT_RECORDED.into(),
         why,
+    }
+}
+
+/// **A browser's place in the device's budget while it starts** (#2611): taken under the host's
+/// state lock with the count, and given back when it has started, in the same step that lists
+/// it, or when it does not start.
+struct PlaceInTheBudget {
+    hosting: Option<Hosting>,
+}
+
+impl PlaceInTheBudget {
+    /// A place for one more browser, or `device_full` where the browsers running and starting
+    /// fill `budget` already. With no budget, every start has a place.
+    fn taken(hosting: &Hosting, state: &mut State, budget: Option<usize>) -> Result<Self, Refusal> {
+        if let Some(most) = budget {
+            let running = state
+                .programs
+                .values()
+                .filter(|hosted| hosted.kind == ProgramKind::Browser && !hosted.ended)
+                .count();
+            if running + state.browsers_starting >= most {
+                return Err(Refusal {
+                    code: session::DEVICE_FULL.into(),
+                    // Whole on its own: a window before 1.32 shows it as it is.
+                    why: format!(
+                        "This device runs at most {most} {} at once, and that many run now: \
+                         close one first, or raise the budget in Settings › This machine › \
+                         Browsers",
+                        if most == 1 { "browser" } else { "browsers" }
+                    ),
+                });
+            }
+        }
+        state.browsers_starting += 1;
+        Ok(PlaceInTheBudget {
+            hosting: Some(hosting.clone()),
+        })
+    }
+
+    /// The browser started, and is listed while `state` is held: it counts from now on.
+    fn started(mut self, state: &mut State) {
+        if self.hosting.take().is_some() {
+            state.browsers_starting -= 1;
+        }
+    }
+}
+
+impl Drop for PlaceInTheBudget {
+    /// It did not start: its place is free.
+    fn drop(&mut self) {
+        if let Some(hosting) = self.hosting.take() {
+            hosting.state().browsers_starting -= 1;
+        }
     }
 }
 

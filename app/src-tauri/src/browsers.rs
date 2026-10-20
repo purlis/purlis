@@ -272,6 +272,17 @@ mod hosted {
     /// showing, and its password field going, each within its own limit.
     const A_LOGIN_TAKES_AT_MOST: Duration = Duration::from_secs(150);
 
+    /// **Why a browser's start was refused**, from the host's refusal: the device's budget,
+    /// `budget` here, where the host said `device_full` (1.32, #2611), else in the host's words,
+    /// as for any code this window does not know.
+    pub(super) fn not_started(refused: session::Refusal, budget: usize) -> NotStarted {
+        if refused.code == session::DEVICE_FULL {
+            NotStarted::Full { most: budget }
+        } else {
+            NotStarted::Failed(refused.why)
+        }
+    }
+
     /// A chat's browsers run here (#2013): the window's session host.
     impl crate::chatbrowsers::Driver for WindowBrowsers {
         fn start(
@@ -498,7 +509,9 @@ mod hosted {
         /// Starts a browser in the project at `root` reaching `reach` (#2013), or with none,
         /// nothing listed and every site new to the project refused; opened from the kept login
         /// `kept` where one is named (#2021); answers its id. Refused where the device runs its
-        /// budget of browsers already (#2023).
+        /// budget of browsers already (#2023): the session host holds every client to it and
+        /// refuses a start past it `device_full` (1.32, #2611); this window's own count first
+        /// keeps its starts within it on a host before 1.32.
         pub(crate) fn open_reaching(
             &self,
             root: &Path,
@@ -522,13 +535,14 @@ mod hosted {
             if running >= budget {
                 return Err(NotStarted::Full { most: budget });
             }
+            let start = Command::StartProgram(Box::new(StartProgram {
+                reach,
+                kept,
+                ..StartProgram::of(project, ProgramKind::Browser)
+            }));
             match link
-                .call(Command::StartProgram(Box::new(StartProgram {
-                    reach,
-                    kept,
-                    ..StartProgram::of(project, ProgramKind::Browser)
-                })))
-                .map_err(NotStarted::Failed)?
+                .call_refused(start)
+                .map_err(|refused| not_started(refused, budget))?
             {
                 Answer::ProgramStarted { program, .. } => {
                     let ended = Arc::clone(&self.ended);

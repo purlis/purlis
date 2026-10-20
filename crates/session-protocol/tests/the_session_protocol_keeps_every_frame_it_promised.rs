@@ -17,11 +17,12 @@
 //! (#2525), 1.26's services the window allowed a chat its host composes alone (#2590),
 //! 1.27's kept browser logins (#2021), 1.28's record of how a hosted program's run is
 //! sandboxed (#2636), 1.29's same record on a program's start (#2692), 1.30's relaying host
-//! telling its client a project it no longer holds for it (#2645), and 1.31's window naming
-//! itself to its own host (#2623). Each must read back as it was recorded, by this build and so
-//! by every later one, which is what lets a client and a host one version apart talk. A frame
-//! kind added without being recorded fails here, so the promise grows on purpose. The UI RPC is
-//! not in it: it is private to one build of the app, and excluded from this promise (V7).
+//! telling its client a project it no longer holds for it (#2645), 1.31's window naming itself
+//! to its own host (#2623), and 1.32's browser budget the host holds every client to (#2611).
+//! Each must read back as it was recorded, by this build and so by every later one, which is
+//! what lets a client and a host one version apart talk. A frame kind added without being
+//! recorded fails here, so the promise grows on purpose. The UI RPC is not in it: it is private
+//! to one build of the app, and excluded from this promise (V7).
 //!
 //! And a host reads a later minor's frames the way the promise says: a field it does not know is
 //! ignored, a command it does not know is refused with `unknown_command` and the link carries on,

@@ -205,9 +205,13 @@ use crate::view::{Limits, Views};
 /// relaying host names the window by it to the other host and the window takes back its runner
 /// chats after a restart. The window's alone, never sent on, and never shown by `Debug`. A host
 /// before 1.31 refuses it `unknown_command`, and its window takes nothing back after a restart.
+///
+/// 1.32 added the host holding every client to its device's browser budget (#2611): a browser's
+/// start past it is refused `device_full`. A host before 1.32 starts it; the window's own count
+/// kept its starts within the budget there.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 31,
+    minor: 32,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -277,6 +281,10 @@ pub const INPUT_MISSED: &str = "input_missed";
 /// (1.13): a held project's kept board too large to hand over whole.
 pub const TOO_LARGE: &str = "too_large";
 
+/// The device runs as many browsers as its budget already (1.32, #2611): the host counts
+/// every browser it runs, whoever started it, and starts no more. Its `why` names the budget.
+pub const DEVICE_FULL: &str = "device_full";
+
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
 pub const REFUSALS: &[&str] = &[
@@ -293,6 +301,7 @@ pub const REFUSALS: &[&str] = &[
     TOO_LARGE,
     NOT_DRIVING,
     INPUT_MISSED,
+    DEVICE_FULL,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add

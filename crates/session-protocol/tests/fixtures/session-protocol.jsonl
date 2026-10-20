@@ -134,3 +134,5 @@
 {"reply":{"re":99,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000F","number":12,"process":4244,"confined":{"confinement":"01J9CNFNMNT0000000000000005","http":50813,"socks":50814,"tmp":"/tmp/purlis-chat-12"},"sandbox":{"by":"proxy"}}}}}
 {"pushed":{"not_held":{"project":"01J9PRJCT00000000000000000","why":"that folder is not there"}}}
 {"call":{"id":100,"command":"name_window","name":"0123456789abcdef0123456789abcdef"}}
+{"call":{"id":101,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser"}}
+{"reply":{"re":101,"refused":{"code":"device_full","why":"This device runs at most 4 browsers at once, and that many run now: close one first, or raise the budget in Settings › This machine › Browsers"}}}
