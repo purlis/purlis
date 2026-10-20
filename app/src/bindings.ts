@@ -1721,6 +1721,18 @@ export const commands = {
 	 */
 	dispatches: (plane: PlaneId) => typedError<Dispatches, string>(__TAURI_INVOKE("dispatches", { plane })),
 	/**
+	 *  The Skill studio of the project: every built-in and project skill, with its level, and why
+	 *  each left out is left out. On a blocking thread, as it reads the project's skill folders.
+	 */
+	skillStudio: (plane: PlaneId) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane })),
+	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
+	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
+	/**
+	 *  **Turns the Skill studio on or off on this machine** (Settings › You › Previews), then says
+	 *  whether it is on, which `PURLIS_SKILL_STUDIO` still decides where it is set.
+	 */
+	setSkillStudioOn: (on: boolean) => typedError<boolean, string>(__TAURI_INVOKE("set_skill_studio_on", { on })),
+	/**
 	 *  What discarding the folder of dispatch `id`'s own branch would take with it (#1453): every
 	 *  uncommitted file, every ignored one, and how many commits its branch holds that exist
 	 *  nowhere else, for the question the window asks before it discards. Refused while a chat is
@@ -7001,6 +7013,9 @@ export type LeftOut = {
 	why: string,
 };
 
+/**  The level a skill comes from, as the studio draws it. */
+export type Level = "built-in" | "project";
+
 /**  A level the file says that waits for your Confirm. */
 export type LevelWaiting = {
 	/**  The persona's level, or the project's for `None`. */
@@ -10373,6 +10388,27 @@ export type StopPhase =
 "stopping" | 
 /**  It has ended, and its tab goes. */
 "stopped";
+
+/**  What the studio shows: whether it is on, and its skills by name. */
+export type Studio = {
+	on: boolean,
+	skills: StudioSkill[],
+};
+
+/**  One skill the studio lists: [`purlis_core::skills::StudioRow`], for the window. */
+export type StudioSkill = {
+	/**  Its name, or its folder's where it names none. */
+	name: string,
+	level: Level,
+	/**  Whether a chat at the project's root gets it. */
+	on: boolean,
+	/**  Why it is left out, in one line, where it is. */
+	left_out: string | null,
+	/**  What it does and when to use it: its frontmatter's `description`. */
+	description: string,
+	/**  Its folder, relative to the project where it is inside it. */
+	folder: string,
+};
 
 /**  What one subject is offered. */
 export type SubjectCurations = {

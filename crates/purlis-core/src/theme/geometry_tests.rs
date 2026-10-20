@@ -795,3 +795,181 @@ fn the_person_s_icon_set_is_a_file_beside_their_theme_or_in_its_icons_folder() {
         );
     }
 }
+
+/// What `purlis docs show themes` prints.
+const THEMES_MD: &str = include_str!("../../docs/themes.md");
+
+/// One row of the docs' geometry table: token, unit, least, most, Classic, Compact.
+type DocsRow = (String, String, f64, f64, f64, f64);
+
+/// How the docs' table writes a unit.
+fn unit_said(unit: geometry::Unit) -> &'static str {
+    match unit {
+        geometry::Unit::Text => "px at 14px",
+        geometry::Unit::Px => "px",
+        geometry::Unit::Weight => "weight",
+        geometry::Unit::Ratio => "× text",
+    }
+}
+
+/// Each row of the docs' geometry table, in its order: one token a row.
+fn docs_geometry_rows(page: &str) -> Vec<DocsRow> {
+    let number = |text: &str| -> f64 {
+        let text = text.trim().replace('−', "-");
+        text.parse()
+            .unwrap_or_else(|_| panic!("not a number: {text:?}"))
+    };
+    page.lines()
+        .skip_while(|line| {
+            !line.starts_with("| Token | Unit | Bounds | Classic | Compact | What it reaches |")
+        })
+        .skip(2)
+        .take_while(|line| line.starts_with('|'))
+        .map(|line| {
+            let cells: Vec<&str> = line.trim_matches('|').split(" | ").collect();
+            assert!(cells.len() == 6, "six cells in {line:?}");
+            let token = cells[0].trim().trim_matches('`');
+            let (least, most) = cells[2]
+                .split_once('–')
+                .unwrap_or_else(|| panic!("a range: {:?}", cells[2]));
+            (
+                token.to_owned(),
+                cells[1].trim().to_owned(),
+                number(least),
+                number(most),
+                number(cells[3]),
+                number(cells[4]),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn the_docs_geometry_table_is_the_engine_s_steps_row_for_row() {
+    let steps: Vec<DocsRow> = geometry::STEPS
+        .iter()
+        .map(|one| {
+            (
+                one.token.to_owned(),
+                unit_said(one.unit).to_owned(),
+                one.least,
+                one.most,
+                one.classic,
+                one.compact,
+            )
+        })
+        .collect();
+    assert_eq!(
+        docs_geometry_rows(THEMES_MD),
+        steps,
+        "docs/themes.md's geometry table is STEPS: every token once, in its order, with its unit, \
+         its bounds, Classic's value and Classic's compact value"
+    );
+}
+
+#[test]
+fn the_docs_geometry_scan_reads_one_token_a_row_and_stops_at_the_table_s_end() {
+    let page = "x\n\n| Token | Unit | Bounds | Classic | Compact | What it reaches |\n|---|---|---|---|---|---|\n| `a.b` | px | −4–0 | −2 | −1 | x |\n| `a.c` | × text | 1.2–1.8 | 1.4 | 1.3 | y |\n\n| `not.read` | px | 1–2 | 1 | 1 | z |\n";
+    assert_eq!(
+        docs_geometry_rows(page),
+        vec![
+            ("a.b".to_owned(), "px".to_owned(), -4.0, 0.0, -2.0, -1.0),
+            ("a.c".to_owned(), "× text".to_owned(), 1.2, 1.8, 1.4, 1.3),
+        ]
+    );
+}
+
+/// `text` with every run of whitespace one space, so a sentence is found however it wraps.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A number as the docs write it: to two places, no trailing zeros.
+fn written(number: f64) -> String {
+    format!("{}", (number * 100.0).round() / 100.0)
+}
+
+/// The tokens Classic's compact moves, as the docs' compact rule names them: the run of
+/// `space.*` as `first` to `last`, then each other token.
+fn moved_said() -> String {
+    let moved: Vec<&str> = geometry::STEPS
+        .iter()
+        .filter(|one| one.compact != one.classic)
+        .map(|one| one.token)
+        .collect();
+    let spaces: Vec<&str> = moved
+        .iter()
+        .copied()
+        .filter(|token| token.starts_with("space."))
+        .collect();
+    let mut parts = Vec::new();
+    if let (Some(first), Some(last)) = (spaces.first(), spaces.last()) {
+        parts.push(format!("`{first}` to `{last}`"));
+    }
+    parts.extend(
+        moved
+            .iter()
+            .filter(|token| !token.starts_with("space."))
+            .map(|token| format!("`{token}`")),
+    );
+    parts.join(", ")
+}
+
+#[test]
+fn the_docs_hold_each_line_the_check_fits_with_classic_s_numbers_in_both_densities() {
+    let docs = one_line(THEMES_MD);
+    let section = docs
+        .split_once("### A line fits its box")
+        .and_then(|(_, after)| after.split(" ## ").next())
+        .expect("the docs' line-fits section");
+    assert_eq!(
+        section.matches("` within `").count(),
+        FITS.len(),
+        "the docs list one line for each line the check fits"
+    );
+    for fit in FITS {
+        let named = format!(
+            "`{}` × `{}` within `{}`",
+            fit.size, fit.line_height, fit.height
+        );
+        assert!(section.contains(&named), "the docs say {named}");
+        for (density, value) in [
+            ("comfortable", geometry::classic()),
+            ("compact", geometry::classic_compact()),
+        ] {
+            let (size, line_height, room) = (
+                value[&fit.size],
+                value[&fit.line_height],
+                value[&fit.height],
+            );
+            let sum = format!(
+                "{} × {} = {} within {}",
+                written(size),
+                written(line_height),
+                written(size * line_height),
+                written(room)
+            );
+            assert!(
+                section.contains(&sum),
+                "the docs say Classic's {density} line: {sum}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_docs_compact_rule_names_the_tokens_classic_s_compact_moves() {
+    // `first` to `last` holds only while the spacing steps compact moves are one run.
+    let at: Vec<usize> = geometry::STEPS
+        .iter()
+        .enumerate()
+        .filter(|(_, one)| one.token.starts_with("space.") && one.compact != one.classic)
+        .map(|(at, _)| at)
+        .collect();
+    assert!(
+        at.windows(2).all(|pair| pair[1] == pair[0] + 1),
+        "the spacing steps compact moves are one run: {at:?}"
+    );
+    let named = moved_said();
+    assert!(one_line(THEMES_MD).contains(&named), "the docs say {named}");
+}
