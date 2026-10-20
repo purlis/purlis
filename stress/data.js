@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792511125693,
+  "lastUpdate": 1792511145156,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8296,6 +8296,42 @@ window.BENCHMARK_DATA = {
             "value": 662.3,
             "unit": "MB",
             "extra": "median of 6 samples: 624.6, 652.7, 660.6, 663.9, 664.2, 761.2 MB; window 402.9 MB, session host 259.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "560f1ac156daab4bcd3e8422c056f3a429e230a9",
+          "message": "Runners: add a Docker pool from the window (#2679, 3/3) (#2750)\n\n* Runners: add a Docker pool from the window (#2679)\n\n- Add a Docker pool… in the palette opens a dialog: the pool's name, its\n  runner image by digest, and its limits, each empty for the default. The\n  pool's runner is made, checked, paired and kept at once.\n- Settings › This machine › Pools lists the pools, each with Remove, and is\n  offered only while this machine keeps one. Remove unpairs the runner over\n  a link of its own while it answers, then removes its container, home and\n  the pool, and sets the workspaces that ran on it back to this machine.\n- A runner that answers with another key than the one it was paired with is\n  said in a Notice with Remove.\n- A workspace whose chats this machine's store sends to a pool starts none,\n  and says why: a pool's runner does not hold the project yet.\n\nRefs #2679\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A pool's image this machine does not hold is pulled by its digest; refusals read as one sentence\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A chat's start reads where its workspace runs from the config home the window gives it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Pools: every Remove asks first; copy reads plainer\n\n- Remove pool {name}? says what goes and that there is no undo, with Cancel and Remove pool, for the row's Remove and the key-changed Notice's.\n- A pool's limits read \"MiB of memory\"; the key-changed Notice says purlis no longer links to the runner; Remove is named Removing while it runs.\n- Adding a pool makes this desktop's link key; nothing else does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T18:43:28+04:00",
+          "tree_id": "1dded72ce8c0bd4695c5d3d2a45808823386f322",
+          "url": "https://github.com/purlis/purlis/commit/560f1ac156daab4bcd3e8422c056f3a429e230a9"
+        },
+        "date": 1792511143328,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1553.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1407.5, 1553.1, 1705.7 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 670.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 624.8, 660.8, 667.4, 674.4, 675.7, 757.4 MB; window 398.9 MB, session host 272 MB"
           }
         ]
       }
