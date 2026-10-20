@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792493535211,
+  "lastUpdate": 1792493553087,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7792,6 +7792,42 @@ window.BENCHMARK_DATA = {
             "value": 641.5,
             "unit": "MB",
             "extra": "median of 6 samples: 603.6, 631.3, 639.7, 643.3, 643.4, 722.1 MB; window 387.4 MB, session host 254.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "58b60313f0fa2ddff2265dfa109f25f63a1d4b44",
+          "message": "The theme specimen draws any theme exactly as the window would (#2536) (#2742)\n\ntheme_preview names a theme by its id (a built-in, a theme folder by name\nor level, draft:<folder>, or an extension's theme) with option values and\nan appearance, high contrast included, looked up where the asking chat\nworks by the app's own record of it. The engine resolves it as the window\nresolves the same choice there, through theme::draw. The page is tinted\nwith the workspace's colour by the window's own code and handed the\ntheme's own font faces, waited on before layout, so the terminal draws in\nthe theme's terminal font. Gallery cards are handed their fonts too.\n\nOn the painter's turns (#2740), a chat's turn is taken before the lookup\nand holds it, the lookup and the pictures, within a time the tool waits\nfor; one chat is drawn at most once a gap so Settings › Theme is drawn\nbetween. The app holds the tool's bounds again, a refusal says only what\nwas said of the theme named with no path, and the workspace's colour is\nread bounded and non-blocking. ADR 0064 records the operator's ruling that\nthe tool stays pre-allowed with this reach.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T14:02:01+04:00",
+          "tree_id": "d3947cdee4ecd98b6ca2b819491e887ba3f2b824",
+          "url": "https://github.com/purlis/purlis/commit/58b60313f0fa2ddff2265dfa109f25f63a1d4b44"
+        },
+        "date": 1792493550901,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1510.9,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1368.4, 1510.9, 1610.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 665.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 622.8, 646.9, 659, 672.4, 672.9, 761.1 MB; window 403.9 MB, session host 261.8 MB"
           }
         ]
       }
