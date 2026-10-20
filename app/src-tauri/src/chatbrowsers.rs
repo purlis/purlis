@@ -309,14 +309,44 @@ pub struct ChatBrowsers {
     theirs: Mutex<HashMap<String, Vec<Site>>>,
 }
 
-/// **A login a browser holds** (#2022): the persona whose login purlis performed in it, and the
-/// login's name. A browser holding one goes only to a chat that may log in with the same login
-/// now (spec #2008: a kept login needs the Allow of the login that made it).
-// TODO(#2654): the login's declaration digest too, once a kept login carries it.
+/// **A login a browser holds** (#2022): the persona whose login purlis performed in it, or
+/// whose kept store it was opened from (#2021), the login's name, and its identity: the
+/// persona, the project and the login as declared ([`purlis_core::browserlogins::identity_of`]).
+/// A browser holding one goes only to a chat that may log in with that same login now, the
+/// identity compared whole (#2699; spec #2008: a kept login needs the Allow of the login that
+/// made it).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeldLogin {
     pub persona: Option<String>,
     pub login: String,
+    pub identity: String,
+}
+
+impl HeldLogin {
+    /// **Whether a chat running as `persona`, whose own login of this name is allowed now as
+    /// `allowed` (its identity, or why not), may be handed a browser holding this login**
+    /// (#2699): the same persona, and the same login as declared, compared whole.
+    pub fn may_go_to(
+        &self,
+        persona: Option<&str>,
+        allowed: Result<String, String>,
+    ) -> Result<(), String> {
+        if persona != self.persona.as_deref() {
+            return Err(format!(
+                "{} is {}'s login, and that chat runs as {}",
+                self.login,
+                self.persona.as_deref().unwrap_or("no persona"),
+                persona.unwrap_or("no persona")
+            ));
+        }
+        if allowed? != self.identity {
+            return Err(format!(
+                "that chat's {} is declared otherwise than the one this browser signed in with",
+                self.login
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// **What a hand-over is** (#2022): browser `program`, to chat `session`, at `now`, the chat
@@ -1760,6 +1790,11 @@ impl ChatBrowsers {
         let chat_sites = chat.sites.clone();
         let per_project = (self.limits)().per_project;
         let start = |chat: &mut Chat, kept: Option<KeptLogin>| -> Result<String, String> {
+            let kept_as = kept.as_ref().map(|kept| HeldLogin {
+                persona: Some(kept.persona.clone()),
+                login: kept.login.clone(),
+                identity: kept.identity.clone(),
+            });
             if elsewhere + chat.running() >= per_project {
                 return Err(purlis_core::browserlimits::project_full_said(per_project));
             }
@@ -1781,6 +1816,13 @@ impl ChatBrowsers {
                          go on with what needs no browser and tell the person what it said"
                     ),
                 })?;
+            // Opened from a kept store, it holds that login from its first moment (#2699).
+            if let Some(kept) = kept_as {
+                self.logins_held
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .insert(program.clone(), kept);
+            }
             let name = format!("b{}", chat.next);
             chat.next += 1;
             chat.used.insert(program.clone(), now);
@@ -1851,7 +1893,7 @@ impl ChatBrowsers {
             }
             Browsing::Act(act) => Doing::Act(act.clone()),
             Browsing::LogIn { login } => match read {
-                Some(Ok((read, opens))) => Doing::LogIn(login.clone(), read, opens),
+                Some(Ok(read)) => Doing::LogIn(login.clone(), read),
                 Some(Err(why)) => return (no(&why), false),
                 None => {
                     return (
@@ -1871,7 +1913,7 @@ impl ChatBrowsers {
         // A login whose kept store is there opens in a browser of its own, from that store
         // (#2021), already held to the login's site: the chat's other browsers stay as they are.
         let named = match &act {
-            Doing::LogIn(_, read, true) => match start(chat, read.keep.clone()) {
+            Doing::LogIn(_, read) if read.opens => match start(chat, read.login.keep.clone()) {
                 Ok(name) => Some(name),
                 Err(why) => return (no(&why), false),
             },
@@ -1915,7 +1957,12 @@ impl ChatBrowsers {
             }
             // The login was read before the lock, for the browser it goes into, and is handed on
             // whole.
-            Doing::LogIn(declared, login, _) => {
+            Doing::LogIn(
+                declared,
+                LoginRead {
+                    login, identity, ..
+                },
+            ) => {
                 // Held from the moment it is tried, whatever its answer (#2022): a login that
                 // timed out, or that the person finished by hand, may have signed it in.
                 self.logins_held
@@ -1926,6 +1973,7 @@ impl ChatBrowsers {
                         HeldLogin {
                             persona: persona_now.clone(),
                             login: declared.clone(),
+                            identity,
                         },
                     );
                 driver.log_in(&program, login).map(|mut browsed| {
@@ -1962,14 +2010,23 @@ impl ChatBrowsers {
 
 /// A browser login as read for a chat (#2016): the login with the kept login it keeps, and
 /// whether a kept store of it is there to open (#2021); or why there is none.
-pub type ReadLogin = Result<(LogIn, bool), String>;
+pub type ReadLogin = Result<LoginRead, String>;
+
+/// A browser login as read for a chat (#2016): the login, with the kept login it keeps;
+/// whether a kept store of it is there to open (#2021); and its identity (#2699).
+#[derive(Debug, Clone)]
+pub struct LoginRead {
+    pub login: LogIn,
+    pub opens: bool,
+    pub identity: String,
+}
 
 /// What a chat's browser call asks of the browser itself: one of its acts, or a login of
 /// purlis's by the login's name (#2016).
 enum Doing {
     Act(Act),
-    /// A login by its name, as read, and whether it opens from its kept store.
-    LogIn(String, LogIn, bool),
+    /// A login by its name, as read.
+    LogIn(String, LoginRead),
 }
 
 /// What the chat is told once purlis performed its browser login `name` (#2016): that its
@@ -2131,7 +2188,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
 
 /// **Chat `session`'s browser login `name`** (#2016): read for the chat as the app records it,
 /// never as the line says, exactly as a declared tool's run is (`purlis_core::secrets::brokered`).
-fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> Result<(LogIn, bool), String> {
+fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     // The persona the chat was started as, as every brokered read of a vault takes it, and
     // whether it runs with no sandbox at all, from the same run of it (#2560).
     let (asker, unconfined) = held
@@ -2147,7 +2204,7 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> Result<(Log
         profile,
         persona,
         login: name.to_owned(),
-        identity,
+        identity: identity.clone(),
         address: login.address.clone(),
     });
     let store = kept.as_ref().and_then(|kept| {
@@ -2165,7 +2222,11 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> Result<(Log
     };
     // A login whose names cannot name a store keeps nothing.
     login.keep = kept.filter(|_| store.is_some());
-    Ok((login, opens))
+    Ok(LoginRead {
+        login,
+        opens,
+        identity,
+    })
 }
 
 /// The persona chat `session` runs with, from the app's own record of it, never from what
@@ -3045,21 +3106,16 @@ pub fn handed(
     }
     // The same login, the same persona's, and allowed for that chat now: the Allow that made
     // it (spec #2008).
+    // The identity compared whole (#2699): persona, project and declaration.
     let may_log_in = |login: &HeldLogin| -> Result<(), String> {
         let (asker, unconfined) = held
             .chats()
             .login_asker(held.root(), session)
             .ok_or_else(|| "that chat is not open in this window".to_owned())?;
-        if asker.persona != login.persona {
-            return Err(format!(
-                "{} is {}'s login, and that chat runs as {}",
-                login.login,
-                login.persona.as_deref().unwrap_or("no persona"),
-                asker.persona.as_deref().unwrap_or("no persona")
-            ));
-        }
-        // TODO(#2654): the declaration's digest too, once a kept login carries it.
-        purlis_core::secrets::brokered::login_allowed(&asker, &login.login, unconfined)
+        login.may_go_to(
+            asker.persona.as_deref(),
+            purlis_core::secrets::brokered::login_allowed(&asker, &login.login, unconfined),
+        )
     };
     let listing = held.browsers().listing();
     let name = held.browsers().hand_over(
