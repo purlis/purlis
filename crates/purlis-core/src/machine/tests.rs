@@ -356,6 +356,31 @@ fn forgetting_a_plane_forgets_the_approval_and_closes_its_tab() {
     );
 }
 
+#[test]
+fn forgetting_a_project_lets_go_of_the_name_its_window_link_kept() {
+    let machine = machine();
+    let (gone, kept) = (Path::new("/planes/gone"), Path::new("/planes/kept"));
+    update(machine.path(), |store| {
+        store.remember(gone, 1);
+        store.remember(kept, 2);
+    })
+    .unwrap();
+    let named = crate::windownames::name_for(machine.path(), gone, &[]).unwrap();
+    let other = crate::windownames::name_for(machine.path(), kept, &[]).unwrap();
+
+    assert!(forget_project(machine.path(), gone).unwrap());
+
+    assert_ne!(
+        crate::windownames::name_for(machine.path(), gone, &[]).unwrap(),
+        named,
+        "a forgotten project's link would take its runner chats back"
+    );
+    assert_eq!(
+        crate::windownames::name_for(machine.path(), kept, &[]).unwrap(),
+        other
+    );
+}
+
 // ---------------------------------------------------------------- trust
 
 fn a_contribution(plugins: &[(&str, &str)], env: &[(&str, &str)]) -> Contribution {
@@ -2402,6 +2427,37 @@ fn the_browser_limits_survive_a_write_and_a_read_and_are_absent_until_one_is_set
     assert!(text.contains(r#""on_this_device": 6"#), "{text}");
     assert!(!text.contains("per_project"), "only what was set: {text}");
     assert_eq!(read(machine.path()).store.browsers, store.browsers);
+}
+
+// The ninth (#2764): the flags turned on on this machine.
+
+#[test]
+fn a_flag_survives_a_write_and_a_read_and_is_absent_until_turned_on() {
+    let machine = machine();
+    let mut store = one_plane();
+    write(machine.path(), &store).unwrap();
+    let text = std::fs::read_to_string(file(machine.path())).unwrap();
+    assert!(!text.contains("flags"), "nothing on yet: {text}");
+    assert!(!read(machine.path()).store.flags.skill_studio);
+
+    store.flags.skill_studio = true;
+    write(machine.path(), &store).unwrap();
+
+    let text = std::fs::read_to_string(file(machine.path())).unwrap();
+    assert!(text.contains(r#""skill-studio": true"#), "{text}");
+    assert!(read(machine.path()).store.flags.skill_studio);
+}
+
+#[test]
+fn a_flag_that_is_not_true_or_not_known_reads_as_off() {
+    for raw in [
+        serde_json::json!({ "flags": { "skill-studio": "yes" } }),
+        serde_json::json!({ "flags": { "skill-studio": 1 } }),
+        serde_json::json!({ "flags": { "skill_studio": true, "another": true } }),
+        serde_json::json!({ "flags": true }),
+    ] {
+        assert_eq!(flags_of(raw.get("flags")), Flags::default(), "{raw}");
+    }
 }
 
 #[test]

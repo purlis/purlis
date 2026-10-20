@@ -31,8 +31,9 @@ impl HarnessAdapter for Opencode {
     ///
     /// No plugin choice: opencode has no switch that turns one plugin off.
     ///
-    /// Its skills are the bundle's, handed to the shim as its option, which adds them to
-    /// the skills opencode discovers for this process ([`Harness::skills`]).
+    /// Its skills are its set's ([`crate::skills::for_chat`]): their directory is handed to
+    /// the shim as its option, which adds them to the skills opencode discovers for this
+    /// process ([`Harness::skills`]).
     ///
     /// It cannot report `SessionEnd`: quitting opencode fires no event and runs no exit
     /// handler in a plugin (measured). The app sees the process end.
@@ -61,7 +62,7 @@ impl HarnessAdapter for Opencode {
                     crate::opencode::CONFIG_ENV.to_owned(),
                     crate::opencode::session_config(
                         &shim,
-                        kit.plugin.and_then(crate::skills::in_bundle).as_deref(),
+                        crate::skills::for_chat(kit, Harness::Opencode).dir(),
                         Some(kit.binary),
                         sandbox.applied().is_some(),
                     ),
