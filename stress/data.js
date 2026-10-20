@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792523310330,
+  "lastUpdate": 1792526169057,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4202,6 +4202,42 @@ window.BENCHMARK_DATA = {
             "value": 321.6,
             "unit": "MB",
             "extra": "median of 6 samples: 281.7, 362.4, 351, 321.6, 321.7, 231.6 MB; window 146.7 MB, session host 174.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dbeb9007383f1a60b51625762b283b1c81617082",
+          "message": "Browsers: the event log says who drives a browser, and that someone typed, never what (#2293) (#2820)\n\n* Browsers: the event log says who drives a browser, and that someone typed, never what (#2293)\n\nTaking a browser over, handing it back, a login purlis performs and a\nhand-over to a chat each write an event naming the browser and its driver\n(agent, person or purlis). The first key a driver types after each change\nwrites browser.typed, with no key, count, value, address or page text.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a browser's events go to its own project's log alone, and a login the person blocks says nothing (#2293)\n\nAn event whose browser's project is not held is written nowhere. A\nwindow that has not watched a browser asks the host who drives it\nbefore a login, so a login refused because the person drives writes no\ndriver. ADR 0089's amendment names both typed rows, and the origin is\nleft to the ticket for the other browser events (D-2293-7).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T23:24:32+04:00",
+          "tree_id": "334d7152322ed2cdc13c52d50ea595591d898793",
+          "url": "https://github.com/purlis/purlis/commit/dbeb9007383f1a60b51625762b283b1c81617082"
+        },
+        "date": 1792526167098,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 993,
+            "unit": "MB",
+            "extra": "median of 3 samples: 810, 993, 1025 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 332.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 331.4, 310.8, 334.4, 336, 337, 253.3 MB; window 153.4 MB, session host 171.5 MB"
           }
         ]
       }
