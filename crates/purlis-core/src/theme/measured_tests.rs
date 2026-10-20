@@ -180,3 +180,43 @@ fn a_file_written_moments_ago_is_never_taken_for_the_one_measured() {
     assert!(!places.drawn(&measured).refused);
     assert_eq!(measured.hashed(), 4, "each face is hashed again");
 }
+
+#[test]
+fn a_chat_s_draft_shares_the_read_s_hashing_and_hashes_its_own_face_once() {
+    // A draft of the project's `typed`, its face approved where the draft is kept to: the
+    // project's file is the one measured, and the draft's own file is another, hashed once for
+    // every ask of the same read.
+    let places = Places::new();
+    std::fs::create_dir_all(places.plane.join(".purlis")).unwrap();
+    let chat = crate::reopen::mint();
+    let place = drafts::Place {
+        plane: &places.plane,
+        workspace: None,
+    };
+    let path = drafts::start(Some(&places.config), place, &chat, "typed")
+        .unwrap()
+        .path;
+    std::fs::create_dir_all(path.join("fonts")).unwrap();
+    for name in ["ui", "mono"] {
+        std::fs::copy(places.face(name), path.join(format!("fonts/{name}.woff2"))).unwrap();
+    }
+    let measured = Measured::settled_after(Duration::ZERO);
+    let _ = crate::machine::Contribution::of_measured(&places.plane, &measured);
+    assert_eq!(measured.hashed(), 2);
+    let folders = Folders::of_measured(
+        Some(&places.config),
+        Some(&places.plane),
+        None,
+        measured.clone(),
+    );
+    let level = drafts::level(Some(&places.config), place, &folders, &chat).expect("a chat's");
+    for _ in 0..3 {
+        match folders.find_draft(&level, "typed", true) {
+            folders::Found::Read(resolved) => {
+                assert!(!resolved.refused, "{:?}", resolved.complaints)
+            }
+            folders::Found::Missing(said) => panic!("{said:?}"),
+        }
+    }
+    assert_eq!(measured.hashed(), 4, "the draft's two faces, once each");
+}

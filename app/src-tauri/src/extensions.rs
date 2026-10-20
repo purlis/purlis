@@ -3324,7 +3324,10 @@ mod tests {
             reread: false,
         };
         let window = asked().read(None);
-        assert_eq!(window.theme.map(|theme| theme.name).as_deref(), Some("Dusk"));
+        assert_eq!(
+            window.theme.map(|theme| theme.name).as_deref(),
+            Some("Dusk")
+        );
         assert!(window.draft.is_some());
         let link = asked().for_a_link();
         assert_eq!(link.theme.map(|theme| theme.name).as_deref(), Some("one"));
