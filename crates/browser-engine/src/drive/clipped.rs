@@ -395,6 +395,10 @@ impl Read {
                 };
                 if holds && !document.roots.contains(&up) {
                     part = within(part, placed);
+                    // Nothing left is nothing left, whatever holds the box further out.
+                    if empty(&part) {
+                        return Some(part);
+                    }
                 }
                 if holds {
                     out_of_flow = placed.position;

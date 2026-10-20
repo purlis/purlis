@@ -667,3 +667,43 @@ fn a_frame_on_an_offset_path_is_not_said_to_be_cut_off() {
         ..NO_BOXES
     }));
 }
+
+#[test]
+fn an_item_scrolled_out_of_a_list_in_a_fixed_box_is_cut_off() {
+    // A fixed panel holds a list 100 high that scrolls; its third item is below the list's
+    // bottom. The list cuts it off before the panel says nothing more is known (#2840).
+    let doc = Doc {
+        nodes: vec![
+            ("#document", -1, 1),
+            ("HTML", 0, 2),
+            ("BODY", 1, 3),
+            ("DIV", 2, 4),
+            ("UL", 3, 5),
+            ("LI", 4, 6),
+            ("LI", 4, 7),
+        ],
+        laid: vec![
+            (1, [0.0, 0.0, 800.0, 2000.0], SHOWN),
+            (2, [0.0, 0.0, 800.0, 2000.0], SHOWN),
+            (3, [0.0, 0.0, 300.0, 400.0], at(SHOWN, "fixed")),
+            (4, [0.0, 50.0, 300.0, 100.0], SCROLLS),
+            (5, [0.0, 50.0, 300.0, 40.0], SHOWN),
+            (6, [0.0, 170.0, 300.0, 40.0], SHOWN),
+        ],
+        scrolled: (0.0, 0.0),
+        contents: Vec::new(),
+        clients: Vec::new(),
+        boxes: Vec::new(),
+    };
+    assert_eq!(clipped(&answer(&[doc]), &ids(&[6, 7]), None), ids(&[7]));
+}
+
+#[test]
+fn every_way_the_rotate_property_names_a_turn_is_a_turn() {
+    for rotate in ["x 45deg", "1 0 0 45deg", "0.5rad", "0.25turn", "50grad"] {
+        assert!(!cut_through(Boxes { rotate, ..NO_BOXES }), "{rotate}");
+    }
+    for rotate in ["none", "0deg", "x 0deg", "0turn"] {
+        assert!(cut_through(Boxes { rotate, ..NO_BOXES }), "{rotate}");
+    }
+}
