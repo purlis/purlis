@@ -725,7 +725,12 @@ fn the_browser_tools_through_every_hop_in_homes_of_their_own() {
     // A login purlis performs: no value in its answer, nor in any read of the page it left,
     // the page's own "Show password" pressed.
     let logged_in = tools.done("browser_login", json!({ "login": LOGIN }));
-    assert!(logged_in.text.contains("Account"), "{}", logged_in.text);
+    assert!(
+        logged_in.text.contains("account.html")
+            && logged_in.text.contains("the password field is gone"),
+        "the login went through to the page it lands on: {}",
+        logged_in.text
+    );
     let show = ref_on(
         &tools
             .done("browser_find", json!({ "text": "Show password" }))
