@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792520765717,
+  "lastUpdate": 1792524356855,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19530,6 +19530,48 @@ window.BENCHMARK_DATA = {
             "value": 101.919015,
             "unit": "ms",
             "extra": "median of 5 runs: 100.142, 100.504, 101.919, 102.046, 102.549 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dbeb9007383f1a60b51625762b283b1c81617082",
+          "message": "Browsers: the event log says who drives a browser, and that someone typed, never what (#2293) (#2820)\n\n* Browsers: the event log says who drives a browser, and that someone typed, never what (#2293)\n\nTaking a browser over, handing it back, a login purlis performs and a\nhand-over to a chat each write an event naming the browser and its driver\n(agent, person or purlis). The first key a driver types after each change\nwrites browser.typed, with no key, count, value, address or page text.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a browser's events go to its own project's log alone, and a login the person blocks says nothing (#2293)\n\nAn event whose browser's project is not held is written nowhere. A\nwindow that has not watched a browser asks the host who drives it\nbefore a login, so a login refused because the person drives writes no\ndriver. ADR 0089's amendment names both typed rows, and the origin is\nleft to the ticket for the other browser events (D-2293-7).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T23:24:32+04:00",
+          "tree_id": "334d7152322ed2cdc13c52d50ea595591d898793",
+          "url": "https://github.com/purlis/purlis/commit/dbeb9007383f1a60b51625762b283b1c81617082"
+        },
+        "date": 1792524354764,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6792335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.665, 0.679, 0.685, 0.689 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.625162,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.477, 16.572, 16.625, 16.704, 16.874 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3701325,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.401, 102.266, 102.370, 102.709, 104.728 ms"
           }
         ]
       }
