@@ -43,6 +43,9 @@ pub struct Kit {
     pub binary: Option<PathBuf>,
     pub plugin: Option<PathBuf>,
     pub git_hooks: Option<crate::githooks::GitHooks>,
+    /// Where the folders of links a chat is handed the plane's skills by are laid out
+    /// ([`crate::skills::lay_out`]): `<app data>/skill-sets`, where purlis has a data folder.
+    pub skill_sets: Option<PathBuf>,
 }
 
 impl Kit {
@@ -53,6 +56,7 @@ impl Kit {
             binary: self.binary.as_deref(),
             plugin: self.plugin.as_deref(),
             git_hooks: self.git_hooks.as_ref().map(crate::githooks::GitHooks::dir),
+            skill_sets: self.skill_sets.as_deref(),
         }
     }
 
@@ -68,6 +72,7 @@ impl Kit {
             binary,
             plugin,
             git_hooks,
+            skill_sets: skill_sets_here(),
         }
     }
 
@@ -98,6 +103,7 @@ impl Kit {
             binary: Some(binary),
             plugin,
             git_hooks,
+            skill_sets: Some(data.join(crate::names::BUNDLE_ID.write).join(SKILL_SETS)),
         }
     }
 
@@ -110,6 +116,7 @@ impl Kit {
                 binary: binary.ok(),
                 plugin: None,
                 git_hooks: None,
+                skill_sets: None,
             },
         }
     }
@@ -117,6 +124,15 @@ impl Kit {
 
 /// The folder of the app's data folder the window writes purlis's git hooks in at its launch.
 pub const GIT_HOOKS: &str = "git-hooks";
+
+/// The folder of the app's data folder a chat's folder of links to the plane's skills is laid
+/// out in ([`crate::skills::lay_out`]).
+pub const SKILL_SETS: &str = "skill-sets";
+
+/// [`SKILL_SETS`] in this user's app data folder, beside the git hooks the window writes there.
+pub fn skill_sets_here() -> Option<PathBuf> {
+    dirs::data_dir().map(|data| data.join(crate::names::BUNDLE_ID.write).join(SKILL_SETS))
+}
 
 /// The host's [`Beside`], as two calls: what starts a confinement and what writes the log.
 impl<C, R> Beside for (C, R)
@@ -536,10 +552,18 @@ pub fn armed(
             None => Ok((Vec::new(), Vec::new())),
         };
     };
+    // The plane's skills, only while the Skill studio's flag is on (ADR 0099, #2786).
+    let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
+    let skills = crate::skills::studio_on_here().then_some(crate::skills::PlaneSkills {
+        plane: root,
+        workspace: workspace.as_deref(),
+        sets: kit.skill_sets.as_deref(),
+    });
     let armed = crate::harness::Kit {
         binary,
         plugin: kit.plugin.as_deref(),
         persona: persona.map(|persona| crate::harness::As { root, persona }),
+        skills,
     };
     match harness.state_hooks(armed, cwd, plugins, sandbox) {
         StateHooks::ThisSessionOnly { args, env, .. } => Ok((args, env)),

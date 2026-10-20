@@ -136,6 +136,7 @@ impl Composes {
             binary: shipped.binary,
             plugin: shipped.plugin,
             git_hooks: shipped.git_hooks,
+            skill_sets: None,
         })
     }
 }

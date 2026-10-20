@@ -106,7 +106,7 @@ fn the_shim_routes_by_its_own_keys_and_refuses_when_the_guard_cannot_answer() {
 fn a_session_config_names_the_shim_as_a_url_no_character_can_end() {
     let config = session_config(
         Path::new("/Apps/my charter#1/plugin/opencode/charter.ts"),
-        None,
+        &[],
         None,
         false,
     );
@@ -126,7 +126,7 @@ fn a_session_config_hands_the_shim_the_skills_directory_as_its_option() {
     // replaced, so `skills.paths` here would drop every path the operator's own config names.
     let config = session_config(
         Path::new("/Apps/plugin/opencode/charter.ts"),
-        Some(Path::new("/Apps/my charter/plugin/skills")),
+        &[PathBuf::from("/Apps/my charter/plugin/skills")],
         None,
         false,
     );
@@ -237,7 +237,7 @@ fn a_sandboxed_chat_makes_no_snapshot() {
     // config that turn snapshots on, and a turn runs without them.
     let config = session_config(
         Path::new("/Apps/plugin/opencode/charter.ts"),
-        None,
+        &[],
         None,
         true,
     );
@@ -245,7 +245,7 @@ fn a_sandboxed_chat_makes_no_snapshot() {
     assert_eq!(doc["snapshot"], serde_json::Value::Bool(false));
     let unsandboxed = session_config(
         Path::new("/Apps/plugin/opencode/charter.ts"),
-        None,
+        &[],
         None,
         false,
     );

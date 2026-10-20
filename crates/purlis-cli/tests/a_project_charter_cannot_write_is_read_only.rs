@@ -509,6 +509,15 @@ fn statusline_only_reads_a_read_only_project() {
 }
 
 #[test]
+fn skill_list_only_reads_a_read_only_project() {
+    only_reads_with(
+        &["skill", "list"],
+        &[("PURLIS_SKILL_STUDIO", "1")],
+        "No skills here yet",
+    );
+}
+
+#[test]
 fn persona_list_only_reads_a_read_only_project() {
     only_reads(&["persona", "list"], "1 secret");
 }

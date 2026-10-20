@@ -393,6 +393,7 @@ import type {
 } from "./bindings";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
+import { useSkillStudioOn } from "./skillStudio";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
@@ -943,6 +944,8 @@ export const PlaneView = memo(function PlaneView({
    *  again after a write — a vault's own tab (charter-app#235). */
   const vaults = useVaults(plane);
   const vaultNames = useMemo(() => vaults.vaults?.map((one) => one.name), [vaults.vaults]);
+  // Whether the Skill studio's flag is on (#2765): its palette row is offered only then.
+  const studioOn = useSkillStudioOn();
   const reloadVaults = vaults.reload;
   /** Whether the vault picker is up. */
   const [pickingVault, setPickingVault] = useState(false);
@@ -7040,6 +7043,7 @@ export const PlaneView = memo(function PlaneView({
             away,
             sidePanels,
             profiles: profileNames,
+            skillStudio: studioOn,
             readOnly: readOnlySaid,
             places,
           }),
@@ -7096,6 +7100,7 @@ export const PlaneView = memo(function PlaneView({
       harnessCards,
       memoryStores,
       profileNames,
+      studioOn,
     ],
   );
 

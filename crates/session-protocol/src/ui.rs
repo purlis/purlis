@@ -931,6 +931,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_record",
     "set_dismissed",
     "show_window_holding",
+    "skill_studio",
+    "skill_studio_on",
     "smart_close_offer",
     "smart_closing",
     "stale_clones",

@@ -1,0 +1,290 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! A project skill reaches a chat at the plane root on Claude Code, Codex and opencode, each by
+//! its own route, and nothing is written where a harness looks for skills (SK-2, #2765; ADR 0063
+//! as amended 2026-10-20, ADR 0099). Read through what each harness is started with: its
+//! arguments and its environment.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use purlis_core::harness::{Harness, Kit, StateHooks};
+use purlis_core::skills::{LISTED_ENV, PLANE_LISTED_ENV, PlaneSkills};
+
+struct Here {
+    _tmp: tempfile::TempDir,
+    plugin: PathBuf,
+    plane: PathBuf,
+    sets: PathBuf,
+}
+
+fn skill(dir: &Path, name: &str) {
+    fs::create_dir_all(dir.join(name)).unwrap();
+    fs::write(
+        dir.join(name).join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: Does {name}.\n---\n\nbody\n"),
+    )
+    .unwrap();
+}
+
+/// A bundle with one built-in skill and the opencode shim, a plane with one project skill, and
+/// an empty folder for the sets, each apart.
+fn here() -> Here {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let plugin = root.join("plugin");
+    skill(&plugin.join("skills"), "secrets");
+    let shim = purlis_core::opencode::shim_in(&plugin);
+    fs::create_dir_all(shim.parent().unwrap()).unwrap();
+    fs::write(&shim, "// the shim, a stand-in\n").unwrap();
+    let plane = root.join("plane");
+    skill(&plane.join("skills"), "deploy");
+    fs::create_dir_all(plane.join("workspaces/smart-ide")).unwrap();
+    Here {
+        _tmp: tmp,
+        plugin,
+        plane,
+        sets: root.join("data/skill-sets"),
+    }
+}
+
+fn kit<'a>(here: &'a Here, skills: Option<PlaneSkills<'a>>) -> Kit<'a> {
+    Kit {
+        binary: Path::new("/bin/purlis"),
+        plugin: Some(&here.plugin),
+        persona: None,
+        skills,
+    }
+}
+
+fn at_the_root(here: &Here) -> Option<PlaneSkills<'_>> {
+    Some(PlaneSkills {
+        plane: &here.plane,
+        workspace: None,
+        sets: Some(&here.sets),
+    })
+}
+
+fn armed(harness: Harness, kit: Kit<'_>, cwd: &Path) -> (Vec<String>, Vec<(String, String)>) {
+    match harness.state_hooks(
+        kit,
+        Some(cwd),
+        &purlis_core::harness_plugin::Chosen::new(),
+        None,
+    ) {
+        StateHooks::ThisSessionOnly { args, env, .. } => (args, env),
+        StateHooks::None => panic!("{harness:?} is armed"),
+    }
+}
+
+fn plugin_dirs(args: &[String]) -> Vec<PathBuf> {
+    args.windows(2)
+        .filter(|pair| pair[0] == "--plugin-dir")
+        .map(|pair| PathBuf::from(&pair[1]))
+        .collect()
+}
+
+fn var<'e>(env: &'e [(String, String)], name: &str) -> Option<&'e str> {
+    env.iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.as_str())
+}
+
+/// Every path under `dir`, so a test can tell nothing was written there.
+fn tree(dir: &Path) -> Vec<PathBuf> {
+    let mut all = Vec::new();
+    let mut todo = vec![dir.to_path_buf()];
+    while let Some(next) = todo.pop() {
+        for entry in fs::read_dir(&next).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                todo.push(path.clone());
+            }
+            all.push(path);
+        }
+    }
+    all.sort();
+    all
+}
+
+#[test]
+fn a_claude_code_chat_at_the_plane_root_loads_the_project_skill_as_a_plugin_of_links() {
+    let here = here();
+    let (args, _) = armed(
+        Harness::ClaudeCode,
+        kit(&here, at_the_root(&here)),
+        &here.plane,
+    );
+
+    let dirs = plugin_dirs(&args);
+    assert_eq!(dirs.len(), 2, "{args:?}");
+    assert_eq!(dirs[0], here.plugin, "the bundle first, as before");
+    let linked = &dirs[1];
+    assert!(linked.starts_with(&here.sets), "{}", linked.display());
+    let manifest: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(linked.join(".claude-plugin/plugin.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest["name"], "skills");
+    assert_eq!(
+        fs::read_link(linked.join("skills/deploy")).unwrap(),
+        here.plane.join("skills/deploy"),
+        "a link to the plane's own folder, never a copy"
+    );
+    assert_eq!(
+        fs::read_dir(linked.join("skills")).unwrap().count(),
+        1,
+        "the project's skills only: the built-in ones ride the bundle"
+    );
+}
+
+#[test]
+fn an_opencode_chat_at_the_plane_root_is_handed_the_built_in_and_the_project_skills_folders() {
+    let here = here();
+    let (_, env) = armed(
+        Harness::Opencode,
+        kit(&here, at_the_root(&here)),
+        &here.plane,
+    );
+
+    let config: serde_json::Value =
+        serde_json::from_str(var(&env, purlis_core::opencode::CONFIG_ENV).unwrap()).unwrap();
+    let skills = config["plugin"][0][1]["skills"]
+        .as_array()
+        .expect("a list of directories");
+    let skills: Vec<PathBuf> = skills
+        .iter()
+        .map(|dir| PathBuf::from(dir.as_str().unwrap()))
+        .collect();
+    assert_eq!(skills.len(), 2, "{skills:?}");
+    assert_eq!(skills[0], here.plugin.join("skills"));
+    assert!(skills[1].starts_with(&here.sets), "{}", skills[1].display());
+    assert_eq!(
+        fs::read_link(skills[1].join("deploy")).unwrap(),
+        here.plane.join("skills/deploy")
+    );
+}
+
+#[test]
+fn a_codex_chat_at_the_plane_root_is_briefed_on_the_project_skill_from_its_folder_in_the_plane() {
+    let here = here();
+    let (_, env) = armed(Harness::Codex, kit(&here, at_the_root(&here)), &here.plane);
+
+    let built_in = here.plugin.join("skills").display().to_string();
+    assert_eq!(var(&env, LISTED_ENV), Some(built_in.as_str()));
+    assert_eq!(var(&env, PLANE_LISTED_ENV), Some("1"));
+
+    let lookup = |name: &str| var(&env, name).map(str::to_owned);
+    let text = purlis_core::skills::briefed(&here.plane, None, &lookup).expect("listed");
+    assert!(text.contains("`deploy`"), "{text}");
+    assert!(
+        text.contains(
+            &here
+                .plane
+                .join("skills/deploy/SKILL.md")
+                .display()
+                .to_string()
+        ),
+        "{text}"
+    );
+    assert!(text.contains("`secrets`"), "{text}");
+}
+
+#[test]
+fn with_the_flag_off_every_harness_is_armed_as_before_with_the_built_in_skills_alone() {
+    let here = here();
+    let (claude, _) = armed(Harness::ClaudeCode, kit(&here, None), &here.plane);
+    assert_eq!(plugin_dirs(&claude), [here.plugin.clone()]);
+
+    let (_, opencode) = armed(Harness::Opencode, kit(&here, None), &here.plane);
+    let config: serde_json::Value =
+        serde_json::from_str(var(&opencode, purlis_core::opencode::CONFIG_ENV).unwrap()).unwrap();
+    assert_eq!(
+        config["plugin"][0][1]["skills"],
+        here.plugin.join("skills").display().to_string()
+    );
+
+    let (_, codex) = armed(Harness::Codex, kit(&here, None), &here.plane);
+    assert_eq!(var(&codex, PLANE_LISTED_ENV), None);
+    let lookup = |name: &str| var(&codex, name).map(str::to_owned);
+    let text = purlis_core::skills::briefed(&here.plane, None, &lookup).expect("listed");
+    assert!(!text.contains("`deploy`"), "{text}");
+
+    assert!(!here.sets.exists(), "nothing laid out");
+}
+
+#[test]
+fn a_chat_in_a_workspace_the_skill_was_not_granted_to_gets_the_built_in_skills_alone() {
+    let here = here();
+    let in_a_workspace = Some(PlaneSkills {
+        plane: &here.plane,
+        workspace: Some("smart-ide"),
+        sets: Some(&here.sets),
+    });
+    let cwd = here.plane.join("workspaces/smart-ide");
+
+    let (claude, _) = armed(Harness::ClaudeCode, kit(&here, in_a_workspace), &cwd);
+    assert_eq!(plugin_dirs(&claude), [here.plugin.clone()]);
+    let (_, codex) = armed(Harness::Codex, kit(&here, in_a_workspace), &cwd);
+    assert_eq!(var(&codex, PLANE_LISTED_ENV), None);
+    assert!(!here.sets.exists(), "nothing laid out");
+}
+
+#[test]
+fn arming_every_harness_writes_nothing_in_the_plane_and_two_chats_share_one_folder() {
+    let here = here();
+    let before = tree(&here.plane);
+
+    let (first, _) = armed(
+        Harness::ClaudeCode,
+        kit(&here, at_the_root(&here)),
+        &here.plane,
+    );
+    armed(
+        Harness::Opencode,
+        kit(&here, at_the_root(&here)),
+        &here.plane,
+    );
+    armed(Harness::Codex, kit(&here, at_the_root(&here)), &here.plane);
+    let (second, _) = armed(
+        Harness::ClaudeCode,
+        kit(&here, at_the_root(&here)),
+        &here.plane,
+    );
+
+    assert_eq!(
+        tree(&here.plane),
+        before,
+        "no harness skills folder (`.claude/skills`, `.agents/skills`, `.codex/skills`, \
+         `.opencode/`) or anything else is written in the plane"
+    );
+    assert_eq!(plugin_dirs(&first), plugin_dirs(&second));
+    assert_eq!(
+        fs::read_dir(&here.sets).unwrap().count(),
+        1,
+        "one set, one folder"
+    );
+}
+
+#[test]
+fn a_new_project_skill_is_laid_out_in_a_folder_of_its_own_and_the_old_one_is_left_alone() {
+    let here = here();
+    let (first, _) = armed(
+        Harness::ClaudeCode,
+        kit(&here, at_the_root(&here)),
+        &here.plane,
+    );
+    skill(&here.plane.join("skills"), "review");
+
+    let (second, _) = armed(
+        Harness::ClaudeCode,
+        kit(&here, at_the_root(&here)),
+        &here.plane,
+    );
+
+    let (old, new) = (&plugin_dirs(&first)[1], &plugin_dirs(&second)[1]);
+    assert_ne!(old, new);
+    assert_eq!(fs::read_dir(old.join("skills")).unwrap().count(), 1);
+    assert_eq!(fs::read_dir(new.join("skills")).unwrap().count(), 2);
+}

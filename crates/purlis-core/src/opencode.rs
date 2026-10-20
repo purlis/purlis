@@ -294,8 +294,8 @@ pub fn binary_in(text: &str) -> Option<PathBuf> {
 /// The config an app chat is started with in [`CONFIG_ENV`]: the shim at `shim`, and nothing
 /// else. A `file://` URL, percent-encoded, so no character of a path can end it early.
 ///
-/// With `skills`, the shim is named in opencode's `[spec, options]` form and handed that
-/// directory as its option, which it adds to the skills opencode discovers (ADR 0063). Not a
+/// With `skills`, the shim is named in opencode's `[spec, options]` form and handed those
+/// directories as its option (one as a string, as before; more as a list), which it adds to the skills opencode discovers (ADR 0063). Not a
 /// `skills` key beside `plugin`: opencode merges its configs with arrays replaced, so one here
 /// would drop every skills path the operator's own config names (measured on 1.18.32).
 ///
@@ -307,7 +307,7 @@ pub fn binary_in(text: &str) -> Option<PathBuf> {
 /// a global and a project config that turn snapshots on (measured on 1.18.33).
 pub fn session_config(
     shim: &Path,
-    skills: Option<&Path>,
+    skills: &[PathBuf],
     binary: Option<&Path>,
     sandboxed: bool,
 ) -> String {
@@ -320,8 +320,11 @@ pub fn session_config(
         }
     }
     let spec = match skills {
-        Some(dir) => serde_json::json!([url, { SKILLS_OPTION: dir.display().to_string() }]),
-        None => serde_json::Value::from(url),
+        [] => serde_json::Value::from(url),
+        [dir] => serde_json::json!([url, { SKILLS_OPTION: dir.display().to_string() }]),
+        dirs => serde_json::json!([url, {
+            SKILLS_OPTION: dirs.iter().map(|dir| dir.display().to_string()).collect::<Vec<_>>()
+        }]),
     };
     let mut config = serde_json::json!({ "plugin": [spec] });
     if let Some(binary) = binary {
