@@ -251,8 +251,8 @@ in its `LICENSE`.
 
 | asset             | what the frame uses                     | used for       | status                          |
 | ----------------- | --------------------------------------- | -------------- | ------------------------------- |
-| IBM Plex Sans     | Regular 400, Medium 500, SemiBold 600   | the interface  | bundled, OFL (#2336)            |
-| JetBrains Mono    | Regular 400                             | code and paths | bundled, OFL (#2336)            |
+| IBM Plex Sans     | Regular 400, Medium 500, SemiBold 600   | the interface  | bundled, OFL (#2336), with each weight's italic (#2709) |
+| JetBrains Mono    | Regular 400                             | code and paths | bundled, OFL (#2336), with its Italic and Bold (#2709) |
 | Untitled UI Icons | eleven icons, by name                   | the rails      | not bundled: Lucide (ISC) draws the rails instead (#2337) |
 
 ## The frame and the tables agree

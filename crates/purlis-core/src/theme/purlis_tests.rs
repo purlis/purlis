@@ -101,8 +101,30 @@ fn dark_draws_the_foundation_s_colours_fonts_and_icons() {
         assert_eq!(dark.value(token), value, "{token}");
     }
     assert_eq!(dark.fonts.ui.family.as_deref(), Some("IBM Plex Sans"));
-    let weights: Vec<u16> = dark.fonts.ui.faces.iter().map(|one| one.weight).collect();
-    assert_eq!(weights, [400, 500, 600]);
+    let faces = |font: &Font| -> Vec<(u16, Style)> {
+        font.faces
+            .iter()
+            .map(|one| (one.weight, one.style))
+            .collect()
+    };
+    assert_eq!(
+        faces(&dark.fonts.ui),
+        [
+            (400, Style::Normal),
+            (400, Style::Italic),
+            (500, Style::Normal),
+            (500, Style::Italic),
+            (600, Style::Normal),
+            (600, Style::Italic),
+        ]
+    );
+    let mono = [
+        (400, Style::Normal),
+        (400, Style::Italic),
+        (700, Style::Normal),
+    ];
+    assert_eq!(faces(&dark.fonts.mono), mono);
+    assert_eq!(faces(&dark.fonts.terminal), mono);
     assert_eq!(dark.fonts.mono.family.as_deref(), Some("JetBrains Mono"));
     assert_eq!(
         dark.fonts.terminal.family.as_deref(),
@@ -135,11 +157,69 @@ fn every_combination_clears_the_check_and_holds_no_consent_floor() {
 fn its_faces_are_served_by_their_digest_from_the_files_compiled_in() {
     let dark = purlis().first();
     let files = purlis_files();
-    for face in dark.fonts.ui.faces.iter().chain(&dark.fonts.mono.faces) {
+    let every = dark
+        .fonts
+        .ui
+        .faces
+        .iter()
+        .chain(&dark.fonts.mono.faces)
+        .chain(&dark.fonts.terminal.faces);
+    for face in every {
         let bytes = served(&face.asset).unwrap();
         assert!(bytes.starts_with(b"wOF2"));
         assert!(files.values().any(|one| *one == bytes));
     }
+}
+
+fn style(slot: &'static str, weight: u16, style: Style) -> StyleDrawn {
+    StyleDrawn {
+        slot,
+        weight,
+        style,
+    }
+}
+
+#[test]
+fn each_style_it_draws_has_a_real_face_in_every_appearance() {
+    // Comments, emphasis, headings and terminal bold are drawn in faces of their own (#2709),
+    // never ones the browser fakes from the upright regular.
+    for one in &purlis().appearances {
+        let drawn = styles_drawn(one);
+        for wanted in [
+            style("mono", 400, Style::Italic),
+            style("mono", BOLD, Style::Normal),
+            style("terminal", BOLD, Style::Normal),
+            style("terminal", 400, Style::Italic),
+            style("ui", 400, Style::Italic),
+            style("ui", 600, Style::Normal),
+            style("ui", 600, Style::Italic),
+        ] {
+            assert!(
+                drawn.contains(&wanted),
+                "{}: {wanted:?} in {drawn:?}",
+                one.id
+            );
+        }
+        assert_eq!(without_a_face(one), [], "{}", one.id);
+    }
+}
+
+#[test]
+fn a_style_drawn_with_no_face_of_its_own_is_named() {
+    let mut thin = purlis().first().clone();
+    thin.fonts
+        .mono
+        .faces
+        .retain(|one| one.weight == 400 && one.style == Style::Normal);
+    assert_eq!(
+        without_a_face(&thin),
+        [
+            style("mono", 400, Style::Italic),
+            style("mono", BOLD, Style::Normal)
+        ]
+    );
+    // A font with no face is the platform's own, whose styles are its own: Purlis Classic's.
+    assert_eq!(without_a_face(default_theme()), []);
 }
 
 #[test]
