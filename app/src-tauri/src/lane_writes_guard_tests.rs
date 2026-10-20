@@ -632,25 +632,33 @@ fn the_crates_sources() -> Vec<(String, String)> {
                 walk(&path, root, out);
                 continue;
             }
-            let name = path.to_string_lossy().into_owned();
-            if !name.ends_with(".rs")
-                || name.ends_with("_tests.rs")
-                || name.ends_with("/tests.rs")
-                || name.contains("/tests/")
-            {
-                continue;
-            }
             let file = path
                 .strip_prefix(root)
                 .expect("under the sources")
                 .to_string_lossy()
                 .into_owned();
+            // Read under `src` alone: a checkout whose own path has a `tests` folder in it is
+            // still read.
+            let in_tests = file.split('/').any(|part| part == "tests");
+            if !file.ends_with(".rs")
+                || file.ends_with("_tests.rs")
+                || file == "tests.rs"
+                || file.ends_with("/tests.rs")
+                || in_tests
+            {
+                continue;
+            }
             out.push((file, std::fs::read_to_string(&path).expect("a source file")));
         }
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut out = Vec::new();
     walk(&root, &root, &mut out);
+    assert!(
+        !out.is_empty(),
+        "no source of the crate's was read under {}",
+        root.display()
+    );
     out.sort();
     out
 }
