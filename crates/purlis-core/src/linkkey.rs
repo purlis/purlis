@@ -5,10 +5,10 @@
 //! its runners with, minted with its first runner and kept in the Keyring tier, one item,
 //! `purlis/@link-key/<device>` ([`SERVICE`]), its private half as 64 lower-case hex.
 //!
-//! - **Made once, under a lock** ([`desktop`]): the first ask on a device that keeps none makes
-//!   the key from the operating system's generator and keeps it, under `link-key.lock` beside
+//! - **Made once, under a lock, and only as a pool is added** ([`desktop`]): the first add on a
+//!   device that keeps none makes the key from the operating system's generator and keeps it, under `link-key.lock` beside
 //!   the machine store, so a window and its session host asking at once make one key between
-//!   them.
+//!   them. A link reads it and never makes one ([`kept`]).
 //! - **What every runner pins**: a pairing hands a runner this key's public half with the
 //!   device's id ([`Desktop::pinned`]), and the desktop's host presents the key on every link.
 //!   Losing it unpairs every runner, which is made and paired again (ADR 0066, amended).
@@ -80,6 +80,21 @@ pub fn desktop(config_root: &Path, store: &dyn keyring::Store) -> Result<Desktop
                 })?
         }
     };
+    Ok(Desktop(Identity { device, key }))
+}
+
+/// **This desktop's device id and link key, as they are kept**, for a link to a runner it
+/// paired: read and never made, so a key the keyring does not give is said, and no new key is
+/// made in its place, which no runner pinned. Only adding a pool makes one ([`desktop`]).
+pub fn kept(config_root: &Path, store: &dyn keyring::Store) -> Result<Desktop, String> {
+    let device = crate::machine::known_device_id(config_root).ok_or_else(|| {
+        "this machine has no device id, so it has paired no runner to link to".to_owned()
+    })?;
+    let key = read(store, &format!("{SERVICE}/{device}"))?.ok_or_else(|| {
+        "this machine's link key is not in your keychain, so purlis links to no runner it \
+         paired; remove the pool and add it again"
+            .to_owned()
+    })?;
     Ok(Desktop(Identity { device, key }))
 }
 

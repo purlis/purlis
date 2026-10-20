@@ -521,11 +521,58 @@ fn a_workspace_reaches_only_a_runner_whose_pool_and_runner_are_both_kept() {
     // Both kept: its runner.
     forget(config.path(), "first").unwrap();
     forget_pool(config.path(), "builds").unwrap();
-    // The runner is gone, so its name is free for a pool, which reaches it once it is kept.
+    // The runner is gone, so its name is free for a pool, which reaches it once it is kept as
+    // the pool's runner.
     record_pool(config.path(), &pool("first", Set::default())).unwrap();
-    keep(config.path(), &made(), &kept.pinned, &OURS).unwrap();
+    let locked = lock(config.path());
+    keep_for_its_pool(config.path(), &made(), &kept.pinned, &OURS, &locked).unwrap();
+    drop(locked);
     assert_eq!(
         runner_for(config.path(), "first").unwrap().pinned,
         kept.pinned
+    );
+}
+
+#[test]
+fn a_runner_is_not_kept_under_a_pools_name_but_as_the_pools_own() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("first", Set::default())).unwrap();
+    let refused = keep(
+        config.path(),
+        &made(),
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+    )
+    .unwrap_err();
+    assert!(
+        refused.to_string().contains("named as pool first"),
+        "{refused}"
+    );
+    assert!(read(config.path()).unwrap().is_empty());
+}
+
+#[test]
+fn a_pools_runner_of_another_image_is_not_its_runner() {
+    let config = tempfile::tempdir().unwrap();
+    let other = Image::pinned(&format!("ghcr.io/team/runner@sha256:{}", "1".repeat(64))).unwrap();
+    record_pool(
+        config.path(),
+        &Pool::new("first", other, Set::default()).unwrap(),
+    )
+    .unwrap();
+    let locked = lock(config.path());
+    keep_for_its_pool(
+        config.path(),
+        &made(),
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+        &locked,
+    )
+    .unwrap();
+    drop(locked);
+    let refused = runner_for(config.path(), "first").unwrap_err();
+    assert!(
+        refused.to_string().contains("no runner of its image"),
+        "{refused}"
     );
 }

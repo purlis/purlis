@@ -822,9 +822,10 @@ impl Docker {
 
     /// Make and start `runner`'s container on a home volume made for it, and check it is
     /// confined as it was made. A daemon that does not give containers its built-in seccomp
-    /// profile makes none, and neither does a volume of the home's name that is already there.
-    /// A container that fails the check, or whose id cannot be read, is removed with its
-    /// volume, and a removal that fails is said with the refusal.
+    /// profile makes none, and neither does a volume of the home's name, or a container of the
+    /// runner's, that is already there. A run that fails, a container that fails the check, or
+    /// one whose id cannot be read, is removed with its volume, and a removal that fails is said
+    /// with the refusal.
     pub fn make(&self, runner: &Runner) -> Result<Made, Refused> {
         self.check_daemon()?;
         let volume = runner.volume();
@@ -845,7 +846,34 @@ impl Docker {
                  for it alone; remove that volume, or name the runner otherwise"
             )));
         }
-        let out = self.run(&runner.create_args(), None, MOST_INSPECTED)?;
+        // Nor where a container of its name is: one a run that failed can leave is then
+        // this runner's alone, and removed with its volume.
+        let container = runner.container();
+        let named = self.run(
+            &[
+                "container".into(),
+                "ls".into(),
+                "--all".into(),
+                "--format".into(),
+                "{{.Names}}".into(),
+                "--filter".into(),
+                format!("name={container}"),
+            ],
+            None,
+            MOST_INSPECTED,
+        )?;
+        if named.lines().any(|line| line.trim() == container) {
+            return Err(refused(format!(
+                "a container named {container} is already there; remove it, or name the runner \
+                 otherwise"
+            )));
+        }
+        // Docker makes the container and its volume before it starts it, so a run that fails
+        // can leave both: they are removed with the refusal.
+        let out = match self.run(&runner.create_args(), None, MOST_INSPECTED) {
+            Ok(out) => out,
+            Err(why) => return Err(self.and_removed(why, &container, &volume)),
+        };
         let made = match ContainerId::new(out.trim()) {
             Ok(container) => Made {
                 container,

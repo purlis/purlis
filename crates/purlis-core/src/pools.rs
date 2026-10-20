@@ -36,7 +36,9 @@ pub fn add(
     pool: &Pool,
     desktop: &Pinned,
 ) -> Result<Kept, Refused> {
-    runners::record_pool(config_root, pool)?;
+    // Held across the whole add, so a removal of this pool, or another add of it, waits.
+    let locked = runners::lock(config_root);
+    runners::record_pool_locked(config_root, pool, &locked)?;
     let made = docker
         .declared(pool.image())
         .and_then(|(user, home)| Runner::new(pool.name(), pool.image().clone(), user, &home))
@@ -44,12 +46,14 @@ pub fn add(
         .and_then(|runner| docker.make(&runner));
     let made = match made {
         Ok(made) => made,
-        Err(why) => return Err(forgotten(config_root, pool, Refused::Other(why.0))),
+        Err(why) => return Err(forgotten(config_root, pool, Refused::Other(why.0), &locked)),
     };
     let kept = docker
         .pair(&made, desktop)
         .map_err(|why| Refused::Other(why.0))
-        .and_then(|answered| runners::keep(config_root, &made, &answered, desktop));
+        .and_then(|answered| {
+            runners::keep_for_its_pool(config_root, &made, &answered, desktop, &locked)
+        });
     match kept {
         Ok(kept) => Ok(kept),
         Err(why) => {
@@ -62,14 +66,14 @@ pub fn add(
                     made.runner.volume()
                 )),
             };
-            Err(forgotten(config_root, pool, why))
+            Err(forgotten(config_root, pool, why, &locked))
         }
     }
 }
 
 /// `why`, once `pool`'s record is forgotten; a record that could not be is said with it.
-fn forgotten(config_root: &Path, pool: &Pool, why: Refused) -> Refused {
-    match runners::forget_pool(config_root, pool.name()) {
+fn forgotten(config_root: &Path, pool: &Pool, why: Refused, locked: &runners::Locked) -> Refused {
+    match runners::forget_pool_locked(config_root, pool.name(), locked) {
         Ok(()) => why,
         Err(left) => Refused::Other(format!(
             "{why}; and the pool could not be forgotten ({left})"
@@ -87,6 +91,7 @@ pub fn remove(
     name: &str,
     unpair: Option<&Unpair<'_>>,
 ) -> Result<Option<Removed>, Refused> {
+    let locked = runners::lock(config_root);
     if !runners::pools(config_root)?
         .iter()
         .any(|pool| pool.name() == name)
@@ -96,11 +101,17 @@ pub fn remove(
         )));
     }
     let removed = match runners::named(config_root, name)? {
-        Some(_) => Some(runners::remove(config_root, docker, name, unpair)?),
+        Some(_) => Some(runners::remove_locked(
+            config_root,
+            docker,
+            name,
+            unpair,
+            &locked,
+        )?),
         None => None,
     };
     if removed.as_ref().is_none_or(|removed| removed.forgotten) {
-        runners::forget_pool(config_root, name)?;
+        runners::forget_pool_locked(config_root, name, &locked)?;
     }
     Ok(removed)
 }

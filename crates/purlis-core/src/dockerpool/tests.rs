@@ -609,7 +609,7 @@ fn pairing_runs_the_bridge_to_pair_as_the_runners_user_and_group_in_the_containe
 /// of its folder: `run` with `id`, `container inspect` with `inspect`, `volume inspect` with
 /// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and
 /// `exec` with `paired`, after keeping its standard input, and `container ls` with
-/// `containers`. `container rm` and `volume rm` exit with what `rm-fails-container` or
+/// `containers`. `run` fails where `run-fails` is there. `container rm` and `volume rm` exit with what `rm-fails-container` or
 /// `rm-fails-volume` holds, else what `rm-fails` holds, 0 when there is none.
 pub(crate) struct FakeDocker {
     dir: tempfile::TempDir,
@@ -621,7 +621,7 @@ impl FakeDocker {
         let at = |name: &str| dir.path().join(name).display().to_string();
         let script = format!(
             "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  \
-             'run '*) cat '{id}' ;;\n  \
+             'run '*) [ -f '{run_fails}' ] && {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') cat '{inspect}' ;;\n  \
              'volume inspect') cat '{volume}' ;;\n  \
              'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \
@@ -640,6 +640,7 @@ impl FakeDocker {
             input = at("input"),
             paired = at("paired"),
             rm_fails = at("rm-fails"),
+            run_fails = at("run-fails"),
             containers = at("containers"),
         );
         stand_in::program(dir.path(), "docker", &script);
@@ -949,4 +950,35 @@ fn a_part_that_could_not_be_removed_is_said_with_the_command_that_removes_it() {
         Ok(()),
         "the volume is tried whatever the container did"
     );
+}
+
+#[test]
+fn a_run_that_fails_after_docker_made_the_container_removes_it_and_its_volume() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("run-fails", "");
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("the runtime refused it"), "{refused}");
+    let log = fake.file("log");
+    assert!(
+        log.contains("container rm --force --volumes purlis-runner-first"),
+        "{log}"
+    );
+    assert!(
+        log.contains("volume rm --force purlis-runner-first-home"),
+        "{log}"
+    );
+}
+
+#[test]
+fn a_runner_is_not_made_where_a_container_of_its_name_is_already_there() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "containers",
+        "purlis-runner-first-old\npurlis-runner-first\n",
+    );
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("already there"), "{refused}");
+    let log = fake.file("log");
+    assert!(!log.contains("run "), "{log}");
+    assert!(!log.contains(" rm "), "{log}");
 }

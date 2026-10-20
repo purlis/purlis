@@ -60,3 +60,18 @@ fn an_item_that_is_not_one_key_is_refused_and_never_replaced() {
         );
     }
 }
+
+#[test]
+fn a_link_reads_the_desktops_key_and_never_makes_one() {
+    let (config, keys) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let store = a_keyring(keys.path());
+    // No device id yet, then a device id with no key: refused in words, and nothing made.
+    assert!(kept(config.path(), &store).is_err());
+    crate::machine::device_id(config.path()).unwrap();
+    let refused = kept(config.path(), &store).err().unwrap();
+    assert!(refused.contains("not in your keychain"), "{refused}");
+    assert!(kept(config.path(), &store).is_err(), "a read made a key");
+    // Once a pool's add made one, a link reads that one.
+    let made = desktop(config.path(), &store).unwrap();
+    assert_eq!(kept(config.path(), &store).unwrap().pinned(), made.pinned());
+}

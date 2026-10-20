@@ -21,9 +21,11 @@ person's rulings, quoted. Items 3 to 6 are *decided in implementation, to be con
    a chat only where that pool and its runner are both kept in `runners.json`
    (`purlis_core::runners::runner_for`); any other name starts no chat and says which pool is
    missing, as §2 says of a runner. *Decided in implementation, to be confirmed (D-2679-1).*
-4. **A pool has one runner, kept under the pool's name**, made, checked and paired as the pool
-   is added, with its limits (`purlis_core::pools::add`). A failure takes back what the add
-   made, the pool's record included. Removing a pool removes its runner whole first (the
+4. **A pool has one runner, kept under the pool's name and of its image**, made, checked and
+   paired as the pool is added, with its limits, under the lock of `runners.json`, so another add
+   or a removal of it waits (`purlis_core::pools::add`). A failure takes back what the add made,
+   the pool's record included; a run that fails after Docker made the container removes it and
+   its volume. No other runner is kept under a pool's name. Removing a pool removes its runner whole first (the
    amendment of 2026-10-18 on removing a runner), then the pool. A pool that makes runners on
    demand is a cluster's (spec #2041). *Decided in implementation, to be confirmed (D-2679-2).*
 5. **The limits are written as the person sets them**: `cpus` a number of CPUs to the
@@ -32,6 +34,7 @@ person's rulings, quoted. Items 3 to 6 are *decided in implementation, to be con
    implementation, to be confirmed (D-2679-3).*
 6. **This desktop's link key is in the keyring as `purlis/@link-key/<device>`** (account
    `key`, §3 and §8's Keyring tier, named as the browser-logins key is), its private half as 64
-   lower-case hex. It is made once, on first use, under `link-key.lock` beside the machine store,
-   and read back before a runner pins its public half (`purlis_core::linkkey`). *Decided in
+   lower-case hex. It is made once, as a pool is added, under `link-key.lock` beside the machine
+   store, and read back before a runner pins its public half; a link reads it and never makes
+   one, so a key the keyring does not give is said rather than replaced (`purlis_core::linkkey`). *Decided in
    implementation, to be confirmed (D-2679-4).*
