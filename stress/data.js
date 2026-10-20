@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792523293094,
+  "lastUpdate": 1792523310330,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8512,6 +8512,42 @@ window.BENCHMARK_DATA = {
             "value": 654.3,
             "unit": "MB",
             "extra": "median of 6 samples: 613.3, 644, 654.4, 654.2, 654.5, 750.4 MB; window 387.6 MB, session host 266.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3a0a6ecab21e918778675a678cd68b2ba6c4b5c3",
+          "message": "Browsers: out-of-view marks in a cross-site frame, and a box around it (#2831)\n\n* Browsers: a box around a frame from another site marks what it hides (#2689)\n\nA frame from another site runs in a session of its own, so neither layout\nread alone holds both its elements and the boxes around its element. Its\nelements are now compared with what its own layout viewport shows, cut to the\npart of its element that the boxes on the page around it let show: read from\nthe layout of the session holding the element (`DOM.getFrameOwner`), at the\nelement's client size, inset by its border. Each session's layout is read at\nmost once per look.\n\nReal-Chrome tests open a page with two frames from another site: one scrolls\nan element out of itself, and a box on the page cuts the other's lower part\noff.\n\nCloses #2689\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a page holding a frame from another site settles (#2689)\n\nThe engine asks for the document of a frame from another site in the\nsession of the page around it, and answers it in the frame's own session,\nunder the same id. The settle tracker kept it open in the page's session,\nso such a page never settled: it waited out its settling time and said the\nframe was still loading. A document request now ends on its end in any\nsession of the page; other requests, numbered per process, still end only\nin their own.\n\nRefs #2689\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T22:21:44+04:00",
+          "tree_id": "fbc09b0c3413b0cee061748d3dcbb86bc256cbcc",
+          "url": "https://github.com/purlis/purlis/commit/3a0a6ecab21e918778675a678cd68b2ba6c4b5c3"
+        },
+        "date": 1792523308888,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1570.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1372.6, 1570.7, 1588.8 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 669.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 632, 659.9, 667.9, 671.9, 672.2, 765.5 MB; window 403.5 MB, session host 266.3 MB"
           }
         ]
       }
