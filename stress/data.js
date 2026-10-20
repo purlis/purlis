@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792483862229,
+  "lastUpdate": 1792483879788,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7436,6 +7436,42 @@ window.BENCHMARK_DATA = {
             "value": 660.4,
             "unit": "MB",
             "extra": "median of 6 samples: 616.6, 648.6, 657.6, 663.3, 663.8, 767.8 MB; window 399.2 MB, session host 261.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "990a9b02b9407ec8176d9ab785cfb5874213f1e7",
+          "message": "Keeping a runner refuses this desktop's own link key (#2683) (#2727)\n\n* Keeping a runner refuses this desktop's own link key (#2683)\n\nrunners::keep takes the desktop as its pairing presented it, its device id\nand the public half of the key it links with, and refuses a runner whose\nanswered key is that key, as it refuses one with the desktop's device id.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Review: a public link key is read in its one spelling\n\nA device id and key line is refused where the key sets the last bit,\nwhich X25519 ignores, so one key never arrives in two spellings.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T11:26:41+04:00",
+          "tree_id": "cf6c87833d5f8e6c308dbfd8ec75a410aa029a6a",
+          "url": "https://github.com/purlis/purlis/commit/990a9b02b9407ec8176d9ab785cfb5874213f1e7"
+        },
+        "date": 1792483878031,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1450.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1351.2, 1450.1, 1661.7 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 675.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 628, 661.2, 670.2, 680.8, 681.6, 784.8 MB; window 402.2 MB, session host 273.3 MB"
           }
         ]
       }
