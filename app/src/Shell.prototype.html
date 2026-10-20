@@ -1,0 +1,653 @@
+<title>Project Switcher Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* PROTOTYPE (M66 wayfinder). Throwaway: three ways to switch project and workspace without two full-width
+   strips, in a mock purlis window drawn in the Purlis (Figma) palette. Layout concept: the window fills the
+   page; only the chrome around the work changes per variant; a switcher bar at the bottom. */
+:root {
+  --behind: #121215; --window: #17171b; --panel: #1d1d22; --card: #24242a; --hover: #2a2a31; --line: #2f2f37;
+  --text: #e6e4ec; --text-2: #c9c7d2; --muted: #a09eab; --quiet: #8a8896; --faint: #6f6d7a;
+  --accent: #a99cf0; --accent-text: #c3baf5; --wash: rgba(169,156,240,.12); --amber: #e5c08a; --amber-wash: rgba(229,192,138,.12);
+  --switch-bg: #e6e4ec; --switch-fg: #17171b;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+/* This mock commits to the Figma design's one dark appearance (the Figma file draws no light one). */
+html, body { height: 100%; }
+body { margin: 0; background: var(--behind); color: var(--text); font: 13px/1.45 var(--font-ui);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px 72px; box-sizing: border-box; }
+* { box-sizing: border-box; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.win { height: 100%; min-height: 540px; background: var(--window); border-radius: 12px; display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; position: relative; }
+.win.rail { grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
+.win.rail > .titlebar { grid-column: 1 / -1; }
+.titlebar { height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 78px; color: var(--muted); }
+.lights { position: absolute; left: 14px; top: 14px; display: flex; gap: 7px; } .lights i { width: 11px; height: 11px; border-radius: 50%; background: #3a3a42; }
+.titlebar .grow { flex: 1; }
+.pill { height: 24px; padding: 0 10px; border-radius: 999px; border: 0; background: transparent; color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.pill.amber { background: var(--amber-wash); color: var(--amber); }
+.pill.accent { background: var(--wash); color: var(--accent-text); }
+.crumb { display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 4px 0 6px; border-radius: 8px; border: 0; background: transparent; cursor: pointer; color: var(--text-2); font-weight: 500; }
+.crumb:hover, .crumb[aria-expanded="true"] { background: var(--card); }
+.crumb .sep { color: var(--faint); margin: 0 4px; }
+.crumb .chev { color: var(--quiet); margin-left: 4px; }
+.crumb .needs { margin-left: 6px; }
+.needs { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--amber-wash); color: var(--amber); font-size: 11px; display: inline-grid; place-items: center; font-weight: 600; }
+.mark { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font: 600 10px var(--font-ui); flex: none; }
+
+.chats { display: flex; align-items: center; gap: 4px; padding: 0 8px 6px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.chat { height: 29px; padding: 0 12px; border-radius: 8px; border: 0; background: transparent; color: var(--quiet); white-space: nowrap; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.chat[aria-selected="true"] { background: var(--card); color: var(--text); font-weight: 500; }
+.chat:hover { color: var(--text); }
+.chat .live { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.chat .wait { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+.ctx { height: 29px; padding: 0 8px 0 6px; border-radius: 8px; border: 0; background: var(--panel); color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 500; flex: none; margin-right: 6px; }
+.ctx:hover, .ctx[aria-expanded="true"] { background: var(--card); }
+.ctx .sep { color: var(--faint); }
+.addchat { width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 16px; cursor: pointer; flex: none; }
+
+.body { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 8px; padding: 0 8px 8px; min-height: 0; }
+.side, .work { background: var(--panel); border-radius: 12px; padding: 14px; min-height: 0; overflow: auto; }
+.side h4 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.side .item { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 8px; color: var(--text-2); cursor: pointer; border: 0; background: transparent; width: 100%; text-align: left; }
+.side .item[aria-current="true"] { background: var(--wash); color: var(--text); }
+.side .item:hover { background: var(--card); }
+.side .item .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work { color: var(--muted); font: 12.5px/21px var(--font-mono); white-space: pre-wrap; }
+.work b { color: var(--text); font-family: var(--font-ui); font-size: 14px; display: block; margin-bottom: 8px; }
+@media (max-width: 760px) { .body { grid-template-columns: 1fr; } .side { display: none; } }
+
+/* rail variant */
+.railcol { grid-row: 2 / -1; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 2px 0 10px; }
+.railbtn { position: relative; width: 36px; height: 36px; border-radius: 9px; border: 0; cursor: pointer; display: grid; place-items: center; font: 600 11px var(--font-ui); }
+.railbtn[aria-current="true"] { box-shadow: 0 0 0 2px var(--window), 0 0 0 3.5px var(--accent); }
+.railbtn .needs { position: absolute; right: -5px; top: -5px; height: 16px; min-width: 16px; font-size: 10px; background: #3b3222; }
+.railbtn.add { background: transparent; color: var(--muted); font-size: 18px; }
+.railbtn.add:hover { background: var(--card); }
+.win.rail .chats, .win.rail .body { grid-column: 2; }
+.win.docked, .win:has(.body.docked) { grid-template-rows: auto minmax(0, 1fr); }
+.win.rail.docked .railcol { grid-row: 2; }
+.win.rail.docked .body { grid-column: 2; grid-row: 2; }
+.body.docked { padding-top: 0; }
+.workcol { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; }
+/* The first tab starts exactly at the panel's left edge, and the chosen tab flares into the panel with
+   inverse corners on each side, so tab and panel read as one piece (the first tab has no left flare: the
+   panel's corner is square under it). */
+.dtabs { display: flex; align-items: flex-end; gap: 2px; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding: 0 8px 0 0; }
+.dtab { position: relative; }
+.dtab[aria-selected="true"]::before, .dtab[aria-selected="true"]::after { content: ""; position: absolute; bottom: 0; width: 8px; height: 8px; pointer-events: none; }
+.dtab[aria-selected="true"]::before { left: -8px; background: radial-gradient(circle at 0 0, transparent 8px, var(--panel) 8.5px); }
+.dtab[aria-selected="true"]::after { right: -8px; background: radial-gradient(circle at 100% 0, transparent 8px, var(--panel) 8.5px); }
+.dtab:first-child[aria-selected="true"]::before { display: none; }
+.dtabs { padding-right: 8px; } .dtabs > .dtab:first-child { margin-left: 0; } .dtabs > .dtab + .dtab { margin-left: 6px; }
+.dtab { height: 31px; max-width: 240px; padding: 0 10px 0 12px; border: 0; border-radius: 8px 8px 0 0; background: transparent; color: var(--quiet); display: inline-flex; align-items: center; gap: 8px; cursor: pointer; white-space: nowrap; flex: 0 1 auto; min-width: 0; }
+/* An unselected tab's hover is a pill inset from the strip's floor, never touching the panel, so only the
+   chosen tab ever joins it. */
+.dtab:hover { color: var(--text); }
+.dtab { isolation: isolate; }
+.dtab:not([aria-selected="true"]):hover::before { content: ""; position: absolute; inset: 3px 0 5px; border-radius: 7px; background: var(--card); z-index: -1; }
+/* Selection changes colour and fill only, never weight or padding, so no tab changes width and none of
+   its neighbours moves when the selection does. */
+.dtab[aria-selected="true"] { background: var(--panel); color: var(--text); }
+.dtab .dl { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dtab .dx { color: var(--faint); font-size: 12px; width: 16px; height: 16px; display: grid; place-items: center; border-radius: 5px; }
+.dtab .dx:hover { background: var(--hover); color: var(--text); }
+.dtab .live, .dtab .wait { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.dtab .live { background: var(--accent); } .dtab .wait { background: var(--amber); }
+.dtabs .addchat { align-self: center; }
+.body.docked .work { border-radius: 12px; }
+.body.docked .work.first { border-top-left-radius: 0; }
+.sbtn { width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; margin-right: 2px; }
+.sbtn:hover { background: var(--card); color: var(--text); }
+.railpeek .railcol { height: 100%; }
+.win.rail .railcol { height: 100%; }
+/* Sidebar motion: the rail's column closes or opens (the content slides with it) while the rail itself
+   slides and fades; the peek slides in from the edge. */
+.win.rail { --ease: cubic-bezier(.22, .8, .24, 1); transition: grid-template-columns 260ms var(--ease); }
+.win.rail .railcol { transition: transform 260ms var(--ease), opacity 200ms ease; }
+.win.rail.rail-closing { grid-template-columns: 0px minmax(0, 1fr); }
+.win.rail.rail-closing .railcol { transform: translateX(-56px); opacity: 0; }
+.win.rail.rail-opening-start { grid-template-columns: 0px minmax(0, 1fr); transition: none; }
+.win.rail.rail-opening-start .railcol { transform: translateX(-56px); opacity: 0; transition: none; }
+.win.rail .railcol { overflow: visible; min-width: 0; }
+.railpeek.enter { animation: peek-in 220ms cubic-bezier(.22, .8, .24, 1); }
+.railpeek.leaving { animation: peek-out 200ms ease forwards; }
+@keyframes peek-in { from { transform: translateX(-100%); opacity: .4; } to { transform: none; opacity: 1; } }
+@keyframes peek-out { to { transform: translateX(-100%); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .win.rail, .win.rail .railcol { transition: none; } .railpeek, .railpeek.leaving { animation: none; } }
+.sep2 { color: var(--faint); margin: 0 6px 0 2px; }
+.wstrip { display: inline-flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; flex: 0 1 auto; max-width: 62%; }
+.wchip { height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--quiet); cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 13px; }
+.wchip:hover { color: var(--text); background: var(--card); }
+.wchip.here { color: var(--text); background: var(--card); }
+.wchip.ghost { color: var(--muted); border: 1px dashed var(--line); }
+.wchip .needs { height: 16px; min-width: 16px; font-size: 10px; }
+.wall { width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--quiet); cursor: pointer; display: grid; place-items: center; flex: none; margin-left: 2px; }
+.wall:hover, .wall[aria-expanded="true"] { background: var(--card); color: var(--text); }
+/* A workspace switch slides every part that belongs to the workspace (side panel, work, right panel,
+   bottom halves) together, one direction, one timing; the bars, the rail and the title bar stay put. */
+.body.slide-next > .side, .body.slide-next > .workcol, .body.slide-next > .rpanel, .body.slide-next .bhalf { animation: slide-next 260ms cubic-bezier(.22,.8,.24,1); }
+.body.slide-prev > .side, .body.slide-prev > .workcol, .body.slide-prev > .rpanel, .body.slide-prev .bhalf { animation: slide-prev 260ms cubic-bezier(.22,.8,.24,1); }
+@media (prefers-reduced-motion: reduce) { .body[class*=slide-] > *, .body[class*=slide-] .bhalf { animation: none !important; } }
+.side.withdock { display: flex; flex-direction: column; padding-bottom: 8px; overflow: hidden; }
+.side.withdock .sidelist { flex: 1; min-height: 0; overflow: auto; }
+.sidelist.slide-next { animation: slide-next 260ms cubic-bezier(.22,.8,.24,1); }
+.sidelist.slide-prev { animation: slide-prev 260ms cubic-bezier(.22,.8,.24,1); }
+@keyframes slide-next { from { transform: translateX(28px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes slide-prev { from { transform: translateX(-28px); opacity: 0; } to { transform: none; opacity: 1; } }
+.dock { display: flex; align-items: center; gap: 4px; padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--line); flex: none; }
+.dockrow { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; scroll-padding: 0 4px; }
+.dockbtn { position: relative; width: 34px; height: 34px; flex: none; border: 0; border-radius: 9px; background: transparent; cursor: pointer; display: grid; place-items: center; }
+.dockbtn .dini { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font: 600 10px var(--font-ui); background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); opacity: .75; }
+.dockbtn:hover { background: var(--card); } .dockbtn:hover .dini { opacity: 1; }
+.dockbtn.here { background: var(--hover); } .dockbtn.here .dini { opacity: 1; }
+.dockbtn .ddot { position: absolute; right: 4px; top: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 2px var(--panel); }
+.dockbtn.add { color: var(--muted); font-size: 16px; }
+@media (prefers-reduced-motion: reduce) { .sidelist.slide-next, .sidelist.slide-prev { animation: none; } }
+.body.docked.act-column { grid-template-columns: 44px 240px minmax(0, 1fr) 44px; }
+.body.docked.act-tabs { grid-template-columns: 240px minmax(0, 1fr) 44px; }
+.body.docked.act-column.rightopen { grid-template-columns: 44px 240px minmax(0, 1fr) 300px 44px; }
+.body.docked.act-tabs.rightopen { grid-template-columns: 240px minmax(0, 1fr) 300px 44px; }
+/* Bottom panel: under the side panel, the work and the right panel, between the two bars; each bottom
+   icon opens its own half, and one half alone takes the whole width. */
+.body.docked { grid-template-rows: minmax(0, 1fr); }
+.body.docked.bottomopen { grid-template-rows: minmax(0, 1fr) minmax(160px, 34%); }
+.body.docked .actbar { grid-row: 1 / -1; }
+.body.docked .side, .body.docked .workcol, .body.docked .rpanel { grid-row: 1; }
+.bpanel { grid-row: 2; grid-column: 2 / -2; display: flex; gap: 8px; min-height: 0; }
+.body.docked.act-tabs .bpanel { grid-column: 1 / -2; }
+@keyframes bp-in { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+.bhalf { flex: 1; min-width: 0; background: var(--panel); border-radius: 12px; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+.bhead { display: flex; align-items: center; padding: 10px 10px 6px 14px; }
+.bhead b { flex: 1; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.bbody { overflow: auto; padding: 0 12px 12px; }
+.bcols { display: grid; grid-template-columns: minmax(180px, 34%) minmax(0, 1fr); gap: 14px; }
+@media (prefers-reduced-motion: reduce) { .bhalf.enter { animation: none; } }
+.rpanel { background: var(--panel); border-radius: 12px; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; overflow: hidden; }
+/* Motion plays only for the part that just opened; a re-render of anything else never replays it. */
+.rpanel.enter { animation: rp-in 240ms cubic-bezier(.22,.8,.24,1); }
+.bhalf.enter { animation: bp-in 220ms cubic-bezier(.22,.8,.24,1); }
+@keyframes rp-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.rhead { display: flex; align-items: center; padding: 12px 10px 8px 14px; }
+.rhead b { flex: 1; font-size: 13px; }
+.icon-x { width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--quiet); cursor: pointer; }
+.icon-x:hover { background: var(--card); color: var(--text); }
+.rbody { overflow: auto; padding: 0 10px 12px; display: grid; gap: 8px; align-content: start; }
+.ask { background: var(--card); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+.asktop { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; } .asktop .quiet { color: var(--quiet); font-size: 11.5px; }
+.askline { color: var(--amber); font-size: 12px; }
+.askq { color: var(--text-2); font-size: 12.5px; }
+.askact { display: flex; gap: 6px; margin-top: 4px; }
+.btn-sm { height: 24px; padding: 0 10px; border: 0; border-radius: 7px; background: var(--hover); color: var(--text); cursor: pointer; font-size: 12px; }
+.btn-sm.primary { background: var(--wash); color: var(--accent-text); }
+.tadd { height: 30px; border: 0; border-radius: 8px; background: var(--window); padding: 0 10px; color: var(--text); }
+.tadd::placeholder { color: var(--faint); }
+.todo { display: flex; gap: 10px; align-items: flex-start; padding: 6px 4px; color: var(--text-2); cursor: pointer; font-size: 13px; }
+.todo input { accent-color: var(--accent); margin-top: 3px; }
+.todo .done { color: var(--faint); text-decoration: line-through; }
+.tree .tw { width: 12px; color: var(--quiet); font-size: 10px; flex: none; }
+.gm { margin-left: auto; font: 600 10.5px var(--font-mono); color: var(--amber); }
+.gm.add { color: #8fc79a; }
+.chg .gm { margin-left: 0; width: 14px; flex: none; }
+.chg .name { display: flex; gap: 6px; align-items: baseline; }
+.cpath { color: var(--faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+.cnum { font: 11px var(--font-mono); color: var(--quiet); flex: none; }
+.hint { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); font-size: 11px; }
+.msg { width: 100%; resize: none; border: 0; border-radius: 8px; background: var(--window); color: var(--text); padding: 8px 10px; font: 12.5px var(--font-ui); }
+.msg::placeholder { color: var(--faint); }
+.savebar { margin: 6px 0 4px; }
+.btn-save { width: 100%; height: 28px; border: 0; border-radius: 8px; background: var(--wash); color: var(--accent-text); cursor: pointer; font-weight: 500; }
+.grp { margin: 12px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--quiet); }
+.sidelist.viewin { animation: view-in 180ms ease-out; }
+@keyframes view-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .rpanel.enter, .sidelist.viewin { animation: none; } }
+.actbar { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 2px 0 6px; min-height: 0; }
+.actbar .actgap { flex: 1; min-height: 12px; }
+.actbar .actgap + .act { border-top: 0; }
+.acttabs .actgap { flex: 1; }
+.actbar.right { padding-top: 2px; }
+.actgap { flex: 1; }
+.act { position: relative; width: 36px; height: 36px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; flex: none; }
+.act:hover { background: var(--card); color: var(--text); }
+.act.on { background: var(--wash); color: var(--accent-text); }
+.actn { position: absolute; right: 1px; top: 1px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--hover); color: var(--text-2); font: 600 10px/15px var(--font-ui); box-shadow: 0 0 0 2px var(--window); }
+.actn.hot { background: #8a3a3a; color: #fff; }
+.acttabs { display: flex; gap: 2px; margin: -4px -4px 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.acttabs .act { width: 32px; height: 30px; }
+.acttabs .act .actn { box-shadow: 0 0 0 2px var(--panel); }
+.seg3 { display: inline-flex; gap: 2px; margin-left: 6px; padding: 2px; border-radius: 999px; background: color-mix(in srgb, var(--switch-fg) 10%, transparent); }
+.seg3 button { width: auto !important; padding: 0 10px; height: 26px !important; border-radius: 999px !important; font-size: 11.5px !important; }
+.seg3 button[aria-checked="true"] { background: var(--switch-fg) !important; color: var(--switch-bg); }
+@media (max-width: 900px) { .seg3 { display: none; } }
+.pins { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
+.pinsep { width: 1px; height: 16px; background: var(--line); margin: 0 6px 0 4px; flex: none; }
+.pinchip { display: inline-flex; align-items: center; height: 26px; border-radius: 8px; color: var(--muted); flex: none; }
+.pinchip:hover { background: var(--card); color: var(--text); }
+.pinchip.here { background: var(--card); color: var(--text); }
+.pingo { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 4px 0 9px; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 12.5px; }
+.pingo .needs { height: 16px; min-width: 16px; font-size: 10px; }
+.pdot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.pinx { width: 18px; height: 18px; margin-right: 4px; border: 0; border-radius: 5px; background: transparent; color: var(--faint); cursor: pointer; font-size: 11px; visibility: hidden; }
+.pinchip:hover .pinx, .pinx:focus-visible { visibility: visible; }
+.pinx:hover { background: var(--hover); color: var(--text); }
+.rowwrap { display: flex; align-items: center; gap: 2px; }
+.rowwrap .row { flex: 1; }
+.pinbtn { width: 28px; height: 28px; flex: none; border: 0; border-radius: 7px; background: transparent; color: var(--faint); cursor: pointer; display: grid; place-items: center; }
+.pinbtn:hover { background: var(--card); color: var(--text); }
+.pinbtn.on { color: var(--accent-text); }
+.pinbtn[aria-disabled="true"] { opacity: .35; cursor: not-allowed; }
+.edge { position: absolute; left: 0; top: 40px; bottom: 0; width: 6px; z-index: 20; }
+.railpeek { position: absolute; left: 0; top: 40px; bottom: 0; width: 56px; background: var(--window); z-index: 25; box-shadow: 8px 0 24px rgba(0,0,0,.45); border-radius: 0 12px 12px 0; padding-top: 6px; }
+.railpeek .railcol { grid-row: auto; }
+.seg2 { display: inline-flex; background: var(--window); border-radius: 7px; padding: 2px; gap: 2px; }
+.seg2 button { height: 24px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: var(--quiet); cursor: pointer; font-size: 12px; }
+.seg2 button[aria-checked="true"] { background: var(--card); color: var(--text); font-weight: 500; }
+.tip { position: absolute; background: var(--card); color: var(--text); font-size: 12px; padding: 5px 9px; border-radius: 8px; pointer-events: none; z-index: 30; white-space: nowrap; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+
+/* the switcher popover, shared by A and C */
+.pop { position: absolute; z-index: 40; width: min(560px, calc(100% - 24px)); background: var(--panel); border-radius: 12px; box-shadow: 0 18px 48px rgba(0,0,0,.5); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: min(440px, calc(100% - 60px)); overflow: hidden; }
+.pop .q { display: flex; gap: 8px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.pop .q input { flex: 1; border: 0; background: transparent; outline: none; font-size: 14px; min-width: 0; }
+.pop .cols { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+.pop .col { overflow: auto; padding: 6px; min-height: 0; }
+.pop .col + .col { border-left: 1px solid var(--line); }
+.pop .col h5 { margin: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--quiet); }
+.pop .row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer; text-align: left; }
+.pop .row:hover { background: var(--card); }
+.pop .row[aria-selected="true"] { background: var(--wash); color: var(--text); }
+.pop .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop .row .sub { font-size: 11px; color: var(--quiet); }
+.pop .foot { display: flex; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--line); color: var(--quiet); font-size: 11.5px; }
+.kbd { font: 11px var(--font-mono); color: var(--muted); background: var(--card); padding: 1px 5px; border-radius: 4px; }
+@media (max-width: 560px) { .pop .cols { grid-template-columns: 1fr; } .pop .col + .col { border-left: 0; border-top: 1px solid var(--line); } }
+
+.switcher { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 4px; background: var(--switch-bg); color: var(--switch-fg); border-radius: 999px; padding: 4px; box-shadow: 0 6px 24px rgba(0,0,0,.45); font: 500 12px var(--font-ui); z-index: 50; max-width: calc(100% - 32px); }
+.switcher button { border: 0; background: transparent; color: inherit; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 15px; }
+.switcher span { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="win" id="win"></div>
+<div class="switcher" role="toolbar" aria-label="Prototype variants"><button id="prev" aria-label="Previous variant">‹</button><span id="vlabel"></span><button id="next" aria-label="Next variant">›</button>
+  <span class="seg3" id="actpos" role="radiogroup" aria-label="Where the left activity bar sits"><button role="radio" data-actpos="column">Bar: column</button><button role="radio" data-actpos="tabs">Bar: tabs in panel</button></span></div>
+
+<script>
+const PROJECTS = [
+  { id: "charter", hue: "#a99cf0", ws: [["smart-ide", 1], ["charter", 0], ["skills", 0]] },
+  { id: "volaticloud", hue: "#8fc79a", ws: [["console-ux", 2], ["platform", 0]] },
+  { id: "easydmarc-umbrella", hue: "#e5c08a", ws: [["keycloak", 2], ["invites", 1], ["reporting", 0], ["sending-domains", 0]] },
+  { id: "elastic-press", hue: "#8fb5e8", ws: [["main", 0]] },
+  { id: "dotfiles", hue: "#c9a0dc", ws: [["mac", 0]] },
+  { id: "notes", hue: "#e89f9f", ws: [["inbox", 0]] },
+];
+const CHATS = [["build the browser program's ready tickets", "live"], ["steward 9", "wait"], ["issues", ""], ["skills", ""], ["themes", ""]];
+const st = { v: 0, p: 0, w: 0, chat: 0, open: false, q: "", sel: [0, 0] };
+st.v = 3; st.railMode = "show"; st.peek = false; st.view = "chats"; st.actPos = "column"; st.right = null; st.viewAnim = false; st.bl = null; st.br = null; st.enter = {};
+// Render with one part marked as just opened, so only it animates; every later render draws it at rest.
+function once(part, opened) { st.enter = opened && !reduced() ? { [part]: true } : {}; render(); st.enter = {}; }
+st.todos = [["Record the switcher design on #2868", false], ["Pick the left bar layout (#2805)", false], ["Review the tab strip prototype", false], ["Merge #2859 after the advisory fix", true], ["Grill quiet text vs 4.5:1 (#2803)", false], ["Harness icons decision (#2866)", false], ["Look at #2485 when Figma lands", false]];
+try { const a = localStorage.getItem("proto-switcher-act"); if (a === "column" || a === "tabs") st.actPos = a; } catch (e) {} st.pins = [{ p: 0, w: 0 }, { p: 0, w: 1 }, { p: 0, w: 2 }, { p: 1, w: 0 }, { p: 1, w: 1 }, { p: 2, w: 0 }, { p: 2, w: 1 }, { p: 2, w: 2 }];
+try { const pp = JSON.parse(localStorage.getItem("proto-switcher-pins2") || "null"); if (Array.isArray(pp)) st.pins = pp; } catch (e) {}
+try { const m = localStorage.getItem("proto-switcher-rail"); if (m === "show" || m === "auto") st.railMode = m; } catch (e) {}
+const VARIANTS = [
+  { key: "A", name: "Breadcrumb in the title bar, switcher on click or ⌘P" },
+  { key: "B", name: "Project rail on the left, workspaces in the side panel" },
+  { key: "C", name: "Context chip at the start of the chat strip" },
+  { key: "D", name: "Project rail, workspace switcher in the title bar" },
+];
+const NV = VARIANTS.length;
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const P = () => PROJECTS[st.p];
+const waiting = p => p.ws.reduce((n, w) => n + w[1], 0);
+const mark = (p, size = 22) => `<span class="mark" style="width:${size}px;height:${size}px;background:${p.hue}22;color:${p.hue}">${p.id.split("-").map(s => s[0]).join("").slice(0, 2).toUpperCase()}</span>`;
+const needs = n => n ? `<span class="needs" title="${n} waiting on you">${n}</span>` : "";
+const chev = '<svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5l3 3 3-3"/></svg>';
+
+// Pinned workspaces: up to five, from any project, as chips in the title bar after the breadcrumb.
+// A chip jumps there (⌘1–⌘5 in order); pin and unpin from the switcher's rows or a chip's ×.
+const MAX_PINS = Infinity; // no limit: the dock scrolls sideways when it outgrows the panel
+const pinIcon = '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5l4 4-2.2.8-2.6 2.6.3 3-1.2 1.2-2.4-2.4L2.5 14.6 1.4 13.5 4.3 10.6 1.9 8.2 3.1 7l3 .3 2.6-2.6z"/></svg>';
+const isPinned = (p, w) => st.pins.some(x => x.p === p && x.w === w);
+function togglePin(p, w) {
+  const i = st.pins.findIndex(x => x.p === p && x.w === w);
+  if (i >= 0) st.pins.splice(i, 1); else if (st.pins.length < MAX_PINS) st.pins.push({ p, w });
+  try { localStorage.setItem("proto-switcher-pins2", JSON.stringify(st.pins)); } catch (e) {}
+  render();
+}
+// Pins now live in the side panel's dock (Arc-style); the title bar keeps only the breadcrumb.
+// Pinned workspaces live in the title bar, because the side panel's contents change with the activity
+// view. They read as one strip after the project's name; a sideways swipe over the title bar or the
+// work area steps through them, and the whole workspace slides.
+function pinChips() {
+  if (st.v !== 3) return "";
+  const pins = projPins(), here = pins.findIndex(x => x.w === st.w);
+  const chips = pins.map((x, i) => {
+    const ws = P().ws[x.w];
+    return `<button class="wchip${i === here ? " here" : ""}" data-ppin="${x.w}" data-tip="${esc(ws[0])}${i < 9 ? " · ⌘" + (i + 1) : ""}" aria-current="${i === here}">${esc(ws[0])}${needs(ws[1])}</button>`;
+  }).join("");
+  const add = here < 0 ? `<button class="wchip ghost" data-pinp="${st.p}" data-pinw="${st.w}" data-tip="Pin ${esc(P().ws[st.w][0])}">${esc(P().ws[st.w][0])} <span aria-hidden="true">+</span></button>` : "";
+  return `<span class="wstrip" id="wstrip" role="toolbar" aria-label="Pinned workspaces · swipe sideways to switch">${chips}${add}<button class="wall" id="opener" aria-haspopup="dialog" aria-expanded="${st.open}" aria-label="All workspaces" data-tip="All workspaces · ⌘P">${chev}</button></span>`;
+}
+// Pins belong to their project: the dock, the swipe and ⌘1–⌘9 cover the selected project's pins only.
+const projPins = () => st.pins.filter(x => x.p === st.p);
+function pinDock() {
+  if (st.v !== 3) return "";
+  const pins = projPins();
+  const here = pins.findIndex(x => x.w === st.w);
+  const items = pins.map((x, i) => {
+    const pr = PROJECTS[x.p], ws = pr.ws[x.w];
+    const ini = ws[0].split(/[-\s]/).map(s => s[0]).join("").slice(0, 2).toUpperCase();
+    return `<button class="dockbtn${i === here ? " here" : ""}" data-ppin="${x.w}" data-tip="${esc(ws[0])} · ${esc(pr.id)}${i < 9 ? " · ⌘" + (i + 1) : ""}" aria-label="${esc(ws[0])} in ${esc(pr.id)}" aria-current="${i === here}" style="--c:${pr.hue}"><span class="dini">${ini}</span>${ws[1] ? `<span class="ddot" aria-hidden="true"></span>` : ""}</button>`;
+  }).join("");
+  const add = here < 0 ? `<button class="dockbtn add" data-pinp="${st.p}" data-pinw="${st.w}" data-tip="Pin ${esc(P().ws[st.w][0])}" aria-label="Pin this workspace">+</button>` : "";
+  return `<div class="dock" role="toolbar" aria-label="Pinned workspaces · swipe sideways to switch"><div class="dockrow" id="dockrow">${items}</div>${add}</div>`;
+}
+function _unusedChips() {
+  if (!st.pins.length) return "";
+  return `<span class="pins" role="toolbar" aria-label="Pinned workspaces"><span class="pinsep"></span>${st.pins.map((x, i) => {
+    const pr = PROJECTS[x.p], ws = pr.ws[x.w], here = x.p === st.p && x.w === st.w;
+    return `<span class="pinchip${here ? " here" : ""}"><button class="pingo" data-pin="${i}" data-tip="${esc(pr.id)} / ${esc(ws[0])} · ⌘${i + 1}" aria-label="Go to ${esc(ws[0])} in ${esc(pr.id)}"><span class="pdot" style="background:${pr.hue}"></span>${esc(ws[0])}${needs(ws[1])}</button><button class="pinx" data-unpin="${i}" aria-label="Unpin ${esc(ws[0])}">×</button></span>`;
+  }).join("")}</span>`;
+}
+function titlebar(inner = "") {
+  inner += pinChips();
+  const total = PROJECTS.reduce((n, p) => n + waiting(p), 0);
+  // While the projects sidebar is hidden, the title bar's first control brings it back.
+  const show = st.v === 3 && st.railMode === "auto" ? `<button class="sbtn" data-rail="show" aria-label="Show the projects sidebar" data-tip="Show projects sidebar">${sidebarIcon}</button>` : "";
+  return `<div class="titlebar"><div class="lights"><i></i><i></i><i></i></div>${show}${inner}<span class="grow"></span>
+    <button class="pill amber">✋ ${total} waiting</button><button class="pill">Saved</button><button class="pill">About</button><button class="pill accent">0.4.2-dev.1037</button></div>`;
+}
+function chats(prefix = "") {
+  return `<div class="chats" role="tablist" aria-label="Chats">${prefix}${CHATS.map((c, i) => `<button class="chat" role="tab" aria-selected="${i === st.chat}" data-chat="${i}">${c[1] ? `<span class="${c[1]}"></span>` : ""}${esc(c[0])}</button>`).join("")}<button class="addchat" aria-label="New chat">+</button></div>`;
+}
+// In D the chat tabs sit on the content panel: as wide as the panel, starting at its edge, the chosen tab
+// joining the panel below it, so the side panel runs the full height beside them.
+function docked() {
+  return `<div class="dtabs" role="tablist" aria-label="Chats">${CHATS.map((c, i) => `<button class="dtab" role="tab" aria-selected="${i === st.chat}" data-chat="${i}">${c[1] ? `<span class="${c[1]}"></span>` : ""}<span class="dl">${esc(c[0])}</span><span class="dx" aria-hidden="true">×</span></button>`).join("")}<button class="addchat" aria-label="New chat">+</button></div>`;
+}
+// The activity bars stay: the left one picks what the side panel shows (chats, files, search, branches,
+// changes), the right one opens the right-hand views (needs you, personas, vaults; memory, todos, history).
+// Where the left bar sits is the question here: its own column beside the rail, or icon tabs across the top
+// of the side panel.
+const ico = d => `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const LEFT_VIEWS = [
+  ["chats", "Chats", ico('<path d="M4 5h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M19 9h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v3l-4-3"/>'), 1],
+  ["files", "Explorer", ico('<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><path d="M14 17h6M17 14v6"/>'), 0],
+  ["search", "Search", ico('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>'), 0],
+  ["branches", "Branch folders", ico('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="15" cy="13" r="2"/>'), 0],
+  ["changes", "Changes", ico('<circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M6 15.5V9a3 3 0 0 1 3-3h6.5"/>'), 0],
+];
+const RIGHT_VIEWS = [
+  [ico('<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V5.5a1.5 1.5 0 0 1 3 0V13c0 4-2.5 7-6 7s-5-2-6.5-5L3 11.5a1.5 1.5 0 0 1 2.5-1.6L8 13"/>'), "Needs you", 2],
+  [ico('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>'), "Personas", 0],
+  [ico('<circle cx="8" cy="15" r="4.5"/><path d="M11 12l9-9M17 6l2 2M15 8l2 2"/>'), "Vaults", 0],
+  null,
+  [ico('<path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 0V7a3 3 0 0 0-3-3zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 0"/>'), "Memory", 0],
+  [ico('<path d="M4 6l1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17M11 6h9M11 12h9M11 18h6"/>'), "Todos", 7],
+  [ico('<path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/>'), "History", 0],
+];
+// Both bars keep two groups, as today: the left bar's top group (chats, files, search) and bottom group
+// (branch folders, changes); the right bar's top (needs you, personas, vaults) and bottom (memory, todos,
+// history). In the tabs layout the left bar's bottom group sits at the row's far end.
+const LEFT_BOTTOM = new Set(["branches", "changes"]);
+// The corners keep today's split: a top icon switches its side's panel (left: the side panel; right: the
+// right panel); a bottom icon opens its half of the bottom panel (left icons the left half, right icons the
+// right half), under the work, without touching the side panels.
+function leftBar(asTabs) {
+  const one = ([id, name, svg, n]) => {
+    const bottom = LEFT_BOTTOM.has(id), on = bottom ? st.bl === id : st.view === id;
+    return `<button class="act${on ? " on" : ""}" ${bottom ? `data-bl="${id}"` : `data-view="${id}"`} data-tip="${name}" aria-label="${name}" aria-pressed="${on}">${svg}${n ? `<span class="actn">${n}</span>` : ""}</button>`;
+  };
+  const b = LEFT_VIEWS.filter(v => !LEFT_BOTTOM.has(v[0])).map(one).join("") + '<span class="actgap"></span>' + LEFT_VIEWS.filter(v => LEFT_BOTTOM.has(v[0])).map(one).join("");
+  return asTabs ? `<div class="acttabs" role="toolbar" aria-label="Side panel views">${b}</div>` : `<div class="actbar" role="toolbar" aria-label="Side panel views">${b}</div>`;
+}
+function rightBar() {
+  let below = false;
+  return `<div class="actbar right" role="toolbar" aria-label="Right views">${RIGHT_VIEWS.map(v => {
+    if (!v) { below = true; return '<span class="actgap"></span>'; }
+    const on = below ? st.br === v[1] : st.right === v[1];
+    return `<button class="act${on ? " on" : ""}" ${below ? `data-br="${v[1]}"` : `data-right="${v[1]}"`} aria-pressed="${on}" data-tip="${v[1]}" aria-label="${v[1]}">${v[0]}${v[2] ? `<span class="actn${v[1] === "Needs you" ? " hot" : ""}">${v[2]}</span>` : ""}</button>`;
+  }).join("")}</div>`;
+}
+function changesView() {
+  const staged = CHANGES.filter(c => c[3]), rest = CHANGES.filter(c => !c[3]);
+  const row = c => `<div class="item chg"><span class="gm ${c[1] === "A" ? "add" : ""}">${c[1]}</span><span class="name">${esc(c[0].split("/").pop())}<span class="cpath">${esc(c[0].split("/").slice(0, -1).join("/"))}</span></span><span class="cnum">${c[2]}</span></div>`;
+  return `<div class="bcols"><div><textarea class="msg" id="commitmsg" rows="2" placeholder="Describe this save…"></textarea><div class="savebar"><button class="btn-save" data-act="save">Save ${staged.length} staged</button></div><div class="hint" style="margin:2px 2px 0">main ← purlis/save/aharon</div></div>
+    <div><h5 class="grp">Staged · ${staged.length}</h5>${staged.map(row).join("")}<h5 class="grp">Not staged · ${rest.length}</h5>${rest.map(row).join("")}</div></div>`;
+}
+function todosView() {
+  return `<input class="tadd" id="tadd" placeholder="Add a todo…" autocomplete="off" style="width:100%">` + st.todos.map((t, i) => `<label class="todo"><input type="checkbox" data-todo="${i}" ${t[1] ? "checked" : ""}><span class="${t[1] ? "done" : ""}">${esc(t[0])}</span></label>`).join("");
+}
+function bottomPanel() {
+  if (!st.bl && !st.br) return "";
+  const half = (side, key, title, inner) => `<section class="bhalf${st.enter[side] ? " enter" : ""}" aria-label="${esc(title)}"><div class="bhead"><b>${esc(title)}</b><button class="icon-x" data-${side}="${esc(key)}" aria-label="Close ${esc(title)}">×</button></div><div class="bbody">${inner}</div></section>`;
+  const l = st.bl ? half("bl", st.bl, st.bl === "changes" ? "Changes" : "Branch folders", st.bl === "changes" ? changesView() : '<p class="quiet" style="font-size:12px">Not drawn in this prototype: try Changes.</p>') : "";
+  const r = st.br ? half("br", st.br, st.br, st.br === "Todos" ? todosView() : '<p class="quiet" style="font-size:12px">Not drawn in this prototype: try Todos.</p>') : "";
+  return `<div class="bpanel">${l}${r}</div>`;
+}
+
+// One working view per corner: Explorer (left top), Changes (left bottom), Needs you (right top),
+// Todos (right bottom). The others say they are not drawn in this prototype.
+const TREE = [["app", 0, 1], ["src", 1, 1], ["settings", 2, 0], ["App.tsx", 2, 0, "M"], ["StartChat.tsx", 2, 0, "M"], ["theme", 2, 0], ["src-tauri", 1, 0], ["crates", 0, 1], ["purlis-core", 1, 1], ["src/theme", 2, 0], ["docs", 0, 0], ["charter.toml", 0, 0, "M"], ["workspace.md", 0, 0]];
+const CHANGES = [["app/src/StartChat.tsx", "M", "+42 −18", true], ["app/src/App.tsx", "M", "+6 −2", true], ["charter.toml", "M", "+1 −1", false], ["app/src/settings/SettingsTab.tsx", "M", "+88 −31", false], ["docs/design-system.md", "A", "+120", false]];
+const ASKS = [["steward 9", "Waiting on your reply", "Is this the switcher design to record?", "smart-ide"], ["console-ux trains", "Asks to reach a host", "registry.npmjs.org:443", "console-ux"]];
+function sideView() {
+  const p = P(), head = (t, extra = "") => `<h4>${t}${extra}</h4>`;
+  if (st.view === "files") return head(`${esc(p.ws[st.w][0])}`) + TREE.map(([n, d, open, m]) => `<div class="item tree" style="padding-left:${8 + d * 14}px"><span class="tw">${open === 1 ? "▾" : n.includes(".") ? "" : "▸"}</span><span class="name">${esc(n)}</span>${m ? `<span class="gm">${m}</span>` : ""}</div>`).join("");
+  if (st.view === "chats") return head(`${esc(p.ws[st.w][0])} <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--faint)">· ${esc(p.id)}</span>`) + CHATS.map(c => `<div class="item"><span class="name">${esc(c[0])}</span></div>`).join("");
+  return head(LEFT_VIEWS.find(v => v[0] === st.view)[1]) + `<p class="quiet" style="font-size:12px;margin:0 8px">Not drawn in this prototype: try Explorer or Changes.</p>`;
+}
+function rightView() {
+  if (!st.right) return "";
+  let inner;
+  if (st.right === "Needs you") inner = ASKS.map(a => `<div class="ask"><div class="asktop"><b>${esc(a[0])}</b><span class="quiet">${esc(a[3])}</span></div><div class="askline">${esc(a[1])}</div><div class="askq">${esc(a[2])}</div><div class="askact"><button class="btn-sm primary">Go to chat</button><button class="btn-sm">Later</button></div></div>`).join("");
+  else inner = `<p class="quiet" style="font-size:12px">Not drawn in this prototype: try Needs you.</p>`;
+  return `<aside class="rpanel${st.enter.right ? " enter" : ""}" aria-label="${esc(st.right)}"><div class="rhead"><b>${esc(st.right)}</b><button class="icon-x" data-right="${esc(st.right)}" aria-label="Close ${esc(st.right)}">×</button></div><div class="rbody">${inner}</div></aside>`;
+}
+function body(side) {
+  const dock = st.v === 3;
+  const tabs = dock && st.actPos === "tabs";
+  return `<div class="body${dock && st.slide ? " slide-" + st.slide : ""}${dock ? " docked act-" + st.actPos : ""}${dock && st.right ? " rightopen" : ""}${dock && (st.bl || st.br) ? " bottomopen" : ""}">${dock && !tabs ? leftBar(false) : ""}<div class="side${dock ? " withdock" : ""}" id="side">${tabs ? leftBar(true) : ""}<div class="sidelist${st.viewAnim ? " viewin" : ""}">${side}${dock ? sideView() : `<h4>Chats</h4>${CHATS.map(c => `<div class="item"><span class="name">${esc(c[0])}</span></div>`).join("")}`}</div></div>
+    ${dock ? `<div class="workcol">${docked()}` : ""}<div class="work${dock && st.chat === 0 ? " first" : ""}"><b>${esc(CHATS[st.chat][0])}</b>${esc(P().id)} · ${esc(P().ws[st.w][0])}\n\n❯ Main's CI passed on the #2758 merge, so main is green.\n  Started the two follow-ups that weren't waiting on anything.</div>${dock ? "</div>" : ""}${dock ? rightView() + rightBar() + bottomPanel() : ""}</div>`;
+}
+function popover() {
+  const q = st.q.trim().toLowerCase();
+  const ps = PROJECTS.map((p, i) => ({ p, i })).filter(x => !q || x.p.id.includes(q) || x.p.ws.some(w => w[0].includes(q)));
+  const cur = PROJECTS[st.sel[0]] || P();
+  const ws = cur.ws.map((w, j) => ({ w, j })).filter(x => !q || x.w[0].includes(q) || cur.id.includes(q));
+  return `<div class="pop" id="pop" role="dialog" aria-label="Switch project and workspace">
+    <div class="q"><input id="pq" placeholder="Go to a project or workspace…" value="${esc(st.q)}" autocomplete="off"><span class="kbd">⌘P</span></div>
+    <div class="cols"><div class="col" role="listbox" aria-label="Projects"><h5>Projects</h5>${ps.map(x => `<button class="row" role="option" aria-selected="${x.i === st.sel[0]}" data-pp="${x.i}">${mark(x.p)}<span class="name">${esc(x.p.id)}</span>${needs(waiting(x.p))}</button>`).join("") || '<div class="row sub">No project matches.</div>'}</div>
+    <div class="col" role="listbox" aria-label="Workspaces"><h5>Workspaces in ${esc(cur.id)}</h5>${ws.map(x => `<div class="rowwrap"><button class="row" role="option" aria-selected="${st.sel[0] === st.p && x.j === st.w}" data-pw="${x.j}"><span class="name">${esc(x.w[0])}</span>${needs(x.w[1])}</button>${st.v === 3 ? pinBtn(st.sel[0], x.j) : ""}</div>`).join("") || '<div class="row sub">No workspace matches.</div>'}</div></div>
+    <div class="foot"><span><span class="kbd">↑↓</span> move</span><span><span class="kbd">→</span> workspaces</span><span><span class="kbd">⏎</span> go</span><span><span class="kbd">esc</span> close</span></div></div>`;
+}
+function renderA() {
+  const p = P();
+  const crumb = `<button class="crumb" id="opener" aria-expanded="${st.open}" aria-haspopup="dialog">${mark(p, 20)}<span style="margin-left:6px">${esc(p.id)}</span><span class="sep">/</span>${esc(p.ws[st.w][0])}${chev}${needs(PROJECTS.reduce((n, x, i) => n + (i === st.p ? 0 : waiting(x)), 0) ? 0 : 0)}</button>`;
+  return { cls: "", html: titlebar(crumb) + chats() + body("") };
+}
+function renderB() {
+  const p = P();
+  const rail = `<div class="railcol" role="tablist" aria-orientation="vertical" aria-label="Projects">${PROJECTS.map((x, i) => `<button class="railbtn" role="tab" aria-current="${i === st.p}" data-rp="${i}" data-tip="${esc(x.id)}" style="background:${x.hue}22;color:${x.hue}">${x.id.split("-").map(s => s[0]).join("").slice(0, 2).toUpperCase()}${needs(waiting(x))}</button>`).join("")}<button class="railbtn add" aria-label="Open a project" data-tip="Open a project">+</button></div>`;
+  const ws = `<h4>${esc(p.id)}</h4>${p.ws.map((w, j) => `<button class="item" aria-current="${j === st.w}" data-sw="${j}"><span class="name">${esc(w[0])}</span>${needs(w[1])}</button>`).join("")}<div style="height:14px"></div>`;
+  return { cls: "rail", html: titlebar(`<span style="color:var(--text-2);font-weight:500">${esc(p.id)} · ${esc(p.ws[st.w][0])}</span>`) + rail + chats() + body(ws) };
+}
+function renderC() {
+  const p = P();
+  const chip = `<button class="ctx" id="opener" aria-expanded="${st.open}" aria-haspopup="dialog">${mark(p, 20)}${esc(p.id)}<span class="sep">›</span>${esc(p.ws[st.w][0])}${chev}</button>`;
+  return { cls: "", html: titlebar("") + chats(chip) + body("") };
+}
+// D: B's rail for projects; the title bar names the project and holds the workspace switcher (⌘P), one column.
+const sidebarIcon = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.6" width="12.4" height="10.8" rx="2"/><path d="M6 2.6v10.8"/></svg>';
+function railCol(peek) {
+  // The rail's own last button hides it (auto-hide); while it only peeks, that button pins it back to always shown.
+  const tog = peek
+    ? `<button class="railbtn add" data-rail="show" aria-label="Keep the projects sidebar shown" data-tip="Keep sidebar shown">${sidebarIcon}</button>`
+    : `<button class="railbtn add" data-rail="auto" aria-label="Hide the projects sidebar" data-tip="Hide sidebar (shows at the left edge)">${sidebarIcon}</button>`;
+  return `<div class="railcol" role="tablist" aria-orientation="vertical" aria-label="Projects">${PROJECTS.map((x, i) => `<button class="railbtn" role="tab" aria-current="${i === st.p}" data-rp="${i}" data-tip="${esc(x.id)}" style="background:${x.hue}22;color:${x.hue}">${x.id.split("-").map(s => s[0]).join("").slice(0, 2).toUpperCase()}${needs(waiting(x))}</button>`).join("")}<button class="railbtn add" aria-label="Open a project" data-tip="Open a project">+</button><span style="flex:1"></span>${tog}</div>`;
+}
+// The projects sidebar is a setting: always show, or auto-hide. Hidden, it slides in when the pointer reaches
+// the window's left edge, and the title bar carries A's full breadcrumb and two-column switcher instead.
+function railSetting() {
+  return `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)"><h4>Projects sidebar</h4>
+    <div class="seg2" role="radiogroup" aria-label="Projects sidebar">${[["show", "Always show"], ["auto", "Auto-hide"]].map(([k, l]) =>
+      `<button role="radio" aria-checked="${st.railMode === k}" data-rail="${k}">${l}</button>`).join("")}</div>
+    <div style="color:var(--quiet);font-size:11.5px;margin-top:6px">A setting in Settings › Appearance; also on the sidebar's right-click menu.</div></div>`;
+}
+function renderD() {
+  if (st.railMode === "auto") {
+    // Hidden rail: the project becomes a switcher of its own in the title bar, then the pinned strip.
+    const p = P();
+    const proj = `<button class="crumb" id="popener" data-act="projects" aria-haspopup="dialog">${mark(p, 20)}<span style="margin-left:6px">${esc(p.id)}</span>${chev}</button><span class="sep2">/</span>`;
+    const a = { html: titlebar(proj) + body("") };
+    const peek = st.peek ? `<div class="railpeek${st.enter.peek ? " enter" : ""}" id="railpeek">${railCol(true)}</div>` : "";
+    return { cls: "", html: a.html + `<div class="edge" id="edge" aria-hidden="true"></div>` + peek, popover: "full" };
+  }
+  const p = P();
+  const crumb = `<span style="color:var(--quiet);font-weight:500">${esc(p.id)}</span><span class="sep2">/</span>`;
+  return { cls: "rail docked", html: titlebar(crumb) + railCol() + body("") };
+}
+function pinBtn(p, w) {
+  const on = isPinned(p, w), full = !on && st.pins.length >= MAX_PINS;
+  const tip = on ? "Unpin" : full ? `${MAX_PINS} pinned at most: unpin one first` : "Pin to the title bar";
+  return `<button class="pinbtn${on ? " on" : ""}" data-pinp="${p}" data-pinw="${w}" aria-pressed="${on}" ${full ? 'aria-disabled="true"' : ""} aria-label="${tip}" title="${tip}">${pinIcon}</button>`;
+}
+function wsPopover() {
+  const p = P(), q = st.q.trim().toLowerCase();
+  const ws = p.ws.map((w, j) => ({ w, j })).filter(x => !q || x.w[0].includes(q));
+  return `<div class="pop" id="pop" role="dialog" aria-label="Switch workspace" style="width:min(320px, calc(100% - 24px)); grid-template-rows: auto minmax(0,1fr) auto">
+    <div class="q"><input id="pq" placeholder="Go to a workspace in ${esc(p.id)}…" value="${esc(st.q)}" autocomplete="off"><span class="kbd">⌘P</span></div>
+    <div class="col" role="listbox" aria-label="Workspaces" style="overflow:auto;padding:6px">${ws.map(x => `<div class="rowwrap"><button class="row" role="option" aria-selected="${x.j === st.sel[1]}" data-pw="${x.j}"><span class="name">${esc(x.w[0])}</span>${needs(x.w[1])}</button>${pinBtn(st.p, x.j)}</div>`).join("") || '<div class="row sub">No workspace matches.</div>'}
+      <button class="row" style="color:var(--muted)" data-act="neww">+ New workspace…</button></div>
+    <div class="foot"><span><span class="kbd">↑↓</span> move</span><span><span class="kbd">⏎</span> go</span><span><span class="kbd">esc</span> close</span></div></div>`;
+}
+function render() {
+  const r = [renderA, renderB, renderC, renderD][st.v]();
+  const wsOnly = st.v === 3 && st.railMode === "show";
+  const w = $("#win"); w.className = "win " + r.cls; w.innerHTML = r.html + (st.open && st.v !== 1 ? (wsOnly ? wsPopover() : popover()) : "");
+  $("#vlabel").textContent = `${VARIANTS[st.v].key} · ${VARIANTS[st.v].name}`;
+  const ap = $("#actpos"); if (ap) { ap.hidden = st.v !== 3; ap.querySelectorAll("button").forEach(x => x.setAttribute("aria-checked", x.dataset.actpos === st.actPos)); }
+  if (st.open && st.v !== 1) {
+    const o = $("#opener").getBoundingClientRect(), wr = w.getBoundingClientRect(), pop = $("#pop");
+    pop.style.top = (o.bottom - wr.top + 6) + "px"; pop.style.left = Math.max(12, Math.min(o.left - wr.left, wr.width - pop.offsetWidth - 12)) + "px";
+    const i = $("#pq"); i.focus(); i.setSelectionRange(i.value.length, i.value.length);
+  }
+}
+// Hiding slides the rail out to the left while its column closes and the content follows it; showing does the
+// reverse. One easing and one duration for both, none under reduced motion.
+const SLIDE_MS = 260;
+const reduced = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+function persistRail() { try { localStorage.setItem("proto-switcher-rail", st.railMode); } catch (e) {} }
+function setRail(mode) {
+  if (mode === st.railMode && !st.peek) return;
+  const w = $("#win");
+  if (mode === "auto") {
+    if (st.peek) { st.railMode = "auto"; persistRail(); return closePeek(); }
+    if (reduced()) { st.railMode = "auto"; st.open = false; persistRail(); return render(); }
+    w.classList.add("rail-closing");
+    setTimeout(() => { st.railMode = "auto"; st.open = false; persistRail(); render(); }, SLIDE_MS);
+    return;
+  }
+  // show: from the peek it is already on screen, so it settles into its column; from hidden it slides in.
+  const fromPeek = st.peek; st.railMode = "show"; st.peek = false; st.open = false; persistRail();
+  render();
+  if (reduced() || fromPeek) return;
+  w.classList.add("rail-opening-start"); void w.offsetWidth;
+  w.classList.remove("rail-opening-start"); w.classList.add("rail-opening");
+  setTimeout(() => w.classList.remove("rail-opening"), SLIDE_MS + 20);
+}
+function closePeek() {
+  const p = $("#railpeek"); if (!p || reduced()) { st.peek = false; return render(); }
+  p.classList.add("leaving"); setTimeout(() => { st.peek = false; render(); }, 200);
+}
+function go(i) { st.v = (i + NV) % NV; st.open = false; try { localStorage.setItem("proto-switcher-variant", st.v); } catch (e) {} render(); }
+function openPop() { st.open = true; st.q = ""; st.sel = [st.p, st.w]; render(); }
+function choose(p, w) { st.p = p; st.w = w; st.open = false; render(); }
+
+document.addEventListener("click", e => {
+  const tb = e.target.closest("input[data-todo]"); if (tb) { st.todos[+tb.dataset.todo][1] = tb.checked; return render(); }
+  const b = e.target.closest("button"); const inPop = e.target.closest("#pop");
+  if (!b) { if (st.open && !inPop) { st.open = false; render(); } return; }
+  if (b.id === "prev") return go(st.v - 1); if (b.id === "next") return go(st.v + 1);
+  if (b.id === "opener") return st.open ? (st.open = false, render()) : openPop();
+  if (b.dataset.pp) { st.sel = [+b.dataset.pp, 0]; return render(); }
+  if (b.dataset.rail) return setRail(b.dataset.rail);
+  if (b.dataset.view) { if (st.view === b.dataset.view) return; st.view = b.dataset.view; st.viewAnim = !reduced(); render(); st.viewAnim = false; return; }
+  if (b.dataset.right) { const was = st.right; st.right = st.right === b.dataset.right ? null : b.dataset.right; return once("right", !was && !!st.right); }
+  if (b.dataset.bl) { const was = st.bl; st.bl = st.bl === b.dataset.bl ? null : b.dataset.bl; return once("bl", !was && !!st.bl); }
+  if (b.dataset.br) { const was = st.br; st.br = st.br === b.dataset.br ? null : b.dataset.br; return once("br", !was && !!st.br); }
+  if (b.id === "popener") return st.open ? (st.open = false, render()) : openPop();
+  if (b.dataset.actpos) { st.actPos = b.dataset.actpos; try { localStorage.setItem("proto-switcher-act", st.actPos); } catch (er) {} return render(); }
+  if (b.dataset.pinp) { if (b.getAttribute("aria-disabled") === "true") return; e.stopPropagation(); return togglePin(+b.dataset.pinp, +b.dataset.pinw); }
+  if (b.dataset.unpin) { st.pins.splice(+b.dataset.unpin, 1); try { localStorage.setItem("proto-switcher-pins2", JSON.stringify(st.pins)); } catch (er) {} return render(); }
+  if (b.dataset.ppin) { const to = +b.dataset.ppin; if (to === st.w) return; const pins = projPins(); const dir = pins.findIndex(x => x.w === to) > pins.findIndex(x => x.w === st.w) ? "next" : "prev"; st.w = to; st.open = false; st.slide = reduced() ? "" : dir; render(); st.slide = ""; return; }
+  if (b.dataset.pin) { const x = st.pins[+b.dataset.pin]; st.p = x.p; st.w = x.w; st.open = false; return render(); }
+  if (b.dataset.pw) return choose(st.v === 3 && st.railMode === "show" ? st.p : st.sel[0], +b.dataset.pw);
+  if (b.dataset.act === "neww") { st.open = false; return render(); }
+  if (b.dataset.rp) { st.p = +b.dataset.rp; st.w = 0; st.open = false; return render(); }
+  if (b.dataset.sw) { st.w = +b.dataset.sw; return render(); }
+  if (b.dataset.chat) { st.chat = +b.dataset.chat; return render(); }
+  if (st.open && !inPop) { st.open = false; render(); }
+});
+document.addEventListener("input", e => { if (e.target.id === "pq") { st.q = e.target.value; const q = st.q.toLowerCase();
+  if (st.v === 3) { const j = P().ws.findIndex(w => w[0].includes(q)); st.sel = [st.p, Math.max(0, j)]; return render(); }
+  const i = PROJECTS.findIndex(p => p.id.includes(q) || p.ws.some(w => w[0].includes(q))); if (i >= 0) st.sel = [i, 0]; render(); } });
+// A sideways swipe (two-finger trackpad or shift-wheel) over the side panel moves to the next or previous
+// pinned workspace, sliding the panel's list in the swipe's direction. One step per gesture.
+let swipeAcc = 0, swipeDone = false, swipeQuiet = 0;
+function stepPin(dir) {
+  const pins = projPins(); if (!pins.length) return;
+  const here = pins.findIndex(x => x.w === st.w);
+  const i = here < 0 ? (dir > 0 ? 0 : pins.length - 1) : (here + dir + pins.length) % pins.length;
+  if (pins[i].w === st.w) return;
+  st.w = pins[i].w; st.open = false;
+  st.slide = reduced() ? "" : (dir > 0 ? "next" : "prev"); render(); st.slide = "";
+  const d = document.querySelector(".wchip.here"); if (d) d.scrollIntoView({ inline: "nearest", block: "nearest", behavior: reduced() ? "auto" : "smooth" });
+}
+document.addEventListener("wheel", e => {
+  // Only the title bar switches workspaces; a sideways scroll anywhere else scrolls what is under it.
+  if (st.v !== 3 || !e.target.closest(".titlebar")) return;
+  const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
+  if (Math.abs(dx) <= Math.abs(e.deltaY) && !e.shiftKey) return;
+  const strip = e.target.closest("#wstrip"); if (strip && strip.scrollWidth > strip.clientWidth + 2) return; // a long strip scrolls itself
+  e.preventDefault();
+  // One workspace per gesture: once a swipe has stepped, every further wheel event of that gesture (the
+  // trackpad's momentum included) is ignored until the wheel has been quiet for a moment.
+  clearTimeout(swipeQuiet); swipeQuiet = setTimeout(() => { swipeDone = false; swipeAcc = 0; }, 220);
+  if (swipeDone) return;
+  swipeAcc += dx;
+  if (Math.abs(swipeAcc) > 60) { swipeDone = true; stepPin(swipeAcc > 0 ? 1 : -1); }
+}, { passive: false });
+document.addEventListener("mousemove", e => {
+  if (st.v !== 3 || st.railMode !== "auto") return;
+  const wr = $("#win").getBoundingClientRect(), x = e.clientX - wr.left;
+  if (!st.peek && x >= 0 && x < 6 && e.clientY > wr.top + 40) { st.peek = true; once("peek", true); }
+  else if (st.peek && x > 70 && !$("#railpeek.leaving")) closePeek();
+});
+document.addEventListener("mouseover", e => {
+  const t = e.target.closest("[data-tip]"); document.querySelectorAll(".tip").forEach(x => x.remove()); if (!t) return;
+  const d = document.createElement("div"); d.className = "tip"; d.textContent = t.dataset.tip; $("#win").appendChild(d);
+  const r = t.getBoundingClientRect(), wr = $("#win").getBoundingClientRect(); d.style.left = (r.right - wr.left + 10) + "px"; d.style.top = (r.top - wr.top + 8) + "px";
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.id === "tadd") { if (e.target.value.trim()) { st.todos.unshift([e.target.value.trim(), false]); render(); const t = $("#tadd"); if (t) t.focus(); } return; }
+  if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key) && st.v === 3) { const x = projPins()[+e.key - 1]; if (x) { e.preventDefault(); st.w = x.w; st.open = false; render(); } return; }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "p" && st.v !== 1) { e.preventDefault(); return st.open ? (st.open = false, render()) : openPop(); }
+  if (st.open) {
+    const cur = PROJECTS[st.sel[0]];
+    if (e.key === "Escape") { st.open = false; return render(); }
+    if (e.key === "ArrowDown") { e.preventDefault(); st.sel[1] = Math.min(cur.ws.length - 1, st.sel[1] + 1); return render(); }
+    if (e.key === "ArrowUp") { e.preventDefault(); st.sel[1] = Math.max(0, st.sel[1] - 1); return render(); }
+    if (e.key === "Enter") { e.preventDefault(); return choose(st.sel[0], st.sel[1]); }
+    return;
+  }
+  if (e.target.closest && e.target.closest("input")) return;
+  if (e.key === "ArrowLeft") go(st.v - 1); if (e.key === "ArrowRight") go(st.v + 1);
+});
+render();
+</script>
