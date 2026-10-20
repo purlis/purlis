@@ -7,16 +7,21 @@
 //! view. Read from the engine's own layout of the page (`DOMSnapshot.captureSnapshot`), never
 //! from a script in the page.
 //!
-//! Every box is placed in its own document's coordinates, so each element is compared with the
-//! boxes it is in, then with what its document's frame shows, then, for a frame whose element
-//! this read holds, that element with the boxes it is in, outward to the page.
+//! Every box is placed in its own document's coordinates. An element's part is cut to each box it
+//! is in, then to what its document's frame shows, then carried into the frame element's
+//! document, placed by the element's content box (inside its border and padding, each side its
+//! own) at the scale the page draws the element at, and cut again to the boxes that element is
+//! in, outward to the page (#2840). A frame read in a session of its own is carried the same way
+//! through the layout of each session around it ([`through`]). What is left of the part, nothing
+//! or some, says whether it is cut off.
 //!
 //! **Nothing is said to be cut off that is not known to be.** An element taken out of the flow
 //! (`position: absolute` or `fixed`) is not compared with a box that may not hold it; the page's
 //! root and body, whose overflow is the viewport's, are left to the viewport's own check; only a
 //! box CSS applies overflow to cuts anything off (never an inline box, nor `overflow: clip` with a
-//! margin to paint into); a frame is compared at the size its element shows it before any
-//! transform, and not at all when that size is not given; and an answer that cannot be read
+//! margin to paint into); a frame is not carried through when its client box is not given, or
+//! where it or a box around it is turned or skewed (a transform other than a move or a scale),
+//! where its layout's bounds no longer say where it is drawn; and an answer that cannot be read
 //! says nothing is cut off.
 
 use std::collections::{HashMap, HashSet};
@@ -26,13 +31,26 @@ use serde_json::Value;
 use super::blank::Rect;
 
 /// The styles read for each element laid out, in this order.
-pub(crate) const STYLES: [&str; 5] = [
+pub(crate) const STYLES: [&str; 14] = [
     "overflow-x",
     "overflow-y",
     "position",
     "display",
     "overflow-clip-margin",
+    "border-left-width",
+    "border-top-width",
+    "border-right-width",
+    "border-bottom-width",
+    "padding-left",
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "transform",
 ];
+
+/// The size an element no wider, or no taller, than nothing is given, so what is left of it says
+/// whether it is cut off as a line's would.
+const LEAST_SIZE: f64 = 1e-3;
 
 /// The boxes whose overflow cuts off what does not fit: CSS applies `overflow` to block
 /// containers, flex and grid containers, and table cells, never to an inline box.
@@ -53,10 +71,26 @@ const CUT_BY_OVERFLOW: [&str; 9] = [
 /// they are in shows. `shows` is what the answer's first document shows, in its own
 /// coordinates, when that is known and to be compared (a frame read in a session of its own).
 pub(crate) fn clipped(answer: &Value, wanted: &HashSet<i64>, shows: Option<Rect>) -> HashSet<i64> {
+    shown_parts(answer, wanted, shows)
+        .into_iter()
+        .filter(|(_, part)| part.as_ref().is_some_and(empty))
+        .map(|(backend, _)| backend)
+        .collect()
+}
+
+/// The part of each of `wanted` that its boxes and frames in `answer` let show, in the
+/// coordinates of the answer's first document, cut to `shows` there where it is given (#2840):
+/// empty where nothing of it shows, and `None` where that is not known. One the answer does not
+/// lay out is left out.
+pub(crate) fn shown_parts(
+    answer: &Value,
+    wanted: &HashSet<i64>,
+    shows: Option<Rect>,
+) -> HashMap<i64, Option<Rect>> {
     let Some(read) = Read::of(answer) else {
-        return HashSet::new();
+        return HashMap::new();
     };
-    let mut out = HashSet::new();
+    let mut out = HashMap::new();
     for (d, document) in read.documents.iter().enumerate() {
         for (at, backend) in document.backends.iter().enumerate() {
             if !wanted.contains(backend) {
@@ -65,73 +99,54 @@ pub(crate) fn clipped(answer: &Value, wanted: &HashSet<i64>, shows: Option<Rect>
             let Some(rect) = document.placed.get(&at).map(|p| p.bounds) else {
                 continue;
             };
-            if read.cut_off(d, at, rect, shows, 0) {
-                out.insert(*backend);
-            }
+            let rect = Rect {
+                width: rect.width.max(LEAST_SIZE),
+                height: rect.height.max(LEAST_SIZE),
+                ..rect
+            };
+            out.insert(*backend, read.shown(d, at, rect, shows, 0));
         }
     }
     out
 }
 
-/// The part of a frame's document that the boxes its element is in on the page around it let
-/// show (#2689), in that document's own coordinates, its frame scrolled to `scrolled`: for a
-/// frame from another site, read in a session of its own, whose page's layout is `answer` and
-/// whose element is the node `owner` there. Empty where a box cuts the whole frame off; `None`
-/// where the element, or the size it shows its document at, is not in the read.
-///
-/// The frame shows its document at its element's client size, inset by the element's border
-/// on each side alike. Only the boxes of the document the element is in are read: a box further
-/// out, in a frame around that one, is not.
-pub(crate) fn shown_through(answer: &Value, owner: i64, scrolled: (f64, f64)) -> Option<Rect> {
+/// What of `part`, a part of the document a frame element of `answer` shows (the node `owner`,
+/// its document scrolled to `scrolled`), the frame and the boxes around its element let show,
+/// in the coordinates of the answer's first document, cut to `shows` there where it is given
+/// (#2689, #2840): for a frame from another site, read in a session of its own. Empty where
+/// nothing of it shows; `None` where that is not known.
+pub(crate) fn through(
+    answer: &Value,
+    owner: i64,
+    part: Rect,
+    scrolled: (f64, f64),
+    shows: Option<Rect>,
+) -> Option<Rect> {
     let read = Read::of(answer)?;
-    let (document, at) = read.documents.iter().find_map(|document| {
-        let at = document.backends.iter().position(|b| *b == owner)?;
-        Some((document, at))
-    })?;
-    let element = document.placed.get(&at)?;
-    let &(width, height) = document.client.get(&at)?;
-    if width <= 0.0 || height <= 0.0 {
-        return None;
+    let (d, at) = read
+        .documents
+        .iter()
+        .enumerate()
+        .find_map(|(d, document)| Some((d, document.backends.iter().position(|b| *b == owner)?)))?;
+    let carried = read.carried_out(d, at, part, scrolled)?;
+    read.shown(d, at, carried, shows, 0)
+}
+
+/// Whether nothing of `rect` is left.
+pub(crate) fn empty(rect: &Rect) -> bool {
+    rect.width <= 0.0 || rect.height <= 0.0
+}
+
+/// The part `a` and `b` share: empty (no width, or no height) where they share none.
+pub(crate) fn overlap(a: &Rect, b: &Rect) -> Rect {
+    let x = a.x.max(b.x);
+    let y = a.y.max(b.y);
+    Rect {
+        x,
+        y,
+        width: ((a.x + a.width).min(b.x + b.width) - x).max(0.0),
+        height: ((a.y + a.height).min(b.y + b.height) - y).max(0.0),
     }
-    let origin = (
-        element.bounds.x + (element.bounds.width - width).max(0.0) / 2.0,
-        element.bounds.y + (element.bounds.height - height).max(0.0) / 2.0,
-    );
-    let mut shown = Rect {
-        x: origin.0,
-        y: origin.1,
-        width,
-        height,
-    };
-    // The boxes it is in, as `Read::cut_off` walks them.
-    let mut out_of_flow = element.position;
-    let mut next = document.parents.get(at).copied().flatten();
-    let mut steps = 0;
-    while let Some(up) = next {
-        steps += 1;
-        if steps > document.parents.len() || out_of_flow == Position::Fixed {
-            break;
-        }
-        if let Some(placed) = document.placed.get(&up) {
-            let holds = match out_of_flow {
-                Position::Absolute => placed.position != Position::InFlow,
-                _ => true,
-            };
-            if holds && !document.roots.contains(&up) {
-                shown = within(shown, placed);
-            }
-            if holds {
-                out_of_flow = placed.position;
-            }
-        }
-        next = document.parents.get(up).copied().flatten();
-    }
-    Some(Rect {
-        x: shown.x - origin.0 + scrolled.0,
-        y: shown.y - origin.1 + scrolled.1,
-        width: shown.width,
-        height: shown.height,
-    })
 }
 
 /// `rect` cut to `placed` on each axis `placed` cuts off what overflows it on: empty (no width,
@@ -161,6 +176,15 @@ fn within(rect: Rect, placed: &Placed) -> Rect {
     }
 }
 
+/// An element's border and padding, each side its own (left, top, right, bottom), and whether a
+/// transform turns or skews it.
+#[derive(Debug, Clone, Copy)]
+struct Boxing {
+    border: [f64; 4],
+    padding: [f64; 4],
+    turned: bool,
+}
+
 /// How an element laid out is placed.
 #[derive(Debug, Clone, Copy)]
 struct Placed {
@@ -168,6 +192,8 @@ struct Placed {
     /// Whether it cuts off what overflows it, across and down.
     cuts: (bool, bool),
     position: Position,
+    /// Its border, padding and transform, where the read gives them.
+    boxing: Option<Boxing>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -276,9 +302,9 @@ impl Read {
                     .map(string)
                     .collect::<Option<_>>()?;
                 // What is not an element (a text, the document) is given no styles.
-                let (cut, position) = match style.as_slice() {
-                    [] => ((false, false), Position::InFlow),
-                    [across, down, position, display, margin] => (
+                let (cut, position, boxing) = match style.as_slice() {
+                    [] => ((false, false), Position::InFlow, None),
+                    [across, down, position, display, margin, sides @ ..] if sides.len() == 9 => (
                         if CUT_BY_OVERFLOW.contains(display) {
                             (cuts(across, margin), cuts(down, margin))
                         } else {
@@ -290,6 +316,7 @@ impl Read {
                             "relative" | "sticky" => Position::Holds,
                             _ => Position::InFlow,
                         },
+                        boxing(sides),
                     ),
                     _ => return None,
                 };
@@ -304,6 +331,7 @@ impl Read {
                         },
                         cuts: cut,
                         position,
+                        boxing,
                     },
                 );
             }
@@ -331,16 +359,21 @@ impl Read {
         Some(Read { documents, owners })
     }
 
-    /// Whether the node `at` of document `d`, laid out at `rect`, is wholly outside a box it is
-    /// in that cuts off what overflows it, or outside what its frame shows; `shows` what the
-    /// first document shows, when known. `depth` counts the frames passed on the way out.
-    fn cut_off(&self, d: usize, at: usize, rect: Rect, shows: Option<Rect>, depth: usize) -> bool {
-        let Some(document) = self.documents.get(d) else {
-            return false;
-        };
-        let Some(own) = document.placed.get(&at) else {
-            return false;
-        };
+    /// What of `rect`, a part of the node `at` of document `d`, the boxes it is in let show,
+    /// then what its document's frame shows, outward through each frame element this read holds
+    /// to the first document, cut to `shows` there; `None` where that is not known. `depth`
+    /// counts the frames passed on the way out.
+    fn shown(
+        &self,
+        d: usize,
+        at: usize,
+        rect: Rect,
+        shows: Option<Rect>,
+        depth: usize,
+    ) -> Option<Rect> {
+        let document = self.documents.get(d)?;
+        let own = document.placed.get(&at)?;
+        let mut part = rect;
         // Until the box that holds an element taken out of the flow, no box is known to hold it.
         let mut out_of_flow = own.position;
         let mut next = document.parents.get(at).copied().flatten();
@@ -348,15 +381,15 @@ impl Read {
         while let Some(up) = next {
             steps += 1;
             if steps > document.parents.len() || out_of_flow == Position::Fixed {
-                return false;
+                return None;
             }
             if let Some(placed) = document.placed.get(&up) {
                 let holds = match out_of_flow {
                     Position::Absolute => placed.position != Position::InFlow,
                     _ => true,
                 };
-                if holds && !document.roots.contains(&up) && outside(&rect, placed) {
-                    return true;
+                if holds && !document.roots.contains(&up) {
+                    part = within(part, placed);
                 }
                 if holds {
                     out_of_flow = placed.position;
@@ -365,46 +398,127 @@ impl Read {
             next = document.parents.get(up).copied().flatten();
         }
         if out_of_flow == Position::Fixed {
-            return false;
+            return None;
         }
         match self.owners.get(&d) {
             Some(&(parent, frame)) if depth < self.documents.len() => {
-                let Some(owner) = self.documents.get(parent) else {
-                    return false;
-                };
-                let Some(element) = owner.placed.get(&frame) else {
-                    return false;
-                };
-                // What the frame shows, in its document's coordinates: from where it is scrolled
-                // to, at the size the frame element shows it before any transform.
-                let outside_its_frame = owner.client.get(&frame).is_some_and(|&(width, height)| {
-                    let frame_shows = Rect {
-                        x: document.scrolled.0,
-                        y: document.scrolled.1,
-                        width,
-                        height,
-                    };
-                    width > 0.0 && height > 0.0 && !meets(&rect, &frame_shows)
-                });
-                outside_its_frame || self.cut_off(parent, frame, element.bounds, shows, depth + 1)
+                let carried = self.carried_out(parent, frame, part, document.scrolled)?;
+                self.shown(parent, frame, carried, shows, depth + 1)
             }
-            Some(_) => false,
-            None => shows.is_some_and(|shows| d == 0 && !meets(&rect, &shows)),
+            Some(_) => None,
+            None => Some(match shows {
+                Some(shows) if d == 0 => overlap(&part, &shows),
+                _ => part,
+            }),
         }
+    }
+
+    /// `part`, of the document the frame element `frame` of document `d` shows (scrolled to
+    /// `scrolled`), cut to what the frame shows and carried into `d`'s coordinates: placed at
+    /// the element's content box, at the scale the page draws the element at. `None` where the
+    /// element's client box or border and padding are not given, or it or a box around it is
+    /// turned or skewed.
+    fn carried_out(
+        &self,
+        d: usize,
+        frame: usize,
+        part: Rect,
+        scrolled: (f64, f64),
+    ) -> Option<Rect> {
+        let document = self.documents.get(d)?;
+        let element = document.placed.get(&frame)?;
+        let boxing = element.boxing?;
+        let mut next = Some(frame);
+        let mut steps = 0;
+        while let Some(at) = next {
+            steps += 1;
+            if steps > document.parents.len() + 1 {
+                return None;
+            }
+            if document
+                .placed
+                .get(&at)
+                .and_then(|p| p.boxing)
+                .is_some_and(|b| b.turned)
+            {
+                return None;
+            }
+            next = document.parents.get(at).copied().flatten();
+        }
+        let &(client_width, client_height) = document.client.get(&frame)?;
+        let [left, top, right, bottom] = boxing.border;
+        let [pad_left, pad_top, pad_right, pad_bottom] = boxing.padding;
+        let content = (
+            client_width - pad_left - pad_right,
+            client_height - pad_top - pad_bottom,
+        );
+        let laid = (left + client_width + right, top + client_height + bottom);
+        if content.0 <= 0.0 || content.1 <= 0.0 || laid.0 <= 0.0 || laid.1 <= 0.0 {
+            return None;
+        }
+        let scale = (
+            element.bounds.width / laid.0,
+            element.bounds.height / laid.1,
+        );
+        if !(scale.0.is_finite() && scale.1.is_finite() && scale.0 > 0.0 && scale.1 > 0.0) {
+            return None;
+        }
+        let view = Rect {
+            x: scrolled.0,
+            y: scrolled.1,
+            width: content.0,
+            height: content.1,
+        };
+        let seen = overlap(&part, &view);
+        Some(Rect {
+            x: element.bounds.x + (left + pad_left + seen.x - scrolled.0) * scale.0,
+            y: element.bounds.y + (top + pad_top + seen.y - scrolled.1) * scale.1,
+            width: seen.width * scale.0,
+            height: seen.height * scale.1,
+        })
     }
 }
 
-/// Whether `rect` is wholly outside `placed` on an axis `placed` cuts off what overflows it on.
-fn outside(rect: &Rect, placed: &Placed) -> bool {
-    let b = &placed.bounds;
-    let across = rect.x + rect.width <= b.x || b.x + b.width <= rect.x;
-    let down = rect.y + rect.height <= b.y || b.y + b.height <= rect.y;
-    (placed.cuts.0 && across) || (placed.cuts.1 && down)
+/// An element's border, padding and transform from the nine styles after its first five; `None`
+/// where a length cannot be read.
+fn boxing(sides: &[&str]) -> Option<Boxing> {
+    let length = |text: &str| -> Option<f64> {
+        text.strip_suffix("px")
+            .unwrap_or(text)
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|n| n.is_finite())
+    };
+    let lengths: Vec<f64> = sides[..8]
+        .iter()
+        .map(|s| length(s))
+        .collect::<Option<_>>()?;
+    Some(Boxing {
+        border: [lengths[0], lengths[1], lengths[2], lengths[3]],
+        padding: [lengths[4], lengths[5], lengths[6], lengths[7]],
+        turned: turned(sides[8]),
+    })
 }
 
-/// Whether `a` and `b` share any part.
-fn meets(a: &Rect, b: &Rect) -> bool {
-    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+/// Whether `transform`, as the engine computes it, does more than move or scale: anything it
+/// cannot be read as (`matrix3d` among them) is taken to.
+fn turned(transform: &str) -> bool {
+    let transform = transform.trim();
+    if transform.is_empty() || transform == "none" {
+        return false;
+    }
+    let Some(inner) = transform
+        .strip_prefix("matrix(")
+        .and_then(|rest| rest.strip_suffix(')'))
+    else {
+        return true;
+    };
+    let numbers: Option<Vec<f64>> = inner.split(',').map(|n| n.trim().parse().ok()).collect();
+    match numbers.as_deref() {
+        Some(&[a, b, c, d, _, _]) => b != 0.0 || c != 0.0 || a <= 0.0 || d <= 0.0,
+        _ => true,
+    }
 }
 
 /// Whether an overflow cuts off what does not fit; `clip` only with no margin to paint into.

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use serde_json::{Value, json};
 
-use super::{Rect, clipped, shown_through};
+use super::{Rect, clipped, empty, through};
 
 /// A document as the engine answers it: each node its name, its parent and its id; each laid
 /// out one its box and its styles (`overflow-x`, `overflow-y`, `position`, `display`,
@@ -14,12 +14,29 @@ struct Doc {
     nodes: Vec<(&'static str, i64, i64)>,
     laid: Vec<(usize, [f64; 4], Style)>,
     clients: Vec<(usize, [f64; 4])>,
+    /// Each laid out element's border and padding (left, top, right, bottom, in pixels) and
+    /// transform, where not none of each (#2840).
+    boxes: Vec<(usize, Boxes)>,
     scrolled: (f64, f64),
     /// The frame elements of this document, by node, and the document each one holds.
     contents: Vec<(usize, usize)>,
 }
 
 type Style = [&'static str; 5];
+
+/// An element's border and padding, each side its own, and its transform.
+#[derive(Clone, Copy)]
+struct Boxes {
+    border: [f64; 4],
+    padding: [f64; 4],
+    transform: &'static str,
+}
+
+const NO_BOXES: Boxes = Boxes {
+    border: [0.0; 4],
+    padding: [0.0; 4],
+    transform: "none",
+};
 
 const SHOWN: Style = ["visible", "visible", "static", "block", "0px"];
 const SCROLLS: Style = ["auto", "auto", "static", "block", "0px"];
@@ -49,7 +66,21 @@ fn answer(docs: &[Doc]) -> Value {
                     if doc.nodes[*node].0 == "#text" {
                         Vec::new()
                     } else {
-                        style.iter().map(|s| index(s)).collect()
+                        let boxes = doc
+                            .boxes
+                            .iter()
+                            .find(|(n, _)| n == node)
+                            .map_or(NO_BOXES, |(_, b)| *b);
+                        let sides: Vec<String> = boxes
+                            .border
+                            .iter()
+                            .chain(&boxes.padding)
+                            .map(|n| format!("{n}px"))
+                            .collect();
+                        let mut out: Vec<i64> = style.iter().map(|s| index(s)).collect();
+                        out.extend(sides.iter().map(|s| index(s)));
+                        out.push(index(boxes.transform));
+                        out
                     }
                 })
                 .collect();
@@ -110,6 +141,7 @@ fn list(list_style: Style, third_style: Style) -> Doc {
         scrolled: (0.0, 0.0),
         contents: Vec::new(),
         clients: Vec::new(),
+        boxes: Vec::new(),
     }
 }
 
@@ -172,6 +204,7 @@ fn framed(page_box: Style) -> Vec<Doc> {
             scrolled: (0.0, 0.0),
             contents: vec![(4, 1)],
             clients: Vec::new(),
+            boxes: Vec::new(),
         },
         Doc {
             nodes: vec![
@@ -192,6 +225,7 @@ fn framed(page_box: Style) -> Vec<Doc> {
             scrolled: (0.0, 300.0),
             contents: Vec::new(),
             clients: Vec::new(),
+            boxes: Vec::new(),
         },
     ]
 }
@@ -250,6 +284,7 @@ fn an_inline_box_cuts_nothing_off_whatever_its_overflow() {
         scrolled: (0.0, 0.0),
         contents: Vec::new(),
         clients: Vec::new(),
+        boxes: Vec::new(),
     };
     assert!(clipped(&answer(&[doc]), &ids(&[5]), None).is_empty());
     // The same box as an inline block cuts it off.
@@ -298,41 +333,214 @@ fn an_answer_that_cannot_be_read_cuts_nothing_off() {
     assert!(clipped(&read, &ids(&[7]), None).is_empty());
 }
 
-/// The page around a frame from another site, read in a session of its own (#2689): `framed`'s
-/// page alone, whose frame element is node 5.
-fn around_a_frame(page_box: Style, box_bounds: [f64; 4]) -> Value {
-    let mut page = framed(page_box).remove(0);
-    page.laid[2].1 = box_bounds;
+const HIDDEN: Style = ["hidden", "hidden", "static", "block", "0px"];
+
+/// A page whose box cuts off what overflows it below `box_bottom`, holding a frame element laid
+/// out at `frame` with the client box `client` and `boxes`, whose document is scrolled to its
+/// top and holds a paragraph 20 high at `child_at` (node 30) (#2840).
+fn in_a_box(
+    box_bottom: f64,
+    frame: [f64; 4],
+    client: [f64; 4],
+    boxes: Boxes,
+    child_at: f64,
+) -> Vec<Doc> {
+    vec![
+        Doc {
+            nodes: vec![
+                ("#document", -1, 1),
+                ("HTML", 0, 2),
+                ("BODY", 1, 3),
+                ("DIV", 2, 4),
+                ("IFRAME", 3, 5),
+            ],
+            laid: vec![
+                (1, [0.0, 0.0, 800.0, 600.0], SHOWN),
+                (2, [0.0, 0.0, 800.0, 600.0], SHOWN),
+                (3, [0.0, 0.0, 800.0, box_bottom], HIDDEN),
+                (4, frame, SHOWN),
+            ],
+            scrolled: (0.0, 0.0),
+            contents: vec![(4, 1)],
+            clients: vec![(4, client)],
+            boxes: vec![(4, boxes)],
+        },
+        Doc {
+            nodes: vec![
+                ("#document", -1, 20),
+                ("HTML", 0, 21),
+                ("BODY", 1, 22),
+                ("P", 2, 30),
+            ],
+            laid: vec![
+                (1, [0.0, 0.0, 200.0, 1000.0], SHOWN),
+                (2, [0.0, 0.0, 200.0, 1000.0], SHOWN),
+                (3, [0.0, child_at, 200.0, 20.0], SHOWN),
+            ],
+            scrolled: (0.0, 0.0),
+            contents: Vec::new(),
+            clients: Vec::new(),
+            boxes: Vec::new(),
+        },
+    ]
+}
+
+fn cut_in_a_box(
+    box_bottom: f64,
+    frame: [f64; 4],
+    client: [f64; 4],
+    boxes: Boxes,
+    child_at: f64,
+) -> bool {
+    let read = answer(&in_a_box(box_bottom, frame, client, boxes, child_at));
+    clipped(&read, &ids(&[30]), None).contains(&30)
+}
+
+const FRAME: [f64; 4] = [10.0, 400.0, 200.0, 100.0];
+const CLIENT: [f64; 4] = [0.0, 0.0, 200.0, 100.0];
+
+#[test]
+fn a_box_on_the_page_that_cuts_off_part_of_a_frame_marks_what_it_hides_of_the_frame() {
+    // The box ends 50 into the frame.
+    assert!(!cut_in_a_box(450.0, FRAME, CLIENT, NO_BOXES, 20.0));
+    assert!(cut_in_a_box(450.0, FRAME, CLIENT, NO_BOXES, 60.0));
+}
+
+#[test]
+fn a_frame_with_padding_shows_its_document_inside_it() {
+    // 20 of padding on every side: the document starts at (30, 420), and a paragraph 32 down
+    // it starts at 452, below the box's bottom at 450.
+    let padded = Boxes {
+        padding: [20.0; 4],
+        ..NO_BOXES
+    };
+    let (frame, client) = ([10.0, 400.0, 240.0, 140.0], [0.0, 0.0, 240.0, 140.0]);
+    assert!(cut_in_a_box(450.0, frame, client, padded, 32.0));
+    assert!(!cut_in_a_box(450.0, frame, client, padded, 25.0));
+}
+
+#[test]
+fn a_frame_whose_border_is_wider_on_one_side_shows_its_document_inside_that_border() {
+    // A border of 30 on top alone: the document starts at 430, and a paragraph 25 down it at
+    // 455, below the box's bottom at 450.
+    let topped = Boxes {
+        border: [0.0, 30.0, 0.0, 0.0],
+        ..NO_BOXES
+    };
+    let frame = [10.0, 400.0, 200.0, 130.0];
+    assert!(cut_in_a_box(450.0, frame, CLIENT, topped, 25.0));
+    assert!(!cut_in_a_box(450.0, frame, CLIENT, topped, 15.0));
+}
+
+#[test]
+fn a_frame_the_page_scales_is_compared_where_the_page_draws_it() {
+    // Drawn at half its size, 100 by 50: a paragraph 40 down its document is drawn 20 down the
+    // frame, at 420 to 430, inside the box that ends at 430; one 60 down it, at 430, is not.
+    let halved = Boxes {
+        transform: "matrix(0.5, 0, 0, 0.5, 0, 0)",
+        ..NO_BOXES
+    };
+    let frame = [10.0, 400.0, 100.0, 50.0];
+    assert!(!cut_in_a_box(430.0, frame, CLIENT, halved, 40.0));
+    assert!(cut_in_a_box(430.0, frame, CLIENT, halved, 60.0));
+}
+
+#[test]
+fn a_frame_the_page_turns_is_not_said_to_be_cut_off() {
+    let turned = Boxes {
+        transform: "matrix(0, 1, -1, 0, 0, 0)",
+        ..NO_BOXES
+    };
+    assert!(!cut_in_a_box(410.0, FRAME, CLIENT, turned, 90.0));
+    // Nor a frame in a box the page turns.
+    let mut docs = in_a_box(410.0, FRAME, CLIENT, NO_BOXES, 90.0);
+    docs[0].boxes.push((2, turned));
+    assert!(!clipped(&answer(&docs), &ids(&[30]), None).contains(&30));
+}
+
+#[test]
+fn a_box_in_a_frame_further_out_cuts_off_what_a_nested_frame_holds() {
+    // The page's box ends at 450; a frame at 400 holds, at its top, a frame whose paragraph 60
+    // down it is drawn at 460, and one 20 down it at 420.
+    let nested = |child_at: f64| {
+        let mut docs = in_a_box(
+            450.0,
+            [0.0, 400.0, 300.0, 200.0],
+            [0.0, 0.0, 300.0, 200.0],
+            NO_BOXES,
+            0.0,
+        );
+        docs[1] = Doc {
+            nodes: vec![
+                ("#document", -1, 20),
+                ("HTML", 0, 21),
+                ("BODY", 1, 22),
+                ("IFRAME", 2, 23),
+            ],
+            laid: vec![
+                (1, [0.0, 0.0, 300.0, 200.0], SHOWN),
+                (2, [0.0, 0.0, 300.0, 200.0], SHOWN),
+                (3, [0.0, 0.0, 200.0, 100.0], SHOWN),
+            ],
+            scrolled: (0.0, 0.0),
+            contents: vec![(3, 2)],
+            clients: vec![(3, CLIENT)],
+            boxes: Vec::new(),
+        };
+        docs.push(Doc {
+            nodes: vec![
+                ("#document", -1, 40),
+                ("HTML", 0, 41),
+                ("BODY", 1, 42),
+                ("P", 2, 30),
+            ],
+            laid: vec![
+                (1, [0.0, 0.0, 200.0, 1000.0], SHOWN),
+                (2, [0.0, 0.0, 200.0, 1000.0], SHOWN),
+                (3, [0.0, child_at, 200.0, 20.0], SHOWN),
+            ],
+            scrolled: (0.0, 0.0),
+            contents: Vec::new(),
+            clients: Vec::new(),
+            boxes: Vec::new(),
+        });
+        clipped(&answer(&docs), &ids(&[30]), None).contains(&30)
+    };
+    assert!(nested(60.0));
+    assert!(!nested(20.0));
+}
+
+/// The page around a frame from another site, read in a session of its own (#2689): its frame
+/// element is node 5, at (10, 400), 200 by 100, in a box that ends at `box_bottom`.
+fn around_a_frame(box_bottom: f64) -> Value {
+    let mut page = in_a_box(box_bottom, FRAME, CLIENT, NO_BOXES, 0.0).remove(0);
     page.contents.clear();
     answer(&[page])
 }
 
+/// The whole of what a frame scrolled to 300 shows: its document from 300 to 400.
+const WHOLE_VIEW: Rect = Rect {
+    x: 0.0,
+    y: 300.0,
+    width: 200.0,
+    height: 100.0,
+};
+
 #[test]
-fn a_box_on_the_page_that_cuts_off_a_whole_frame_lets_none_of_its_document_show() {
-    let hidden = ["hidden", "hidden", "static", "block", "0px"];
-    let shown = shown_through(
-        &around_a_frame(hidden, [0.0, 0.0, 800.0, 200.0]),
-        5,
-        (0.0, 300.0),
-    )
-    .expect("the frame's element is in the read");
-    assert!(shown.width <= 0.0 || shown.height <= 0.0, "{shown:?}");
+fn a_box_on_the_page_that_cuts_off_a_whole_frame_from_another_site_lets_none_of_it_show() {
+    let shown = through(&around_a_frame(200.0), 5, WHOLE_VIEW, (0.0, 300.0), None)
+        .expect("the frame's element is in the read");
+    assert!(empty(&shown), "{shown:?}");
 }
 
 #[test]
-fn a_box_on_the_page_that_cuts_off_part_of_a_frame_lets_the_rest_of_its_document_show() {
-    // The box ends at 450: the frame, from 400 to 500, shows its top 50, scrolled down 300.
-    let hidden = ["hidden", "hidden", "static", "block", "0px"];
-    let shown = shown_through(
-        &around_a_frame(hidden, [0.0, 0.0, 800.0, 450.0]),
-        5,
-        (0.0, 300.0),
-    );
+fn a_box_on_the_page_that_cuts_off_part_of_a_frame_from_another_site_lets_the_rest_show() {
+    let shown = through(&around_a_frame(450.0), 5, WHOLE_VIEW, (0.0, 300.0), None);
     assert_eq!(
         shown,
         Some(Rect {
-            x: 0.0,
-            y: 300.0,
+            x: 10.0,
+            y: 400.0,
             width: 200.0,
             height: 50.0
         })
@@ -340,17 +548,13 @@ fn a_box_on_the_page_that_cuts_off_part_of_a_frame_lets_the_rest_of_its_document
 }
 
 #[test]
-fn a_frame_no_box_cuts_off_shows_its_whole_size() {
-    let shown = shown_through(
-        &around_a_frame(SHOWN, [0.0, 0.0, 800.0, 200.0]),
-        5,
-        (0.0, 300.0),
-    );
+fn a_frame_from_another_site_no_box_cuts_off_shows_its_whole_size() {
+    let shown = through(&around_a_frame(600.0), 5, WHOLE_VIEW, (0.0, 300.0), None);
     assert_eq!(
         shown,
         Some(Rect {
-            x: 0.0,
-            y: 300.0,
+            x: 10.0,
+            y: 400.0,
             width: 200.0,
             height: 100.0
         })
@@ -359,6 +563,8 @@ fn a_frame_no_box_cuts_off_shows_its_whole_size() {
 
 #[test]
 fn a_frame_whose_element_is_not_in_the_read_shows_what_is_not_known() {
-    let read = around_a_frame(SHOWN, [0.0, 0.0, 800.0, 200.0]);
-    assert_eq!(shown_through(&read, 99, (0.0, 0.0)), None);
+    assert_eq!(
+        through(&around_a_frame(600.0), 99, WHOLE_VIEW, (0.0, 300.0), None),
+        None
+    );
 }
