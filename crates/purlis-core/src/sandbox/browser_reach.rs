@@ -916,7 +916,8 @@ pub fn private_address(ip: IpAddr, own: &[IpAddr]) -> bool {
 /// documentation and benchmarking ranges. An IPv6 address that carries an IPv4 one (mapped,
 /// SIIT, NAT64, IPv4-compatible, 6to4) is judged as the IPv4 one; outside those, only global
 /// unicast (`2000::/3`) is public, less documentation and the IETF's own assignments
-/// (`2001::/23`, Teredo among them), and an ISATAP address only where the IPv4 address it
+/// (`2001::/23`, Teredo among them) and Teredo's prefix before RFC 4380 (`3ffe:831f::/32`), and
+/// an ISATAP address only where the IPv4 address it
 /// carries is public too (#2678).
 pub fn public_address(ip: IpAddr, own: &[IpAddr]) -> bool {
     if refused_address(ip, own) {
@@ -963,7 +964,8 @@ fn public_v6(ip: Ipv6Addr) -> bool {
     let documentation =
         (first == 0x2001 && second == 0x0db8) || (first == 0x3fff && second < 0x1000);
     let ietf_assignments = first == 0x2001 && second < 0x0200;
-    global_unicast && !documentation && !ietf_assignments
+    let pre_rfc_teredo = first == 0x3ffe && second == 0x831f;
+    global_unicast && !documentation && !ietf_assignments && !pre_rfc_teredo
 }
 
 #[cfg(test)]

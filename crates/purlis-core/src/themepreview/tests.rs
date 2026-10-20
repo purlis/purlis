@@ -327,9 +327,14 @@ struct Places {
 
 impl Places {
     fn new() -> Self {
+        Self::inside("")
+    }
+
+    /// The config home and the plane inside the folder `folder` of a temporary one.
+    fn inside(folder: &str) -> Self {
         let home = tempfile::tempdir().unwrap();
-        let config = home.path().join("config");
-        let plane = home.path().join("plane");
+        let config = home.path().join(folder).join("config");
+        let plane = home.path().join(folder).join("plane");
         std::fs::create_dir_all(plane.join(".purlis")).unwrap();
         std::fs::create_dir_all(plane.join("workspaces/alpha")).unwrap();
         std::fs::create_dir_all(plane.join("workspaces/beta")).unwrap();
@@ -1017,7 +1022,7 @@ fn a_refusal_says_only_what_is_wrong_with_the_theme_named_and_no_path() {
     assert!(
         noise
             .iter()
-            .any(|one| one.said.contains(&places.config.display().to_string())),
+            .any(|one| one.said.contains("your purlis config folder's themes")),
         "{noise:?}"
     );
     at(&places, Some("alpha"), None, |reached| {
@@ -1032,23 +1037,6 @@ fn a_refusal_says_only_what_is_wrong_with_the_theme_named_and_no_path() {
         let plane = places.plane.display().to_string();
         assert!(!why.contains(&config) && !why.contains(&plane), "{why}");
     });
-    let at_ = Reached {
-        config: Some(&places.config),
-        plane: Some(&places.plane),
-        ..Reached::nowhere()
-    };
-    let said = redacted(
-        &at_,
-        &format!(
-            "{}/themes/x could not be read; nor {}/purlis/themes/y; nor /etc/z",
-            places.plane.display(),
-            places.config.display()
-        ),
-    );
-    assert_eq!(
-        said,
-        "themes/x could not be read; nor your purlis config folder/purlis/themes/y; nor a path"
-    );
 }
 
 #[test]
@@ -1138,26 +1126,111 @@ fn the_tool_waits_for_the_whole_turn_the_lookup_included() {
     assert!(ASKED_WITHIN > BUDGET + TURN);
 }
 
+/// The words of the folder a test keeps the levels in, none of which a chat is told.
+const AWKWARD_WORDS: [&str; 5] = ["Client", "Werk", "Bobz", "vintage", "kopie"];
+
+#[cfg(unix)]
 #[test]
-fn a_path_outside_the_project_and_the_config_folder_is_not_said_spaces_and_all() {
-    let said = unpathed(
-        "purlis could not open /Volumes/Client Work/themes/secret client/fonts/Plex Mono.woff2 \
-         to read its fonts; nor /Users/someone/My Themes: no such file; nor \
-         (/opt/odd place/theme.json) and \"/srv/a b c\" either; /etc/z.",
+fn a_face_handed_to_a_specimen_is_named_by_its_level_and_never_where_it_is() {
+    let places = Places::inside("Client Werk 'Bobz' [vintage] (kopie)");
+    let folder = places.machine().join("facey");
+    let face = folder.join("fonts/Plex.woff2");
+    std::fs::create_dir_all(face.parent().unwrap()).unwrap();
+    std::fs::write(&face, woff2("the face as read")).unwrap();
+    let mut document = dusk("#101010");
+    document["fonts"] =
+        json!({ "ui": { "family": "Plex", "faces": [{ "file": "fonts/Plex.woff2" }] } });
+    std::fs::write(folder.join(THEME_JSON), document.to_string()).unwrap();
+    let drawn = at(&places, None, None, |reached| {
+        resolved(reached, &named_specimen("facey", None, &[])).expect("drawn")
+    });
+    let theme = drawn.theme.expect("a theme");
+    assert_eq!(faces(&theme).map(|handed| handed.len()), Ok(1));
+    let home = places._home.path().display().to_string();
+    let told = |why: &str, says: &str| {
+        assert!(why.contains(says), "{why}");
+        assert!(!why.contains(&home), "{why}");
+        for word in AWKWARD_WORDS {
+            assert!(!why.contains(word), "{word}: {why}");
+        }
+    };
+    // The face changes between the read and the hand-off: what the chat is told names it by
+    // its level and its path there.
+    std::fs::write(&face, woff2("the face changed")).unwrap();
+    told(
+        &faces(&theme).expect_err("changed"),
+        "your purlis config folder's themes/facey/fonts/Plex.woff2 changed since purlis read the \
+         theme",
     );
-    assert_eq!(
-        said,
-        "purlis could not open a path to read its fonts; nor a path: no such file; nor (a path) \
-         and \"a path\" either; a path."
+    // And when it is gone.
+    std::fs::remove_file(&face).unwrap();
+    told(
+        &faces(&theme).expect_err("gone"),
+        "your purlis config folder's themes/facey/fonts/Plex.woff2 is not in the theme's folder",
     );
-    for word in [
-        "Client", "Work", "secret", "Plex", "Mono", "Themes", "odd", "place", " b c",
-    ] {
-        assert!(!said.contains(word), "{word}: {said}");
-    }
-    // Words that are no path's are said as they are.
-    assert_eq!(
-        unpathed("a theme has a name: 3 is not one"),
-        "a theme has a name: 3 is not one"
-    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_outside_folder_s_path_is_never_told_to_a_chat_spaces_quotes_and_brackets_and_all() {
+    // The levels sit in a folder of an awkward name, and a theme folder of the project's is a
+    // link to one outside every level, in a folder of another.
+    let places = Places::inside("Client Werk 'Bobz' [vintage] (kopie)");
+    let outside = places._home.path().join("Elsewhere [x] 'y' (z)");
+    put(&outside, "outer", &dusk("#101010"));
+    std::fs::create_dir_all(places.project()).unwrap();
+    std::os::unix::fs::symlink(outside.join("outer"), places.project().join("outer")).unwrap();
+    std::fs::create_dir_all(places.project().join("broken")).unwrap();
+    std::fs::write(
+        places.project().join("broken").join(THEME_JSON),
+        "{ not json",
+    )
+    .unwrap();
+    let mut iconic = dusk("#101010");
+    iconic["icons"] = Value::from("icons/gone.json");
+    put(&places.machine(), "iconic", &iconic);
+    let (chat, _) = two_chats();
+    let place = drafts::Place {
+        plane: &places.plane,
+        workspace: Some("alpha"),
+    };
+    put(&places.workspace("alpha"), "dusk", &dusk("#202028"));
+    let draft = drafts::start(Some(&places.config), place, &chat, "dusk")
+        .unwrap()
+        .path;
+    std::fs::write(draft.join(THEME_JSON), "{ not json").unwrap();
+    at(&places, Some("alpha"), Some(&chat), |reached| {
+        for (id, names) in [
+            (
+                "outer",
+                "the project's themes/outer is a link or not a folder",
+            ),
+            ("broken", "the project's themes/broken/theme.json: "),
+            (
+                "iconic",
+                "your purlis config folder's themes/iconic has no icons/gone.json",
+            ),
+            ("draft:dusk", "the chat's theme draft dusk/theme.json: "),
+        ] {
+            let why = resolved(reached, &named_specimen(id, None, &[])).expect_err(id);
+            // What the person opens to put it right is named, by its level and its path there.
+            assert!(why.contains(names), "{why}");
+            assert!(
+                !why.contains(&places._home.path().display().to_string()),
+                "{why}"
+            );
+            for word in [
+                "Client",
+                "Werk",
+                "Bobz",
+                "vintage",
+                "kopie",
+                "Elsewhere",
+                "[x]",
+                "(z)",
+            ] {
+                assert!(!why.contains(word), "{word}: {why}");
+            }
+        }
+    });
 }

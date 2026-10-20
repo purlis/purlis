@@ -2429,6 +2429,37 @@ fn the_browser_limits_survive_a_write_and_a_read_and_are_absent_until_one_is_set
     assert_eq!(read(machine.path()).store.browsers, store.browsers);
 }
 
+// The ninth (#2764): the flags turned on on this machine.
+
+#[test]
+fn a_flag_survives_a_write_and_a_read_and_is_absent_until_turned_on() {
+    let machine = machine();
+    let mut store = one_plane();
+    write(machine.path(), &store).unwrap();
+    let text = std::fs::read_to_string(file(machine.path())).unwrap();
+    assert!(!text.contains("flags"), "nothing on yet: {text}");
+    assert!(!read(machine.path()).store.flags.skill_studio);
+
+    store.flags.skill_studio = true;
+    write(machine.path(), &store).unwrap();
+
+    let text = std::fs::read_to_string(file(machine.path())).unwrap();
+    assert!(text.contains(r#""skill-studio": true"#), "{text}");
+    assert!(read(machine.path()).store.flags.skill_studio);
+}
+
+#[test]
+fn a_flag_that_is_not_true_or_not_known_reads_as_off() {
+    for raw in [
+        serde_json::json!({ "flags": { "skill-studio": "yes" } }),
+        serde_json::json!({ "flags": { "skill-studio": 1 } }),
+        serde_json::json!({ "flags": { "skill_studio": true, "another": true } }),
+        serde_json::json!({ "flags": true }),
+    ] {
+        assert_eq!(flags_of(raw.get("flags")), Flags::default(), "{raw}");
+    }
+}
+
 #[test]
 fn a_browser_limit_out_of_its_bounds_reads_as_not_set() {
     let doc = serde_json::json!({

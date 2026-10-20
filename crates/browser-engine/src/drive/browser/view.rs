@@ -11,8 +11,8 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
-use super::super::clipped::{STYLES, clipped};
-use super::{Browser, NodeKey, Placings, Rect, lock};
+use super::super::clipped::{STYLES, clipped, shown_through};
+use super::{Browser, NodeKey, Placings, Rect, Session, lock};
 
 /// The most nodes a page's process may hold for its layout to be read for what a box or a frame
 /// cuts off (#2564). Past it, the read is skipped and nothing is marked cut off, so a heavy page
@@ -89,38 +89,23 @@ impl Browser {
             }
         }
         let mut out = HashSet::new();
+        let mut layouts = Layouts::default();
         for (session, keys) in by_session {
-            // Read once for each session the shown elements are in, and only where the page is
-            // small enough to read: an answer the engine cannot count, or past the bound, marks
-            // nothing, and so does a read whose answer is past [`MOST_LAYOUT_BYTES`].
-            let nodes = self
-                .devtools()
-                .call("Memory.getDOMCounters", json!({}), Some(&session))
-                .ok()
-                .and_then(|counted| counted.get("nodes").and_then(Value::as_u64));
-            if nodes.is_none_or(|nodes| nodes > MOST_NODES_READ) {
-                continue;
-            }
-            let Ok(answer) = self.devtools().call_within_bounded(
-                "DOMSnapshot.captureSnapshot",
-                json!({
-                    "computedStyles": STYLES,
-                    "includeDOMRects": true,
-                    "includePaintOrder": false,
-                    "includeBlendedBackgroundColors": false,
-                    "includeTextColorOpacities": false,
-                }),
-                Some(&session),
-                crate::cdp::CALL_TIMEOUT,
-                MOST_LAYOUT_BYTES,
-            ) else {
+            let Some(answer) = layouts.of(self, &session) else {
                 continue;
             };
             let shows = if session == page_session {
                 None
             } else {
                 match self.viewport_of(&session, true) {
-                    Some(shows) => Some(shows),
+                    // What the frame's own viewport shows, cut to what the boxes its element
+                    // is in on the page around it let show (#2689).
+                    Some(shows) => Some(
+                        match self.shown_from_around(&mut layouts, &session, shows) {
+                            Some(around) => overlap(&shows, &around),
+                            None => shows,
+                        },
+                    ),
                     None => continue,
                 }
             };
@@ -133,6 +118,33 @@ impl Browser {
             );
         }
         out
+    }
+
+    /// What the boxes on the page around the frame `session` reads let its document show, in
+    /// the document's coordinates, scrolled as `shows` is (#2689): read from the layout of the
+    /// session that holds the frame's element. `None` where that is not known.
+    fn shown_from_around(&self, layouts: &mut Layouts, session: &str, shows: Rect) -> Option<Rect> {
+        let (frame, around) = {
+            let state = lock(&self.inner.state);
+            let Some(Session::Frame { page, frame }) = state.sessions.get(session) else {
+                return None;
+            };
+            let page = state.page(page)?;
+            let parent = page.frames.get(frame)?.parent.clone()?;
+            (frame.clone(), page.frames.get(&parent)?.session.clone())
+        };
+        let owner = self
+            .devtools()
+            .call(
+                "DOM.getFrameOwner",
+                json!({ "frameId": frame }),
+                Some(&around),
+            )
+            .ok()?
+            .get("backendNodeId")?
+            .as_i64()?;
+        let answer = layouts.of(self, &around)?;
+        shown_through(&answer, owner, (shows.x, shows.y))
     }
 
     /// What the viewport of `session`'s document shows, in CSS pixels: the page's visual
@@ -169,6 +181,61 @@ fn shown(metrics: &Value, in_document: bool) -> Option<Rect> {
         width,
         height,
     })
+}
+
+/// The layouts read for one look at what boxes and frames cut off, each session's read at most
+/// once (#2689): a frame's page around it may be read for its own elements too.
+#[derive(Default)]
+struct Layouts(HashMap<String, Option<std::sync::Arc<Value>>>);
+
+impl Layouts {
+    /// `session`'s layout, read only where the page is small enough to read: an answer the
+    /// engine cannot count, or past the bound, is none, and so is a read whose answer is past
+    /// [`MOST_LAYOUT_BYTES`].
+    fn of(&mut self, browser: &Browser, session: &str) -> Option<std::sync::Arc<Value>> {
+        self.0
+            .entry(session.to_owned())
+            .or_insert_with(|| {
+                let nodes = browser
+                    .devtools()
+                    .call("Memory.getDOMCounters", json!({}), Some(session))
+                    .ok()
+                    .and_then(|counted| counted.get("nodes").and_then(Value::as_u64));
+                if nodes.is_none_or(|nodes| nodes > MOST_NODES_READ) {
+                    return None;
+                }
+                browser
+                    .devtools()
+                    .call_within_bounded(
+                        "DOMSnapshot.captureSnapshot",
+                        json!({
+                            "computedStyles": STYLES,
+                            "includeDOMRects": true,
+                            "includePaintOrder": false,
+                            "includeBlendedBackgroundColors": false,
+                            "includeTextColorOpacities": false,
+                        }),
+                        Some(session),
+                        crate::cdp::CALL_TIMEOUT,
+                        MOST_LAYOUT_BYTES,
+                    )
+                    .ok()
+                    .map(std::sync::Arc::new)
+            })
+            .clone()
+    }
+}
+
+/// The part `a` and `b` share: empty (no width) where they share none.
+fn overlap(a: &Rect, b: &Rect) -> Rect {
+    let x = a.x.max(b.x);
+    let y = a.y.max(b.y);
+    Rect {
+        x,
+        y,
+        width: ((a.x + a.width).min(b.x + b.width) - x).max(0.0),
+        height: ((a.y + a.height).min(b.y + b.height) - y).max(0.0),
+    }
 }
 
 /// Whether `a` and `b` share any part.
