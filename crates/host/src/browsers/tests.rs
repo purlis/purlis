@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use purlis_session_protocol::session::{Exit, ViewKind, ViewRole};
 
+use crate::recording::Stopped;
+
 use super::{Browser, FrameSink, NotActed, Screen};
 use crate::hosting::Running;
 
@@ -51,7 +53,7 @@ impl Screen for Slow {
 
     fn stop(&self) {}
 
-    fn when_it_ends(&self, _tell: Box<dyn FnOnce(Exit) + Send>) {}
+    fn when_it_ends(&self, _tell: Box<dyn FnOnce(super::ScreenEnded) + Send>) {}
 
     fn act(
         &self,
@@ -92,7 +94,7 @@ impl Screen for Slow {
 #[test]
 fn a_view_attached_while_the_last_one_detaches_is_still_shown_frames() {
     let screen = Arc::new(Slow::default());
-    let browser = Browser::new(screen.clone());
+    let browser = Browser::new(screen.clone(), "b-1", Arc::default());
     let source = browser
         .view(ViewKind::Browser, Some(ViewRole::Focused), None, true)
         .expect("a browser view");
@@ -120,4 +122,32 @@ fn a_view_attached_while_the_last_one_detaches_is_still_shown_frames() {
         "a view is attached, so its browser makes frames"
     );
     drop(second);
+}
+
+#[test]
+fn a_browsers_end_says_the_hosts_act_and_how_its_engine_ended() {
+    let ended = super::ScreenEnded {
+        exit: Exit::Signal("SIGKILL".into()),
+        why: "purlis ended its engine (signal SIGKILL) because its DevTools connection closed: \
+              the engine sent an event (Page.frameNavigated) longer than 67108864 bytes, which \
+              purlis does not read"
+            .into(),
+    };
+    assert_eq!(
+        super::ended_said("01K2", None, &ended),
+        "browser 01K2 ended (not stopped by the host): purlis ended its engine (signal SIGKILL) \
+         because its DevTools connection closed: the engine sent an event (Page.frameNavigated) \
+         longer than 67108864 bytes, which purlis does not read"
+    );
+    let stopped = super::ScreenEnded {
+        exit: Exit::Code(0),
+        why: "purlis stopped its engine (exit code 0)".into(),
+    };
+    assert_eq!(
+        super::ended_said("01K2", Some(Stopped::Operator), &stopped),
+        "browser 01K2 ended (stopped at its link's ask): purlis stopped its engine (exit code 0)"
+    );
+    assert!(super::ended_said("b", Some(Stopped::Quit), &stopped).contains("as the host ended"));
+    assert!(super::ended_said("b", Some(Stopped::Killed), &stopped).contains("kill switch"));
+    assert!(super::ended_said("b", Some(Stopped::Closed), &stopped).contains("closed at"));
 }

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Blog</title></head>
+<body>
+  <h1>Blog</h1>
+  <article>
+    <h2>Post one</h2>
+    <p id="excerpt"></p>
+    <a href="#more">Read more</a>
+  </article>
+  <script>
+    // An excerpt a script cuts at a fixed length, as a blog's listing does: the cut falls
+    // inside an emoji and leaves half of its surrogate pair, which the engine writes over
+    // DevTools as a lone \ud83d escape.
+    const full = 'Email security tips \u{1F512}\u{1F512} and more';
+    const cut = full.substring(0, 21);
+    document.getElementById('excerpt').textContent = cut + '...';
+    document.querySelector('a').setAttribute('aria-label', 'Read more of ' + cut);
+    document.title = 'Blog ' + cut;
+    window.name = cut;
+    console.log('excerpt', cut);
+    console.error(new Error(cut));
+  </script>
+</body></html>

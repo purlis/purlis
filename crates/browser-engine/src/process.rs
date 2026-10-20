@@ -18,7 +18,9 @@
 //! machine can reach DevTools.
 //!
 //! **The end.** [`Engine::stop`] asks the engine to close, gives it a moment, then kills the
-//! group. Dropping an [`Engine`] kills the group at once. When the host itself ends, however it
+//! group. [`Engine::wait_or_end`] gives an engine whose pipe closed a moment to end by itself,
+//! then kills the group. Each answers how the engine's process ended (#2745). Dropping an
+//! [`Engine`] kills the group at once. When the host itself ends, however it
 //! ends, the engine's DevTools pipe and the keeper's lifeline both close, and the keeper kills
 //! the group within [`crate::keeper::GRACE`].
 
@@ -45,6 +47,7 @@ use serde_json::{Value, json};
 
 use crate::WebAddress;
 use crate::cdp::{CallError, Connection, Event};
+use crate::ending::EngineExit;
 use crate::launch::Launch;
 
 /// How long a starting engine has to answer over its pipe: a cold start on a busy machine.
@@ -159,6 +162,8 @@ pub enum StartError {
 pub struct Engine {
     pid: Pid,
     reaped: bool,
+    /// How its process ended, once it is reaped and the system said.
+    exit: Option<EngineExit>,
     connection: Option<Arc<Connection>>,
     events: Option<Receiver<Event>>,
     group: EngineGroup,
@@ -172,7 +177,7 @@ impl Engine {
         let group = EngineGroup::start(keeper).map_err(StartError::Spawn)?;
         let (engine_reads, host_writes) = io::pipe().map_err(StartError::Spawn)?;
         let (host_reads, engine_writes) = io::pipe().map_err(StartError::Spawn)?;
-        let log = File::create(launch.data_dir().join("engine.log")).map_err(StartError::Spawn)?;
+        let log = engine_log(&launch.log()).map_err(StartError::Spawn)?;
         let null = File::open("/dev/null").map_err(StartError::Spawn)?;
         let environment = launch.environment(std::env::vars_os());
         let pid = spawn_engine(
@@ -192,6 +197,7 @@ impl Engine {
         let engine = Self {
             pid,
             reaped: false,
+            exit: None,
             connection: Some(Arc::new(connection)),
             events: Some(events),
             group,
@@ -262,15 +268,37 @@ impl Engine {
     }
 
     /// Asks the engine to close, waits up to `grace` for it, then ends its whole group.
-    pub fn stop(mut self, grace: Duration) {
+    /// Answers how its process ended, where the system said.
+    pub fn stop(mut self, grace: Duration) -> Option<EngineExit> {
         let _ = self
             .devtools()
             .call_within("Browser.close", json!({}), None, grace);
+        self.wait_up_to(grace);
+        self.end_now();
+        self.exit.clone()
+    }
+
+    /// **For an engine whose DevTools pipe has closed** (#2745): waits up to `grace` for its
+    /// process to end by itself, then ends its whole group. Answers how its process ended, and
+    /// whether it ended by itself.
+    pub fn wait_or_end(mut self, grace: Duration) -> (Option<EngineExit>, bool) {
+        let by_itself = self.wait_up_to(grace);
+        self.end_now();
+        (self.exit.clone(), by_itself)
+    }
+
+    /// Whether the engine's process ended within `grace`.
+    fn wait_up_to(&mut self, grace: Duration) -> bool {
         let started = Instant::now();
-        while !self.has_ended() && started.elapsed() < grace {
+        loop {
+            if self.has_ended() {
+                return true;
+            }
+            if started.elapsed() >= grace {
+                return false;
+            }
             std::thread::sleep(Duration::from_millis(20));
         }
-        self.end_now();
     }
 
     fn forget_reaped(&mut self) {
@@ -279,8 +307,14 @@ impl Engine {
         }
         match waitpid(self.pid, Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::StillAlive) | Err(Errno::EINTR) => {}
-            Ok(_) | Err(_) => self.reaped = true,
+            Ok(status) => self.reaped_as(Some(status)),
+            Err(_) => self.reaped_as(None),
         }
+    }
+
+    fn reaped_as(&mut self, status: Option<WaitStatus>) {
+        self.reaped = true;
+        self.exit = status.and_then(exit_of);
     }
 
     fn end_now(&mut self) {
@@ -288,8 +322,8 @@ impl Engine {
         self.connection.take();
         self.group.kill_now();
         if !self.reaped {
-            let _ = waitpid(self.pid, None);
-            self.reaped = true;
+            let status = waitpid(self.pid, None).ok();
+            self.reaped_as(status);
         }
     }
 }
@@ -297,6 +331,29 @@ impl Engine {
 impl Drop for Engine {
     fn drop(&mut self) {
         self.end_now();
+    }
+}
+
+/// **The engine's log at `path`, this user's alone** (#2745): made `0600`, emptied, and set to
+/// `0600` where an earlier one was looser. It outlives its browser.
+pub(crate) fn engine_log(path: &std::path::Path) -> io::Result<File> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    let log = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    log.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    Ok(log)
+}
+
+/// How a process ended, as `waitpid` said it: `None` for a status that is no end.
+pub(crate) fn exit_of(status: WaitStatus) -> Option<EngineExit> {
+    match status {
+        WaitStatus::Exited(_, code) => Some(EngineExit::Code(code)),
+        WaitStatus::Signaled(_, signal, _) => Some(EngineExit::Signal(signal.as_str().to_owned())),
+        _ => None,
     }
 }
 
@@ -413,3 +470,6 @@ fn c_string(text: &OsStr) -> io::Result<CString> {
     CString::new(text.as_bytes())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "a NUL byte in an argument"))
 }
+
+#[cfg(test)]
+mod tests;

@@ -15,10 +15,11 @@ use serde_json::{Value, json};
 
 use super::{ACTIVE_ELEMENT, Browser, DevTools, READ_VALUE, READY_STATE, SELECT_OPTIONS};
 use crate::WebAddress;
-use crate::cdp::{CallError, Event};
+use crate::cdp::{CallError, Closed, Event};
 use crate::drive::{
     Answer, Call, CallId, Content, DragTo, Field, Limits, PageId, Ref, Refusal, Settled,
 };
+use crate::ending::{EndedBy, Ending};
 
 mod aim;
 mod drawn;
@@ -91,6 +92,8 @@ struct Engine {
     /// Ids of ended worlds that now name the page's own world, by session: what a process the
     /// page moved to may give the same number.
     reused: Mutex<Vec<(String, i64)>>,
+    /// Why its connection closed, as the real one says it (#2745).
+    closed: Mutex<Option<Closed>>,
 }
 
 /// A world of purlis's own the stand-in made.
@@ -458,6 +461,10 @@ impl DevTools for Stand {
         Ok(answer)
     }
 
+    fn closed(&self) -> Option<Closed> {
+        super::lock(&self.0.closed).clone()
+    }
+
     fn dropped_events(&self) -> u64 {
         *super::lock(&self.0.dropped)
     }
@@ -544,6 +551,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
         dropped: Mutex::new(0),
         worlds: Mutex::new(Vec::new()),
         reused: Mutex::new(Vec::new()),
+        closed: Mutex::new(None),
     });
     let browser = Browser::over(Arc::new(Stand(engine.clone())), receiver, limits, judge).unwrap();
     // Set up means both sessions resumed: every frame is known by then.
@@ -2333,11 +2341,137 @@ fn whoever_asked_is_told_once_the_engine_ends() {
     let (browser, engine) = browser();
     let told = Arc::new(Mutex::new(0));
     let counting = told.clone();
-    browser.when_it_ends(Box::new(move || *super::lock(&counting) += 1));
+    browser.when_it_ends(Box::new(move |_| *super::lock(&counting) += 1));
 
     // The engine's pipe closes: its events end.
     let (closed, _) = mpsc::sync_channel(1);
     *super::lock(&engine.events) = closed;
 
     wait_for("told", || *super::lock(&told) == 1);
+}
+
+#[test]
+fn whoever_asked_is_told_the_connection_closed_and_why() {
+    // #2745: a message the connection could not read ended it while the engine still ran.
+    let (browser, engine) = browser();
+    let told: Arc<Mutex<Option<Ending>>> = Arc::default();
+    let telling = told.clone();
+    browser.when_it_ends(Box::new(move |ending| {
+        *super::lock(&telling) = Some(ending)
+    }));
+
+    let why = Closed::TooLarge {
+        method: Some("Page.frameNavigated".into()),
+        most: 64 << 20,
+    };
+    *super::lock(&engine.closed) = Some(why.clone());
+    let (closed, _) = mpsc::sync_channel(1);
+    *super::lock(&engine.events) = closed;
+
+    wait_for("told", || super::lock(&told).is_some());
+    assert_eq!(
+        super::lock(&told).clone(),
+        Some(Ending {
+            by: EndedBy::LostConnection,
+            exit: None,
+            closed: Some(why),
+        })
+    );
+}
+
+#[test]
+fn one_who_asks_after_the_end_is_told_at_once_how_it_ended() {
+    let (browser, engine) = browser();
+    let first: Arc<Mutex<Option<Ending>>> = Arc::default();
+    let telling = first.clone();
+    browser.when_it_ends(Box::new(move |ending| {
+        *super::lock(&telling) = Some(ending)
+    }));
+    *super::lock(&engine.closed) = Some(Closed::PipeEnded);
+    let (closed, _) = mpsc::sync_channel(1);
+    *super::lock(&engine.events) = closed;
+    wait_for("told", || super::lock(&first).is_some());
+
+    let later: Arc<Mutex<Option<Ending>>> = Arc::default();
+    let telling = later.clone();
+    browser.when_it_ends(Box::new(move |ending| {
+        *super::lock(&telling) = Some(ending)
+    }));
+    assert_eq!(*super::lock(&later), *super::lock(&first));
+    assert_eq!(
+        super::lock(&later).as_ref().map(|ending| ending.by),
+        Some(EndedBy::Itself)
+    );
+}
+
+/// An engine the stand-in browser holds: what was done to it, and how long it takes to end by
+/// itself once its pipe has closed.
+struct StandHold {
+    stopped: Arc<Mutex<Option<Duration>>>,
+    ends_after: Duration,
+}
+
+impl super::EngineHold for StandHold {
+    fn pid(&self) -> u32 {
+        4242
+    }
+
+    fn stop(self: Box<Self>, grace: Duration) -> Option<crate::ending::EngineExit> {
+        *super::lock(&self.stopped) = Some(grace);
+        Some(crate::ending::EngineExit::Code(0))
+    }
+
+    fn wait_or_end(self: Box<Self>, _grace: Duration) -> (Option<crate::ending::EngineExit>, bool) {
+        std::thread::sleep(self.ends_after);
+        (Some(crate::ending::EngineExit::Code(0)), true)
+    }
+}
+
+#[test]
+fn a_browser_dropped_unstopped_ends_its_engine_and_says_purlis_stopped_it() {
+    // #2745: its event reader keeps what the engine lives in until the pipe closes, so the
+    // drop is what ends it.
+    let (browser, _engine) = browser();
+    let stopped: Arc<Mutex<Option<Duration>>> = Arc::default();
+    browser.holding(Box::new(StandHold {
+        stopped: Arc::clone(&stopped),
+        ends_after: Duration::ZERO,
+    }));
+    let told: Arc<Mutex<Option<Ending>>> = Arc::default();
+    let telling = told.clone();
+    browser.when_it_ends(Box::new(move |ending| {
+        *super::lock(&telling) = Some(ending)
+    }));
+
+    drop(browser);
+
+    assert_eq!(*super::lock(&stopped), Some(Duration::ZERO));
+    assert_eq!(
+        super::lock(&told).as_ref().map(|ending| ending.by),
+        Some(EndedBy::Stopped)
+    );
+}
+
+#[test]
+fn a_stop_while_the_engine_ends_by_itself_returns_once_its_end_is_told() {
+    // #2745: a quit's stop waits for the end its pipe began, so a kept login's write-back in
+    // the teller is not skipped.
+    let (browser, engine) = browser();
+    browser.holding(Box::new(StandHold {
+        stopped: Arc::default(),
+        ends_after: Duration::from_millis(400),
+    }));
+    let told = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let telling = Arc::clone(&told);
+    browser.when_it_ends(Box::new(move |_| {
+        telling.store(true, std::sync::atomic::Ordering::SeqCst);
+    }));
+    let (closed, _) = mpsc::sync_channel(1);
+    *super::lock(&engine.events) = closed;
+    // The event reader has taken the engine, and waits for it to end by itself.
+    wait_for("taken", || browser.process().is_none());
+
+    browser.stop(Duration::from_millis(100));
+
+    assert!(told.load(std::sync::atomic::Ordering::SeqCst));
 }
