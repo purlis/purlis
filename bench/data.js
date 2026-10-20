@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792487713852,
+  "lastUpdate": 1792489164142,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18900,6 +18900,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7744395,
             "unit": "ms",
             "extra": "median of 5 runs: 101.262, 101.369, 101.774, 101.973, 102.467 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "770f17b1ec6e92c9d29b2422d441482a26ab1f28",
+          "message": "The window is told a project a re-link could not hold, and holds it again (#2721)\n\n* Move the relay's and the grants table's tests to files of their own\n\nA move alone: no test's name or body changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The window is told a project a re-link could not hold, and holds it again\n\nWhen the last pass of a carry-over cannot hold a project the window\nholds, the desktop's relay pushes the window `not_held` (session\nprotocol 1.30), with the project and the runner's own words. It is the\nrelay's own word: one the runner pushes is never handed on.\n\nOn `not_held` the window stops counting the project as held on that\nlink and holds it again at once, with what a first hold does: hook\nlines, numbers dealt, the kept board. Where the runner refuses again,\nevery command that needs the hold tries again and is refused in words\nthat say the project is not held where its chats run, then the\nrunner's. A project held again on the same link tells its reconnects\nonce.\n\nADR 0078 amended 2026-10-20 for #2645.\n\nCloses #2645\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T13:30:33+04:00",
+          "tree_id": "c3dc634d2121ed086d74e4f58a50d7b6461d64c3",
+          "url": "https://github.com/purlis/purlis/commit/770f17b1ec6e92c9d29b2422d441482a26ab1f28"
+        },
+        "date": 1792489161999,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5342405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.523, 0.530, 0.534, 0.541, 0.543 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.692898,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.530, 16.658, 16.693, 16.986, 17.126 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.66992199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.780, 104.157, 104.670, 105.314, 107.127 ms"
           }
         ]
       }
