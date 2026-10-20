@@ -123,7 +123,7 @@ of 2026-10-20 on #2779):
   skill-creator's array of a query and whether it should trigger, so skill-creator's own trigger
   runner still reads it.
 
-So the `evals/` folder, not one file, is the exception ADR 0099 makes to keeping purlis's data
+So the `evals/` folder, not one file, is the exception [ADR 0099](0099-a-skill-lives-at-a-level-a-project-skill-reaches-a-workspace-by-grant-and-the-narrowest-copy-wins.md) makes to keeping purlis's data
 beside the skill folder. Results never go in the folder: they go to the eval record (MH-15),
 tied to the skill's commit, harness and model.
 
