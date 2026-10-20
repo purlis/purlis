@@ -3208,7 +3208,7 @@ fn an_audit_or_a_trust_event_inside_a_skill_run_carries_the_skill_too() {
             },
         )
         .unwrap();
-    let trusted = host
+    let sandbox_on = host
         .apply(Entry::Trust {
             chat: prompt.chat.clone().unwrap(),
             run: prompt.run.clone().unwrap(),
@@ -3218,7 +3218,10 @@ fn an_audit_or_a_trust_event_inside_a_skill_run_carries_the_skill_too() {
         .unwrap();
 
     assert_eq!(granted.body["skill"], "deploy", "{granted:#?}");
-    assert_eq!(trusted[0].body["skill"], "deploy", "{trusted:#?}");
+    assert_eq!(
+        sandbox_on[0].body["skill"], "deploy",
+        "the sandbox's own event too"
+    );
 }
 
 #[test]
