@@ -631,7 +631,8 @@ impl FakeDocker {
              'image inspect') cat '{image}' ;;\n  \
              'exec '*) cat > '{input}'; cat '{paired}' ;;\n  \
              'container ls') cat '{containers}' 2>/dev/null || true ;;\n  \
-             *' rm') exit $(cat '{rm_fails}'-\"$1\" 2>/dev/null || cat '{rm_fails}' 2>/dev/null || echo 0) ;;\nesac\n",
+             *' rm') code=$(cat '{rm_fails}'-\"$1\" 2>/dev/null || cat '{rm_fails}' 2>/dev/null || echo 0); \
+             [ \"$code\" = 0 ] && rm -f \"$(dirname '{log}')/$1s\"; exit $code ;;\nesac\n",
             log = at("log"),
             id = at("id"),
             inspect = at("inspect"),

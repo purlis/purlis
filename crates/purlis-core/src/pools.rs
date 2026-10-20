@@ -199,6 +199,8 @@ pub fn follow(
         )));
     }
     let successor = crate::dockerpool::successor_name(name, image);
+    // What a follow that stopped short of keeping its runner left goes first (#2869).
+    clear_leftovers_locked(config_root, docker, &successor, &locked)?;
     let made = docker
         .declared(image)
         .and_then(|(user, home)| Runner::new(&successor, image.clone(), user, &home))
@@ -223,6 +225,42 @@ pub fn follow(
             )),
         }),
     }
+}
+
+/// **Removes what a make of the runner `name` left behind, where nothing kept claims it**
+/// (#2869): a container and home volume of its name, made by a follow that stopped before
+/// `runners.json` kept the runner. A name a kept runner or a pool holds is left alone. What was
+/// removed, in a sentence; `None` where nothing was.
+pub fn clear_leftovers_of(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+) -> Result<Option<String>, Refused> {
+    clear_leftovers_locked(config_root, docker, name, &runners::lock(config_root))
+}
+
+fn clear_leftovers_locked(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    _locked: &runners::Locked,
+) -> Result<Option<String>, Refused> {
+    let claimed = runners::named(config_root, name)?.is_some()
+        || runners::pools(config_root)?
+            .iter()
+            .any(|pool| pool.name() == name);
+    if claimed {
+        return Ok(None);
+    }
+    let removed = docker
+        .remove_leftovers_of(name)
+        .map_err(|why| Refused::Other(why.0))?;
+    Ok((!removed.is_empty()).then(|| {
+        format!(
+            "removed {} that a move of the pool to a new runner left behind",
+            removed.join(" and ")
+        )
+    }))
 }
 
 /// **Removes the draining runner `name`** (#2749), once its last chat has ended, as a runner is

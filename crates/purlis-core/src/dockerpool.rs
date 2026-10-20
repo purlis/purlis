@@ -1042,6 +1042,62 @@ impl Docker {
         crate::runnerlink::from_line(&out).map_err(refused)
     }
 
+    /// **Removes what a make of the runner `name` left behind** (#2869): its container, only where
+    /// one of exactly its name carries the runner label of that name, and its home volume of
+    /// exactly its name. What it removed, each named; nothing where nothing was there. Only for a
+    /// name no kept runner holds: the caller says so.
+    pub fn remove_leftovers_of(&self, name: &str) -> Result<Vec<String>, Refused> {
+        let words = |words: &[&str]| -> Vec<String> {
+            words.iter().map(|word| (*word).to_owned()).collect()
+        };
+        let container = format!("{PREFIX}{name}");
+        let volume = format!("{PREFIX}{name}-home");
+        let mut removed = Vec::new();
+        let named = self.run(
+            &words(&[
+                "container",
+                "ls",
+                "--all",
+                "--format",
+                "{{.Names}}",
+                "--filter",
+                &format!("name={container}"),
+                "--filter",
+                &format!("label={LABEL}={name}"),
+            ]),
+            None,
+            MOST_INSPECTED,
+        )?;
+        if named.lines().any(|line| line.trim() == container) {
+            self.run(
+                &words(&["container", "rm", "--force", "--volumes", &container]),
+                None,
+                MOST_INSPECTED,
+            )?;
+            removed.push(format!("container {container}"));
+        }
+        let listed = self.run(
+            &words(&[
+                "volume",
+                "ls",
+                "--quiet",
+                "--filter",
+                &format!("name={volume}"),
+            ]),
+            None,
+            MOST_INSPECTED,
+        )?;
+        if listed.lines().any(|line| line.trim() == volume) {
+            self.run(
+                &words(&["volume", "rm", "--force", &volume]),
+                None,
+                MOST_INSPECTED,
+            )?;
+            removed.push(format!("volume {volume}"));
+        }
+        Ok(removed)
+    }
+
     /// **The version `made`'s runner runs** (#2749), as its `purlis --version` says it, once
     /// its container passes the check.
     pub fn version_of(&self, made: &Made) -> Result<String, Refused> {

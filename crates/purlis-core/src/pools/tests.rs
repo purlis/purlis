@@ -426,3 +426,71 @@ fn only_a_draining_runner_is_drained_and_removing_the_pool_removes_every_runner_
 }
 
 const IMAGE_OF_FIRST: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+/// **A follow leaves no runner behind** (#2869): a container and a home volume of the new
+/// runner's name that a follow stopped short of keeping are removed by the next one, which then
+/// makes the runner.
+#[test]
+fn a_container_and_volume_a_follow_left_behind_are_removed_by_the_next() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    // What a follow that stopped after Docker made them leaves: the container, labelled as a
+    // runner of the successor's name, and its home volume.
+    fake.set("containers", &format!("purlis-runner-{successor}\n"));
+    fake.set("volumes", &format!("purlis-runner-{successor}-home\n"));
+
+    let kept = follow(config.path(), &fake.docker(), "first", &new_image, &ours)
+        .unwrap()
+        .expect("the runner is made");
+
+    assert_eq!(kept.name(), successor);
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!(
+            "container ls --all --format {{{{.Names}}}} --filter name=purlis-runner-{successor} --filter label=purlis.runner={successor}"
+        )),
+        "{log}"
+    );
+    assert!(
+        log.contains(&format!(
+            "container rm --force --volumes purlis-runner-{successor}"
+        )),
+        "{log}"
+    );
+    assert!(
+        log.contains(&format!("volume rm --force purlis-runner-{successor}-home")),
+        "{log}"
+    );
+}
+
+/// **A container or volume a kept runner claims is never removed** (#2869): a runner kept under
+/// the successor's name already is the pool's, and nothing of it is cleared.
+#[test]
+fn what_a_kept_runner_claims_is_left_as_it_is() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+    let before = fake.file("log");
+
+    // Moved to the image again, as a later look would after the pool's image was put back.
+    assert!(
+        clear_leftovers_of(config.path(), &fake.docker(), &successor)
+            .unwrap()
+            .is_none()
+    );
+    let after = fake.file("log");
+    assert_eq!(
+        after, before,
+        "a kept runner's container or volume was touched"
+    );
+}
