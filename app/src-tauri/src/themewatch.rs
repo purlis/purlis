@@ -58,6 +58,9 @@ pub(crate) struct Target {
     pub config: PathBuf,
     pub plane: Option<PathBuf>,
     pub workspace: Option<String>,
+    /// The ids of the chats this app has open there, whose theme drafts it draws (#2332): the
+    /// only drafts watched.
+    pub drafts: Vec<String>,
 }
 
 impl Target {
@@ -92,7 +95,17 @@ impl Target {
             self.workspace.as_deref(),
         );
         let extensions = ThemesOnly::installed(&self.config, &crate::extensions::built_in());
-        Watched::of(&folders, &extensions)
+        // The theme drafts of the chats open there (#2332), and the drafts folder itself, so the
+        // first draft of a chat started after this was asked redraws, and the window asks again.
+        let drafts = self
+            .plane
+            .as_deref()
+            .map(|plane| {
+                let chats: Vec<&str> = self.drafts.iter().map(String::as_str).collect();
+                purlis_core::theme::drafts::watched(plane, &chats)
+            })
+            .unwrap_or_default();
+        Watched::of(&folders, &extensions).with_drafts(&drafts)
     }
 }
 
@@ -478,6 +491,7 @@ mod tests {
                 config,
                 plane: Some(plane),
                 workspace: None,
+                drafts: Vec::new(),
             },
         )
     }
@@ -594,6 +608,7 @@ mod tests {
                 config,
                 plane: None,
                 workspace: None,
+                drafts: Vec::new(),
             },
         );
         let folder = machine.join("themes/live");
@@ -690,6 +705,7 @@ mod tests {
                 config: config.clone(),
                 plane: None,
                 workspace: None,
+                drafts: Vec::new(),
             },
         );
         assert!(watching(&watch).contains(&folder), "{:?}", watching(&watch));

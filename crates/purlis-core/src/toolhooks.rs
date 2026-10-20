@@ -686,6 +686,9 @@ pub fn posttooluse(hook: &Hook) -> Answer {
     if fp.is_empty() {
         return Answer::Nothing;
     }
+    if let Some(answer) = theme_draft_said(hook, &fp) {
+        return answer;
+    }
     let norm = format!("/{}", fp.replace('\\', "/")).replace("//", "/");
     if mem_path().is_match(&norm) {
         memnudge_set(hook, 0);
@@ -725,6 +728,97 @@ pub fn posttooluse(hook: &Hook) -> Answer {
         );
     }
     Answer::Nothing
+}
+
+/// **A write into a chat's theme draft** (#2332, `crate::theme::drafts`): the engine reads the
+/// draft as the window draws it, and the chat is told when the window does not draw it: the hard
+/// floors it breaks, or why the engine refused it. A draft the window draws says nothing, and so
+/// does any draft but the chat's own. The
+/// draft is read by the engine through handles refusing a link, under its caps; the path named
+/// only says which draft, never what is read.
+fn theme_draft_said(hook: &Hook, fp: &str) -> Option<Answer> {
+    use crate::theme::drafts;
+    let path = if Path::new(fp).is_absolute() {
+        PathBuf::from(fp)
+    } else {
+        hook.cwd.join(fp)
+    };
+    let root = crate::plane::state_dir(hook.root).join(drafts::DRAFTS);
+    let real = |at: &Path| std::fs::canonicalize(at).unwrap_or_else(|_| at.to_path_buf());
+    // As written, or as the disk spells it (a temporary folder is reached through a link on
+    // macOS): the file itself may not be there yet, so its folder is resolved.
+    let below = match path.strip_prefix(&root) {
+        Ok(below) => below.to_path_buf(),
+        Err(_) => {
+            let whole = path.parent().map(real)?.join(path.file_name()?);
+            whole.strip_prefix(real(&root)).ok()?.to_path_buf()
+        }
+    };
+    let mut parts = below.components().map(|part| part.as_os_str().to_str());
+    let (Some(Some(chat)), Some(Some(folder)), Some(_)) =
+        (parts.next(), parts.next(), parts.next())
+    else {
+        return None;
+    };
+    if !drafts::is_chat_id(chat) || !crate::theme::is_folder_name(folder) {
+        return None;
+    }
+    // Only the chat's own draft is spoken of: the chat its harness says it is, never another's.
+    if (hook.env)(crate::hookwire::CHAT_ID_ENV).as_deref() != Some(chat) {
+        return None;
+    }
+    let started_in = (hook.env)(crate::sandboxblock::CHAT_DIR_ENV).map(PathBuf::from);
+    let workspace =
+        crate::active::workspace_of_tree(hook.root, started_in.as_deref().unwrap_or(hook.cwd));
+    let config = crate::machine::config_root_in(hook.env);
+    let place = drafts::Place {
+        plane: hook.root,
+        workspace: workspace.as_deref(),
+    };
+    let folders = crate::theme::Folders::of(config.as_deref(), Some(hook.root), place.workspace);
+    let draft = drafts::Draft {
+        chat: chat.to_owned(),
+        folder: folder.to_owned(),
+        kept_to: drafts::kept_to(&folders, place.workspace, folder),
+    };
+    let read = drafts::read(config.as_deref(), place, &draft, true);
+    let drafted = drafts::drafted(
+        read,
+        None,
+        None,
+        crate::theme::Appearance::Dark,
+        crate::theme::Contrast::Standard,
+    );
+    const MOST: usize = 8;
+    let said = if !drafted.broken.is_empty() {
+        let each: Vec<String> = drafted
+            .broken
+            .iter()
+            .take(MOST)
+            .map(drafts::BrokenIn::said)
+            .collect();
+        format!(
+            "purlis does not draw the theme draft {folder}: it breaks a hard floor, so the window \
+             keeps its last good version. {}. Fix it and save again; `purlis theme check \
+             draft:{folder}` says the same.",
+            each.join("; ")
+        )
+    } else if !drafted.refused.is_empty() {
+        let each: Vec<&str> = drafted
+            .refused
+            .iter()
+            .take(MOST)
+            .map(|one| one.said.as_str())
+            .collect();
+        format!(
+            "purlis does not draw the theme draft {folder}: {}. Fix it and save again; `purlis \
+             theme check draft:{folder}` says the same.",
+            crate::shown::readable(&each.join("; "), 1200)
+        )
+    } else {
+        return None;
+    };
+    Some(say("PostToolUse", &[("additionalContext", said)]))
 }
 
 /// `_posttooluse_secret_scan`: what was written, and the file as it now stands, checked for a

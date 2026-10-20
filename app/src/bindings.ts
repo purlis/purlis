@@ -2531,11 +2531,17 @@ export const commands = {
 	 *  **And the theme folders it is read from are watched for this window** (#2324,
 	 *  [`crate::themewatch`]): from the config home and the plane root held here, never from a path
 	 *  the window or a chat names. A save in one tells the window to ask again.
+	 * 
+	 *  **A theme draft of a chat working where the window is draws in place of every level**
+	 *  (#2332, [`crate::themedrafts`]): the chats are this app's own record of where each works, and
+	 *  the draft is drawn only while it holds every hard floor; its last good version stays
+	 *  otherwise. `kept` asks for the theme as kept, without any draft: what Compare shows while
+	 *  it is held. The drafts are watched with the folders.
 	 */
 	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at })),
+} | null, kept: boolean | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at, kept })),
 	/**
 	 *  **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
 	 *  read again by the core's theme engine from inside the theme's folder, under its cap, and only
@@ -2640,6 +2646,12 @@ export const commands = {
 	 *  Notice offers no button. `null` otherwise.
 	 */
 	review: ThemeReview | null,
+	/**
+	 *  The theme draft of a chat working where the window is (#2332): drawn in place of what
+	 *  the levels choose while it holds every hard floor, and named on the draft strip either
+	 *  way. `None` when no chat there has one, or the theme as kept was asked for.
+	 */
+	draft: WindowDraft | null,
 } | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
 	/**
 	 *  **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names
@@ -2677,6 +2689,38 @@ export const commands = {
 	plane: PlaneId,
 	workspace: string | null,
 } | null, theme: string, from: string | null) => typedError<null, string>(__TAURI_INVOKE("theme_open_folder", { at, theme, from })),
+	/**
+	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
+	 *  draft, where Keep puts it. Empty for a chat with none.
+	 */
+	themeDraftsOfChat: (plane: PlaneId, session: number) => typedError<WindowDraft[], string>(__TAURI_INVOKE("theme_drafts_of_chat", { plane, session })),
+	/**
+	 *  **Keep** pressed: the engine copies the draft of the chat `session` into the real folder it is
+	 *  a draft of and deletes the draft. Answers what it did, in a sentence. Only a draft the window
+	 *  draws is kept, and only as the person was shown it: `kept_to` (`workspace` or `project`, as
+	 *  `WindowDraft::kept_to` says) and `replaces`, which the window sends once the person agreed to
+	 *  replace the folder there. When either has changed since, nothing is kept.
+	 */
+	themeDraftKeep: (plane: PlaneId, session: number, folder: string, keptTo: string, replaces: boolean) => typedError<string, string>(__TAURI_INVOKE("theme_draft_keep", { plane, session, folder, keptTo, replaces })),
+	/**  **Revert** pressed: the engine deletes the draft of the chat `session`. */
+	themeDraftRevert: (plane: PlaneId, session: number, folder: string) => typedError<null, string>(__TAURI_INVOKE("theme_draft_revert", { plane, session, folder })),
+	/**
+	 *  **The revert key**: every draft of the chats working at `workspace` (the plane root for
+	 *  `None`) is deleted at once, so the window draws its kept theme again whatever the drafts
+	 *  said. Answers how many were reverted.
+	 */
+	themeDraftsRevertHere: (plane: PlaneId, workspace: string | null) => typedError<number, string>(__TAURI_INVOKE("theme_drafts_revert_here", { plane, workspace })),
+	/**
+	 *  **Use in the whole project** pressed: the engine moves the workspace's theme folder `folder`
+	 *  to the project's `themes/`, never over one there. Answers what it did.
+	 */
+	themeMoveToProject: (plane: PlaneId, workspace: string, folder: string) => typedError<string, string>(__TAURI_INVOKE("theme_move_to_project", { plane, workspace, folder })),
+	/**
+	 *  **Copy to my machine** pressed: the engine copies the project's or a workspace's theme folder
+	 *  `folder` to the person's own themes, never over one there, with only the font files approved
+	 *  with the project. Answers what it did.
+	 */
+	themeCopyToMachine: (plane: PlaneId, workspace: string | null, folder: string) => typedError<string, string>(__TAURI_INVOKE("theme_copy_to_machine", { plane, workspace, folder })),
 	/**
 	 *  Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
 	 *  the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`
@@ -10480,6 +10524,12 @@ export type ThemeInForce = {
 	 *  Notice offers no button. `null` otherwise.
 	 */
 	review: ThemeReview | null,
+	/**
+	 *  The theme draft of a chat working where the window is (#2332): drawn in place of what
+	 *  the levels choose while it holds every hard floor, and named on the draft strip either
+	 *  way. `None` when no chat there has one, or the theme as kept was asked for.
+	 */
+	draft: WindowDraft | null,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */
@@ -10994,6 +11044,34 @@ export type WindowApart = {
 	token: string,
 	from: string,
 	distance: number | null,
+};
+
+/**  One theme draft, as the strip and the close of its chat name it. */
+export type WindowDraft = {
+	/**  The theme folder's name. */
+	folder: string,
+	/**  The chat that writes it: its number here, and what the person calls it. */
+	session: number,
+	chat: string,
+	/**  The workspace the chat works in, `None` at the plane root: where the draft is drawn. */
+	workspace: string | null,
+	/**  Where Keep puts it: `workspace` (the chat's workspace's `themes/`) or `project`. */
+	kept_to: string,
+	/**  Whether Keep replaces a theme folder that is there: the window asks the person first. */
+	replaces: boolean,
+	/**  Whether the window draws it now: the draft, or its last good version. */
+	drawn: boolean,
+	/**  The hard floors the draft as saved breaks, in the engine's words: why it is not drawn. */
+	broken: string[],
+	/**  Why the engine refused the draft as saved, when it did. */
+	refused: string[],
+	/**
+	 *  What the refused draft's Notice may offer (#2647): `fonts` where every font file it waits
+	 *  on is one the project brings in the folder the draft is kept to, with those bytes, and
+	 *  the project asks again about font files alone, so its trust ask lifts the refusal; the
+	 *  rules of a refused theme otherwise. `None` for a draft not refused for a font.
+	 */
+	review: ThemeReview | null,
 };
 
 /**  One face of a font. */

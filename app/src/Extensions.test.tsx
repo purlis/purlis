@@ -736,8 +736,17 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
         moreContrast: false,
         reread: false,
         at: null,
+        kept: null,
       },
-      { pick: null, on: null, light: true, moreContrast: false, reread: false, at: null },
+      {
+        pick: null,
+        on: null,
+        light: true,
+        moreContrast: false,
+        reread: false,
+        at: null,
+        kept: null,
+      },
     ]);
   });
 

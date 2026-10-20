@@ -1487,6 +1487,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     for state in crate::names::STATE_DIR.spellings() {
         let app = root.join(state).join("app");
         deny(Class::Integrity, app.clone(), Access::Write);
+        // Every chat's theme drafts (#2332): the app writes a chat's draft, in the folder of the
+        // chat whose token asked, and no chat writes any. Read, never written.
+        deny(
+            Class::Integrity,
+            root.join(state).join(crate::theme::drafts::DRAFTS),
+            Access::Write,
+        );
         // Every chat's hook spool and the keys that check it, neither read nor written: the
         // hooks that write a spool run outside the sandbox their tools run in (ADR 0068 §6
         // as amended by V63), so nothing inside it needs them.
@@ -1529,6 +1536,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(
             Class::Integrity,
             crate::personaverbs::mcp::approvals_path(&ctx.state),
+            Access::Write,
+        );
+        // …and the theme drafts (#2332), which the app writes there.
+        deny(
+            Class::Integrity,
+            ctx.state.join(crate::theme::drafts::DRAFTS),
             Access::Write,
         );
     }

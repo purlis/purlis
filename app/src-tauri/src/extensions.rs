@@ -207,6 +207,12 @@ pub struct ExtensionTheme {
 /// **And the theme folders it is read from are watched for this window** (#2324,
 /// [`crate::themewatch`]): from the config home and the plane root held here, never from a path
 /// the window or a chat names. A save in one tells the window to ask again.
+///
+/// **A theme draft of a chat working where the window is draws in place of every level**
+/// (#2332, [`crate::themedrafts`]): the chats are this app's own record of where each works, and
+/// the draft is drawn only while it holds every hard floor; its last good version stays
+/// otherwise. `kept` asks for the theme as kept, without any draft: what Compare shows while
+/// it is held. The drafts are watched with the folders.
 #[tauri::command]
 #[specta::specta]
 // The window and the state are Tauri's to hand in; the rest is the window's question.
@@ -220,13 +226,16 @@ pub async fn theme_in_force(
     more_contrast: bool,
     reread: bool,
     at: Option<ThemeAt>,
+    kept: Option<bool>,
 ) -> Result<ThemeInForce, String> {
     let root = config_root()?;
-    let (at, workspace) = match at {
+    let (at, workspace, chats) = match at {
         Some(ThemeAt { plane, workspace }) => {
-            (Some(planes.held(&plane)?.root().to_path_buf()), workspace)
+            let held = planes.held(&plane)?;
+            let chats = crate::themedrafts::chats_at(&held, workspace.as_deref());
+            (Some(held.root().to_path_buf()), workspace, chats)
         }
-        None => (None, None),
+        None => (None, None, Vec::new()),
     };
     tauri::async_runtime::spawn_blocking(move || {
         crate::themewatch::follow(
@@ -235,6 +244,7 @@ pub async fn theme_in_force(
                 config: root.clone(),
                 plane: at.clone(),
                 workspace: workspace.clone(),
+                drafts: chats.iter().map(|one| one.id.clone()).collect(),
             },
         );
         if reread {
@@ -247,7 +257,26 @@ pub async fn theme_in_force(
                 .as_deref()
                 .and_then(|pick| purlis_core::theme::Choice::new(pick, None));
         }
-        theme_in_force_of(
+        let drafted = match (at.as_deref(), kept) {
+            (Some(plane), None | Some(false)) => crate::themedrafts::drafted_here(
+                &root,
+                plane,
+                workspace,
+                &chats,
+                &levels,
+                light,
+                contrast_of(more_contrast),
+            ),
+            _ => None,
+        };
+        if let Some((Some(drawn), draft)) = drafted.clone() {
+            return ThemeInForce {
+                draft: Some(draft),
+                // A draft drawn is not refused: there is nothing to review.
+                ..answer_of(drawn, &levels, |_| None)
+            };
+        }
+        let answer = theme_in_force_of(
             &levels,
             &purlis_core::theme::Folders::of(Some(&root), at.as_deref(), workspace),
             on.as_deref(),
@@ -264,7 +293,11 @@ pub async fn theme_in_force(
                     review_kept(plane, faces, || crate::planes::theme_review(&root, plane))
                 })
             },
-        )
+        );
+        ThemeInForce {
+            draft: drafted.map(|(_, draft)| draft),
+            ..answer
+        }
     })
     .await
     .map_err(|err| format!("reading the theme in force did not finish: {err}"))
@@ -489,6 +522,16 @@ pub(crate) fn theme_in_force_of(
         },
         offered,
     );
+    answer_of(drawn, levels, review)
+}
+
+/// What the window is told of `drawn`, the theme the levels (or a draft) chose. `review` is
+/// asked only for a theme refused for a project font file its approval does not hold (#2647).
+pub(crate) fn answer_of(
+    drawn: purlis_core::theme::Drawn,
+    levels: &purlis_core::theme::Levels,
+    review: impl FnOnce(&[&str]) -> Option<ThemeReview>,
+) -> ThemeInForce {
     let review = {
         let faces = drawn.awaiting_faces();
         if faces.is_empty() {
@@ -527,6 +570,7 @@ pub(crate) fn theme_in_force_of(
         complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
         follows_system: drawn.follows_system,
         floors: drawn.held.map(|held| held.said()),
+        draft: None,
     }
 }
 
@@ -628,6 +672,10 @@ pub struct ThemeInForce {
     /// Notice offers no button. `unapproved`: this machine never approved the project, and the
     /// Notice offers no button. `null` otherwise.
     pub review: Option<ThemeReview>,
+    /// The theme draft of a chat working where the window is (#2332): drawn in place of what
+    /// the levels choose while it holds every hard floor, and named on the draft strip either
+    /// way. `None` when no chat there has one, or the theme as kept was asked for.
+    pub draft: Option<crate::themedrafts::WindowDraft>,
 }
 
 /// What a refused theme's Notice may offer (#2647, [`ThemeInForce::review`]).
