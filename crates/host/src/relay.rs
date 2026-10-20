@@ -155,6 +155,12 @@ type ByLink = Arc<Mutex<HashMap<u64, Arc<Relayed>>>>;
 /// number, until its first command after the name makes what the relay keeps for it (#2623).
 type Named = Arc<Mutex<HashMap<u64, String>>>;
 
+/// **The window each client link of a host's relays is named, by the client link's number**
+/// (#2744): one for the whole host, shared by every relay its links make
+/// ([`Relay::claiming`]), so while one link holds a window's name, no link of another relay of
+/// the same host takes it. A link's name ends with it.
+pub type Claimed = Arc<Mutex<HashMap<u64, String>>>;
+
 /// Relays every client link's commands to the other host its links reach. A clone is the same
 /// relay.
 #[derive(Clone)]
@@ -162,6 +168,7 @@ pub struct Relay {
     source: Source,
     links: ByLink,
     named: Named,
+    claimed: Claimed,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -198,7 +205,15 @@ impl Relay {
             source,
             links: Arc::default(),
             named: Arc::default(),
+            claimed: Arc::default(),
         }
+    }
+
+    /// This relay, holding the names its client links take in `claimed`, which other relays of
+    /// the same host share (#2744): a name another of their links holds is refused here too.
+    pub fn claiming(mut self, claimed: Claimed) -> Relay {
+        self.claimed = claimed;
+        self
     }
 
     /// What the relay keeps for `peer`'s link, made with its first command. A link that has
@@ -244,16 +259,21 @@ impl Relay {
                     .into(),
             });
         }
+        let mut claimed = lock(&self.claimed);
         let held = links
             .values()
             .any(|relayed| relayed.client.window == window)
-            || named.values().any(|other| *other == window);
+            || named.values().any(|other| *other == window)
+            || claimed
+                .iter()
+                .any(|(link, other)| *link != peer.link() && *other == window);
         if held {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "another window's link holds this name now".into(),
             });
         }
+        claimed.insert(peer.link(), window.clone());
         named.insert(peer.link(), window);
         Ok(Answer::Done)
     }
@@ -1265,6 +1285,7 @@ impl session::Host for Relay {
     async fn link_ended(&self, peer: &Peer) {
         lock(&self.links).remove(&peer.link());
         lock(&self.named).remove(&peer.link());
+        lock(&self.claimed).remove(&peer.link());
     }
 
     async fn subscribe(

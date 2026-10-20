@@ -309,3 +309,45 @@ async fn a_second_name_while_the_link_is_undecided_is_refused_and_the_first_stay
         .unwrap_err();
     assert_eq!(code(&again), Some(session::MALFORMED), "{again}");
 }
+
+/// **One link of the desktop's host holds a window's name at a time** (#2623, #2744), across the
+/// relays its links make: a second link that names itself so is refused `relay_to`
+/// `not_allowed` while the first holds the name, and keeps the name, so the same `relay_to`
+/// sent again once the first link has ended is relayed.
+#[tokio::test]
+async fn a_name_another_relayed_link_holds_is_refused_until_that_link_ends() {
+    let (a, _b) = a_desktop(Kept::pinned);
+    let name = purlis_session_protocol::browsing::Secret::new("ab".repeat(16));
+    let first = routed(Scope::LocalUi, a.clone()).await;
+    first
+        .call(Command::NameWindow { name: name.clone() })
+        .await
+        .unwrap();
+    tokio::time::timeout(PATIENCE, first.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("the first link is relayed");
+
+    let second = routed(Scope::LocalUi, a.clone()).await;
+    second
+        .call(Command::NameWindow { name })
+        .await
+        .expect("kept while the link is undecided");
+    let refused = tokio::time::timeout(PATIENCE, second.relay_to("builds"))
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(code(&refused), Some(session::NOT_ALLOWED), "{refused}");
+
+    drop(first);
+    let deadline = tokio::time::Instant::now() + PATIENCE;
+    while let Err(refused) = second.relay_to("builds").await {
+        assert_eq!(code(&refused), Some(session::NOT_ALLOWED), "{refused}");
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the name was never let go of"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    second.list().await.expect("relayed");
+}

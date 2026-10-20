@@ -115,7 +115,7 @@ impl Routed {
                 .unwrap_or_else(|why| Err(format!("the runner could not be looked up: {why}"))),
         };
         let relay = match relayed {
-            Ok(keep) => Relay::kept(keep),
+            Ok(keep) => Relay::kept(keep).claiming(self.hosting.claimed()),
             Err(why) => {
                 *lock(&self.route) = Route::Undecided;
                 return Err(Refusal {
