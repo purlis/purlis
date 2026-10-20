@@ -13,7 +13,9 @@ use std::time::Duration;
 use base64::Engine as _;
 use serde_json::{Value, json};
 
-use super::{ACTIVE_ELEMENT, Browser, DevTools, READ_VALUE, READY_STATE, SELECT_OPTIONS, TITLE};
+use super::{
+    ACTIVE_ELEMENT, Browser, DevTools, FOCUSED_HERE, READ_VALUE, READY_STATE, SELECT_OPTIONS, TITLE,
+};
 use crate::WebAddress;
 use crate::cdp::{CallError, Closed, Event};
 use crate::drive::{
@@ -49,6 +51,9 @@ struct Model {
     /// The title each page's document has now, by target: what the engine last told of, unless
     /// a test sets it with no word from the engine (#2753).
     titles: HashMap<String, String>,
+    /// The element that has the focus, by its engine id, where the document has the focus
+    /// (#2295).
+    focused_backend: Option<i64>,
     history: Value,
     screenshot: Vec<u8>,
     select: Value,
@@ -327,6 +332,20 @@ impl Engine {
                 };
                 Ok(json!({"result":{"type":"string","value":lie}}))
             }
+            "Runtime.evaluate" if p["expression"] == FOCUSED_HERE => {
+                Ok(match super::lock(&self.model).focused_backend {
+                    Some(_) => {
+                        json!({"result":{"type":"object","subtype":"node","objectId":"FOCUSED"}})
+                    }
+                    None => json!({"result":{"type":"object","subtype":"null","value":null}}),
+                })
+            }
+            "DOM.describeNode" if p["objectId"] == "FOCUSED" => {
+                let backend = super::lock(&self.model).focused_backend;
+                Ok(
+                    json!({"node":{"nodeId":0,"backendNodeId":backend,"nodeType":1,"nodeName":"INPUT"}}),
+                )
+            }
             "Runtime.evaluate" if p["expression"] == TITLE => {
                 let target = on.unwrap_or_default().trim_start_matches("S-");
                 let title = super::lock(&self.model)
@@ -563,6 +582,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             ]),
             ready: "complete".into(),
             titles: HashMap::new(),
+            focused_backend: None,
             history: json!({"currentIndex":0,"entries":[{"id":1,"url":"http://fixture.test/frames.html","userTypedURL":"","title":"","transitionType":"typed"}]}),
             screenshot: white_png(),
             select: json!({"picked":["Blue"]}),

@@ -692,6 +692,64 @@ fn input_aimed_at_a_frame_whose_inside_has_since_changed_is_dropped() {
     assert!(engine.sent("Input.dispatchMouseEvent").is_empty());
 }
 
+/// How many times the page's tree was read.
+fn tree_reads(engine: &super::Engine) -> usize {
+    engine.sent("Accessibility.getFullAXTree").len()
+}
+
+#[test]
+fn keys_typed_into_a_field_that_keeps_the_focus_read_the_page_once() {
+    // #2295: the first key blanks the focused field, reading the page; while that field keeps
+    // the focus, the next keys only ask the document what has it.
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    browser.person_input(&key(&aim, "x", true)).unwrap();
+    let field = engine
+        .sent("DOM.resolveNode")
+        .last()
+        .map(|s| s.params["backendNodeId"].as_i64().unwrap())
+        .expect("the field was read after the key");
+    super::super::lock(&engine.model).focused_backend = Some(field);
+    let reads = tree_reads(&engine);
+
+    for _ in 0..5 {
+        browser.person_input(&key(&aim, "y", true)).unwrap();
+        browser.person_input(&key(&aim, "y", false)).unwrap();
+    }
+
+    assert_eq!(tree_reads(&engine), reads, "the page was read again");
+    assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), 11);
+    // What the field holds is still read after each key, and kept out.
+    super::super::lock(&engine.model).value = "xyyyyy".into();
+    browser.person_input(&key(&aim, "y", true)).unwrap();
+    browser.hand_back();
+    assert!(!snapshot(&browser, 1).contains("xyyyyy"));
+}
+
+#[test]
+fn a_key_after_the_focus_moved_reads_the_page_again() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    browser.person_input(&key(&aim, "x", true)).unwrap();
+    // The page's script moves the focus to another field, as a code's boxes do.
+    super::super::lock(&engine.model).focused_backend = Some(9999);
+    let reads = tree_reads(&engine);
+
+    browser.person_input(&key(&aim, "y", true)).unwrap();
+
+    assert!(
+        tree_reads(&engine) > reads,
+        "the new field was not blanked first"
+    );
+    // And where the document says nothing has the focus.
+    super::super::lock(&engine.model).focused_backend = None;
+    let reads = tree_reads(&engine);
+    browser.person_input(&key(&aim, "z", true)).unwrap();
+    assert!(tree_reads(&engine) > reads);
+}
+
 #[test]
 fn a_value_typed_key_by_key_leaves_no_part_of_it_in_any_later_answer() {
     let (browser, engine) = browser();

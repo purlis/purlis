@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A large page to type on</title></head>
+<body>
+  <label>Note <input id="note" autofocus></label>
+  <p id="count">Typed: 0</p>
+  <div id="rows"></div>
+  <script>
+    const note = document.getElementById('note');
+    note.focus();
+    note.addEventListener('input', () => {
+      document.getElementById('count').textContent = 'Typed: ' + note.value.length;
+    });
+    // A large page: twenty thousand rows, each a link and some text.
+    const rows = document.getElementById('rows');
+    for (let i = 0; i < 20000; i++) {
+      const row = document.createElement('div');
+      const link = document.createElement('a');
+      link.href = '#row-' + i;
+      link.textContent = 'Row ' + i;
+      row.appendChild(link);
+      row.appendChild(document.createTextNode(' and what it says'));
+      rows.appendChild(row);
+    }
+  </script>
+</body></html>

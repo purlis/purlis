@@ -192,6 +192,10 @@ pub(crate) const ACTIVE_ELEMENT: &str = r"(() => {
   return at && at !== document.body && at !== document.documentElement ? at.tagName : '';
 })()";
 
+/// The expression that answers the element that has the focus, where the document it runs in has
+/// the focus, or `null` (#2295). Run in purlis's own world, not by value.
+pub(crate) const FOCUSED_HERE: &str = "document.hasFocus() ? document.activeElement : null";
+
 /// The first [`MOST_TITLE_CHARS`] of `title`.
 fn kept_title(title: &str) -> String {
     title.chars().take(MOST_TITLE_CHARS).collect()
