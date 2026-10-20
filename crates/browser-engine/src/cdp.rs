@@ -11,8 +11,11 @@
 //! message without an `id` to the event receiver. It knows no DevTools domain: what to call is
 //! the broker's business. A message is never held past a bound, [`MAX_MESSAGE_BYTES`] or the
 //! smaller one its call asked for ([`Connection::call_within_bounded`]): an answer past it is
-//! read past to its NUL, never kept, and fails only its own call; an event past it is dropped
-//! and counted (#2694). A message that is not JSON ends the connection.
+//! read past to its NUL, never kept, and fails only its own call (#2694). An event past it is
+//! dropped only where nobody reads its kind (what a page writes to its console, its uncaught
+//! errors); any other event past it ends the connection, since the driver's view of the page's
+//! frames and targets is kept from events and is never left stale. A message that is not JSON
+//! ends the connection.
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
@@ -244,20 +247,36 @@ fn most_for(shared: &Shared, head: &[u8]) -> usize {
         .unwrap_or(MAX_MESSAGE_BYTES)
 }
 
-/// A message past its bound, which began `head`: the call it answers fails, alone; an event,
-/// or what answers no call, is dropped and counted.
-fn too_large(shared: &Shared, head: &[u8]) {
-    let waiting = id_of(head).and_then(|id| lock(&shared.pending).as_mut()?.remove(&id));
-    match waiting {
-        Some(waiting) => {
+/// The method a message's first bytes name, as the engine writes an event: `{"method":"X"` first.
+fn method_of(head: &[u8]) -> Option<&str> {
+    let rest = head.strip_prefix(br#"{"method":""#)?;
+    let end = rest.iter().position(|&b| b == b'"')?;
+    std::str::from_utf8(&rest[..end]).ok()
+}
+
+/// Events past their bound that may be dropped: kinds nobody here reads.
+const DROPPED_WHEN_TOO_LARGE: [&str; 5] = [
+    "Runtime.consoleAPICalled",
+    "Runtime.exceptionThrown",
+    "Runtime.exceptionRevoked",
+    "Runtime.inspectRequested",
+    "Log.entryAdded",
+];
+
+/// A message past its bound, which began `head`: the call it answers fails, alone, and an
+/// answer to no call waiting, or an event of a kind nobody reads, is dropped. Any other event
+/// ends the connection: false.
+fn too_large(shared: &Shared, head: &[u8]) -> bool {
+    if let Some(id) = id_of(head) {
+        let waiting = lock(&shared.pending).as_mut().and_then(|p| p.remove(&id));
+        if let Some(waiting) = waiting {
             let _ = waiting
                 .answer
                 .try_send(Err(CallError::TooLarge { most: waiting.most }));
         }
-        None => {
-            shared.dropped.fetch_add(1, Ordering::Relaxed);
-        }
+        return true;
     }
+    method_of(head).is_some_and(|method| DROPPED_WHEN_TOO_LARGE.contains(&method))
 }
 
 /// Reads messages until the pipe ends or carries something that is not one, then fails every
@@ -267,14 +286,14 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
     while let Some(Ok(frame)) = frames.next_message(|head| most_for(shared, head)) {
         let message = match frame {
             Frame::Whole(message) => message,
-            Frame::Over { head } => {
-                too_large(shared, &head);
-                continue;
-            }
+            Frame::Over { head } if too_large(shared, &head) => continue,
+            Frame::Over { .. } => break,
         };
         if message.len() > most_for(shared, &message) {
-            too_large(shared, &message[..message.len().min(HEAD_BYTES)]);
-            continue;
+            if too_large(shared, &message[..message.len().min(HEAD_BYTES)]) {
+                continue;
+            }
+            break;
         }
         let Ok(Value::Object(mut message)) = serde_json::from_slice::<Value>(&message) else {
             break;
@@ -390,7 +409,8 @@ impl<R: Read> Frames<R> {
                 "a message from the engine past the bound is no DevTools message",
             )));
         }
-        self.buffer.clear();
+        // What was held of the message is let go, not kept as capacity.
+        self.buffer = Vec::new();
         self.scanned = 0;
         loop {
             match self.fill() {

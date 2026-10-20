@@ -287,10 +287,10 @@ fn an_answer_past_the_connections_bound_fails_only_its_call() {
 }
 
 #[test]
-fn an_event_past_the_bound_is_dropped_and_counted_and_calls_are_still_answered() {
+fn an_event_past_the_bound_that_nobody_reads_is_dropped_and_calls_are_still_answered() {
     let (connection, events, mut engine) = connect();
     let engine = thread::spawn(move || {
-        engine.send(json!({"method": "Page.frameNavigated", "params": {"data": "x".repeat(MAX_MESSAGE_BYTES + (1 << 20))}}));
+        engine.send(json!({"method": "Runtime.consoleAPICalled", "params": {"data": "x".repeat(MAX_MESSAGE_BYTES + (1 << 20))}}));
         engine.send(json!({"method": "Page.loadEventFired", "params": {}}));
         let call = engine.read();
         engine.send(json!({"id": call["id"], "result": {}}));
@@ -299,8 +299,25 @@ fn an_event_past_the_bound_is_dropped_and_counted_and_calls_are_still_answered()
     connection
         .call("Browser.getVersion", json!({}), None)
         .unwrap();
-    assert_eq!(connection.dropped_events(), 1);
+    assert_eq!(connection.dropped_events(), 0);
     let kept: Vec<_> = events.try_iter().map(|e| e.method).collect();
     assert_eq!(kept, vec!["Page.loadEventFired".to_owned()]);
     drop(engine.join().unwrap());
+}
+
+#[test]
+fn an_event_past_the_bound_the_driver_reads_ends_the_connection() {
+    // A frame's navigation keeps the driver's view of the page: never lost, so never dropped.
+    let (connection, _events, mut engine) = connect();
+    let engine = thread::spawn(move || {
+        let call = engine.read();
+        engine.send(json!({"method": "Page.frameNavigated", "params": {"frame": {"name": "x".repeat(MAX_MESSAGE_BYTES + (1 << 20))}}}));
+        engine.send(json!({"id": call["id"], "result": {}}));
+        engine
+    });
+    let error = connection
+        .call("Browser.getVersion", json!({}), None)
+        .unwrap_err();
+    assert!(matches!(error, CallError::Ended), "{error:?}");
+    drop(engine.join());
 }
