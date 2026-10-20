@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792480253295,
+  "lastUpdate": 1792481578935,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18690,6 +18690,48 @@ window.BENCHMARK_DATA = {
             "value": 102.54846749999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.177, 102.384, 102.548, 102.732, 103.864 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "990a9b02b9407ec8176d9ab785cfb5874213f1e7",
+          "message": "Keeping a runner refuses this desktop's own link key (#2683) (#2727)\n\n* Keeping a runner refuses this desktop's own link key (#2683)\n\nrunners::keep takes the desktop as its pairing presented it, its device id\nand the public half of the key it links with, and refuses a runner whose\nanswered key is that key, as it refuses one with the desktop's device id.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Review: a public link key is read in its one spelling\n\nA device id and key line is refused where the key sets the last bit,\nwhich X25519 ignores, so one key never arrives in two spellings.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T11:26:41+04:00",
+          "tree_id": "cf6c87833d5f8e6c308dbfd8ec75a410aa029a6a",
+          "url": "https://github.com/purlis/purlis/commit/990a9b02b9407ec8176d9ab785cfb5874213f1e7"
+        },
+        "date": 1792481576541,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.34212549999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.333, 0.341, 0.342, 0.347, 0.350 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4026885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.294, 16.313, 16.403, 16.407, 16.451 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.05839900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.692, 101.134, 102.058, 102.180, 102.329 ms"
           }
         ]
       }
