@@ -45,8 +45,9 @@
 //! close asks about them. Each chat's drafts folder names the clone whose app made it (its
 //! [`crate::plane::CloneKey`]), and a sweep deletes only its own clone's: a state folder that
 //! `$PURLIS_HOME` shares between clones keeps every other clone's drafts. A chat's folder that
-//! names no clone is adopted by the sweep only in the plane's own state folder, which no other
-//! clone shares: the sweep writes this clone's owner record into it, then treats it as its own.
+//! names no clone is adopted by the sweep only in the plane's own state folder, the one used
+//! while `$PURLIS_HOME` is not set: the sweep writes this clone's owner record into it, then
+//! treats it as its own.
 //!
 //! # The draft's fonts and its floors
 //!
@@ -770,7 +771,7 @@ pub fn sweep(plane: &Path, open: &[&str]) -> usize {
         return 0;
     };
     let mine = owner_of(plane);
-    let adopts = adopts_ownerless(plane);
+    let adopts = adopts_ownerless();
     let mut deleted = 0;
     for entry in listed.filter_map(Result::ok).take(MOST_SWEPT) {
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
@@ -805,14 +806,14 @@ pub fn sweep(plane: &Path, open: &[&str]) -> usize {
     deleted
 }
 
-/// **Whether a sweep of the plane at `plane` adopts a chat's drafts folder that names no
-/// clone** (#2761): only where the drafts are in the plane's own state folder, inside the plane,
-/// which no other clone's app writes. Never under `$PURLIS_HOME`, inside the plane or not: an
+/// **Whether a sweep adopts a chat's drafts folder that names no clone** (#2761): only while
+/// `$PURLIS_HOME` is not set, so that the drafts are in the plane's own state folder, inside the
+/// plane, which is this clone's own. Never under `$PURLIS_HOME`, inside the plane or not: an
 /// operator sets it to share one state folder between clones, and a folder there that names no
-/// clone may be another clone's open chat's.
-fn adopts_ownerless(plane: &Path) -> bool {
-    let shared = crate::steer::var_os("PURLIS_HOME").is_some_and(|home| !home.is_empty());
-    !shared && root_of(plane).0 == plane
+/// clone may be another clone's open chat's. A `$PURLIS_HOME` another clone sets to this plane's
+/// own state folder counts as this clone's own.
+fn adopts_ownerless() -> bool {
+    !crate::steer::var_os("PURLIS_HOME").is_some_and(|home| !home.is_empty())
 }
 
 /// The most files a save hands over: `theme.json` and the icon sets beside it.

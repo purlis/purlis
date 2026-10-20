@@ -598,6 +598,7 @@ export const PlaneView = memo(function PlaneView({
   shellAsked,
   fileAsked,
   closeAsked,
+  onAsking,
   awayRefused,
   onAway,
   waiting,
@@ -663,7 +664,10 @@ export const PlaneView = memo(function PlaneView({
   fileAsked?: { place: Place; path: string; line?: number; at: number };
   /** A link's close of chats with theme drafts, handed to THIS project (#2761), asked here once
    *  per `at`: the chats it ends. */
-  closeAsked?: { sessions: readonly number[]; at: number };
+  closeAsked?: { sessions: readonly number[]; at: number; dropped: boolean };
+  /** Told whether THIS project has a close or a "Who draws it?" question up (#2761), so the
+   *  window asks no link's close over any project's question. */
+  onAsking?: (plane: PlaneId, up: boolean) => void;
   /** This project's dispatches refused while nobody was at their chat (#1507), which the
    *  window holds: updates in the Inbox (#1693), and a part of the away summary (#1551). */
   awayRefused?: readonly AwayRefusal[];
@@ -7287,15 +7291,24 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **A link's close of chats with theme drafts, handed to this window** (#2761): asked here as
    * the window's own close of the tab that holds them is, Keep or Revert first, and the dialog
-   * says a link asked. Nothing is asked while another close question is on screen, so a link
-   * never changes what the person is answering; nor for chats no tab here holds alone, which
-   * the person closes here themselves.
+   * says a link asked. Nothing is asked while a question is on screen anywhere in the window
+   * (`closeHanded.ts`), so a link never changes what the person is answering; nor for chats no
+   * tab here holds alone, which the person closes here themselves. Either is said here.
    */
+  const questionUp = endingChat !== undefined || keptOnClose.length > 0;
+  useEffect(() => {
+    if (onAsking === undefined) return;
+    onAsking(plane, questionUp);
+    return () => onAsking(plane, false);
+  }, [onAsking, plane, questionUp]);
   const closeHandled = useRef(closeAsked?.at);
   useEffect(() => {
     if (closeAsked === undefined || closeHandled.current === closeAsked.at) return;
     closeHandled.current = closeAsked.at;
-    if (endingChat !== undefined || keptOnClose.length > 0) return;
+    if (closeAsked.dropped || questionUp) {
+      setReport({ from: "close-handed", refused: true, words: CLOSE_HANDED_NOT_ASKED });
+      return;
+    }
     const asked = new Set(closeAsked.sessions);
     const tab = now.current.order.find((id) =>
       panesOf(now.current, id).some((one) => asked.has(one.session)),
@@ -7318,7 +7331,7 @@ export const PlaneView = memo(function PlaneView({
       return;
     }
     void askToEnd(offer, true);
-  }, [askToEnd, askedByNow, by, closeAsked, endingChat, keptOnClose]);
+  }, [askToEnd, askedByNow, by, closeAsked, questionUp]);
 
   /**
    * **Keeps or reverts a closing chat's theme drafts** (#2332), as its close was answered, while
@@ -9796,6 +9809,10 @@ function chatsEndedBy(does: Offer["does"], tabs: Tabs, askedBy: AskedBy): number
   const going = panesOf(tabs, tab.id).find((one) => one.pane === tab.focused);
   return going === undefined ? [] : [going.session];
 }
+
+/** What the window says of a link's close that came while a question was on screen (#2761). */
+const CLOSE_HANDED_NOT_ASKED =
+  "A link asked to close chats here that have theme drafts while a question was on screen, so it was not asked: close them here, and answer Keep or Revert.";
 
 /** What the window says when a link's close names chats no tab here holds alone (#2761). */
 const CLOSE_HANDED_NOT_HERE =

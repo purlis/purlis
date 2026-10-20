@@ -1363,13 +1363,15 @@ export const commands = {
 	/**
 	 *  **A link's close of chats that have theme drafts is handed to the window** (#2761): closing a
 	 *  chat, and its drafts' Keep and Revert, are the window's alone, so a link never settles a
-	 *  draft. The window holding the project is brought to the front and told the chats
-	 *  ([`CLOSE_HANDED`]); it asks the person there, Keep or Revert first, and closes nothing
-	 *  unasked. Answers whether the close was handed: `false` when none of `sessions` is a chat open
-	 *  here with a draft, or no window holds the project, and the link refuses the close as it
-	 *  refuses any of the window's own commands. Nothing of the drafts is answered.
+	 *  draft. Where one of `sessions` is a chat open here with a draft, the window holding the
+	 *  project is told the chats ([`CLOSE_HANDED`]). That window decides: it asks the person, Keep
+	 *  or Revert first, and brings itself and the project forward only when it does, never over a
+	 *  question already on screen; it closes nothing unasked.
+	 * 
+	 *  **The link is answered the same whatever was found**: nothing of the drafts, nor whether the
+	 *  window was told. At most [`drafts::MOST_CHATS`] chats are read from the list, each once.
 	 */
-	handDraftsCloseToTheWindow: (plane: PlaneId, sessions: number[]) => typedError<boolean, string>(__TAURI_INVOKE("hand_drafts_close_to_the_window", { plane, sessions })),
+	handDraftsCloseToTheWindow: (plane: PlaneId, sessions: number[]) => typedError<null, string>(__TAURI_INVOKE("hand_drafts_close_to_the_window", { plane, sessions })),
 	themeDraftKeep: __WINDOW_ONLY_RESULT,
 	themeDraftRevert: __WINDOW_ONLY_RESULT,
 	themeDraftsRevertHere: __WINDOW_ONLY_RESULT,

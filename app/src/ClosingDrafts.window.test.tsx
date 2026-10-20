@@ -80,14 +80,26 @@ const draft = (folder: string, session: number): WindowDraft => ({
   kept_refused: false,
 });
 
-/** Answers every command; chat 1, the one opened, has the theme drafts `folders`. */
-function core(folders: readonly string[]): { asked: { cmd: string; args: unknown }[] } {
+const OTHER = "/home/dev/other";
+
+/** Answers every command; chat 1, the one opened, has the theme drafts `folders`. With `both`,
+ *  the window starts holding two projects, this one in front. */
+function core(
+  folders: readonly string[],
+  both = false,
+): { asked: { cmd: string; args: unknown }[] } {
   const asked: { cmd: string; args: unknown }[] = [];
   let opened = 0;
   mockIPC(
     (cmd, args) => {
       asked.push({ cmd, args });
-      if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+      if (cmd === "plane_at_launch")
+        return both
+          ? { plane: null, from: null, why: null }
+          : { plane: PLANE, from: PLANE, why: null };
+      if (cmd === "planes_to_restore" && both)
+        return { windows: [{ planes: [PLANE, OTHER], active: 0 }], dropped: [] };
+      if (cmd === "open_plane") return { plane: (args as { path: string }).path, ask: null };
       if (cmd === "plane_sidebar") return SIDEBAR;
       if (cmd === "running_sessions") return [];
       if (cmd === "opened_chats") return [];
@@ -170,16 +182,45 @@ describe("a link's close of a chat with theme drafts", () => {
     await waitFor(() => expect(asked(log, "theme_draft_keep")).toHaveLength(1));
   });
 
-  it("never changes a close question already on screen", async () => {
-    core(["dusk"]);
+  it("never changes a close question already on screen, and says it was not asked", async () => {
+    const { asked: log } = core(["dusk"]);
     render(<App />);
     await openAChat();
     await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
     const asking = await screen.findByRole("alertdialog");
+    const raised = asked(log, "show_window_holding").length;
     await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1] }));
     await act(async () => {});
     expect(screen.getAllByRole("alertdialog")).toEqual([asking]);
     expect(asking.textContent).not.toContain(FROM_A_LINK_SAYS);
+    expect(asked(log, "show_window_holding")).toHaveLength(raised);
+    expect(
+      await screen.findByText(/while a question was on screen, so it was not asked/),
+    ).toBeTruthy();
+  });
+
+  it("never changes a question on screen in another project, nor brings its own forward", async () => {
+    const { asked: log } = core(["dusk"], true);
+    render(<App />);
+    await openAChat();
+    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
+    const asking = await screen.findByRole("alertdialog");
+    const raised = asked(log, "show_window_holding").length;
+    await act(() => emit(CLOSE_HANDED, { plane: OTHER, sessions: [1] }));
+    await act(async () => {});
+    expect(screen.getAllByRole("alertdialog")).toEqual([asking]);
+    expect(asking.textContent).not.toContain(FROM_A_LINK_SAYS);
+    expect(asked(log, "show_window_holding")).toHaveLength(raised);
+  });
+
+  it("brings the window forward when it asks", async () => {
+    const { asked: log } = core(["dusk"]);
+    render(<App />);
+    await openAChat();
+    const raised = asked(log, "show_window_holding").length;
+    await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1] }));
+    await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
+    expect(asked(log, "show_window_holding").slice(raised)).toEqual([{ plane: PLANE }]);
   });
 
   it("asks nothing for chats no tab here holds alone, and says to close them here", async () => {

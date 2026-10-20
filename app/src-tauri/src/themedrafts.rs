@@ -278,11 +278,13 @@ fn drafted_among(config: &Path, plane: &Path, chats: &[Drafting]) -> Vec<u32> {
 
 /// **A link's close of chats that have theme drafts is handed to the window** (#2761): closing a
 /// chat, and its drafts' Keep and Revert, are the window's alone, so a link never settles a
-/// draft. The window holding the project is brought to the front and told the chats
-/// ([`CLOSE_HANDED`]); it asks the person there, Keep or Revert first, and closes nothing
-/// unasked. Answers whether the close was handed: `false` when none of `sessions` is a chat open
-/// here with a draft, or no window holds the project, and the link refuses the close as it
-/// refuses any of the window's own commands. Nothing of the drafts is answered.
+/// draft. Where one of `sessions` is a chat open here with a draft, the window holding the
+/// project is told the chats ([`CLOSE_HANDED`]). That window decides: it asks the person, Keep
+/// or Revert first, and brings itself and the project forward only when it does, never over a
+/// question already on screen; it closes nothing unasked.
+///
+/// **The link is answered the same whatever was found**: nothing of the drafts, nor whether the
+/// window was told. At most [`drafts::MOST_CHATS`] chats are read from the list, each once.
 #[tauri::command]
 #[specta::specta]
 pub async fn hand_drafts_close_to_the_window(
@@ -291,42 +293,49 @@ pub async fn hand_drafts_close_to_the_window(
     showing: tauri::State<'_, crate::planes::Showing>,
     plane: crate::planes::PlaneId,
     sessions: Vec<u32>,
-) -> Result<bool, String> {
+) -> Result<(), String> {
     use tauri::Emitter;
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
-    // The chats the link's close ends that are open here, each once: the window's close asks
-    // about every one of them.
+    let asked = asked_sessions(sessions);
+    // The chats the link's close ends that are open here: the window's close asks about every
+    // one of them.
     let ending: Vec<Drafting> = held
         .chats()
         .drafting()
         .into_iter()
-        .filter(|one| sessions.contains(&one.session))
-        .take(drafts::MOST_CHATS)
+        .filter(|one| asked.contains(&one.session))
         .collect();
     let handed: Vec<u32> = ending.iter().map(|one| one.session).collect();
-    let config = crate::extensions::config_root()?;
+    let Ok(config) = crate::extensions::config_root() else {
+        return Ok(());
+    };
     let drafted =
         tauri::async_runtime::spawn_blocking(move || drafted_among(&config, &root, &ending))
             .await
-            .map_err(|err| format!("reading the chats' theme drafts did not finish: {err}"))?;
+            .unwrap_or_default();
     if drafted.is_empty() {
-        return Ok(false);
+        return Ok(());
     }
-    let Some(window) = showing.holder(&plane) else {
-        return Ok(false);
-    };
-    crate::windows::raise(&app, &window);
-    app.emit_to(
-        window.as_str(),
-        CLOSE_HANDED,
-        CloseHanded {
-            plane,
-            sessions: handed,
-        },
-    )
-    .map_err(|err| format!("the window was not told of the close: {err}"))?;
-    Ok(true)
+    if let Some(window) = showing.holder(&plane) {
+        let _ = app.emit_to(
+            window.as_str(),
+            CLOSE_HANDED,
+            CloseHanded {
+                plane,
+                sessions: handed,
+            },
+        );
+    }
+    Ok(())
+}
+
+/// The chats a link's close names: the first [`drafts::MOST_CHATS`] of its list, each once.
+fn asked_sessions(mut sessions: Vec<u32>) -> Vec<u32> {
+    sessions.truncate(drafts::MOST_CHATS);
+    sessions.sort_unstable();
+    sessions.dedup();
+    sessions
 }
 
 /// The draft `folder` of the chat `session` of the plane `held`, with the chat's workspace.
@@ -720,6 +729,13 @@ mod tests {
             [3, 4]
         );
         assert_eq!(drafted_among(&config, &plane, &[none]), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn a_link_s_list_of_chats_is_read_each_once_and_capped() {
+        assert_eq!(asked_sessions(vec![4, 3, 4, 3]), [3, 4]);
+        let long: Vec<u32> = (0..10_000).rev().collect();
+        assert_eq!(asked_sessions(long).len(), drafts::MOST_CHATS);
     }
 
     #[test]

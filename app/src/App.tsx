@@ -115,7 +115,7 @@ import { TitleBar, useTitleBarRoom } from "./TitleBar";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
-import { useCloseHanded } from "./closeHanded";
+import { aQuestionIsUp, useCloseHanded } from "./closeHanded";
 import { useAwayRefusals } from "./dispatchAway";
 import { useUpdates } from "./Updates";
 import { StripTablist, useTabIds } from "./StripTablist";
@@ -1838,10 +1838,17 @@ function App() {
     [registry.held],
   );
   useNotificationLanding(landOnNotified);
+  /** The projects whose view has a close or a "Who draws it?" question up (#2761). */
+  const closeQuestionsIn = useRef(new Set<PlaneId>());
+  const onAsking = useCallback((plane: PlaneId, up: boolean) => {
+    if (up) closeQuestionsIn.current.add(plane);
+    else closeQuestionsIn.current.delete(plane);
+  }, []);
   /** A link's close of chats with theme drafts (#2761): asked in that project, brought to the
-   *  front. */
+   *  front, unless a question is up anywhere in this window. */
   const closeAsk = useCloseHanded(
     (plane) => planesNow.current.includes(plane),
+    () => aQuestionIsUp(closeQuestionsIn.current),
     (plane) => setShowing({ at: "plane", plane }),
   );
 
@@ -2398,6 +2405,7 @@ function App() {
           shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
           fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
           closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
+          onAsking={onAsking}
           awayRefused={awayRefusals.held[plane]}
           onAway={answerAway}
           waiting={registry.held[plane]}
