@@ -6,5 +6,6 @@
    frame inside it, no longer counts as loading, and the requests it made in that session no
    longer count as open; a frame's session that ends drops its requests as before. Either is a
    change to the page: the quiet while starts again from it, so an act still waits for the page
-   to settle after a frame goes. A request the engine names no frame for stays counted until it
+   to settle after a frame goes. *D-2841-2, decided in implementation, to be confirmed.* A
+   request the engine names no frame for, or one from another session, stays counted until it
    ends. *D-2841-1, decided in implementation, to be confirmed.*
