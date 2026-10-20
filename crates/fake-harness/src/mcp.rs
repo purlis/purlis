@@ -11,7 +11,7 @@
 //! so a test drives the server's tools as the model would. It ends once the test closes the
 //! socket and the server has ended.
 
-use std::io;
+use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -40,14 +40,34 @@ pub fn relay(socket: &Path, server: &[String]) -> Result<(), String> {
     // What the test sends goes to the server until the test closes its end; then the server's
     // stdin closes, as a harness's does when it lets go, and the server ends.
     let asking = thread::spawn(move || {
-        let _ = io::copy(&mut asked, &mut to_server);
+        pump(&mut asked, &mut to_server);
     });
     let mut answers = stream;
-    let _ = io::copy(&mut from_server, &mut answers);
+    pump(&mut from_server, &mut answers);
     let _ = answers.shutdown(std::net::Shutdown::Write);
     let _ = asking.join();
     child
         .wait()
         .map_err(|err| format!("cannot wait for {program}: {err}"))?;
     Ok(())
+}
+
+/// Copies what `from` gives to `to` as it arrives, until `from` ends or `to` is gone. Not
+/// `io::copy`: on Linux it splices a socket into a pipe, and a line sent waited there unread.
+fn pump(from: &mut impl Read, to: &mut impl Write) {
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        match from.read(&mut buffer) {
+            Ok(0) | Err(_) => return,
+            Ok(read) => {
+                if to
+                    .write_all(&buffer[..read])
+                    .and_then(|()| to.flush())
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }
+    }
 }

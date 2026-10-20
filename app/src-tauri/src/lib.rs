@@ -36,7 +36,7 @@ mod browserneedsyou;
 mod browsers;
 // A chat's browser end to end on a real engine (#2243): tests alone.
 #[cfg(all(test, unix))]
-mod browsersendtoend;
+mod browsers_end_to_end_tests;
 mod changes;
 mod chatbrowsers;
 mod chats;
