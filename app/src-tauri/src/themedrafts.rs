@@ -579,4 +579,49 @@ mod tests {
             "the last good one"
         );
     }
+
+    #[test]
+    fn a_draft_refused_for_a_font_the_project_does_not_bring_offers_no_review() {
+        let home = tempfile::tempdir().unwrap();
+        let config = home.path().join("config");
+        let plane = home.path().join("plane");
+        std::fs::create_dir_all(plane.join(".purlis")).unwrap();
+        std::fs::create_dir_all(plane.join("workspaces/alpha")).unwrap();
+        std::fs::create_dir_all(&config).unwrap();
+        let one = chat(4, Some("alpha"));
+        let place = drafts::Place {
+            plane: &plane,
+            workspace: Some("alpha"),
+        };
+        let path = drafts::start(Some(&config), place, &one.id, "dusk")
+            .unwrap()
+            .path;
+        // A face only the draft has: the project brings no such file, so its trust ask is no
+        // way to draw it.
+        std::fs::create_dir_all(path.join("fonts")).unwrap();
+        let mut woff2 = b"wOF2".to_vec();
+        woff2.extend_from_slice(&[0; 64]);
+        std::fs::write(path.join("fonts/face.woff2"), woff2).unwrap();
+        let theme = serde_json::json!({
+            "name": "Dusk",
+            "appearances": [{ "id": "dark", "appearance": "dark" }],
+            "fonts": { "ui": { "family": "Face", "faces": [
+                { "file": "fonts/face.woff2", "weight": 400 }
+            ] } }
+        });
+        std::fs::write(path.join("theme.json"), theme.to_string()).unwrap();
+        let (drawn, draft) = drafted_here(
+            &config,
+            &plane,
+            Some("alpha"),
+            &[one],
+            &theme::Levels::default(),
+            false,
+            theme::Contrast::Standard,
+        )
+        .expect("a draft");
+        assert!(drawn.is_none());
+        assert!(!draft.refused.is_empty(), "{draft:?}");
+        assert_eq!(draft.review, None);
+    }
 }

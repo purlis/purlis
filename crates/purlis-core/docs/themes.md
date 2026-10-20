@@ -227,7 +227,10 @@ over theme files only.
   does.
 - **A draft is read as a project's theme folder is**: through handles refusing a link, under the
   caps of a theme folder. Its fonts follow the project's approval: a face is drawn only when the
-  project's approval holds that file, with that digest, in the folder the draft is kept to.
+  project's approval holds that file, with that digest, in the folder the draft is kept to. A
+  draft refused for such a face is said in a Notice, which offers Review and allow by the rules
+  of any refused theme, and only where the project itself brings that file, with those bytes, in
+  the folder the draft is kept to: a face only the draft has is no project's to allow.
 - **A draft that breaks a hard floor is not drawn**, in any combination of its appearances and
   option values: the last good version of it stays drawn, or the kept theme when there is none,
   and the chat is told which floor (by `--save`'s answer, and by `purlis

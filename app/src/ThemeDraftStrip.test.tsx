@@ -34,6 +34,7 @@ const DRAFT: WindowDraft = {
   drawn: true,
   broken: [],
   refused: [],
+  review: null,
 };
 
 function asked(): { cmd: string; args: Record<string, unknown> }[] {

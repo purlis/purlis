@@ -1256,6 +1256,7 @@ fn this_chats_draft(here: Here<'_>, folder: &str) -> Result<Found, Vec<Complaint
         vec![Complaint {
             said: why,
             token: None,
+            awaits_approval: None,
         }]
     };
     let plane = here

@@ -734,7 +734,11 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
 /** What the core said of the theme draft where the window is (#2332), for its strip. */
 function sayTheDraft(draft: WindowDraft | null | undefined) {
   const here = where !== null && draft != null && typeof draft === "object" ? draft : null;
-  setDraftHere(here === null || where === null ? null : { plane: where.plane, workspace: where.workspace, draft: here });
+  setDraftHere(
+    here === null || where === null
+      ? null
+      : { plane: where.plane, workspace: where.workspace, draft: here },
+  );
   sayTheDraftRefused(here);
 }
 
