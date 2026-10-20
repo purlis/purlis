@@ -1460,3 +1460,7 @@ pub fn stop_every_browser(app: &tauri::AppHandle) -> usize {
         0
     }
 }
+
+// A chat's browser end to end on a real engine (#2243).
+#[cfg(all(test, unix))]
+mod tests;

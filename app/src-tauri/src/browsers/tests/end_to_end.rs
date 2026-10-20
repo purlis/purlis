@@ -625,7 +625,7 @@ fn a_chats_browser_tools_drive_a_real_engine_through_every_hop() {
         return;
     }
     in_homes_of_its_own(
-        "browsers_end_to_end_tests::the_browser_tools_through_every_hop_in_homes_of_their_own",
+        "browsers::tests::end_to_end::the_browser_tools_through_every_hop_in_homes_of_their_own",
     );
 }
 

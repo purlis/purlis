@@ -622,7 +622,8 @@ fn faults(table: &Value, read: &Read) -> Vec<String> {
     faults
 }
 
-/// The crate's own sources, by their path under `src`; its test files left out.
+/// The crate's own sources, by their path under `src`; its test files left out, a module's
+/// `tests/` folder whole.
 fn the_crates_sources() -> Vec<(String, String)> {
     fn walk(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
         for entry in std::fs::read_dir(dir).expect("the crate's sources") {
@@ -632,7 +633,10 @@ fn the_crates_sources() -> Vec<(String, String)> {
                 continue;
             }
             let name = path.to_string_lossy().into_owned();
-            if !name.ends_with(".rs") || name.ends_with("_tests.rs") || name.ends_with("/tests.rs")
+            if !name.ends_with(".rs")
+                || name.ends_with("_tests.rs")
+                || name.ends_with("/tests.rs")
+                || name.contains("/tests/")
             {
                 continue;
             }
