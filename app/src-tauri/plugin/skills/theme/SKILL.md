@@ -99,31 +99,40 @@ A draft brings no font. A face is drawn only when the project approved that file
 folder, and the window shows the person a Notice for a face it refuses. Tell the person about
 each font you named that their folder does not already have.
 
-**Shape and size** are tokens in the same appearance, beside the colours: a whole number (the
-line heights take decimals) inside its bounds, or the theme is refused. Offer them: the
-built-in Purlis theme sets `radius.md` 7, `radius.lg` 10, `radius.xl` 12, `size.control` 26 and
-`size.chrome` 24.
+**Shape and size** are tokens beside the colours, set in each appearance (one that leaves
+them out keeps the theme it extends): a whole number (the line heights take decimals) inside its bounds,
+or the theme is refused. Offer them: the built-in Purlis theme sets `radius.md` 7, `radius.lg`
+10, `radius.xl` 12, `size.control` 26, `size.chrome` 24 and `line-height.body` 1.55 in all three
+of its appearances. The top-level `compact` holds what compact density draws; a token it leaves
+out takes the smaller of Classic's compact and the appearance's own.
 
-| Tokens | Bounds | Classic, comfortable | What it reaches |
-|---|---|---|---|
-| `radius.sm` · `md` · `lg` · `xl` | 0–8 · 0–10 · 0–14 · 0–18 px | 3 · 4 · 6 · 8 | corners: `sm` checkboxes; `md` buttons, fields, selects, menu rows; `lg` menus, segmented controls; `xl` the largest panels |
-| `radius.full` | 0–9999 px | 9999 | pills: counts, toggle tracks |
-| `size.control` | 20–40 | 28 | every button and field's height |
-| `size.chrome` | 16–32 | 21 | strip and pane header heights |
-| `space.1` … `space.8` | 0–4, 1–8, 2–10, 4–12, 6–16, 8–24, 12–32, 16–48 | 2 4 6 8 12 16 24 32 | padding, gaps, margins (`space.0` is fixed at 0) |
-| `font-size.2xs` `xs` `sm` `md` `base` `lg` `xl` | 8–12, 9–13, 10–14, 11–15, 12–18, 13–22, 16–28 | 10 11 12 13 14 16 20 | the type scale |
-| `font-weight.regular` · `medium` · `strong` | 300–500 · 400–600 · 500–800 | 400 · 500 · 600 | weights |
-| `line-height.tight` · `body` | 1.0–1.4 · 1.2–1.8 | 1.2 · 1.4 | line spacing |
-| `focus-ring.width` · `offset` · `inset` | 1–4 · 0–4 · −4–0 px | 2 · 2 · −2 | the focus ring |
-| `elevation.raised-y` · `-blur`, `elevation.overlay-y` · `-blur` | 0–8 · 0–24, 0–16 · 0–48 | 2 · 8, 8 · 24 | shadows |
+| Tokens | Bounds | Classic | Compact | What it reaches |
+|---|---|---|---|---|
+| `radius.sm` | 0–8 px | 3 | 3 | labels, chips, crumbs, badges, checkboxes, error and report boxes |
+| `radius.md` | 0–10 px | 4 | 4 | buttons, fields, selects, menu rows, Notices, the palette's rows, Inbox asks |
+| `radius.lg` | 0–14 px | 6 | 6 | dialogs, popovers, menus, tooltips, segmented controls |
+| `radius.xl` | 0–18 px | 8 | 8 | the Welcome page's doors, nothing else |
+| `radius.full` | 0–9999 px | 9999 | 9999 | pills: counts, toggle tracks |
+| `size.control` | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
+| `size.chrome` | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
+| `space.0` `space.1` `space.2` `space.3` `space.4` `space.5` `space.6` `space.7` `space.8` | 0–0, 0–4, 1–8, 2–10, 4–12, 6–16, 8–24, 12–32, 16–48 | 0, 2, 4, 6, 8, 12, 16, 24, 32 | 0, 2, 3, 4, 6, 8, 12, 16, 24 | padding, gaps, margins |
+| `font-size.2xs` `font-size.xs` `font-size.sm` `font-size.md` `font-size.base` `font-size.lg` `font-size.xl` | 8–12, 9–13, 10–14, 11–15, 12–18, 13–22, 16–28 | 10, 11, 12, 13, 14, 16, 20 | 10, 11, 12, 13, 14, 16, 20 | the type scale; `md` is a tab's title, `base` the window's words |
+| `font-weight.regular` `font-weight.medium` `font-weight.strong` | 300–500, 400–600, 500–800 | 400, 500, 600 | 400, 500, 600 | weights |
+| `line-height.tight` `line-height.body` | 1.0–1.4, 1.2–1.8 | 1.2, 1.4 | 1.2, 1.3 | line spacing |
+| `focus-ring.width` `focus-ring.offset` `focus-ring.inset` | 1–4 px, 0–4 px, −4–0 px | 2, 2, −2 | 2, 2, −2 | the focus ring |
+| `elevation.raised-y` `elevation.raised-blur` `elevation.overlay-y` `elevation.overlay-blur` | 0–8, 0–24, 0–16, 0–48 | 2, 8, 8, 24 | 2, 8, 8, 24 | shadows: raised surfaces, then overlays |
 
-Sizes are px at the default text size and grow with it; corners and the focus ring do not.
-A line must fit its box: `font-size.base` × `line-height.body` within `size.control`, and
-`font-size.md` × `line-height.body` within `size.chrome`; the check reports one that does not.
+Sizes are px at the default text size and grow with it; corners and the focus ring do not. The
+project strip sits in the title bar, whose height no token reaches yet.
+
+A line must fit its box, in both densities: `font-size.base` × `line-height.body` within
+`size.control`, and `font-size.md` × `line-height.body` within `size.chrome`. Compact is
+tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fails compact
+(14 × 1.3 = 18.2, over 18). The check reports each line that does not fit, with its density.
 
 **Still square, whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a
-tab's `×` closer, the settings gear on a strip, and every list and tree row. Tell the person
-when they ask for rounder tabs or rows: the theme cannot round those yet.
+tab's `×` closer, the settings gear on a strip, and every list and tree row but the palette's.
+Tell the person when they ask for rounder tabs or rows: the theme cannot round those yet.
 
 Done when the file is JSON with every value hex, a palette name, or a token's own type, and
 every shape and size inside its bounds.
