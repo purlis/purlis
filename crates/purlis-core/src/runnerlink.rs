@@ -154,7 +154,7 @@ pub fn to_line(pinned: &Pinned) -> String {
 }
 
 /// A device id and public link key from one line of [`to_line`]: exactly those two keys, a device id of letters and
-/// digits, and a key of 64 lower-case hex.
+/// digits, and a key of 64 lower-case hex whose last bit, which X25519 ignores, is clear.
 pub fn from_line(line: &str) -> Result<Pinned, String> {
     let bad = || format!("\"{}\" is not a device id and public link key", line.trim());
     let value: serde_json::Value = serde_json::from_str(line.trim()).map_err(|_| bad())?;
@@ -175,6 +175,9 @@ pub fn from_line(line: &str) -> Result<Pinned, String> {
         .get("key")
         .and_then(serde_json::Value::as_str)
         .and_then(bytes_of)
+        // X25519 ignores a public key's last bit, so a key with it set is another spelling of
+        // the key without it: a key is read in its one spelling, which every key made has.
+        .filter(|key| key[31] & 0x80 == 0)
         .ok_or_else(bad)?;
     Ok(Pinned {
         device: device.to_owned(),
