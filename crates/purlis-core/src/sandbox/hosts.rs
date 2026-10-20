@@ -561,7 +561,8 @@ pub(super) fn carried_v4(ip: Ipv6Addr) -> Vec<Ipv4Addr> {
 
 /// **The IPv4 addresses a Teredo or an ISATAP address carries** (#2678), which it reaches its
 /// node through, so it is judged as itself and as each of them: Teredo's (`2001::/32`, RFC
-/// 4380) server address in bits 32 to 63 and its client's, every bit flipped, in the last 32;
+/// 4380, and `3ffe:831f::/32`, the prefix Teredo used before it, #2741) server address in bits
+/// 32 to 63 and its client's, every bit flipped, in the last 32;
 /// ISATAP's (RFC 5214) in the last 32 bits behind a `0:5efe` or `200:5efe` interface identifier,
 /// under any prefix (the group bit, `100:5efe` and `300:5efe`, is read too).
 pub(super) fn tunnelled_v4(ip: Ipv6Addr) -> Vec<Ipv4Addr> {
@@ -571,7 +572,7 @@ pub(super) fn tunnelled_v4(ip: Ipv6Addr) -> Vec<Ipv4Addr> {
         Ipv4Addr::new(a, b, c, d)
     };
     let mut carried = Vec::new();
-    if s[0] == 0x2001 && s[1] == 0 {
+    if matches!([s[0], s[1]], [0x2001, 0] | [0x3ffe, 0x831f]) {
         carried.push(of(s[2], s[3]));
         carried.push(of(!s[6], !s[7]));
     }

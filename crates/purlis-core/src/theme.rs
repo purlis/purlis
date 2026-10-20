@@ -88,6 +88,7 @@ mod native;
 mod opened;
 mod options;
 mod person;
+mod placed;
 pub mod portable;
 mod published;
 pub mod reload;
@@ -123,6 +124,7 @@ pub use options::{
     Kind, MOST_COMBINATIONS, OFF, ON, OptionDrawn, OptionValue, ThemeOption, Values,
 };
 pub use person::{Density, Layer, Person};
+pub use placed::{Placed, PlacedIn};
 pub use published::{SCHEMA_FILE, SCHEMA_URL};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
@@ -168,6 +170,8 @@ mod measured_tests;
 mod native_tests;
 #[cfg(test)]
 mod options_tests;
+#[cfg(test)]
+mod placed_tests;
 #[cfg(test)]
 mod published_tests;
 #[cfg(test)]
@@ -403,6 +407,10 @@ pub struct Complaint {
     /// ask lists it, so a yes there lets it be drawn.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub awaits_approval: Option<String>,
+    /// **Where it is about** (#2763): the theme folder, or the level's `themes/` folder, it was
+    /// said of, as its level and its path there. `None` for a theme read from no folder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at: Option<Placed>,
 }
 
 impl Complaint {
@@ -411,14 +419,32 @@ impl Complaint {
             said: said.into(),
             token: None,
             awaits_approval: None,
+            at: None,
         }
     }
 
     fn about(token: &str, said: impl Into<String>) -> Self {
         Self {
-            said: said.into(),
             token: Some(token.to_owned()),
-            awaits_approval: None,
+            ..Self::said(said)
+        }
+    }
+
+    /// The complaint, said of `at`.
+    #[must_use]
+    fn at(self, at: Placed) -> Self {
+        Self {
+            at: Some(at),
+            ..self
+        }
+    }
+
+    /// The complaint, said of `at` when nothing nearer was named.
+    #[must_use]
+    fn at_least(self, at: Option<&Placed>) -> Self {
+        match (&self.at, at) {
+            (None, Some(at)) => self.at(at.clone()),
+            _ => self,
         }
     }
 
@@ -1039,6 +1065,8 @@ pub fn read_theirs(config_root: Option<&std::path::Path>) -> Theirs {
 pub(crate) struct TheirsOpened {
     /// Purlis's own folder in the config root: the person's theme folder.
     folder: std::path::PathBuf,
+    /// The same folder, as a sentence names it.
+    placed: Placed,
     /// Its handle; `None` when there is no such folder, or why it could not be opened.
     dir: Result<Option<opened::Held>, String>,
 }
@@ -1048,17 +1076,22 @@ impl TheirsOpened {
     pub(crate) fn open(config_root: &std::path::Path) -> Self {
         let folder = crate::machine::dir(config_root);
         let below = folder.strip_prefix(config_root).unwrap_or(&folder);
-        let dir = opened::walk(config_root, below, &folder.display().to_string());
-        Self { folder, dir }
+        let placed = Placed::level(PlacedIn::Machine);
+        let dir = opened::walk(config_root, below, &placed.to_string());
+        Self {
+            folder,
+            placed,
+            dir,
+        }
     }
 
     /// **Their `theme.json`, as text**, read from the folder's handle, or why it could not be.
     pub(crate) fn text(&self) -> crate::windowprefs::ThemeText {
-        let file = self.folder.join(THEME_JSON);
-        let path = file.display().to_string();
+        let path = self.folder.join(THEME_JSON).display().to_string();
+        let shown = self.placed.join(THEME_JSON).to_string();
         let read = self.dir.as_ref().map_err(Clone::clone).and_then(|dir| {
             dir.as_ref()
-                .map_or(Ok(None), |dir| opened::text(dir, THEME_JSON, &path))
+                .map_or(Ok(None), |dir| opened::text(dir, THEME_JSON, &shown))
         });
         match read {
             Ok(None) => crate::windowprefs::ThemeText {
@@ -1096,7 +1129,7 @@ impl TheirsOpened {
         // The person's `theme.json` sits in their config folder, which is its theme folder: its
         // icon set and its fonts are read from that folder's handle.
         let resolved = match load_text_document(&text) {
-            Ok(document) => Library::new().load_held_in(&document, &self.folder, dir),
+            Ok(document) => Library::new().load_held_in(&document, &self.folder, &self.placed, dir),
             Err(why) => Resolved::refusal(vec![Complaint::said(why)]),
         };
         let format_1 = serde_json::from_str::<Value>(&text)

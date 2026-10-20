@@ -78,8 +78,12 @@ struct Model {
     dragging: bool,
     /// What the engine's own drag carries (#2136).
     drag_data: Value,
-    /// How long after the move that starts it the engine tells of its own drag.
-    drag_told_after: Duration,
+    /// Whether the engine holds its word that its own drag started until the test tells it to
+    /// say it ([`Engine::tell_of_the_held_drag`]), rather than saying it with the move that
+    /// starts it.
+    drag_told_when_asked: bool,
+    /// The word of the engine's own drag, held until the test asks for it.
+    held_drag: Option<Event>,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -138,6 +142,16 @@ impl Engine {
             params,
             session_id: session.map(str::to_owned),
         });
+    }
+
+    /// Says, now, that the engine's own drag started: the word it held back
+    /// (`drag_told_when_asked`). Fails the test when no drag has started.
+    fn tell_of_the_held_drag(&self) {
+        let told = super::lock(&self.model)
+            .held_drag
+            .take()
+            .expect("the engine's own drag started");
+        let _ = super::lock(&self.events).send(told);
     }
 
     fn sent(&self, method: &str) -> Vec<Sent> {
@@ -419,23 +433,17 @@ impl Engine {
                     starts
                 };
                 if starts {
-                    let (data, after) = {
-                        let model = super::lock(&self.model);
-                        (model.drag_data.clone(), model.drag_told_after)
+                    let mut model = super::lock(&self.model);
+                    let told = Event {
+                        method: "Input.dragIntercepted".into(),
+                        params: json!({ "data": model.drag_data }),
+                        session_id: on.map(str::to_owned),
                     };
-                    if after.is_zero() {
-                        self.emit("Input.dragIntercepted", json!({ "data": data }), on);
+                    if model.drag_told_when_asked {
+                        model.held_drag = Some(told);
                     } else {
-                        let events = super::lock(&self.events).clone();
-                        let session = on.map(str::to_owned);
-                        std::thread::spawn(move || {
-                            std::thread::sleep(after);
-                            let _ = events.send(Event {
-                                method: "Input.dragIntercepted".into(),
-                                params: json!({ "data": data }),
-                                session_id: session,
-                            });
-                        });
+                        drop(model);
+                        let _ = super::lock(&self.events).send(told);
                     }
                 }
                 Ok(json!({}))
@@ -570,7 +578,8 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             intercepting: false,
             dragging: false,
             drag_data: json!({"items":[{"mimeType":"text/plain","data":"card"}],"dragOperationsMask":1}),
-            drag_told_after: Duration::ZERO,
+            drag_told_when_asked: false,
+            held_drag: None,
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),
@@ -785,6 +794,76 @@ fn lays_read_more_out_below_a_list(engine: &Engine) {
             }],
         }),
     );
+}
+
+/// The page puts the payment frame (its element node 50, at (100, 200), 200 by 60, as its box
+/// model says) in a box that cuts off what overflows it below `box_bottom`; the frame, from
+/// another site and read in a session of its own, lays "Pay now" (node 7) out 10 to 20 down
+/// its document (#2689).
+fn boxes_in_the_payment_frame_down_to(engine: &Engine, box_bottom: f64) {
+    let mut model = super::lock(&engine.model);
+    model.drawn.insert(
+        "S-PAGE-1".to_owned(),
+        json!({
+            "strings": ["#document", "HTML", "BODY", "DIV", "IFRAME", "visible", "static", "hidden", "block", "0px"],
+            "documents": [{
+                "nodes": {
+                    "parentIndex": [-1, 0, 1, 2, 3],
+                    "nodeName": [0, 1, 2, 3, 4],
+                    "backendNodeId": [1, 2, 3, 4, 50],
+                },
+                "layout": {
+                    "nodeIndex": [1, 2, 3, 4],
+                    "bounds": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 800, box_bottom], [100, 200, 200, 60]],
+                    "styles": [[5, 5, 6, 8, 9], [5, 5, 6, 8, 9], [7, 7, 6, 8, 9], [5, 5, 6, 8, 9]],
+                    "clientRects": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 800, box_bottom], [0, 0, 200, 60]],
+                },
+            }],
+        }),
+    );
+    model.drawn.insert(
+        "S-PAYMENT".to_owned(),
+        json!({
+            "strings": ["#document", "HTML", "BODY", "BUTTON", "visible", "static", "block", "0px", "inline-block"],
+            "documents": [{
+                "nodes": {
+                    "parentIndex": [-1, 0, 1, 2],
+                    "nodeName": [0, 1, 2, 3],
+                    "backendNodeId": [1, 2, 3, 7],
+                },
+                "layout": {
+                    "nodeIndex": [1, 2, 3],
+                    "bounds": [[0, 0, 200, 60], [0, 0, 200, 60], [10, 10, 20, 10]],
+                    "styles": [[4, 4, 5, 6, 7], [4, 4, 5, 6, 7], [4, 4, 5, 8, 7]],
+                    "clientRects": [[0, 0, 200, 60], [0, 0, 200, 60], [0, 0, 20, 10]],
+                },
+            }],
+        }),
+    );
+}
+
+#[test]
+fn a_box_on_the_page_that_cuts_off_a_cross_site_frame_marks_what_it_hides_of_the_frame() {
+    let marked = |box_bottom: f64| {
+        let (browser, engine) = browser();
+        boxes_in_the_payment_frame_down_to(&engine, box_bottom);
+        let text = snapshot(&browser, 1);
+        text.lines()
+            .find(|l| l.contains("Pay now"))
+            .unwrap_or_else(|| panic!("no Pay now in\n{text}"))
+            .ends_with(" (out of view)")
+    };
+    // The box ends above the frame: none of it shows.
+    assert!(marked(100.0), "the whole frame cut off");
+    // It ends 5 into the frame: "Pay now", 10 down the frame, is hidden.
+    assert!(marked(205.0), "the frame cut off above its button");
+    // It ends 15 into the frame: "Pay now" shows in part.
+    assert!(
+        !marked(215.0),
+        "the frame cut off below the top of its button"
+    );
+    // No box cuts it off.
+    assert!(!marked(600.0), "the frame shown whole");
 }
 
 /// Renames the main frame's link, as a page that changed it would show it.
@@ -1081,12 +1160,17 @@ fn a_drag_that_fails_on_the_way_is_cancelled_let_go_and_handed_back() {
 
 #[test]
 fn a_drag_cut_by_the_person_taking_over_is_cancelled_let_go_and_handed_back() {
-    // The engine tells of its own drag only after the moves: the person takes over meanwhile.
-    let (browser, engine) = browser();
+    // In this order: every move is made with the button held, the person takes over, and only
+    // then does the engine say its own drag started. The driver waits for that word as long as
+    // the test needs, so no timing decides the order.
+    let (browser, engine) = browser_with(Limits {
+        drag_starts_within: Duration::from_secs(30),
+        ..limits()
+    });
     {
         let mut model = super::lock(&engine.model);
         model.native_drag = true;
-        model.drag_told_after = Duration::from_millis(80);
+        model.drag_told_when_asked = true;
     }
     let browser = Arc::new(browser);
     let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
@@ -1100,21 +1184,24 @@ fn a_drag_cut_by_the_person_taking_over_is_cancelled_let_go_and_handed_back() {
             },
         )
     });
+    let held_moves = || {
+        engine
+            .sent("Input.dispatchMouseEvent")
+            .iter()
+            .filter(|s| s.params["type"] == "mouseMoved" && s.params["buttons"] == 1)
+            .count()
+    };
     let started = std::time::Instant::now();
-    while engine
-        .sent("Input.dispatchMouseEvent")
-        .iter()
-        .filter(|s| s.params["type"] == "mouseMoved" && s.params["buttons"] == 1)
-        .count()
-        < 10
-    {
+    while held_moves() < super::DRAG_STEPS {
         assert!(
-            started.elapsed() < Duration::from_secs(5),
-            "the drag never moved"
+            started.elapsed() < Duration::from_secs(10),
+            "the drag never made its moves"
         );
         std::thread::sleep(Duration::from_millis(1));
     }
+    // Waits for the last move's answer: the lease is held while a call is in flight.
     browser.take_over();
+    engine.tell_of_the_held_drag();
     assert!(call.join().unwrap().is_err());
     let kinds = drag_kinds(&engine);
     assert_eq!(kinds, ["dragCancel"], "{kinds:?}");

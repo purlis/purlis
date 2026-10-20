@@ -588,6 +588,14 @@ can be read. Its interface:
   selected row's distinctness, as it is and tinted by every hue of its own recipe, and reports
   each finding with its ratio.
 
+**A path is said relative to its level** (#2763). Every sentence the engine says about a file
+or a folder of a level's theme folders names it by the level and its path there: "the project's
+themes/dusk/theme.json", "your purlis config folder's themes/dusk", "the workspace alpha's
+themes/dusk", "the chat's theme draft dusk/theme.json". Each complaint carries the same place as
+data (`Complaint::at`, a `Placed`: the level and the path). So the window, the command line and
+a chat's theme specimen show what the engine said as it said it, and none of them looks for a
+path in a sentence.
+
 **The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
 gives, the theme the window is handed as it is created, and the theme specimen, is drawn by
 `draw`, which holds five floors for any theme from any source. `draw` takes an appearance with

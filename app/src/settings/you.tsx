@@ -22,6 +22,7 @@ import { Choice, Field } from "./components";
 import type { Setting, SettingsGroup } from "./groups";
 import { thisMachineGroup } from "./thisMachine";
 import { browserLimitsGroup } from "./browserLimits";
+import { poolsGroup } from "./pools";
 import { accountsGroup } from "./accounts";
 import { notificationsGroup } from "./notifications";
 import { profilesGroup } from "./profiles";
@@ -75,6 +76,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
     notificationsGroup(),
     thisMachineGroup(),
     browserLimitsGroup(),
+    poolsGroup(),
     accountsGroup(),
     profilesGroup(plane),
   ];

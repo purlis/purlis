@@ -321,11 +321,13 @@ impl Store {
     }
 }
 
-/// **A theme folder, held**: where it is, for a sentence, and the handle its fonts are opened
-/// from, or why its fonts are not read.
+/// **A theme folder, held**: where it is, and the handle its fonts are opened from, or why its
+/// fonts are not read.
 #[derive(Debug, Clone)]
 pub(crate) struct ThemeDir {
     path: PathBuf,
+    /// Where it is as its level and its path there (#2763), for a folder of a level.
+    placed: Option<std::sync::Arc<super::Placed>>,
     handle: Result<Store, String>,
     /// For a project's or a workspace's folder: the font files the person approved with the
     /// project, path to digest, and this folder's path in the project. `None` for the person's
@@ -348,6 +350,7 @@ impl ThemeDir {
     pub(crate) fn held(path: PathBuf, handle: std::os::fd::OwnedFd) -> Self {
         Self {
             path,
+            placed: None,
             handle: Ok(Store::Held(std::sync::Arc::new(handle))),
             approved: None,
         }
@@ -358,6 +361,7 @@ impl ThemeDir {
     pub(crate) fn built_in(path: PathBuf, files: &'static [(&'static str, &'static [u8])]) -> Self {
         Self {
             path,
+            placed: None,
             handle: Ok(Store::BuiltIn(files)),
             approved: None,
         }
@@ -385,6 +389,7 @@ impl ThemeDir {
     pub(crate) fn refusing(path: PathBuf, why: String) -> Self {
         Self {
             path,
+            placed: None,
             handle: Err(why),
             approved: None,
         }
@@ -392,21 +397,36 @@ impl ThemeDir {
 
     /// The folder at `path`, held by `dir`, a handle on it the caller opened refusing a link,
     /// or why it could not be: a theme folder named on the command line, and the person's own
-    /// config folder (`super::opened`).
-    pub(crate) fn opened(path: PathBuf, dir: Result<super::opened::Held, String>) -> Self {
+    /// config folder (`super::opened`). `shown` names it in a sentence.
+    pub(crate) fn opened(
+        path: PathBuf,
+        shown: &str,
+        dir: Result<super::opened::Held, String>,
+    ) -> Self {
         match dir {
             #[cfg(unix)]
             Ok(dir) => Self::held(path, dir),
             #[cfg(not(unix))]
             Ok(dir) => match dir {},
             Err(why) => Self::refusing(
-                path.clone(),
-                format!(
-                    "purlis could not open {} to read its fonts: {why}",
-                    path.display()
-                ),
+                path,
+                format!("purlis could not open {shown} to read its fonts: {why}"),
             ),
         }
+    }
+
+    /// The folder, at `placed` (#2763): every complaint said of it names it so.
+    #[must_use]
+    pub(crate) fn placed(self, placed: super::Placed) -> Self {
+        Self {
+            placed: Some(std::sync::Arc::new(placed)),
+            ..self
+        }
+    }
+
+    /// Where it is as its level and its path there, for a folder of a level.
+    pub(crate) fn at(&self) -> Option<&super::Placed> {
+        self.placed.as_deref()
     }
 
     /// **The handle the folder is held by**, or why it is not held: what an export packs from
@@ -425,7 +445,7 @@ impl ThemeDir {
         }
     }
 
-    /// The folder, for a sentence.
+    /// The folder on disk.
     pub(crate) fn path(&self) -> &Path {
         &self.path
     }
@@ -448,8 +468,11 @@ enum Missed {
 pub(crate) struct Kept {
     fonts: Store,
     name: String,
-    /// Where it is, for a sentence.
+    /// Where it is on disk: which file it is.
     file: PathBuf,
+    /// Where it is, as every sentence about it names it: its level and its path there for a
+    /// face of a level's folder (#2763).
+    shown: String,
 }
 
 impl PartialEq for Kept {
@@ -853,15 +876,16 @@ fn digest_face(
 
 /// **The bytes of the font file whose digest is `asset`**, for the window to make the face
 /// from. Only a file of a theme folder the engine accepted is served, read again under
-/// the same containment and cap, and only while its bytes still have that digest.
+/// the same containment and cap, and only while its bytes still have that digest. Why not names
+/// the face as every sentence does: by its level and its path there (#2763).
 pub fn served(asset: &str) -> Result<Vec<u8>, String> {
     let Some(places) = kept().get(asset).cloned() else {
         return Err("that is not a font of a theme purlis read".to_owned());
     };
     let mut why = String::new();
     for one in places {
-        let shown = one.file.display().to_string();
-        match read_face(&one.fonts, &one.name, &shown) {
+        let shown = &one.shown;
+        match read_face(&one.fonts, &one.name, shown) {
             Ok(bytes) if hex(&bytes) == asset => return Ok(bytes),
             Ok(_) => why = format!("{shown} changed since purlis read the theme"),
             Err(refused) => why = refused,
@@ -964,6 +988,7 @@ fn read_said(
     let inside = Inside {
         fonts: dir.fonts(),
         folder: folder.path(),
+        placed: folder.at(),
         approved: folder.approved.as_ref(),
         awaiting: std::cell::RefCell::new(Vec::new()),
     };
@@ -988,6 +1013,8 @@ struct Inside<'a> {
     fonts: Result<Store, Missed>,
     approved: Option<&'a Approved>,
     folder: &'a Path,
+    /// The folder as its level and its path there, for a folder of a level.
+    placed: Option<&'a super::Placed>,
     /// The place in the complaints of each face the approval does not hold but would, once the
     /// project is approved again.
     awaiting: std::cell::RefCell<Vec<(usize, String)>>,
@@ -1179,6 +1206,17 @@ fn face_of(
                 from: Some(Kept {
                     fonts: fonts.clone(),
                     file: folder.folder.join("fonts").join(&file),
+                    shown: folder.placed.map_or_else(
+                        || {
+                            folder
+                                .folder
+                                .join("fonts")
+                                .join(&file)
+                                .display()
+                                .to_string()
+                        },
+                        |placed| placed.join("fonts").join(&file).to_string(),
+                    ),
                     name: file,
                 }),
             })

@@ -86,6 +86,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "sent, said once for whoever cannot see the Answer control go. Neither stands for " +
       "something true now that has a way out of its own",
   },
+  "AddDockerPool.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". Add a Docker pool's refusal (#2679), in the core's words, under the form it refused; " +
+      "the form, kept as it was typed, and Add pool are the way on",
+  },
   "AnswerQuestion.tsx": {
     count: 2,
     why:
@@ -489,6 +496,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "references.tsx": {
     count: 1,
     why: "the reference picker saying it found no chat, inside its menu",
+  },
+  "settings/pools.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". The Pools group's read refusing (#2679), in the core's words: the group is read again " +
+      "as it comes on screen. A runner whose key changed has a Notice of its own",
   },
   "settings/accounts.tsx": {
     count: 2,

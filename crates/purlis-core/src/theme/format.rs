@@ -117,7 +117,7 @@ pub(super) fn is_name(name: &str) -> bool {
 #[derive(Debug, Clone, Default)]
 pub struct Library {
     /// Each folder's `theme.json` and the files beside it, or why it could not be read.
-    folders: BTreeMap<String, Result<Held, String>>,
+    folders: BTreeMap<String, Result<Held, Complaint>>,
     /// Whether [`Self::with_folder`] and [`Self::load_folder`] read the fonts of the folders they
     /// name ([`Self::reading_named_fonts`]).
     named_fonts: bool,
@@ -221,7 +221,7 @@ impl Library {
     /// told that. Its fonts are read only by a library [`Self::reading_named_fonts`].
     #[must_use]
     pub fn with_folder(mut self, themes: &Path, name: &str) -> Self {
-        let read = read_folder(themes, name, self.named_fonts);
+        let read = read_folder(themes, name, self.named_fonts).map_err(Complaint::said);
         self.folders.insert(name.to_owned(), read);
         self
     }
@@ -230,7 +230,7 @@ impl Library {
     /// set it names (`None` when it names none), or why it could not be read
     /// (`super::folders`, which reads a level's folders from handles).
     #[must_use]
-    pub(crate) fn with_read(mut self, name: &str, read: Result<FolderRead, String>) -> Self {
+    pub(crate) fn with_read(mut self, name: &str, read: Result<FolderRead, Complaint>) -> Self {
         self.folders.insert(
             name.to_owned(),
             read.map(|(document, icons, folder)| Held {
@@ -251,14 +251,16 @@ impl Library {
     /// theme's own folder: the icon set and the fonts it names are read from that handle. The
     /// person's own theme is read so, from the config folder its `theme.json` is in, which holds
     /// more than the theme: so its icon set is a plain file beside `theme.json` or one in its
-    /// own `icons/`, never a deeper path.
+    /// own `icons/`, never a deeper path. `placed` is where the folder is, as its level and its
+    /// path there: what every sentence names it by.
     pub(crate) fn load_held_in(
         &self,
         document: &Value,
         folder: &Path,
+        placed: &super::Placed,
         dir: &opened::Held,
     ) -> Resolved {
-        let shown = folder.display().to_string();
+        let shown = placed.to_string();
         let icons = match document.get("icons") {
             Some(Value::String(named)) if beside_or_in_icons(named) => {
                 Some(opened::icons(dir, &shown, named))
@@ -271,7 +273,8 @@ impl Library {
         };
         let beside = Beside::Folder {
             icons,
-            folder: ThemeDir::opened(folder.to_path_buf(), opened::again(dir, &shown)),
+            folder: ThemeDir::opened(folder.to_path_buf(), &shown, opened::again(dir, &shown))
+                .placed(placed.clone()),
         };
         self.load_beside(None, document, &beside)
     }
@@ -292,13 +295,19 @@ impl Library {
         self.load_beside(Some(id), document, &Beside::Folder { icons, folder })
     }
 
-    /// [`Self::load`] of a theme with what was read beside it.
+    /// [`Self::load`] of a theme with what was read beside it: each complaint said of the
+    /// folder it was read from, when nothing nearer was named.
     fn load_beside(&self, id: Option<&str>, document: &Value, beside: &Beside) -> Resolved {
         let Some(from) = document.as_object() else {
-            return Resolved::refusal(vec![Complaint::said("a theme is a JSON object")]);
+            return Resolved::refusal(placed_at(
+                vec![Complaint::said("a theme is a JSON object")],
+                beside,
+            ));
         };
         if !is_format_2(from) {
-            return load_format_1(from);
+            let mut loaded = load_format_1(from);
+            loaded.complaints = placed_at(loaded.complaints, beside);
+            return loaded;
         }
         let mut path: Vec<String> = id.into_iter().map(str::to_owned).collect();
         match self.format_2(from, beside, &mut path) {
@@ -322,7 +331,7 @@ impl Library {
     pub fn load_id(&self, id: &str) -> Resolved {
         match self.folders.get(id) {
             Some(Ok(held)) => self.load_beside(Some(id), &held.document, &held.beside),
-            Some(Err(why)) => Resolved::refusal(vec![Complaint::said(why.clone())]),
+            Some(Err(why)) => Resolved::refusal(vec![why.clone()]),
             None => Resolved::refusal(vec![Complaint::said(format!(
                 "\"{id}\" is not a theme purlis has"
             ))]),
@@ -342,9 +351,26 @@ impl Library {
         }
     }
 
-    /// A format 2 theme, or why not. `path` is the ids of the themes being read, the one that
+    /// A format 2 theme, or why not, each complaint said of the folder it was read from when
+    /// nothing nearer was named. `path` is the ids of the themes being read, the one that
     /// extends first, so a circle is seen when it closes.
     fn format_2(
+        &self,
+        from: &Map<String, Value>,
+        beside: &Beside,
+        path: &mut Vec<String>,
+    ) -> Result<Read, Refused> {
+        match self.format_2_unplaced(from, beside, path) {
+            Ok((theme, notes)) => Ok((theme, placed_at(notes, beside))),
+            Err(refused) => Err(Refused {
+                complaints: placed_at(refused.complaints, beside),
+                ..refused
+            }),
+        }
+    }
+
+    /// [`Self::format_2`], each complaint as it was said.
+    fn format_2_unplaced(
         &self,
         from: &Map<String, Value>,
         beside: &Beside,
@@ -544,7 +570,7 @@ impl Library {
                     why: Why::Missing,
                 });
             }
-            Some(Err(why)) => return Err(Refused::because(vec![Complaint::said(why.clone())])),
+            Some(Err(why)) => return Err(Refused::because(vec![why.clone()])),
             Some(Ok(held)) => held,
         };
         let Some(from) = held.document.as_object() else {
@@ -554,10 +580,11 @@ impl Library {
         };
         if !is_format_2(from) {
             let loaded = load_format_1(from);
+            let complaints = placed_at(loaded.complaints, &held.beside);
             return if loaded.refused {
-                Err(Refused::because(loaded.complaints))
+                Err(Refused::because(complaints))
             } else {
-                Ok((loaded.theme, loaded.complaints))
+                Ok((loaded.theme, complaints))
             };
         }
         path.push(parent.to_owned());
@@ -565,6 +592,15 @@ impl Library {
         path.pop();
         read
     }
+}
+
+/// `complaints`, each said of the folder `beside` is when nothing nearer was named.
+fn placed_at(complaints: Vec<Complaint>, beside: &Beside) -> Vec<Complaint> {
+    let at = match beside {
+        Beside::Folder { folder, .. } => folder.at(),
+        Beside::Nothing => None,
+    };
+    complaints.into_iter().map(|one| one.at_least(at)).collect()
 }
 
 /// Whether `id` names Purlis Classic: its id, or an id one of its appearances is picked by.
@@ -613,7 +649,7 @@ fn read_held(dir: &opened::Held, folder: PathBuf, fonts: bool) -> Result<Held, S
     let shown = folder.display().to_string();
     let (document, icons) = opened::theme_json(dir, &shown)?;
     let held = if fonts {
-        ThemeDir::opened(folder, opened::again(dir, &shown))
+        ThemeDir::opened(folder, &shown, opened::again(dir, &shown))
     } else {
         ThemeDir::refusing(
             folder,
@@ -723,7 +759,9 @@ impl Named {
             };
             let read = read_held(&beside, folder, true);
             parent = read.as_ref().ok().and_then(|held| extends(&held.document));
-            library.folders.insert(at.clone(), read);
+            library
+                .folders
+                .insert(at.clone(), read.map_err(Complaint::said));
             chain.push(at);
         }
         library.load_beside(Some(&self.name), &own.document, &own.beside)

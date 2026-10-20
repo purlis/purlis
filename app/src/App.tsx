@@ -49,6 +49,7 @@ import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
 import { ForgeSignInEnded } from "./ForgeSignInEnded";
+import { AddDockerPoolHost } from "./AddDockerPool";
 import { SaidLink } from "./SaidLink";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
 import { goneCause, goneKept, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
@@ -2305,6 +2306,8 @@ function App() {
           ))}
         {/* A browser sign-in a forge ended, with Sign in again (#729). */}
         <ForgeSignInEnded />
+        {/* Add a Docker pool… (#2679): a dialog, opened from the palette or the Pools group. */}
+        <AddDockerPoolHost />
         {/* An entry the store itself would not take back, said the same way. */}
         {notRestored.map((line) => (
           <Notice

@@ -148,3 +148,25 @@ fn a_composed_chat_is_started_without_what_was_allowed_for_it_alone_and_the_runn
     assert!(left_out_of(&composed(vec![5432]), &[5432]).is_empty());
     assert!(left_out_of(&composed(vec![5432]), &[]).is_empty());
 }
+
+/// A port given back after a re-link is held to this machine's sandbox for the project as it is
+/// then (#2738): given while it is yours for the project and policy leaves services open, and
+/// refused once you remove it or policy forbids services.
+#[test]
+fn a_port_is_given_back_only_while_this_machines_sandbox_gives_it_now() {
+    let project = tempfile::tempdir().expect("a project");
+    crate::sandbox::local::grant_port(project.path(), 5432).unwrap();
+    assert_eq!(super::gives_here(project.path(), 5432), Ok(()));
+    assert!(
+        super::gives_here(project.path(), 6379).is_err(),
+        "never given"
+    );
+
+    crate::sandbox::policy::set_for_this_test(locked(r#"{"socket-grants": false}"#));
+    let forbidden = super::gives_here(project.path(), 5432);
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    assert!(forbidden.is_err(), "policy forbids services");
+
+    crate::sandbox::local::revoke_port(project.path(), 5432).unwrap();
+    assert!(super::gives_here(project.path(), 5432).is_err(), "removed");
+}
