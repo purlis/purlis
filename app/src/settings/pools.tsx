@@ -1,8 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { PoolLink, PoolRow } from "../bindings";
+import * as AlertDialog from "../overlays/alert-dialog";
+import { AnswerBar } from "../AnswerBar";
 import { Notice } from "../Notice";
 import { askLink, removePool, startAddingAPool, usePools } from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
@@ -17,6 +19,9 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  * group comes on screen. One whose key changed is refused on every link, so its row has a
  * Notice with Remove, which removes its runner whole, the pool with it. A runner that does not
  * answer says why, in Docker's or purlis's words.
+ *
+ * **Every Remove asks first** ({@link RemovePool}): it says what goes and that there is no undo,
+ * and Remove pool removes it.
  */
 export function poolsGroup(): SettingsGroup {
   return {
@@ -35,7 +40,7 @@ export const POOLS = "you.machine.pools";
 function limitsSaid(pool: PoolRow): string {
   const { cpus, memory_mib, processes, tmp_mib } = pool.limits;
   const cpusSaid = cpus === "1" ? "1 CPU" : `${cpus} CPUs`;
-  return `${cpusSaid}, ${memory_mib} MiB, ${processes} processes, ${tmp_mib} MiB of /tmp`;
+  return `${cpusSaid}, ${memory_mib} MiB of memory, ${processes} processes, ${tmp_mib} MiB of /tmp`;
 }
 
 /** What a row says of its runner, beside its name. */
@@ -46,16 +51,69 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   return "not linked";
 }
 
+/**
+ * **Remove pool {name}?**, asked before any pool is removed: what goes, and that there is no
+ * undo. Cancel changes nothing.
+ */
+export function RemovePool({
+  name,
+  onRemove,
+  onCancel,
+}: {
+  name: string;
+  onRemove: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AlertDialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+    >
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay className="ui-scrim" />
+        <AlertDialog.Content className="ui-dialog warning">
+          <AlertDialog.Title>Remove pool {name}?</AlertDialog.Title>
+          <AlertDialog.Description className="came-back">
+            Its runner&apos;s container and home are removed from your Docker, with everything chats
+            left in them, and this machine is taken out of the runner&apos;s peers. There is no
+            undo.
+          </AlertDialog.Description>
+          <AnswerBar>
+            <AlertDialog.Cancel asChild>
+              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
+                Cancel
+              </button>
+            </AlertDialog.Cancel>
+            <button
+              type="button"
+              className="ui-button ui-button-danger ends-it"
+              tabIndex={0}
+              onClick={onRemove}
+            >
+              Remove pool
+            </button>
+          </AnswerBar>
+        </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
+  );
+}
+
 function PoolEntry({
   pool,
   link,
   removing,
+  onAsk,
 }: {
   pool: PoolRow;
   link: PoolLink | "asking" | undefined;
   removing: boolean;
+  /** Asks whether to remove it. */
+  onAsk: () => void;
 }) {
-  const remove = () => void removePool(pool.name);
+  const remove = onAsk;
   return (
     <li className="ui-machine-entry">
       <span className="ui-machine-name">{pool.name}</span>
@@ -68,7 +126,7 @@ function PoolEntry({
         className="ui-button ui-button-sm"
         // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
         tabIndex={0}
-        aria-label={`Remove pool ${pool.name}`}
+        aria-label={removing ? `Removing pool ${pool.name}` : `Remove pool ${pool.name}`}
         aria-disabled={removing}
         onClick={removing ? undefined : remove}
       >
@@ -81,7 +139,7 @@ function PoolEntry({
           fixes={[{ label: "Remove", onPress: remove, busy: removing }]}
         >
           Pool {pool.name}&apos;s runner answered with another key than the one this machine paired
-          with, so purlis links to it no more. Remove it, then add the pool again.
+          with, so purlis no longer links to it. Remove it, then add the pool again.
         </Notice>
       )}
       {typeof link === "object" && link.state === "down" && (
@@ -97,6 +155,7 @@ const poolsList: LiveSetting = {
   help: "Remove takes this machine out of the runner's peers while it answers, then removes its container and home. There is no undo.",
   useControl: function usePoolsList() {
     const now = usePools();
+    const [asking, setAsking] = useState<string | undefined>();
     const names = now.read.state === "read" ? now.read.shown.pools.map((one) => one.name) : [];
     const asked = names.join("\u0000");
     // Each runner is asked once, as the group comes on screen or a pool is added.
@@ -125,10 +184,21 @@ const poolsList: LiveSetting = {
                     pool={pool}
                     link={now.links[pool.name]}
                     removing={now.removing === pool.name}
+                    onAsk={() => setAsking(pool.name)}
                   />
                 ))}
               </ul>
             ))}
+          {asking !== undefined && (
+            <RemovePool
+              name={asking}
+              onCancel={() => setAsking(undefined)}
+              onRemove={() => {
+                setAsking(undefined);
+                void removePool(asking);
+              }}
+            />
+          )}
           <button type="button" className="ui-button" tabIndex={0} onClick={startAddingAPool}>
             Add a Docker pool…
           </button>

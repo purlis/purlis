@@ -56,13 +56,6 @@ impl Machine {
     }
 
     /// This desktop as a pool is added: its key made where it keeps none.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "a pool is added from the window in the part after this"
-        )
-    )]
     pub fn desktop_made(&self) -> Result<purlis_core::linkkey::Desktop, String> {
         purlis_core::linkkey::desktop(&self.config, &*self.keyring)
     }

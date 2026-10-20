@@ -96,6 +96,19 @@ describe("You › This machine › Pools", () => {
     expect(within(nav).queryByRole("button", { name: "Pools" })).toBeNull();
   });
 
+  it("asks before the row's Remove removes a pool", async () => {
+    pools = [a_pool("builds")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await userEvent.click(await within(group).findByRole("button", { name: "Remove pool builds" }));
+    const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    expect(removed).toEqual([]);
+    await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
+    await waitFor(() => expect(removed).toEqual(["builds"]));
+  });
+
   it("adds the first pool from the palette, with the limits typed and the defaults for the rest", async () => {
     render(<App />);
     await palette("Add a Docker pool…");
@@ -139,6 +152,18 @@ describe("You › This machine › Pools", () => {
     expect(notice).toHaveTextContent(/answered with another key/);
 
     await userEvent.click(within(notice).getByRole("button", { name: "Remove" }));
+    // It asks first, and Cancel changes nothing.
+    let asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    expect(asked).toHaveTextContent(/There is no undo/);
+    await userEvent.click(within(asked).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog", { name: "Remove pool builds?" })).toBeNull(),
+    );
+    expect(removed).toEqual([]);
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Remove" }));
+    asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
 
     await waitFor(() => expect(removed).toEqual(["builds"]));
     // With none left, nothing about pools shows.

@@ -193,7 +193,7 @@ pub async fn add_docker_pool(adding: PoolAdding) -> Result<PoolRow, String> {
 #[cfg(unix)]
 /// [`add_docker_pool`], on `machine`.
 pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
-    let desktop = machine.desktop()?.pinned();
+    let desktop = machine.desktop_made()?.pinned();
     purlis_core::pools::add(&machine.config, &machine.docker, pool, &desktop)
         .map_err(|why| why.to_string())?;
     Ok(row(pool))
