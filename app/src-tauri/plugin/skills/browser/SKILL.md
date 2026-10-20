@@ -50,7 +50,15 @@ name**. Playwright substitutes the value and scrubs it from the output it captur
 That is a net, not a boundary. A step that transforms or forwards the value is not scrubbed:
 a screenshot, an `eval`, a POST. The credential goes wherever you send it.
 
-Three rules for the terminal flow:
+Four rules for the terminal flow:
+
+- **Keep Playwright's output out of the project.** `playwright-cli` writes its snapshots, logs
+  and traces under `.playwright-cli/` in the folder it runs from, and a trace of a logged-in
+  run holds that run's cookies. A project's autosave commits what the project does not ignore.
+  So the flow makes a private folder outside the project with `mktemp -d`, stops if it could
+  not, and points `PLAYWRIGHT_MCP_OUTPUT_DIR` at it before `open`. `playwright-cli` reads that
+  variable when the session starts, as it reads the secrets file. When the flow exits, however
+  it exits, it closes the session and removes the folder. Do the run's work inside the flow.
 
 - **Open the session inside the bridge.** `playwright-cli` reads
   `PLAYWRIGHT_MCP_SECRETS_FILE` once, when the session starts. Setting it later, on a `fill`
@@ -70,6 +78,10 @@ purlis secret exec <vault> \
   --dotenv PLAYWRIGHT_MCP_SECRETS_FILE=PASS:<pass-key> \
   -- bash -c '
     P="npx @playwright/cli@<version> -s=owner"
+    OUT=$(mktemp -d) || exit 1
+    cleanup() { $P close >/dev/null 2>&1; rm -rf -- "$OUT"; }
+    trap cleanup EXIT
+    export PLAYWRIGHT_MCP_OUTPUT_DIR="$OUT"
     wait_for() {
       for _ in $(seq 1 15); do
         $P eval "() => !!document.querySelector(\"$1\")" 2>/dev/null | grep -q true && return 0
