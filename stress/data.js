@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792529513020,
+  "lastUpdate": 1792529529281,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8656,6 +8656,42 @@ window.BENCHMARK_DATA = {
             "value": 671.5,
             "unit": "MB",
             "extra": "median of 6 samples: 632.7, 661.7, 671.1, 672, 673.3, 762.5 MB; window 403.6 MB, session host 267.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5061598d7a83c0eebaa6707c0f0e6c3b87c36b98",
+          "message": "Theme e2e: the native window's background colour from a real pick (#2801)\n\n* Theme e2e: the native window's background colour from a real pick\n\nnative_window_drawn answers the window's background colour too, read back\nfrom the platform (NSWindow on macOS, the WebKitGTK webview on Linux), and\nthe picked-theme launch checks it against purlis-light's window.background,\nread from the resolved theme.\n\nCloses #2760\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Mutation (to be reverted): the window is given a colour one step off its theme's\n\nThrowaway: shows the picked launch's colour check fails when the window is\nnot given the theme's window.background. Reverted in the next commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Revert the mutation: the window is given its theme's colour again\n\nThe tree is the fix's again (a5579aa).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Native window read-back: an unread colour is null, checked against the drawn frame\n\nnative_window_drawn answers background as null where the platform gives no\ncolour, so the appearance is always read. The picked launch compares the\ncolour with the window.background of the frame the page draws.\n\nPart of #2760\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Native window read-back: the appearance's error is worded where it is read\n\nThe copy guide's reader reads a command's error where it is made; the colour\nhalf stays infallible.\n\nPart of #2760\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T23:26:02+04:00",
+          "tree_id": "daf0047e8fcd4f134f0accd8abcb2438a4ba7368",
+          "url": "https://github.com/purlis/purlis/commit/5061598d7a83c0eebaa6707c0f0e6c3b87c36b98"
+        },
+        "date": 1792529527742,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1487.3,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1358.2, 1487.3, 1714.7 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 662.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 629.2, 652.7, 662.2, 662.1, 663.4, 750.6 MB; window 395 MB, session host 267.1 MB"
           }
         ]
       }
