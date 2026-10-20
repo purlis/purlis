@@ -385,11 +385,14 @@ const SESSION_HOOKS: &str = r#"    // purlis's skills, beside every skills path 
     // this hook its live merged config before it discovers any skill, and scans each path in
     // `skills.paths` for `SKILL.md` (ADR 0063). Appended, never in their place.
     config: async (cfg) => {
-      const skills = typeof options?.skills === "string" ? options.skills : ""
-      if (!skills || !cfg || typeof cfg !== "object") return
+      // One directory as a string, or several as a list: the built-in skills', then the
+      // folder of links to the project's (ADR 0063 as amended 2026-10-20).
+      const given = Array.isArray(options?.skills) ? options.skills : [options?.skills]
+      const skills = given.filter((dir) => typeof dir === "string" && dir !== "")
+      if (skills.length === 0 || !cfg || typeof cfg !== "object") return
       if (!cfg.skills || typeof cfg.skills !== "object") cfg.skills = {}
       const paths = Array.isArray(cfg.skills.paths) ? cfg.skills.paths : []
-      if (!paths.includes(skills)) cfg.skills.paths = [...paths, skills]
+      cfg.skills.paths = [...paths, ...skills.filter((dir) => !paths.includes(dir))]
     },
 
     // `$PURLIS_SESSION_ID` (and its old name) in every shell a tool opens, so a `purlis` command run there

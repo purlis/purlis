@@ -110,6 +110,7 @@ fn tree(dir: &Path) -> Vec<PathBuf> {
 
 #[test]
 fn a_claude_code_chat_at_the_plane_root_loads_the_project_skill_as_a_plugin_of_links() {
+    purlis_core::unsteered!();
     let here = here();
     let (args, _) = armed(
         Harness::ClaudeCode,
@@ -141,6 +142,7 @@ fn a_claude_code_chat_at_the_plane_root_loads_the_project_skill_as_a_plugin_of_l
 
 #[test]
 fn an_opencode_chat_at_the_plane_root_is_handed_the_built_in_and_the_project_skills_folders() {
+    purlis_core::unsteered!();
     let here = here();
     let (_, env) = armed(
         Harness::Opencode,
@@ -168,6 +170,7 @@ fn an_opencode_chat_at_the_plane_root_is_handed_the_built_in_and_the_project_ski
 
 #[test]
 fn a_codex_chat_at_the_plane_root_is_briefed_on_the_project_skill_from_its_folder_in_the_plane() {
+    purlis_core::unsteered!();
     let here = here();
     let (_, env) = armed(Harness::Codex, kit(&here, at_the_root(&here)), &here.plane);
 
@@ -193,6 +196,7 @@ fn a_codex_chat_at_the_plane_root_is_briefed_on_the_project_skill_from_its_folde
 
 #[test]
 fn with_the_flag_off_every_harness_is_armed_as_before_with_the_built_in_skills_alone() {
+    purlis_core::unsteered!();
     let here = here();
     let (claude, _) = armed(Harness::ClaudeCode, kit(&here, None), &here.plane);
     assert_eq!(plugin_dirs(&claude), std::slice::from_ref(&here.plugin));
@@ -216,6 +220,7 @@ fn with_the_flag_off_every_harness_is_armed_as_before_with_the_built_in_skills_a
 
 #[test]
 fn a_chat_in_a_workspace_the_skill_was_not_granted_to_gets_the_built_in_skills_alone() {
+    purlis_core::unsteered!();
     let here = here();
     let in_a_workspace = Some(PlaneSkills {
         plane: &here.plane,
@@ -233,6 +238,7 @@ fn a_chat_in_a_workspace_the_skill_was_not_granted_to_gets_the_built_in_skills_a
 
 #[test]
 fn arming_every_harness_writes_nothing_in_the_plane_and_two_chats_share_one_folder() {
+    purlis_core::unsteered!();
     let here = here();
     let before = tree(&here.plane);
 
@@ -269,6 +275,7 @@ fn arming_every_harness_writes_nothing_in_the_plane_and_two_chats_share_one_fold
 
 #[test]
 fn a_new_project_skill_is_laid_out_in_a_folder_of_its_own_and_the_old_one_is_left_alone() {
+    purlis_core::unsteered!();
     let here = here();
     let (first, _) = armed(
         Harness::ClaudeCode,
