@@ -99,12 +99,14 @@ A draft brings no font. A face is drawn only when the project approved that file
 folder, and the window shows the person a Notice for a face it refuses. Tell the person about
 each font you named that their folder does not already have.
 
-**Shape and size** are tokens beside the colours, set in each appearance (one that leaves
-them out keeps the theme it extends): a whole number (the line heights take decimals) inside its bounds,
-or the theme is refused. Offer them: the built-in Purlis theme sets `radius.md` 7, `radius.lg`
-10, `radius.xl` 12, `size.control` 26, `size.chrome` 24 and `line-height.body` 1.55 in all three
-of its appearances. The top-level `compact` holds what compact density draws; a token it leaves
-out takes the smaller of Classic's compact and the appearance's own.
+**Shape and size** are tokens beside the colours, set in each appearance (one that leaves them
+out keeps the theme it extends): a whole number (the line heights take decimals) inside its
+bounds, or the theme is refused. Offer them: the built-in Purlis theme sets `radius.md` 7,
+`radius.lg` 10, `radius.xl` 12, `size.control` 26, `size.chrome` 24 and `line-height.body` 1.55
+in all three of its appearances. The top-level `compact` holds what compact density draws. A
+token it leaves out keeps the appearance's own value, except the ones Classic's compact moves
+(`space.2` to `space.8`, `size.control`, `size.chrome`, `line-height.body`): those take the
+smaller of Classic's compact and the appearance's own.
 
 | Tokens | Bounds | Classic | Compact | What it reaches |
 |---|---|---|---|---|
