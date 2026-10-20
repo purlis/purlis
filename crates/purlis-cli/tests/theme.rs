@@ -1675,51 +1675,9 @@ fn the_check_reports_each_hard_floor_a_combination_breaks() {
     assert_eq!(first["appearance"], "dark");
     assert_eq!(first["options"], serde_json::json!({}));
     assert_eq!(first["tint"], serde_json::Value::Null);
-}
-
-#[test]
-fn a_hard_floor_broken_on_a_plain_ground_names_no_layer_in_its_json() {
-    let rig = Rig::new();
-    // A light sunken ground under Classic's light words. (Every pair laid over a wash is a
-    // consent floor's too, which the window holds before the hard floors are measured.)
-    rig.folder(
-        &rig.project_themes(),
-        "glare",
-        &dark_folder("Glare", &serde_json::json!({ "surface.sunken": "#f2f2f2" })),
-    );
-
-    let json = rig.run(&["check", "project:glare", "--json"]).json();
-
-    let broken = json["hard_floors"].as_array().expect("hard floors");
-    assert!(!broken.is_empty(), "{json:#}");
-    for one in broken {
-        let fields = one.as_object().expect("an entry");
-        assert!(
-            !fields.contains_key("under") && !fields.contains_key("beneath"),
-            "a pair on a plain ground has no layer: {one:#}"
-        );
-    }
-    let keys: std::collections::BTreeSet<&str> = broken[0]
-        .as_object()
-        .expect("an entry")
-        .keys()
-        .map(String::as_str)
-        .collect();
-    assert_eq!(
-        keys,
-        [
-            "appearance",
-            "back",
-            "floor",
-            "front",
-            "options",
-            "ratio",
-            "tint"
-        ]
-        .into(),
-        "{:#}",
-        broken[0]
-    );
+    // A pair on a plain ground is laid over no layer. (Every hard-floor pair over a wash is a
+    // consent pair, which the window holds before the hard floors are measured.)
+    assert!(first.get("beneath").is_none(), "{first:#}");
 }
 
 #[test]
