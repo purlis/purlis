@@ -20,7 +20,9 @@
 //! root and body, whose overflow is the viewport's, are left to the viewport's own check; only a
 //! box CSS applies overflow to cuts anything off (never an inline box, nor `overflow: clip` with a
 //! margin to paint into); a frame is not carried through when its client box is not given, or
-//! where it or a box around it is turned or skewed (a transform other than a move or a scale),
+//! where it or a box around it is turned or skewed (a transform other than a move or a scale, a
+//! `rotate`, a `scale` that flips or flattens, or an `offset-path`), though an element its own
+//! boxes hide is still cut off,
 //! where its layout's bounds no longer say where it is drawn; and an answer that cannot be read
 //! says nothing is cut off.
 
@@ -31,7 +33,7 @@ use serde_json::Value;
 use super::blank::Rect;
 
 /// The styles read for each element laid out, in this order.
-pub(crate) const STYLES: [&str; 14] = [
+pub(crate) const STYLES: [&str; 17] = [
     "overflow-x",
     "overflow-y",
     "position",
@@ -46,6 +48,9 @@ pub(crate) const STYLES: [&str; 14] = [
     "padding-right",
     "padding-bottom",
     "transform",
+    "rotate",
+    "scale",
+    "offset-path",
 ];
 
 /// The size an element no wider, or no taller, than nothing is given, so what is left of it says
@@ -304,7 +309,7 @@ impl Read {
                 // What is not an element (a text, the document) is given no styles.
                 let (cut, position, boxing) = match style.as_slice() {
                     [] => ((false, false), Position::InFlow, None),
-                    [across, down, position, display, margin, sides @ ..] if sides.len() == 9 => (
+                    [across, down, position, display, margin, sides @ ..] if sides.len() == 12 => (
                         if CUT_BY_OVERFLOW.contains(display) {
                             (cuts(across, margin), cuts(down, margin))
                         } else {
@@ -400,6 +405,10 @@ impl Read {
         if out_of_flow == Position::Fixed {
             return None;
         }
+        // Nothing left is nothing left, whatever is around the frame (#2840).
+        if empty(&part) {
+            return Some(part);
+        }
         match self.owners.get(&d) {
             Some(&(parent, frame)) if depth < self.documents.len() => {
                 let carried = self.carried_out(parent, frame, part, document.scrolled)?;
@@ -479,8 +488,8 @@ impl Read {
     }
 }
 
-/// An element's border, padding and transform from the nine styles after its first five; `None`
-/// where a length cannot be read.
+/// An element's border, padding and transforms from the twelve styles after its first five
+/// (`transform`, `rotate`, `scale`, `offset-path` last); `None` where a length cannot be read.
 fn boxing(sides: &[&str]) -> Option<Boxing> {
     let length = |text: &str| -> Option<f64> {
         text.strip_suffix("px")
@@ -497,7 +506,10 @@ fn boxing(sides: &[&str]) -> Option<Boxing> {
     Some(Boxing {
         border: [lengths[0], lengths[1], lengths[2], lengths[3]],
         padding: [lengths[4], lengths[5], lengths[6], lengths[7]],
-        turned: turned(sides[8]),
+        turned: turned(sides[8])
+            || rotated(sides[9])
+            || flipped(sides[10])
+            || sides[11].trim() != "none",
     })
 }
 
@@ -519,6 +531,38 @@ fn turned(transform: &str) -> bool {
         Some(&[a, b, c, d, _, _]) => b != 0.0 || c != 0.0 || a <= 0.0 || d <= 0.0,
         _ => true,
     }
+}
+
+/// Whether the `rotate` property, as the engine computes it, turns the element: anything but
+/// `none` or an angle of nothing.
+fn rotated(rotate: &str) -> bool {
+    let rotate = rotate.trim();
+    if rotate.is_empty() || rotate == "none" {
+        return false;
+    }
+    // The angle is its last word; an axis, if any, comes first.
+    let angle = rotate.rsplit(' ').next().unwrap_or(rotate);
+    let number = ["deg", "grad", "rad", "turn"]
+        .iter()
+        .find_map(|unit| angle.strip_suffix(unit))
+        .unwrap_or(angle);
+    number.parse::<f64>().ok().is_none_or(|n| n != 0.0)
+}
+
+/// Whether the `scale` property, as the engine computes it, flips or flattens the element: a
+/// factor of nothing or less on any axis, or one that cannot be read.
+fn flipped(scale: &str) -> bool {
+    let scale = scale.trim();
+    if scale.is_empty() || scale == "none" {
+        return false;
+    }
+    scale.split_whitespace().any(|factor| {
+        let factor = factor.strip_suffix('%').map_or_else(
+            || factor.parse::<f64>().ok(),
+            |percent| percent.parse::<f64>().ok().map(|p| p / 100.0),
+        );
+        factor.is_none_or(|f| f <= 0.0)
+    })
 }
 
 /// Whether an overflow cuts off what does not fit; `clip` only with no margin to paint into.

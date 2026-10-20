@@ -30,12 +30,18 @@ struct Boxes {
     border: [f64; 4],
     padding: [f64; 4],
     transform: &'static str,
+    rotate: &'static str,
+    scale: &'static str,
+    offset_path: &'static str,
 }
 
 const NO_BOXES: Boxes = Boxes {
     border: [0.0; 4],
     padding: [0.0; 4],
     transform: "none",
+    rotate: "none",
+    scale: "none",
+    offset_path: "none",
 };
 
 const SHOWN: Style = ["visible", "visible", "static", "block", "0px"];
@@ -80,6 +86,9 @@ fn answer(docs: &[Doc]) -> Value {
                         let mut out: Vec<i64> = style.iter().map(|s| index(s)).collect();
                         out.extend(sides.iter().map(|s| index(s)));
                         out.push(index(boxes.transform));
+                        out.push(index(boxes.rotate));
+                        out.push(index(boxes.scale));
+                        out.push(index(boxes.offset_path));
                         out
                     }
                 })
@@ -567,4 +576,94 @@ fn a_frame_whose_element_is_not_in_the_read_shows_what_is_not_known() {
         through(&around_a_frame(600.0), 99, WHOLE_VIEW, (0.0, 300.0), None),
         None
     );
+}
+
+/// A frame laid out at (10, 400), 200 by 100, whose document holds a list 40 high that scrolls,
+/// with an item at its top (node 31) and one below its bottom (node 32), in a page with no box
+/// around the frame (#2840).
+fn a_list_in_a_frame(boxes: Boxes) -> Vec<Doc> {
+    let mut docs = in_a_box(600.0, FRAME, CLIENT, boxes, 0.0);
+    docs[1] = Doc {
+        nodes: vec![
+            ("#document", -1, 20),
+            ("HTML", 0, 21),
+            ("BODY", 1, 22),
+            ("UL", 2, 23),
+            ("LI", 3, 31),
+            ("LI", 3, 32),
+        ],
+        laid: vec![
+            (1, [0.0, 0.0, 200.0, 100.0], SHOWN),
+            (2, [0.0, 0.0, 200.0, 100.0], SHOWN),
+            (3, [0.0, 0.0, 200.0, 40.0], SCROLLS),
+            (4, [0.0, 0.0, 200.0, 20.0], SHOWN),
+            (5, [0.0, 60.0, 200.0, 20.0], SHOWN),
+        ],
+        scrolled: (0.0, 0.0),
+        contents: Vec::new(),
+        clients: Vec::new(),
+        boxes: Vec::new(),
+    };
+    docs
+}
+
+#[test]
+fn an_item_its_own_list_hides_is_marked_in_a_frame_that_cannot_be_placed() {
+    let turned = Boxes {
+        transform: "matrix(0, 1, -1, 0, 0, 0)",
+        ..NO_BOXES
+    };
+    assert_eq!(
+        clipped(&answer(&a_list_in_a_frame(turned)), &ids(&[31, 32]), None),
+        ids(&[32])
+    );
+    // Nor a frame whose client box is not given.
+    let mut read = answer(&a_list_in_a_frame(NO_BOXES));
+    read["documents"][0]["layout"]
+        .as_object_mut()
+        .unwrap()
+        .remove("clientRects");
+    assert_eq!(clipped(&read, &ids(&[31, 32]), None), ids(&[32]));
+}
+
+/// Whether the paragraph 90 down a frame in a box ending at 410 is said to be cut off, the frame
+/// given `boxes`.
+fn cut_through(boxes: Boxes) -> bool {
+    cut_in_a_box(410.0, FRAME, CLIENT, boxes, 90.0)
+}
+
+#[test]
+fn a_frame_the_rotate_property_turns_is_not_said_to_be_cut_off() {
+    assert!(cut_through(Boxes {
+        rotate: "0deg",
+        ..NO_BOXES
+    }));
+    assert!(!cut_through(Boxes {
+        rotate: "45deg",
+        ..NO_BOXES
+    }));
+}
+
+#[test]
+fn a_frame_the_scale_property_flips_or_flattens_is_not_said_to_be_cut_off() {
+    assert!(cut_through(Boxes {
+        scale: "0.5 0.5",
+        ..NO_BOXES
+    }));
+    assert!(!cut_through(Boxes {
+        scale: "-1 1",
+        ..NO_BOXES
+    }));
+    assert!(!cut_through(Boxes {
+        scale: "0",
+        ..NO_BOXES
+    }));
+}
+
+#[test]
+fn a_frame_on_an_offset_path_is_not_said_to_be_cut_off() {
+    assert!(!cut_through(Boxes {
+        offset_path: "path(\"M 0 0 L 100 100\")",
+        ..NO_BOXES
+    }));
 }
