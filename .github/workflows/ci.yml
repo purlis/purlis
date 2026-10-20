@@ -103,8 +103,8 @@ jobs:
       # The pinned engine the window's end-to-end browser tests download (#2243) makes its
       # sandbox with user namespaces, which Ubuntu 23.10 and later allow only to a program with
       # an AppArmor profile that says so, as Chrome's own package installs for itself. Without
-      # one it ends at its start (#2835). This profile is for the engine those tests download
-      # under the temporary folder, and for nothing else.
+      # one it ends at its start (#2835). This profile is for anything at that path, under the
+      # temporary folder.
       - name: The pinned engine may make its sandbox
         run: |
           printf '%s\n' \

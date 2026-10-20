@@ -577,6 +577,21 @@ pub(crate) fn ref_on(text: &str, words: &str) -> String {
     line[start..end].to_owned()
 }
 
+/// How many pixels of a PNG are the fixture site's pure red, the colour its pages draw a value
+/// kept out in.
+pub(crate) fn red_pixels(png_bytes: &[u8]) -> usize {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder.read_info().expect("a PNG");
+    let mut buffer = vec![0; reader.output_buffer_size().expect("its size")];
+    let info = reader.next_frame(&mut buffer).expect("its frame");
+    let channels = info.color_type.samples();
+    buffer[..info.line_size * info.height as usize]
+        .chunks(channels)
+        .filter(|pixel| pixel.len() >= 3 && pixel[0] > 200 && pixel[1] < 60 && pixel[2] < 60)
+        .count()
+}
+
 /// Whether `bytes` are a PNG.
 pub(crate) fn is_a_png(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x89PNG\r\n\x1a\n")
@@ -692,9 +707,14 @@ fn the_browser_tools_through_every_hop_in_homes_of_their_own() {
     assert!(is_a_png(&shot.images[0]), "a PNG");
 
     // The proxy carries what the person allowed, and nothing else on this machine.
-    tools.call(
+    let refused = tools.call(
         "browser_navigate",
         json!({ "address": unlisted.at("opened.html") }),
+    );
+    assert!(
+        refused.text.contains("the page did not load"),
+        "the proxy refused it: {}",
+        refused.text
     );
     assert!(
         unlisted.heard().is_empty(),
@@ -740,7 +760,14 @@ fn the_browser_tools_through_every_hop_in_homes_of_their_own() {
     tools.done("browser_click", json!({ "target": show, "changes": true }));
     tools.done("browser_snapshot", json!({}));
     tools.done("browser_find", json!({ "text": "Your password" }));
-    tools.call("browser_screenshot", json!({}));
+    let shown = tools.done("browser_screenshot", json!({}));
+    assert_eq!(shown.images.len(), 1, "{shown:?}");
+    // The page draws what was filled in the fixture's red: none of it is left to see.
+    assert_eq!(
+        red_pixels(&shown.images[0]),
+        0,
+        "what purlis filled is painted over"
+    );
     for said in &tools.told {
         for value in [USER, PASSWORD] {
             assert!(
