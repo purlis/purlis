@@ -149,7 +149,7 @@ fn a_call_the_engine_never_answers_times_out() {
 }
 
 #[test]
-fn a_message_past_the_bound_without_its_nul_ends_the_connection() {
+fn a_message_past_the_bound_that_is_no_devtools_message_ends_the_connection() {
     let (connection, _events, mut engine) = connect();
     let flood = thread::spawn(move || {
         let chunk = vec![b'x'; 1 << 20];
@@ -222,4 +222,102 @@ fn what_a_page_writes_to_its_console_is_never_queued_nor_counted() {
     let queued: Vec<String> = events.try_iter().map(|e| e.method).collect();
     assert_eq!(queued, ["Runtime.executionContextCreated"]);
     drop(engine.join().unwrap());
+}
+
+/// An answer of `bytes` bytes or so to the call `call`.
+fn answer_of(call: &Value, bytes: usize) -> Value {
+    json!({"id": call["id"], "result": {"data": "x".repeat(bytes)}})
+}
+
+#[test]
+fn an_answer_past_its_calls_bound_fails_only_that_call_and_the_connection_still_answers() {
+    // #2694: the answer is read past and dropped; the next one is matched as ever.
+    let (connection, _events, mut engine) = connect();
+    let engine = thread::spawn(move || {
+        let first = engine.read();
+        engine.send(answer_of(&first, 64 * 1024));
+        let second = engine.read();
+        engine.send(json!({"id": second["id"], "result": {"product": "Chrome/155"}}));
+        engine
+    });
+    let error = connection
+        .call_within_bounded(
+            "DOMSnapshot.captureSnapshot",
+            json!({}),
+            None,
+            Duration::from_secs(30),
+            16 * 1024,
+        )
+        .unwrap_err();
+    assert!(
+        matches!(error, CallError::TooLarge { most: 16384 }),
+        "{error:?}"
+    );
+    assert!(error.to_string().contains("too large"), "{error}");
+    assert_eq!(
+        connection
+            .call("Browser.getVersion", json!({}), None)
+            .unwrap(),
+        json!({"product": "Chrome/155"})
+    );
+    drop(engine.join().unwrap());
+}
+
+#[test]
+fn an_answer_past_the_connections_bound_fails_only_its_call() {
+    let (connection, _events, mut engine) = connect();
+    let engine = thread::spawn(move || {
+        let first = engine.read();
+        engine.send(answer_of(&first, MAX_MESSAGE_BYTES + (1 << 20)));
+        let second = engine.read();
+        engine.send(json!({"id": second["id"], "result": {}}));
+        engine
+    });
+    let error = connection
+        .call("Accessibility.getFullAXTree", json!({}), None)
+        .unwrap_err();
+    assert!(
+        matches!(error, CallError::TooLarge { most } if most == MAX_MESSAGE_BYTES),
+        "{error:?}"
+    );
+    connection
+        .call("Browser.getVersion", json!({}), None)
+        .unwrap();
+    drop(engine.join().unwrap());
+}
+
+#[test]
+fn an_event_past_the_bound_that_nobody_reads_is_dropped_and_calls_are_still_answered() {
+    let (connection, events, mut engine) = connect();
+    let engine = thread::spawn(move || {
+        engine.send(json!({"method": "Runtime.consoleAPICalled", "params": {"data": "x".repeat(MAX_MESSAGE_BYTES + (1 << 20))}}));
+        engine.send(json!({"method": "Page.loadEventFired", "params": {}}));
+        let call = engine.read();
+        engine.send(json!({"id": call["id"], "result": {}}));
+        engine
+    });
+    connection
+        .call("Browser.getVersion", json!({}), None)
+        .unwrap();
+    assert_eq!(connection.dropped_events(), 0);
+    let kept: Vec<_> = events.try_iter().map(|e| e.method).collect();
+    assert_eq!(kept, vec!["Page.loadEventFired".to_owned()]);
+    drop(engine.join().unwrap());
+}
+
+#[test]
+fn an_event_past_the_bound_the_driver_reads_ends_the_connection() {
+    // A frame's navigation keeps the driver's view of the page: never lost, so never dropped.
+    let (connection, _events, mut engine) = connect();
+    let engine = thread::spawn(move || {
+        let call = engine.read();
+        engine.send(json!({"method": "Page.frameNavigated", "params": {"frame": {"name": "x".repeat(MAX_MESSAGE_BYTES + (1 << 20))}}}));
+        engine.send(json!({"id": call["id"], "result": {}}));
+        engine
+    });
+    let error = connection
+        .call("Browser.getVersion", json!({}), None)
+        .unwrap_err();
+    assert!(matches!(error, CallError::Ended), "{error:?}");
+    drop(engine.join());
 }

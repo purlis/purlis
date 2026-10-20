@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A label past every bound</title></head>
+<body>
+  <button id="huge">Huge</button>
+  <script>
+    // A name longer than any one answer from the engine may be: 72 MiB.
+    document.getElementById('huge').setAttribute('aria-label', 'x'.repeat(72 << 20));
+  </script>
+</body></html>

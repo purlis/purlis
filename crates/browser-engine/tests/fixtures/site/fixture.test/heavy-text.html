@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Heavy in inline text</title></head>
+<body style="margin: 8px">
+  <ul style="height: 120px; overflow-y: auto; margin: 0; padding: 0; list-style: none">
+    <li style="height: 40px">Shown in the list</li>
+    <li style="height: 400px">Rows between</li>
+    <li style="height: 40px"><button>Last in the list</button></li>
+  </ul>
+  <script>
+    // Inline text no tree shows, but every read of the page's layout carries: 24 MiB of it.
+    const heavy = document.createElement('script');
+    heavy.type = 'text/plain';
+    heavy.text = 'x'.repeat(24 << 20);
+    document.body.append(heavy);
+  </script>
+</body></html>

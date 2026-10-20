@@ -1285,7 +1285,8 @@ key refuses.
 
 An older project may still carry `.claude/skills/playwright-cli/`, `.playwright/`, `.playwright-cli/`
 and an ``added by `purlis browser install` `` block in its `.gitignore`. They are Playwright's files;
-purlis neither writes nor reads them (#2575).
+purlis neither writes nor reads them (#2575). The `browser` skill's terminal flow points Playwright's output at a private folder
+outside the project and removes it when the flow ends, so it adds none of them (#2686).
 
 - **Tier:** None — Playwright's files, not purlis's.
 
