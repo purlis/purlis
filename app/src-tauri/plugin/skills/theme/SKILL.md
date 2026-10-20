@@ -60,15 +60,19 @@ unzip -o "$TMPDIR/purlis-classic.zip" -d "$TMPDIR/purlis-classic"
 The format and the check are documented in full: `purlis docs show themes`. Keep it small:
 `"extends": "purlis-classic"` and only what differs. Put each colour in the `palette` once and
 name it from the tokens. Most of a look is `surface.*`, `text.*`, `border.*`, `accent.base`,
-`accent.surface`, `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` and the
-`terminal.*` colours. A theme with a `dark` and a `light` appearance follows the system.
+`accent.surface`, `focus.ring`, `layer.selected`, `list.selected`, `list.selected-edge`, the
+`terminal.*` colours and its shape (below). A theme with a `dark` and a `light` appearance
+follows the system.
+
+**The selected tab is `layer.selected`**, on all three strips; keep it apart from
+`list.selected`. `tab.active` is not a tab: it colours menu highlights and button hovers.
 
 Start from what the person gave you:
 
 - **A brand colour**: make it the palette's accent and draw `accent.base`, `focus.ring`,
-  `list.selected-edge`, `markdown.link` and `chart.1` from it; mix `accent.surface`, `tab.active`
-  and `list.selected` from it and the surface. Give the light appearance a darker step of the
-  same hue, so it reads on a light surface.
+  `list.selected-edge`, `markdown.link` and `chart.1` from it; mix `accent.surface`,
+  `list.selected` and `layer.selected` from it and the surface. Give the light appearance a
+  darker step of the same hue, so it reads on a light surface.
 - **An image or a screenshot**: read it, and take the background, the raised surfaces, the
   words, the rules and the accent from its own colours, as hex.
 - **A Figma frame**: read the frame's variables and colours with the Figma tools this chat has;
@@ -95,7 +99,34 @@ A draft brings no font. A face is drawn only when the project approved that file
 folder, and the window shows the person a Notice for a face it refuses. Tell the person about
 each font you named that their folder does not already have.
 
-Done when the file is JSON with every value hex, a palette name, or a token's own type.
+**Shape and size** are tokens in the same appearance, beside the colours: a whole number (the
+line heights take decimals) inside its bounds, or the theme is refused. Offer them: the
+built-in Purlis theme sets `radius.md` 7, `radius.lg` 10, `radius.xl` 12, `size.control` 26 and
+`size.chrome` 24.
+
+| Tokens | Bounds | Classic, comfortable | What it reaches |
+|---|---|---|---|
+| `radius.sm` · `md` · `lg` · `xl` | 0–8 · 0–10 · 0–14 · 0–18 px | 3 · 4 · 6 · 8 | corners: `sm` checkboxes; `md` buttons, fields, selects, menu rows; `lg` menus, segmented controls; `xl` the largest panels |
+| `radius.full` | 0–9999 px | 9999 | pills: counts, toggle tracks |
+| `size.control` | 20–40 | 28 | every button and field's height |
+| `size.chrome` | 16–32 | 21 | strip and pane header heights |
+| `space.1` … `space.8` | 0–4, 1–8, 2–10, 4–12, 6–16, 8–24, 12–32, 16–48 | 2 4 6 8 12 16 24 32 | padding, gaps, margins (`space.0` is fixed at 0) |
+| `font-size.2xs` `xs` `sm` `md` `base` `lg` `xl` | 8–12, 9–13, 10–14, 11–15, 12–18, 13–22, 16–28 | 10 11 12 13 14 16 20 | the type scale |
+| `font-weight.regular` · `medium` · `strong` | 300–500 · 400–600 · 500–800 | 400 · 500 · 600 | weights |
+| `line-height.tight` · `body` | 1.0–1.4 · 1.2–1.8 | 1.2 · 1.4 | line spacing |
+| `focus-ring.width` · `offset` · `inset` | 1–4 · 0–4 · −4–0 px | 2 · 2 · −2 | the focus ring |
+| `elevation.raised-y` · `-blur`, `elevation.overlay-y` · `-blur` | 0–8 · 0–24, 0–16 · 0–48 | 2 · 8, 8 · 24 | shadows |
+
+Sizes are px at the default text size and grow with it; corners and the focus ring do not.
+A line must fit its box: `font-size.base` × `line-height.body` within `size.control`, and
+`font-size.md` × `line-height.body` within `size.chrome`; the check reports one that does not.
+
+**Still square, whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a
+tab's `×` closer, the settings gear on a strip, and every list and tree row. Tell the person
+when they ask for rounder tabs or rows: the theme cannot round those yet.
+
+Done when the file is JSON with every value hex, a palette name, or a token's own type, and
+every shape and size inside its bounds.
 
 ## 3. Draw, look, check, fix
 
