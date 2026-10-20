@@ -3504,12 +3504,6 @@ export const commands = {
 	 *  sets the appearance; every window sets its own colour.
 	 */
 	drawNativeWindow: (appearance: string, background: string, followsSystem: boolean) => typedError<null, string>(__TAURI_INVOKE("draw_native_window", { appearance, background, followsSystem })),
-	/**
-	 *  **What the operating system draws this window in** (#2328, #2760): the appearance of its
-	 *  native parts and its background colour, each read back from the platform, not from what
-	 *  purlis last asked for. The scenario tests ask; nothing in the UI does.
-	 */
-	nativeWindowDrawn: () => typedError<NativeDrawn, string>(__TAURI_INVOKE("native_window_drawn")),
 	/**  One secret's value, to show in the window for a while ([`reveal`]). */
 	vaultSecretReveal: (plane: PlaneId, vault: string, key: string) => typedError<SecretValue, string>(__TAURI_INVOKE("vault_secret_reveal", { plane, vault, key })),
 	/**
@@ -7369,21 +7363,6 @@ export type Moved = {
 	 *  or child its harness spawned, drawn under the chat. Empty for nearly every chat.
 	 */
 	children: ChildAgent[],
-};
-
-/**
- *  **What the operating system draws this window in**, read back from the platform: the
- *  appearance its native parts are drawn in and the background colour the window was given.
- */
-export type NativeDrawn = {
-	/**  `dark` or `light`. */
-	appearance: string,
-	/**
-	 *  The window's colour, `#rrggbb` in lowercase, opaque as the window is drawn: `null` where
-	 *  the platform gives no colour purlis reads (Windows for now, or a colour with no sRGB
-	 *  form). An unread colour never stops the appearance from being read.
-	 */
-	background: string | null,
 };
 
 /**
