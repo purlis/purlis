@@ -595,6 +595,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Share in the Skill studio (#2767): moves a local skill into the shared folder, so the next
     // save commits it to the team. The person's own press in their window.
     "skill_share",
+    // Why browsers cannot start for the engine's sandbox, and choosing this machine's Chrome
+    // for every browser (#2835): which program runs as the person's browsers' engine is theirs
+    // to choose, in their window.
+    "engine_sandbox",
+    "use_this_machines_chrome",
     // This machine's Docker pools (#2679): adding one runs a container on the person's machine
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.

@@ -1065,6 +1065,9 @@ pub struct BrowserLimits {
     pub on_this_device: Option<u32>,
     /// `0` is never: a chat's browser does not stop for going unused.
     pub idle_minutes: Option<u32>,
+    /// `browsers.engine` is `"machine"`: browsers start on this machine's own Chrome where one
+    /// is installed, not the pinned engine (#2835, ADR 0042's choice). Absent, the pinned one.
+    pub machine_chrome: bool,
 }
 
 /// **The flags turned on on this machine** (#2764): `flags.<name>` in the file, `true` when on.
@@ -1180,7 +1183,25 @@ fn browsers_of(raw: Option<&serde_json::Value>) -> BrowserLimits {
         per_project: one(Limit::PerProject),
         on_this_device: one(Limit::OnThisDevice),
         idle_minutes: one(Limit::IdleMinutes),
+        machine_chrome: raw
+            .and_then(|table| table.get(BROWSER_ENGINE))
+            .and_then(serde_json::Value::as_str)
+            == Some(MACHINE_CHROME),
     }
+}
+
+/// The key of the `browsers` table that says which engine browsers start on (#2835).
+const BROWSER_ENGINE: &str = "engine";
+
+/// Its one value: this machine's own Chrome.
+const MACHINE_CHROME: &str = "machine";
+
+/// **Browsers on this machine start on its own Chrome**, or with `false` on the pinned engine
+/// again (#2835), in the store under `config_root`.
+pub fn set_machine_chrome(config_root: &Path, on: bool) -> Result<(), String> {
+    update(config_root, |store| store.browsers.machine_chrome = on)
+        .map(|_| ())
+        .map_err(|why| format!("purlis could not keep it, so nothing was changed: {why}"))
 }
 
 /// The flags off the file's `flags` table: a flag is on only where it is `true`.
@@ -2579,11 +2600,16 @@ struct BrowsersOnDisk {
     on_this_device: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     idle_minutes: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    engine: Option<&'static str>,
 }
 
 impl BrowsersOnDisk {
     fn is_unset(&self) -> bool {
-        self.per_project.is_none() && self.on_this_device.is_none() && self.idle_minutes.is_none()
+        self.per_project.is_none()
+            && self.on_this_device.is_none()
+            && self.idle_minutes.is_none()
+            && self.engine.is_none()
     }
 }
 
@@ -2662,6 +2688,7 @@ impl From<&Store> for OnDisk {
                 per_project: store.browsers.per_project,
                 on_this_device: store.browsers.on_this_device,
                 idle_minutes: store.browsers.idle_minutes,
+                engine: store.browsers.machine_chrome.then_some(MACHINE_CHROME),
             },
             flags: FlagsOnDisk {
                 skill_studio: store.flags.skill_studio,

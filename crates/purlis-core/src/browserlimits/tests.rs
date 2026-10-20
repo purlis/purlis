@@ -54,6 +54,7 @@ fn what_the_person_set_takes_the_place_of_each_default_and_zero_idle_minutes_is_
         per_project: Some(5),
         on_this_device: None,
         idle_minutes: Some(0),
+        machine_chrome: false,
     };
 
     let limits = Limits::for_memory(gib(32.0)).set_to(set);

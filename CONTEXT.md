@@ -628,7 +628,7 @@ _Avoid_: masked, redacted, hidden (a page hides elements of its own)
 **Engine**:
 The program a browser runs on, one per browser: a pinned Chrome for Testing that purlis
 downloads on first use, checks against its manifest before it runs, and keeps current apart from
-purlis's own releases, or the machine's own Chrome when the person chooses it in Settings. The
+purlis's own releases, or the machine's own Chrome when the person chooses it (the Notice offers it where the pinned engine cannot make its sandbox, #2835). It always runs with its sandbox on. The
 session host drives it only over a pipe it holds, never a port, and it ends with its host.
 _Avoid_: Chromium (unless that project is meant), headless Chrome, driver (that is who acts on a
 browser)

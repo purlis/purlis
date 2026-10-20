@@ -43,7 +43,12 @@
     "linux": {
       "deb": {
         "conflicts": ["charter"],
-        "replaces": ["charter"]
+        "replaces": ["charter"],
+        "files": {
+          "/usr/share/purlis/apparmor/purlis-engine": "../../crates/purlis-core/src/browsers/purlis-engine.apparmor"
+        },
+        "postInstallScript": "packaging/deb/postinst",
+        "postRemoveScript": "packaging/deb/postrm"
       }
     },
     "resources": {

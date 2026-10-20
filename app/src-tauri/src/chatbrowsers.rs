@@ -79,6 +79,8 @@ pub enum Refused {
 pub enum NotStarted {
     /// The device runs as many browsers as its budget, `most` (#2023).
     Full { most: usize },
+    /// The browser engine cannot make its sandbox on this machine (#2835).
+    NoSandbox,
     /// It failed, in the host's words.
     Failed(String),
 }
@@ -1899,6 +1901,10 @@ impl ChatBrowsers {
                 )
                 .map_err(|not| match not {
                     NotStarted::Full { most } => purlis_core::browserlimits::device_full_said(most),
+                    NotStarted::NoSandbox => {
+                        crate::enginesandbox::refused();
+                        crate::enginesandbox::NO_BROWSER_HERE.to_owned()
+                    }
                     NotStarted::Failed(why) => format!(
                         "the browser did not start: {why}. Try once more; if it fails again, \
                          go on with what needs no browser and tell the person what it said"

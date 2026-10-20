@@ -242,15 +242,45 @@ pub(crate) struct Host {
     pub(crate) session: SessionHost,
     /// Its data home, where its engines and browsers' folders are.
     pub(crate) data: PathBuf,
+    /// Its config home, where this machine's choices are kept.
+    pub(crate) config: PathBuf,
     _home: tempfile::TempDir,
 }
 
 impl Host {
+    /// A host whose data home is its user's default, `~/.local/share/purlis`, its home the
+    /// test's: where the profile the `.deb` installs names its engine (#2835; on CI, whose homes
+    /// are under the temporary folder, as `ci.yml` tells AppArmor).
     pub(crate) fn serving() -> Host {
+        Host::serving_with(true)
+    }
+
+    /// A host whose data home is a folder the person named elsewhere: no profile the `.deb`
+    /// installs names its engine.
+    pub(crate) fn serving_with_its_data_folder_elsewhere() -> Host {
+        Host::serving_with(false)
+    }
+
+    fn serving_with(default_data_home: bool) -> Host {
         let home = tempfile::tempdir().expect("the host's home");
         let crate::behaviour::HostHome {
-            place, inherited, ..
+            place,
+            mut inherited,
+            ..
         } = crate::behaviour::a_host_home(home.path());
+        let mut data = home.path().join("data");
+        if default_data_home {
+            let named = |name: &std::ffi::OsString, var: &str| {
+                purlis_core::envvar::same(&name.to_string_lossy(), var)
+            };
+            inherited.retain(|(name, _)| {
+                !named(name, purlis_core::datahome::HOME_VAR)
+                    && !named(name, "XDG_DATA_HOME")
+                    && !named(name, "HOME")
+            });
+            inherited.push(("HOME".into(), home.path().as_os_str().to_owned()));
+            data = purlis_core::names::DATA_HOME.folder_at(&home.path().join(".local/share"));
+        }
         let purlis = crate::behaviour::built_beside("purlis", "purlis-cli");
         let session = SessionHost::default();
         session.start_at(place, move || {
@@ -272,7 +302,8 @@ impl Host {
             .expect("the window connects to purlis serve");
         Host {
             session,
-            data: home.path().join("data"),
+            data,
+            config: home.path().join("config"),
             _home: home,
         }
     }
@@ -300,6 +331,11 @@ impl Window {
     /// [`LOGIN`] on `login`'s site, from a vault of a plain file, allowed on this machine; and
     /// whose browsers may reach each of `allowed`, allowed by the person on this machine.
     pub(crate) fn holding(login: &Site, allowed: &[&Site]) -> Window {
+        Window::holding_on(Host::serving, login, allowed)
+    }
+
+    /// [`Window::holding`], its session host as `host` starts it.
+    pub(crate) fn holding_on(host: fn() -> Host, login: &Site, allowed: &[&Site]) -> Window {
         the_log();
         let project = tempfile::tempdir().expect("the project's folder");
         let root = std::fs::canonicalize(project.path()).expect("its path");
@@ -338,7 +374,7 @@ impl Window {
                 .expect("a browser site allowed here");
         }
 
-        let host = Host::serving();
+        let host = host();
         let browsers = Arc::new(WindowBrowsers::new(host.session.connection()));
         let planes = crate::hostedsessions::chats_in_the_host(
             Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None),
@@ -851,4 +887,79 @@ fn a_chat_whose_browser_the_person_kept_off_is_refused_in_words() {
         next.text
     );
     assert!(site.heard().is_empty(), "no browser opened anything");
+}
+
+// ---- #2835: where the engine cannot make its sandbox ----
+
+/// Where AppArmor restricts user namespaces and no profile names the pinned engine (its data
+/// folder elsewhere), the chat is told a browser is not available on this machine, never the
+/// engine's crash; the person is offered the profile's command and this machine's own Chrome;
+/// and once they choose it, the next call opens on it. Run in homes of its own, since the
+/// window reads its data home for the command.
+#[test]
+fn where_the_engine_cannot_make_its_sandbox_the_chat_is_told_and_this_machines_chrome_is_offered() {
+    if !a_real_engine_runs_here() {
+        return;
+    }
+    in_homes_of_its_own(
+        "browsers::tests::end_to_end::the_engines_sandbox_and_this_machines_chrome_in_homes_of_their_own",
+    );
+}
+
+/// [`where_the_engine_cannot_make_its_sandbox_the_chat_is_told_and_this_machines_chrome_is_offered`],
+/// in homes of its own.
+#[test]
+#[ignore = "run by where_the_engine_cannot_make_its_sandbox_the_chat_is_told_and_this_machines_chrome_is_offered"]
+fn the_engines_sandbox_and_this_machines_chrome_in_homes_of_their_own() {
+    if !a_real_engine_runs_here() {
+        return;
+    }
+    if !purlis_core::browsers::sandboxing::Machine::here().restricts {
+        tracing::warn!("not run: nothing restricts user namespaces on this machine");
+        return;
+    }
+    let Some(chrome) = purlis_core::browsers::machine_chrome() else {
+        panic!("CI runs this where the runner's own Chrome is installed, and none was found");
+    };
+    let site = Site::serve();
+    let window = Window::holding_on(
+        Host::serving_with_its_data_folder_elsewhere,
+        &site,
+        &[&site],
+    );
+    let (chat, mut tools) = window.a_chat();
+    tools.call("browser_snapshot", json!({}));
+    crate::chatbrowsers::allowed(&window.held, chat, false).expect("the person allows it");
+
+    let refused = tools.call(
+        "browser_open",
+        json!({ "address": site.at("counter.html") }),
+    );
+    assert!(refused.error, "{refused:?}");
+    assert!(
+        refused.text.contains(crate::enginesandbox::NO_BROWSER_HERE),
+        "{}",
+        refused.text
+    );
+    for crash in ["No usable sandbox", "zygote", "pipe"] {
+        assert!(!refused.text.contains(crash), "{}", refused.text);
+    }
+    assert!(site.heard().is_empty(), "nothing started");
+
+    let notice = crate::enginesandbox::notice()
+        .expect("the Notice reads")
+        .expect("the Notice stands");
+    assert!(
+        notice.command.contains("sudo apparmor_parser -r"),
+        "{}",
+        notice.command
+    );
+    assert_eq!(notice.chrome, Some(chrome.display().to_string()));
+
+    // The person uses this machine's Chrome: the next call opens on it.
+    purlis_core::machine::set_machine_chrome(&window.host.config, true)
+        .expect("their choice is kept");
+    window.opens(&mut tools, &site.at("counter.html"));
+    let read = tools.done("browser_snapshot", json!({}));
+    assert!(read.text.contains("Count: 0"), "{}", read.text);
 }
