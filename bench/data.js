@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792519141680,
+  "lastUpdate": 1792520765717,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19488,6 +19488,48 @@ window.BENCHMARK_DATA = {
             "value": 101.92158900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.192, 101.504, 101.922, 102.156, 102.834 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3a0a6ecab21e918778675a678cd68b2ba6c4b5c3",
+          "message": "Browsers: out-of-view marks in a cross-site frame, and a box around it (#2831)\n\n* Browsers: a box around a frame from another site marks what it hides (#2689)\n\nA frame from another site runs in a session of its own, so neither layout\nread alone holds both its elements and the boxes around its element. Its\nelements are now compared with what its own layout viewport shows, cut to the\npart of its element that the boxes on the page around it let show: read from\nthe layout of the session holding the element (`DOM.getFrameOwner`), at the\nelement's client size, inset by its border. Each session's layout is read at\nmost once per look.\n\nReal-Chrome tests open a page with two frames from another site: one scrolls\nan element out of itself, and a box on the page cuts the other's lower part\noff.\n\nCloses #2689\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a page holding a frame from another site settles (#2689)\n\nThe engine asks for the document of a frame from another site in the\nsession of the page around it, and answers it in the frame's own session,\nunder the same id. The settle tracker kept it open in the page's session,\nso such a page never settled: it waited out its settling time and said the\nframe was still loading. A document request now ends on its end in any\nsession of the page; other requests, numbered per process, still end only\nin their own.\n\nRefs #2689\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T22:21:44+04:00",
+          "tree_id": "fbc09b0c3413b0cee061748d3dcbb86bc256cbcc",
+          "url": "https://github.com/purlis/purlis/commit/3a0a6ecab21e918778675a678cd68b2ba6c4b5c3"
+        },
+        "date": 1792520764301,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5429360000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.526, 0.542, 0.543, 0.545, 0.546 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4591225,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.344, 16.418, 16.459, 16.477, 16.614 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.919015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.142, 100.504, 101.919, 102.046, 102.549 ms"
           }
         ]
       }
