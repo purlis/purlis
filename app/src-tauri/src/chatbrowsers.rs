@@ -505,6 +505,49 @@ pub struct ChatBrowser {
     pub login: Option<String>,
 }
 
+/// **Why the window ends a chat's browser** (#2745), for the line each end leaves in its log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndWhy {
+    /// The chat closed it (`browser_close`).
+    ClosedByItsChat,
+    /// Its chat ended, and it was not pinned.
+    ChatEnded,
+    /// It went unused this many minutes.
+    Unused { minutes: u64 },
+    /// Its chat's reach was narrowed, or a browser site it reached was removed.
+    ReachNarrowed,
+    /// The person stopped every browser.
+    StopAll,
+    /// It could not be given the chat it was handed to's reach.
+    NotHandedOver,
+}
+
+impl std::fmt::Display for EndWhy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EndWhy::ClosedByItsChat => write!(f, "its chat closed it"),
+            EndWhy::ChatEnded => write!(f, "its chat ended"),
+            EndWhy::Unused { minutes } => write!(f, "it went unused for {minutes} minutes"),
+            EndWhy::ReachNarrowed => write!(f, "what its chat may reach was narrowed"),
+            EndWhy::StopAll => write!(f, "the person stopped every browser"),
+            EndWhy::NotHandedOver => {
+                write!(
+                    f,
+                    "it could not be given the reach of the chat it was handed to"
+                )
+            }
+        }
+    }
+}
+
+/// The window's line for ending `browser` because of `why` (#2745).
+pub fn ending_said(browser: &ChatBrowser, why: EndWhy) -> String {
+    format!(
+        "purlis: chat {}'s browser {} ({}) is ended by the window: {why}",
+        browser.session, browser.name, browser.program
+    )
+}
+
 /// Ends `program`: a close, once more, then a stop by its id. Whether it ended.
 fn end(driver: &dyn Driver, program: &str) -> bool {
     let closed = driver.close(program).or_else(|_| driver.close(program));
@@ -725,7 +768,12 @@ impl ChatBrowsers {
         }
         stopping
             .into_iter()
-            .map(|(session, browsers)| (session, self.end_now(driver, &browsers)))
+            .map(|(session, browsers)| {
+                (
+                    session,
+                    self.end_now(driver, &browsers, EndWhy::Unused { minutes }),
+                )
+            })
             .collect()
     }
 
@@ -1009,7 +1057,7 @@ impl ChatBrowsers {
                 ..ChatBrowser::default()
             })];
             self.letting_go(&ending);
-            self.end_now(Some(driver), &ending);
+            self.end_now(Some(driver), &ending, EndWhy::NotHandedOver);
             self.relisted();
             return Err(format!(
                 "purlis could not give it that chat's reach, so it was not handed over, and could \
@@ -1475,7 +1523,15 @@ impl ChatBrowsers {
     /// **Ends each of `browsers`**, let go of before ([`Self::letting_go`]): one try each, here;
     /// one that did not end is retried off every call's path until it ends ([`Ending`]).
     /// Answers how many ended and did not.
-    fn end_now(&self, driver: Option<&Arc<dyn Driver>>, browsers: &[ChatBrowser]) -> Ended {
+    fn end_now(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        browsers: &[ChatBrowser],
+        why: EndWhy,
+    ) -> Ended {
+        for browser in browsers {
+            tracing::info!("{}", ending_said(browser, why));
+        }
         let ended: Vec<&str> = match driver {
             Some(driver) => browsers
                 .iter()
@@ -1569,7 +1625,7 @@ impl ChatBrowsers {
         if !browsers.is_empty() {
             self.relisted();
         }
-        self.end_now(driver, &browsers);
+        self.end_now(driver, &browsers, EndWhy::StopAll);
         // One not ended yet is tried again now, off this path.
         let mut endings = self.endings();
         if endings.retrying {
@@ -1617,7 +1673,7 @@ impl ChatBrowsers {
         if !programs.is_empty() {
             self.relisted();
         }
-        self.end_now(driver, &programs)
+        self.end_now(driver, &programs, EndWhy::ReachNarrowed)
     }
 
     /// Chat `session` has closed: its browsers end, and nothing of it is kept but a browser that
@@ -1660,7 +1716,7 @@ impl ChatBrowsers {
         if !programs.is_empty() {
             self.relisted();
         }
-        self.end_now(driver, &programs);
+        self.end_now(driver, &programs, EndWhy::ChatEnded);
     }
 
     /// **Answers one browser call of a chat's**, and whether it raised the chat's browser Ask
@@ -1891,7 +1947,11 @@ impl ChatBrowsers {
                 }];
                 self.letting_go(&closing);
                 drop(chats);
-                if self.end_now(Some(driver), &closing).unended > 0 {
+                if self
+                    .end_now(Some(driver), &closing, EndWhy::ClosedByItsChat)
+                    .unended
+                    > 0
+                {
                     return (
                         no(&format!(
                             "purlis could not end browser {name} yet, and keeps trying: this chat \

@@ -12,10 +12,19 @@
 //! the broker's business. A message is never held past a bound, [`MAX_MESSAGE_BYTES`] or the
 //! smaller one its call asked for ([`Connection::call_within_bounded`]): an answer past it is
 //! read past to its NUL, never kept, and fails only its own call (#2694). An event past it is
-//! dropped only where nobody reads its kind (what a page writes to its console, its uncaught
-//! errors); any other event past it ends the connection, since the driver's view of the page's
-//! frames and targets is kept from events and is never left stale. A message that is not JSON
-//! ends the connection.
+//! dropped where nobody reads its kind (what a page writes to its console, its uncaught
+//! errors) and where it is a network event, which the driver reads only to tell when a page has
+//! settled (#2745); any other event past it ends the connection, since the driver's view of the
+//! page's frames and targets is kept from events and is never left stale.
+//!
+//! **What JSON allows is read** (#2745). The engine writes each character of a JavaScript string
+//! past ASCII as a `\uXXXX` escape, so a string holding half of a surrogate pair (an emoji a
+//! script cut in two) arrives as a lone `\ud83d`: valid JSON that a strict reader refuses. Such a
+//! half, and any byte that is not UTF-8, is read as U+FFFD. A message that still does not read
+//! as JSON ends the connection.
+//!
+//! **Why it closed is kept** ([`Connection::closed`], [`Closed`]): the end of the pipe, a read
+//! that failed, or the message that ended it, named by its method and never by what it held.
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
@@ -80,12 +89,63 @@ pub enum CallError {
     },
 }
 
+/// **Why the connection closed** (#2745), for the host's log: it names a message by its
+/// DevTools method alone, never by anything it held.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Closed {
+    /// The engine closed its end of the pipe: it ended, or is ending.
+    PipeEnded,
+    /// Reading the pipe failed.
+    ReadFailed(io::ErrorKind),
+    /// A message past its bound that may not be dropped: an event of a kind the driver reads,
+    /// by its method where its first bytes name one.
+    TooLarge {
+        /// The event's method.
+        method: Option<String>,
+        /// The bound it went past.
+        most: usize,
+    },
+    /// A message that does not read as DevTools JSON: an event's method, or the method of the
+    /// call an answer was for, where purlis can tell.
+    NotDevTools {
+        /// The method.
+        method: Option<String>,
+    },
+}
+
+impl std::fmt::Display for Closed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let named = |method: &Option<String>| match method {
+            Some(method) => format!(" ({method})"),
+            None => String::new(),
+        };
+        match self {
+            Closed::PipeEnded => write!(f, "the engine closed its DevTools pipe"),
+            Closed::ReadFailed(kind) => {
+                write!(f, "reading the engine's DevTools pipe failed: {kind}")
+            }
+            Closed::TooLarge { method, most } => write!(
+                f,
+                "the engine sent an event{} longer than {most} bytes, which purlis does not read",
+                named(method)
+            ),
+            Closed::NotDevTools { method } => write!(
+                f,
+                "the engine sent a message{} that does not read as DevTools JSON",
+                named(method)
+            ),
+        }
+    }
+}
+
 type Answer = Result<Value, CallError>;
 
-/// A call waiting for its answer, and the most bytes the answer may take.
+/// A call waiting for its answer, the most bytes the answer may take, and its method, to name an
+/// answer that does not read.
 struct Waiting {
     answer: SyncSender<Answer>,
     most: usize,
+    method: String,
 }
 
 struct Shared {
@@ -93,6 +153,8 @@ struct Shared {
     pending: Mutex<Option<HashMap<u64, Waiting>>>,
     /// Events dropped because [`MAX_QUEUED_EVENTS`] were already waiting.
     dropped: AtomicU64,
+    /// Why the connection closed, once it has.
+    closed: Mutex<Option<Closed>>,
 }
 
 /// One DevTools connection over the engine's pipe.
@@ -115,6 +177,7 @@ impl Connection {
         let shared = Arc::new(Shared {
             pending: Mutex::new(Some(HashMap::new())),
             dropped: AtomicU64::new(0),
+            closed: Mutex::new(None),
         });
         let (events, receiver) = mpsc::sync_channel(MAX_QUEUED_EVENTS);
         let reading = shared.clone();
@@ -171,6 +234,7 @@ impl Connection {
                 Waiting {
                     answer,
                     most: most.min(MAX_MESSAGE_BYTES),
+                    method: method.to_owned(),
                 },
             );
         }
@@ -196,6 +260,11 @@ impl Connection {
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => Err(CallError::Ended),
         }
+    }
+
+    /// Why the connection closed, once it has (#2745); `None` while it reads.
+    pub fn closed(&self) -> Option<Closed> {
+        lock(&self.shared.closed).clone()
     }
 
     /// How many events were dropped because the queue was full.
@@ -263,9 +332,32 @@ const DROPPED_WHEN_TOO_LARGE: [&str; 5] = [
     "Log.entryAdded",
 ];
 
+/// The domain whose events past their bound are dropped too (#2745): the driver reads a
+/// request's events only to tell when its page has settled, and the reach proxy judges each
+/// request itself.
+const NETWORK_EVENTS: &str = "Network.";
+
+/// Whether an event of `method` past its bound may be dropped.
+fn droppable(method: &str) -> bool {
+    DROPPED_WHEN_TOO_LARGE.contains(&method) || method.starts_with(NETWORK_EVENTS)
+}
+
+/// `method` where it is a DevTools method's name (`Domain.name`, letters and digits): nothing a
+/// page wrote is ever repeated in the host's log.
+fn method_name(method: &str) -> Option<String> {
+    let plain = method.len() <= 64
+        && method.split_once('.').is_some_and(|(domain, name)| {
+            !domain.is_empty()
+                && !name.is_empty()
+                && domain.chars().all(|c| c.is_ascii_alphanumeric())
+                && name.chars().all(|c| c.is_ascii_alphanumeric())
+        });
+    plain.then(|| method.to_owned())
+}
+
 /// A message past its bound, which began `head`: the call it answers fails, alone, and an
-/// answer to no call waiting, or an event of a kind nobody reads, is dropped. Any other event
-/// ends the connection: false.
+/// answer to no call waiting, or an event that may be dropped, is dropped. Any other event
+/// ends the connection, and why is said: false.
 fn too_large(shared: &Shared, head: &[u8]) -> bool {
     if let Some(id) = id_of(head) {
         let waiting = lock(&shared.pending).as_mut().and_then(|p| p.remove(&id));
@@ -276,14 +368,135 @@ fn too_large(shared: &Shared, head: &[u8]) -> bool {
         }
         return true;
     }
-    method_of(head).is_some_and(|method| DROPPED_WHEN_TOO_LARGE.contains(&method))
+    let method = method_of(head);
+    if method.is_some_and(droppable) {
+        return true;
+    }
+    close(
+        shared,
+        Closed::TooLarge {
+            method: method.and_then(method_name),
+            most: most_for(shared, head),
+        },
+    );
+    false
+}
+
+/// Keeps why the connection closed: the first reason given.
+fn close(shared: &Shared, why: Closed) {
+    lock(&shared.closed).get_or_insert(why);
+}
+
+/// The method a message that does not read names: an event's, or that of the call an answer
+/// was for.
+fn method_of_unread(shared: &Shared, message: &[u8]) -> Option<String> {
+    let head = &message[..message.len().min(HEAD_BYTES)];
+    if let Some(id) = id_of(head) {
+        return lock(&shared.pending)
+            .as_ref()
+            .and_then(|pending| pending.get(&id).map(|waiting| waiting.method.clone()));
+    }
+    method_of(head).and_then(method_name)
+}
+
+/// `message` as JSON, read as JSON allows (#2745): where the strict reader refuses it, again with
+/// every half of a surrogate pair and every byte that is not UTF-8 as U+FFFD ([`repaired`]).
+fn parsed(message: &[u8]) -> Option<serde_json::Map<String, Value>> {
+    match serde_json::from_slice::<Value>(message) {
+        Ok(Value::Object(message)) => return Some(message),
+        Ok(_) => return None,
+        Err(_) => {}
+    }
+    match serde_json::from_slice::<Value>(&repaired(message)) {
+        Ok(Value::Object(message)) => Some(message),
+        _ => None,
+    }
+}
+
+/// The four hex digits at `at` in `bytes`, as a UTF-16 unit.
+fn unit_at(bytes: &[u8], at: usize) -> Option<u16> {
+    let digits = std::str::from_utf8(bytes.get(at..at + 4)?).ok()?;
+    if !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    u16::from_str_radix(digits, 16).ok()
+}
+
+/// **`message` with every `\u` escape of half a surrogate pair that has no other half, and every
+/// byte that is not UTF-8, made U+FFFD** (#2745): as `String::from_utf16_lossy` reads a string
+/// holding such a half. A leading half followed by a trailing one is a whole pair and is kept; a
+/// backslash escaped by another (`\\ud83d`) is text, not an escape.
+pub(crate) fn repaired(message: &[u8]) -> Vec<u8> {
+    const REPLACEMENT: &[u8] = b"\\ufffd";
+    let leading = |unit: u16| (0xD800..0xDC00).contains(&unit);
+    let trailing = |unit: u16| (0xDC00..0xE000).contains(&unit);
+    let text = String::from_utf8_lossy(message);
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut in_string = false;
+    let mut at = 0;
+    while let Some(&byte) = bytes.get(at) {
+        if !in_string || byte != b'\\' {
+            if byte == b'"' {
+                in_string = !in_string;
+            }
+            out.push(byte);
+            at += 1;
+            continue;
+        }
+        // An escape inside a string.
+        let unit = (bytes.get(at + 1) == Some(&b'u'))
+            .then(|| unit_at(bytes, at + 2))
+            .flatten();
+        match unit {
+            Some(unit) if leading(unit) => {
+                let pair = bytes.get(at + 6..at + 8) == Some(br"\u".as_slice())
+                    && unit_at(bytes, at + 8).is_some_and(trailing);
+                if pair {
+                    out.extend_from_slice(&bytes[at..at + 12]);
+                    at += 12;
+                } else {
+                    out.extend_from_slice(REPLACEMENT);
+                    at += 6;
+                }
+            }
+            Some(unit) if trailing(unit) => {
+                out.extend_from_slice(REPLACEMENT);
+                at += 6;
+            }
+            _ => {
+                // Any other escape: the backslash and what it escapes, as they are.
+                out.push(byte);
+                if let Some(&escaped) = bytes.get(at + 1) {
+                    out.push(escaped);
+                }
+                at += 2;
+            }
+        }
+    }
+    out
 }
 
 /// Reads messages until the pipe ends or carries something that is not one, then fails every
-/// waiting call and refuses every later one.
+/// waiting call and refuses every later one, keeping why it stopped.
 fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender<Event>) {
     let mut frames = Frames::new(from_engine);
-    while let Some(Ok(frame)) = frames.next_message(|head| most_for(shared, head)) {
+    loop {
+        let frame = match frames.next_message(|head| most_for(shared, head)) {
+            None => {
+                close(shared, Closed::PipeEnded);
+                break;
+            }
+            Some(Err(why)) if why.kind() == io::ErrorKind::InvalidData => {
+                close(shared, Closed::NotDevTools { method: None });
+                break;
+            }
+            Some(Err(why)) => {
+                close(shared, Closed::ReadFailed(why.kind()));
+                break;
+            }
+            Some(Ok(frame)) => frame,
+        };
         let message = match frame {
             Frame::Whole(message) => message,
             Frame::Over { head } if too_large(shared, &head) => continue,
@@ -295,12 +508,18 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
             }
             break;
         }
-        let Ok(Value::Object(mut message)) = serde_json::from_slice::<Value>(&message) else {
+        let Some(mut read) = parsed(&message) else {
+            close(
+                shared,
+                Closed::NotDevTools {
+                    method: method_of_unread(shared, &message),
+                },
+            );
             break;
         };
-        match message.get("id").and_then(Value::as_u64) {
+        match read.get("id").and_then(Value::as_u64) {
             Some(id) => {
-                let answer = match message.remove("error") {
+                let answer = match read.remove("error") {
                     Some(error) => Err(CallError::Engine {
                         code: error
                             .get("code")
@@ -312,7 +531,7 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
                             .unwrap_or_default()
                             .to_owned(),
                     }),
-                    None => Ok(message.remove("result").unwrap_or(Value::Null)),
+                    None => Ok(read.remove("result").unwrap_or(Value::Null)),
                 };
                 let waiting = lock(&shared.pending).as_mut().and_then(|p| p.remove(&id));
                 if let Some(waiting) = waiting {
@@ -320,7 +539,8 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
                 }
             }
             None => {
-                let Some(Value::String(method)) = message.remove("method") else {
+                let Some(Value::String(method)) = read.remove("method") else {
+                    close(shared, Closed::NotDevTools { method: None });
                     break;
                 };
                 // What a page writes to its console nobody here reads: never queued, so it
@@ -330,8 +550,8 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
                 }
                 let event = Event {
                     method,
-                    params: message.remove("params").unwrap_or(Value::Null),
-                    session_id: message
+                    params: read.remove("params").unwrap_or(Value::Null),
+                    session_id: read
                         .remove("sessionId")
                         .and_then(|s| s.as_str().map(str::to_owned)),
                 };

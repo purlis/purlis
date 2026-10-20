@@ -69,7 +69,7 @@ pub mod standin;
 #[cfg(unix)]
 pub use browsers::{
     A_BROWSER_THE_PERSON_DRIVES, AN_ENDED_BROWSER, Browsers, FrameSink, INPUT_MISSED, LoginEnded,
-    NOT_DRIVING, NoBrowsers, NotActed, NotTaken, Screen, THUMBNAIL_EVERY,
+    NOT_DRIVING, NoBrowsers, NotActed, NotTaken, Screen, ScreenEnded, THUMBNAIL_EVERY,
 };
 #[cfg(unix)]
 pub use confining::{Askable, Confine, ConfinesNothing, Confining, Planned, Tell, ToConfine};

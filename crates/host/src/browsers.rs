@@ -49,6 +49,7 @@ use purlis_session_protocol::view::{Attachment, Source};
 use tokio::sync::watch;
 
 use crate::hosting::Running;
+use crate::recording::Stopped;
 
 /// Where a browser's engine hands each frame it makes: what it shows, and a JPEG image of it.
 pub type FrameSink = Arc<dyn Fn(Aim, Bytes) + Send + Sync>;
@@ -71,8 +72,8 @@ pub trait Screen: Send + Sync + 'static {
     fn process(&self) -> Option<u32>;
     /// End the engine and its whole process group; returns once they are gone.
     fn stop(&self);
-    /// Calls `tell` once, as the engine ends.
-    fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>);
+    /// Calls `tell` once, as the engine ends, with how it ended (#2745).
+    fn when_it_ends(&self, tell: Box<dyn FnOnce(ScreenEnded) + Send>);
     /// Carries out `act` under its own id `call_id` (#2013), as the agent's under the lease of
     /// `epoch` (#2014), and answers what the browser answered, or why it did not act: refused
     /// unless the agent holds that lease, and cut if the person takes the browser over before
@@ -98,6 +99,27 @@ pub trait Screen: Send + Sync + 'static {
     /// nothing, while the person drives. It waits on the page, so the host calls it off its
     /// runtime.
     fn log_in(&self, login: &LogIn) -> Result<LoginEnded, NotActed>;
+}
+
+/// **How a browser's engine ended** (#2745): its exit, and why, in words for the host's log that
+/// hold nothing a page showed: who ended it, and why its DevTools connection closed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreenEnded {
+    pub exit: Exit,
+    pub why: String,
+}
+
+/// **The host's line for a browser's end** (#2745): which browser, the host's own act that ended
+/// it where one did, and how its engine ended.
+pub(crate) fn ended_said(program: &str, stopped: Option<Stopped>, ended: &ScreenEnded) -> String {
+    let by_the_host = match stopped {
+        Some(Stopped::Closed) => "closed at its link's ask",
+        Some(Stopped::Operator) => "stopped at its link's ask",
+        Some(Stopped::Quit) => "stopped as the host ended",
+        Some(Stopped::Killed) => "stopped by the kill switch",
+        None => "not stopped by the host",
+    };
+    format!("browser {program} ended ({by_the_host}): {}", ended.why)
 }
 
 /// **How a login purlis performed ended** (#2016): who drives the browser now (the agent,
@@ -332,13 +354,21 @@ pub fn every(role: Option<ViewRole>, rate: Option<u32>) -> Duration {
 /// A browser, as the host runs it beside its terminals.
 pub(crate) struct Browser {
     hub: Arc<Hub>,
+    /// Its id in the host, and the host's own act that ends it, for the line its end leaves in
+    /// the host's log (#2745).
+    program: String,
+    stopping: Arc<Mutex<Option<Stopped>>>,
     /// Who drives it, and the epoch of their lease (#2014): the host's, so no link's end
     /// changes it.
     lease: Mutex<(Driver, u64)>,
 }
 
 impl Browser {
-    pub(crate) fn new(screen: Arc<dyn Screen>) -> Browser {
+    pub(crate) fn new(
+        screen: Arc<dyn Screen>,
+        program: impl Into<String>,
+        stopping: Arc<Mutex<Option<Stopped>>>,
+    ) -> Browser {
         let (latest, _) = watch::channel(Latest::Nothing);
         Browser {
             hub: Arc::new(Hub {
@@ -348,6 +378,8 @@ impl Browser {
                 next: AtomicU64::new(1),
             }),
             lease: Mutex::new((Driver::Agent, 0)),
+            program: program.into(),
+            stopping,
         }
     }
 
@@ -493,9 +525,15 @@ impl Running for Browser {
 
     fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>) {
         let hub = Arc::clone(&self.hub);
-        self.hub.screen.when_it_ends(Box::new(move |exit| {
+        let program = self.program.clone();
+        let stopping = Arc::clone(&self.stopping);
+        self.hub.screen.when_it_ends(Box::new(move |ended| {
             hub.ended();
-            tell(exit);
+            let stopped = *stopping
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            crate::say(&ended_said(&program, stopped, &ended));
+            tell(ended.exit);
         }));
     }
 }
