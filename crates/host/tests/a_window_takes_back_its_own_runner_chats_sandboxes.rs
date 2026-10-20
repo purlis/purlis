@@ -7,7 +7,9 @@
 //! confinements of the chats the window started there over the links before, whether the window
 //! made the confinement or the runner composed it for the window's start. It names it no
 //! confinement the runner's own window made, and none made or composed for another window's
-//! link. Here the runner's host is spoken to directly, each link of the desktop's admitted as
+//! link. A sandbox the window made on a link a renewal is replacing, before its chat started, is
+//! the window's on its new link too, and passes to it as the old link ends (#2624). Here the
+//! runner's host is spoken to directly, each link of the desktop's admitted as
 //! `remote-link`, so the links' ends are the test's to choose; the confinements and programs are
 //! stand-ins, so none of this needs a terminal.
 
@@ -503,4 +505,76 @@ async fn the_window_takes_nothing_back_by_a_relaying_hosts_word() {
         refused.refusal().map(|r| r.code.as_str()),
         Some(session::NOT_ALLOWED)
     );
+}
+
+/// A sandbox the window made on a link a renewal is replacing, before its chat started there:
+/// the window starts its chat on the new link (#2624). Another window's link cannot.
+#[tokio::test]
+async fn a_sandbox_made_on_a_link_a_renewal_replaces_starts_on_the_new_link() {
+    let runner = a_runner();
+    let (old, _old_events, _) = runner.relayed_for(WINDOW).await;
+    old.call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the link being renewed");
+    // The renewal: a new link for the same window, while the old one still answers.
+    let (new, _new_events, _) = runner.relayed_for(WINDOW).await;
+    let (another, _another_events, _) = runner.relayed_for(ANOTHER_WINDOW).await;
+
+    assert!(
+        another.start_program(running_in(MADE)).await.is_err(),
+        "another window's link starts nothing in it"
+    );
+    new.start_program(running_in(MADE))
+        .await
+        .expect("the window's chat starts in it on the new link");
+    drop(old);
+    assert_eq!(reach_of(&new, MADE).await, Ok(()));
+}
+
+/// A sandbox the window made on a link a renewal replaced, which ended before the chat started:
+/// it is carried over to the window's new link, not ended with the old one (#2624).
+#[tokio::test]
+async fn a_sandbox_made_on_a_link_a_renewal_replaced_is_carried_over_as_the_old_link_ends() {
+    let runner = a_runner();
+    let (old, old_events, _) = runner.relayed_for(WINDOW).await;
+    old.call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the link being renewed");
+    let (new, _new_events, _) = runner.relayed_for(WINDOW).await;
+
+    drop((old, old_events));
+    // However long the runner takes over the old link's end, the sandbox stays.
+    let _ = timeout(Duration::from_millis(300), async {
+        while !runner.confines.ended(MADE) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(!runner.confines.ended(MADE), "it ended with the old link");
+    assert_eq!(reach_of(&new, MADE).await, Ok(()));
+    new.start_program(running_in(MADE))
+        .await
+        .expect("the window's chat starts in it on the new link");
+}
+
+/// A sandbox a link made that names no window, or whose window has no other link, still ends
+/// with that link, as one nothing runs in yet does (#1999).
+#[tokio::test]
+async fn a_sandbox_whose_window_has_no_other_link_ends_with_its_link() {
+    let runner = a_runner();
+    let (only, only_events, _) = runner.relayed_for(WINDOW).await;
+    only.call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined");
+    let (another, _another_events, _) = runner.relayed_for(ANOTHER_WINDOW).await;
+
+    drop((only, only_events));
+    timeout(PATIENCE, async {
+        while !runner.confines.ended(MADE) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("it ends with its link");
+    assert!(another.start_program(running_in(MADE)).await.is_err());
 }
