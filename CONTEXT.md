@@ -1590,8 +1590,9 @@ A skill a persona or workspace keeps always loaded, so no router hides it.
 A person named on a skill whose review a teammate's change needs on an org plane.
 
 **Skill source**:
-A git repository of skills that skills can be installed from. An installed skill is a pinned
-copy, updated only through a reviewed change. It is not a **marketplace**.
+A git repository of skills, or a source an extension provides (SkillSource), that skills can be
+installed from. An installed skill is a pinned copy, updated only through a reviewed change
+(ADR 0100). It is not a **marketplace**.
 _Avoid_: marketplace, registry, feed
 
 **Marketplace**:
