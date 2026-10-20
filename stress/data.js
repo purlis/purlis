@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792495912976,
+  "lastUpdate": 1792495927629,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7864,6 +7864,42 @@ window.BENCHMARK_DATA = {
             "value": 665.7,
             "unit": "MB",
             "extra": "median of 6 samples: 622.8, 646.9, 659, 672.4, 672.9, 761.1 MB; window 403.9 MB, session host 261.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "db20b491a9ed0ad8b927d998bf63bfbd7b737ecf",
+          "message": "Browsers: a chat's browser reads what JSON allows and says how it ended (#2745) (#2748)\n\n* Browsers: a page whose script cut an emoji in two is read through a real engine (#2745)\n\nA fixture page whose script cuts an emoji at a fixed length, as a blog's\nlisting does, leaving half of a surrogate pair in its text, title and\nconsole. The engine writes that half over DevTools as a lone \\ud83d\nescape. This test runs it through a real Chrome.\n\nRefs #2745\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Move the app library's tests into tests.rs, as a move alone\n\nNo test's name or body changes; rustfmt rewraps two lines the shallower\nindent lets fit.\n\nRefs #2745\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the connection reads what JSON allows and a browser says how its engine ended (#2745)\n\n- A lone half of a surrogate pair, which the engine writes for a JavaScript\n  string an emoji was cut in, and any byte that is not UTF-8, read as\n  U+FFFD. A message that still does not read ends the connection.\n- A network event past the 64 MiB bound is dropped, as a console event is.\n- The connection keeps why it closed (`Closed`), naming a message by its\n  DevTools method alone.\n- When the connection ends, the driver ends the engine before anyone is\n  told: two seconds to end by itself where its pipe closed, at once where\n  a message closed it. Whoever waits is told who ended it, its exit code\n  or signal, and why the connection closed (`Ending`).\n- A launch may write the engine's log outside its data folder.\n\nRefs #2745\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: every browser's end is logged and its engine's log kept (#2745)\n\n- The session host writes a line for each browser's end into the\n  window's log: the host's own act that ended it, how its engine ended,\n  why its connection closed, and where its engine's log is.\n- The window writes a line for each chat's browser it ends, and why, and\n  one for each end it is told of, with the engine's exit. The session\n  host's warnings from the core reach the window's log.\n- Each engine writes its log to <data>/browsers/<program>.engine.log,\n  beside its folder, so the folder's removal leaves it; the newest 20\n  are kept.\n- The program's end carries the engine's exit.\n\nCloses #2745\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a browser whose engine a signal ended holds no engine and refuses an act (#2745)\n\nThe listing of pages answers from what the driver kept, so the test asks\nfor what the end changes: no engine held, and an act refused.\n\nRefs #2745\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the cut-emoji test checks what the page reads, not when the engine retitles it (#2745)\n\nChrome tells of a script's new title by an event that comes, or does not,\nsome time after the load: the test reads the page and lists the pages.\n\nRefs #2745\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a dropped browser ends its engine, and a stop waits for an end under way (#2745)\n\n- The engine is held behind a small trait, and a browser dropped unstopped\n  stops it: its event reader keeps what the engine lives in until the\n  pipe closes, so nothing else would.\n- A stop made while the engine ends by itself returns once whoever waits\n  has been told, so a quit waits for a kept login's write-back.\n- An engine's log is made 0600, and set so where an earlier one was\n  looser.\n- The engine-log sweep strips the suffix once.\n\nRefs #2745\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T14:49:43+04:00",
+          "tree_id": "bc21fb9c376e86c1140ecf5ca9404ec8758d9ac0",
+          "url": "https://github.com/purlis/purlis/commit/db20b491a9ed0ad8b927d998bf63bfbd7b737ecf"
+        },
+        "date": 1792495926366,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1530.6,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1345.1, 1530.6, 1628.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 646.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 617.2, 638.8, 645.7, 648, 648.3, 720.3 MB; window 392.7 MB, session host 254.1 MB"
           }
         ]
       }
