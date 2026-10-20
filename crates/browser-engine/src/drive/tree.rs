@@ -126,7 +126,8 @@ pub(crate) struct Snapshot {
     lines: Vec<Line>,
     /// What the blanked elements held when this was built, to keep out of every later answer.
     blanked_text: Kept,
-    /// Every element the engine says has the focus.
+    /// What has the focus: every element the engine says has it, a document only where nothing
+    /// in it does, each once.
     focused: Vec<NodeKey>,
     /// Every element whose name or value held a text kept out: where the page shows it.
     echoes: Vec<NodeKey>,
@@ -396,6 +397,7 @@ pub(crate) fn build_kept(
         lines: Vec::new(),
         blanked_text: Kept::default(),
         focused: Vec::new(),
+        focused_documents: Vec::new(),
         held: HashMap::new(),
     };
     let tree = FrameNodes::new(&main.nodes);
@@ -447,7 +449,13 @@ pub(crate) fn build_kept(
         title,
         lines,
         blanked_text,
-        focused: builder.focused,
+        // A real engine says a document has the focus while a field in it has it too (#2294):
+        // the field is what has it.
+        focused: if builder.focused.is_empty() {
+            builder.focused_documents
+        } else {
+            builder.focused
+        },
         echoes,
         groups,
         out_of_view: HashSet::new(),
@@ -1046,6 +1054,8 @@ struct Builder<'f> {
     /// of every other line.
     blanked_text: Kept,
     focused: Vec<NodeKey>,
+    /// The documents the engine says have the focus.
+    focused_documents: Vec<NodeKey>,
     /// What each blanked element holds as its value, to join a group of boxes by.
     held: HashMap<NodeKey, String>,
 }
@@ -1146,7 +1156,14 @@ impl Builder<'_> {
         if let Some(key) = &key
             && is_true(property(node, "focused"))
         {
-            self.focused.push(key.clone());
+            let focused = if role == "RootWebArea" {
+                &mut self.focused_documents
+            } else {
+                &mut self.focused
+            };
+            if !focused.contains(key) {
+                focused.push(key.clone());
+            }
         }
         // A blanked element is blanked whatever the engine says of it, ignored or a wrapper.
         if let Some(key) = &key

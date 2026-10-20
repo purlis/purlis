@@ -1180,7 +1180,7 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
         read.text
     );
     tools.call("browser_screenshot", json!({}));
-    tools.call("browser_find", json!({ "text": THEIR_PASSWORD }));
+    tools.call("browser_find", json!({ "text": "Password" }));
     let show = ref_on(
         &tools
             .done("browser_find", json!({ "text": "Show password" }))
@@ -1189,7 +1189,7 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
     );
     tools.done("browser_click", json!({ "target": show, "changes": true }));
     tools.done("browser_snapshot", json!({}));
-    tools.call("browser_find", json!({ "text": THEIR_NAME }));
+    tools.call("browser_find", json!({ "text": "User name" }));
     tools.call("browser_screenshot", json!({}));
 
     // The page that echoes what is typed.
@@ -1224,7 +1224,7 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
         .hand_back(&program)
         .expect("they hand it back");
     tools.done("browser_snapshot", json!({}));
-    tools.call("browser_find", json!({ "text": THEIR_ECHO }));
+    tools.call("browser_find", json!({ "text": "Say something" }));
     tools.call("browser_screenshot", json!({}));
 
     for said in &tools.told {

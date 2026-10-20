@@ -363,6 +363,47 @@ fn the_focused_element_is_known_so_the_field_typed_into_can_be_blanked() {
     assert_eq!(snapshot.focused(), &[key("MAIN-FRAME", 20)]);
 }
 
+/// A page whose document and one of its fields both say they have the focus, as a real engine
+/// says once the agent has clicked the field (#2294): the field is what has the focus, and a
+/// node the engine names twice is one.
+#[test]
+fn a_focused_field_is_what_has_the_focus_though_its_document_says_it_has_it_too() {
+    let focused = |mut node: Value| {
+        node["properties"] = json!([{ "name": "focused", "value": { "type": "booleanOrUndefined", "value": true } }]);
+        node
+    };
+    let page = |nodes: Vec<Value>| {
+        vec![FrameAx {
+            id: "CODE-FRAME".into(),
+            name: String::new(),
+            url: "http://fixture.test/login.html".into(),
+            parent: None,
+            owner: None,
+            nodes: Value::Array(nodes),
+        }]
+    };
+    let field = page(vec![
+        focused(ax(1, "RootWebArea", "Sign in", None, &[2, 3])),
+        focused(ax(2, "textbox", "User name", None, &[])),
+        ax(3, "textbox", "Password", None, &[]),
+    ]);
+    assert_eq!(
+        build(&field, &HashSet::new(), &[]).focused(),
+        &[key("CODE-FRAME", 2)]
+    );
+    // The document alone, named twice, is the one thing with the focus.
+    let mut twice = ax(4, "RootWebArea", "Sign in", None, &[]);
+    twice["backendDOMNodeId"] = json!(1);
+    let document = page(vec![
+        focused(ax(1, "RootWebArea", "Sign in", None, &[4])),
+        focused(twice),
+    ]);
+    assert_eq!(
+        build(&document, &HashSet::new(), &[]).focused(),
+        &[key("CODE-FRAME", 1)]
+    );
+}
+
 fn find_pay(frames: &[FrameAx], blanked: &[&str]) -> String {
     build(frames, &HashSet::new(), blanked)
         .find(
