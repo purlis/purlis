@@ -1360,8 +1360,10 @@ pub struct ThemeDraftAsk {
 }
 
 /// **The theme specimens a chat asks for** ([`Ask::ThemePreview`], #2330): one, or two side by
-/// side, each a theme by its id and an appearance. Nothing else travels: no workspace, no path,
-/// nothing of the window's.
+/// side, each a theme by its id, an appearance (high contrast included, #2709) and option values
+/// (#2536). Nothing else travels: no workspace, no path, nothing of the window's. Where the chat
+/// works, and so what an id names, is the app's own record of the chat, and the app holds the
+/// line to the tool's bounds again ([`crate::themepreview::checked`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ThemePreviewAsk {
     /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.

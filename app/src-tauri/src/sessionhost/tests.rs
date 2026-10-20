@@ -418,7 +418,7 @@ fn a_window_running_its_chats_puts_them_back_once_its_own_host_serves_after_a_fa
     let (_serving, link) = crate::hostedsessions::tests::in_memory(hosting, &runtime);
     host.connection.ready(
         link,
-        Arc::new(|_| Err("one link is enough here".to_owned())),
+        Arc::new(|_, _| Err("one link is enough here".to_owned())),
     );
 
     assert_eq!(asked.join().unwrap(), Ok(()));

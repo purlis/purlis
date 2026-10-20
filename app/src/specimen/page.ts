@@ -16,8 +16,31 @@ export const READY = "purlis-specimen-drawn";
 /** The title the page sets when it could not draw itself, before why. */
 export const FAILED = "purlis-specimen-failed: ";
 
-/** What the page is handed: the theme, and the size it lays itself out at, in CSS pixels. */
-export type Given = { theme: Theme; width: number; height: number };
+/**
+ * What the page is handed: the theme, the size it lays itself out at in CSS pixels, the colour of
+ * the workspace it is tinted with as the window is there (`null` for none), and the bytes of each
+ * face of the theme's fonts, as base64 by the face's digest (#2536): the page may ask purlis for
+ * nothing, so its faces are handed to it.
+ */
+export type Given = {
+  theme: Theme;
+  width: number;
+  height: number;
+  tint?: string | null;
+  faces?: Record<string, string>;
+};
+
+/** The face of digest `asset` that the page was handed, as bytes; `undefined` for one it was
+ *  not, which draws the family list's fallback, as the window does for a face purlis would not
+ *  serve. */
+export function handedFace(handed: Given, asset: string): ArrayBuffer | undefined {
+  const text = handed.faces?.[asset];
+  if (text === undefined) return undefined;
+  const raw = atob(text);
+  const bytes = new Uint8Array(raw.length);
+  for (let at = 0; at < raw.length; at++) bytes[at] = raw.charCodeAt(at);
+  return bytes.buffer;
+}
 
 export function given(): Given {
   const handed = (globalThis as Record<string, unknown>)[GIVEN] as Partial<Given> | undefined;
