@@ -25,7 +25,7 @@ use workflow::{Job, release_jobs};
 /// when the run publishes, so it names the environment outright. And `x && 'release' || ''`,
 /// never `x && '' || 'release'`: an empty string is falsy in a workflow expression, so the
 /// second form is `release` every time.
-const EXPECTED: [(&str, &str); 3] = [
+const EXPECTED: [(&str, &str); 4] = [
     (
         "plan",
         "${{ (github.event_name == 'push' || github.event_name == 'workflow_run') && 'release' || '' }}",
@@ -34,6 +34,8 @@ const EXPECTED: [(&str, &str); 3] = [
         "build",
         "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}",
     ),
+    // Signs the runner image's line with the updater's key (#2749).
+    ("runner-image-signature", "release"),
     ("publish", "release"),
 ];
 

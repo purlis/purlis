@@ -5663,6 +5663,8 @@ dependencies = [
  "log",
  "memchr",
  "memory-stats",
+ "minisign",
+ "minisign-verify",
  "nix 0.31.3",
  "nucleo-matcher",
  "percent-encoding",

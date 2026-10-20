@@ -28,6 +28,10 @@ futures = "0.3"
 # workflow and About Charter use (#352), so the three cannot disagree about a version.
 changelog.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# The runner image the update manifest names for this version is signed with the updater's own
+# key (#2749), and checked as the updater checks a bundle: the same verifier and version
+# tauri-plugin-updater already brings, so no crate is added.
+minisign-verify = "0.3"
 # `home_dir`, for the last rung of the config-home ladder `machine` shares with
 # `charter/report.py:consent_path`. Already in this workspace's lockfile — Tauri depends on
 # it — so this adds no crate to the tree and no licence to review.
@@ -194,6 +198,9 @@ fenced = []
 test-support = []
 
 [dev-dependencies]
+# Signs a runner image's line as the release does, for the check of it (#2749): the version
+# release-manifest's tests already use.
+minisign = "0.10"
 # This crate, fenced, so purlis-core's OWN tests run under the guard as well. A
 # dev-dependency on itself is how a crate turns a feature on for its tests and only its
 # tests; without it the fence would be a rule every crate but this one had to keep.

@@ -43,8 +43,19 @@ pub const PREFIX: &str = "purlis-runner-";
 /// Where `purlis` is in a runner image (`docs/runner-image.md`).
 pub const PURLIS: &str = "/usr/local/bin/purlis";
 
-/// The longest runner name.
-const MOST_NAME: usize = 40;
+/// The longest runner name: a pool's longest, and the dash and eight hex digits a runner made
+/// beside it after an update adds ([`successor_name`], #2749).
+const MOST_NAME: usize = 49;
+
+/// **purlis's own runner image** (`docs/runner-image.md`): the one image a pool is moved along
+/// with the desktop's version after an update (#2749). A team's own image never is.
+pub const PURLIS_RUNNER_IMAGE: &str = "ghcr.io/purlis/purlis-runner";
+
+/// **The name of the runner made beside `pool`'s after an update to `image`** (#2749): the
+/// pool's name, a dash and the first eight hex digits of the image's digest.
+pub fn successor_name(pool: &str, image: &Image) -> String {
+    format!("{pool}-{}", &image.digest()[..8])
+}
 
 /// Why a runner container was not made, checked or linked, in words a person reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +104,40 @@ impl Image {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Its name, without its tag or digest: `ghcr.io/purlis/purlis-runner`.
+    pub fn name(&self) -> &str {
+        let named = self
+            .0
+            .rsplit_once('@')
+            .map_or(self.0.as_str(), |(name, _)| name);
+        // A tag follows the last `:` after the last `/`; a registry's port comes before it.
+        match named.rsplit_once(':') {
+            Some((name, tag)) if !tag.contains('/') => name,
+            _ => named,
+        }
+    }
+
+    /// Its digest's 64 hex digits.
+    pub fn digest(&self) -> &str {
+        self.0
+            .rsplit_once("@sha256:")
+            .map_or("", |(_, digest)| digest)
+    }
+
+    /// **Whether it is purlis's own runner image** ([`PURLIS_RUNNER_IMAGE`], #2749), by name.
+    pub fn is_purlis_own(&self) -> bool {
+        self.name() == PURLIS_RUNNER_IMAGE
+    }
+}
+
+/// **The version `purlis --version` says in `line`** (#2749): `purlis <version> (<profile>
+/// profile)`, or nothing where the line is not one.
+pub fn version_in(line: &str) -> Option<&str> {
+    let rest = line.trim().strip_prefix("purlis ")?;
+    let (version, profile) = rest.split_once(' ')?;
+    (profile.starts_with('(') && profile.ends_with(" profile)") && !version.is_empty())
+        .then_some(version)
 }
 
 /// The user a runner container runs as, by number: never root's user or group.
@@ -244,7 +289,7 @@ pub struct Runner {
 }
 
 impl Runner {
-    /// A runner called `name` (lower-case letters, digits and dashes, at most 40, starting and
+    /// A runner called `name` (lower-case letters, digits and dashes, at most 49, starting and
     /// ending with a letter or digit), of `image`, run as `user`, whose home is `home` (the
     /// image's `HOME`: an absolute path of plain names).
     pub fn new(name: &str, image: Image, user: User, home: &str) -> Result<Runner, Refused> {
@@ -393,6 +438,11 @@ impl Made {
     /// desktop's device id and key on its standard input and answers the runner's.
     pub fn pair_args(&self) -> Vec<String> {
         self.exec(&["bridge", "--pair"])
+    }
+
+    /// `docker`'s arguments that ask the runner's `purlis` its version (#2749).
+    pub fn version_args(&self) -> Vec<String> {
+        self.exec(&["--version"])
     }
 
     fn exec(&self, words: &[&str]) -> Vec<String> {
@@ -990,6 +1040,20 @@ impl Docker {
         let line = format!("{}\n", crate::runnerlink::to_line(desktop));
         let out = self.run(&made.pair_args(), Some(&line), crate::runnerlink::MOST_LINE)?;
         crate::runnerlink::from_line(&out).map_err(refused)
+    }
+
+    /// **The version `made`'s runner runs** (#2749), as its `purlis --version` says it, once
+    /// its container passes the check.
+    pub fn version_of(&self, made: &Made) -> Result<String, Refused> {
+        self.check(made)?;
+        let out = self.run(&made.version_args(), None, crate::runnerlink::MOST_LINE)?;
+        version_in(&out).map(str::to_owned).ok_or_else(|| {
+            refused(format!(
+                "runner {}'s purlis did not say its version as purlis does: {:?}",
+                made.runner.name(),
+                out.trim()
+            ))
+        })
     }
 
     /// Remove `made`'s container and its home's volume, whatever state they are in.
