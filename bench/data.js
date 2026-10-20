@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792505434064,
+  "lastUpdate": 1792507355364,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19278,6 +19278,48 @@ window.BENCHMARK_DATA = {
             "value": 104.2682575,
             "unit": "ms",
             "extra": "median of 5 runs: 102.581, 102.664, 104.268, 104.508, 107.426 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b4c18e5046bff5e57e2fd91e7661b9d8d79c014a",
+          "message": "Theme check: hard-floor findings name a pair's second layer (#2802)\n\n* Theme check: hard-floor findings name a pair's second layer (#2756)\n\nhard::Broken carries `beneath` beside `under`. Its line names the pair\nwith each layer under it, through check::laid, the naming the warnings\nuse too, and the hard_floors JSON has the optional key `beneath`.\n\nAn engine test measures a test-only pair over two layers through\nbroken_among, the seam broken runs over PAIRS. A CLI test pins the\nhard_floors entry on a plain ground.\n\nPart of #2313.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme check: fold the hard floors' no-layer check into the glare test (#2756)\n\nThe CLI's glare test now asserts its hard_floors entry has no `beneath`,\nin place of a separate test that pinned the entry's exact keys.\n\nPart of #2313.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T18:41:04+04:00",
+          "tree_id": "df12eb07f7b4896b6e3c155fa00777fed540f74c",
+          "url": "https://github.com/purlis/purlis/commit/b4c18e5046bff5e57e2fd91e7661b9d8d79c014a"
+        },
+        "date": 1792507353877,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4566785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.437, 0.452, 0.457, 0.460, 0.470 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.523448000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.506, 16.513, 16.523, 16.555, 16.562 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.529248,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.058, 101.500, 101.529, 102.108, 102.811 ms"
           }
         ]
       }
