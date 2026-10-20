@@ -3052,6 +3052,9 @@ fn refuse_beside_the_old_app() {
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
     purlis_host::serve_for_the_window_if_asked(sessionhost::place, |place| {
+        // The core's warnings raised in this host go to its standard error, which the window
+        // reads into its own log (#2745): this process installs no log of its own.
+        purlis_core::applog::install_for_a_terminal();
         // The event log, opened as the host first holds a project (#2003).
         let kept = purlis_core::hookchannel::EventLog::on_this_machine();
         let hosting = purlis_host::Hosting::kept(

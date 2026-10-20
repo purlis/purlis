@@ -36,7 +36,11 @@
 //! - **Its acts** are the driver's own calls ([`call_of`]), answered in the protocol's words
 //!   ([`browsed`]), a screenshot made to fit the control lane ([`MOST_SCREENSHOT_BYTES`]).
 //! - **Its data folder** is the one the host gives it, under `<data>/browsers`, fresh: the host
-//!   removes it once the browser has ended.
+//!   removes it once the browser has ended. **Its engine's log** is written beside it,
+//!   `<data>/browsers/<program>.engine.log`, and outlives it: the newest [`ENGINE_LOGS_KEPT`]
+//!   are kept, swept as a browser starts ([`engine_log_of`], #2745).
+//! - **Its end** is told with who ended it, its engine's exit and why its DevTools connection
+//!   closed, and where its engine's log is ([`ended_of`], #2745): the host says it in its log.
 //! - **Its logins** (#2016): a declared login is performed by the driver itself
 //!   ([`drive::Browser::log_in`]), on the address the window hands it with the vault's values.
 //!   The browser's reach proxy and judge are told first: what purlis sends to the login's site
@@ -54,6 +58,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{self, Browser, CallId, Limits, PageId, Ref};
+use purlis_browser_engine::ending::{Ending, EngineExit};
 use purlis_browser_engine::install::{
     Age, EngineSettings, Engines, Fetch, Hop, Https, Manifest, Platform, Ready, Refused,
 };
@@ -62,7 +67,7 @@ use purlis_browser_engine::process::{Engine, Keeper};
 use purlis_browser_engine::sigstore::Sigstore;
 use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
 use purlis_host::protocol::session::Exit;
-use purlis_host::{Browsers, FrameSink, LoginEnded, NotActed, NotTaken, Screen};
+use purlis_host::{Browsers, FrameSink, LoginEnded, NotActed, NotTaken, Screen, ScreenEnded};
 
 use crate::sandbox::browser_reach::{Bound, Lane, NewSites, ReachProxy, Site};
 use crate::sandbox::reach::{Reach, Written};
@@ -93,6 +98,64 @@ pub fn engines_in(data: &Path) -> PathBuf {
 /// Where each browser's data folder is made: `<data>/browsers`.
 pub fn browsers_in(data: &Path) -> PathBuf {
     data.join(crate::datahome::BROWSERS)
+}
+
+/// How many engines' logs are kept under `<data>/browsers` (#2745): the newest, whatever
+/// browsers they were of.
+pub const ENGINE_LOGS_KEPT: usize = 20;
+
+/// The suffix of an engine's log beside its browser's folder.
+const ENGINE_LOG: &str = ".engine.log";
+
+/// **Where the engine of the browser whose folder is `folder` writes its log** (#2745):
+/// `<program>.engine.log` beside the folder, so the folder's removal as the browser ends leaves
+/// it. A program's id holds no `.`, so no browser's folder is ever named so.
+pub fn engine_log_of(folder: &Path) -> PathBuf {
+    let mut name = folder.file_name().unwrap_or_default().to_os_string();
+    name.push(ENGINE_LOG);
+    folder.with_file_name(name)
+}
+
+/// **Keeps the newest `kept` engines' logs in `folders`** (#2745), removing older ones whose
+/// browser's folder is gone: a running browser's log is never removed.
+pub fn sweep_engine_logs(folders: &Path, kept: usize) {
+    let Ok(entries) = std::fs::read_dir(folders) else {
+        return;
+    };
+    let mut logs: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(ENGINE_LOG))
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .map(|entry| {
+            let modified = entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            (modified, entry.path())
+        })
+        .collect();
+    logs.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    for (_, log) in logs.into_iter().skip(kept) {
+        let name = log.file_name().unwrap_or_default().to_string_lossy();
+        let folder = folders.join(name.trim_end_matches(ENGINE_LOG));
+        if !folder.exists() {
+            let _ = std::fs::remove_file(&log);
+        }
+    }
+}
+
+/// **A browser's end as the host is told it** (#2745): its engine's exit in the protocol's words,
+/// and why, with where its engine's log is. An exit nobody saw is said as none.
+pub fn ended_of(ending: &Ending, log: &Path) -> ScreenEnded {
+    let exit = match &ending.exit {
+        Some(EngineExit::Code(code)) => Exit::Code(code.unsigned_abs()),
+        Some(EngineExit::Signal(signal)) => Exit::Signal(signal.clone()),
+        None => Exit::Code(0),
+    };
+    ScreenEnded {
+        exit,
+        why: format!("{ending}; its engine's log is {}", log.display()),
+    }
 }
 
 /// `hosting`, starting its browsers on the pinned engine with this binary as their keeper, and
@@ -308,7 +371,11 @@ impl Browsers for EngineBrowsers {
             sites.bound_to(site);
             keeping.open(kept)?;
         }
-        let launch = Launch::new(&ready, data, launch::ReachProxy(proxy.address()));
+        // Its engine's log beside its folder, kept past its end (#2745).
+        sweep_engine_logs(&browsers_in(&home), ENGINE_LOGS_KEPT);
+        let log = engine_log_of(data);
+        let launch =
+            Launch::new(&ready, data, launch::ReachProxy(proxy.address())).logging_to(&log);
         let engine =
             Engine::start(&launch, &Self::keeper(program)).map_err(|why| why.to_string())?;
         let browser = match &sites {
@@ -325,6 +392,7 @@ impl Browsers for EngineBrowsers {
         .map_err(|why| why.to_string())?;
         Ok(Arc::new(EngineScreen {
             process: browser.process(),
+            log,
             fresh: Arc::clone(&keeping.fresh),
             keeping: Arc::new(Mutex::new(keeping)),
             sites,
@@ -931,6 +999,8 @@ struct Held {
 /// One browser on its engine, as the host drives it.
 struct EngineScreen {
     process: Option<u32>,
+    /// Where its engine writes its log (#2745).
+    log: PathBuf,
     /// What it keeps of a kept login (#2021): written back as its engine ends.
     keeping: Arc<Mutex<Keeping>>,
     /// Whether it has done nothing yet (#2693): its keeping's, marked without its lock.
@@ -1094,26 +1164,34 @@ impl Screen for EngineScreen {
         browser.size_to(width, height).map_err(not_taken)
     }
 
-    /// Told once the engine has ended, however it ended; at once when it was stopped already.
-    fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>) {
+    /// Told once the engine has ended, however it ended, with how (#2745); at once when it was
+    /// stopped already.
+    fn when_it_ends(&self, tell: Box<dyn FnOnce(ScreenEnded) + Send>) {
         // A kept login is written back once its engine has ended and before the host removes
         // the browser's folder (#2021).
         let keeping = Arc::clone(&self.keeping);
-        let tell: Box<dyn FnOnce(Exit) + Send> = Box::new(move |exit| {
+        let tell: Box<dyn FnOnce(ScreenEnded) + Send> = Box::new(move |ended| {
             keeping
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .write_back();
-            tell(exit);
+            tell(ended);
         });
+        let log = self.log.clone();
         let held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         match held.as_ref() {
             Some(Held { browser, .. }) => {
-                browser.when_it_ends(Box::new(move || tell(Exit::Code(0))));
+                browser.when_it_ends(Box::new(move |ending| tell(ended_of(&ending, &log))));
             }
             None => {
                 drop(held);
-                tell(Exit::Code(0));
+                tell(ScreenEnded {
+                    exit: Exit::Code(0),
+                    why: format!(
+                        "purlis had stopped its engine already; its engine's log is {}",
+                        log.display()
+                    ),
+                });
             }
         }
     }

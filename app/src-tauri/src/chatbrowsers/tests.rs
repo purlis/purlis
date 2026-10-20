@@ -2588,3 +2588,26 @@ fn everyone_in_the_project_is_refused_where_the_projects_sandbox_is_not_on() {
     assert!(super::sites_grantable(off.path(), &sites, Level::You).is_ok());
     assert!(super::sites_grantable(on.path(), &sites, Level::Project).is_ok());
 }
+
+#[test]
+fn the_window_says_why_it_ends_each_chats_browser() {
+    let browser = super::ChatBrowser {
+        session: 7,
+        name: "b1".into(),
+        program: "01K2".into(),
+        ..super::ChatBrowser::default()
+    };
+    assert_eq!(
+        super::ending_said(&browser, super::EndWhy::Unused { minutes: 15 }),
+        "purlis: chat 7's browser b1 (01K2) is ended by the window: it went unused for 15 minutes"
+    );
+    for (why, said) in [
+        (super::EndWhy::ClosedByItsChat, "its chat closed it"),
+        (super::EndWhy::ChatEnded, "its chat ended"),
+        (super::EndWhy::ReachNarrowed, "was narrowed"),
+        (super::EndWhy::StopAll, "stopped every browser"),
+        (super::EndWhy::NotHandedOver, "handed to"),
+    ] {
+        assert!(super::ending_said(&browser, why).contains(said), "{why:?}");
+    }
+}

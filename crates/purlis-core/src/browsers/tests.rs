@@ -840,3 +840,80 @@ fn a_browsers_folder_left_looser_by_an_earlier_version_is_tightened_and_a_link_i
     let mode = std::fs::metadata(&elsewhere).unwrap().permissions().mode();
     assert_ne!(mode & 0o777, 0o700, "a link's target is left as it was");
 }
+
+#[test]
+fn a_browsers_engine_log_is_beside_its_folder_so_the_folders_removal_leaves_it() {
+    let folder = Path::new("/home/me/.local/share/purlis/browsers/01K2ABC");
+    assert_eq!(
+        super::engine_log_of(folder),
+        Path::new("/home/me/.local/share/purlis/browsers/01K2ABC.engine.log")
+    );
+}
+
+#[test]
+fn the_newest_engine_logs_are_kept_and_a_running_browsers_never_goes() {
+    let folders = tempfile::tempdir().unwrap();
+    let at = |n: u64| std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000 + n);
+    for n in 0..5u64 {
+        let log = folders.path().join(format!("b{n}.engine.log"));
+        let file = std::fs::File::create(&log).unwrap();
+        file.set_modified(at(n)).unwrap();
+    }
+    // The oldest is of a browser still running: its folder is there.
+    std::fs::create_dir(folders.path().join("b0")).unwrap();
+    // Nothing else in the folder is a log.
+    std::fs::write(folders.path().join("b9.kept"), "").unwrap();
+
+    super::sweep_engine_logs(folders.path(), 2);
+
+    let mut left: Vec<String> = std::fs::read_dir(folders.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        [
+            "b0",
+            "b0.engine.log",
+            "b3.engine.log",
+            "b4.engine.log",
+            "b9.kept"
+        ]
+    );
+}
+
+#[test]
+fn a_browsers_end_is_told_with_its_exit_why_and_where_its_engines_log_is() {
+    use purlis_browser_engine::cdp::Closed;
+    use purlis_browser_engine::ending::{EndedBy, Ending, EngineExit};
+    use purlis_host::protocol::session::Exit;
+
+    let log = Path::new("/data/browsers/01K2.engine.log");
+    let ended = super::ended_of(
+        &Ending {
+            by: EndedBy::LostConnection,
+            exit: Some(EngineExit::Signal("SIGKILL".into())),
+            closed: Some(Closed::NotDevTools {
+                method: Some("Target.targetInfoChanged".into()),
+            }),
+        },
+        log,
+    );
+    assert_eq!(ended.exit, Exit::Signal("SIGKILL".into()));
+    assert_eq!(
+        ended.why,
+        "purlis ended its engine (signal SIGKILL) because its DevTools connection closed: the \
+         engine sent a message (Target.targetInfoChanged) that does not read as DevTools JSON; \
+         its engine's log is /data/browsers/01K2.engine.log"
+    );
+    let stopped = super::ended_of(
+        &Ending {
+            by: EndedBy::Stopped,
+            exit: Some(EngineExit::Code(0)),
+            closed: None,
+        },
+        log,
+    );
+    assert_eq!(stopped.exit, Exit::Code(0));
+}
