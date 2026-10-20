@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792489164142,
+  "lastUpdate": 1792490699057,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18942,6 +18942,48 @@ window.BENCHMARK_DATA = {
             "value": 104.66992199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 103.780, 104.157, 104.670, 105.314, 107.127 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "58b60313f0fa2ddff2265dfa109f25f63a1d4b44",
+          "message": "The theme specimen draws any theme exactly as the window would (#2536) (#2742)\n\ntheme_preview names a theme by its id (a built-in, a theme folder by name\nor level, draft:<folder>, or an extension's theme) with option values and\nan appearance, high contrast included, looked up where the asking chat\nworks by the app's own record of it. The engine resolves it as the window\nresolves the same choice there, through theme::draw. The page is tinted\nwith the workspace's colour by the window's own code and handed the\ntheme's own font faces, waited on before layout, so the terminal draws in\nthe theme's terminal font. Gallery cards are handed their fonts too.\n\nOn the painter's turns (#2740), a chat's turn is taken before the lookup\nand holds it, the lookup and the pictures, within a time the tool waits\nfor; one chat is drawn at most once a gap so Settings › Theme is drawn\nbetween. The app holds the tool's bounds again, a refusal says only what\nwas said of the theme named with no path, and the workspace's colour is\nread bounded and non-blocking. ADR 0064 records the operator's ruling that\nthe tool stays pre-allowed with this reach.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T14:02:01+04:00",
+          "tree_id": "d3947cdee4ecd98b6ca2b819491e887ba3f2b824",
+          "url": "https://github.com/purlis/purlis/commit/58b60313f0fa2ddff2265dfa109f25f63a1d4b44"
+        },
+        "date": 1792490697626,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4304605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.412, 0.421, 0.430, 0.440, 0.448 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.662065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.153, 16.170, 16.662, 16.755, 16.802 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.19979000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.629, 101.009, 101.200, 101.695, 101.808 ms"
           }
         ]
       }
