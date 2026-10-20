@@ -2,7 +2,7 @@
 
 **Accepted 2026-10-20**, from the operator's spec #2762 (M65, Skill studio), whose decisions were
 grilled with the operator on 2026-10-20 (decisions 19, 53, 54, 56, 62 and 64); ticket #2778
-(SK-15). It builds on ADR 0099 (#2829: a chat's skill set, and a reason for every skill left out
+(SK-15). It builds on [ADR 0099](0099-a-skill-lives-at-a-level-a-project-skill-reaches-a-workspace-by-grant-and-the-narrowest-copy-wins.md) (a chat's skill set, and a reason for every skill left out
 of it), ADR 0101 (the SkillRouter capability) and the fallback route's amendment to
 [ADR 0063](0063-every-harness-a-chat-runs-on-is-handed-charters-skills-by-its-own-route.md)
 (`skill_find` and `skill_load`).
