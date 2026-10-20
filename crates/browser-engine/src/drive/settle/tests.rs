@@ -196,3 +196,78 @@ fn a_request_other_than_a_document_ended_in_another_session_still_counts() {
         vec!["1 request still loading: http://other.test/frame.html".to_owned()]
     );
 }
+
+/// A request a frame of the page made, in the page's own session (#2841).
+fn a_request_of(frame: &str, id: &str, url: &str) -> Value {
+    serde_json::json!({"requestId":id,"frameId":frame,"request":{"url":url},"type":"Fetch"})
+}
+
+#[test]
+fn a_frame_that_detaches_takes_its_open_requests_and_those_of_frames_inside_it_with_it() {
+    let start = Instant::now();
+    let mut settle = Settle::new(start);
+    for (frame, id, url) in [
+        ("CHILD", "1.1", "http://fixture.test/child-data"),
+        ("GRANDCHILD", "1.2", "http://fixture.test/grandchild-data"),
+        ("PAGE", "1.3", "http://fixture.test/page-data"),
+    ] {
+        settle.observe(
+            "PAGE",
+            activity("Network.requestWillBeSent", &a_request_of(frame, id, url)).unwrap(),
+            start,
+        );
+    }
+    let gone_at = start + Duration::from_secs(1);
+    settle.frames_gone(
+        "PAGE",
+        &["CHILD".to_owned(), "GRANDCHILD".to_owned()],
+        gone_at,
+    );
+    // What the page itself has open still counts.
+    assert_eq!(
+        settle.waiting_for(gone_at + QUIET, QUIET),
+        vec!["1 request still loading: http://fixture.test/page-data".to_owned()]
+    );
+}
+
+#[test]
+fn a_page_whose_frame_detached_is_quiet_a_quiet_while_from_the_detach() {
+    let start = Instant::now();
+    let mut settle = Settle::new(start);
+    settle.observe(
+        "PAGE",
+        activity(
+            "Network.requestWillBeSent",
+            &a_request_of("CHILD", "1.1", "http://fixture.test/child-data"),
+        )
+        .unwrap(),
+        start,
+    );
+    let gone_at = start + Duration::from_secs(5);
+    settle.frames_gone("PAGE", &["CHILD".to_owned()], gone_at);
+    assert_eq!(
+        settle.waiting_for(gone_at + Duration::from_millis(100), QUIET),
+        vec!["the page changed 100 ms ago".to_owned()]
+    );
+    assert!(settle.waiting_for(gone_at + QUIET, QUIET).is_empty());
+}
+
+#[test]
+fn a_frame_that_detaches_leaves_another_session_s_requests_counted() {
+    let start = Instant::now();
+    let mut settle = Settle::new(start);
+    settle.observe(
+        "FRAME-SESSION",
+        activity(
+            "Network.requestWillBeSent",
+            &a_request_of("CHILD", "1.1", "http://other.test/data"),
+        )
+        .unwrap(),
+        start,
+    );
+    settle.frames_gone("PAGE", &["CHILD".to_owned()], start);
+    assert_eq!(
+        settle.waiting_for(start + QUIET, QUIET),
+        vec!["1 request still loading: http://other.test/data".to_owned()]
+    );
+}
