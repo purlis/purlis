@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792477260398,
+  "lastUpdate": 1792478790509,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18606,6 +18606,48 @@ window.BENCHMARK_DATA = {
             "value": 103.3214755,
             "unit": "ms",
             "extra": "median of 5 runs: 102.322, 102.415, 103.321, 103.860, 106.234 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e6ed8b52c29c2c482fd1ea62393a2c96568ec379",
+          "message": "Browsers: a login runs its page scripts in purlis's own world (#2613) (#2716)\n\n* A login runs its page scripts in purlis's own world (#2613)\n\nThe scripts that find a login's fields run in purlis's isolated world in the\npage's document, and the fields are focused, checked, measured and cleared\nthrough that world's objects. A world that cannot be had fills nothing and\nthe login fails in words; the browser is handed back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Login tests name how a login ended in fixed words (#2613)\n\nA failing login test says the kind of answer it got, never its words: what\na login answers may carry what its page showed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A login clears a field only in purlis's world, named by its unique id (#2613)\n\nCLEAR_FIELD takes the field as its argument and runs by the world's unique\nid, so an element of another world is refused by the engine and the world is\nmade again once.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* ADR 0068 note for #2613: a clear runs by the world's unique id\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T10:45:04+04:00",
+          "tree_id": "42c1e521bb41075a27bd03dfec378ef39568f206",
+          "url": "https://github.com/purlis/purlis/commit/e6ed8b52c29c2c482fd1ea62393a2c96568ec379"
+        },
+        "date": 1792478788719,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4278665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.403, 0.424, 0.428, 0.432, 0.446 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.412865500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.263, 16.266, 16.413, 16.465, 16.939 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.84142,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.466, 101.595, 101.841, 101.954, 102.167 ms"
           }
         ]
       }
