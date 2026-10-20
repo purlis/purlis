@@ -909,7 +909,8 @@ fn the_docs_name_each_line_the_check_fits_and_the_tokens_classic_s_compact_moves
             "size.chrome",
         ]
     );
-    assert!(THEMES_MD.contains(
-        "`space.2` to `space.8`, `size.control`, `size.chrome`, `line-height.body`"
-    ));
+    assert!(
+        THEMES_MD
+            .contains("`space.2` to `space.8`, `size.control`, `size.chrome`, `line-height.body`")
+    );
 }

@@ -2253,7 +2253,10 @@ fn the_theme_skill_s_corners_and_heights_are_the_engine_s_bounds_and_values() {
         );
     }
     // It points at the docs' Geometry section for the rest.
-    let skill = theme_skill().split_whitespace().collect::<Vec<_>>().join(" ");
+    let skill = theme_skill()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     assert!(
         skill.contains("`purlis docs show themes` has every one in its Geometry section"),
         "the skill points at the docs for the rest"
