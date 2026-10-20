@@ -15,6 +15,11 @@
 //! Its `info` and every library's events are not shown there: a command's terminal holds its
 //! answer.
 //!
+//! **`purlis serve` is a service, and its standard error is its log** (#2753): the journal of the
+//! service that runs it, or its container's log. [`widen_for_a_service`] lets through there what
+//! the app's file keeps (charter's `info` and up, a library's warnings), redacted the same way.
+//! It is not a store of purlis's: whatever runs the service keeps it.
+//!
 //! **Output is not a log.** What a `charter` command prints to its terminal on purpose is that
 //! command's answer, replayed against the recorded fixtures (ADR 0046), and it never goes
 //! through here. Only diagnostics do, and `clippy.toml` refuses `eprintln!` in this crate and
@@ -41,6 +46,7 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::filter::Targets;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{Registry, reload};
 
 /// The directory the log is kept in: `$CHARTER_LOG_DIR` when it is set, else the app's own log
 /// directory, where `panics.log` already is.
@@ -151,16 +157,56 @@ fn redaction_made_ready_beside_the_launch() {
 /// the command's answer (ADR 0046), so only charter's own warnings join it, never its `info`
 /// and never a library's. Called a second time, it changes nothing.
 pub fn install_for_a_terminal() {
-    let _ = tracing::subscriber::set_global_default(terminal_only(std::io::stderr));
+    let (subscriber, widening) = terminal_widening(std::io::stderr);
+    if tracing::subscriber::set_global_default(subscriber).is_ok() {
+        let _ = WIDENING.set(widening);
+    }
 }
 
+/// Lets through on standard error, from now on, what the app's file keeps: charter's `info` and
+/// up, and a library's warnings (#2753). What `purlis serve` calls as it starts, after
+/// [`install_for_a_terminal`]: a runner's host has no terminal and no file of purlis's, and its
+/// standard error is the service's journal or its container's log. Redacted the same way.
+pub fn widen_for_a_service() {
+    if let Some(widening) = WIDENING.get() {
+        let _ = widening.reload(what_a_log_keeps());
+    }
+}
+
+/// How [`install_for_a_terminal`]'s filter is widened for a service.
+static WIDENING: OnceLock<reload::Handle<Targets, Registry>> = OnceLock::new();
+
 /// charter's warnings, and nothing else, to `screen`.
+#[cfg(test)]
 fn terminal_only(
     screen: impl for<'a> MakeWriter<'a> + Send + Sync + 'static,
 ) -> impl tracing::Subscriber + Send + Sync {
-    tracing_subscriber::registry()
-        .with(Targets::new().with_target("purlis", Level::WARN))
-        .with(terminal(screen))
+    terminal_widening(screen).0
+}
+
+/// charter's warnings to `screen`, and the handle that widens them to [`what_a_log_keeps`].
+fn terminal_widening(
+    screen: impl for<'a> MakeWriter<'a> + Send + Sync + 'static,
+) -> (
+    impl tracing::Subscriber + Send + Sync,
+    reload::Handle<Targets, Registry>,
+) {
+    let (filter, widening) = reload::Layer::new(Targets::new().with_target("purlis", Level::WARN));
+    (
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(terminal(screen)),
+        widening,
+    )
+}
+
+/// What a log keeps: charter's own crates (`purlis_core`, `purlis_app_lib`, `purlis_host`) at
+/// `info`, so what purlis did is there to read; everything it links at `warn`, so a library's
+/// routine chatter is not.
+fn what_a_log_keeps() -> Targets {
+    Targets::new()
+        .with_target("purlis", Level::INFO)
+        .with_default(Level::WARN)
 }
 
 /// The message alone, as `eprintln!` printed it, redacted: what a person running charter from
@@ -187,6 +233,14 @@ pub fn warn_on_purpose() {
     tracing::warn!("purlis: a warning purlis-core raised on purpose, for a test");
 }
 
+/// One `info` line, raised here on purpose so a test can watch whether a process that links
+/// this crate keeps the core's `info` (#2753). Only a debug build has it.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn inform_on_purpose() {
+    tracing::info!("purlis: an info line purlis-core raised on purpose, for a test");
+}
+
 /// The file in `dir` that today's events go to.
 ///
 /// **Blocking, on purpose.** `tracing-appender`'s non-blocking writer hands lines to a thread
@@ -208,13 +262,8 @@ fn subscriber_to(
     file: Option<RollingFileAppender>,
     screen: impl for<'a> MakeWriter<'a> + Send + Sync + 'static,
 ) -> impl tracing::Subscriber + Send + Sync {
-    // charter's own crates (`purlis_core`, `purlis_app_lib`) at `info`, so what the app did
-    // is there to read; everything it links at `warn`, so a library's routine chatter is not.
-    let wanted = Targets::new()
-        .with_target("purlis", Level::INFO)
-        .with_default(Level::WARN);
     tracing_subscriber::registry()
-        .with(wanted)
+        .with(what_a_log_keeps())
         .with(file.map(|file| {
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)
