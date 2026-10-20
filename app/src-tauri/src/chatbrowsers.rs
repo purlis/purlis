@@ -1247,6 +1247,14 @@ impl ChatBrowsers {
         })
     }
 
+    /// The chat whose browser `program` is, where a chat has it (#2293).
+    pub fn chat_of(&self, program: &str) -> Option<u32> {
+        self.lock()
+            .iter()
+            .find(|(_, chat)| chat.browsers.iter().any(|(_, one)| one == program))
+            .map(|(session, _)| *session)
+    }
+
     /// Chat `session` lets go of its browser `name`, which has ended: the next call opens a new
     /// one.
     pub fn let_go_of_ended(&self, session: u32, name: &str) {
@@ -3233,6 +3241,15 @@ pub fn handed(
     held.browsers_listed_since(listing);
     if name.is_ok() {
         tracing::info!("purlis: the person handed a browser to chat {session}");
+        let handed = purlis_core::eventlog::browsing::Said::HandedOver {
+            browser: program.to_owned(),
+        };
+        if let Err(why) = held
+            .hooks()
+            .record_browser(held.root(), Some(session), handed)
+        {
+            tracing::warn!("purlis: a hand-over was not written to the event log ({why})");
+        }
     }
     name
 }
@@ -3278,6 +3295,40 @@ pub fn idle_swept(held: &crate::planes::Held, now: u64) {
             stopped.len()
         );
         crate::browserneedsyou::settled(held);
+    }
+}
+
+/// **Writes what the window says of a browser in the event log** (#2293), under the chat whose
+/// browser it is, in whichever of `projects` has it; for a browser no chat uses, with no chat,
+/// in the project at `root` it was started in, and nowhere where that project is not held. A
+/// write that fails is warned of, and never holds up what the person did.
+pub fn say(
+    projects: &[Arc<crate::planes::Held>],
+    root: Option<&Path>,
+    said: purlis_core::eventlog::browsing::Said,
+) {
+    let of_a_chat = projects.iter().find_map(|held| {
+        held.browsers()
+            .chat_of(said.browser())
+            .map(|session| (held, Some(session)))
+    });
+    let started_in = || {
+        projects
+            .iter()
+            .find(|held| root.is_some_and(|root| held.root() == root))
+            .map(|held| (held, None))
+    };
+    // Never another project's log: one whose project is not held is written nowhere.
+    let Some((held, number)) = of_a_chat.or_else(started_in) else {
+        tracing::warn!(
+            "purlis: {} was not written to the event log: the browser's project is not held",
+            said.kind()
+        );
+        return;
+    };
+    let kind = said.kind();
+    if let Err(why) = held.hooks().record_browser(held.root(), number, said) {
+        tracing::warn!("purlis: {kind} was not written to the event log ({why})");
     }
 }
 
