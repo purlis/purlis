@@ -101,8 +101,10 @@ pub fn draw_native_window(
 pub struct NativeDrawn {
     /// `dark` or `light`.
     pub appearance: String,
-    /// The window's colour, `#rrggbb` in lowercase, opaque as the window is drawn.
-    pub background: String,
+    /// The window's colour, `#rrggbb` in lowercase, opaque as the window is drawn: `null` where
+    /// the platform gives no colour purlis reads (Windows for now, or a colour with no sRGB
+    /// form). An unread colour never stops the appearance from being read.
+    pub background: Option<String>,
 }
 
 /// **What the operating system draws this window in** (#2328, #2760): the appearance of its
@@ -111,18 +113,33 @@ pub struct NativeDrawn {
 #[tauri::command]
 #[specta::specta]
 pub fn native_window_drawn(window: tauri::WebviewWindow) -> Result<NativeDrawn, String> {
-    let appearance = match window.theme() {
-        Ok(tauri::Theme::Light) => "light".to_owned(),
-        Ok(_) => "dark".to_owned(),
+    answered(
+        window.theme().map_err(|err| err.to_string()),
+        given_colour(&window),
+    )
+}
+
+/// **The answer for a window** whose platform said `theme` and `colour`: a theme that could not
+/// be read fails the answer, a colour that could not be read is `null` in it.
+fn answered(
+    theme: Result<tauri::Theme, String>,
+    colour: Result<[u8; 3], String>,
+) -> Result<NativeDrawn, String> {
+    let appearance = match theme {
+        Ok(tauri::Theme::Light) => "light",
+        Ok(_) => "dark",
         Err(err) => {
             return Err(format!(
                 "purlis could not read the window's appearance: {err}"
             ));
         }
     };
-    let background = hex(given_colour(&window)?);
+    let background = colour
+        .inspect_err(|why| tracing::debug!("purlis: no window colour was read back ({why})"))
+        .ok()
+        .map(hex);
     Ok(NativeDrawn {
-        appearance,
+        appearance: appearance.to_owned(),
         background,
     })
 }
@@ -252,6 +269,27 @@ mod tests {
             .native();
         assert_eq!(hex(light.background), "#fcfbf8");
         assert_eq!(hex([0, 10, 255]), "#000aff");
+    }
+
+    #[test]
+    fn a_colour_the_platform_gives_no_reading_of_is_null_and_the_appearance_is_still_read() {
+        let unread = Err("no colour on this platform".to_owned());
+        assert_eq!(
+            answered(Ok(tauri::Theme::Light), unread),
+            Ok(NativeDrawn {
+                appearance: "light".to_owned(),
+                background: None,
+            })
+        );
+        assert_eq!(
+            answered(Ok(tauri::Theme::Dark), Ok([0x19, 0x19, 0x17])),
+            Ok(NativeDrawn {
+                appearance: "dark".to_owned(),
+                background: Some("#191917".to_owned()),
+            })
+        );
+        // The appearance is the one read that fails the answer.
+        assert!(answered(Err("gone".to_owned()), Ok([0, 0, 0])).is_err());
     }
 
     #[test]

@@ -16,8 +16,9 @@ import { $$, browser, expect } from "@wdio/globals";
 
 type Answer<T> = { value?: T; trouble?: string };
 
-/** What `native_window_drawn` answers: the platform's appearance and colour for the window. */
-type NativeDrawn = { appearance: string; background: string };
+/** What `native_window_drawn` answers: the platform's appearance and colour for the window,
+ *  the colour `null` where the platform gives none. */
+type NativeDrawn = { appearance: string; background: string | null };
 
 /** Asks the core `command` from the window, and insists it answered. */
 async function ask<T>(command: string, args?: Record<string, unknown>): Promise<T> {

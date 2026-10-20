@@ -19,13 +19,18 @@ import { PICKED } from "../wdio.picked.conf.js";
  * runner.
  */
 
-type Handed = {
-  first?: { follows_system?: boolean; frames?: { theme?: { appearance?: string } }[] } | null;
-  built_in?: { name: string; values: Record<string, string> }[];
+type Frame = {
+  more?: boolean;
+  theme?: { name?: string; appearance?: string; values?: Record<string, string> };
 };
 
-/** What `native_window_drawn` answers: the platform's appearance and colour for the window. */
-type NativeDrawn = { appearance: string; background: string };
+type Handed = {
+  first?: { follows_system?: boolean; contrast?: string | null; frames?: Frame[] } | null;
+};
+
+/** What `native_window_drawn` answers: the platform's appearance and colour for the window,
+ *  the colour `null` where the platform gives none. */
+type NativeDrawn = { appearance: string; background: string | null };
 
 async function handed(): Promise<Handed> {
   return browser.execute(
@@ -64,11 +69,20 @@ describe("the native window, on a project that picks a light theme", () => {
     );
   });
 
-  it(`is given the picked theme's window.background (${PICKED})`, async () => {
+  it(`is given the drawn frame's window.background (${PICKED})`, async () => {
     await untilTheStripIsRead();
-    // The theme's own value, as the core resolved it, not a colour written here.
-    const theme = (await handed()).built_in?.find((each) => each.name === PICKED);
-    const background = theme?.values["window.background"]?.toLowerCase();
+    // The frame the page draws: the one for the contrast the core read, or, where it read none,
+    // the one the page's own `prefers-contrast` picks. Its value is the core's, not one written
+    // here.
+    const { first } = await handed();
+    const more =
+      first?.contrast != null
+        ? first.contrast === "more"
+        : await browser.execute(() => window.matchMedia("(prefers-contrast: more)").matches);
+    const frames = first?.frames ?? [];
+    const frame = frames.length === 1 ? frames[0] : frames.find((each) => !!each.more === more);
+    expect(frame?.theme?.name).toBe(PICKED);
+    const background = frame?.theme?.values?.["window.background"]?.toLowerCase();
     expect(background).toMatch(/^#[0-9a-f]{6}$/);
     let drawn: NativeDrawn | undefined;
     await browser
@@ -80,6 +94,7 @@ describe("the native window, on a project that picks a light theme", () => {
         { timeout: 10_000, interval: 250 },
       )
       .catch(() => undefined);
+    // A colour the platform did not give (`null`) is not the theme's either.
     expect(drawn?.background).toBe(background);
   });
 });

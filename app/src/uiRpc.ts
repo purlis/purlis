@@ -5661,8 +5661,12 @@ export type Moved = {
 export type NativeDrawn = {
 	/**  `dark` or `light`. */
 	appearance: string,
-	/**  The window's colour, `#rrggbb` in lowercase, opaque as the window is drawn. */
-	background: string,
+	/**
+	 *  The window's colour, `#rrggbb` in lowercase, opaque as the window is drawn: `null` where
+	 *  the platform gives no colour purlis reads (Windows for now, or a colour with no sRGB
+	 *  form). An unread colour never stops the appearance from being read.
+	 */
+	background: string | null,
 };
 
 /**

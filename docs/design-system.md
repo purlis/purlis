@@ -145,8 +145,9 @@ scenario run (`app/e2e/specs/forced-colors.e2e.ts`) turns forced colours on in t
 by placing the sheet's rules beside their media query, in the same layer and order, and checks
 each of these on the window's own controls as computed styles in the system colours the WebView
 resolves (#2583). A project's theme pick reaching the native window is checked by its own launch
-(`wdio.picked.conf.ts`): the appearance and the background colour the platform reads back for
-the window are the picked theme's, its `window.background` taken from the theme (#2760).
+(`wdio.picked.conf.ts`): the appearance the platform reads back for the window, and the
+colour it holds (the window's own on macOS, its webview's on Linux), are those of the frame the
+page draws, its `window.background` taken from that frame (#2760).
 
 **Two tokens may look like one token and are not.** `needs-you.base` and `danger.base` were a
 single value before this — `--stop`, `#c05c5c`, "purlis's red" — and splitting them by meaning
