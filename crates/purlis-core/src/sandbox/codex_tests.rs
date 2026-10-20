@@ -655,6 +655,7 @@ fn a_refused_chat_readies_no_home() {
 fn charters_hooks() -> Vec<String> {
     let crate::harness::StateHooks::ThisSessionOnly { args, .. } = Harness::Codex.state_hooks(
         crate::harness::Kit {
+            skills: None,
             binary: Path::new("/Applications/charter.app/Contents/MacOS/charter"),
             plugin: None,
             persona: None,

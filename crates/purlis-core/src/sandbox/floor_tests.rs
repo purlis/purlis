@@ -1091,6 +1091,7 @@ fn armed<'a>(
         binary,
         plugin,
         git_hooks,
+        skill_sets: None,
     }
 }
 

@@ -95,7 +95,9 @@ block2 = "0.6"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString", "NSValue"] }
 # The system's Increase contrast, read as a window is created (#2582, `syscontrast.rs`): two more
 # features of the same crate, no crate new to the tree (operator, 2026-10-18).
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAccessibility", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSWorkspace"] }
+# The window's colour, read back for the scenario tests (#2760, `nativewindow.rs`): the app's
+# windows, their colour and its sRGB form. More features of the same crate, none new to the tree.
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-foundation", "NSAccessibility", "NSApplication", "NSColor", "NSColorSpace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSResponder", "NSWindow", "NSWorkspace"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"] }
 
 # The desktop portal, asked on the session bus before GTK asks it (charter-app#24,

@@ -116,17 +116,56 @@ impl Browser {
                 done => return done,
             }
         }
-        let world = self.make_world(session, frame)?;
+        let world = self.make_world(session, frame, None)?;
         run(&world)
     }
 
-    /// Makes a world of purlis's own in `frame`, and waits for the engine to tell of it.
-    fn make_world(&self, session: &str, frame: &str) -> Result<World, CallError> {
-        let made = self.devtools().call(
-            "Page.createIsolatedWorld",
-            json!({ "frameId": frame, "worldName": WORLD_NAME, "grantUniveralAccess": false }),
-            Some(session),
-        )?;
+    /// [`Browser::in_world`], a world made for it made by `deadline` (#2753).
+    pub(super) fn in_world_by(
+        &self,
+        session: &str,
+        frame: &str,
+        deadline: Instant,
+        run: impl Fn(&World) -> Result<Value, CallError>,
+    ) -> Result<Value, CallError> {
+        let worlds = &self.inner.worlds;
+        if let Some(world) = worlds.get(session, frame) {
+            match run(&world) {
+                Err(CallError::Engine { .. }) => worlds.forget(session, frame, &world),
+                done => return done,
+            }
+        }
+        let world = self.make_world(session, frame, Some(deadline))?;
+        run(&world)
+    }
+
+    /// Makes a world of purlis's own in `frame`, and waits for the engine to tell of it, by
+    /// `deadline` where one is given.
+    fn make_world(
+        &self,
+        session: &str,
+        frame: &str,
+        deadline: Option<Instant>,
+    ) -> Result<World, CallError> {
+        let asked =
+            json!({ "frameId": frame, "worldName": WORLD_NAME, "grantUniveralAccess": false });
+        let made = match deadline {
+            None => self
+                .devtools()
+                .call("Page.createIsolatedWorld", asked, Some(session))?,
+            Some(by) => {
+                let left = by.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(CallError::TimedOut);
+                }
+                self.devtools().call_within(
+                    "Page.createIsolatedWorld",
+                    asked,
+                    Some(session),
+                    left,
+                )?
+            }
+        };
         let untold = || CallError::Engine {
             code: 0,
             message: "the engine did not tell of the world it made".into(),
@@ -135,7 +174,8 @@ impl Browser {
             .get("executionContextId")
             .and_then(Value::as_i64)
             .ok_or_else(untold)?;
-        let deadline = Instant::now() + WORLD_TOLD_WITHIN;
+        let told_by = Instant::now() + WORLD_TOLD_WITHIN;
+        let deadline = deadline.map_or(told_by, |by| by.min(told_by));
         let mut state = lock(&self.inner.state);
         loop {
             if let Some(world) = self.inner.worlds.get(session, frame)

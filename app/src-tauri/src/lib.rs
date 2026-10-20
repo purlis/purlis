@@ -71,6 +71,7 @@ mod hooks;
 mod host;
 mod inboxupdates;
 mod machineprofiles;
+mod skillstudio;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg(all(test, unix))]
 mod behaviour;
@@ -2810,6 +2811,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<projectsettings::Rescreened>()
         .typ::<chatbrowsers::BrowsersEnded>()
         .typ::<chatbrowsers::BrowsersListed>()
+        // What `theme-drafts-close-handed` carries (#2761).
+        .typ::<themedrafts::CloseHanded>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
         // What `chats-reconnecting` carries (#2496).
@@ -2824,6 +2827,8 @@ fn commands() -> Builder<tauri::Wry> {
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
         // window asks again later, matching it whole.
         .constant("SPECIMEN_BUSY", specimen::BUSY)
+        // The event a link's close of chats with theme drafts reaches the window on (#2761).
+        .constant("CLOSE_HANDED", themedrafts::CLOSE_HANDED)
 }
 
 /// Where the generated TypeScript lives.
@@ -3450,7 +3455,17 @@ pub fn run() {
                                     chatbrowsers::engine_ended(&planes.every_held(), &program);
                                 }
                             });
-                        })),
+                        }))
+                        // Who drives each browser, and that someone typed, in the event log
+                        // (#2293): told off the window, on the thread of the person's command.
+                        .saying({
+                            let window = app.handle().clone();
+                            std::sync::Arc::new(move |root, said| {
+                                if let Some(planes) = window.try_state::<planes::Planes>() {
+                                    chatbrowsers::say(&planes.every_held(), root, said);
+                                }
+                            })
+                        }),
                 ));
                 app.manage(host);
             }

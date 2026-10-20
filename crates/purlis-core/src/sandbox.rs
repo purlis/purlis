@@ -2602,6 +2602,9 @@ pub struct ArmedWith<'a> {
     pub binary: Option<&'a Path>,
     pub plugin: Option<&'a Path>,
     pub git_hooks: Option<&'a Path>,
+    /// Where a chat's folders of links to the plane's skills are laid out (ADR 0063 as amended
+    /// 2026-10-20): a plugin folder too, held as the git hooks are.
+    pub skill_sets: Option<&'a Path>,
 }
 
 /// **The whole install `program` belongs to**, as the kernel names it: the app bundle it is
@@ -3367,6 +3370,7 @@ impl Applied {
             .chain(install.as_deref())
             .chain(kit.plugin)
             .chain(kit.git_hooks)
+            .chain(kit.skill_sets)
             .flat_map(|path| [path.to_path_buf(), real(path)])
         {
             let around_root = root.starts_with(&path) || path.starts_with(&root);

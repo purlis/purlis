@@ -51,6 +51,7 @@ mod scan;
 mod secret;
 mod session;
 mod shellguard;
+mod skill;
 mod statusline;
 mod theme;
 mod themepreview;
@@ -268,6 +269,11 @@ enum Command {
     /// Personas: their memory.
     #[command(subcommand)]
     Persona(memory::PersonaCommand),
+
+    /// Skills: the ones a chat in this project gets, and why each other one is left out (behind
+    /// the `skill-studio` flag).
+    #[command(subcommand)]
+    Skill(skill::SkillCommand),
 
     /// Read/write secrets in a vault; values stay out of the model.
     #[command(subcommand)]
@@ -796,6 +802,14 @@ fn serve() -> ExitCode {
 /// one finds the other serving and leaves it be.
 #[cfg(unix)]
 fn serve() -> ExitCode {
+    // A service: its standard error is its log, the journal or the container's (#2753), so the
+    // core's `info` is said there too, redacted as the app's log is.
+    purlis_core::applog::widen_for_a_service();
+    #[cfg(debug_assertions)]
+    if std::env::var_os(CORE_INFORMS_ON_PURPOSE_ENV).is_some() {
+        purlis_core::applog::inform_on_purpose();
+        return ExitCode::SUCCESS;
+    }
     let Some(config) = purlis_core::machine::config_root() else {
         voice::err("there is no home folder to keep the session host's credentials in");
         return ExitCode::FAILURE;
@@ -1023,6 +1037,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             WorkspaceCommand::List | WorkspaceCommand::Current | WorkspaceCommand::Recall { .. },
         )
         | Command::Persona(memory::PersonaCommand::List)
+        | Command::Skill(_)
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
         | Command::Harness(HarnessCommand::List | HarnessCommand::Show { .. })
@@ -1729,6 +1744,13 @@ const PANIC_ON_PURPOSE_ENV: &str = "CHARTER_TEST_HOOK_PANICS";
 /// a release build.
 #[cfg(debug_assertions)]
 const CORE_WARNS_ON_PURPOSE_ENV: &str = "CHARTER_TEST_CORE_WARNS";
+
+/// Set in a debug build, `purlis serve` raises one `info` line from `purlis-core` and ends
+/// before it serves: the test suite's way to watch where the core's `info` goes under a
+/// runner's host (#2753). Compiled out of a release build.
+#[cfg(debug_assertions)]
+#[cfg(unix)]
+const CORE_INFORMS_ON_PURPOSE_ENV: &str = "PURLIS_TEST_CORE_INFORMS";
 
 /// Set in a debug build, `purlis` says whose process group the gits it runs are in, and does
 /// nothing else: the test suite's way to hold that this command keeps them in its own
@@ -3323,6 +3345,7 @@ fn run(command: Command) -> Result<u8, String> {
         Command::Worktree(command) => return piece::run(&here, command),
         Command::Change(command) => return change::run(&here, command),
         Command::Curation(command) => return curation::run(here.plane.root(), command),
+        Command::Skill(command) => return skill::run(here.plane.root(), command),
         Command::Session(command) => return session::run(&here, command),
         Command::Workspace(WorkspaceCommand::Remember {
             text,

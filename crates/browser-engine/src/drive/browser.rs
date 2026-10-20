@@ -150,6 +150,9 @@ enum Ends {
 /// The script that says whether a document has loaded: a constant, never the caller's words.
 pub(crate) const READY_STATE: &str = "document.readyState";
 
+/// The expression that reads a document's title (#2753), in purlis's own world.
+pub(crate) const TITLE: &str = "document.title";
+
 /// The script that answers once its document has drawn two frames (#2690): what a scroll moved
 /// is then drawn, and the browser routes input by where it is drawn now. A constant.
 pub(crate) const DRAWN_TWICE: &str =
@@ -189,8 +192,20 @@ pub(crate) const ACTIVE_ELEMENT: &str = r"(() => {
   return at && at !== document.body && at !== document.documentElement ? at.tagName : '';
 })()";
 
+/// The first [`MOST_TITLE_CHARS`] of `title`.
+fn kept_title(title: &str) -> String {
+    title.chars().take(MOST_TITLE_CHARS).collect()
+}
+
 /// How long the driver gives the engine to say whether a document has loaded.
 const READY_STATE_WITHIN: Duration = Duration::from_secs(2);
+/// How long listing the pages gives the engine to read every page's title from its document,
+/// all of them together (#2753): past it, the pages left keep the title the engine told of.
+const TITLES_WITHIN: Duration = Duration::from_secs(1);
+/// The most bytes the answer to one page's title read may take (#2753).
+const MOST_TITLE_BYTES: usize = 64 << 10;
+/// The most characters of a page's title kept, as the engine cuts the titles it tells of.
+const MOST_TITLE_CHARS: usize = 4096;
 /// How often a wait looks again.
 const POLL: Duration = Duration::from_millis(50);
 /// How often a wait for text reads the page again.
@@ -1285,6 +1300,7 @@ impl Browser {
             } => self.wait_for_text(page.as_ref(), &text, gone, within),
             Call::Pages => {
                 let target = self.target(None).ok();
+                self.read_titles();
                 let pages = {
                     let state = lock(&self.inner.state);
                     state
@@ -1321,6 +1337,51 @@ impl Browser {
                 Ok(self.answer_now(&target, Content::Nothing))
             }
             Call::Screenshot { page } => self.screenshot(page.as_ref()),
+        }
+    }
+
+    /// Reads each page's title from its document, in purlis's own world (#2753). The engine
+    /// tells of a title by `Target.targetInfoChanged`, and Chrome does not always send it after
+    /// a script sets `document.title`. Every read together is given [`TITLES_WITHIN`], a world
+    /// made for one included; a page not read by then, or whose answer is past
+    /// [`MOST_TITLE_BYTES`], keeps the title it has. A read is kept only while the page still
+    /// shows the document it was read from, and only its first [`MOST_TITLE_CHARS`].
+    fn read_titles(&self) {
+        let deadline = Instant::now() + TITLES_WITHIN;
+        let pages: Vec<(String, String, u64)> = lock(&self.inner.state)
+            .pages
+            .iter()
+            .filter_map(|p| Some((p.target.clone(), p.session.clone()?, p.shows)))
+            .collect();
+        for (target, session, shows) in pages {
+            if Instant::now() >= deadline {
+                break;
+            }
+            let read = self.in_world_by(&session, &target, deadline, |world| {
+                let left = deadline.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(CallError::TimedOut);
+                }
+                self.devtools().call_within_bounded(
+                    "Runtime.evaluate",
+                    json!({
+                        "expression": TITLE,
+                        "uniqueContextId": world.unique,
+                        "returnByValue": true,
+                    }),
+                    Some(&session),
+                    left,
+                    MOST_TITLE_BYTES,
+                )
+            });
+            if let Some(title) = read
+                .ok()
+                .and_then(|r| r.pointer("/result/value")?.as_str().map(kept_title))
+                && let Some(page) = lock(&self.inner.state).page_mut(&target)
+                && page.shows == shows
+            {
+                page.title = title;
+            }
         }
     }
 
@@ -1654,7 +1715,13 @@ impl Browser {
         let (text, document) = {
             let mut state = lock(&self.inner.state);
             let body = read(&snapshot, &mut state)?;
-            let page = state.page(target).ok_or(Refusal::NoPage)?;
+            let page = state.page_mut(target).ok_or(Refusal::NoPage)?;
+            // The tree names the document's title as it is now, which the engine may not have
+            // told of (#2753): the pages are listed under it from here on.
+            if !snapshot.title().is_empty() {
+                page.title = kept_title(snapshot.title());
+            }
+            let page = &*page;
             let title = if snapshot.title().is_empty() {
                 page.shown(&page.title)
             } else {

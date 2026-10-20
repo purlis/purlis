@@ -42,6 +42,7 @@ use std::time::Instant;
 
 use crate::state::run::{Cause, RunState};
 
+pub mod browsing;
 mod entry;
 pub use entry::Entry;
 

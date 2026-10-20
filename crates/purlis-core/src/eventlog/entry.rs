@@ -87,6 +87,15 @@ pub enum Entry {
     KillSwitchWrote { line: crate::halt::Entry },
     /// The kill switch's journal, read again ([`Recorder::kill_switch_read`]).
     KillSwitchRead,
+    /// What the window said of a browser (#2293): who drives it, that someone typed into it,
+    /// or that it was handed to a chat, under chat `number` where it is a chat's
+    /// ([`Recorder::browser`]).
+    Browser {
+        plane: PathBuf,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        number: Option<u32>,
+        said: super::browsing::Said,
+    },
 }
 
 impl Entry {
@@ -182,6 +191,11 @@ impl Recorder {
                 let config = self.config()?;
                 self.kill_switch_read(&config)
             }
+            Entry::Browser {
+                plane,
+                number,
+                said,
+            } => one(self.browser(&plane, number, &said)),
         }
     }
 

@@ -247,6 +247,86 @@ pub async fn theme_drafts_of_chat(
     .map_err(|err| format!("reading the chat's theme drafts did not finish: {err}"))
 }
 
+/// **The event the window holding a project hears a link's close on** (#2761): the chats the
+/// close would end, at least one of which has a theme draft. The window asks the person, as it
+/// asks about any close of its own, Keep or Revert included.
+pub const CLOSE_HANDED: &str = "theme-drafts-close-handed";
+
+/// What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct CloseHanded {
+    pub plane: crate::planes::PlaneId,
+    pub sessions: Vec<u32>,
+}
+
+/// The chats among `chats` that have a theme draft, by session: only whether one is there, never
+/// what it says ([`drafts::has_drafts`]).
+fn drafted_among(plane: &Path, chats: &[Drafting]) -> Vec<u32> {
+    chats
+        .iter()
+        .filter(|chat| drafts::has_drafts(plane, &chat.id))
+        .map(|chat| chat.session)
+        .collect()
+}
+
+/// **A link's close of chats that have theme drafts is handed to the window** (#2761): closing a
+/// chat, and its drafts' Keep and Revert, are the window's alone, so a link never settles a
+/// draft. Where one of `sessions` is a chat open here with a draft, the window holding the
+/// project is told the chats ([`CLOSE_HANDED`]). That window decides: it asks the person, Keep
+/// or Revert first, and brings itself and the project forward only when it does, never over a
+/// question already on screen; it closes nothing unasked.
+///
+/// **The link is answered the same whatever was found**: nothing of the drafts, nor whether the
+/// window was told. At most [`drafts::MOST_CHATS`] chats are read from the list, each once.
+#[tauri::command]
+#[specta::specta]
+pub async fn hand_drafts_close_to_the_window(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    showing: tauri::State<'_, crate::planes::Showing>,
+    plane: crate::planes::PlaneId,
+    sessions: Vec<u32>,
+) -> Result<(), String> {
+    use tauri::Emitter;
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let asked = asked_sessions(sessions);
+    // The chats the link's close ends that are open here: the window's close asks about every
+    // one of them.
+    let ending: Vec<Drafting> = held
+        .chats()
+        .drafting()
+        .into_iter()
+        .filter(|one| asked.contains(&one.session))
+        .collect();
+    let handed: Vec<u32> = ending.iter().map(|one| one.session).collect();
+    let drafted = tauri::async_runtime::spawn_blocking(move || drafted_among(&root, &ending))
+        .await
+        .unwrap_or_default();
+    if drafted.is_empty() {
+        return Ok(());
+    }
+    if let Some(window) = showing.holder(&plane) {
+        let _ = app.emit_to(
+            window.as_str(),
+            CLOSE_HANDED,
+            CloseHanded {
+                plane,
+                sessions: handed,
+            },
+        );
+    }
+    Ok(())
+}
+
+/// The chats a link's close names: the first [`drafts::MOST_CHATS`] of its list, each once.
+fn asked_sessions(mut sessions: Vec<u32>) -> Vec<u32> {
+    sessions.truncate(drafts::MOST_CHATS);
+    sessions.sort_unstable();
+    sessions.dedup();
+    sessions
+}
+
 /// The draft `folder` of the chat `session` of the plane `held`, with the chat's workspace.
 fn draft_of(
     held: &crate::planes::Held,
@@ -614,6 +694,37 @@ mod tests {
             Some("#4477dd"),
             "the last good one"
         );
+    }
+
+    #[test]
+    fn a_link_s_close_is_handed_to_the_window_only_for_chats_that_have_a_draft() {
+        // #2761: each chat's drafts read where it works; a chat with none is not handed.
+        let home = tempfile::tempdir().unwrap();
+        let config = home.path().join("config");
+        let plane = home.path().join("plane");
+        std::fs::create_dir_all(plane.join(".purlis")).unwrap();
+        std::fs::create_dir_all(plane.join("workspaces/alpha")).unwrap();
+        std::fs::create_dir_all(&config).unwrap();
+        let (drafting, root, none) = (chat(3, Some("alpha")), chat(4, None), chat(5, None));
+        for one in [&drafting, &root] {
+            let place = drafts::Place {
+                plane: &plane,
+                workspace: one.workspace.as_deref(),
+            };
+            drafts::start(Some(&config), place, &one.id, "dusk").unwrap();
+        }
+        assert_eq!(
+            drafted_among(&plane, &[drafting, root, none.clone()]),
+            [3, 4]
+        );
+        assert_eq!(drafted_among(&plane, &[none]), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn a_link_s_list_of_chats_is_read_each_once_and_capped() {
+        assert_eq!(asked_sessions(vec![4, 3, 4, 3]), [3, 4]);
+        let long: Vec<u32> = (0..10_000).rev().collect();
+        assert_eq!(asked_sessions(long).len(), drafts::MOST_CHATS);
     }
 
     #[test]

@@ -2835,6 +2835,7 @@ impl Chats {
             binary: self.shipped.binary.clone(),
             plugin: self.shipped.plugin.clone(),
             git_hooks: self.git_hooks_for(harness),
+            skill_sets: purlis_core::hoststart::skill_sets_here(),
         }
     }
 
