@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792457092980,
+  "lastUpdate": 1792471580158,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3448,6 +3448,42 @@ window.BENCHMARK_DATA = {
             "value": 352.8,
             "unit": "MB",
             "extra": "median of 6 samples: 344, 369.8, 368.5, 352.4, 353.2, 232.1 MB; window 166.7 MB, session host 190.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7d6d7017920eca1d25008052bb9820ccdfe6ee0e",
+          "message": "A refused theme font can be reviewed and allowed in place (#2713)\n\n* A refused theme font can be reviewed and allowed in place\n\nThe engine marks a refusal the project's approval would lift\n(Complaint::awaits_approval, Drawn::awaits_approval). The refused theme\nNotice then offers Review and allow: the project's trust ask, read again\nfor a project already open (Planes::review, window-only review_plane),\nwith what changed first. The yes is approve_plane, the one approval path,\nwhich refuses if the project changed after the ask was drawn; then the\ntheme is drawn again. A no leaves it refused.\n\nCloses #2647\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n# Conflicts:\n#\tcrates/purlis-core/src/theme/fonts.rs\n\n* Theme review tests: a borrow clippy refuses\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Review and allow is offered for font files alone (D-2647-10)\n\nA chat that can write a project can change a face whenever it likes, so the\ntrust ask it can raise from a theme is kept to the faces: Review and allow\nis offered only when every change since the approval is a font file\n(Consent::grew_in_fonts_alone). Otherwise the Notice has no button and says\nto open the project again, and review_plane refuses. The yes reads Allow\nthese fonts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Review and allow: its own sentence for a project never approved, whose fonts, found once per face\n\nA held project this machine never approved says so, not \"since you\napproved it\". The fonts-only ask names the themes and workspaces whose\nfont files changed, and says the system's font engine reads them.\nWhether to offer it is found once per set of faces a refusal waits on\n(Drawn::awaiting_faces, path and digest), so a redraw that changed no\nface hashes nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T08:09:39+04:00",
+          "tree_id": "da975e485af964a9b86c3ae10018c7cebb6c125f",
+          "url": "https://github.com/purlis/purlis/commit/7d6d7017920eca1d25008052bb9820ccdfe6ee0e"
+        },
+        "date": 1792471578709,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 965,
+            "unit": "MB",
+            "extra": "median of 3 samples: 807, 965, 1019 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 339.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 422, 350, 340.5, 337.8, 338.8, 281.6 MB; window 156.9 MB, session host 182.8 MB"
           }
         ]
       }
