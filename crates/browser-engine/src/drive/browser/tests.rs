@@ -13,7 +13,7 @@ use std::time::Duration;
 use base64::Engine as _;
 use serde_json::{Value, json};
 
-use super::{ACTIVE_ELEMENT, Browser, DevTools, READ_VALUE, READY_STATE, SELECT_OPTIONS};
+use super::{ACTIVE_ELEMENT, Browser, DevTools, READ_VALUE, READY_STATE, SELECT_OPTIONS, TITLE};
 use crate::WebAddress;
 use crate::cdp::{CallError, Closed, Event};
 use crate::drive::{
@@ -46,6 +46,9 @@ struct Model {
     /// Content quads by backend node id.
     quads: HashMap<i64, Vec<f64>>,
     ready: String,
+    /// The title each page's document has now, by target: what the engine last told of, unless
+    /// a test sets it with no word from the engine (#2753).
+    titles: HashMap<String, String>,
     history: Value,
     screenshot: Vec<u8>,
     select: Value,
@@ -106,6 +109,18 @@ struct StandWorld {
 
 impl Engine {
     fn emit(&self, method: &str, params: Value, session: Option<&str>) {
+        if matches!(method, "Target.targetCreated" | "Target.targetInfoChanged")
+            && let (Some(target), Some(title)) = (
+                params
+                    .pointer("/targetInfo/targetId")
+                    .and_then(Value::as_str),
+                params.pointer("/targetInfo/title").and_then(Value::as_str),
+            )
+        {
+            super::lock(&self.model)
+                .titles
+                .insert(target.to_owned(), title.to_owned());
+        }
         if method == "Target.targetCreated"
             && let (Some(target), Some(url)) = (
                 params
@@ -297,6 +312,15 @@ impl Engine {
                     "loading"
                 };
                 Ok(json!({"result":{"type":"string","value":lie}}))
+            }
+            "Runtime.evaluate" if p["expression"] == TITLE => {
+                let target = on.unwrap_or_default().trim_start_matches("S-");
+                let title = super::lock(&self.model)
+                    .titles
+                    .get(target)
+                    .cloned()
+                    .unwrap_or_default();
+                Ok(json!({"result":{"type":"string","value":title}}))
             }
             "Runtime.evaluate" if p["expression"] == ACTIVE_ELEMENT => {
                 Ok(json!({"result":{"type":"string","value":super::lock(&self.model).active}}))
@@ -530,6 +554,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
                 (71, vec![0.0, 900.0, 80.0, 900.0, 80.0, 920.0, 0.0, 920.0]),
             ]),
             ready: "complete".into(),
+            titles: HashMap::new(),
             history: json!({"currentIndex":0,"entries":[{"id":1,"url":"http://fixture.test/frames.html","userTypedURL":"","title":"","transitionType":"typed"}]}),
             screenshot: white_png(),
             select: json!({"picked":["Blue"]}),
@@ -1331,6 +1356,35 @@ fn an_action_answers_once_its_late_data_has_arrived() {
         started.elapsed() >= Duration::from_millis(300),
         "it waited for the data"
     );
+}
+
+#[test]
+fn a_title_a_script_set_is_listed_though_the_engine_never_told_of_it() {
+    let (browser, engine) = browser();
+    // The engine told of "Frames and fields" as the page opened, and of nothing since.
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-1".into(), "Retitled by its script".into());
+    let listed = browser.call(&id(1), Call::Pages).unwrap();
+    let Content::Pages(pages) = &listed.content else {
+        panic!("{listed:?}")
+    };
+    assert_eq!(pages[0].title, "Retitled by its script");
+    assert_eq!(listed.page.unwrap().title, "Retitled by its script");
+}
+
+#[test]
+fn a_page_whose_title_cannot_be_read_keeps_the_title_the_engine_told_of() {
+    let (browser, engine) = browser();
+    engine.on(|sent, _| {
+        (sent.method == "Runtime.evaluate" && sent.params["expression"] == TITLE)
+            .then_some(Err(CallError::TimedOut))
+    });
+    let listed = browser.call(&id(1), Call::Pages).unwrap();
+    let Content::Pages(pages) = &listed.content else {
+        panic!("{listed:?}")
+    };
+    assert_eq!(pages[0].title, "Frames and fields");
 }
 
 #[test]
