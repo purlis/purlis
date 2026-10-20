@@ -100,3 +100,33 @@ fn forgetting_a_root_with_no_names_kept_writes_nothing() {
 
     assert!(!crate::machine::charterd(config.path()).join(FILE).exists());
 }
+
+#[test]
+fn a_file_past_what_a_private_file_is_read_up_to_is_started_again() {
+    let config = tempfile::tempdir().unwrap();
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::charterd(config.path())).unwrap();
+    let too_long = usize::try_from(purlis_same_user::A_PRIVATE_FILE_IS_AT_MOST).unwrap() + 1;
+    folder.replace_file(FILE, &vec![b' '; too_long]).unwrap();
+
+    let name = name_for(config.path(), Path::new("/projects/a"), &[]).unwrap();
+    assert!(is_a_name(name.expose()));
+    // Kept from now on, in a file that reads again.
+    assert_eq!(
+        name_for(config.path(), Path::new("/projects/a"), &[]).unwrap(),
+        name
+    );
+}
+
+#[test]
+fn a_file_past_the_limit_that_another_user_could_read_is_still_refused() {
+    let config = tempfile::tempdir().unwrap();
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::charterd(config.path())).unwrap();
+    let too_long = usize::try_from(purlis_same_user::A_PRIVATE_FILE_IS_AT_MOST).unwrap() + 1;
+    folder.replace_file(FILE, &vec![b' '; too_long]).unwrap();
+    let file = crate::machine::charterd(config.path()).join(FILE);
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    assert!(name_for(config.path(), Path::new("/projects/a"), &[]).is_err());
+}

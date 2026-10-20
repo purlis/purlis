@@ -1869,7 +1869,6 @@ export const commands = {
 	 */
 	useDefaultLayout: () => typedError<string, string>(__TAURI_INVOKE("use_default_layout")),
 	drawNativeWindow: __WINDOW_ONLY_RESULT,
-	nativeWindowDrawn: __WINDOW_ONLY_RESULT,
 	vaultSecretReveal: __WINDOW_ONLY_RESULT,
 	vaultSecretCopy: __WINDOW_ONLY_RESULT,
 	vaultSetupAccounts: __WINDOW_ONLY_RESULT,
@@ -5685,21 +5684,6 @@ export type Moved = {
 	 *  or child its harness spawned, drawn under the chat. Empty for nearly every chat.
 	 */
 	children: ChildAgent[],
-};
-
-/**
- *  **What the operating system draws this window in**, read back from the platform: the
- *  appearance its native parts are drawn in and the background colour the window was given.
- */
-export type NativeDrawn = {
-	/**  `dark` or `light`. */
-	appearance: string,
-	/**
-	 *  The window's colour, `#rrggbb` in lowercase, opaque as the window is drawn: `null` where
-	 *  the platform gives no colour purlis reads (Windows for now, or a colour with no sRGB
-	 *  form). An unread colour never stops the appearance from being read.
-	 */
-	background: string | null,
 };
 
 /**
