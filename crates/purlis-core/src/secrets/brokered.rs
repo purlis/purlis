@@ -1257,18 +1257,7 @@ pub fn login_and_identity_for(
             )
         })
     };
-    let project = crate::scaffold::planefile::id_to_hold_by(&asker.root)
-        .unwrap_or_else(|_| asker.root.display().to_string());
-    let identity = crate::browserlogins::identity_of(
-        asker.persona.as_deref().unwrap_or_default(),
-        &project,
-        &crate::browserlogins::Declared {
-            vault,
-            user_key,
-            password_key: pass_key,
-            page: &login.url,
-        },
-    );
+    let identity = identity_of_ready(asker, name, &ready)?;
     Ok((
         LogIn {
             address: login.url.clone(),
@@ -1281,10 +1270,37 @@ pub fn login_and_identity_for(
 }
 
 /// **Whether chat `asker` may log in with its browser login `name` now** (#2022): every check
-/// [`login_for`] makes, its vault's grant included, and no value read. What a browser signed in
-/// with that login is handed to a chat by.
-pub fn login_allowed(asker: &Asker, name: &str, unconfined: bool) -> Result<(), String> {
-    login_ready(asker, name, unconfined).map(|_| ())
+/// [`login_for`] makes, its vault's grant included, and no value read. Answers the login's
+/// identity as declared and allowed now (#2699), the one [`login_and_identity_for`] answers: a
+/// browser signed in with a login is handed only to a chat whose login has the same.
+pub fn login_allowed(asker: &Asker, name: &str, unconfined: bool) -> Result<String, String> {
+    let (ready, _) = login_ready(asker, name, unconfined)?;
+    identity_of_ready(asker, name, &ready)
+}
+
+/// The identity of login `name`, declared and allowed for `asker` as `ready` (#2021): its
+/// persona, its project (the plane's id, else its root) and its declaration.
+fn identity_of_ready(
+    asker: &Asker,
+    name: &str,
+    ready: &crate::sandbox::tools::Ready,
+) -> Result<String, String> {
+    let (Some(login), Some((user_key, pass_key))) = (&ready.tool.login, ready.tool.login_keys())
+    else {
+        return Err(format!("{name} is not a browser login"));
+    };
+    let project = crate::scaffold::planefile::id_to_hold_by(&asker.root)
+        .unwrap_or_else(|_| asker.root.display().to_string());
+    Ok(crate::browserlogins::identity_of(
+        asker.persona.as_deref().unwrap_or_default(),
+        &project,
+        &crate::browserlogins::Declared {
+            vault: &ready.tool.vault,
+            user_key,
+            password_key: pass_key,
+            page: &login.url,
+        },
+    ))
 }
 
 /// [`login_for`]'s checks, short of reading a value: the login declared and allowed for the
