@@ -76,6 +76,13 @@ pub trait Confine: Send + Sync + 'static {
     /// machine's window sends; nothing starts from one that does not fit.
     fn fits(&self, confining: &ToConfine<'_>) -> Result<(), String>;
 
+    /// Whether this machine's own sandbox for the project at `project_path` gives a chat the
+    /// service on `port` now, or why not, in a sentence (#2738). Asked before a port the host
+    /// withdrew for want of a window is given back after a re-link, so a port this machine's
+    /// policy stopped giving meanwhile is not carried again. Reads the policy: never called
+    /// under the host's state lock.
+    fn gives_now(&self, project_path: &Path, port: u16) -> Result<(), String>;
+
     /// The confinement `confining` plans, telling `tell` what its proxy does and holding a
     /// connection while the person is asked only while `askable` says so; or why it cannot be
     /// started, in a sentence.
@@ -109,6 +116,10 @@ pub struct ConfinesNothing;
 
 impl Confine for ConfinesNothing {
     fn fits(&self, _confining: &ToConfine<'_>) -> Result<(), String> {
+        Err("this session host was given no way to start a chat's confinement".into())
+    }
+
+    fn gives_now(&self, _project_path: &Path, _port: u16) -> Result<(), String> {
         Err("this session host was given no way to start a chat's confinement".into())
     }
 

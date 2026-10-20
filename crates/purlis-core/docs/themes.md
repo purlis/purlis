@@ -204,6 +204,11 @@ is refused, **2** when there is no such theme.
 
 `refused` is `null`, or why the theme is not drawn, and `errors` then lists each value that
 refused it (`said`, and `token` when it was about one); `name` and `appearances` are `null`.
+An error or a note said of a theme folder of a level, or of that level's `themes/`, has `at`:
+the folder as its `level` (`machine`, `project`, `workspace` with its `name`, or `draft`) and
+its `path` inside that level's folder, `themes/dusk` for a project's folder `dusk`. Its `said`
+names a file the same way, "the project's themes/dusk/theme.json", never where the level is on
+disk.
 `notes` is what was left out of a theme that is drawn. A warning's `appearance` is the id of the
 appearance it was found in, and its `options` the value of each option it was drawn with (`{}`
 for a theme with none), in the theme's order of its options. Its `kind` is `contrast` (a `pair`,

@@ -275,6 +275,9 @@ fn a_range_that_takes_in_what_no_host_may_be_is_refused() {
         "[2002::/16]",
         "[2001::/32]",
         "[2001:0:a00::/48]",
+        "[3ffe:831f::/32]",
+        "[3ffe:831f:a00::/48]",
+        "[3ffe::/16]",
         "[2000::/3]",
     ] {
         assert!(
@@ -393,6 +396,32 @@ fn a_teredo_address_carrying_an_internal_server_or_client_is_held() {
     assert!(!listing(&["db.example"]).carries(
         "db.example",
         at("[2001:0:cb00:7107::5601:5601]:80"),
+        Some(&[])
+    ));
+}
+
+/// A Teredo address under the prefix used before RFC 4380, `3ffe:831f::/32`, is read as one under
+/// `2001::/32` is: as the server and the client IPv4 addresses it carries (#2741).
+#[test]
+fn a_pre_rfc_teredo_address_carrying_an_internal_server_or_client_is_held() {
+    // Server 203.0.113.7, client 10.0.0.5 (f5ff:fffa flipped).
+    let client = at("[3ffe:831f:cb00:7107::f5ff:fffa]:443");
+    // Server 10.0.0.5, client 198.51.100.9 (39cc:9bf6 flipped).
+    let server = at("[3ffe:831f:a00:5::39cc:9bf6]:443");
+    // Server 203.0.113.7, client 198.51.100.9.
+    let public = at("[3ffe:831f:cb00:7107::39cc:9bf6]:443");
+
+    assert!(private_address(client.ip()) && private_address(server.ip()));
+    assert!(!private_address(public.ip()));
+    assert!(!listing(&[]).carries("db.example", client, Some(&[])));
+    assert!(!listing(&[]).carries("db.example", server, Some(&[])));
+    assert!(listing(&[]).carries("api.example", public, Some(&[])));
+    // Listed as the IPv4 address it carries, it is carried.
+    assert!(listing(&["10.0.0.5"]).carries("db.example", client, Some(&[])));
+    // Client 169.254.169.254 (5601:5601 flipped) is never carried, whatever is listed.
+    assert!(!listing(&["db.example"]).carries(
+        "db.example",
+        at("[3ffe:831f:cb00:7107::5601:5601]:80"),
         Some(&[])
     ));
 }

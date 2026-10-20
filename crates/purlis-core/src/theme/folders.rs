@@ -37,6 +37,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::format::FolderRead;
+use super::placed::{Placed, PlacedIn};
 use super::{Complaint, Library, Resolved};
 
 /// The reserved folder a level keeps its theme folders in.
@@ -90,6 +91,9 @@ pub struct ThemesFolder {
     pub root: PathBuf,
     /// The `themes/` folder, relative to [`Self::root`].
     pub below: PathBuf,
+    /// The `themes/` folder as its level and its path there: what every sentence names it and
+    /// what is inside it by ([`Placed`]).
+    pub(crate) placed: Placed,
     /// Which of its theme folders' faces are read.
     pub(crate) fonts: FontGate,
 }
@@ -118,14 +122,14 @@ pub(crate) enum FontGate {
 }
 
 impl ThemesFolder {
-    /// The folder as a path, for a sentence.
+    /// The folder as a path on disk.
     pub fn path(&self) -> PathBuf {
         self.root.join(&self.below)
     }
 }
 
 /// What one level's `themes/` holds: each theme folder as read, or why not.
-type Held = BTreeMap<String, Result<FolderRead, String>>;
+type Held = BTreeMap<String, Result<FolderRead, Complaint>>;
 
 /// **The `themes/` folders of the three levels** a window, a project or a workspace has.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -196,12 +200,14 @@ impl Folders {
                     .map(Path::to_path_buf)
                     .unwrap_or_default()
                     .join(THEMES),
+                placed: Placed::level(PlacedIn::Machine).join(THEMES),
                 fonts: FontGate::Own,
             }
         });
         let project = plane.map(|root| ThemesFolder {
             root: root.to_path_buf(),
             below: PathBuf::from(THEMES),
+            placed: Placed::level(PlacedIn::Project).join(THEMES),
             fonts: FontGate::Approved {
                 files: approved.clone(),
                 measured: measured.clone(),
@@ -212,6 +218,7 @@ impl Folders {
             .map(|(root, name)| ThemesFolder {
                 root: root.to_path_buf(),
                 below: Path::new("workspaces").join(name).join(THEMES),
+                placed: Placed::workspace(name).join(THEMES),
                 fonts: FontGate::Approved {
                     files: approved,
                     measured,
@@ -304,7 +311,10 @@ impl Folders {
             Some(read) => Ok(FoundFolder {
                 name: name.to_owned(),
                 path: level.path().join(name),
-                read: read.map(|(_, _, folder)| folder),
+                placed: level.placed.join(name),
+                read: read
+                    .map(|(_, _, folder)| folder)
+                    .map_err(|complaint| complaint.said),
             }),
             None => Err(said),
         }
@@ -401,6 +411,7 @@ impl Folders {
 pub struct FoundFolder {
     name: String,
     path: PathBuf,
+    placed: Placed,
     read: Result<super::fonts::ThemeDir, String>,
 }
 
@@ -410,16 +421,21 @@ impl FoundFolder {
         &self.name
     }
 
-    /// Where the folder is, for a sentence.
+    /// Where the folder is on disk.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Where the folder is, as its level and its path there: what a sentence names it by.
+    pub fn placed(&self) -> &Placed {
+        &self.placed
     }
 
     /// **The folder as one zip** ([`super::export`]), every file read from the handle it was
     /// found through.
     pub fn export(&self) -> Result<super::Packed, String> {
         let folder = self.read.as_ref().map_err(Clone::clone)?;
-        super::archive::export_held(&self.name, folder.dir()?, &self.path.display().to_string())
+        super::archive::export_held(&self.name, folder.dir()?, &self.placed.to_string())
     }
 }
 
@@ -499,13 +515,14 @@ impl Folders {
 /// One level's theme folders, each read, or nothing when the level has no `themes/`; what is
 /// wrong with the level itself is said in `said`.
 pub(super) fn read_level(folder: &ThemesFolder, said: &mut Vec<Complaint>) -> Held {
+    let of_level = |why: String| Complaint::said(why).at(folder.placed.clone());
     match read::level(folder) {
         Ok((held, notes)) => {
-            said.extend(notes.into_iter().map(Complaint::said));
+            said.extend(notes.into_iter().map(of_level));
             held
         }
         Err(why) => {
-            said.push(Complaint::said(why));
+            said.push(of_level(why));
             Held::new()
         }
     }
@@ -560,7 +577,7 @@ mod read {
 
     use std::path::Path;
 
-    use super::{FontGate, Held, MOST_FOLDERS, ThemesFolder, Value, in_project};
+    use super::{Complaint, FontGate, Held, MOST_FOLDERS, ThemesFolder, Value, in_project};
     use crate::theme::fonts;
     use crate::theme::fonts::ThemeDir;
     use crate::theme::opened;
@@ -573,8 +590,7 @@ mod read {
     /// The level's theme folders, read, and what is worth saying about them; `Ok(empty)` when
     /// it has no `themes/`.
     pub(super) fn level(folder: &ThemesFolder) -> Result<(Held, Vec<String>), String> {
-        let shown = folder.path();
-        let shown = shown.display();
+        let shown = &folder.placed;
         // The level's root is the caller's to trust (a temp directory is itself reached through
         // a link on macOS); every step below it is opened refusing one.
         let Some(at) = opened::walk(&folder.root, &folder.below, &shown.to_string())? else {
@@ -592,14 +608,15 @@ mod read {
             .iter()
             .take(MOST_FOLDERS)
             .map(|name| {
+                let placed = shown.join(name);
                 // A name Windows cannot hold is refused, said, and never read.
                 let read = match crate::theme::portable::refusal(name, name) {
-                    Some(why) => Err(format!("{shown}/{why}")),
+                    Some(why) => Err(format!("{placed}: {why}")),
                     None => {
-                        theme_json(&at, &shown.to_string(), name).map(|(document, icons, dir)| {
+                        theme_json(&at, &placed.to_string(), name).map(|(document, icons, dir)| {
                             let path = folder.path().join(name);
                             // Its fonts are read from the handle its `theme.json` was read through.
-                            let held = ThemeDir::held(path, dir);
+                            let held = ThemeDir::held(path, dir).placed(placed.clone());
                             let held = match &folder.fonts {
                                 FontGate::Own => held,
                                 FontGate::Approved { files, measured } => held.approved_only(
@@ -626,7 +643,10 @@ mod read {
                         })
                     }
                 };
-                (name.clone(), read)
+                (
+                    name.clone(),
+                    read.map_err(|why| Complaint::said(why).at(placed)),
+                )
             })
             .collect();
         Ok((held, notes))
@@ -763,12 +783,12 @@ mod read {
     /// A theme folder opened: its `theme.json`, the icon set it names, and the folder's handle.
     type Opened = (Value, Option<Result<Value, String>>, OwnedFd);
 
-    /// The theme folder `name` in `themes`: its `theme.json`, parsed, the icon set it names,
-    /// each read from a handle opened from `themes` refusing a link, and that handle; or why not.
+    /// The theme folder `name` in `themes`, `shown` naming it: its `theme.json`, parsed, the
+    /// icon set it names, each read from a handle opened from `themes` refusing a link, and that
+    /// handle; or why not.
     fn theme_json(themes: &OwnedFd, shown: &str, name: &str) -> Result<Opened, String> {
-        let folder = format!("{shown}/{name}");
-        let dir = opened::folder(themes, name, &folder)?;
-        let (document, icons) = opened::theme_json(&dir, &folder)?;
+        let dir = opened::folder(themes, name, shown)?;
+        let (document, icons) = opened::theme_json(&dir, shown)?;
         Ok((document, icons, dir))
     }
 }
@@ -795,7 +815,7 @@ mod read {
     pub(super) fn level(folder: &ThemesFolder) -> Result<(Held, Vec<String>), String> {
         Err(format!(
             "{} is not read: theme folders are read on macOS and Linux",
-            folder.path().display()
+            folder.placed
         ))
     }
 }

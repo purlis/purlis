@@ -73,6 +73,94 @@ pub(crate) fn clipped(answer: &Value, wanted: &HashSet<i64>, shows: Option<Rect>
     out
 }
 
+/// The part of a frame's document that the boxes its element is in on the page around it let
+/// show (#2689), in that document's own coordinates, its frame scrolled to `scrolled`: for a
+/// frame from another site, read in a session of its own, whose page's layout is `answer` and
+/// whose element is the node `owner` there. Empty where a box cuts the whole frame off; `None`
+/// where the element, or the size it shows its document at, is not in the read.
+///
+/// The frame shows its document at its element's client size, inset by the element's border
+/// on each side alike. Only the boxes of the document the element is in are read: a box further
+/// out, in a frame around that one, is not.
+pub(crate) fn shown_through(answer: &Value, owner: i64, scrolled: (f64, f64)) -> Option<Rect> {
+    let read = Read::of(answer)?;
+    let (document, at) = read.documents.iter().find_map(|document| {
+        let at = document.backends.iter().position(|b| *b == owner)?;
+        Some((document, at))
+    })?;
+    let element = document.placed.get(&at)?;
+    let &(width, height) = document.client.get(&at)?;
+    if width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+    let origin = (
+        element.bounds.x + (element.bounds.width - width).max(0.0) / 2.0,
+        element.bounds.y + (element.bounds.height - height).max(0.0) / 2.0,
+    );
+    let mut shown = Rect {
+        x: origin.0,
+        y: origin.1,
+        width,
+        height,
+    };
+    // The boxes it is in, as `Read::cut_off` walks them.
+    let mut out_of_flow = element.position;
+    let mut next = document.parents.get(at).copied().flatten();
+    let mut steps = 0;
+    while let Some(up) = next {
+        steps += 1;
+        if steps > document.parents.len() || out_of_flow == Position::Fixed {
+            break;
+        }
+        if let Some(placed) = document.placed.get(&up) {
+            let holds = match out_of_flow {
+                Position::Absolute => placed.position != Position::InFlow,
+                _ => true,
+            };
+            if holds && !document.roots.contains(&up) {
+                shown = within(shown, placed);
+            }
+            if holds {
+                out_of_flow = placed.position;
+            }
+        }
+        next = document.parents.get(up).copied().flatten();
+    }
+    Some(Rect {
+        x: shown.x - origin.0 + scrolled.0,
+        y: shown.y - origin.1 + scrolled.1,
+        width: shown.width,
+        height: shown.height,
+    })
+}
+
+/// `rect` cut to `placed` on each axis `placed` cuts off what overflows it on: empty (no width,
+/// or no height) where nothing of it is left.
+fn within(rect: Rect, placed: &Placed) -> Rect {
+    let b = &placed.bounds;
+    let cut = |from: f64, size: f64, box_from: f64, box_size: f64| {
+        let start = from.max(box_from);
+        let end = (from + size).min(box_from + box_size);
+        (start, (end - start).max(0.0))
+    };
+    let (x, width) = if placed.cuts.0 {
+        cut(rect.x, rect.width, b.x, b.width)
+    } else {
+        (rect.x, rect.width)
+    };
+    let (y, height) = if placed.cuts.1 {
+        cut(rect.y, rect.height, b.y, b.height)
+    } else {
+        (rect.y, rect.height)
+    };
+    Rect {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
 /// How an element laid out is placed.
 #[derive(Debug, Clone, Copy)]
 struct Placed {
