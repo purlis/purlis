@@ -1055,6 +1055,17 @@ jobs:
         run: xvfb-run -a npm run e2e:layout
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # A project that picks a theme before the app starts, and the native window drawn in it
+      # with no draw asked by the test (#2583). Its own run, because the pick has to be on disk
+      # before the one app process a run keeps is started.
+      - name: The native window, from a project's theme pick
+        run: npm run e2e:picked
+        if: runner.os == 'macOS' && matrix.extras
+        working-directory: app
+      - name: The native window, from a project's theme pick
+        run: xvfb-run -a npm run e2e:picked
+        if: runner.os == 'Linux' && matrix.extras
+        working-directory: app
       # The app launched over an old charter install, and the launch's migration it runs
       # (RN-10). Its own run, because the old install has to be on disk before the one app
       # process a run keeps is started, and this is the one app that migrates at launch.
