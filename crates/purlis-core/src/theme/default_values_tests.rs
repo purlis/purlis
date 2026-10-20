@@ -348,3 +348,67 @@ fn a_committed_default_s_values_are_read_from_the_plane_on_disk() {
         Some(values(&[("loud", "on")]))
     );
 }
+
+#[test]
+fn a_nearer_choice_of_the_same_theme_with_no_values_draws_its_defaults_not_the_committed_ones() {
+    let places = Places::new();
+    let manifest = r#"{"settings": {"theme": {"use": "accented", "options": {"accent": "teal", "loud": "on"}}}}"#;
+    // The person's choice for the LIVE workspace: the same theme, no values.
+    let mut held = choices::Choices::default();
+    held.projects.insert(
+        PROJECT.to_owned(),
+        choices::ProjectChoices {
+            workspaces: [("alpha".to_owned(), Choice::new("accented", None).unwrap())].into(),
+            ..choices::ProjectChoices::default()
+        },
+    );
+    let levels = levels_of(&held, PROJECT_TEAL, Some(manifest));
+
+    let got = drawn(&levels, &places.folders());
+
+    assert_eq!(got.level, Some(Level::WorkspaceChoice));
+    // Neither the workspace's committed values nor the project's are drawn.
+    assert_eq!(accent_of(&got), LAVENDER);
+    assert!(got.held.is_none(), "loud stays off, so no floor is held");
+    let theme = got.theme.as_ref().unwrap();
+    assert!(theme.options.iter().all(|one| !one.chosen));
+}
+
+#[test]
+fn an_options_refusal_quotes_what_the_file_holds_escaped_and_cut() {
+    let long = "x".repeat(200);
+    let top: toml::Table = toml::from_str(&format!(
+        "[theme]\nuse = \"accented\"\noptions = {{ \"bad\\nkey\" = \"on\", accent = \"{long}\" }}\n"
+    ))
+    .unwrap();
+    let said = refusals_in_workspace(&top, "workspaces/alpha/workspace.json");
+    assert_eq!(said.len(), 2, "{said:?}");
+    let accent = said
+        .iter()
+        .find(|one| one.starts_with("settings.theme.options.accent "))
+        .expect("the long value's refusal");
+    assert!(
+        accent.starts_with(
+            "settings.theme.options.accent in workspaces/alpha/workspace.json is \"xxx"
+        ),
+        "{said:?}"
+    );
+    assert!(accent.contains("x..., which is not the id"), "{said:?}");
+    assert!(!accent.contains(&"x".repeat(100)), "{said:?}");
+    assert!(
+        said.iter().any(|one| one.starts_with(
+            "settings.theme.options.\"bad\\nkey\" in workspaces/alpha/workspace.json is \"on\""
+        )),
+        "{said:?}"
+    );
+    assert!(said.iter().all(|one| !one.contains('\n')), "{said:?}");
+    // charter.toml's says the same.
+    let shared = "[theme]\nuse = \"accented\"\noptions = { \"bad\\nkey\" = \"on\" }\n";
+    assert_eq!(
+        refusals(shared, "charter.toml"),
+        [
+            "theme.options.\"bad\\nkey\" in charter.toml is \"on\" for an option whose id is not \
+          one — an option and its value are each named by their id"
+        ]
+    );
+}

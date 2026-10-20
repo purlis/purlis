@@ -729,7 +729,9 @@ person's choice beats it, nearest level first, and a choice's values are its own
 choice of the same theme with no values draws the theme's defaults, not the team's. Options with
 no `use` choose nothing; an option or a value that is not an id is left out when read and
 refused when saved. In Settings › Theme a committed default's value is badged Team, and setting
-an option where it is drawn makes it the person's choice, starting from the team's values.
+an option where it is drawn makes it the person's choice, starting from the team's values: those
+values are copied into the person's choice, so later changes the team commits no longer reach
+them there while that choice stands.
 
 ```toml
 [theme]

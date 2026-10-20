@@ -83,7 +83,9 @@ default, and its option values are its own. `--json` has them as `choices`:
 `workspace-choice`, `workspace-default`, `project-choice`, `project-default` or
 `machine-default`, `workspace` names the workspace of the first two (`null` otherwise), `theme`
 is the pick as written, `id` is the id this list names its theme by (`null` for a folder no
-level within the choice's reach has), `from` is `workspace`, `project`, `machine` or `null`,
+level within the choice's reach has), `from` is `workspace`, `project`, `machine` or `null`
+(the level the choice reads now, placed as the engine places it: a choice stored with no
+`from` shows the level it reads, not what `theme-choices.json` holds),
 `appearance` is `null` when none was chosen, and `options` is the value of each option by its id
 (`{}` for none). Whether a choice is drawn where it is made also hangs on the extensions in force
 there and the system's appearance; Settings › Theme says what is drawn.

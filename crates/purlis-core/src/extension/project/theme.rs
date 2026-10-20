@@ -772,10 +772,7 @@ pub fn keyed(text: &str, file: &str) -> Vec<Refusal> {
             }
             OPTIONS => out.extend(
                 options_refused(value, &format!("{TABLE}.{OPTIONS} in {file}"), |option| {
-                    format!(
-                        "{TABLE}.{OPTIONS}.{} in {file}",
-                        toml_edit::Key::new(option).display_repr()
-                    )
+                    format!("{TABLE}.{OPTIONS}.{option} in {file}")
                 })
                 .into_iter()
                 .map(|(why, option)| match option {
@@ -871,15 +868,24 @@ pub fn keyed_in_workspace(top: &toml::Table, file: &str) -> Vec<Refusal> {
 /// What is refused in an [`OPTIONS`] value, `at` naming the key and `named` each option's key
 /// in a sentence: not a table; more options than a theme may have; an option whose id is not
 /// one; a value that is not an id. Each with the option it is about, when it is about one.
+///
+/// What the file holds is quoted as a sentence may show it: each option's key as TOML writes it
+/// (`display_repr`), so no character of it is drawn raw, and each value escaped and cut to
+/// [`QUOTED`].
 fn options_refused<'a>(
     value: &'a toml::Value,
     at: &str,
     named: impl Fn(&str) -> String,
 ) -> Vec<(String, Option<&'a str>)> {
     use crate::theme::choices::{MOST_VALUES, is_id};
+    let quoted = |value: &toml::Value| crate::shown::readable(&value.to_string(), QUOTED);
+    let named = |option: &str| named(&toml_edit::Key::new(option).display_repr());
     let Some(table) = value.as_table() else {
         return vec![(
-            format!("{at} is {value}, which is not a table of option ids and their values"),
+            format!(
+                "{at} is {}, which is not a table of option ids and their values",
+                quoted(value)
+            ),
             None,
         )];
     };
@@ -898,17 +904,19 @@ fn options_refused<'a>(
         if !is_id(option) {
             out.push((
                 format!(
-                    "{} is {given} for an option whose id is not one — an option and its value \
-                     are each named by their id",
-                    named(option)
+                    "{} is {} for an option whose id is not one — an option and its value are \
+                     each named by their id",
+                    named(option),
+                    quoted(given)
                 ),
                 Some(option.as_str()),
             ));
         } else if !given.as_str().is_some_and(is_id) {
             out.push((
                 format!(
-                    "{} is {given}, which is not the id of one of the option's values",
-                    named(option)
+                    "{} is {}, which is not the id of one of the option's values",
+                    named(option),
+                    quoted(given)
                 ),
                 Some(option.as_str()),
             ));
@@ -916,6 +924,9 @@ fn options_refused<'a>(
     }
     out
 }
+
+/// The most of a value from a file an options refusal quotes.
+const QUOTED: usize = 80;
 
 #[cfg(test)]
 mod tests;
