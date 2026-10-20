@@ -66,8 +66,9 @@ what the skill does beyond its instructions:
 - writes it would make outside the workspace;
 - its grade, if the source carries one (#2779), and the lint's findings (#2771).
 
-The risky items are marked, and every file is one click away. The skill installs in one click
-from the review. `purlis skill install` prints the same summary and asks the same question.
+The risky items are marked, and every file is one click away. **The skills that come along as
+references (§2) are in the same review**, each with its own summary, so nothing is installed that
+the person was not shown. The skill installs in one click from the review. `purlis skill install` prints the same summary and asks the same question.
 
 **The review is a reading aid, not a guarantee.** It is worked out from the files, so it lists
 what they name, not what a script could compute at run time. What bounds an installed skill is
@@ -92,13 +93,12 @@ never overwrites an edit silently.
 A private source names a vault entry. Every fetch from it runs through `purlis secret exec`,
 which hands git the credential for that one command: the token never reaches a chat, the
 lockfile, the plane or purlis's own git runner, which strips credentials from what it starts.
-Each person signs in with their own vault entry, so a teammate who updates a skill from a
-private source needs access to it themselves; without it, the studio says so and installs nothing.
+Each person signs in with their ow### 6. On an org plane, the org decides what may be installed
 
-### 6. On an org plane, the org decides what may be installed
+Org planes add an allow/block list, a minimum source age and audit entries over this same
+install (#2774).
 
-On an org plane (#2774), an allow/block list of sources and of single skills decides what a
-member may install, a commit younger than `minPackageAge` (7 days by default) is not offered, and
+7 days by default) is not offered, and
 every install, update and removal is an audit entry. These are policies over the same install,
 not a different one.
 
