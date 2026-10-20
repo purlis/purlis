@@ -208,6 +208,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
     "theme_in_force",
+    // The theme drafts of a chat, asked before the window closes it (#2332): the chat, where it
+    // works, each draft and what Keep would do, for the person's Keep or Revert, which are the
+    // window's alone. A link is served `theme_drafts_of_chat_counted`, the number (#2708).
+    "theme_drafts_of_chat",
     // The theme specimen (#2330): a hidden window this app opens on this machine, photographed
     // and closed. Drawn for the window and for the chats this app started, on their hook
     // socket; a link has no window of its own here to draw it for.
@@ -938,8 +942,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // What Settings › Theme's gallery reads (#2331): its cards, and what a card draws while the
     // pointer is on it. Nothing is written.
     "theme_card_drawn",
-    // The theme drafts of a chat, asked before it closes (#2332). Nothing is written.
-    "theme_drafts_of_chat",
+    // How many theme drafts a chat has, asked before a link closes it (#2708): a number, and
+    // nothing of the drafts. Nothing is written.
+    "theme_drafts_of_chat_counted",
     "theme_gallery",
     // The theme in force at a project and workspace, with no window and nothing watched
     // (#2697): what a link is served in place of `theme_in_force`.

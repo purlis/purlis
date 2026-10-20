@@ -1394,15 +1394,12 @@ fn draft(here: Here<'_>, folder: &str, save: bool, from: Option<&str>) -> ExitCo
         std::time::Duration::from_secs(30),
     );
     let (code, newly) = match answer {
-        Ok(Ok(purlis_core::hookwire::Answer::Said { lines, code })) => {
-            // A draft made now is said as done: its working copy is made again from it.
-            let newly = lines
-                .iter()
-                .any(|line| matches!(line, purlis_core::repocmd::Say::Done(_)));
+        Ok(Ok(purlis_core::hookwire::Answer::Drafted { lines, code, made })) => {
+            // A draft made now: its working copy is made again from it.
             for line in lines {
                 crate::speak(line);
             }
-            (code, newly)
+            (code, made)
         }
         // The app's own refusal, as it said it.
         Ok(Ok(purlis_core::hookwire::Answer::No { why }))

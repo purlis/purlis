@@ -759,7 +759,7 @@ function sayTheDraftRefused(draft: WindowDraft | null) {
     detail: `Theme draft “${plainLine(draft.folder)}” is not drawn: ${complaintsSaid(draft.refused)}.`,
     remedy:
       plane !== undefined
-        ? "review the font files that changed and allow them, and the draft is drawn with them; or fix the draft and save it again"
+        ? "Review and allow approves the project's own font files, the same bytes the draft carries, and the draft is drawn with them; or fix the draft and save it again"
         : "fix the draft and save it again; a font file of the project's is drawn once you approve the project again",
     ...(plane === undefined ? {} : { review: plane }),
   });

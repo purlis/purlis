@@ -1355,11 +1355,13 @@ export const commands = {
 	themeDuplicate: __WINDOW_ONLY_RESULT,
 	themeOpenFolder: __WINDOW_ONLY_RESULT,
 	themeChat: __WINDOW_ONLY_RESULT,
+	themeDraftsOfChat: __WINDOW_ONLY_RESULT,
 	/**
-	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
-	 *  draft, where Keep puts it. Empty for a chat with none.
+	 *  **How many theme drafts the chat `session` has**, as a link asks before it closes that chat
+	 *  (#2708): a number, and nothing of the drafts, the chat or where it works. Keep and Revert are
+	 *  the window's alone, so a link's close of a chat with drafts is the window's to ask about.
 	 */
-	themeDraftsOfChat: (plane: PlaneId, session: number) => typedError<WindowDraft[], string>(__TAURI_INVOKE("theme_drafts_of_chat", { plane, session })),
+	themeDraftsOfChatCounted: (plane: PlaneId, session: number) => typedError<number, string>(__TAURI_INVOKE("theme_drafts_of_chat_counted", { plane, session })),
 	themeDraftKeep: __WINDOW_ONLY_RESULT,
 	themeDraftRevert: __WINDOW_ONLY_RESULT,
 	themeDraftsRevertHere: __WINDOW_ONLY_RESULT,
@@ -9444,6 +9446,11 @@ export type WindowDraft = {
 	kept_to: string,
 	/**  Whether Keep replaces a theme folder that is there: the window asks the person first. */
 	replaces: boolean,
+	/**
+	 *  Whether the theme folder Keep puts it in is not what the draft started from: made,
+	 *  changed or deleted since ([`drafts::changed`]). The window says so, and Keep asks first.
+	 */
+	changed: boolean,
 	/**  Whether the window draws it now: the draft, or its last good version. */
 	drawn: boolean,
 	/**  The hard floors the draft as saved breaks, in the engine's words: why it is not drawn. */
@@ -9457,6 +9464,11 @@ export type WindowDraft = {
 	 *  rules of a refused theme otherwise. `None` for a draft not refused for a font.
 	 */
 	review: ThemeReview | null,
+	/**
+	 *  Whether the theme as kept is refused while the draft is drawn: its Notice, and any
+	 *  Review and allow on it, waits until the draft is reverted, and the strip says so.
+	 */
+	kept_refused: boolean,
 };
 
 /**  One face of a font. */

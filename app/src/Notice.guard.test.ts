@@ -422,11 +422,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   },
   "TabRename.tsx": { count: 1, why: "a rename's refusal, beside the box being typed in" },
   "ThemeDraftStrip.tsx": {
-    count: 3,
+    count: 4,
     why:
       ACTION +
-      ". Three: the draft strip's line that a save is not drawn and which hard floor it " +
-      "breaks (#2332), what Keep or Revert answered, and Keep's question's refusal",
+      ". Four: the draft strip's line that a save is not drawn and which hard floor it " +
+      "breaks (#2332), that a refused kept theme's Notice waits while the draft is drawn " +
+      "(#2708), what Keep or Revert answered, and Keep's question's refusal",
   },
   "TaskEnd.tsx": {
     count: 2,

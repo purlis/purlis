@@ -727,7 +727,15 @@ const DIALOGS: Opened[] = [
           closing={["steward 2"]}
           back={["web 5"]}
           ownTabs={1}
-          drafts={[{ folder: "dusk", kept_to: "project", workspace: "alpha", replaces: true }]}
+          drafts={[
+            {
+              folder: "dusk",
+              kept_to: "project",
+              workspace: "alpha",
+              replaces: true,
+              changed: false,
+            },
+          ]}
           onEnd={nothing}
           onSmartClose={nothing}
           onCancel={nothing}

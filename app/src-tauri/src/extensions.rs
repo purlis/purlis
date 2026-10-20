@@ -369,25 +369,43 @@ impl ThemeAsked {
             ),
             _ => None,
         };
+        let folders = purlis_core::theme::Folders::of(Some(&root), at, workspace);
+        let theirs = crate::windowprefs::THEIRS.get(Some(&root));
+        let offered = || {
+            offered_kept()
+                .get_or_insert_with(|| offered_of(&extension::survey(&root, &built_in())))
+                .clone()
+        };
         if let Some((Some(drawn), draft)) = drafted.clone() {
+            // The theme as kept, asked only whether it is refused: its Notice waits while the
+            // draft is drawn, and the strip says so (#2708).
+            let kept = theme_in_force_of(
+                &levels,
+                &folders,
+                self.on.as_deref(),
+                theirs.theme.as_ref(),
+                self.light,
+                contrast_of(self.more_contrast),
+                offered,
+                |_| None,
+            );
             return ThemeInForce {
-                draft: Some(draft),
+                draft: Some(crate::themedrafts::WindowDraft {
+                    kept_refused: kept.refused.is_some(),
+                    ..draft
+                }),
                 // A draft drawn is not refused: there is nothing to review.
                 ..answer_of(drawn, &levels, |_| None)
             };
         }
         let answer = theme_in_force_of(
             &levels,
-            &purlis_core::theme::Folders::of(Some(&root), at, workspace),
+            &folders,
             self.on.as_deref(),
-            crate::windowprefs::THEIRS.get(Some(&root)).theme.as_ref(),
+            theirs.theme.as_ref(),
             self.light,
             contrast_of(self.more_contrast),
-            || {
-                offered_kept()
-                    .get_or_insert_with(|| offered_of(&extension::survey(&root, &built_in())))
-                    .clone()
-            },
+            offered,
             |faces| {
                 at.and_then(|plane| {
                     review_kept(plane, faces, || crate::planes::theme_review(&root, plane))
@@ -3332,5 +3350,47 @@ mod tests {
         let link = asked().for_a_link();
         assert_eq!(link.theme.map(|theme| theme.name).as_deref(), Some("one"));
         assert_eq!(link.draft, None);
+    }
+
+    #[test]
+    fn a_drawn_draft_says_when_the_theme_as_kept_is_refused_and_its_notice_waits() {
+        // #2708: while a draft is drawn, nothing of the kept theme is refused in the answer, so
+        // its Notice waits; the draft says so, for its strip.
+        let (_home, config, [one, _]) = two_projects();
+        std::fs::create_dir_all(one.join(".purlis")).expect("the project's own folder");
+        let chat = crate::chats::Drafting {
+            session: 3,
+            id: purlis_core::reopen::mint(),
+            name: "chat 3".to_owned(),
+            workspace: None,
+        };
+        let place = purlis_core::theme::drafts::Place {
+            plane: &one,
+            workspace: None,
+        };
+        purlis_core::theme::drafts::start(Some(&config), place, &chat.id, "dusk").expect("a draft");
+        let asked = || ThemeAsked {
+            config: config.clone(),
+            plane: Some(one.clone()),
+            workspace: None,
+            chats: vec![chat.clone()],
+            pick: None,
+            on: None,
+            light: false,
+            more_contrast: false,
+            reread: false,
+        };
+        let drawn = asked().read(None);
+        assert_eq!(drawn.draft.map(|draft| draft.kept_refused), Some(false));
+        // The project's own theme saved as no theme at all: refused as kept.
+        std::fs::write(
+            one.join("themes/one").join(purlis_core::theme::THEME_JSON),
+            "not json",
+        )
+        .expect("a broken theme");
+        let drawn = asked().read(None);
+        assert!(drawn.refused.is_none(), "the draft is drawn");
+        assert_eq!(drawn.draft.map(|draft| draft.kept_refused), Some(true));
+        assert!(asked().read(Some(true)).refused.is_some(), "as kept, it is");
     }
 }

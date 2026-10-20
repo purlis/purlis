@@ -641,7 +641,8 @@ exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such t
 engine (`theme::drafts`) and drawn only in its chat's workspace while it holds every hard floor
 (primary text, the focus ring and the terminal's words at 3:1, as drawn, in every tint); the
 window's draft strip (`ThemeDraftStrip.tsx`) has Keep, Revert and Compare, and the revert key
-is ⌘⇧⌫ (Ctrl+Shift+Backspace elsewhere).
+is ⌘⇧⌫ (Ctrl+Shift+Backspace elsewhere). The hard floors cover colour only; the revert key is
+the way out of a draft whose face, size or spacing makes the window hard to read.
 `purlis docs show themes` has the JSON's shape. **`purlis theme import <file>`** (#2334)
 makes a theme folder from a VS Code colour theme, a base16 or base24 scheme, an iTerm2 colour
 preset, a Ghostty theme or a theme folder's zip: the engine's `import` maps each kind through a

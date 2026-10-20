@@ -300,7 +300,16 @@ export function DRAFTS_SAY(drafts: readonly string[]): string {
 }
 
 /** A closing chat's theme draft, as the close question says what Keep does with it. */
-export type DraftClosing = Pick<WindowDraft, "folder" | "kept_to" | "workspace" | "replaces">;
+export type DraftClosing = Pick<
+  WindowDraft,
+  "folder" | "kept_to" | "workspace" | "replaces" | "changed"
+>;
+
+/** Why a link does not close a chat with theme drafts (#2708): Keep and Revert are the window's. */
+export function DRAFTS_IN_THE_WINDOW(drafts: number): string {
+  const has = drafts === 1 ? "a theme draft" : `${drafts} theme drafts`;
+  return `This chat has ${has}, so it is closed in purlis's own window on this machine, where you choose Keep or Revert.`;
+}
 
 /** What Keep does with each draft: where it puts it, and what it replaces there; then the one
  *  question who draws it. */

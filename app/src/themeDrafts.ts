@@ -79,11 +79,16 @@ export function keptToSaid(draft: Pick<WindowDraft, "kept_to" | "workspace">): s
     : `Keep puts it in the workspace ${draft.workspace ?? ""}'s themes`;
 }
 
-/** Keep's own words for `draft`: where it goes, and what it replaces there. */
+/**
+ * Keep's own words for `draft`: where it goes, and what it replaces there; and, where the folder
+ * it replaces is not what the draft started from (#2708), that it changed since.
+ */
 export function keepSays(
-  draft: Pick<WindowDraft, "kept_to" | "workspace" | "replaces" | "folder">,
+  draft: Pick<WindowDraft, "kept_to" | "workspace" | "replaces" | "folder"> &
+    Partial<Pick<WindowDraft, "changed">>,
 ): string {
-  const replacing = draft.replaces ? `, replacing the ${draft.folder} that is there` : "";
+  const since = draft.changed === true ? ", which changed since this draft started" : "";
+  const replacing = draft.replaces ? `, replacing the ${draft.folder} that is there${since}` : "";
   return `${keptToSaid(draft)}${replacing}.`;
 }
 

@@ -143,6 +143,8 @@ impl Records {
     /// Neither half is worth interrupting the operator over. A record that cannot be written
     /// means the next launch of this plane comes back empty; a vouch that cannot be taken
     /// means one spurious question at that launch. Both are said and neither refuses.
+    ///
+    /// And once it is written, the theme drafts of the chats it no longer holds are deleted.
     fn write(&self, record: &reopen::Record) {
         if !self.allowed.load(Ordering::SeqCst) {
             return;
@@ -161,6 +163,15 @@ impl Records {
             return;
         }
         self.vouch();
+        // **The theme drafts of a chat the record no longer holds go** (#2708): it holds every
+        // chat open, and every one a launch has still to start, so a draft deleted here is one
+        // no strip names and no close asks about again.
+        let open: Vec<&str> = record
+            .chats
+            .iter()
+            .filter_map(|one| one.identity.id.as_deref())
+            .collect();
+        crate::themedrafts::sweep(&self.root, &open);
     }
 
     /// Every project this machine remembers opening (the machine store's recents), which is

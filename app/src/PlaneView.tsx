@@ -340,7 +340,8 @@ import { endedState, type Away } from "./TaskAway";
 import { useHeldAmong } from "./dispatchesHeld";
 import { useRefusedAmong } from "./vaultRefusals";
 import { type Asking } from "./NeedsYou";
-import { EndingChat, type SmartAsk } from "./EndingChat";
+import { DRAFTS_IN_THE_WINDOW, EndingChat, type SmartAsk } from "./EndingChat";
+import { inTheWindow } from "./personaHostsAllow";
 import { KeepAsk, ThemeDraftStrip } from "./ThemeDraftStrip";
 import { ChatAsk, focusAfterNoticeGone } from "./ChatAsk";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
@@ -7153,12 +7154,14 @@ export const PlaneView = memo(function PlaneView({
     /** The closing chat's theme drafts (#2332), which the close asks Keep or Revert about. */
     drafts?: readonly WindowDraft[];
   }>();
-  /** A theme kept as its chat closed (#2332): Keep then asks who draws it. */
-  const [keptOnClose, setKeptOnClose] = useState<{
-    folder: string;
-    workspace: string | null;
-    keptTo: string;
-  }>();
+  /** The themes kept as their chat closed (#2332), each asked in turn who draws it (#2708). */
+  const [keptOnClose, setKeptOnClose] = useState<
+    readonly {
+      folder: string;
+      workspace: string | null;
+      keptTo: string;
+    }[]
+  >([]);
 
   /**
    * What every surface does with a row: ask first where a chat is about to end, then carry
@@ -7206,6 +7209,27 @@ export const PlaneView = memo(function PlaneView({
               : [],
           };
         };
+        // **On a link, the drafts are the window's to ask about** (#2708): Keep and Revert are
+        // its alone, so a link is told only how many each chat has, and a close of one that has
+        // any is refused, saying where it is answered.
+        if (!inTheWindow(commands, "themeDraftsOfChat")) {
+          const counted = await Promise.all(
+            ending.map((session) =>
+              commands
+                .themeDraftsOfChatCounted(plane, session)
+                .catch((err: unknown) => ({ status: "error" as const, error: String(err) })),
+            ),
+          );
+          for (const one of counted) {
+            if (one.status === "error")
+              return {
+                ok: false,
+                refused: `purlis could not tell whether this chat has a theme draft, so it is not closed: ${one.error}`,
+              };
+            if (typeof one.data === "number" && one.data > 0)
+              return { ok: false, refused: DRAFTS_IN_THE_WINDOW(one.data) };
+          }
+        }
         // **The theme drafts of every chat the close ends** (#2332), which it asks Keep or Revert
         // about. Where purlis cannot tell, the close does not go on unasked: it is refused, and
         // says why.
@@ -7292,7 +7316,14 @@ export const PlaneView = memo(function PlaneView({
         const done = keep
           ? // The close row said what Keep puts where, and what it replaces: the answer is
             // the person's yes to it.
-            await commands.themeDraftKeep(plane, one.session, one.folder, one.kept_to, one.replaces)
+            await commands.themeDraftKeep(
+              plane,
+              one.session,
+              one.folder,
+              one.kept_to,
+              one.replaces,
+              one.changed,
+            )
           : await commands.themeDraftRevert(plane, one.session, one.folder);
         if (done.status === "error") {
           sayAboutThisMachine("theme draft", {
@@ -7305,12 +7336,15 @@ export const PlaneView = memo(function PlaneView({
       }
       sayAboutThisMachine("theme draft", undefined);
       void drawWhatIsInForce();
+      // Who draws each theme kept, asked about every one in turn (#2708).
       if (keep)
-        setKeptOnClose({
-          folder: drafts[0].folder,
-          workspace: drafts[0].workspace,
-          keptTo: drafts[0].kept_to,
-        });
+        setKeptOnClose(
+          drafts.map((one) => ({
+            folder: one.folder,
+            workspace: one.workspace,
+            keptTo: one.kept_to,
+          })),
+        );
       return true;
     },
     [plane],
@@ -9334,13 +9368,14 @@ export const PlaneView = memo(function PlaneView({
             />
           )}
 
-          {keptOnClose && (
+          {keptOnClose.length > 0 && (
             <KeepAsk
+              key={`${keptOnClose[0].folder} ${keptOnClose.length}`}
               plane={plane}
-              folder={keptOnClose.folder}
-              workspace={keptOnClose.workspace}
-              keptTo={keptOnClose.keptTo}
-              onDone={() => setKeptOnClose(undefined)}
+              folder={keptOnClose[0].folder}
+              workspace={keptOnClose[0].workspace}
+              keptTo={keptOnClose[0].keptTo}
+              onDone={() => setKeptOnClose((was) => was.slice(1))}
             />
           )}
 

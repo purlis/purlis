@@ -23,11 +23,14 @@ type Kept = { folder: string; workspace: string | null; keptTo: string };
  * - **Keep** copies the draft into the real folder it is a draft of, then asks once whether the
  *   theme becomes this workspace's (or the project's) committed default or stays the person's
  *   own choice ({@link KeepAsk}). Where that folder is the project's, the strip says so before
- *   it is pressed; where Keep replaces a folder that is there, it asks first.
+ *   it is pressed; where Keep replaces a folder that is there, it asks first, saying when that
+ *   folder changed since the draft started.
  * - **Revert** deletes the draft.
  * - **Compare**, while it is held (pointer or key), draws the theme as kept.
  * - **The revert key** (⌘⇧⌫, Ctrl+Shift+Backspace elsewhere) reverts every draft here at once,
  *   whatever the window looks like.
+ * - **While the draft is drawn, a refused kept theme's Notice waits** (#2708): the strip says
+ *   so, and Revert brings it back.
  */
 export function ThemeDraftStrip({
   plane,
@@ -79,13 +82,20 @@ export function ThemeDraftStrip({
     holding.current = held;
     void compareWithKept(held);
   };
-  // Keep does what the strip showed: where it puts the draft, and whether it replaces a folder
-  // there, which the person agreed to before this is called. The core refuses when either has
-  // changed since.
+  // Keep does what the strip showed: where it puts the draft, whether it replaces a folder there,
+  // and whether that folder changed since the draft started, which the person agreed to before
+  // this is called. The core refuses when any has changed since.
   const keep = () => {
     setReplacing(false);
     void commands
-      .themeDraftKeep(plane, draft.session, draft.folder, draft.kept_to, draft.replaces)
+      .themeDraftKeep(
+        plane,
+        draft.session,
+        draft.folder,
+        draft.kept_to,
+        draft.replaces,
+        draft.changed,
+      )
       .then((done) => {
         if (done.status === "error") {
           setSaid(done.error);
@@ -118,6 +128,7 @@ export function ThemeDraftStrip({
               : `Not drawn: ${notDrawn}`}
           </span>
         )}
+        {draft.drawn && draft.kept_refused && <span role="status">{KEPT_REFUSED_WAITS}</span>}
         {said !== undefined && <span role="status">{said}</span>}
       </div>
       <div className="theme-draft-actions">
@@ -181,6 +192,10 @@ export function ThemeDraftStrip({
     </div>
   );
 }
+
+/** What the strip says while the draft is drawn over a kept theme that is refused (#2708). */
+export const KEPT_REFUSED_WAITS =
+  "The theme as kept is refused, and its Notice waits while this draft is drawn: Revert brings it back.";
 
 /**
  * **Keep asks before it replaces a theme folder that is there** (#2332): the folder it is a draft

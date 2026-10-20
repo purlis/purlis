@@ -35,6 +35,9 @@ pub struct WindowDraft {
     pub kept_to: String,
     /// Whether Keep replaces a theme folder that is there: the window asks the person first.
     pub replaces: bool,
+    /// Whether the theme folder Keep puts it in is not what the draft started from: made,
+    /// changed or deleted since ([`drafts::changed`]). The window says so, and Keep asks first.
+    pub changed: bool,
     /// Whether the window draws it now: the draft, or its last good version.
     pub drawn: bool,
     /// The hard floors the draft as saved breaks, in the engine's words: why it is not drawn.
@@ -46,6 +49,9 @@ pub struct WindowDraft {
     /// the project asks again about font files alone, so its trust ask lifts the refusal; the
     /// rules of a refused theme otherwise. `None` for a draft not refused for a font.
     pub review: Option<crate::extensions::ThemeReview>,
+    /// Whether the theme as kept is refused while the draft is drawn: its Notice, and any
+    /// Review and allow on it, waits until the draft is reverted, and the strip says so.
+    pub kept_refused: bool,
 }
 
 /// The chats of the plane `held` that work at `workspace` (`None`: the plane root).
@@ -149,10 +155,12 @@ pub(crate) fn drafted_here(
         workspace: chat.workspace.clone(),
         kept_to: kept_to_word(&draft.kept_to),
         replaces: drafts::replaces(plane, &draft),
+        changed: drafts::changed(plane, &draft),
         drawn: drafted.drawn.is_some(),
         broken: drafted.broken.iter().map(drafts::BrokenIn::said).collect(),
         refused: drafted.refused.iter().map(|one| one.said.clone()).collect(),
         review: draft_review(config, plane, &drafted.refused),
+        kept_refused: false,
     };
     Some((drafted.drawn, window))
 }
@@ -194,7 +202,9 @@ fn draft_review(
 }
 
 /// The theme drafts of the chat `session`, as the window asks before it closes that chat: each
-/// draft, where Keep puts it. Empty for a chat with none.
+/// draft, where Keep puts it. Empty for a chat with none. The window's alone: it names the chat
+/// and where it works, and what Keep would do, which only the window acts on; a link is served
+/// [`theme_drafts_of_chat_counted`].
 #[tauri::command]
 #[specta::specta]
 pub async fn theme_drafts_of_chat(
@@ -219,6 +229,7 @@ pub async fn theme_drafts_of_chat(
             .into_iter()
             .map(|(draft, chat)| WindowDraft {
                 replaces: drafts::replaces(&root, &draft),
+                changed: drafts::changed(&root, &draft),
                 folder: draft.folder,
                 session: chat.session,
                 chat: chat.name.clone(),
@@ -228,8 +239,39 @@ pub async fn theme_drafts_of_chat(
                 broken: Vec::new(),
                 refused: Vec::new(),
                 review: None,
+                kept_refused: false,
             })
             .collect()
+    })
+    .await
+    .map_err(|err| format!("reading the chat's theme drafts did not finish: {err}"))
+}
+
+/// **How many theme drafts the chat `session` has**, as a link asks before it closes that chat
+/// (#2708): a number, and nothing of the drafts, the chat or where it works. Keep and Revert are
+/// the window's alone, so a link's close of a chat with drafts is the window's to ask about.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_drafts_of_chat_counted(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+) -> Result<u32, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let chats: Vec<Drafting> = held
+        .chats()
+        .drafting()
+        .into_iter()
+        .filter(|one| one.session == session)
+        .collect();
+    let config = crate::extensions::config_root()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(chat) = chats.first() else {
+            return 0;
+        };
+        let found = drafts_of(&config, &root, chat.workspace.as_deref(), &chats).len();
+        u32::try_from(found).unwrap_or(u32::MAX)
     })
     .await
     .map_err(|err| format!("reading the chat's theme drafts did not finish: {err}"))
@@ -262,8 +304,9 @@ fn draft_of(
 /// **Keep** pressed: the engine copies the draft of the chat `session` into the real folder it is
 /// a draft of and deletes the draft. Answers what it did, in a sentence. Only a draft the window
 /// draws is kept, and only as the person was shown it: `kept_to` (`workspace` or `project`, as
-/// `WindowDraft::kept_to` says) and `replaces`, which the window sends once the person agreed to
-/// replace the folder there. When either has changed since, nothing is kept.
+/// `WindowDraft::kept_to` says), `replaces`, which the window sends once the person agreed to
+/// replace the folder there, and `changed`, once they agreed to replace a folder that is not what
+/// the draft started from. When any has changed since, nothing is kept.
 #[tauri::command]
 #[specta::specta]
 pub async fn theme_draft_keep(
@@ -273,6 +316,7 @@ pub async fn theme_draft_keep(
     folder: String,
     kept_to: String,
     replaces: bool,
+    changed: bool,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
@@ -286,6 +330,7 @@ pub async fn theme_draft_keep(
             _ => return Err(format!("{kept_to} is not where Keep puts a theme draft")),
         },
         replaces,
+        changed,
     };
     tauri::async_runtime::spawn_blocking(move || {
         let place = drafts::Place {
@@ -393,21 +438,22 @@ pub(crate) fn asked(
     let folder = &ask.folder;
     let Some(files) = &ask.files else {
         return match drafts::start(config.as_deref(), place, &chat.id, folder) {
-            // A draft made now is said as done, one that was there as information: the command
-            // refreshes its working copy from a draft made now.
+            // Whether the draft was made now travels as its own field: the command makes its
+            // working copy again from a draft made now.
             Ok(started) => {
                 let said = format!(
                     "The theme draft {folder} is {}, drawn only {here}; Keep puts it in {}.",
                     if started.made { "started" } else { "there" },
                     kept_to(&started.kept_to)
                 );
-                Answer::Said {
+                Answer::Drafted {
                     lines: vec![if started.made {
                         Say::Done(said)
                     } else {
                         Say::Info(said)
                     }],
                     code: 0,
+                    made: started.made,
                 }
             }
             Err(why) => Answer::No { why },
@@ -425,7 +471,11 @@ pub(crate) fn asked(
                 "The theme draft {folder} is saved, and not drawn: it breaks a hard floor, so the \
                  window keeps its last good version. Fix it and save again."
             )));
-            Answer::Said { lines, code: 1 }
+            Answer::Drafted {
+                lines,
+                code: 1,
+                made: saved.made,
+            }
         }
         Ok(saved) if !saved.refused.is_empty() => {
             let mut lines: Vec<Say> = saved
@@ -438,16 +488,31 @@ pub(crate) fn asked(
                 "The theme draft {folder} is saved, and not drawn: it is refused. Fix it and save \
                  again."
             )));
-            Answer::Said { lines, code: 1 }
+            Answer::Drafted {
+                lines,
+                code: 1,
+                made: saved.made,
+            }
         }
-        Ok(saved) => Answer::Said {
+        Ok(saved) => Answer::Drafted {
             lines: vec![Say::Done(format!(
                 "The theme draft {folder} is saved and drawn {here}; Keep puts it in {}.",
                 kept_to(&saved.kept_to)
             ))],
             code: 0,
+            made: saved.made,
         },
         Err(why) => Answer::No { why },
+    }
+}
+
+/// **The drafts of the chats no longer open in the plane at `plane` are deleted** (#2708): every
+/// chat's drafts folder whose chat is none of `open`, the chats its record holds, which are the
+/// ones open now and the ones its next launch reopens. Their last good versions go with them.
+/// Asked whenever that record is written, which is whenever a chat opens or closes.
+pub(crate) fn sweep(plane: &Path, open: &[&str]) {
+    if drafts::sweep(plane, open) > 0 {
+        last_good().retain(|(at, chat, _), _| at != plane || open.contains(&chat.as_str()));
     }
 }
 
@@ -474,8 +539,9 @@ pub async fn theme_move_to_project(
     tauri::async_runtime::spawn_blocking(move || {
         drafts::move_to_project(&root, &workspace, &folder).map(|_| {
             format!(
-                "The theme {folder} is the project's now, in every workspace. Its font files are \
-                 asked about again with the project."
+                "The theme {folder} is the project's now, in every workspace, and the project's \
+                 next save commits it for everyone, even from a local workspace. Its font files \
+                 are asked about again with the project."
             )
         })
     })
