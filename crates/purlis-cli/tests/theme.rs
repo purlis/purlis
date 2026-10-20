@@ -1978,6 +1978,8 @@ fn the_check_names_each_level_that_chose_the_theme_with_its_values() {
         ),
         "{}",
         text.out
+    );
+}
 
 // ---- the theme skill (#2333) ------------------------------------------------------------- //
 
