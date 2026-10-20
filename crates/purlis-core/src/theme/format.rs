@@ -298,23 +298,16 @@ impl Library {
     /// [`Self::load`] of a theme with what was read beside it: each complaint said of the
     /// folder it was read from, when nothing nearer was named.
     fn load_beside(&self, id: Option<&str>, document: &Value, beside: &Beside) -> Resolved {
-        let mut resolved = self.load_beside_unplaced(id, document, beside);
-        resolved.complaints = placed_at(resolved.complaints, beside);
-        resolved
-    }
-
-    /// [`Self::load_beside`], each complaint as it was said.
-    fn load_beside_unplaced(
-        &self,
-        id: Option<&str>,
-        document: &Value,
-        beside: &Beside,
-    ) -> Resolved {
         let Some(from) = document.as_object() else {
-            return Resolved::refusal(vec![Complaint::said("a theme is a JSON object")]);
+            return Resolved::refusal(placed_at(
+                vec![Complaint::said("a theme is a JSON object")],
+                beside,
+            ));
         };
         if !is_format_2(from) {
-            return load_format_1(from);
+            let mut loaded = load_format_1(from);
+            loaded.complaints = placed_at(loaded.complaints, beside);
+            return loaded;
         }
         let mut path: Vec<String> = id.into_iter().map(str::to_owned).collect();
         match self.format_2(from, beside, &mut path) {

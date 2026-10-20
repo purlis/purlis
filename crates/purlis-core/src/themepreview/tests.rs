@@ -1126,6 +1126,50 @@ fn the_tool_waits_for_the_whole_turn_the_lookup_included() {
     assert!(ASKED_WITHIN > BUDGET + TURN);
 }
 
+/// The words of the folder a test keeps the levels in, none of which a chat is told.
+const AWKWARD_WORDS: [&str; 5] = ["Client", "Werk", "Bobz", "vintage", "kopie"];
+
+#[cfg(unix)]
+#[test]
+fn a_face_handed_to_a_specimen_is_named_by_its_level_and_never_where_it_is() {
+    let places = Places::inside("Client Werk 'Bobz' [vintage] (kopie)");
+    let folder = places.machine().join("facey");
+    let face = folder.join("fonts/Plex.woff2");
+    std::fs::create_dir_all(face.parent().unwrap()).unwrap();
+    std::fs::write(&face, woff2("the face as read")).unwrap();
+    let mut document = dusk("#101010");
+    document["fonts"] =
+        json!({ "ui": { "family": "Plex", "faces": [{ "file": "fonts/Plex.woff2" }] } });
+    std::fs::write(folder.join(THEME_JSON), document.to_string()).unwrap();
+    let drawn = at(&places, None, None, |reached| {
+        resolved(reached, &named_specimen("facey", None, &[])).expect("drawn")
+    });
+    let theme = drawn.theme.expect("a theme");
+    assert_eq!(faces(&theme).map(|handed| handed.len()), Ok(1));
+    let home = places._home.path().display().to_string();
+    let told = |why: &str, says: &str| {
+        assert!(why.contains(says), "{why}");
+        assert!(!why.contains(&home), "{why}");
+        for word in AWKWARD_WORDS {
+            assert!(!why.contains(word), "{word}: {why}");
+        }
+    };
+    // The face changes between the read and the hand-off: what the chat is told names it by
+    // its level and its path there.
+    std::fs::write(&face, woff2("the face changed")).unwrap();
+    told(
+        &faces(&theme).expect_err("changed"),
+        "your purlis config folder's themes/facey/fonts/Plex.woff2 changed since purlis read the \
+         theme",
+    );
+    // And when it is gone.
+    std::fs::remove_file(&face).unwrap();
+    told(
+        &faces(&theme).expect_err("gone"),
+        "your purlis config folder's themes/facey/fonts/Plex.woff2 is not in the theme's folder",
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn an_outside_folder_s_path_is_never_told_to_a_chat_spaces_quotes_and_brackets_and_all() {

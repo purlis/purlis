@@ -468,8 +468,11 @@ enum Missed {
 pub(crate) struct Kept {
     fonts: Store,
     name: String,
-    /// Where it is, for a sentence.
+    /// Where it is on disk: which file it is.
     file: PathBuf,
+    /// Where it is, as every sentence about it names it: its level and its path there for a
+    /// face of a level's folder (#2763).
+    shown: String,
 }
 
 impl PartialEq for Kept {
@@ -873,15 +876,16 @@ fn digest_face(
 
 /// **The bytes of the font file whose digest is `asset`**, for the window to make the face
 /// from. Only a file of a theme folder the engine accepted is served, read again under
-/// the same containment and cap, and only while its bytes still have that digest.
+/// the same containment and cap, and only while its bytes still have that digest. Why not names
+/// the face as every sentence does: by its level and its path there (#2763).
 pub fn served(asset: &str) -> Result<Vec<u8>, String> {
     let Some(places) = kept().get(asset).cloned() else {
         return Err("that is not a font of a theme purlis read".to_owned());
     };
     let mut why = String::new();
     for one in places {
-        let shown = one.file.display().to_string();
-        match read_face(&one.fonts, &one.name, &shown) {
+        let shown = &one.shown;
+        match read_face(&one.fonts, &one.name, shown) {
             Ok(bytes) if hex(&bytes) == asset => return Ok(bytes),
             Ok(_) => why = format!("{shown} changed since purlis read the theme"),
             Err(refused) => why = refused,
@@ -984,6 +988,7 @@ fn read_said(
     let inside = Inside {
         fonts: dir.fonts(),
         folder: folder.path(),
+        placed: folder.at(),
         approved: folder.approved.as_ref(),
         awaiting: std::cell::RefCell::new(Vec::new()),
     };
@@ -1008,6 +1013,8 @@ struct Inside<'a> {
     fonts: Result<Store, Missed>,
     approved: Option<&'a Approved>,
     folder: &'a Path,
+    /// The folder as its level and its path there, for a folder of a level.
+    placed: Option<&'a super::Placed>,
     /// The place in the complaints of each face the approval does not hold but would, once the
     /// project is approved again.
     awaiting: std::cell::RefCell<Vec<(usize, String)>>,
@@ -1199,6 +1206,17 @@ fn face_of(
                 from: Some(Kept {
                     fonts: fonts.clone(),
                     file: folder.folder.join("fonts").join(&file),
+                    shown: folder.placed.map_or_else(
+                        || {
+                            folder
+                                .folder
+                                .join("fonts")
+                                .join(&file)
+                                .display()
+                                .to_string()
+                        },
+                        |placed| placed.join("fonts").join(&file).to_string(),
+                    ),
                     name: file,
                 }),
             })
