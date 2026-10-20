@@ -15,7 +15,9 @@ window first reaches a Docker pool's runner. *Decided in implementation, to be c
 3. **A runner that answers with another key is refused on every try and said to have changed
    its key**, so the window offers to remove it (§3: a link whose keys do not match is refused,
    whatever the connector).
-4. **This machine's `docker` is the first on `PATH`, else where Docker's installers put it**:
-   Docker Desktop's own, Homebrew's and `/usr/local`'s, and, in the home folder, Docker
-   Desktop's, OrbStack's and Rancher Desktop's (`purlis_core::dockerpool::Docker::on_this_machine`).
-   A window opened from the Finder has a `PATH` that names none.
+4. **This machine's `docker` is where Docker's installers put it, else the first on `PATH`**:
+   Docker Desktop's own, `/usr/local`'s, Homebrew's and the system's, then, in the home folder,
+   Docker Desktop's, OrbStack's and Rancher Desktop's, and only then `PATH`'s absolute folders
+   (`purlis_core::dockerpool::Docker::on_this_machine`). A window opened from the Finder has a
+   `PATH` that names none, and the program the host runs to reach a runner is taken from where
+   Docker installs it before anywhere else.

@@ -378,7 +378,8 @@ fn not_linked(down: &Down) -> Refusal {
         return Refusal {
             code: session::KEY_CHANGED.into(),
             why: format!(
-                "Runner refused ({why}). purlis sent it nothing and does not link to it until it                  is removed and added again"
+                "Runner refused ({why}). purlis sent it nothing and does not link to it until it \
+                 is removed and added again"
             ),
         };
     }
