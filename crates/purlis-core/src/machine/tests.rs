@@ -2389,3 +2389,33 @@ fn a_browser_limit_out_of_its_bounds_reads_as_not_set() {
 
     assert_eq!(browsers_of(doc.get("browsers")), BrowserLimits::default());
 }
+
+#[test]
+fn only_an_ask_about_font_files_alone_grew_in_fonts_alone() {
+    // #2647: a refused theme's Notice may raise the project's trust ask only about its faces.
+    let font = || Change::FontChanged("themes/a/fonts/ui.woff2".to_owned());
+    assert!(Consent::Grew(vec![font()]).grew_in_fonts_alone());
+    assert!(
+        Consent::Grew(vec![
+            font(),
+            Change::FontAdded("themes/a/fonts/mono.woff2".to_owned())
+        ])
+        .grew_in_fonts_alone()
+    );
+    for more in [
+        Change::PluginAdded("x@market".to_owned()),
+        Change::EnvChanged("PATH".to_owned()),
+        Change::StartsAdded("chat-1".to_owned()),
+        Change::ProfileAdded("work".to_owned()),
+        Change::GrantAdded("ops".to_owned()),
+        Change::PluginRemoved("y@market".to_owned()),
+    ] {
+        assert!(
+            !Consent::Grew(vec![font(), more.clone()]).grew_in_fonts_alone(),
+            "{more:?}"
+        );
+    }
+    assert!(!Consent::New.grew_in_fonts_alone());
+    assert!(!Consent::Unchanged.grew_in_fonts_alone());
+    assert!(!Consent::Noted(vec![Change::FontRemoved("f".to_owned())]).grew_in_fonts_alone());
+}

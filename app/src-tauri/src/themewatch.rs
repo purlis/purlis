@@ -651,6 +651,7 @@ mod tests {
             false,
             theme::Contrast::Standard,
             || Arc::from(Vec::new()),
+            |_| None,
         );
         drawn
             .theme

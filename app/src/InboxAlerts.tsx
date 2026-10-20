@@ -3,7 +3,15 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
-import { commands, type AlertRow, type AlertWay, type DoctorFixed, type PlaneId } from "./bindings";
+import { ApprovePlane } from "./ApprovePlane";
+import {
+  commands,
+  type AlertRow,
+  type AlertWay,
+  type DoctorFixed,
+  type FontReview,
+  type PlaneId,
+} from "./bindings";
 import type { AlertsReading } from "./alerts";
 import { identityNowOf, sendIdentity, useFixForm, type Fixer } from "./Doctor";
 import { useSeenOnThisMachine } from "./dismissals";
@@ -31,7 +39,8 @@ import {
  *   fix of the doctor's registry (with its form, #1301), the outer project, the Saving view.
  * - **This machine's**: a theme or layout file purlis could not use as written, with its
  *   Settings group, Use the built-in theme or Use the default layout (each asks first), or
- *   Dismiss.
+ *   Dismiss; a theme refused for a project's font file its approval does not hold, with Review
+ *   and allow (#2647).
  * - **Another project's**: the drawer listed every project's, because the one that matters is
  *   often not the one in front. Here each other project with alerts is one Notice, "N alerts in
  *   name", whose way out opens that project's Inbox, where they are listed whole.
@@ -62,6 +71,8 @@ export function InboxAlerts({
       {machine.map((alert) =>
         alert.themeFolder ? (
           <ThemeFolderOffer key={alert.subject} alert={alert} />
+        ) : alert.review !== undefined ? (
+          <RefusedThemeReview key={alert.subject} alert={alert} plane={alert.review} />
         ) : (
           <MachineRow key={alert.subject} alert={alert} onOpenSettings={does.openSettings} />
         ),
@@ -420,6 +431,85 @@ function ThemeFolderOffer({ alert }: { alert: MachineAlert }) {
         said={said}
       />
     </Notice>
+  );
+}
+
+/**
+ * **A theme refused for a project's font file its approval does not hold, reviewed and allowed
+ * in place** (#2647). Review and allow asks the core for the project's trust ask as it stands
+ * now (`review_plane`) and draws it in the one dialog every approval is given in
+ * (`ApprovePlane`, ADR 0035): what changed first, then what it contributes, its font files
+ * grouped by theme folder. It is offered only when what the project asks for again is font
+ * files alone (D-2647-10); the core refuses the review otherwise. The yes is `approve_plane`, the one path an approval takes, with
+ * what the dialog showed; the core refuses it if the project changed in between. Then the theme
+ * is drawn again, and the Notice goes once it draws. A no answers nothing, and the theme stays
+ * refused.
+ *
+ * Both presses are the person's own: the two commands are the window's alone (`WINDOW_ONLY`).
+ */
+function RefusedThemeReview({ alert, plane }: { alert: MachineAlert; plane: PlaneId }) {
+  const [asking, setAsking] = useState<FontReview>();
+  const [said, setSaid] = useState<string>();
+  const failed = (err: unknown) => setSaid(String(err));
+  const review = () => {
+    setSaid(undefined);
+    void commands
+      .reviewPlane(plane)
+      .then((answer) => {
+        if (answer.status === "error") {
+          setSaid(answer.error);
+          return;
+        }
+        // The approval already holds what the project contributes: drawn again, it says what
+        // is still in the way, if anything is.
+        if (answer.data === null) {
+          void drawWhatIsInForce();
+          return;
+        }
+        setAsking(answer.data);
+      })
+      .catch(failed);
+  };
+  const allow = (ask: FontReview["ask"]) => {
+    setAsking(undefined);
+    void commands
+      .approvePlane(ask.path, ask.contributes)
+      .then((answer) => {
+        // Verbatim: "it changed while you were reading it" names the project, and the next
+        // press asks about what is there now.
+        if (answer.status === "error") {
+          setSaid(answer.error);
+          return;
+        }
+        void drawWhatIsInForce();
+      })
+      .catch(failed);
+  };
+  return (
+    <>
+      <Notice
+        cause={`alert:${alert.subject}`}
+        tone={toneOf(alert.severity)}
+        fixes={[{ label: "Review and allow", onPress: review }]}
+      >
+        <Words
+          severity={alert.severity}
+          subject={alert.subject}
+          detail={alert.detail}
+          then={alert.remedy}
+          said={said}
+        />
+      </Notice>
+      {asking !== undefined && (
+        <ApprovePlane
+          ask={asking.ask}
+          fonts={asking.themes}
+          yes="Allow these fonts"
+          onApprove={allow}
+          onCancel={() => setAsking(undefined)}
+        />
+      )}
+    </>
   );
 }
 
