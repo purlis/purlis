@@ -38,7 +38,12 @@ async fn a_window_of(host: Hosting) -> Client {
     let held = Credentials::mint().unwrap();
     let (a, b) = tokio::io::duplex(256 * 1024);
     let (client, served) = tokio::join!(
-        link::connect(a, session::speaks(), Scope::LocalUi, held.of(Scope::LocalUi)),
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            held.of(Scope::LocalUi)
+        ),
         link::serve_any(b, session::speaks(), &held)
     );
     tokio::spawn(session::serve(served.unwrap(), Routed::new(host), None));
@@ -52,8 +57,11 @@ fn a_pool_this_machine_does_not_keep_is_never_reached() {
     let refused = ToARunner::of(&machine, "builds").err().unwrap();
     assert!(refused.contains("not on this machine"), "{refused}");
     // A pool kept with no runner reaches nothing either.
-    let image = Image::pinned(&format!("ghcr.io/purlis/purlis-runner@sha256:{}", "0".repeat(64)))
-        .unwrap();
+    let image = Image::pinned(&format!(
+        "ghcr.io/purlis/purlis-runner@sha256:{}",
+        "0".repeat(64)
+    ))
+    .unwrap();
     purlis_core::runners::record_pool(
         config.path(),
         &Pool::new("builds", image, Set::default()).unwrap(),
