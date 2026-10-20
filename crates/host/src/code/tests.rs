@@ -384,3 +384,26 @@ async fn only_the_window_moves_code_through_a_relay() {
     }
     assert!(runner.recorded.taken.lock().unwrap().is_empty());
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_projects_folder_that_is_a_link_is_not_held_and_nothing_is_taken_through_it() {
+    let runner = a_runner();
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(elsewhere.path(), runner.projects.join(PROJECT)).unwrap();
+    let (client, _streams) = through_the_relay(Scope::LocalUi, &runner).await;
+
+    let refused = client.hold_project(PROJECT, "").await.unwrap_err();
+
+    assert_eq!(refused.refusal().unwrap().code, session::NOT_ALLOWED);
+    let refused = tokio::time::timeout(
+        PATIENCE,
+        client.take_code(PROJECT, REPO, 7, vec![fix()], None),
+    )
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(refused.refusal().is_some(), "{refused:?}");
+    assert!(runner.recorded.taken.lock().unwrap().is_empty());
+    assert_eq!(std::fs::read_dir(elsewhere.path()).unwrap().count(), 0);
+}

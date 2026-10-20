@@ -1045,7 +1045,18 @@ impl Hosting {
                 ),
             });
         }
-        Ok(folder.join(project))
+        let place = folder.join(project);
+        // A link in its place would send what the desktop holds there elsewhere on this machine.
+        if std::fs::symlink_metadata(&place).is_ok_and(|meta| !meta.is_dir()) {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: format!(
+                    "the folder for project {project} is a link or a file, so it is not held \
+                     and no code is moved there"
+                ),
+            });
+        }
+        Ok(place)
     }
 
     /// Where `peer` holds `project`, held where this host keeps it (#2046): the one place code

@@ -714,3 +714,146 @@ fn a_project_that_ignores_its_state_folder_is_still_snapshotted() {
     assert!(listed.contains("fix.txt"), "{listed}");
     assert!(!listed.contains(".purlis"), "{listed}");
 }
+
+#[test]
+fn a_pool_named_as_a_remote_of_the_repository_is_refused_and_its_refs_are_left_alone() {
+    let world = World::new();
+    git(
+        &world.desktop,
+        &[
+            "config",
+            "remote.builds.url",
+            "https://example.invalid/acme/web.git",
+        ],
+    );
+    git(
+        &world.desktop,
+        &["update-ref", "refs/remotes/builds/main", "refs/heads/main"],
+    );
+    let main = git(&world.desktop, &["rev-parse", "main"]);
+    let refused = take_back(&world.desktop, "builds", None, &[]).unwrap_err();
+    assert!(
+        matches!(&refused, Refused::NotAllowed(why) if why.contains("remote named builds")),
+        "{refused:?}"
+    );
+    assert_eq!(
+        git(&world.desktop, &["rev-parse", "refs/remotes/builds/main"]),
+        main
+    );
+}
+
+#[test]
+fn a_bundle_carrying_a_malformed_object_is_refused_and_nothing_moves() {
+    let world = World::new();
+    let empty = git(
+        &world.desktop,
+        &["hash-object", "-w", "-t", "tree", "/dev/null"],
+    );
+    let bad = world.top.join("bad-commit");
+    // No committer, and an author with no address: what fsck refuses.
+    std::fs::write(
+        &bad,
+        format!("tree {empty}\nauthor nobody\n\na bad commit\n"),
+    )
+    .unwrap();
+    let oid = git(
+        &world.desktop,
+        &[
+            "hash-object",
+            "-t",
+            "commit",
+            "-w",
+            "--literally",
+            bad.to_str().unwrap(),
+        ],
+    );
+    git(&world.desktop, &["update-ref", "refs/heads/bad", &oid]);
+    let into = world.bundle_path("bad.bundle");
+    bundle(&world.desktop, &["refs/heads/bad"], &[], &into).unwrap();
+    let refused = receive(
+        &world.runner_repo(),
+        Some(&into),
+        &[Ref {
+            name: "refs/heads/bad".into(),
+            oid,
+        }],
+        None,
+    );
+    assert!(matches!(refused, Err(Refused::Git(_))), "{refused:?}");
+    assert_eq!(held_refs(&world.runner_repo()).unwrap(), Vec::new());
+}
+
+#[test]
+fn a_fetch_made_as_a_bundle_is_read_reaches_no_transport_but_a_file() {
+    let world = World::new();
+    for url in [
+        "https://example.invalid/acme/web.git",
+        "ssh://example.invalid/acme/web.git",
+        "git://example.invalid/acme/web.git",
+    ] {
+        let mut args: Vec<&str> = FETCHES_WITH.to_vec();
+        args.extend([
+            "fetch",
+            "--quiet",
+            url,
+            "refs/heads/main:refs/heads/elsewhere",
+        ]);
+        let ran = run(&world.desktop, &args).unwrap();
+        assert!(!ran.ok(), "{url} was reached: {ran:?}");
+        assert!(ran.err.contains("not allowed"), "{url}: {}", ran.err);
+    }
+}
+
+#[test]
+fn a_snapshot_carries_no_credential_file_and_no_file_with_another_link() {
+    let world = World::new();
+    std::fs::write(world.desktop.join(".env"), "TOKEN=x\n").unwrap();
+    std::fs::write(world.desktop.join(".env.local"), "TOKEN=y\n").unwrap();
+    std::fs::write(world.desktop.join("id_ed25519"), "-----BEGIN-----\n").unwrap();
+    std::fs::write(world.desktop.join("server.pem"), "-----BEGIN-----\n").unwrap();
+    let outside = world.top.join("outside.txt");
+    std::fs::write(&outside, "not the tree's\n").unwrap();
+    std::fs::hard_link(&outside, world.desktop.join("linked.txt")).unwrap();
+    std::fs::write(world.desktop.join(".env.example"), "TOKEN=\n").unwrap();
+    std::fs::write(world.desktop.join("fix.txt"), "the work\n").unwrap();
+
+    let snapshot = snapshot(&world.desktop, &world.scratch(), &[])
+        .unwrap()
+        .expect("the work is carried");
+    let listed: Vec<String> = git(&world.desktop, &["ls-tree", "-r", "--name-only", &snapshot])
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    for left in [
+        ".env",
+        ".env.local",
+        "id_ed25519",
+        "server.pem",
+        "linked.txt",
+    ] {
+        assert!(
+            !listed.iter().any(|one| one == left),
+            "{left} went: {listed:?}"
+        );
+    }
+    assert!(listed.iter().any(|one| one == ".env.example"), "{listed:?}");
+    assert_eq!(
+        git(&world.desktop, &["show", &format!("{snapshot}:fix.txt")]),
+        "the work"
+    );
+}
+
+#[test]
+fn a_committed_credential_file_changed_here_goes_as_it_is_committed() {
+    let world = World::new();
+    commit(&world.desktop, ".env", "TOKEN=committed\n");
+    std::fs::write(world.desktop.join(".env"), "TOKEN=changed\n").unwrap();
+    std::fs::write(world.desktop.join("fix.txt"), "the work\n").unwrap();
+    let snapshot = snapshot(&world.desktop, &world.scratch(), &[])
+        .unwrap()
+        .expect("the work is carried");
+    assert_eq!(
+        git(&world.desktop, &["show", &format!("{snapshot}:.env")]),
+        "TOKEN=committed"
+    );
+}

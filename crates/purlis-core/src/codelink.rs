@@ -46,8 +46,9 @@ pub const UNBORN: &str = "purlis/held";
 
 /// What every git call that reads a bundle runs with, ahead of its verb: no hook runs, every
 /// object is checked as it arrives, no submodule is reached, no transport but a file (a bundle
-/// is read through git's file transport), and nothing is collected as garbage on the way.
-pub const FETCHES_WITH: [&str; 18] = [
+/// is read through git's file transport), nothing is collected as garbage on the way, and no ref
+/// is pruned but where the caller prunes it itself.
+pub const FETCHES_WITH: [&str; 22] = [
     "-c",
     "core.hooksPath=/dev/null",
     "-c",
@@ -66,6 +67,10 @@ pub const FETCHES_WITH: [&str; 18] = [
     "maintenance.auto=false",
     "-c",
     "fetch.writeCommitGraph=false",
+    "-c",
+    "fetch.prune=false",
+    "-c",
+    "fetch.pruneTags=false",
 ];
 
 /// One ref and the commit it is at.
@@ -149,6 +154,24 @@ fn an_oid(oid: &str) -> bool {
 }
 
 /// Whether `name` is a pool's name a remote ref may be kept under, `refs/remotes/<pool>/`.
+/// Whether `repo` configures a remote of `name` (`remote.<name>.*`): a pool of that name would
+/// write over that remote's refs.
+fn a_remote_of(repo: &Path, name: &str) -> bool {
+    let pattern = format!("^remote\\.{}\\.", regex_escaped(name));
+    run(repo, &["config", "--get-regexp", &pattern])
+        .is_ok_and(|ran| ran.ok() && !ran.out.trim().is_empty())
+}
+
+/// `name` with every character a regular expression gives a meaning escaped.
+fn regex_escaped(name: &str) -> String {
+    name.chars()
+        .flat_map(|c| {
+            let special = !c.is_ascii_alphanumeric() && c != '_' && c != '-';
+            special.then_some('\\').into_iter().chain([c])
+        })
+        .collect()
+}
+
 fn pool_ok(pool: &str) -> bool {
     crate::contain::workspace_name_ok(pool) && ref_format_ok(&format!("refs/remotes/{pool}/x"))
 }
@@ -245,6 +268,13 @@ pub fn snapshot(
             return Err(git_failed("stage the uncommitted work", &ran));
         }
     }
+    // Nothing secret is kept on a runner (ADR 0078 §7, ruled): a file named as credentials
+    // are, and one with more than one link (it may be another file's, reached through the tree),
+    // goes as it is committed, or not at all.
+    if let Err(why) = keep_secrets_out(tree, &index) {
+        let _ = std::fs::remove_file(&index);
+        return Err(why);
+    }
     let written = git::run_with_index(tree, &index, &["write-tree"]).map_err(git_missing)?;
     let _ = std::fs::remove_file(&index);
     if !written.ok() {
@@ -275,6 +305,62 @@ pub fn snapshot(
         return Err(git_failed("keep the uncommitted work", &commit));
     }
     Ok(Some(commit.line().to_owned()))
+}
+
+/// **Takes out of the snapshot staged in `index` of `tree`** every changed or new file whose name
+/// a credential file goes by ([`crate::reposave::secret_name`]), and every one with more than one
+/// link: each is staged as it is committed, or not at all where it is not.
+fn keep_secrets_out(tree: &Path, index: &Path) -> Result<(), Refused> {
+    let changed = git::run_with_index(
+        tree,
+        index,
+        &[
+            "diff-index",
+            "--cached",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "HEAD",
+            "--",
+        ],
+    )
+    .map_err(git_missing)?;
+    if !changed.ok() {
+        return Err(git_failed("read the uncommitted work", &changed));
+    }
+    let secret: Vec<&str> = changed
+        .out
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .filter(|path| {
+            let name = path.rsplit('/').next().unwrap_or(path);
+            crate::reposave::secret_name(name).is_some() || more_than_one_link(&tree.join(path))
+        })
+        .collect();
+    if secret.is_empty() {
+        return Ok(());
+    }
+    let mut args = vec!["reset", "--quiet", "HEAD", "--"];
+    args.extend(secret.iter().copied());
+    let ran = git::run_with_index(tree, index, &args).map_err(git_missing)?;
+    if !ran.ok() {
+        return Err(git_failed("leave the credential files out", &ran));
+    }
+    Ok(())
+}
+
+/// Whether the file at `path` (not followed) has more than one link.
+fn more_than_one_link(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file() && meta.nlink() > 1)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        false
+    }
 }
 
 /// The empty tree's name in `repo`'s object format.
@@ -676,6 +762,12 @@ pub fn take_back(
     if !pool_ok(pool) {
         return Err(not_allowed(format!(
             "`{pool}` is not a pool's name refs can be kept under, so nothing was fetched"
+        )));
+    }
+    if a_remote_of(repo, pool) {
+        return Err(not_allowed(format!(
+            "this repository has a remote named {pool}, whose branches a pool of that name would \
+             write over, so nothing was fetched: rename the pool or the remote"
         )));
     }
     let remote = |name: &str| -> Result<String, Refused> {
