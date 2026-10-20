@@ -762,6 +762,76 @@ fn lays_read_more_out_below_a_list(engine: &Engine) {
     );
 }
 
+/// The page puts the payment frame (its element node 50, at (100, 200), 200 by 60, as its box
+/// model says) in a box that cuts off what overflows it below `box_bottom`; the frame, from
+/// another site and read in a session of its own, lays "Pay now" (node 7) out 10 to 20 down
+/// its document (#2689).
+fn boxes_in_the_payment_frame_down_to(engine: &Engine, box_bottom: f64) {
+    let mut model = super::lock(&engine.model);
+    model.drawn.insert(
+        "S-PAGE-1".to_owned(),
+        json!({
+            "strings": ["#document", "HTML", "BODY", "DIV", "IFRAME", "visible", "static", "hidden", "block", "0px"],
+            "documents": [{
+                "nodes": {
+                    "parentIndex": [-1, 0, 1, 2, 3],
+                    "nodeName": [0, 1, 2, 3, 4],
+                    "backendNodeId": [1, 2, 3, 4, 50],
+                },
+                "layout": {
+                    "nodeIndex": [1, 2, 3, 4],
+                    "bounds": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 800, box_bottom], [100, 200, 200, 60]],
+                    "styles": [[5, 5, 6, 8, 9], [5, 5, 6, 8, 9], [7, 7, 6, 8, 9], [5, 5, 6, 8, 9]],
+                    "clientRects": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 800, box_bottom], [0, 0, 200, 60]],
+                },
+            }],
+        }),
+    );
+    model.drawn.insert(
+        "S-PAYMENT".to_owned(),
+        json!({
+            "strings": ["#document", "HTML", "BODY", "BUTTON", "visible", "static", "block", "0px", "inline-block"],
+            "documents": [{
+                "nodes": {
+                    "parentIndex": [-1, 0, 1, 2],
+                    "nodeName": [0, 1, 2, 3],
+                    "backendNodeId": [1, 2, 3, 7],
+                },
+                "layout": {
+                    "nodeIndex": [1, 2, 3],
+                    "bounds": [[0, 0, 200, 60], [0, 0, 200, 60], [10, 10, 20, 10]],
+                    "styles": [[4, 4, 5, 6, 7], [4, 4, 5, 6, 7], [4, 4, 5, 8, 7]],
+                    "clientRects": [[0, 0, 200, 60], [0, 0, 200, 60], [0, 0, 20, 10]],
+                },
+            }],
+        }),
+    );
+}
+
+#[test]
+fn a_box_on_the_page_that_cuts_off_a_cross_site_frame_marks_what_it_hides_of_the_frame() {
+    let marked = |box_bottom: f64| {
+        let (browser, engine) = browser();
+        boxes_in_the_payment_frame_down_to(&engine, box_bottom);
+        let text = snapshot(&browser, 1);
+        text.lines()
+            .find(|l| l.contains("Pay now"))
+            .unwrap_or_else(|| panic!("no Pay now in\n{text}"))
+            .ends_with(" (out of view)")
+    };
+    // The box ends above the frame: none of it shows.
+    assert!(marked(100.0), "the whole frame cut off");
+    // It ends 5 into the frame: "Pay now", 10 down the frame, is hidden.
+    assert!(marked(205.0), "the frame cut off above its button");
+    // It ends 15 into the frame: "Pay now" shows in part.
+    assert!(
+        !marked(215.0),
+        "the frame cut off below the top of its button"
+    );
+    // No box cuts it off.
+    assert!(!marked(600.0), "the frame shown whole");
+}
+
 /// Renames the main frame's link, as a page that changed it would show it.
 fn rename_the_link(engine: &Engine, to: &str) {
     let mut model = super::lock(&engine.model);
