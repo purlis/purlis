@@ -107,5 +107,8 @@ fn a_click_in_a_cross_site_frame_nested_below_a_middle_frames_fold_presses_the_b
     // What the inner frame reads now: a count of 0 is a press that missed, no count at all a
     // frame two deep that is not read.
     let counted = find(&browser, "Count:");
-    assert!(seen, "the inner frame reads:\n{counted}\nthe button was found as:\n{found}");
+    assert!(
+        seen,
+        "the inner frame reads:\n{counted}\nthe button was found as:\n{found}"
+    );
 }
