@@ -16,6 +16,7 @@ fn call(chat: u32, id: &str) -> ToolCall {
         hook_ms: 1,
         agent: None,
         at_ms: 0,
+        skill: None,
     }
 }
 

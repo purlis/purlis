@@ -503,3 +503,51 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
         "the hook answered before the host had recorded its call"
     );
 }
+
+#[test]
+fn a_skill_calls_post_hook_tells_the_host_the_skill_it_invoked_and_the_runs_id() {
+    // SK-3: the run the host opens is the one the plane's skill log names.
+    let (code, _, told) = hook(
+        "posttooluse-skill",
+        &serde_json::json!({"tool_name": "Skill", "tool_use_id": "toolu_1",
+            "tool_input": {"skill": "deploy"}}),
+    );
+
+    assert_eq!(code, 0);
+    let invoked = told
+        .expect("the host was told")
+        .skill
+        .clone()
+        .expect("the skill the call invoked");
+    assert_eq!(invoked.skill, "deploy");
+    assert_eq!(invoked.started_by, "skill-tool");
+    assert_eq!(invoked.run.len(), 26, "a ULID: {}", invoked.run);
+}
+
+#[test]
+fn a_briefed_chats_shell_read_of_a_known_skill_md_tells_the_host_it_invoked_that_skill() {
+    // Codex: its shell's post hook is the block word, and its skills are listed by path.
+    let skills = tempfile::tempdir().unwrap();
+    let skill = skills.path().join("deploy");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Ships it.\n---\n",
+    )
+    .unwrap();
+    let dir = skills.path().display().to_string();
+    let command = format!("sed -n 1,200p {}", skill.join("SKILL.md").display());
+
+    let (_, _, told) = hook_with(
+        "posttooluse-blocked",
+        &serde_json::json!({"tool_name": "Bash", "tool_use_id": "call_1",
+            "tool_input": {"command": command}, "tool_response": ""}),
+        &[(purlis_core::skills::LISTED_ENV, dir.as_str())],
+    );
+
+    let invoked = told.expect("the host was told").skill.clone();
+    assert_eq!(
+        invoked.map(|invoked| (invoked.skill, invoked.started_by)),
+        Some(("deploy".to_owned(), "read".to_owned()))
+    );
+}

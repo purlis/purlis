@@ -885,31 +885,73 @@ fn secret_scan(hook: &Hook, input: &Value, fp: &str) -> Answer {
     )
 }
 
-/// `posttooluse_skill`: log which skill the active persona just used.
+/// `posttooluse_skill`: nothing to the harness. A skill the call invoked opens a run, which
+/// [`skill_invoked`] finds for every tool hook.
 pub fn posttooluse_skill(hook: &Hook) -> Answer {
-    if !hook.in_plane {
-        return Answer::Nothing;
+    if hook.in_plane {
+        hook.touch_piece();
     }
-    hook.touch_piece();
-    if hook.tool_name() != "Skill" {
-        return Answer::Nothing;
-    }
-    let name = match hook.input_text("skill") {
-        "" => hook.input_text("name"),
-        skill => skill,
-    };
-    if name.is_empty() {
-        return Answer::Nothing;
-    }
-    let persona = hook.persona();
-    let _ = crate::skilluse::record(
-        hook.root,
-        name,
-        persona.as_deref(),
-        hook.now,
-        &hook.log_name(),
-    );
     Answer::Nothing
+}
+
+/// **The skill a tool call invokes, where it invokes one** (SK-3, #2766): the Skill tool's skill
+/// (Claude Code's `skill`, opencode's `name`), or, for a chat briefed on its skills, the skill
+/// whose `SKILL.md` a shell command or a file read names
+/// ([`crate::skills::readable_by_a_briefed_chat`]). Its run's start is logged in the plane's
+/// skill log under the id minted here ([`crate::skilluse::record`]), and the host is told the
+/// same id, so the run it opens is that row's.
+pub fn skill_invoked(hook: &Hook) -> Option<Box<crate::hookwire::SkillInvoked>> {
+    use purlis_skills::runs::StartedBy;
+    let (skill, started_by) = match hook.tool_name() {
+        "Skill" => {
+            let named = match hook.input_text("skill") {
+                "" => hook.input_text("name"),
+                skill => skill,
+            };
+            (named.trim().to_owned(), StartedBy::SkillTool)
+        }
+        "Bash" | "Read" => {
+            let read = match hook.input_text("command") {
+                "" => hook.input_text("file_path"),
+                command => command,
+            };
+            if read.is_empty() {
+                return None;
+            }
+            let skills = crate::skills::readable_by_a_briefed_chat(hook.root, hook.env);
+            let cwd = hook
+                .payload
+                .get("cwd")
+                .and_then(Value::as_str)
+                .map_or(hook.cwd, Path::new);
+            let skill = purlis_skills::runs::invoked_by_a_read(read, cwd, &skills)?;
+            (skill.name.clone(), StartedBy::Read)
+        }
+        _ => return None,
+    };
+    if skill.is_empty() {
+        return None;
+    }
+    let run = crate::reopen::mint();
+    if hook.in_plane {
+        let persona = hook.persona();
+        let _ = crate::skilluse::record(
+            hook.root,
+            &crate::skilluse::Started {
+                run: &run,
+                skill: &skill,
+                persona: persona.as_deref(),
+                started_by,
+            },
+            hook.now,
+            &hook.log_name(),
+        );
+    }
+    Some(Box::new(crate::hookwire::SkillInvoked {
+        skill,
+        run,
+        started_by: started_by.word().to_owned(),
+    }))
 }
 
 /// `posttooluse_dispatch`: nothing to the harness, since #1451. It logged which persona a

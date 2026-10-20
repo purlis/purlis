@@ -19,6 +19,9 @@ pub use purlis_skills::{
     level_shown, listing, named, read, set_grant, share,
 };
 
+/// Skill runs: the span from a skill's invocation to the end of the turn (SK-3).
+pub use purlis_skills::runs;
+
 use crate::harness::{Harness, Kit};
 
 /// The variable a chat whose harness cannot load its skills is started with: the directory of
@@ -243,6 +246,21 @@ pub fn briefed(
     );
     let skills: Vec<Skill> = set.effective.into_iter().map(|e| e.skill).collect();
     listing(&skills)
+}
+
+/// **The skills a briefed chat may invoke by reading their `SKILL.md`** (SK-3): every skill in
+/// the directory it was started with in [`LISTED_ENV`], and the plane's at `root` where
+/// [`PLANE_LISTED_ENV`] says its set holds them. Empty for a chat that was not briefed: a
+/// harness that loads its skills itself invokes them by its own tool.
+pub fn readable_by_a_briefed_chat(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Vec<Skill> {
+    let Some(dir) = env(LISTED_ENV).filter(|dir| !dir.is_empty()) else {
+        return Vec::new();
+    };
+    let mut skills = read(Path::new(&dir));
+    if env(PLANE_LISTED_ENV).is_some_and(|on| on == "1") {
+        skills.extend(read(&root.join(purlis_skills::PROJECT_DIR)));
+    }
+    skills
 }
 
 /// One ask of purlis-skills, from a directory of built-in skills, the plane with the workspace

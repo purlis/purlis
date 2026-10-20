@@ -110,6 +110,78 @@ pub(crate) fn studio(
     }
 }
 
+/// One skill run, as a skill's Runs panel lists it (SK-3): what started it and its signals,
+/// never a pass or a fail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioRun {
+    /// Its id, or null for a use recorded before runs were.
+    pub id: Option<String>,
+    pub skill: String,
+    pub persona: Option<String>,
+    /// `skill-tool` or `read`, or null for a use recorded before runs were.
+    pub started_by: Option<String>,
+    /// When it started.
+    pub started: String,
+    /// How it ended (`turn`, `interrupted` or `session`), or null while no end is recorded.
+    pub ended: Option<String>,
+    pub ms: Option<u32>,
+    pub tool_calls: Option<u32>,
+    pub tool_errors: Option<u32>,
+    pub refusals: Option<u32>,
+    pub asks: Option<u32>,
+    /// Tokens spent inside it, where the harness reported them.
+    pub tokens: Option<u32>,
+}
+
+/// Every run of `skill` the project at `root` has recorded, newest first, at most `limit`.
+pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<StudioRun> {
+    let small = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
+    purlis_core::skilluse::runs(root)
+        .into_iter()
+        .filter(|run| run.is_of(skill))
+        .take(limit)
+        .map(|run| {
+            let end = run.end.as_ref();
+            StudioRun {
+                id: run.id.clone(),
+                skill: run.skill.clone(),
+                persona: run.persona.clone(),
+                started_by: run.started_by.clone(),
+                started: run.started.clone(),
+                ended: end.map(|end| end.ended.clone()),
+                ms: end.map(|end| small(end.ms)),
+                tool_calls: end.map(|end| small(end.tool_calls)),
+                tool_errors: end.map(|end| small(end.tool_errors)),
+                refusals: end.map(|end| small(end.refusals)),
+                asks: end.map(|end| small(end.asks)),
+                tokens: end.and_then(|end| end.tokens).map(small),
+            }
+        })
+        .collect()
+}
+
+/// How many runs a skill's Runs panel lists at most.
+const RUNS_SHOWN: usize = 200;
+
+/// The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
+/// flag is off. On a blocking thread, as it reads the project's skill log.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_runs(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    skill: String,
+) -> Result<Vec<StudioRun>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the skill's runs", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Ok(Vec::new());
+        }
+        Ok(runs(held.root(), &skill, RUNS_SHOWN))
+    })
+    .await
+}
+
 /// Whether the Skill studio is on in this window: this machine's flag, or the variable over it.
 #[tauri::command]
 #[specta::specta]

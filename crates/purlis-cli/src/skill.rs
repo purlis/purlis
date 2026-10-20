@@ -1,10 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis skill list | show | grant | share` (SK-2, #2765; SK-4, #2767): the skills a chat in
-//! this project gets, and why each other one is left out, as the Skill studio shows them; where a
-//! project skill reaches and what a workspace turned off; and Share. Behind the `skill-studio`
-//! flag until its finish line (#2786).
+//! `purlis skill list | show | grant | share | runs` (SK-2, #2765; SK-4, #2767; SK-3, #2766):
+//! the skills a chat in this project gets, and why each other one is left out, as the Skill
+//! studio shows them; where a project skill reaches and what a workspace turned off; Share; and
+//! every run of a skill with its signals. Behind the `skill-studio` flag until its finish line
+//! (#2786).
 
 use std::path::Path;
 
@@ -70,6 +71,18 @@ pub enum SkillCommand {
         /// The workspace whose local skill to share (default: the project's root).
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
+    /// Every skill run the project's skill log holds, newest first, with its signals (tool
+    /// calls, tool errors, refusals, asks, tokens, time): never a pass or a fail. With a name,
+    /// that skill's runs alone.
+    Runs {
+        /// The skill whose runs to list (default: every skill's).
+        name: Option<String>,
+        /// How many runs to print at most.
+        #[arg(short = 'n', long = "limit", default_value_t = 50)]
+        limit: usize,
+        /// Answer as JSON, for a chat or a script.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -191,6 +204,91 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             }
         }
+        SkillCommand::Runs { name, limit, json } => {
+            let runs: Vec<_> = purlis_core::skilluse::runs(root)
+                .into_iter()
+                .filter(|run| name.as_deref().is_none_or(|name| run.is_of(name)))
+                .take(limit)
+                .collect();
+            if json {
+                println!("{}", json!({ "runs": runs }));
+            } else {
+                print!("{}", runs_table(&runs, name.as_deref()));
+            }
+            Ok(0)
+        }
+    }
+}
+
+/// The runs, one line each: when, which skill, by whom, what started it, how it ended and its
+/// signals. A run recorded before runs says so, and a run whose end is not logged says it is
+/// open or was not recorded.
+fn runs_table(runs: &[purlis_core::skilluse::Run], name: Option<&str>) -> String {
+    if runs.is_empty() {
+        return match name {
+            Some(name) => format!("No runs of {name} yet.\n"),
+            None => "No skill runs yet.\n".to_owned(),
+        };
+    }
+    let lines: Vec<[String; 6]> = runs
+        .iter()
+        .map(|run| {
+            let (ended, signals) = match &run.end {
+                Some(end) => (
+                    end.ended.clone(),
+                    format!(
+                        "{} tool calls, {} errors, {} refused, {} asks, {}, {}",
+                        end.tool_calls,
+                        end.tool_errors,
+                        end.refusals,
+                        end.asks,
+                        end.tokens.map_or_else(
+                            || "tokens not reported".to_owned(),
+                            |t| format!("{t} tokens")
+                        ),
+                        seconds(end.ms)
+                    ),
+                ),
+                None if run.id.is_none() => ("-".to_owned(), "recorded before runs".to_owned()),
+                None => ("-".to_owned(), "no end recorded".to_owned()),
+            };
+            [
+                run.started.clone(),
+                run.skill.clone(),
+                run.persona.clone().unwrap_or_else(|| "-".to_owned()),
+                run.started_by.clone().unwrap_or_else(|| "-".to_owned()),
+                ended,
+                signals,
+            ]
+        })
+        .collect();
+    let heads = ["STARTED", "SKILL", "PERSONA", "BY", "ENDED", "SIGNALS"];
+    let widths: Vec<usize> = (0..5)
+        .map(|i| voice::column(lines.iter().map(|l| l[i].as_str()).chain([heads[i]])))
+        .collect();
+    let line = |cells: [&str; 6]| {
+        let mut text = String::new();
+        for (i, width) in widths.iter().enumerate() {
+            text.push_str(&voice::pad(cells[i], *width));
+            text.push_str("  ");
+        }
+        text.push_str(cells[5]);
+        text.push('\n');
+        text
+    };
+    let mut text = line(heads);
+    for l in &lines {
+        text.push_str(&line([&l[0], &l[1], &l[2], &l[3], &l[4], &l[5]]));
+    }
+    text
+}
+
+/// `ms` as a person reads a run's time: `850 ms`, `12 s`, `3 min 4 s`.
+fn seconds(ms: u64) -> String {
+    match ms {
+        0..1_000 => format!("{ms} ms"),
+        1_000..60_000 => format!("{} s", ms / 1_000),
+        _ => format!("{} min {} s", ms / 60_000, ms % 60_000 / 1_000),
     }
 }
 

@@ -71,6 +71,7 @@ mod hooks;
 mod host;
 mod inboxupdates;
 mod machineprofiles;
+mod skillrun;
 mod skillstudio;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg(all(test, unix))]
@@ -2654,6 +2655,24 @@ fn chat_states(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<M
         .collect())
 }
 
+/// The skill run open in each open chat, for the chip on its tab (SK-3, #2766).
+///
+/// The window asks once, when it opens; after that it is told (`chat-skill-run`). A chat with
+/// no run open is not answered.
+#[tauri::command]
+#[specta::specta]
+fn chat_skill_runs(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<skillrun::ChatSkillRun>, String> {
+    let held = planes.held(&plane)?;
+    let open = held.chats().open_now();
+    Ok(held
+        .hooks()
+        .skill_runs()
+        .now(open.into_iter().map(|open| open.session)))
+}
+
 /// What each working chat is doing, in a kind and at most one short name (#1493).
 ///
 /// The window asks once, when it opens; after that it is told (`chat-doing`). Only chats the
@@ -3827,6 +3846,19 @@ pub fn run() {
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |told: doing::ChatDoing| {
                         windows::emit_for_plane(&window, &told.plane.clone(), doing::EVENT, &told);
+                    })
+                })
+                // The skill run open in a chat, each time it opens, counts a call or ends:
+                // the chip on the chat's tab (SK-3). In memory only.
+                .telling_skill_runs({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: skillrun::ChatSkillRun| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            skillrun::EVENT,
+                            &told,
+                        );
                     })
                 })
                 // A sandbox block a chat's hook found: the window shows it as a Notice on the

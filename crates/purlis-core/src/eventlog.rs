@@ -1561,6 +1561,8 @@ pub struct Recorder {
     /// The journal as it was when a start found the log already held all of it
     /// ([`KILL_SWITCH_READ`]), so the log was not read for it.
     kill_switch_skipped: Option<(u64, std::time::SystemTime)>,
+    /// Every skill run open, by the chat run it is a span of (SK-3, [`purlis_skills::runs`]).
+    spans: purlis_skills::runs::Spans,
 }
 
 /// One end of a tool call, heard and waiting for the other.
@@ -1639,6 +1641,7 @@ impl Recorder {
             calls: HashMap::new(),
             kill_switch: None,
             kill_switch_skipped: None,
+            spans: purlis_skills::runs::Spans::default(),
         }
     }
 
@@ -1708,6 +1711,7 @@ impl Recorder {
             who.attributes.conversation = Some(id.to_owned());
         }
         let under = self.under(top, report.agent.as_deref())?;
+        self.skills_heard_of_a_report(plane, &under, report)?;
         let mut body = serde_json::json!({});
         if report.event == crate::state::Event::SessionStart {
             body["started"] = started(report.detail.started).into();
@@ -1778,6 +1782,7 @@ impl Recorder {
             return self.of_no_run(call.chat, &tool_kind(call), body);
         };
         let under = self.under(top, call.agent.as_deref())?;
+        self.skills_heard_of_a_call(plane, &under, call)?;
         let phase = phase(&call.tool_hook);
         let mut body = spooled_as(self.tool_body(call), spooled);
         if let Some(id) = &call.call {
@@ -2266,7 +2271,19 @@ impl Recorder {
         }
     }
 
-    fn append(&mut self, under: &Under, kind: &str, body: serde_json::Value) -> io::Result<Event> {
+    fn append(
+        &mut self,
+        under: &Under,
+        kind: &str,
+        mut body: serde_json::Value,
+    ) -> io::Result<Event> {
+        // Every entry inside a skill run carries the skill (SK-3): the innermost run's.
+        if let Some(open) = self.spans.inside(span_of(under))
+            && let Some(fields) = body.as_object_mut()
+        {
+            fields.insert("skill".to_owned(), open.skill.as_str().into());
+            fields.insert("skill_run".to_owned(), open.id.as_str().into());
+        }
         self.log.append(
             Some(&under.chat),
             Some(&under.run),
@@ -2274,6 +2291,161 @@ impl Recorder {
             kind,
             body,
         )
+    }
+
+    /// **What a tool call does to the skill runs of its chat's run** (SK-3): one that invokes a
+    /// skill opens a run of it, before the call's own event, which is inside it; and every call
+    /// is counted onto the runs open. A call a guard refused invokes nothing.
+    fn skills_heard_of_a_call(
+        &mut self,
+        plane: &Path,
+        under: &Under,
+        call: &crate::hookwire::ToolCall,
+    ) -> io::Result<()> {
+        use crate::hookwire::Decision;
+        if call.decision != Decision::Deny
+            && let Some(invoked) = &call.skill
+        {
+            self.open_skill(plane, under, invoked)?;
+        }
+        self.spans.heard(
+            span_of(under),
+            purlis_skills::runs::Heard {
+                call: Some(call.call.as_deref()),
+                failed: call.tool_hook.starts_with("posttoolusefailure"),
+                refused: call.decision == Decision::Deny,
+                asked: call.decision == Decision::Ask,
+            },
+        );
+        Ok(())
+    }
+
+    /// Opens a run of the skill `invoked` names, in `under`'s chat run, and says so with a
+    /// `skill.started`. A claim the host cannot take (a start it does not know, an id that is
+    /// not a ULID, no name) opens nothing; and a skill already open in the turn is not opened
+    /// again.
+    fn open_skill(
+        &mut self,
+        plane: &Path,
+        under: &Under,
+        invoked: &crate::hookwire::SkillInvoked,
+    ) -> io::Result<()> {
+        let skill = crate::shown::readable(invoked.skill.trim(), crate::shown::DISPLAY_LIMIT);
+        let Some(started_by) = purlis_skills::runs::StartedBy::parse(&invoked.started_by) else {
+            return Ok(());
+        };
+        if skill.is_empty() || ulid::Ulid::from_string(&invoked.run).is_err() {
+            return Ok(());
+        }
+        let opened = self.spans.open(
+            span_of(under),
+            purlis_skills::runs::Invoked {
+                skill: &skill,
+                id: &invoked.run,
+                started_by,
+                at_ms: now_ms(),
+                tokens: tokens_of(plane, &under.chat),
+            },
+        );
+        let Some(opened) = opened else {
+            return Ok(());
+        };
+        let mut body = serde_json::json!({ "started_by": started_by.word() });
+        if let Some(parent) = &opened.parent {
+            body["parent_skill_run"] = parent.as_str().into();
+        }
+        self.append(under, "skill.started", body)?;
+        Ok(())
+    }
+
+    /// What a state hook does to the skill runs of its chat's run (SK-3): the turn's end closes
+    /// them, and so does a new prompt that came before it (an interruption) and the session's
+    /// end, each before the hook's own event, which is outside them; a question the chat put to
+    /// the person is counted onto them.
+    fn skills_heard_of_a_report(
+        &mut self,
+        plane: &Path,
+        under: &Under,
+        report: &crate::hookwire::Report,
+    ) -> io::Result<()> {
+        use crate::harness::model::Said;
+        use crate::state::Event;
+        use purlis_skills::runs::Ended;
+        if under.parent.is_some() {
+            return Ok(());
+        }
+        let ended = match report.event {
+            Event::Stop => Some(Ended::Turn),
+            Event::UserPromptSubmit => Some(Ended::Interrupted),
+            Event::SessionEnd => Some(Ended::Session),
+            _ => None,
+        };
+        if let Some(ended) = ended {
+            return self.close_skills(plane, under, ended);
+        }
+        if matches!(report.event.said(report.detail), Said::Ask(_)) {
+            self.spans.heard(
+                &under.run,
+                purlis_skills::runs::Heard {
+                    asked: true,
+                    ..purlis_skills::runs::Heard::default()
+                },
+            );
+        }
+        Ok(())
+    }
+
+    /// Closes every skill run open in `under`'s chat run, innermost first, each with a
+    /// `skill.ended` that holds its signals, and the end row of each in the plane's skill log
+    /// ([`crate::skilluse::ended`]).
+    fn close_skills(
+        &mut self,
+        plane: &Path,
+        under: &Under,
+        ended: purlis_skills::runs::Ended,
+    ) -> io::Result<()> {
+        let closed = self.spans.close(span_of(under), ended, now_ms());
+        if closed.is_empty() {
+            return Ok(());
+        }
+        let tokens = tokens_of(plane, &under.chat);
+        // Each `skill.ended` is the closed run's own, so it says that run's skill.
+        for run in closed {
+            let spent = tokens
+                .zip(run.open.tokens_at_start)
+                .map(|(now, then)| now.saturating_sub(then));
+            let signals = run.open.signals;
+            let mut body = serde_json::json!({
+                "skill": run.open.skill,
+                "skill_run": run.open.id,
+                "ended": ended.word(),
+                "ms": run.ms,
+                "tool_calls": signals.tool_calls,
+                "tool_errors": signals.tool_errors,
+                "refusals": signals.refusals,
+                "asks": signals.asks,
+            });
+            if let Some(spent) = spent {
+                body["tokens"] = spent.into();
+            }
+            self.log.append(
+                Some(&under.chat),
+                Some(&under.run),
+                under.parent.as_deref(),
+                "skill.ended",
+                body,
+            )?;
+            crate::skilluse::ended(
+                plane,
+                &crate::skilluse::Ending {
+                    run: &run,
+                    tokens: spent,
+                },
+                chrono::Utc::now(),
+                &self.log.device,
+            );
+        }
+        Ok(())
     }
 
     /// The run an event of `top`'s chat is under: `top`'s, or the child run of `agent`, begun
@@ -2536,9 +2708,16 @@ impl Recorder {
             held_trust: None,
         };
         if cause == Began::Clear {
-            // The cleared run is superseded, and its children end with it, before the run
-            // that takes its place begins.
+            // The cleared run is superseded, and its children and skill runs end with it,
+            // before the run that takes its place begins.
             self.end_children(&who.chat, RunState::Completed, Cause::Superseded)?;
+            if let Some(cleared) = self.chats.get(&key).map(|was| Under {
+                chat: was.chat.clone(),
+                run: was.run.clone(),
+                parent: None,
+            }) {
+                self.close_skills(plane, &cleared, purlis_skills::runs::Ended::Session)?;
+            }
         }
         let body = who.attributes.body(cause, &self.log.device);
         self.log
@@ -2546,6 +2725,34 @@ impl Recorder {
         self.chats.insert(key, who.clone());
         Ok(who)
     }
+}
+
+/// The chat run an entry `under` counts toward for its skill runs: a sub-agent's child run
+/// counts toward its parent's, where the skill was invoked.
+fn span_of(under: &Under) -> &str {
+    under.parent.as_deref().unwrap_or(&under.run)
+}
+
+/// Now, in milliseconds since 1970: when a skill run opens and closes.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|since| u64::try_from(since.as_millis()).ok())
+        .unwrap_or_default()
+}
+
+/// The tokens chat `chat` of `plane` has spent, as its harness last said them
+/// ([`crate::usage::spent`]): what a skill run's tokens are counted from. `None` where it said
+/// none.
+fn tokens_of(plane: &Path, chat: &str) -> Option<u64> {
+    let spent = crate::usage::spent(plane, chat)?;
+    (spent.input_tokens.is_some() || spent.output_tokens.is_some()).then(|| {
+        spent
+            .input_tokens
+            .unwrap_or_default()
+            .saturating_add(spent.output_tokens.unwrap_or_default())
+    })
 }
 
 /// A dispatch grant's audited body, saying `from` where the person made it somewhere other

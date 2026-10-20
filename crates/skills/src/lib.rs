@@ -30,6 +30,7 @@ use std::path::{Path, PathBuf};
 mod grant;
 mod read;
 mod share;
+pub mod runs;
 
 pub use grant::{Grant, grant_of, set_grant};
 pub use read::{DIR_IN_BUNDLE, frontmatter, in_bundle, listing, read};

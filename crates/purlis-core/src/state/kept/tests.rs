@@ -147,6 +147,7 @@ fn a_tool_call(chat: u32, decision: crate::hookwire::Decision, rule: Option<&str
         hook_ms: 1,
         agent: None,
         at_ms: 0,
+        skill: None,
     }
 }
 

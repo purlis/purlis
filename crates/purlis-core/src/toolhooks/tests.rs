@@ -310,28 +310,121 @@ fn a_returned_helper_is_no_longer_logged() {
 }
 
 #[test]
-fn a_skill_use_is_logged_under_this_devices_id_and_never_its_hostname() {
+fn a_skill_runs_start_is_logged_under_this_devices_id_and_never_its_hostname() {
     let p = Plane::new();
     let config = PathBuf::from(&p.env[crate::machine::HOME_VAR]);
     let device = crate::machine::device_id(&config).unwrap();
     let skill = serde_json::json!({"tool_name": "Skill", "tool_input": {"skill": "x"}});
 
-    p.ask(skill, posttooluse_skill);
+    p.ask(skill, skill_invoked).unwrap();
 
     assert!(crate::skilluse::path_for(&p.root, now(), &device).is_file());
     assert!(!crate::skilluse::path_for(&p.root, now(), "box").exists());
 }
 
 #[test]
-fn a_skill_use_is_logged_under_the_active_persona() {
+fn a_skill_tool_call_invokes_its_skill_under_the_active_persona_and_the_host_is_told_its_run() {
     let p = Plane::new().with_env("PURLIS_PERSONA", "ops");
     p.persona("ops", "role: Ops");
-    p.ask(
-        serde_json::json!({"tool_name": "Skill", "tool_input": {"skill": "charter:secrets"}}),
-        posttooluse_skill,
+    let invoked = p
+        .ask(
+            serde_json::json!({"tool_name": "Skill", "tool_input": {"skill": "charter:secrets"}}),
+            skill_invoked,
+        )
+        .unwrap();
+
+    assert_eq!(invoked.skill, "charter:secrets");
+    assert_eq!(invoked.started_by, "skill-tool");
+    let runs = crate::skilluse::runs(&p.root);
+    assert_eq!(runs.len(), 1, "{runs:#?}");
+    assert_eq!(
+        runs[0].id.as_deref(),
+        Some(invoked.run.as_str()),
+        "one id, row and run"
     );
-    let log = std::fs::read_to_string(crate::skilluse::path_for(&p.root, now(), "box")).unwrap();
-    assert!(log.contains("\"persona\": \"ops\", \"skill\": \"charter:secrets\""));
+    assert_eq!(runs[0].persona.as_deref(), Some("ops"));
+    assert_eq!(runs[0].started_by.as_deref(), Some("skill-tool"));
+    assert_eq!(
+        p.ask(
+            serde_json::json!({"tool_name": "Skill", "tool_input": {"skill": "x"}}),
+            posttooluse_skill
+        ),
+        Answer::Nothing
+    );
+}
+
+#[test]
+fn opencodes_skill_tool_names_its_skill_as_name() {
+    let p = Plane::new();
+    let invoked = p
+        .ask(
+            serde_json::json!({"tool_name": "Skill", "tool_input": {"name": "deploy"}}),
+            skill_invoked,
+        )
+        .unwrap();
+    assert_eq!(invoked.skill, "deploy");
+}
+
+/// `p`, with a built-in skills directory holding `deploy`, as a briefed chat is started with it.
+fn briefed_on_deploy(p: Plane) -> Plane {
+    let dir = p.root.join("bundle-skills");
+    std::fs::create_dir_all(dir.join("deploy")).unwrap();
+    std::fs::write(
+        dir.join("deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Ships it.\n---\nSteps.\n",
+    )
+    .unwrap();
+    let dir = dir.display().to_string();
+    p.with_env(crate::skills::LISTED_ENV, &dir)
+}
+
+#[test]
+fn a_briefed_chat_reading_a_known_skill_md_invokes_that_skill() {
+    let p = briefed_on_deploy(Plane::new());
+    let file = p.root.join("bundle-skills/deploy/SKILL.md");
+    let read = serde_json::json!({"tool_name": "Bash",
+        "tool_input": {"command": format!("sed -n 1,200p '{}'", file.display())}});
+
+    let invoked = p.ask(read, skill_invoked).unwrap();
+
+    assert_eq!(invoked.skill, "deploy");
+    assert_eq!(invoked.started_by, "read");
+    assert_eq!(
+        crate::skilluse::runs(&p.root)[0].started_by.as_deref(),
+        Some("read")
+    );
+}
+
+#[test]
+fn reading_an_unknown_skill_md_or_any_other_file_invokes_nothing() {
+    let p = briefed_on_deploy(Plane::new());
+    for command in [
+        "cat /elsewhere/deploy/SKILL.md".to_owned(),
+        format!(
+            "cat {}",
+            p.root.join("bundle-skills/deploy/README.md").display()
+        ),
+        format!(
+            "cat {}x",
+            p.root.join("bundle-skills/deploy/SKILL.md").display()
+        ),
+    ] {
+        let read = serde_json::json!({"tool_name": "Bash", "tool_input": {"command": command}});
+        assert_eq!(p.ask(read, skill_invoked), None, "{command}");
+    }
+    assert!(crate::skilluse::runs(&p.root).is_empty());
+}
+
+#[test]
+fn a_chat_not_briefed_on_its_skills_invokes_none_by_reading_one() {
+    // Its harness loads its skills itself, and invokes one by its Skill tool.
+    let briefed = briefed_on_deploy(Plane::new());
+    let file = briefed.root.join("bundle-skills/deploy/SKILL.md");
+    let read = serde_json::json!({"tool_name": "Read", "tool_input": {"file_path": file}});
+    assert!(briefed.ask(read.clone(), skill_invoked).is_some());
+    let mut not_briefed = briefed;
+    not_briefed.env.remove(crate::skills::LISTED_ENV);
+    assert_eq!(not_briefed.ask(read, skill_invoked), None);
 }
 
 // ---- posttooluse --------------------------------------------------------------------------
