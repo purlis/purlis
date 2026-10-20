@@ -1608,6 +1608,17 @@ What decides which skills a chat sees or can load for its task. One ships with p
 arrive as extensions.
 _Avoid_: skill selector, dispatcher (dispatch is persona work)
 
+**Skill budget**:
+How many skills, and how many characters of their descriptions, one chat's listing may hold on
+its harness. purlis sets it below each harness's own limit and shows it on the chat tab; past
+it, the skill router hides skills behind the index skill (ADR 0102).
+_Avoid_: context budget (for this), skill limit
+
+**Index skill**:
+An always-loaded skill a skill router shows whenever it hides any skill, listing every hidden
+skill by name and one line and saying that `skill_load` loads it (ADR 0102).
+_Avoid_: catalogue skill, skill menu
+
 **Grading framework**:
 A pluggable way of grading a skill. purlis ships one; others arrive as extensions.
 _Avoid_: eval engine, judge

@@ -12,17 +12,11 @@ capabilities).
 
 ## Where purlis was
 
-Every skill a chat could get had its name and description put in the chat's context. Each
-harness copes with a large library in its own way, and none of them tells the person
-(research of 2026-10-20 in the smart-ide workspace,
-`refs/skills-research/harness-skill-mechanics.md`):
-
-- **Claude Code** keeps the listing to 1% of the context window, and drops descriptions,
-  least-used first, past it. Names always stay.
-- **Codex** keeps it to 2% of the window (at most 10,000 tokens). It shortens descriptions, then
-  **leaves trailing skills out of the listing**, with a warning that is not in the prompt, so a
-  skill becomes unreachable silently.
-- **opencode** has no limit, and puts every skill in the system prompt.
+Every skill a chat could get had its name and description put in the chat's context, and each
+harness copes with a large library in its own way without telling the person. Measured on the
+versions installed on 2026-10-20: Claude Code keeps its listing to 1% of the context window by
+dropping descriptions, Codex keeps it to 2% and then leaves trailing skills out of the listing
+silently, and opencode has no limit and puts every skill in the system prompt.
 
 So a growing library either floods the context or loses skills without saying so, and a harness
 chooses less well among hundreds of descriptions than among a few.
@@ -36,6 +30,10 @@ budget, its pinned skills and, where it has one, the prompt. It returns which sk
 and, for every skill it hides, a one-line reason. It never adds a skill to the set: a skill the
 set leaves out (not granted, turned off, archived) stays out, whatever the router says. A router
 only orders and hides what the chat may already have.
+
+**A router that hides any skill shows the index skill** (§2) with whatever else it shows, and the
+index counts against the budget. So every hidden skill is named in the chat's listing, and the
+fallback (§6) always has an index to fall back to. A router that hides nothing needs no index.
 
 **The budget is purlis's**: the chat's skill budget for its harness, in skills and description
 characters (#2775), shown on the chat tab. It is set below each harness's own limit, so the
@@ -81,8 +79,10 @@ because it reads every prompt of every chat that uses it.
 ### 6. A router has 100 ms
 
 A router gets **100 ms per prompt**. Past that, purlis does not wait: that prompt goes on with the
-listing the chat already has (the index, where there is one) and no pointer, the prompt is
-marked as having fallen back, and the router's timing is recorded. The chat tab and the studio
+listing the chat already has (the index, where the router hides anything) and no pointer.
+**The fallback is marked in two records**: the prompt's **routing record** in the chat's event log
+(the router, its timing, what it hid and that it fell back), and every skill run opened during
+that turn, which names the routing record it started under. The chat tab and the studio
 show the router's timings and its fallbacks. A router that fails or answers wrongly is treated
 the same way, with its error in the record. Chatting never waits on a router.
 
