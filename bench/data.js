@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792504019790,
+  "lastUpdate": 1792505434064,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19236,6 +19236,48 @@ window.BENCHMARK_DATA = {
             "value": 102.786919,
             "unit": "ms",
             "extra": "median of 5 runs: 101.660, 101.858, 102.787, 103.596, 103.874 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f5985d3c12d952aef9172aec658b041314b1517d",
+          "message": "Theme previews and the gallery share the painter fairly; specimen test gaps (#2758)\n\n* Theme previews and the gallery share the painter fairly; specimen test gaps (#2751)\n\n- After a chat's turn the gallery asked during, the gallery is owed one picture: chats are\n  answered busy until it has taken the painter once, or a specimen's budget has passed, and\n  that picture does not give way (themepreview::turns).\n- The window asks a busy painter again every second, for as long as a chat's whole ask takes\n  and while the card is on screen, instead of three tries six seconds apart.\n- A chat's turn counts against its gap only once a picture has begun on it; the spacing doc\n  says what spacing does and leaves the gallery's share to turns.\n- Refusal text says an absolute path with spaces in it as \"a path\", all of it.\n- Tests: a lookup leaving less than a picture's budget never reaches paint; a gallery ask\n  during a chat's lookup is answered busy; handoff::chat_at gives a chat with no id no\n  workspace; Place's on/offered for extensions; the gallery's cards drawn while one or several\n  chats loop theme_preview.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The gallery is owed a picture only for a chat's turn it asked during (#2751 review)\n\n- A chat whose wait for a gallery picture timed out unmarks what it marked, and the gallery\n  taking the painter clears what it asked before: a later chat's turn owes nothing.\n- The window checks its card is still on screen after each wait, before asking again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T17:54:16+04:00",
+          "tree_id": "e1adc56fca216144510cf79f74547b0bcb12a57b",
+          "url": "https://github.com/purlis/purlis/commit/f5985d3c12d952aef9172aec658b041314b1517d"
+        },
+        "date": 1792505432668,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.518045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.515, 0.518, 0.534, 0.537 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.700348499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.468, 16.483, 16.700, 16.916, 17.117 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.2682575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.581, 102.664, 104.268, 104.508, 107.426 ms"
           }
         ]
       }
