@@ -259,6 +259,11 @@ pub async fn theme_in_force(
                     .get_or_insert_with(|| offered_of(&extension::survey(&root, &built_in())))
                     .clone()
             },
+            |faces| {
+                at.as_deref().and_then(|plane| {
+                    review_kept(plane, faces, || crate::planes::theme_review(&root, plane))
+                })
+            },
         )
     })
     .await
@@ -454,7 +459,10 @@ pub(crate) fn contrast_of(more: bool) -> purlis_core::theme::Contrast {
     }
 }
 
-/// [`theme_in_force`] without a runtime.
+/// [`theme_in_force`] without a runtime. `review` is asked only for a theme refused for a
+/// project font file its approval does not hold (#2647): what its Notice may offer.
+// The command's own inputs, and two reads taken only when the answer needs them.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn theme_in_force_of(
     levels: &purlis_core::theme::Levels,
     folders: &purlis_core::theme::Folders,
@@ -463,6 +471,7 @@ pub(crate) fn theme_in_force_of(
     light: bool,
     contrast: purlis_core::theme::Contrast,
     offered: impl FnOnce() -> Arc<[purlis_core::theme::Offered]>,
+    review: impl FnOnce(&[&str]) -> Option<ThemeReview>,
 ) -> ThemeInForce {
     use purlis_core::theme;
     let drawn = theme::resolve_levels(
@@ -480,6 +489,14 @@ pub(crate) fn theme_in_force_of(
         },
         offered,
     );
+    let review = {
+        let faces = drawn.awaiting_faces();
+        if faces.is_empty() {
+            None
+        } else {
+            review(&faces)
+        }
+    };
     let refused = drawn.refused.then(|| ThemeTrouble {
         name: drawn
             .level
@@ -505,6 +522,7 @@ pub(crate) fn theme_in_force_of(
             })
             .unwrap_or_default(),
         refused,
+        review,
         theme: drawn.theme.as_ref().map(WindowTheme::from),
         complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
         follows_system: drawn.follows_system,
@@ -603,6 +621,67 @@ pub struct ThemeInForce {
     /// (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
     /// font file changed since it was approved, is never a silent fallback.
     pub refused: Option<ThemeTrouble>,
+    /// Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+    /// of the project's or a workspace's theme folder that this machine's approval does not
+    /// hold. `fonts`: the project asks about font files alone, and the refused Notice offers
+    /// Review and allow (`review_plane`). `more`: it asks for more than font files, and the
+    /// Notice offers no button. `unapproved`: this machine never approved the project, and the
+    /// Notice offers no button. `null` otherwise.
+    pub review: Option<ThemeReview>,
+}
+
+/// What a refused theme's Notice may offer (#2647, [`ThemeInForce::review`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeReview {
+    /// The project asks again about font files alone: Review and allow.
+    Fonts,
+    /// It asks for more than font files: no button, and where it is reviewed instead.
+    More,
+    /// This machine never approved it: no button, and where it is reviewed instead.
+    Unapproved,
+}
+
+/// The review state last found for each project, with the faces its refused theme waited on.
+type ReviewsKept =
+    std::collections::BTreeMap<std::path::PathBuf, (Vec<String>, Option<ThemeReview>)>;
+
+/// At most this many projects' review states are kept; past it, all are found again.
+const MOST_REVIEWS_KEPT: usize = 32;
+
+fn reviews_kept() -> std::sync::MutexGuard<'static, ReviewsKept> {
+    static KEPT: Mutex<ReviewsKept> = Mutex::new(std::collections::BTreeMap::new());
+    KEPT.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// **What a refused theme's Notice may offer for the project at `root`, found once per set of
+/// faces it waits on** (#2647): `find` reads and hashes what the project contributes, so it is
+/// asked again only when `faces` (each `<path> <sha-256>`, [`purlis_core::theme::Drawn::awaiting_faces`])
+/// differ from the last asked for that project. A redraw under live reload that changed no face
+/// reads nothing. What it answers is only which Notice to say: a press asks `review_plane`,
+/// which reads the project again and refuses an ask about more than font files.
+pub(crate) fn review_kept(
+    root: &std::path::Path,
+    faces: &[&str],
+    find: impl FnOnce() -> Option<ThemeReview>,
+) -> Option<ThemeReview> {
+    if let Some((kept, review)) = reviews_kept().get(root)
+        && kept.iter().map(String::as_str).eq(faces.iter().copied())
+    {
+        return *review;
+    }
+    // Found with the lock let go: it reads the project's files.
+    let review = find();
+    let mut kept = reviews_kept();
+    if kept.len() >= MOST_REVIEWS_KEPT && !kept.contains_key(root) {
+        kept.clear();
+    }
+    kept.insert(
+        root.to_path_buf(),
+        (faces.iter().map(|one| (*one).to_owned()).collect(), review),
+    );
+    review
 }
 
 /// A resolved theme as the window applies it: the window's `Theme`, every token and every
@@ -2358,6 +2437,7 @@ mod tests {
             false,
             Contrast::Standard,
             || unreachable!(),
+            |_| None,
         );
         let theme = drawn.theme.expect("the person's theme");
         assert_eq!(
@@ -2385,6 +2465,7 @@ mod tests {
                 false,
                 contrast_of(more),
                 || unreachable!(),
+                |_| None,
             )
             .theme
             .expect("drawn")
@@ -2410,6 +2491,7 @@ mod tests {
             false,
             Contrast::Standard,
             || unreachable!(),
+            |_| None,
         );
         assert_eq!(
             drawn.options,
@@ -2445,6 +2527,7 @@ mod tests {
             false,
             Contrast::Standard,
             || unreachable!(),
+            |_| None,
         );
         assert!(classic.options.is_empty());
     }
@@ -2497,6 +2580,7 @@ mod tests {
             false,
             Contrast::Standard,
             offered,
+            |_| None,
         );
         let theme = drawn.theme.expect("a theme");
         assert_eq!(theme.name, "Solarized Dark");
@@ -2518,6 +2602,7 @@ mod tests {
             false,
             Contrast::Standard,
             offered,
+            |_| None,
         );
         assert_eq!(off.theme.map(|it| it.name).as_deref(), Some("purlis-dark"));
         let system = theme_in_force_of(
@@ -2528,6 +2613,7 @@ mod tests {
             true,
             Contrast::Standard,
             || unreachable!(),
+            |_| None,
         );
         assert_eq!(
             system.theme.map(|it| it.name).as_deref(),

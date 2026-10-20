@@ -733,6 +733,16 @@ are at least 400 ms apart, so the window is drawn again within a second of the l
 the platform will not watch a folder, the core looks at it every two seconds instead. A theme
 the engine refuses on a reload draws Purlis, with a Notice saying why; a project's font file
 that changed since the project was approved is refused until the project is approved again.
+That Notice offers **Review and allow** (#2647) when the engine says the approval is all that
+stands in the way (`Drawn::awaits_approval`): it shows the project's trust ask in place, what
+changed first and then its font files by theme folder, and a yes approves exactly what the ask
+showed and draws the theme again. A file changed after the ask was drawn approves nothing; a
+no leaves the theme refused. The press is the person's alone. It is offered only when what the
+project asks for again is font files alone; when it asks for more, or was never approved on
+this machine, the Notice has no button and says to close the project and open it again, where
+its whole trust ask is shown. The ask names the themes and workspaces the font files belong
+to, and says that the system's font engine reads them. Whether to offer it is found once for
+each set of faces a refusal waits on, so a redraw that changed no face reads nothing again.
 
 **A workspace switch repaints with a short crossfade**: colours ease across `duration.enter`
 with `easing.standard`, from a rule in the base layer at no specificity, so a surface with a

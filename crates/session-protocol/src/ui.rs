@@ -423,6 +423,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "approve_extension",
     "forget_extension",
     "approve_plane",
+    // The trust ask about a project already open (#2647): only the person's press reviews it.
+    "review_plane",
     "approve_profile",
     "revoke_approval",
     "answer_sandbox_offer",

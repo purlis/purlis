@@ -45,6 +45,7 @@ macro_rules! app_commands {
                 opener::open_plane,
                 opener::folder_is_a_project,
                 opener::approve_plane,
+                opener::review_plane,
                 opener::planes_to_restore,
                 opener::relaunch_ask,
                 opener::relaunch,
