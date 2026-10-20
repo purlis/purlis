@@ -1310,6 +1310,8 @@ export const commands = {
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	projectsNotHeld: __WINDOW_ONLY_RESULT,
 	chatsRunOn: __WINDOW_ONLY_RESULT,
+	applyRunnerWrite: __WINDOW_ONLY_RESULT,
+	dismissRunnerWrite: __WINDOW_ONLY_RESULT,
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
@@ -2256,6 +2258,11 @@ export type AnswerPath =
  */
 { via: "proposed-change"; id: number; path: string } | 
 /**
+ *  `apply_runner_write` for Apply and `dismiss_runner_write` for Dismiss, on held runner
+ *  write `id` (#2046).
+ */
+{ via: "runner-write"; id: number } | 
+/**
  *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
  *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
@@ -2407,6 +2414,11 @@ export type AskSource =
  *  (#1975).
  */
 "proposed-change" | 
+/**
+ *  A change to the project a chat on a pool's runner asked for, which only the person
+ *  applies (#2046).
+ */
+"runner-write" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */

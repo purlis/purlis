@@ -292,6 +292,8 @@ pub struct Held {
     /// The changes each chat proposed to purlis's own configuration, until the person answers
     /// (#1975).
     proposals: crate::proposals::Proposals,
+    /// The writes to the project its runner chats asked for, held for the person (#2046).
+    runner_writes: crate::runnerwrites::RunnerWrites,
     /// The persona MCP servers each chat could not start, until the person answers (qw381).
     mcp_failures: Arc<crate::mcpfailed::Failures>,
     /// The chats whose program ended with their session host, until the person answers
@@ -576,6 +578,11 @@ impl Held {
     /// (#1975).
     pub fn proposals(&self) -> &crate::proposals::Proposals {
         &self.proposals
+    }
+
+    /// The writes to the project its runner chats asked for, held for the person (#2046).
+    pub fn runner_writes(&self) -> &crate::runnerwrites::RunnerWrites {
+        &self.runner_writes
     }
 
     /// The persona MCP servers each chat could not start, for the Notice on its tab (qw381).
@@ -1073,6 +1080,7 @@ impl Held {
             .forget(self.browser_driver.as_ref(), session, &was);
         self.browsers_listed_since(listing);
         self.proposals.forget(session);
+        self.runner_writes.forget(session);
         self.mcp_failures.forget(session);
         self.lost_with_the_host.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
@@ -4183,6 +4191,7 @@ impl Planes {
             browser_driver: self.browser_driver.clone(),
             browsers_listed,
             proposals: crate::proposals::Proposals::default(),
+            runner_writes: crate::runnerwrites::RunnerWrites::default(),
             mcp_failures,
             lost_with_the_host,
             dispatch_grants: crate::dispatchgrants::Store::default(),

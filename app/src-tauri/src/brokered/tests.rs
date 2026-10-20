@@ -52,7 +52,7 @@ fn chat_as(persona: Option<&str>) -> Asker {
 fn a_memory_verb_is_answered_with_what_its_command_says_and_made_in_the_chats_own_persona() {
     let (_dir, root, slug) = a_project();
 
-    let answer = answer(
+    let answer = answered(
         &root,
         &chat_as(Some("steward")),
         &Write::ArchiveMemory {
@@ -86,7 +86,7 @@ fn a_memory_verb_is_answered_with_what_its_command_says_and_made_in_the_chats_ow
 fn a_chat_on_no_persona_is_refused_a_persona_memory_verb() {
     let (_dir, root, slug) = a_project();
 
-    let answer = answer(
+    let answer = answered(
         &root,
         &chat_as(None),
         &Write::Forget {
@@ -111,7 +111,7 @@ fn a_chat_on_no_persona_is_refused_a_persona_memory_verb() {
 #[test]
 fn a_one_file_write_is_still_answered_as_written() {
     let (_dir, root, _) = a_project();
-    let answer = answer(
+    let answer = answered(
         &root,
         &chat_as(None),
         &Write::Todo {
@@ -135,7 +135,7 @@ fn a_workspace_create_is_answered_with_what_create_says_and_one_that_is_there_is
         vision: Some("Port the docs command".to_owned()),
     };
 
-    let made = answer(&root, &chat_as(Some("steward")), &create("gamma"), now());
+    let made = answered(&root, &chat_as(Some("steward")), &create("gamma"), now());
 
     let Answer::Said { lines, code } = made else {
         panic!("a create answers in lines: {made:?}");
@@ -149,7 +149,7 @@ fn a_workspace_create_is_answered_with_what_create_says_and_one_that_is_there_is
     );
     assert!(root.join("workspaces/gamma/workspace.md").is_file());
 
-    let again = answer(&root, &chat_as(Some("steward")), &create("alpha"), now());
+    let again = answered(&root, &chat_as(Some("steward")), &create("alpha"), now());
     let Answer::No { why } = again else {
         panic!("a workspace that is there was answered: {again:?}");
     };

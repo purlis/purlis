@@ -244,6 +244,13 @@ pub trait SessionHost: Send + Sync {
         self.composes_its_harness_chats()
     }
 
+    /// **The pool chat `id` runs on**, where it runs on a pool's runner (#2046): what the window
+    /// holds its writes to the project for the person by. None, where it runs on this machine.
+    fn pool_of(&self, id: u32) -> Option<String> {
+        let _ = id;
+        None
+    }
+
     /// **Holds the project in this host now** (#2046), as a window that is about to start a
     /// chat on a runner beside it does: this machine's host keeps the project's board for
     /// every chat, those on runners included. Nothing, where the window's own process runs the

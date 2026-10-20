@@ -482,6 +482,10 @@ impl SessionHost for RoutedSessions {
         self.here.hold_here();
     }
 
+    fn pool_of(&self, id: u32) -> Option<String> {
+        lock(&self.shared.chats).get(&id).cloned()
+    }
+
     /// Asked of this machine's host, then of each pool a workspace of the project runs its
     /// chats on; one left running on a pool is kept as that pool's.
     /// Asked of this machine's host alone: a chat whose workspace is not known runs here.

@@ -38,7 +38,12 @@ pub fn write(held: &Held, ask: &WriteAsk) -> Answer {
         place,
         persona: open.persona,
     };
-    answer(
+    // **A chat on a pool's runner changes nothing here unasked** (#2046, ADR 0078 §7): its write
+    // is held for the person as a proposal, and made only on their Apply.
+    if let Some(pool) = held.chats().pool_of(ask.chat) {
+        return crate::runnerwrites::hold(held, &pool, asker, ask.write.clone());
+    }
+    answered(
         held.root(),
         &asker,
         &ask.write,
@@ -47,8 +52,9 @@ pub fn write(held: &Held, ask: &WriteAsk) -> Answer {
 }
 
 /// The answer to `write`, made for `asker` (the app's record of the chat, never the request's)
-/// in the project at `root`.
-fn answer(
+/// in the project at `root`: what the window answers a chat here, and what a runner chat's held
+/// write makes on the person's Apply (`crate::runnerwrites`).
+pub(crate) fn answered(
     root: &std::path::Path,
     asker: &purlis_core::brokered::Asker,
     write: &purlis_core::brokered::Write,

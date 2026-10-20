@@ -281,3 +281,22 @@ fn runner_chats_that_end_together_fetch_their_branches_once_at_a_time() {
     );
     assert_eq!(world.builds.most_fetching_at_once(), 1);
 }
+
+#[test]
+fn a_chat_on_a_pool_is_named_by_its_pool_and_one_here_by_none() {
+    let world = a_world();
+    let there = world
+        .sessions
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .unwrap()
+        .number;
+    let here = world
+        .sessions
+        .open(None, &Opening::default(), &|_| {})
+        .unwrap();
+    // What the window holds a chat's writes to the project for the person by (#2046).
+    assert_eq!(world.sessions.pool_of(there).as_deref(), Some("builds"));
+    assert_eq!(world.sessions.pool_of(here), None);
+    world.sessions.close(there).unwrap();
+    assert_eq!(world.sessions.pool_of(there), None);
+}

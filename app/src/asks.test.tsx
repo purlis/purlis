@@ -54,6 +54,20 @@ const PERMISSION: Shown = {
   answer: { via: "hook" },
 };
 
+/** A change a chat on a pool's runner asked for (#2046). */
+const RUNNER_WRITE: Shown = {
+  session: 6,
+  ask: "runner-write:3",
+  says: "Asks, from pool builds, to change this project: Remember in this workspace's memory: x",
+  options: [
+    { id: "apply", label: "Apply", allows: true },
+    { id: "dismiss", label: "Dismiss", allows: false },
+  ],
+  source: "runner-write",
+  chain: [],
+  answer: { via: "runner-write", id: 3 },
+};
+
 const DISPATCH: Shown = {
   session: 4,
   ask: "dispatch:7",
@@ -509,5 +523,23 @@ describe("the list", () => {
     const { result } = renderHook(() => useAsks([PLANE]));
     await new Promise((settle) => setTimeout(settle, 20));
     expect(PLANE in result.current.held).toBe(false);
+  });
+});
+
+describe("a runner chat's change to the project (#2046)", () => {
+  it("is applied or dismissed through its own commands, and nothing else", async () => {
+    const calls = sent({ apply_runner_write: "Applied.", dismiss_runner_write: null });
+    expect(await answerTaken(PLANE, RUNNER_WRITE, "apply")).toEqual({
+      refused: undefined,
+      live: false,
+    });
+    expect(await answerTaken(PLANE, RUNNER_WRITE, "dismiss")).toEqual({
+      refused: undefined,
+      live: false,
+    });
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["apply_runner_write", { plane: PLANE, id: 3 }],
+      ["dismiss_runner_write", { plane: PLANE, id: 3 }],
+    ]);
   });
 });

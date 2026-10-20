@@ -253,6 +253,12 @@ export async function answerTaken(
         }
         if (option === "dismiss") return commands.dismissProposedChange(plane, path.id);
         break;
+      case "runner-write":
+        // A chat on a pool's runner asked to change this project (#2046): Apply makes the change
+        // as the window would for a chat here; Dismiss makes nothing. The chat is told which.
+        if (option === "apply") return commands.applyRunnerWrite(plane, path.id);
+        if (option === "dismiss") return commands.dismissRunnerWrite(plane, path.id);
+        break;
       case "sign-in":
         // Sign in sends nothing (#2035): the project's window opens a shell tab where the core
         // types the harness's own sign-in, to the plan the option names where it names one. The
