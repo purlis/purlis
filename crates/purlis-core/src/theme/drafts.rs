@@ -44,7 +44,10 @@
 //! **The drafts of a chat that is gone are deleted** ([`sweep`]): no strip names them, and no
 //! close asks about them. Each chat's drafts folder names the clone whose app made it (its
 //! [`crate::plane::CloneKey`]), and a sweep deletes only its own clone's: a state folder that
-//! `$PURLIS_HOME` shares between clones keeps every other clone's drafts.
+//! `$PURLIS_HOME` shares between clones keeps every other clone's drafts. A chat's folder that
+//! names no clone is adopted by the sweep only in the plane's own state folder, the one used
+//! while `$PURLIS_HOME` is not set: the sweep writes this clone's owner record into it, then
+//! treats it as its own.
 //!
 //! # The draft's fonts and its floors
 //!
@@ -751,6 +754,28 @@ pub fn changed(plane: &Path, draft: &Draft) -> bool {
     real_now(plane, &draft.kept_to, &draft.folder).is_none_or(|now| now != recorded)
 }
 
+/// **Whether `chat` has a theme draft** in the plane at `plane` (#2761): its drafts folder holds a
+/// folder named as a theme folder is. Only that is looked at, never what the draft says, so the
+/// answer costs the same whatever the draft holds. A link on the way, or at the chat's folder,
+/// counts as none.
+pub fn has_drafts(plane: &Path, chat: &str) -> bool {
+    let Some(folder) = folder_of(plane, chat) else {
+        return false;
+    };
+    let (root, _) = root_of(plane);
+    if crate::contain::no_link_on_the_way(&root, &folder).is_err()
+        || !std::fs::symlink_metadata(&folder).is_ok_and(|meta| meta.is_dir())
+    {
+        return false;
+    }
+    std::fs::read_dir(&folder).is_ok_and(|listed| {
+        listed.filter_map(Result::ok).take(MOST_CHATS).any(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_dir())
+                && entry.file_name().to_str().is_some_and(super::is_folder_id)
+        })
+    })
+}
+
 /// The most chats' drafts folders one [`sweep`] looks at.
 pub const MOST_SWEPT: usize = 256;
 
@@ -758,9 +783,11 @@ pub const MOST_SWEPT: usize = 256;
 /// drafts folder whose chat is none of `open`, the chats the app has open or reopens at its next
 /// launch. No strip names such a draft and no close asks about it. At most [`MOST_SWEPT`] are
 /// looked at in one sweep; a name that is not a chat's id is left as it is. **Only this clone's
-/// are deleted**: a folder whose owner record names another clone, or that has none, is not
-/// this plane's to delete, as in a state folder `$PURLIS_HOME` shares. Answers how many chats'
-/// drafts were deleted.
+/// are deleted**: a folder whose owner record names another clone is not this plane's to
+/// delete, as in a state folder `$PURLIS_HOME` shares. **A folder with no owner record is
+/// adopted only in the plane's own state folder** ([`adopts_ownerless`]): the sweep writes this
+/// clone's owner record into it, open chat or not, and from then on it is this clone's. Under
+/// `$PURLIS_HOME` it is left as it is. Answers how many chats' drafts were deleted.
 pub fn sweep(plane: &Path, open: &[&str]) -> usize {
     let (root, below) = root_of(plane);
     let drafts = root.join(below);
@@ -771,19 +798,31 @@ pub fn sweep(plane: &Path, open: &[&str]) -> usize {
         return 0;
     };
     let mine = owner_of(plane);
+    let adopts = adopts_ownerless();
     let mut deleted = 0;
     for entry in listed.filter_map(Result::ok).take(MOST_SWEPT) {
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
             continue;
         };
-        if !is_chat_id(&name) || open.contains(&name.as_str()) {
+        if !is_chat_id(&name) {
             continue;
         }
         // The entry's own kind: a link is not followed, and not deleted through.
         if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
             continue;
         }
-        if read_small(&root, &entry.path().join(OWNER)).as_deref() != Some(mine.as_str()) {
+        let owner = entry.path().join(OWNER);
+        // Only a record that is not there at all is no owner: one that is a link, a folder or
+        // unreadable names nobody this sweep may replace, and the folder stays.
+        let ownerless = std::fs::symlink_metadata(&owner)
+            .is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound);
+        if adopts && ownerless {
+            let _ = write_no_link(&root, &owner, &mine);
+        }
+        if open.contains(&name.as_str()) {
+            continue;
+        }
+        if read_small(&root, &owner).as_deref() != Some(mine.as_str()) {
             continue;
         }
         // The standard library's removal opens each folder below refusing a link.
@@ -792,6 +831,16 @@ pub fn sweep(plane: &Path, open: &[&str]) -> usize {
         }
     }
     deleted
+}
+
+/// **Whether a sweep adopts a chat's drafts folder that names no clone** (#2761): only while
+/// `$PURLIS_HOME` is not set, so that the drafts are in the plane's own state folder, inside the
+/// plane, which is this clone's own. Never under `$PURLIS_HOME`, inside the plane or not: an
+/// operator sets it to share one state folder between clones, and a folder there that names no
+/// clone may be another clone's open chat's. A `$PURLIS_HOME` another clone sets to this plane's
+/// own state folder counts as this clone's own.
+fn adopts_ownerless() -> bool {
+    !crate::steer::var_os("PURLIS_HOME").is_some_and(|home| !home.is_empty())
 }
 
 /// The most files a save hands over: `theme.json` and the icon sets beside it.

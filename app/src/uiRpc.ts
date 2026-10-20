@@ -1360,6 +1360,18 @@ export const commands = {
 	themeOpenFolder: __WINDOW_ONLY_RESULT,
 	themeChat: __WINDOW_ONLY_RESULT,
 	themeDraftsOfChat: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **A link's close of chats that have theme drafts is handed to the window** (#2761): closing a
+	 *  chat, and its drafts' Keep and Revert, are the window's alone, so a link never settles a
+	 *  draft. Where one of `sessions` is a chat open here with a draft, the window holding the
+	 *  project is told the chats ([`CLOSE_HANDED`]). That window decides: it asks the person, Keep
+	 *  or Revert first, and brings itself and the project forward only when it does, never over a
+	 *  question already on screen; it closes nothing unasked.
+	 * 
+	 *  **The link is answered the same whatever was found**: nothing of the drafts, nor whether the
+	 *  window was told. At most [`drafts::MOST_CHATS`] chats are read from the list, each once.
+	 */
+	handDraftsCloseToTheWindow: (plane: PlaneId, sessions: number[]) => typedError<null, string>(__TAURI_INVOKE("hand_drafts_close_to_the_window", { plane, sessions })),
 	themeDraftKeep: __WINDOW_ONLY_RESULT,
 	themeDraftRevert: __WINDOW_ONLY_RESULT,
 	themeDraftsRevertHere: __WINDOW_ONLY_RESULT,
@@ -1860,6 +1872,8 @@ export const commands = {
 };
 
 /* Constants */
+export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
+
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
 export const SPECIMEN_BUSY = "purlis is drawing another theme specimen, and draws one at a time: ask again in a moment" as const;
@@ -3114,6 +3128,12 @@ export type ChosenInstruction = {
 	repo: string,
 	file: string,
 	text: string,
+};
+
+/**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
+export type CloseHanded = {
+	plane: PlaneId,
+	sessions: number[],
 };
 
 /**
