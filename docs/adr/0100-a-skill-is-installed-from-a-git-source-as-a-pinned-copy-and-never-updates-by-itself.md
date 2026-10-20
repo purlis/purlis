@@ -2,7 +2,7 @@
 
 **Accepted 2026-10-20**, from the operator's spec #2762 (M65, Skill studio), whose decisions were
 grilled with the operator on 2026-10-20 (decisions 7, 20, 29, 39, 44 and 57); ticket #2773
-(SK-10). It builds on ADR 0099 (#2829, a skill lives at a level):
+(SK-10). It builds on [ADR 0099](0099-a-skill-lives-at-a-level-a-project-skill-reaches-a-workspace-by-grant-and-the-narrowest-copy-wins.md):
 an installed skill is an ordinary skill at a level. It leaves
 [ADR 0041](0041-a-plugin-is-a-subprocess-or-charter-has-no-plugins.md)'s "no registry, no fetch by
 name" standing for extensions, and says why skills are different.
@@ -51,7 +51,7 @@ is clone state.
   marked with the skill that brought it, so an installed skill works on its first run. A
   reference the source does not hold is a lint finding, not a failed install.
 - **The grant is asked for as any project skill's is.** An install at the project level lands
-  with the grant `master` unless the person picks another in the review (ADR 0099 §2).
+  with the grant `root` unless the person picks another in the review (ADR 0099 §2).
 - **The install is one commit** through purlis's normal save: the copied folders and the
   lockfile entry together.
 
