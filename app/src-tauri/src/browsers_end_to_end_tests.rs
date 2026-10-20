@@ -417,6 +417,35 @@ impl Window {
     }
 }
 
+impl Window {
+    /// Opens `address` in the chat's browser, which must answer: where it does not, with what
+    /// every engine's own log says.
+    pub(crate) fn opens(&self, tools: &mut Tools, address: &str) -> Said {
+        let said = tools.call("browser_open", json!({ "address": address }));
+        assert!(
+            !said.error,
+            "browser_open {address} was refused: {}\n{}",
+            said.text,
+            self.engine_logs()
+        );
+        said
+    }
+
+    /// What each engine's log in the host's data home says.
+    pub(crate) fn engine_logs(&self) -> String {
+        let folder = purlis_core::browsers::browsers_in(&self.host.data);
+        let mut said = String::new();
+        for entry in std::fs::read_dir(&folder).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.to_string_lossy().ends_with(".engine.log") {
+                let log = std::fs::read_to_string(&path).unwrap_or_default();
+                said.push_str(&format!("{}:\n{log}\n", path.display()));
+            }
+        }
+        said
+    }
+}
+
 impl Drop for Window {
     fn drop(&mut self) {
         self.planes.let_go_of_all();
@@ -584,7 +613,7 @@ fn a_chats_browser_tools_drive_a_real_engine_through_every_hop() {
     crate::chatbrowsers::allowed(&window.held, chat, false).expect("the person allows it");
 
     // Open, read, find, click.
-    window_opens(&mut tools, &site.at("counter.html"));
+    window.opens(&mut tools, &site.at("counter.html"));
     let snapshot = tools.done("browser_snapshot", json!({}));
     assert!(snapshot.text.contains("Count: 0"), "{}", snapshot.text);
     let found = tools.done("browser_find", json!({ "text": "Add one" }));
@@ -738,9 +767,4 @@ fn a_chat_whose_browser_the_person_kept_off_is_refused_in_words() {
         next.text
     );
     assert!(site.heard().is_empty(), "no browser opened anything");
-}
-
-/// Opens `address` in the chat's browser, which must answer.
-fn window_opens(tools: &mut Tools, address: &str) -> Said {
-    tools.done("browser_open", json!({ "address": address }))
 }
