@@ -201,3 +201,34 @@ fn a_workspaces_clones_reach_the_runner_before_a_chat_starts_there_and_its_commi
         "the work tree here is untouched"
     );
 }
+
+#[test]
+fn a_runner_that_lost_a_repository_since_the_last_send_is_sent_it_whole() {
+    let world = World::new();
+    let web = world.root.join("workspaces/app/web");
+    let start = || {
+        let _ = world.sessions.open_named(
+            None,
+            &Named {
+                workspace: Some("app".into()),
+                ..crate::hostedsessions::tests::by_its_names()
+            },
+            Default::default(),
+            &|_| {},
+        );
+    };
+    start();
+    let there = world.kept().join("workspaces/app/web");
+    assert!(there.join("README").is_file(), "sent the first time");
+
+    // The runner loses it; the next start sends it whole, not only what it lacked.
+    std::fs::remove_dir_all(&there).unwrap();
+    let here = committed(&web, "login.rs", "fn log_in() {}\n");
+    start();
+
+    assert_eq!(git(&there, &["rev-parse", "refs/heads/fix-login"]), here);
+    assert_eq!(
+        std::fs::read_to_string(there.join("README")).unwrap(),
+        "web\n"
+    );
+}

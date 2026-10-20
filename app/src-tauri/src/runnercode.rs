@@ -15,7 +15,8 @@
 //!   where Changes shows them ready to push or open as a pull request here.
 //!
 //! What the runner held after each send is kept for the next, so a send carries only what the
-//! runner lacks. The git calls are the core's ([`purlis_core::codelink`]).
+//! runner lacks. It is forgotten after a send that failed, and whenever the project is held
+//! again, so the next send is whole. The git calls are the core's ([`purlis_core::codelink`]).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -53,6 +54,12 @@ fn lock(sent: &Sent) -> std::sync::MutexGuard<'_, HashMap<String, Vec<String>>> 
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// **Forget what the runner held of every repository**, so the next send of each is whole: the
+/// project is held again, and the runner may hold none of it.
+pub(crate) fn forget(sent: &Sent) {
+    lock(sent).clear();
+}
+
 fn scratch() -> Result<tempfile::TempDir, String> {
     tempfile::Builder::new()
         .prefix("purlis-code-")
@@ -80,18 +87,29 @@ pub(crate) fn send(
         Vec::new()
     };
     let have = lock(sent).get(rel).cloned().unwrap_or_default();
-    let scratch = scratch()?;
-    let held = codelink::send(&repo, &leave_out, &have, scratch.path(), |sending| {
-        link.send_code(
-            project,
-            rel,
-            code_refs(sending.refs),
-            Some(sending.checkout),
-            sending.bundle,
-        )
-        .map(core_refs)
-    })
-    .map_err(|why| format!("the code of {} did not reach the runner: {why}", shown(rel)))?;
+    let once = |have: &[String]| -> Result<Vec<Ref>, String> {
+        let scratch = scratch()?;
+        codelink::send(&repo, &leave_out, have, scratch.path(), |sending| {
+            link.send_code(
+                project,
+                rel,
+                code_refs(sending.refs),
+                Some(sending.checkout),
+                sending.bundle,
+            )
+            .map(core_refs)
+        })
+        .map_err(|why| why.to_string())
+    };
+    // A send that leaves out what the runner held last may fail where the runner no longer holds
+    // it: that send is made again whole, and what the runner held is not known after a send that
+    // failed, so the next one is whole too.
+    let held = once(&have)
+        .or_else(|why| if have.is_empty() { Err(why) } else { once(&[]) })
+        .map_err(|why| {
+            lock(sent).remove(rel);
+            format!("the code of {} did not reach the runner: {why}", shown(rel))
+        })?;
     lock(sent).insert(
         rel.to_owned(),
         held.into_iter().map(|one| one.oid).collect(),

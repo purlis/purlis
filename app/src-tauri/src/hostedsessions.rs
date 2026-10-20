@@ -411,6 +411,31 @@ fn no_code_stream() -> String {
     "the host did not open a stream for the code".to_owned()
 }
 
+/// The session protocol version whose host moves code (1.34, #2046).
+const MOVES_CODE: purlis_session_protocol::version::Version =
+    purlis_session_protocol::version::Version {
+        major: 1,
+        minor: 34,
+    };
+
+/// What a transfer says when the host refused it: in purlis's words where the host, or the
+/// runner it relays to, is before [`MOVES_CODE`] and does not know the command.
+fn code_refused(why: session::CallError) -> String {
+    match why.refusal() {
+        Some(refusal) if refusal.code == session::UNKNOWN_COMMAND => moves_no_code(),
+        _ => why.to_string(),
+    }
+}
+
+/// What a transfer says to a host before [`MOVES_CODE`].
+fn moves_no_code() -> String {
+    format!(
+        "the host this project's chats run on is from a purlis before session protocol {}.{}, \
+         which moves no code, so nothing was moved. Update it to this purlis's version.",
+        MOVES_CODE.major, MOVES_CODE.minor
+    )
+}
+
 /// What a chat start says when there is no host to run it (ADR 0068, Ruled 3).
 fn no_host(why: &str) -> String {
     format!(
@@ -461,6 +486,8 @@ pub struct HostLink {
     /// Why the host did not take the window's name on it, where it was named and did not
     /// (#2623): said by whoever opened it, never with the name.
     unnamed: Option<String>,
+    /// The most bytes one bundle it moves may carry, either way (1.34, #2046).
+    most_bundle_bytes: u64,
 }
 
 /// A link nobody holds any more is closed: one that opened after nobody waited for it, among
@@ -663,7 +690,15 @@ impl HostLink {
             shared,
             hearing,
             unnamed,
+            most_bundle_bytes: purlis_session_protocol::code::MOST_BUNDLE_BYTES,
         })
+    }
+
+    /// This link, moving no bundle past `most` bytes: what a test makes a large one with.
+    #[cfg(test)]
+    pub(crate) fn holding_bundles_to(mut self, most: u64) -> HostLink {
+        self.most_bundle_bytes = most;
+        self
     }
 
     /// Send `command` and wait for the host's answer, from any thread.
@@ -738,9 +773,13 @@ impl HostLink {
         checkout: Option<String>,
         bundle: Option<&Path>,
     ) -> Result<Vec<session::CodeRef>, String> {
+        if self.version() < MOVES_CODE {
+            return Err(moves_no_code());
+        }
         let transfer = self.next_transfer();
         let stream = self.stream_for(transfer);
         let client = Arc::clone(&self.client);
+        let most = self.most_bundle_bytes;
         let (project, repo, bundle) = (
             project.to_owned(),
             repo.to_owned(),
@@ -754,22 +793,28 @@ impl HostLink {
                     let mut file = tokio::fs::File::open(&bundle)
                         .await
                         .map_err(|why| format!("the bundle could not be read: {why}"))?;
-                    purlis_session_protocol::code::copy_held_to(
-                        &mut file,
-                        &mut stream,
-                        purlis_session_protocol::code::MOST_BUNDLE_BYTES,
-                    )
-                    .await
-                    .map_err(|why| why.to_string())?;
+                    purlis_session_protocol::code::copy_held_to(&mut file, &mut stream, most)
+                        .await
+                        .map_err(|why| why.to_string())?;
                 }
                 tokio::io::AsyncWriteExt::shutdown(&mut stream)
                     .await
                     .map_err(|why| format!("the code stream broke: {why}"))
             };
-            let (answered, written) = tokio::join!(asked, writing);
-            let heads = answered.map_err(|why| why.to_string())?;
-            written?;
-            Ok(heads)
+            // The host's answer comes as soon as it refuses, stream or none: a refusal is
+            // said at once, never after the bound on a transfer.
+            tokio::pin!(asked, writing);
+            tokio::select! {
+                answered = &mut asked => {
+                    let heads = answered.map_err(code_refused)?;
+                    writing.await?;
+                    Ok(heads)
+                }
+                written = &mut writing => {
+                    written?;
+                    asked.await.map_err(code_refused)
+                }
+            }
         })
     }
 
@@ -783,9 +828,13 @@ impl HostLink {
         have: Vec<String>,
         into: &Path,
     ) -> Result<(Vec<session::CodeRef>, bool), String> {
+        if self.version() < MOVES_CODE {
+            return Err(moves_no_code());
+        }
         let transfer = self.next_transfer();
         let stream = self.stream_for(transfer);
         let client = Arc::clone(&self.client);
+        let most = self.most_bundle_bytes;
         let (project, repo, into) = (project.to_owned(), repo.to_owned(), into.to_path_buf());
         self.transfer(transfer, async move {
             let asked = client.give_code(&project, &repo, transfer, have);
@@ -794,21 +843,27 @@ impl HostLink {
                 let mut file = tokio::fs::File::create(&into)
                     .await
                     .map_err(|why| format!("the bundle could not be kept: {why}"))?;
-                let read = purlis_session_protocol::code::copy_held_to(
-                    &mut stream,
-                    &mut file,
-                    purlis_session_protocol::code::MOST_BUNDLE_BYTES,
-                )
-                .await
-                .map_err(|why| why.to_string())?;
+                let read =
+                    purlis_session_protocol::code::copy_held_to(&mut stream, &mut file, most)
+                        .await
+                        .map_err(|why| why.to_string())?;
                 tokio::io::AsyncWriteExt::flush(&mut file)
                     .await
                     .map_err(|why| format!("the bundle could not be kept: {why}"))?;
                 Ok::<u64, String>(read)
             };
-            let (answered, read) = tokio::join!(asked, reading);
-            let heads = answered.map_err(|why| why.to_string())?;
-            Ok((heads, read? > 0))
+            tokio::pin!(asked, reading);
+            tokio::select! {
+                answered = &mut asked => {
+                    let heads = answered.map_err(code_refused)?;
+                    Ok((heads, reading.await? > 0))
+                }
+                read = &mut reading => {
+                    let read = read?;
+                    let heads = asked.await.map_err(code_refused)?;
+                    Ok((heads, read > 0))
+                }
+            }
         })
     }
 
@@ -1829,6 +1884,8 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
             }
             *held = None;
         }
+        // A runner that holds it again may hold none of what was sent before.
+        crate::runnercode::forget(&sent);
         tracing::warn!(
             "purlis: the runner no longer holds project {project} after a re-link ({why}); \
              holding it again"

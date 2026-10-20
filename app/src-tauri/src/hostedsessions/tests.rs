@@ -16,6 +16,7 @@ use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
 
+mod movingcode;
 mod upgrading;
 
 /// The window's connection to the host `hosting` serves as, over in-memory links, run on
