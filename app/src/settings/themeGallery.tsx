@@ -941,7 +941,8 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
                 className="ui-button"
                 // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
                 tabIndex={0}
-                disabled={at === null}
+                // Once the core has answered for this level, as every button here waits.
+                disabled={gallery === undefined || at === null}
                 title={at === null ? NO_CHAT_HERE : undefined}
                 onClick={() => chat(undefined)}
               >
