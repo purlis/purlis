@@ -6,7 +6,7 @@ draws the window in, so a spec can check that the theme reached the native windo
 anyone is given has no use for it (#2836).
 
 - **A third list in `ipc_commands.rs`: `e2e_only`.** It is no class of the window's. Its
-  commands are compiled, registered, typed and allowed only under the app's `e2e` cargo feature,
+  commands are compiled, registered and allowed only under the app's `e2e` cargo feature,
   the one the scenario run builds with (`--features e2e`). No shipping build turns that feature
   on; `tools/release-features.mjs` fails a release build line that passes any feature flag.
 - **Granted as value-free in the `e2e` build.** `build.rs` adds the list's names to the
