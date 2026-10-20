@@ -181,6 +181,9 @@ export const config: WebdriverIO.Config = {
           // `regions.e2e.ts` drew the view (train 76's `no-blank-view`). What a refresh
           // writes is `glrefresh`'s tests'.
           PURLIS_NO_BACKGROUND_CHECKS: "1",
+          // The Skill studio's slices are built behind its flag (#2786), and a run checks them
+          // as the dev channel's people see them: on (`specs/skill-studio.e2e.ts`).
+          PURLIS_SKILL_STUDIO: "1",
         }),
       },
     ],

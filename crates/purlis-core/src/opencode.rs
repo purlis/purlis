@@ -294,9 +294,10 @@ pub fn binary_in(text: &str) -> Option<PathBuf> {
 /// The config an app chat is started with in [`CONFIG_ENV`]: the shim at `shim`, and nothing
 /// else. A `file://` URL, percent-encoded, so no character of a path can end it early.
 ///
-/// With `skills`, the shim is named in opencode's `[spec, options]` form and handed that
-/// directory as its option, which it adds to the skills opencode discovers (ADR 0063). Not a
-/// `skills` key beside `plugin`: opencode merges its configs with arrays replaced, so one here
+/// With `skills`, the shim is named in opencode's `[spec, options]` form and handed those
+/// directories as its option: one as a string, as before, and several as a list, the built-in
+/// skills' first and then the folder of links to the plane's (ADR 0063 as amended 2026-10-20).
+/// The shim adds each to the skills opencode discovers. Not a `skills` key beside `plugin`: opencode merges its configs with arrays replaced, so one here
 /// would drop every skills path the operator's own config names (measured on 1.18.32).
 ///
 /// With `binary`, charter's MCP server is named under `mcp` too (HP-7). `mcp` is an object, and
@@ -307,7 +308,7 @@ pub fn binary_in(text: &str) -> Option<PathBuf> {
 /// a global and a project config that turn snapshots on (measured on 1.18.33).
 pub fn session_config(
     shim: &Path,
-    skills: Option<&Path>,
+    skills: &[PathBuf],
     binary: Option<&Path>,
     sandboxed: bool,
 ) -> String {
@@ -320,8 +321,11 @@ pub fn session_config(
         }
     }
     let spec = match skills {
-        Some(dir) => serde_json::json!([url, { SKILLS_OPTION: dir.display().to_string() }]),
-        None => serde_json::Value::from(url),
+        [] => serde_json::Value::from(url),
+        [dir] => serde_json::json!([url, { SKILLS_OPTION: dir.display().to_string() }]),
+        dirs => serde_json::json!([url, {
+            SKILLS_OPTION: dirs.iter().map(|dir| dir.display().to_string()).collect::<Vec<_>>()
+        }]),
     };
     let mut config = serde_json::json!({ "plugin": [spec] });
     if let Some(binary) = binary {
@@ -382,11 +386,14 @@ const SESSION_HOOKS: &str = r#"    // purlis's skills, beside every skills path 
     // this hook its live merged config before it discovers any skill, and scans each path in
     // `skills.paths` for `SKILL.md` (ADR 0063). Appended, never in their place.
     config: async (cfg) => {
-      const skills = typeof options?.skills === "string" ? options.skills : ""
-      if (!skills || !cfg || typeof cfg !== "object") return
+      // One directory as a string, or several as a list: the built-in skills', then the
+      // folder of links to the project's (ADR 0063 as amended 2026-10-20).
+      const given = Array.isArray(options?.skills) ? options.skills : [options?.skills]
+      const skills = given.filter((dir) => typeof dir === "string" && dir !== "")
+      if (skills.length === 0 || !cfg || typeof cfg !== "object") return
       if (!cfg.skills || typeof cfg.skills !== "object") cfg.skills = {}
       const paths = Array.isArray(cfg.skills.paths) ? cfg.skills.paths : []
-      if (!paths.includes(skills)) cfg.skills.paths = [...paths, skills]
+      cfg.skills.paths = [...paths, ...skills.filter((dir) => !paths.includes(dir))]
     },
 
     // `$PURLIS_SESSION_ID` (and its old name) in every shell a tool opens, so a `purlis` command run there

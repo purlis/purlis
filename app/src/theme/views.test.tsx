@@ -694,6 +694,27 @@ const ORDINARY: Answers = {
   workspace_saving: REPO_SAVING,
   session_record: RECORD,
   dispatches: { rows: DISPATCHES, undrawn: 1 },
+  skill_studio: {
+    on: true,
+    skills: [
+      {
+        name: "deploy",
+        level: "project",
+        on: true,
+        left_out: null,
+        description: "Deploys the site.",
+        folder: "skills/deploy",
+      },
+      {
+        name: "half",
+        level: "project",
+        on: false,
+        left_out: "not a skill: its SKILL.md names no `description`",
+        description: "",
+        folder: "skills/half",
+      },
+    ],
+  },
   activity: ACTIVITY,
   memory_read: MEMORY,
   todo_read: {
@@ -1036,6 +1057,17 @@ const STATES: State[] = [
       },
     },
     drawn: /cannot say which files/,
+  },
+  {
+    name: "the Skill studio, with a project skill and one left out",
+    view: { from: null, view: "skill-studio", key: "" },
+    drawn: /Deploys the site\./,
+  },
+  {
+    name: "the Skill studio, with no skills yet",
+    view: { from: null, view: "skill-studio", key: "" },
+    answers: { skill_studio: { on: true, skills: [] } },
+    drawn: /This project has no skills yet/,
   },
   {
     name: "the project's dispatches, none yet",

@@ -70,6 +70,7 @@ describe("the Settings tab, at the You level", () => {
       "Browsers",
       "Accounts",
       "Profiles",
+      "Previews",
     ]);
     expect(group("Text")).toHaveAttribute("aria-current", "true");
     expect(shown()).toHaveAccessibleName("Text");
