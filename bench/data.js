@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792495458906,
+  "lastUpdate": 1792496807699,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19068,6 +19068,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5655695,
             "unit": "ms",
             "extra": "median of 5 runs: 101.179, 101.397, 101.566, 101.768, 101.963 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9d9052a306d8e28a8b8fabcb81737b033f5e7f2b",
+          "message": "Theme check: warn for a style drawn without a face (#2755)\n\n* Theme check: warn for a style drawn without a face; a pair over two layers\n\nThe check reports each style a theme draws in a font it brings with no\nface for it (style-without-a-face), once for each combination, naming\nthe slot and the style (#2736).\n\nA pair can name a second layer, beneath, under its under, and ratio\nlays them from the bottom up. The selectable command on the danger wash\nis measured on a see-through selection over the wash over the dialog,\nand the Ask floor holds it (#2724). contrast.test.ts reads the layers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme check CLI test: one appearance, with mono's regular and bold faces\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme check: the dialog under the wash moves with a tint; every layer read\n\nA test holds that a tint turning only the bottom layer of a pair laid\nover two moves its contrast with the hue, so the floors sweep it.\ncontrast.test.ts counts every layer it reads. Docs re-wrapped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T15:37:33+04:00",
+          "tree_id": "861342456050e67552df143eec71394458ed7d9b",
+          "url": "https://github.com/purlis/purlis/commit/9d9052a306d8e28a8b8fabcb81737b033f5e7f2b"
+        },
+        "date": 1792496806213,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.48666,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.479, 0.483, 0.487, 0.495, 0.497 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3318735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.194, 16.262, 16.332, 16.376, 16.469 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.89546,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.812, 100.354, 100.895, 102.211, 102.550 ms"
           }
         ]
       }
