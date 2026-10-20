@@ -7301,12 +7301,17 @@ export const PlaneView = memo(function PlaneView({
     onAsking(plane, questionUp);
     return () => onAsking(plane, false);
   }, [onAsking, plane, questionUp]);
+  /** Says, under the strip, why a link's close was not asked: once the ask is handled, as a
+   *  close's own answer is said once it is carried out. */
+  const sayNotAsked = useCallback((words: string) => {
+    void Promise.resolve().then(() => setReport({ from: "close-handed", refused: true, words }));
+  }, []);
   const closeHandled = useRef(closeAsked?.at);
   useEffect(() => {
     if (closeAsked === undefined || closeHandled.current === closeAsked.at) return;
     closeHandled.current = closeAsked.at;
     if (closeAsked.dropped || questionUp) {
-      setReport({ from: "close-handed", refused: true, words: CLOSE_HANDED_NOT_ASKED });
+      sayNotAsked(CLOSE_HANDED_NOT_ASKED);
       return;
     }
     const asked = new Set(closeAsked.sessions);
@@ -7323,15 +7328,11 @@ export const PlaneView = memo(function PlaneView({
       ends.length !== asked.size ||
       !ends.every((session) => asked.has(session))
     ) {
-      setReport({
-        from: "close-handed",
-        refused: true,
-        words: CLOSE_HANDED_NOT_HERE,
-      });
+      sayNotAsked(CLOSE_HANDED_NOT_HERE);
       return;
     }
     void askToEnd(offer, true);
-  }, [askToEnd, askedByNow, by, closeAsked, questionUp]);
+  }, [askToEnd, askedByNow, by, closeAsked, questionUp, sayNotAsked]);
 
   /**
    * **Keeps or reverts a closing chat's theme drafts** (#2332), as its close was answered, while
