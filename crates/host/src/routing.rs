@@ -135,7 +135,12 @@ impl Routed {
             *lock(&self.route) = Route::Undecided;
             return Err(refused);
         }
-        *lock(&self.route) = Route::There(relay);
+        *lock(&self.route) = Route::There(relay.clone());
+        // A link that ended while this was taken was ended as this host's: its relay is told
+        // too, so the name it holds there goes with it.
+        if peer.has_ended() {
+            session::Host::link_ended(&relay, peer).await;
+        }
         Ok(Answer::Done)
     }
 }

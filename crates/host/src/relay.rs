@@ -275,6 +275,13 @@ impl Relay {
         }
         claimed.insert(peer.link(), window.clone());
         named.insert(peer.link(), window);
+        // A link that ended meanwhile holds no name: its end may already have been dealt with,
+        // and would not let go of one taken after it.
+        if peer.has_ended() {
+            claimed.remove(&peer.link());
+            named.remove(&peer.link());
+            return Err(ended());
+        }
         Ok(Answer::Done)
     }
 }
