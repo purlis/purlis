@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792469453352,
+  "lastUpdate": 1792471181754,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18438,6 +18438,48 @@ window.BENCHMARK_DATA = {
             "value": 101.09813249999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.941, 100.179, 101.098, 101.345, 101.780 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3dad258536573afed8c6f3da1f589ffd7d96d4ec",
+          "message": "Theme check: selection over every ground, and danger words on a selection (#2719)\n\n* Theme check: selection over every ground, and danger words on a selection (#2706)\n\nThe selection pairs are measured laid over each ground a selection is\ndrawn on: the window, a field, a pane and a Notice, a dialog and a\ntrouble Notice. danger.text and danger.base are held on a theme's\nselection at the floor for words, under the danger consent floor. The\nFITS docs name the field (.ui-input) as the fixed-height box on the\nbody line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme check: selected text a theme colours is held by the consent floors (#2706)\n\nselection.text on selection.background over danger.surface is a Danger\nfloor pair and over surface.overlay an Ask floor pair. The floors put a\nselection pair right by drawing purlis's selection first, so the\ntheme's consent ground stays. Words selected in their own colour are\nalso measured over surface.sunken, and a markdown render's words are\nmeasured on the selection over each ground.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T08:36:02+04:00",
+          "tree_id": "7f12e4706b2672301e014ee5ec9b8d84fa471196",
+          "url": "https://github.com/purlis/purlis/commit/3dad258536573afed8c6f3da1f589ffd7d96d4ec"
+        },
+        "date": 1792471180220,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5187145,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.503, 0.508, 0.519, 0.539, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.721816,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.499, 16.592, 16.722, 16.817, 17.136 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.403195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.716, 104.783, 105.403, 105.985, 106.608 ms"
           }
         ]
       }
