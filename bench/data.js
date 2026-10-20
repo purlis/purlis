@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792517783483,
+  "lastUpdate": 1792519141680,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19446,6 +19446,48 @@ window.BENCHMARK_DATA = {
             "value": 104.5775045,
             "unit": "ms",
             "extra": "median of 5 runs: 101.860, 103.361, 104.578, 105.881, 106.057 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2057dce9483eee9ad679231eefd1ba9bfd93094b",
+          "message": "SK-1: purlis-skills works out a chat's skill set, and why (#2787)\n\n* SK-1: purlis-skills works out a chat's skill set, and why\n\nA new purlis-skills crate answers \"what is this chat's skill set, and\nwhy\": given the plane, the machine and a chat (workspace, persona,\nharness), it returns every effective skill with its route and origin,\nand every skill left out with a one-line reason. Only built-in skills\nexist today, so behaviour does not change.\n\nThe Codex and opencode adapters ask it for the set (through\npurlis_core::skills::for_chat) and turn it into env and config;\nClaude Code's built-ins keep riding --plugin-dir. The skills model,\nreader and briefing listing move into the crate, re-exported from\npurlis_core::skills so every caller is unchanged.\n\nAdds the skill-studio flag: off by default, on for a machine that\ntakes the dev channel, PURLIS_SKILL_STUDIO=1/0 overrides. It hides\nnothing yet.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-1: move the skills tests to their modules' tests.rs\n\nA move alone (CONTRIBUTING.md, \"Where tests live\"): read_tests.rs\nbecomes read/tests.rs, purlis-core's skills_tests.rs becomes\nskills/tests.rs, both declared with #[cfg(test)] mod tests;, and the\nseam's test file is named for the behaviour it holds. No test's name\nor body changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-1: answer the review: one source per answer, flag on the machine\n\n- The briefing lists what the chat's skill set holds\n  (skills::briefed, the same ask as the adapters), not a fresh read of\n  the directory: listed_from and LISTED_ENV leave purlis-skills.\n- Claude Code asks for_chat too, and holds in a debug assertion that the\n  set's directory is its plugin's skills/.\n- SkillSet::dir() is the one accessor (replacing dirs()); it asserts\n  every skill sits in that one directory.\n- Machine { built_in } names the built-in skills directory.\n- personas::frontmatter calls purlis_skills::frontmatter; the copy and\n  its guard test go.\n- The skill-studio flag is a machine setting (machine.json flags,\n  the ninth thing the store holds), off on every channel until turned\n  on, with PURLIS_SKILL_STUDIO over it: studio_shown becomes studio_on.\n  A dev-channel default would be a third channel difference (ADR 0092).\n- The briefing heading says built-in skills, as CONTEXT.md does.\n- skill_set takes _plane rather than binding a placeholder.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T21:36:11+04:00",
+          "tree_id": "c333d77c6347473cab6cc81a42ec4beb2b2c360b",
+          "url": "https://github.com/purlis/purlis/commit/2057dce9483eee9ad679231eefd1ba9bfd93094b"
+        },
+        "date": 1792519140271,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6699470000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.650, 0.666, 0.670, 0.675, 0.690 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.523369,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.441, 16.465, 16.523, 16.545, 16.676 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.92158900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.192, 101.504, 101.922, 102.156, 102.834 ms"
           }
         ]
       }
