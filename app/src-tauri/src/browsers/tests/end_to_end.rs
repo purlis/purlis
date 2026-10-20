@@ -1119,7 +1119,7 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
         &tools
             .done("browser_find", json!({ "text": "User name" }))
             .text,
-        "User name",
+        "textbox \"User name\"",
     );
     tools.done("browser_click", json!({ "target": name_field }));
     let watching = Watching::of(&window, &program);
@@ -1185,7 +1185,7 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
         &tools
             .done("browser_find", json!({ "text": "Show password" }))
             .text,
-        "Show password",
+        "button \"Show password\"",
     );
     tools.done("browser_click", json!({ "target": show, "changes": true }));
     tools.done("browser_snapshot", json!({}));
@@ -1201,7 +1201,7 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
         &tools
             .done("browser_find", json!({ "text": "Say something" }))
             .text,
-        "Say something",
+        "textbox \"Say something\"",
     );
     tools.done("browser_click", json!({ "target": echo_field }));
     let echo = watching.aim_other_than(Some(&form));
