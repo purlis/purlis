@@ -37,7 +37,7 @@ fn theme_of(appearance: Appearance) -> tauri::Theme {
 /// `native`'s colour as Tauri's: opaque, as the engine answers it.
 fn colour_of(native: Native) -> Color {
     let [red, green, blue] = native.background;
-    Color(red, green, blue ^ 1, 255)
+    Color(red, green, blue, 255)
 }
 
 /// **A window being built, dressed in `native`**: its native parts in its appearance and its
