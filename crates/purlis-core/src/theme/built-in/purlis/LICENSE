@@ -5,13 +5,15 @@ their own licences.
 - Its icon set, icons/icons.json, is converted from Lucide (https://lucide.dev), under the ISC
   License that follows. Every icon in it comes from Lucide; key and search are among the icons
   Lucide derives from Feather.
-- Its fonts, fonts/IBMPlexSans-Regular.woff2, fonts/IBMPlexSans-Medium.woff2 and
-  fonts/IBMPlexSans-SemiBold.woff2, are IBM Plex Sans 3.005 as IBM publishes it
-  (@ibm/plex-sans 1.1.0, fonts/complete/woff2), unmodified, under the SIL Open Font License,
-  Version 1.1, that follows.
-- Its font fonts/JetBrainsMono-Regular.woff2 is JetBrains Mono 2.304 as JetBrains publishes it
-  (the v2.304 release, fonts/webfonts), unmodified, under the SIL Open Font License, Version
-  1.1, that follows.
+- Its fonts fonts/IBMPlexSans-Regular.woff2, fonts/IBMPlexSans-Italic.woff2,
+  fonts/IBMPlexSans-Medium.woff2, fonts/IBMPlexSans-MediumItalic.woff2,
+  fonts/IBMPlexSans-SemiBold.woff2 and fonts/IBMPlexSans-SemiBoldItalic.woff2 are IBM Plex Sans
+  3.005 as IBM publishes it (@ibm/plex-sans 1.1.0, fonts/complete/woff2), unmodified, under the
+  SIL Open Font License, Version 1.1, that follows.
+- Its fonts fonts/JetBrainsMono-Regular.woff2, fonts/JetBrainsMono-Italic.woff2 and
+  fonts/JetBrainsMono-Bold.woff2 are JetBrains Mono 2.304 as JetBrains publishes it (the v2.304
+  release, fonts/webfonts), unmodified, under the SIL Open Font License, Version 1.1, that
+  follows.
 
 ---
 

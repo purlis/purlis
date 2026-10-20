@@ -54,6 +54,17 @@ pub(crate) trait DevTools: Send + Sync {
         timeout: Duration,
     ) -> Result<Value, CallError>;
 
+    /// [`DevTools::call_within`], its answer held to `most` bytes: a longer one fails this call
+    /// alone (#2694).
+    fn call_within_bounded(
+        &self,
+        method: &str,
+        params: Value,
+        session: Option<&str>,
+        timeout: Duration,
+        most: usize,
+    ) -> Result<Value, CallError>;
+
     /// How many of the engine's events were dropped because nobody read them in time.
     fn dropped_events(&self) -> u64;
 
@@ -71,6 +82,17 @@ impl DevTools for Connection {
         timeout: Duration,
     ) -> Result<Value, CallError> {
         Connection::call_within(self, method, params, session, timeout)
+    }
+
+    fn call_within_bounded(
+        &self,
+        method: &str,
+        params: Value,
+        session: Option<&str>,
+        timeout: Duration,
+        most: usize,
+    ) -> Result<Value, CallError> {
+        Connection::call_within_bounded(self, method, params, session, timeout, most)
     }
 
     fn dropped_events(&self) -> u64 {
@@ -3279,6 +3301,7 @@ fn refusal(why: CallError) -> Refusal {
         CallError::Engine { message, .. } => Refusal::Engine(message),
         CallError::Ended | CallError::Write(_) => Refusal::Ended,
         CallError::TimedOut => Refusal::Unknown,
+        CallError::TooLarge { .. } => Refusal::TooLarge,
     }
 }
 

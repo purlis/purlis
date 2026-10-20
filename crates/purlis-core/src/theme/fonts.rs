@@ -76,7 +76,7 @@ pub const CLASSIC_MONO: &str = "ui-monospace, Menlo, Consolas, monospace";
 pub const CLASSIC_TERMINAL: &str = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
 /// Whether a face is upright or italic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Style {
     Normal,
@@ -143,6 +143,95 @@ impl Fonts {
             _ => &mut self.terminal,
         }
     }
+}
+
+/// The weight the window draws upright text in where it asks for `normal`: code, and the
+/// terminal's text.
+pub const NORMAL: u16 = 400;
+
+/// The weight the window draws bold text in where it asks for `bold`: a syntax role drawn bold,
+/// and the terminal's bold text (xterm's own bold).
+pub const BOLD: u16 = 700;
+
+/// The geometry tokens that say the weights the interface's text is drawn in.
+const UI_WEIGHTS: &[&str] = &[
+    "font-weight.regular",
+    "font-weight.medium",
+    "font-weight.strong",
+];
+
+/// **One style the window draws a theme's font in**: the font's slot, the weight and whether it
+/// is italic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct StyleDrawn {
+    /// `ui`, `mono` or `terminal`.
+    pub slot: &'static str,
+    pub weight: u16,
+    pub style: Style,
+}
+
+/// **Every style `theme` draws text in** (#2709), in order: the interface at each of its weights,
+/// upright and italic (emphasis); code upright, and each syntax role at its own italic and bold;
+/// the terminal upright, bold and italic.
+pub fn styles_drawn(theme: &super::ResolvedTheme) -> Vec<StyleDrawn> {
+    let mut drawn = std::collections::BTreeSet::new();
+    let mut add = |slot, weight, style| {
+        drawn.insert(StyleDrawn {
+            slot,
+            weight,
+            style,
+        });
+    };
+    for geometry in [&theme.geometry, &theme.compact] {
+        for token in UI_WEIGHTS {
+            let Some(weight) = geometry.get(token) else {
+                continue;
+            };
+            // A weight token is a whole number within its bounds (`geometry::STEPS`).
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let weight = *weight as u16;
+            add("ui", weight, Style::Normal);
+            add("ui", weight, Style::Italic);
+        }
+    }
+    add("mono", NORMAL, Style::Normal);
+    for token in super::vocabulary::FLAGS {
+        let Some(role) = token.strip_suffix(".italic") else {
+            continue;
+        };
+        let bold = theme.typed.flag(&format!("{role}.bold"));
+        let italic = theme.typed.flag(token);
+        add(
+            "mono",
+            if bold { BOLD } else { NORMAL },
+            if italic { Style::Italic } else { Style::Normal },
+        );
+    }
+    add("terminal", NORMAL, Style::Normal);
+    add("terminal", BOLD, Style::Normal);
+    add("terminal", NORMAL, Style::Italic);
+    drawn.into_iter().collect()
+}
+
+/// **Each style `theme` draws that its font has no face for** (#2709): the browser would make
+/// it from another face, slanting or thickening it. A font with no face is the platform's
+/// own, which brings its styles, so only a font the theme brings is asked.
+pub fn without_a_face(theme: &super::ResolvedTheme) -> Vec<StyleDrawn> {
+    let font = |slot: &str| match slot {
+        "ui" => &theme.fonts.ui,
+        "mono" => &theme.fonts.mono,
+        _ => &theme.fonts.terminal,
+    };
+    styles_drawn(theme)
+        .into_iter()
+        .filter(|one| {
+            let faces = &font(one.slot).faces;
+            !faces.is_empty()
+                && !faces
+                    .iter()
+                    .any(|face| face.weight == one.weight && face.style == one.style)
+        })
+        .collect()
 }
 
 /// Core's family for `slot`.
