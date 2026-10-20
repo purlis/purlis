@@ -82,10 +82,12 @@ fn skill_runs_lists_every_run_newest_first_with_its_signals_and_never_a_verdict(
     );
     assert!(lines[2].contains("deploy"), "{text}");
     assert!(
-        lines[2].contains("7 tool calls, 1 errors, 2 refused, 1 asks, 5300 tokens, 12 s"),
+        lines[2].contains("7 tool calls, 1 error, 2 refusals, 1 ask, 5300 tokens, 12 s"),
         "{text}"
     );
-    assert!(lines[3].contains("purlis:secrets") && lines[3].contains("recorded before runs"));
+    assert!(
+        lines[3].contains("purlis:secrets") && lines[3].contains("from before runs were recorded")
+    );
     for word in ["pass", "fail"] {
         assert!(!text.to_lowercase().contains(word), "signals only: {text}");
     }

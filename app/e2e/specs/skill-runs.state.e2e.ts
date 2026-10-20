@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { endEveryChat, pressAndStart } from "../opening.js";
 import { USED_SKILL, USES_A_SKILL } from "../harness.js";
@@ -20,6 +21,9 @@ import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
  */
 
 const CHIP = '[data-testid="tab-skill-run"]';
+
+/** Where the run keeps what it drew for the pull request (CI uploads it). */
+const SHOTS = join(process.cwd(), "logs", "screenshots");
 
 describe("a skill run on a chat's tab", function () {
   this.timeout(120_000);
@@ -53,6 +57,10 @@ describe("a skill run on a chat's tab", function () {
       expect.stringContaining(`Using the skill ${USED_SKILL}`),
     );
 
+    mkdirSync(SHOTS, { recursive: true });
+    await chip.saveScreenshot(join(SHOTS, "skill-run-chip.png"));
+    await browser.saveScreenshot(join(SHOTS, "skill-run-chip-window.png"));
+
     await chip.click();
     const runs = await $('[data-testid="skill-runs"]');
     await runs.waitForExist({ timeout: 20_000, timeoutMsg: "the skill's tab did not open" });
@@ -60,6 +68,7 @@ describe("a skill run on a chat's tab", function () {
     await shown.waitForExist({ timeout: 20_000, timeoutMsg: "the run was not in its Runs panel" });
     await expect(shown).toHaveText(expect.stringContaining("The chat's Skill tool"));
     expect(await tabNames()).toContain(USED_SKILL);
+    await browser.saveScreenshot(join(SHOTS, "skill-runs-panel.png"));
 
     await endEveryChat();
     await browser.waitUntil(async () => !(await $(CHIP).isExisting()), {

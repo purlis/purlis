@@ -13,6 +13,8 @@ use clap::Subcommand;
 use purlis_core::skills::{Grant, StudioRow};
 use serde_json::{Value, json};
 
+use purlis_core::counts::counted;
+
 use crate::memory::Code;
 use crate::voice;
 
@@ -231,28 +233,31 @@ fn runs_table(runs: &[purlis_core::skilluse::Run], name: Option<&str>) -> String
         .map(|run| {
             let (ended, signals) = match &run.end {
                 Some(end) => (
-                    end.ended.clone(),
-                    format!(
-                        "{} tool calls, {} errors, {} refused, {} asks, {}, {}",
-                        end.tool_calls,
-                        end.tool_errors,
-                        end.refusals,
-                        end.asks,
+                    end.ended.word().to_owned(),
+                    [
+                        counted(end.tool_calls, "tool call", "tool calls"),
+                        counted(end.tool_errors, "error", "errors"),
+                        counted(end.refusals, "refusal", "refusals"),
+                        counted(end.asks, "ask", "asks"),
                         end.tokens.map_or_else(
                             || "tokens not reported".to_owned(),
-                            |t| format!("{t} tokens")
+                            |t| counted(t, "token", "tokens"),
                         ),
-                        seconds(end.ms)
-                    ),
+                        seconds(end.ms),
+                    ]
+                    .join(", "),
                 ),
-                None if run.id.is_none() => ("-".to_owned(), "recorded before runs".to_owned()),
+                None if run.id.is_none() => {
+                    ("-".to_owned(), "from before runs were recorded".to_owned())
+                }
                 None => ("-".to_owned(), "no end recorded".to_owned()),
             };
             [
                 run.started.clone(),
                 run.skill.clone(),
                 run.persona.clone().unwrap_or_else(|| "-".to_owned()),
-                run.started_by.clone().unwrap_or_else(|| "-".to_owned()),
+                run.started_by
+                    .map_or_else(|| "-".to_owned(), |by| by.word().to_owned()),
                 ended,
                 signals,
             ]

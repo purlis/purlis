@@ -110,20 +110,69 @@ pub(crate) fn studio(
     }
 }
 
+/// What started a skill run, as the Runs panel draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum RunStart {
+    /// The chat's own Skill tool.
+    SkillTool,
+    /// The chat read the skill's `SKILL.md`.
+    Read,
+    /// A start a newer purlis wrote.
+    Unknown,
+}
+
+impl From<purlis_core::skills::runs::StartedBy> for RunStart {
+    fn from(started_by: purlis_core::skills::runs::StartedBy) -> RunStart {
+        use purlis_core::skills::runs::StartedBy;
+        match started_by {
+            StartedBy::SkillTool => RunStart::SkillTool,
+            StartedBy::Read => RunStart::Read,
+            _ => RunStart::Unknown,
+        }
+    }
+}
+
+/// How a skill run ended, as the Runs panel draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum RunEnd {
+    /// With its turn.
+    Turn,
+    /// A new prompt came first.
+    Interrupted,
+    /// The chat ended under it.
+    Session,
+    /// An end a newer purlis wrote.
+    Unknown,
+}
+
+impl From<purlis_core::skills::runs::Ended> for RunEnd {
+    fn from(ended: purlis_core::skills::runs::Ended) -> RunEnd {
+        use purlis_core::skills::runs::Ended;
+        match ended {
+            Ended::Turn => RunEnd::Turn,
+            Ended::Interrupted => RunEnd::Interrupted,
+            Ended::Session => RunEnd::Session,
+            _ => RunEnd::Unknown,
+        }
+    }
+}
+
 /// One skill run, as a skill's Runs panel lists it (SK-3): what started it and its signals,
 /// never a pass or a fail.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct StudioRun {
-    /// Its id, or null for a use recorded before runs were.
+    /// Its id, or null for a use from before runs were recorded.
     pub id: Option<String>,
     pub skill: String,
     pub persona: Option<String>,
-    /// `skill-tool` or `read`, or null for a use recorded before runs were.
-    pub started_by: Option<String>,
+    /// What started it, or null for a use from before runs were recorded.
+    pub started_by: Option<RunStart>,
     /// When it started.
     pub started: String,
-    /// How it ended (`turn`, `interrupted` or `session`), or null while no end is recorded.
-    pub ended: Option<String>,
+    /// How it ended, or null while no end is recorded.
+    pub ended: Option<RunEnd>,
     pub ms: Option<u32>,
     pub tool_calls: Option<u32>,
     pub tool_errors: Option<u32>,
@@ -144,9 +193,9 @@ pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<Stu
                 id: run.id.clone(),
                 skill: run.skill.clone(),
                 persona: run.persona.clone(),
-                started_by: run.started_by.clone(),
+                started_by: run.started_by.map(RunStart::from),
                 started: run.started.clone(),
-                ended: end.map(|end| end.ended.clone()),
+                ended: end.map(|end| RunEnd::from(end.ended)),
                 ms: end.map(|end| small(end.ms)),
                 tool_calls: end.map(|end| small(end.tool_calls)),
                 tool_errors: end.map(|end| small(end.tool_errors)),

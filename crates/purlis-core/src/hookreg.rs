@@ -46,6 +46,14 @@ pub struct Handler {
     pub timeout: u32,
 }
 
+impl Handler {
+    /// Whether this hook is heard as a tool call came back: its `PostToolUse`, and not one that
+    /// failed. Where a skill run can start (SK-3).
+    pub fn hears_a_call_come_back(&self) -> bool {
+        self.matcher.is_some() && self.event == "PostToolUse"
+    }
+}
+
 /// Every hook the Rust `charter` answers, in the order a session meets them.
 pub const HANDLERS: [Handler; 15] = [
     Handler {

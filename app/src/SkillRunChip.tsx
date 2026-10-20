@@ -3,13 +3,9 @@
 
 import { memo } from "react";
 import { Sparkles } from "lucide-react";
+import { counted } from "./dispatches";
 import { useOpenRunOf } from "./skillRuns";
 import { useSkillStudioOn } from "./skillStudio";
-
-/** How a run's tool calls are said: "1 tool call", "3 tool calls". */
-export function toolCallsSaid(count: number): string {
-  return count === 1 ? "1 tool call" : `${count} tool calls`;
-}
 
 /**
  * **The skill run open in a tab's chat** (SK-3, #2766): the skill's name and the tool calls
@@ -29,7 +25,7 @@ export const SkillRunChip = memo(function SkillRunChip({
   const on = useSkillStudioOn();
   const run = useOpenRunOf(session);
   if (!on || run === undefined) return null;
-  const calls = toolCallsSaid(run.tool_calls);
+  const calls = counted(run.tool_calls, "tool call", "tool calls");
   return (
     <span className="tab-tasks tab-skill-run">
       <button

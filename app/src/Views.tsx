@@ -102,7 +102,7 @@ import { ProposedChangeTab } from "./ProposedChangeTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
-import { SKILL_VIEW, isSkillTab } from "./skillRuns";
+import { SKILL_VIEW, isSkillTab, skillOfView } from "./skillRuns";
 import { SkillTab } from "./SkillTab";
 import {
   SAVING_VIEW,
@@ -610,12 +610,12 @@ export function ViewPane({
             onOpenView={onOpenView}
           />
         ) : isSkillTab(view) ? (
-          /* One skill's tab (SK-3): its runs, read from the project's skill log, again when
-             the project changes on disk. */
+          /* One skill's tab (SK-3): its runs, read again when the project changes on disk, and
+             the run its key names marked. */
           <SkillTab
             key={`${plane}\u0000${view.key}`}
             plane={plane}
-            name={view.key}
+            {...skillOfView(view)}
             changed={changed + onDisk}
           />
         ) : isDispatches(view) ? (

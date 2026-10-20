@@ -15,6 +15,7 @@ import {
   workspaceOf,
   type StudioScope,
 } from "./skillStudio";
+import { skillView } from "./skillRuns";
 import type { ViewRef } from "./tabs";
 
 /** A scope as the picker's value: the root, or `in:<workspace>`. */
@@ -26,8 +27,6 @@ function choiceOf(scope: StudioScope): string {
 function scopeOfChoice(choice: string): StudioScope {
   return choice.startsWith("in:") ? inWorkspace(choice.slice(3)) : AT_THE_ROOT;
 }
-import { skillTitle, skillView } from "./skillRuns";
-
 /**
  * **The Skill studio's tab** (SK-2, #2765; SK-4, #2767): one chat's skill set, at the project's
  * root or in one workspace. Every skill the chat gets, with its level, and every one it does not
@@ -181,7 +180,7 @@ export function SkillStudioTab({
                     type="button"
                     className="ui-button ui-button-ghost ui-button-sm"
                     aria-label={`Open ${skill.name}`}
-                    onClick={() => onOpenView(skillView(skill.name), skillTitle(skill.name))}
+                    onClick={() => onOpenView(skillView(skill.name), skill.name)}
                   >
                     <code>{skill.name}</code>
                   </button>

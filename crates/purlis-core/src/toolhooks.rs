@@ -84,15 +84,6 @@ pub struct Hook<'a> {
 }
 
 impl Hook<'_> {
-    /// The name this device's logs are filed under: its device id, read from the machine store
-    /// the environment names and never minted here (FD-25, [`crate::machine::log_name`]).
-    fn log_name(&self) -> String {
-        crate::machine::log_name(
-            crate::machine::config_root_in(self.env).as_deref(),
-            self.host,
-        )
-    }
-
     /// `data.get(key) or ""` for a string field.
     fn text(&self, key: &str) -> &str {
         self.payload
@@ -885,72 +876,46 @@ fn secret_scan(hook: &Hook, input: &Value, fp: &str) -> Answer {
     )
 }
 
-/// `posttooluse_skill`: nothing to the harness. A skill the call invoked opens a run, which
-/// [`skill_invoked`] finds for every tool hook.
+/// `posttooluse_skill`: nothing to the harness, and the worker in the payload's `cwd` is alive.
+/// The run a Skill call starts is [`skill_started`]'s, which every tool hook asks.
 pub fn posttooluse_skill(hook: &Hook) -> Answer {
-    if hook.in_plane {
-        hook.touch_piece();
-    }
+    hook.touch_piece();
     Answer::Nothing
 }
 
-/// **The skill a tool call invokes, where it invokes one** (SK-3, #2766): the Skill tool's skill
-/// (Claude Code's `skill`, opencode's `name`), or, for a chat briefed on its skills, the skill
-/// whose `SKILL.md` a shell command or a file read names
-/// ([`crate::skills::readable_by_a_briefed_chat`]). Its run's start is logged in the plane's
-/// skill log under the id minted here ([`crate::skilluse::record`]), and the host is told the
-/// same id, so the run it opens is that row's.
-pub fn skill_invoked(hook: &Hook) -> Option<Box<crate::hookwire::SkillInvoked>> {
+/// **The skill run a finished tool call starts, where it starts one** (SK-3, #2766), read by the
+/// chat's harness's adapter from the call ([`crate::harness::HarnessAdapter::skill_start`]): the
+/// skill its Skill tool names, or, for a chat briefed on its skills, the skill whose `SKILL.md`
+/// a read names ([`crate::skills::readable_by_a_briefed_chat`]). The run's id is minted here,
+/// and the host opens the run under it, once per turn ([`crate::skillspan`]); nothing is
+/// written here. A chat that names no harness is Claude Code's: a terminal's own `claude`
+/// with purlis's plugin.
+pub fn skill_started(hook: &Hook) -> Option<Box<crate::hookwire::SkillStarted>> {
+    use crate::harness::{Harness, SkillStart};
     use purlis_skills::runs::StartedBy;
-    let (skill, started_by) = match hook.tool_name() {
-        "Skill" => {
-            let named = match hook.input_text("skill") {
-                "" => hook.input_text("name"),
-                skill => skill,
-            };
-            (named.trim().to_owned(), StartedBy::SkillTool)
-        }
-        "Bash" | "Read" => {
-            let read = match hook.input_text("command") {
-                "" => hook.input_text("file_path"),
-                command => command,
-            };
-            if read.is_empty() {
-                return None;
-            }
+    let harness = (hook.env)(crate::hookwire::HARNESS_ENV)
+        .and_then(|kind| Harness::of_kind(&kind))
+        .unwrap_or(Harness::ClaudeCode);
+    let start = harness
+        .adapter()
+        .skill_start(hook.tool_name(), hook.tool_input())?;
+    let (skill, started_by) = match start {
+        SkillStart::Named(skill) => (skill, StartedBy::SkillTool),
+        SkillStart::Reading(read) => {
             let skills = crate::skills::readable_by_a_briefed_chat(hook.root, hook.env);
             let cwd = hook
                 .payload
                 .get("cwd")
                 .and_then(Value::as_str)
                 .map_or(hook.cwd, Path::new);
-            let skill = purlis_skills::runs::invoked_by_a_read(read, cwd, &skills)?;
+            let skill = purlis_skills::runs::started_by_a_read(&read, cwd, &skills)?;
             (skill.name.clone(), StartedBy::Read)
         }
-        _ => return None,
     };
-    if skill.is_empty() {
-        return None;
-    }
-    let run = crate::reopen::mint();
-    if hook.in_plane {
-        let persona = hook.persona();
-        let _ = crate::skilluse::record(
-            hook.root,
-            &crate::skilluse::Started {
-                run: &run,
-                skill: &skill,
-                persona: persona.as_deref(),
-                started_by,
-            },
-            hook.now,
-            &hook.log_name(),
-        );
-    }
-    Some(Box::new(crate::hookwire::SkillInvoked {
+    Some(Box::new(crate::hookwire::SkillStarted {
         skill,
-        run,
-        started_by: started_by.word().to_owned(),
+        run: crate::reopen::mint(),
+        started_by,
     }))
 }
 

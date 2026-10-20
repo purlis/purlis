@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use purlis_core::hookwire::{Conversation, Decision, Report, SkillInvoked, ToolCall};
+use purlis_core::hookwire::{Conversation, Decision, Report, SkillStarted, ToolCall};
 use purlis_core::state::{Detail, Event};
 use std::sync::mpsc;
 
-const RUN: &str = "01JBRUN0000000000000000001";
+const RUN: &str = "01JB0000000000000000000001";
 
 fn call(chat: u32, id: &str, skill: Option<&str>) -> ToolCall {
     ToolCall {
@@ -21,10 +21,10 @@ fn call(chat: u32, id: &str, skill: Option<&str>) -> ToolCall {
         agent: None,
         at_ms: 0,
         skill: skill.map(|skill| {
-            Box::new(SkillInvoked {
+            Box::new(SkillStarted {
                 skill: skill.to_owned(),
                 run: RUN.to_owned(),
-                started_by: "skill-tool".to_owned(),
+                started_by: purlis_core::skills::runs::StartedBy::SkillTool,
             })
         }),
     }
@@ -52,7 +52,7 @@ fn listening() -> (Arc<SkillRuns>, mpsc::Receiver<ChatSkillRun>) {
 }
 
 #[test]
-fn a_skill_invoked_puts_its_run_on_the_chats_tab_counting_its_tool_calls_until_the_turn_ends() {
+fn a_skill_started_puts_its_run_on_the_chats_tab_counting_its_tool_calls_until_the_turn_ends() {
     let (runs, told) = listening();
 
     runs.heard(&call(4, "toolu_1", None));
@@ -71,8 +71,8 @@ fn a_skill_invoked_puts_its_run_on_the_chats_tab_counting_its_tool_calls_until_t
     };
     assert_eq!(
         said,
-        vec![open(1), open(2), open(2), None],
-        "nothing before the skill, each call once, and gone with the turn"
+        vec![open(1), open(2), None],
+        "nothing before the skill, each call once and told once, and gone with the turn"
     );
     assert!(runs.now([4]).is_empty());
 }

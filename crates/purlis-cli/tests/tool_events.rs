@@ -505,27 +505,31 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
 }
 
 #[test]
-fn a_skill_calls_post_hook_tells_the_host_the_skill_it_invoked_and_the_runs_id() {
-    // SK-3: the run the host opens is the one the plane's skill log names.
-    let (code, _, told) = hook(
+fn a_skill_calls_post_hook_tells_the_host_the_run_it_starts() {
+    // SK-3: the host opens the run under the id the hook minted, once per turn.
+    let (code, _, told) = hook_with(
         "posttooluse-skill",
         &serde_json::json!({"tool_name": "Skill", "tool_use_id": "toolu_1",
             "tool_input": {"skill": "deploy"}}),
+        &[(purlis_core::hookwire::HARNESS_ENV, "claude-code")],
     );
 
     assert_eq!(code, 0);
-    let invoked = told
+    let started = told
         .expect("the host was told")
         .skill
         .clone()
-        .expect("the skill the call invoked");
-    assert_eq!(invoked.skill, "deploy");
-    assert_eq!(invoked.started_by, "skill-tool");
-    assert_eq!(invoked.run.len(), 26, "a ULID: {}", invoked.run);
+        .expect("the run the call starts");
+    assert_eq!(started.skill, "deploy");
+    assert_eq!(
+        started.started_by,
+        purlis_core::skills::runs::StartedBy::SkillTool
+    );
+    assert_eq!(started.run.len(), 26, "a ULID: {}", started.run);
 }
 
 #[test]
-fn a_briefed_chats_shell_read_of_a_known_skill_md_tells_the_host_it_invoked_that_skill() {
+fn a_briefed_codex_chats_shell_read_of_a_known_skill_md_tells_the_host_it_started_that_skill() {
     // Codex: its shell's post hook is the block word, and its skills are listed by path.
     let skills = tempfile::tempdir().unwrap();
     let skill = skills.path().join("deploy");
@@ -536,18 +540,40 @@ fn a_briefed_chats_shell_read_of_a_known_skill_md_tells_the_host_it_invoked_that
     )
     .unwrap();
     let dir = skills.path().display().to_string();
-    let command = format!("sed -n 1,200p {}", skill.join("SKILL.md").display());
+    let env = [
+        (purlis_core::skills::LISTED_ENV, dir.as_str()),
+        (purlis_core::hookwire::HARNESS_ENV, "codex"),
+    ];
+    let file = skill.join("SKILL.md").display().to_string();
+    let payload = |command: String| {
+        serde_json::json!({"tool_name": "Bash", "tool_use_id": "call_1",
+            "tool_input": {"command": command}, "tool_response": ""})
+    };
 
-    let (_, _, told) = hook_with(
+    let (_, _, read) = hook_with(
         "posttooluse-blocked",
-        &serde_json::json!({"tool_name": "Bash", "tool_use_id": "call_1",
-            "tool_input": {"command": command}, "tool_response": ""}),
-        &[(purlis_core::skills::LISTED_ENV, dir.as_str())],
+        &payload(format!("sed -n 1,200p {file}")),
+        &env,
+    );
+    let (_, _, edited) = hook_with(
+        "posttooluse-blocked",
+        &payload(format!("sed -i 's/a/b/' {file}")),
+        &env,
     );
 
-    let invoked = told.expect("the host was told").skill.clone();
     assert_eq!(
-        invoked.map(|invoked| (invoked.skill, invoked.started_by)),
-        Some(("deploy".to_owned(), "read".to_owned()))
+        read.expect("the host was told")
+            .skill
+            .clone()
+            .map(|s| (s.skill, s.started_by)),
+        Some((
+            "deploy".to_owned(),
+            purlis_core::skills::runs::StartedBy::Read
+        ))
+    );
+    assert_eq!(
+        edited.expect("the host was told").skill.clone(),
+        None,
+        "a chat editing the skill starts no run"
     );
 }

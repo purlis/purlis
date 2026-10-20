@@ -394,15 +394,7 @@ import type {
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
 import { useSkillStudioOn } from "./skillStudio";
-import {
-  SkillRunsHere,
-  skillOfRun,
-  skillTitle,
-  skillView,
-  useSkillRuns,
-  wantRun,
-  type RunsOf,
-} from "./skillRuns";
+import { SkillRunsHere, skillOfRun, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
@@ -7535,8 +7527,7 @@ export const PlaneView = memo(function PlaneView({
   const openSkillRun = useCallback(
     (used: string, run: string) => {
       const skill = skillOfRun(used);
-      wantRun(skill, run);
-      showView(skillView(skill), skillTitle(skill));
+      showView(skillView(skill, run), skill);
     },
     [showView],
   );

@@ -1821,7 +1821,7 @@ fn tell_the_host_about_the_tool_call(
     payload: &str,
     answered: &hooks::Answered,
     took: std::time::Duration,
-    skill: Option<Box<hookwire::SkillInvoked>>,
+    skill: Option<Box<hookwire::SkillStarted>>,
 ) {
     use std::io::Write as _;
     let Some(socket) = purlis_core::envvar::var_os(SOCKET_ENV) else {
@@ -1995,7 +1995,7 @@ fn tell_the_host_about_the_tool_call(
     _payload: &str,
     _answered: &hooks::Answered,
     _took: std::time::Duration,
-    _skill: Option<Box<hookwire::SkillInvoked>>,
+    _skill: Option<Box<hookwire::SkillStarted>>,
 ) {
 }
 
@@ -2074,11 +2074,12 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
             let answered = decide(&text);
             (text, answered)
         };
-        // A skill the call invoked opens a run (SK-3): heard once, as the call came back, and
+        // The skill run the call starts (SK-3): heard once, as the call came back, and
         // never of a call the guard refused, which ran nothing.
-        let skill = (purlis_core::hookreg::find(name).is_some_and(|h| h.event == "PostToolUse")
+        let skill = (purlis_core::hookreg::find(name)
+            .is_some_and(purlis_core::hookreg::Handler::hears_a_call_come_back)
             && answered.decision != hookwire::Decision::Deny)
-            .then(|| hooks::with_hook(&text, now, purlis_core::toolhooks::skill_invoked))
+            .then(|| hooks::with_hook(&text, now, purlis_core::toolhooks::skill_started))
             .flatten();
         tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed(), skill);
         let taken = tell_the_host_about_blocks(name, &text);

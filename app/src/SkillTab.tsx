@@ -3,27 +3,27 @@
 
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Sparkles } from "lucide-react";
-import { commands, type StudioRun } from "./bindings";
+import { commands, type RunEnd, type RunStart, type StudioRun } from "./bindings";
+import { saidAt } from "./dispatches";
 import { EmptyState } from "./EmptyState";
-import { takeWantedRun } from "./skillRuns";
 
 /** What started a run, as its row says it. */
-export function startedBySaid(word: string | null): string {
-  switch (word) {
+export function startedBySaid(started: RunStart | null): string {
+  switch (started) {
     case "skill-tool":
       return "The chat's Skill tool";
     case "read":
       return "The chat read the skill";
     case null:
-      return "Recorded before runs were";
+      return "From before runs were recorded";
     default:
       return "Not known";
   }
 }
 
 /** How a run ended, as its row says it. */
-export function endedSaid(word: string | null, recordedBefore: boolean): string {
-  switch (word) {
+export function endedSaid(ended: RunEnd | null, fromBefore: boolean): string {
+  switch (ended) {
     case "turn":
       return "With its turn";
     case "interrupted":
@@ -31,7 +31,7 @@ export function endedSaid(word: string | null, recordedBefore: boolean): string 
     case "session":
       return "With the chat";
     case null:
-      return recordedBefore ? "Not recorded" : "Running, or not recorded";
+      return fromBefore ? "Not recorded" : "Running, or not recorded";
     default:
       return "Not known";
   }
@@ -45,8 +45,8 @@ export function timeSaid(ms: number | null): string {
   return `${Math.floor(ms / 60_000)} min ${Math.floor((ms % 60_000) / 1000)} s`;
 }
 
-/** A count, or nothing where the run has no end recorded. */
-function counted(n: number | null): string {
+/** A signal's cell: its count, and empty where the run has no end recorded to count from. */
+function signal(n: number | null): string {
   return n === null ? "" : String(n);
 }
 
@@ -59,16 +59,17 @@ function counted(n: number | null): string {
 export function SkillTab({
   plane,
   name,
+  run: wanted,
   changed,
 }: {
   plane: string;
   name: string;
+  /** The run the tab was opened on, from a run's chip: marked in the Runs panel. */
+  run?: string;
   changed: number;
 }) {
   const [runs, setRuns] = useState<StudioRun[]>();
   const [refused, setRefused] = useState<string>();
-  /** The run the tab was opened to show, as the chip asked. */
-  const [wanted] = useState(() => takeWantedRun(name));
   const shown = useRef<HTMLTableRowElement>(null);
   useEffect(() => {
     let live = true;
@@ -144,14 +145,14 @@ export function SkillTab({
                       data-wanted={isWanted || undefined}
                       aria-current={isWanted || undefined}
                     >
-                      <td>{run.started}</td>
+                      <td>{saidAt(run.started)}</td>
                       <td>{run.persona ?? "None"}</td>
                       <td>{startedBySaid(run.started_by)}</td>
                       <td>{endedSaid(run.ended, run.id === null)}</td>
-                      <td>{counted(run.tool_calls)}</td>
-                      <td>{counted(run.tool_errors)}</td>
-                      <td>{counted(run.refusals)}</td>
-                      <td>{counted(run.asks)}</td>
+                      <td>{signal(run.tool_calls)}</td>
+                      <td>{signal(run.tool_errors)}</td>
+                      <td>{signal(run.refusals)}</td>
+                      <td>{signal(run.asks)}</td>
                       <td>{run.ended === null ? "" : (run.tokens ?? "Not reported")}</td>
                       <td>{timeSaid(run.ms)}</td>
                     </tr>

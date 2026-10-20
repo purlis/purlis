@@ -1561,8 +1561,8 @@ pub struct Recorder {
     /// The journal as it was when a start found the log already held all of it
     /// ([`KILL_SWITCH_READ`]), so the log was not read for it.
     kill_switch_skipped: Option<(u64, std::time::SystemTime)>,
-    /// Every skill run open, by the chat run it is a span of (SK-3, [`purlis_skills::runs`]).
-    spans: purlis_skills::runs::Spans,
+    /// Every skill run open, by the chat run it is a span of (SK-3, [`crate::skillspan`]).
+    skills: crate::skillspan::Tracker,
 }
 
 /// One end of a tool call, heard and waiting for the other.
@@ -1641,7 +1641,7 @@ impl Recorder {
             calls: HashMap::new(),
             kill_switch: None,
             kill_switch_skipped: None,
-            spans: purlis_skills::runs::Spans::default(),
+            skills: crate::skillspan::Tracker::default(),
         }
     }
 
@@ -1781,8 +1781,9 @@ impl Recorder {
             let body = spooled_as(self.tool_body(call), spooled);
             return self.of_no_run(call.chat, &tool_kind(call), body);
         };
+        let persona = top.attributes.persona.clone();
         let under = self.under(top, call.agent.as_deref())?;
-        self.skills_heard_of_a_call(plane, &under, call)?;
+        self.skills_heard_of_a_call(plane, &under, persona.as_deref(), call)?;
         let phase = phase(&call.tool_hook);
         let mut body = spooled_as(self.tool_body(call), spooled);
         if let Some(id) = &call.call {
@@ -1903,10 +1904,8 @@ impl Recorder {
         };
         body["chat_number"] = number.into();
         match known {
-            Some(who) => self
-                .log
-                .append(Some(&who.chat), Some(&who.run), None, &kind, body),
-            None => self.log.append(None, None, None, &kind, body),
+            Some(who) => self.write(Some(&who.chat), Some(&who.run), None, &kind, body),
+            None => self.write(None, None, None, &kind, body),
         }
     }
 
@@ -1927,8 +1926,7 @@ impl Recorder {
         let Some(who) = self.identity(plane, number)? else {
             return self.of_no_run(number, COMMIT_REFUSED, body);
         };
-        self.log
-            .append(Some(&who.chat), Some(&who.run), None, COMMIT_REFUSED, body)
+        self.write(Some(&who.chat), Some(&who.run), None, COMMIT_REFUSED, body)
     }
 
     /// The trust event for a change to a chat's sandbox: `trust.sandbox.off` or
@@ -1959,7 +1957,7 @@ impl Recorder {
         kind: &str,
         body: serde_json::Value,
     ) -> io::Result<Event> {
-        self.log.append(Some(chat), Some(run), None, kind, body)
+        self.write(Some(chat), Some(run), None, kind, body)
     }
 
     /// The audit of a sandbox grant or revoke (#1342, [`crate::sandbox::grant::Audited`]):
@@ -1988,7 +1986,7 @@ impl Recorder {
             .map(|number| self.identity(plane, number))
             .transpose()?
             .flatten();
-        let event = self.log.append(
+        let event = self.write(
             who.as_ref().map(|who| who.chat.as_str()),
             who.as_ref().map(|who| who.run.as_str()),
             None,
@@ -2198,7 +2196,7 @@ impl Recorder {
         }
         let mut written = Vec::with_capacity(owed.len());
         for entry in owed {
-            let event = self.log.append(
+            let event = self.write(
                 None,
                 None,
                 None,
@@ -2271,20 +2269,8 @@ impl Recorder {
         }
     }
 
-    fn append(
-        &mut self,
-        under: &Under,
-        kind: &str,
-        mut body: serde_json::Value,
-    ) -> io::Result<Event> {
-        // Every entry inside a skill run carries the skill (SK-3): the innermost run's.
-        if let Some(open) = self.spans.inside(span_of(under))
-            && let Some(fields) = body.as_object_mut()
-        {
-            fields.insert("skill".to_owned(), open.skill.as_str().into());
-            fields.insert("skill_run".to_owned(), open.id.as_str().into());
-        }
-        self.log.append(
+    fn append(&mut self, under: &Under, kind: &str, body: serde_json::Value) -> io::Result<Event> {
+        self.write(
             Some(&under.chat),
             Some(&under.run),
             under.parent.as_deref(),
@@ -2293,132 +2279,108 @@ impl Recorder {
         )
     }
 
-    /// **What a tool call does to the skill runs of its chat's run** (SK-3): one that invokes a
-    /// skill opens a run of it, before the call's own event, which is inside it; and every call
-    /// is counted onto the runs open. A call a guard refused invokes nothing.
+    /// **Every event this recorder writes goes through here**, so every event inside a skill run
+    /// carries the skill (SK-3): `skill` and `skill_run` in its body, the innermost run open in
+    /// the chat's run (a sub-agent's child run counts toward its parent's).
+    fn write(
+        &mut self,
+        chat: Option<&str>,
+        run: Option<&str>,
+        parent: Option<&str>,
+        kind: &str,
+        mut body: serde_json::Value,
+    ) -> io::Result<Event> {
+        if let Some(open) = parent.or(run).and_then(|key| self.skills.inside(key))
+            && let Some(fields) = body.as_object_mut()
+        {
+            fields.insert("skill".to_owned(), open.skill.as_str().into());
+            fields.insert("skill_run".to_owned(), open.id.as_str().into());
+        }
+        self.log.append(chat, run, parent, kind, body)
+    }
+
+    /// **What a tool call does to the skill runs of its chat's run** (SK-3,
+    /// [`crate::skillspan`]): one that starts a skill opens a run of it, said with a
+    /// `skill.started` before the call's own event, which is inside it, and logged in the
+    /// plane's skill log as it opens ([`crate::skilluse::started`]); every call is counted.
     fn skills_heard_of_a_call(
         &mut self,
         plane: &Path,
         under: &Under,
+        persona: Option<&str>,
         call: &crate::hookwire::ToolCall,
     ) -> io::Result<()> {
-        use crate::hookwire::Decision;
-        if call.decision != Decision::Deny
-            && let Some(invoked) = &call.skill
-        {
-            self.open_skill(plane, under, invoked)?;
-        }
-        self.spans.heard(
-            span_of(under),
-            purlis_skills::runs::Heard {
-                call: Some(call.call.as_deref()),
-                failed: call.tool_hook.starts_with("posttoolusefailure"),
-                refused: call.decision == Decision::Deny,
-                asked: call.decision == Decision::Ask,
-            },
-        );
-        Ok(())
-    }
-
-    /// Opens a run of the skill `invoked` names, in `under`'s chat run, and says so with a
-    /// `skill.started`. A claim the host cannot take (a start it does not know, an id that is
-    /// not a ULID, no name) opens nothing; and a skill already open in the turn is not opened
-    /// again.
-    fn open_skill(
-        &mut self,
-        plane: &Path,
-        under: &Under,
-        invoked: &crate::hookwire::SkillInvoked,
-    ) -> io::Result<()> {
-        let skill = crate::shown::readable(invoked.skill.trim(), crate::shown::DISPLAY_LIMIT);
-        let Some(started_by) = purlis_skills::runs::StartedBy::parse(&invoked.started_by) else {
+        let chat = under.chat.clone();
+        let Some(opened) = self
+            .skills
+            .call(span_of(under), call, now_ms(), || tokens_of(plane, &chat))
+        else {
             return Ok(());
         };
-        if skill.is_empty() || ulid::Ulid::from_string(&invoked.run).is_err() {
-            return Ok(());
-        }
-        let opened = self.spans.open(
-            span_of(under),
-            purlis_skills::runs::Invoked {
-                skill: &skill,
-                id: &invoked.run,
-                started_by,
-                at_ms: now_ms(),
-                tokens: tokens_of(plane, &under.chat),
-            },
-        );
-        let Some(opened) = opened else {
-            return Ok(());
-        };
-        let mut body = serde_json::json!({ "started_by": started_by.word() });
+        let mut body = serde_json::json!({ "started_by": opened.started_by });
         if let Some(parent) = &opened.parent {
             body["parent_skill_run"] = parent.as_str().into();
         }
         self.append(under, "skill.started", body)?;
+        crate::skilluse::started(
+            plane,
+            &opened,
+            persona.filter(|persona| *persona != NONE && *persona != UNKNOWN),
+            chrono::Utc::now(),
+            &self.log.device,
+        );
         Ok(())
     }
 
-    /// What a state hook does to the skill runs of its chat's run (SK-3): the turn's end closes
-    /// them, and so does a new prompt that came before it (an interruption) and the session's
-    /// end, each before the hook's own event, which is outside them; a question the chat put to
-    /// the person is counted onto them.
+    /// What a state hook does to the skill runs of its chat's run (SK-3): the turn's end, a new
+    /// prompt and the session's end close them, each before the hook's own event, which is
+    /// outside them; a question put to the person is counted.
     fn skills_heard_of_a_report(
         &mut self,
         plane: &Path,
         under: &Under,
         report: &crate::hookwire::Report,
     ) -> io::Result<()> {
-        use crate::harness::model::Said;
-        use crate::state::Event;
-        use purlis_skills::runs::Ended;
         if under.parent.is_some() {
             return Ok(());
         }
-        let ended = match report.event {
-            Event::Stop => Some(Ended::Turn),
-            Event::UserPromptSubmit => Some(Ended::Interrupted),
-            Event::SessionEnd => Some(Ended::Session),
-            _ => None,
-        };
-        if let Some(ended) = ended {
-            return self.close_skills(plane, under, ended);
-        }
-        if matches!(report.event.said(report.detail), Said::Ask(_)) {
-            self.spans.heard(
-                &under.run,
-                purlis_skills::runs::Heard {
-                    asked: true,
-                    ..purlis_skills::runs::Heard::default()
-                },
-            );
-        }
-        Ok(())
+        let closed = self.skills.report(&under.run, report, now_ms());
+        self.skills_closed(plane, under, closed)
     }
 
-    /// Closes every skill run open in `under`'s chat run, innermost first, each with a
-    /// `skill.ended` that holds its signals, and the end row of each in the plane's skill log
-    /// ([`crate::skilluse::ended`]).
+    /// Closes every skill run open in `under`'s chat run as `ended`.
     fn close_skills(
         &mut self,
         plane: &Path,
         under: &Under,
         ended: purlis_skills::runs::Ended,
     ) -> io::Result<()> {
-        let closed = self.spans.close(span_of(under), ended, now_ms());
+        let closed = self.skills.close(span_of(under), ended, now_ms());
+        self.skills_closed(plane, under, closed)
+    }
+
+    /// Says each of `closed` with a `skill.ended` that holds its signals, innermost first, and
+    /// logs its end in the plane's skill log ([`crate::skilluse::ended`]).
+    fn skills_closed(
+        &mut self,
+        plane: &Path,
+        under: &Under,
+        closed: Vec<purlis_skills::runs::Closed>,
+    ) -> io::Result<()> {
         if closed.is_empty() {
             return Ok(());
         }
         let tokens = tokens_of(plane, &under.chat);
-        // Each `skill.ended` is the closed run's own, so it says that run's skill.
         for run in closed {
             let spent = tokens
                 .zip(run.open.tokens_at_start)
                 .map(|(now, then)| now.saturating_sub(then));
             let signals = run.open.signals;
+            // The closed run's own, so it says that run's skill: none is open to tag it now.
             let mut body = serde_json::json!({
                 "skill": run.open.skill,
                 "skill_run": run.open.id,
-                "ended": ended.word(),
+                "ended": run.ended,
                 "ms": run.ms,
                 "tool_calls": signals.tool_calls,
                 "tool_errors": signals.tool_errors,
@@ -2428,22 +2390,8 @@ impl Recorder {
             if let Some(spent) = spent {
                 body["tokens"] = spent.into();
             }
-            self.log.append(
-                Some(&under.chat),
-                Some(&under.run),
-                under.parent.as_deref(),
-                "skill.ended",
-                body,
-            )?;
-            crate::skilluse::ended(
-                plane,
-                &crate::skilluse::Ending {
-                    run: &run,
-                    tokens: spent,
-                },
-                chrono::Utc::now(),
-                &self.log.device,
-            );
+            self.append(under, "skill.ended", body)?;
+            crate::skilluse::ended(plane, &run, spent, chrono::Utc::now(), &self.log.device);
         }
         Ok(())
     }
@@ -2559,8 +2507,7 @@ impl Recorder {
         // One the log refuses costs the record of the sandbox coming back on, never the run.
         if let Some(HeldTrust { kind, body }) = trust {
             let kept = self
-                .log
-                .append(Some(&who.chat), Some(&who.run), None, &kind, body)
+                .write(Some(&who.chat), Some(&who.run), None, &kind, body)
                 .and_then(|event| self.log.durable().through(event.seq));
             if let Err(why) = kept {
                 tracing::warn!(error = %why, "the event log did not keep a held trust event");
@@ -2571,8 +2518,7 @@ impl Recorder {
         let ended = self.end_children(&who.chat, RunState::Completed, Cause::Superseded);
         ended?;
         let body = who.attributes.body(cause, &self.log.device);
-        self.log
-            .append(Some(&who.chat), Some(&who.run), None, "run.started", body)
+        self.write(Some(&who.chat), Some(&who.run), None, "run.started", body)
             .map(Some)
     }
 
@@ -2602,7 +2548,7 @@ impl Recorder {
         mut body: serde_json::Value,
     ) -> io::Result<Event> {
         body["chat_number"] = number.into();
-        self.log.append(None, None, None, kind, body)
+        self.write(None, None, None, kind, body)
     }
 
     /// The chat's identity, giving it one and its first run when it has none. `None` for a
@@ -2720,15 +2666,14 @@ impl Recorder {
             }
         }
         let body = who.attributes.body(cause, &self.log.device);
-        self.log
-            .append(Some(&who.chat), Some(&who.run), None, "run.started", body)?;
+        self.write(Some(&who.chat), Some(&who.run), None, "run.started", body)?;
         self.chats.insert(key, who.clone());
         Ok(who)
     }
 }
 
 /// The chat run an entry `under` counts toward for its skill runs: a sub-agent's child run
-/// counts toward its parent's, where the skill was invoked.
+/// counts toward its parent's, where the skill started.
 fn span_of(under: &Under) -> &str {
     under.parent.as_deref().unwrap_or(&under.run)
 }

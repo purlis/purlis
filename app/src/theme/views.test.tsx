@@ -1104,7 +1104,7 @@ const STATES: State[] = [
   {
     name: "a skill's tab, with its runs",
     view: { from: null, view: "skill", key: "deploy" },
-    drawn: /Recorded before runs were/,
+    drawn: /From before runs were recorded/,
   },
   {
     name: "a skill's tab, with no runs yet",

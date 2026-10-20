@@ -164,9 +164,20 @@ export function useSkillRuns(plane: PlaneId | undefined): RunsOf {
 /** The view name of one skill's tab. */
 export const SKILL_VIEW = "skill";
 
-/** One skill's tab, keyed by its name: one per skill. */
-export function skillView(name: string): ViewRef {
-  return { from: null, view: SKILL_VIEW, key: name };
+/**
+ * One skill's tab, keyed by its name, and by the run it opens on where it was opened from a run's
+ * chip: `deploy`, or `deploy@<run>`. A skill's name never holds an `@`.
+ */
+export function skillView(name: string, run?: string): ViewRef {
+  return { from: null, view: SKILL_VIEW, key: run === undefined ? name : `${name}@${run}` };
+}
+
+/** The skill a skill's tab is of, and the run it was opened on, from its key. */
+export function skillOfView(view: ViewRef): { name: string; run?: string } {
+  const at = view.key.indexOf("@");
+  return at === -1
+    ? { name: view.key }
+    : { name: view.key.slice(0, at), run: view.key.slice(at + 1) };
 }
 
 /** Whether `view` is a skill's tab. */
@@ -174,31 +185,11 @@ export function isSkillTab(view: ViewRef): boolean {
   return view.from === null && view.view === SKILL_VIEW && view.key !== "";
 }
 
-/** What a skill's tab is called: the skill's name. */
-export function skillTitle(name: string): string {
-  return name;
-}
-
 /**
- * The name a skill's tab is opened for, from the name a run was used by: a harness may say a
+ * The name a skill's tab is opened for, from the name a run was started by: a harness may say a
  * skill with its plugin's namespace (`purlis:secrets`), and the skill is `secrets`.
  */
 export function skillOfRun(used: string): string {
   const at = used.indexOf(":");
   return at === -1 ? used : used.slice(at + 1);
-}
-
-/** The run a skill's tab was opened to show, by skill: what the chip asked for. */
-const wanted = new Map<string, string>();
-
-/** Asks the tab of `skill` to show run `run` when it next draws its runs. */
-export function wantRun(skill: string, run: string) {
-  wanted.set(skill, run);
-}
-
-/** The run the tab of `skill` was asked to show, taken once. */
-export function takeWantedRun(skill: string): string | undefined {
-  const run = wanted.get(skill);
-  wanted.delete(skill);
-  return run;
 }
