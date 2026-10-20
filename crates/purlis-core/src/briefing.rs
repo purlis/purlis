@@ -217,9 +217,10 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
             parts.push(BRANCH_FOLDER_COMMIT_NOTE.to_owned());
         }
     }
-    // Last: charter's skills, for a chat whose harness cannot load them (ADR 0063). Only such a
-    // chat is started with the variable, so a harness that loads them is not told twice.
-    if let Some(skills) = crate::skills::listed_from(ask.env) {
+    // Last: the chat's skills, for a chat whose harness cannot load them (ADR 0063), as its skill
+    // set holds them. Only such a chat is started with the variable, so a harness that loads
+    // them is not told twice.
+    if let Some(skills) = crate::skills::briefed(ask.root, ask.env) {
         parts.push(skills);
     }
     parts

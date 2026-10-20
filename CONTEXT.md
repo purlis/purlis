@@ -1506,12 +1506,24 @@ shim**, a script the app loads into each opencode chat it starts, and whose guar
 `purlis plugin install` writes into opencode's plugin directory (ADR 0058).
 _Avoid_: extension (for this); "purlis plugin" for anything but purlis's own
 
-**purlis's skills**:
-The skills in purlis's plugin (`skills/` in the bundle), one source for every harness. Each
-harness is handed them by its own route, for the chat alone: Claude Code loads the plugin,
-opencode is told the directory through the shim, and a Codex chat is **briefed** on them, a list
-of names, descriptions and `SKILL.md` paths at `SessionStart` (ADR 0063).
-_Avoid_: "Claude Code skills" for these; a copy of them anywhere
+**Skill**:
+A folder in the open SKILL.md format: instructions with a name and a description, and optionally
+scripts, references and assets. It works unchanged in any harness that reads the format.
+_Avoid_: Claude Code skill, command, prompt
+
+**Built-in skill**:
+A skill that ships inside purlis itself, in its plugin (`skills/` in the bundle), one source for
+every harness. It cannot be turned off or edited. Each harness is handed the built-in skills by
+its own route, for the chat alone: Claude Code loads the plugin, opencode is told the directory
+through the shim, and a Codex chat is **briefed** on them, a list of names, descriptions and
+`SKILL.md` paths at `SessionStart` (ADR 0063).
+_Avoid_: purlis's skills, system skill, "Claude Code skills" for these; a copy of them anywhere
+
+**Skill set**:
+The skills one chat gets, each with the route its harness is handed it by and where it comes
+from, and every skill left out of it with a one-line reason. `purlis-skills` alone works it out
+(#2762); a harness adapter only turns it into argv, env and config.
+_Avoid_: loaded skills, available skills
 
 **Vault**:
 A named set of secrets purlis keeps in the system keyring and hands to a command, never to

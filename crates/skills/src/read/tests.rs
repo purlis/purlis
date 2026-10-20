@@ -96,7 +96,7 @@ fn the_listing_names_each_skill_when_to_use_it_and_where_to_read_it() {
 
     let text = listing(&skills).expect("a listing");
 
-    assert!(text.starts_with("⬢ **purlis's skills**"), "{text}");
+    assert!(text.starts_with("⬢ **purlis's built-in skills**"), "{text}");
     // The model is told what a skill is here: a file to read and follow, by its name.
     assert!(text.contains("read its `SKILL.md`"), "{text}");
     assert!(text.contains(
@@ -112,19 +112,4 @@ fn the_listing_names_each_skill_when_to_use_it_and_where_to_read_it() {
 #[test]
 fn no_skills_is_no_listing_not_an_empty_one() {
     assert_eq!(listing(&[]), None);
-}
-
-#[test]
-fn only_a_chat_started_with_the_variable_is_briefed_on_the_skills() {
-    let unset = |_: &str| None;
-    assert_eq!(listed_from(&unset), None);
-    let empty = |name: &str| (name == LISTED_ENV).then(String::new);
-    assert_eq!(listed_from(&empty), None);
-
-    let dir = bundled().display().to_string();
-    let set = move |name: &str| (name == LISTED_ENV).then(|| dir.clone());
-    let text = listed_from(&set).expect("listed");
-
-    assert!(text.contains("`safe-remove`"), "{text}");
-    assert!(text.contains(&bundled().join("safe-remove/SKILL.md").display().to_string()));
 }
