@@ -166,6 +166,7 @@ pub fn level(
         fonts: FontGate::Draft {
             files: Arc::new(BTreeMap::new()),
             kept_at: Arc::new(BTreeMap::new()),
+            measured: folders.measured(),
         },
     };
     let names: Vec<String> = read_level(&level, &mut Vec::new()).into_keys().collect();
@@ -181,6 +182,7 @@ pub fn level(
     level.fonts = FontGate::Draft {
         files: Arc::new(approved_fonts(config_root, Some(place.plane))),
         kept_at: Arc::new(kept_at),
+        measured: folders.measured(),
     };
     Some(level)
 }

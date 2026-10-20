@@ -204,6 +204,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // theme folders, which the window loads its faces from. Held to the window, failing closed:
     // a link draws with the platform's fonts.
     "theme_font",
+    // The theme in force for the window that asks, which also points that window's theme watch
+    // at the project it answers for (#2324). A link has no window here to watch for: it is
+    // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
+    "theme_in_force",
     // The theme specimen (#2330): a hidden window this app opens on this machine, photographed
     // and closed. Drawn for the window and for the chats this app started, on their hook
     // socket; a link has no window of its own here to draw it for.
@@ -934,7 +938,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // The theme drafts of a chat, asked before it closes (#2332). Nothing is written.
     "theme_drafts_of_chat",
     "theme_gallery",
-    "theme_in_force",
+    // The theme in force at a project and workspace, with no window and nothing watched
+    // (#2697): what a link is served in place of `theme_in_force`.
+    "theme_in_force_at",
     // The person's density and font override, read by the engine (#2326): no file, no state.
     "theme_person",
     "theme_levels_adopt",
