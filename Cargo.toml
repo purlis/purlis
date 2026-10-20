@@ -3,10 +3,10 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "app/src-tauri"]
+members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "app/src-tauri"]
 # Plain `cargo test` and `cargo clippy` cover the crates that need no built frontend.
 # The app crate compiles `app/dist` into itself, so it is checked through `npm run tauri`.
-default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox"]
+default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills"]
 
 [workspace.package]
 version = "0.4.2"
@@ -32,6 +32,8 @@ purlis-host = { path = "crates/host" }
 purlis-browser-engine = { path = "crates/browser-engine" }
 # purlis's own sandbox on Linux: Landlock, a seccomp filter and its supervisor (#1040).
 purlis-linux-sandbox = { path = "crates/linux-sandbox" }
+# What a chat's skill set is, and why: the one crate that works skills out (SK-1, #2764).
+purlis-skills = { path = "crates/skills" }
 # The session protocol, whose browser acts a chat's browser tools also speak (#2013).
 purlis-session-protocol = { path = "crates/session-protocol" }
 clap = { version = "4", features = ["derive"] }

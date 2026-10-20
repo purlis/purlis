@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use serde_json::{Value, json};
 
-use super::{Rect, clipped};
+use super::{Rect, clipped, shown_through};
 
 /// A document as the engine answers it: each node its name, its parent and its id; each laid
 /// out one its box and its styles (`overflow-x`, `overflow-y`, `position`, `display`,
@@ -296,4 +296,69 @@ fn an_answer_that_cannot_be_read_cuts_nothing_off() {
     let mut read = answer(&[list(SCROLLS, SHOWN)]);
     read["documents"][0]["layout"]["styles"][2] = json!([0, 0, 0]);
     assert!(clipped(&read, &ids(&[7]), None).is_empty());
+}
+
+/// The page around a frame from another site, read in a session of its own (#2689): `framed`'s
+/// page alone, whose frame element is node 5.
+fn around_a_frame(page_box: Style, box_bounds: [f64; 4]) -> Value {
+    let mut page = framed(page_box).remove(0);
+    page.laid[2].1 = box_bounds;
+    page.contents.clear();
+    answer(&[page])
+}
+
+#[test]
+fn a_box_on_the_page_that_cuts_off_a_whole_frame_lets_none_of_its_document_show() {
+    let hidden = ["hidden", "hidden", "static", "block", "0px"];
+    let shown = shown_through(
+        &around_a_frame(hidden, [0.0, 0.0, 800.0, 200.0]),
+        5,
+        (0.0, 300.0),
+    )
+    .expect("the frame's element is in the read");
+    assert!(shown.width <= 0.0 || shown.height <= 0.0, "{shown:?}");
+}
+
+#[test]
+fn a_box_on_the_page_that_cuts_off_part_of_a_frame_lets_the_rest_of_its_document_show() {
+    // The box ends at 450: the frame, from 400 to 500, shows its top 50, scrolled down 300.
+    let hidden = ["hidden", "hidden", "static", "block", "0px"];
+    let shown = shown_through(
+        &around_a_frame(hidden, [0.0, 0.0, 800.0, 450.0]),
+        5,
+        (0.0, 300.0),
+    );
+    assert_eq!(
+        shown,
+        Some(Rect {
+            x: 0.0,
+            y: 300.0,
+            width: 200.0,
+            height: 50.0
+        })
+    );
+}
+
+#[test]
+fn a_frame_no_box_cuts_off_shows_its_whole_size() {
+    let shown = shown_through(
+        &around_a_frame(SHOWN, [0.0, 0.0, 800.0, 200.0]),
+        5,
+        (0.0, 300.0),
+    );
+    assert_eq!(
+        shown,
+        Some(Rect {
+            x: 0.0,
+            y: 300.0,
+            width: 200.0,
+            height: 100.0
+        })
+    );
+}
+
+#[test]
+fn a_frame_whose_element_is_not_in_the_read_shows_what_is_not_known() {
+    let read = around_a_frame(SHOWN, [0.0, 0.0, 800.0, 200.0]);
+    assert_eq!(shown_through(&read, 99, (0.0, 0.0)), None);
 }

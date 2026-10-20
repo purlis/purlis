@@ -234,11 +234,15 @@ fn a_chat_started_with_charters_skills_to_list_is_briefed_on_them_last() {
         serde_json::json!({}),
     );
     let last = got.last().expect("a briefing");
-    assert!(last.starts_with("⬢ **purlis's skills**"), "{last}");
+    assert!(last.starts_with("⬢ **purlis's built-in skills**"), "{last}");
     assert!(last.contains("`safe-remove`"), "{last}");
 
     let without = told(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({}));
-    assert!(!without.iter().any(|p| p.contains("purlis's skills")));
+    assert!(
+        !without
+            .iter()
+            .any(|p| p.contains("purlis's built-in skills"))
+    );
 }
 
 #[test]
@@ -1459,7 +1463,12 @@ fn an_agents_md_never_carries_the_skills_listing_and_its_paths() {
         IN_ALPHA[1],
         ("PURLIS_SKILLS_DIR", dir.as_str()),
     ];
-    briefed_but_never_filed(&root, root.parent().unwrap(), &env, "purlis's skills");
+    briefed_but_never_filed(
+        &root,
+        root.parent().unwrap(),
+        &env,
+        "purlis's built-in skills",
+    );
 }
 
 #[test]

@@ -5674,6 +5674,7 @@ dependencies = [
  "purlis-linux-sandbox",
  "purlis-same-user",
  "purlis-session-protocol",
+ "purlis-skills",
  "purlis-terminal",
  "regex",
  "ring",
@@ -5774,6 +5775,13 @@ dependencies = [
  "tokio-util",
  "yamux",
  "zeroize",
+]
+
+[[package]]
+name = "purlis-skills"
+version = "0.4.2"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]

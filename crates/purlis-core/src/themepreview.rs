@@ -542,7 +542,6 @@ pub fn resolved(at: &Reached<'_>, specimen: &Specimen) -> Result<theme::Drawn, S
             workspace,
         } => folder_of(at, id, name, level, workspace)?,
         Named::Extension => accepted(
-            at,
             id,
             gallery::theme_of(&at.shelf, id, None).ok_or_else(|| missing(id))?,
             &[],
@@ -630,7 +629,6 @@ fn folder_of(
     match found {
         // What reading the levels said of every other folder is not this theme's to tell.
         theme::levels::Found::Read(resolved) => accepted(
-            at,
             id,
             resolved,
             &levels_said(at.shelf.folders.find("", at.shelf.reach)),
@@ -669,11 +667,11 @@ fn draft_of(at: &Reached<'_>, id: &str, folder: &str) -> Result<Theme, String> {
             if own.is_empty() {
                 String::new()
             } else {
-                format!(": {}", sentences(at, &own))
+                format!(": {}", sentences(&own))
             }
         )
     })?;
-    let theme = accepted(at, id, read, &noise)?;
+    let theme = accepted(id, read, &noise)?;
     let broken = drafts::broken(&theme);
     if !broken.is_empty() {
         let said: Vec<String> = broken.iter().take(8).map(drafts::BrokenIn::said).collect();
@@ -712,97 +710,11 @@ fn own(complaints: &[Complaint], noise: &[Complaint]) -> Vec<Complaint> {
         .collect()
 }
 
-/// **`text` as a chat is told it**: the plane's path left out (what follows is the project's
-/// own), the person's config home named as such, and any other absolute path not said, with
-/// the words of a path that has spaces in it ([`unpathed`]).
-fn redacted(at: &Reached<'_>, text: &str) -> String {
-    let mut text = text.to_owned();
-    if let Some(plane) = at.plane {
-        let plane = plane.display().to_string();
-        if !plane.is_empty() {
-            text = text
-                .replace(&format!("{plane}/"), "")
-                .replace(&plane, "the project");
-        }
-    }
-    if let Some(config) = at.config {
-        let config = config.display().to_string();
-        if !config.is_empty() {
-            text = text.replace(&config, "your purlis config folder");
-        }
-    }
-    unpathed(&text)
-}
-
-/// **`text` with each absolute path said as "a path"**: a word that starts one, and each word
-/// after it that goes on with it, as a path with a space in it does. A path opened by a bracket
-/// or a quote goes on to the word that closes it; any other, over each word with a `/` or `\\`
-/// in it, a file's name (a `.` inside it), or one that ends where the path ends (a `:`). What
-/// closes the path's last word (`:`, `,`, `;`, `)`, `.`, a quote) is kept.
-fn unpathed(text: &str) -> String {
-    const OPENS: [(char, char); 4] = [('(', ')'), ('"', '"'), ('\'', '\''), ('`', '`')];
-    const ENDS: [char; 7] = [':', ',', ';', ')', '"', '\'', '`'];
-    let starts = |word: &str| {
-        let bare = word.trim_start_matches(['(', '"', '\'', '`']);
-        bare.starts_with('/') || bare.starts_with('~') || bare.starts_with('\\')
-    };
-    let goes_on = |word: &str| {
-        let bare = word.trim_end_matches(ENDS).trim_end_matches('.');
-        bare.contains(['/', '\\'])
-            || bare.trim_matches('.').contains('.')
-            || (word.ends_with(':') && !bare.is_empty())
-    };
-    let words: Vec<&str> = text.split(' ').collect();
-    let mut said = Vec::with_capacity(words.len());
-    let mut at = 0;
-    while at < words.len() {
-        let word = words[at];
-        at += 1;
-        if !starts(word) {
-            said.push(word.to_owned());
-            continue;
-        }
-        let opened = &word[..word.len() - word.trim_start_matches(['(', '"', '\'', '`']).len()];
-        let closer = opened
-            .chars()
-            .next()
-            .and_then(|open| OPENS.iter().find(|(one, _)| *one == open))
-            .map(|(_, close)| *close);
-        let mut last = word;
-        match closer {
-            Some(close) => {
-                // To the word that closes it, the text's end at most.
-                let mut closed = word[opened.len()..].contains(close);
-                while !closed && at < words.len() {
-                    last = words[at];
-                    at += 1;
-                    closed = last.contains(close);
-                }
-            }
-            None => {
-                while !last.ends_with(ENDS) && at < words.len() && goes_on(words[at]) {
-                    last = words[at];
-                    at += 1;
-                }
-            }
-        }
-        let kept = &last[last
-            .trim_end_matches(|end| ENDS.contains(&end) || end == '.')
-            .len()..];
-        said.push(format!("{opened}a path{kept}"));
-    }
-    said.join(" ")
-}
-
 /// `resolved`'s theme, or why the engine refused it, in what was said of it alone (`noise` is
-/// what reading the levels said of other folders), redacted: a theme whose font files wait on
-/// the project's approval says so, since purlis draws no such font before it.
-fn accepted(
-    at: &Reached<'_>,
-    id: &str,
-    resolved: theme::Resolved,
-    noise: &[Complaint],
-) -> Result<Theme, String> {
+/// what reading the levels said of other folders): a theme whose font files wait on the
+/// project's approval says so, since purlis draws no such font before it. The engine names every
+/// path relative to its level (`theme::Placed`), so what it says is told as it is said.
+fn accepted(id: &str, resolved: theme::Resolved, noise: &[Complaint]) -> Result<Theme, String> {
     if !resolved.refused {
         return Ok(resolved.theme);
     }
@@ -820,21 +732,21 @@ fn accepted(
              project or a workspace brings is drawn until the person allows it with the project, \
              so neither the window nor its specimen draws this theme. The person allows them in \
              the window, from the Notice that names them",
-            redacted(at, &waiting.join(", "))
+            waiting.join(", ")
         ));
     }
     Err(format!(
         "`{id}` is refused, so no specimen of it is drawn: {}",
-        sentences(at, &complaints)
+        sentences(&complaints)
     ))
 }
 
-/// Complaints as one run of sentences, as a chat is told them ([`redacted`]).
-fn sentences(at: &Reached<'_>, complaints: &[Complaint]) -> String {
-    let said: Vec<String> = complaints
+/// Complaints as one run of sentences, as a chat is told them.
+fn sentences(complaints: &[Complaint]) -> String {
+    let said: Vec<&str> = complaints
         .iter()
         .take(8)
-        .map(|one| redacted(at, &one.said))
+        .map(|one| one.said.as_str())
         .collect();
     if said.is_empty() {
         "purlis cannot draw it".to_owned()
