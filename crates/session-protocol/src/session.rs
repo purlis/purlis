@@ -199,9 +199,15 @@ use crate::view::{Limits, Views};
 /// ADR 0078 as amended 2026-10-20): the pushed notice `not_held`, with the project and the
 /// other host's words, said when a link to the other host could not hold a project the client
 /// holds as what its link stands on was carried over to it.
+///
+/// 1.31 added a window naming itself to its own host (#2623): `name_window`, the first command
+/// on a link, carries the name the window keeps for that link across its restarts, so a
+/// relaying host names the window by it to the other host and the window takes back its runner
+/// chats after a restart. The window's alone, never sent on, and never shown by `Debug`. A host
+/// before 1.31 refuses it `unknown_command`, and its window takes nothing back after a restart.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 30,
+    minor: 31,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -510,6 +516,13 @@ pub enum Command {
     /// ([`crate::grants::Power::TakeBack`]). A link names one window: another name is refused
     /// [`MALFORMED`].
     TakeBack { window: String },
+    /// The window names itself on a link to its own host (1.31, #2623), as the link's first
+    /// command: the name it keeps for this link across its restarts, on this machine alone.
+    /// Answered [`Answer::Done`]. A relaying host names the window to the other host by a digest
+    /// of it, never the name ([`Command::TakeBack`]); a host that relays nothing has nothing to
+    /// do with it. The window's alone ([`crate::grants::Power::NameWindow`]), never sent on, and
+    /// never shown by `Debug`.
+    NameWindow { name: crate::browsing::Secret },
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -1227,6 +1240,7 @@ wire_words!(Command {
     SizeBrowser => "size_browser",
     LogIn => "log_in",
     TakeBack => "take_back",
+    NameWindow => "name_window",
     Unpair => "unpair",
 });
 
@@ -1272,6 +1286,7 @@ impl Command {
             Command::ProgramsOf { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
+            Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
         }
     }
@@ -1739,6 +1754,7 @@ impl Lane {
             | Command::MidTurn { .. }
             | Command::Quit
             | Command::TakeBack { .. }
+            | Command::NameWindow { .. }
             | Command::Unpair => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }

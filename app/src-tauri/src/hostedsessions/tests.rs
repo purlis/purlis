@@ -2398,3 +2398,188 @@ fn a_project_another_project_was_not_held_for_is_left_held() {
         .expect("a chat starts");
     assert_eq!(holds.tried(), held);
 }
+
+/// Each command's word a host was told, in the order they came, with the name of each
+/// `name_window`.
+type HostTold = Arc<Mutex<Vec<(&'static str, Option<String>)>>>;
+
+/// A host between the window and `inner` that keeps each name the window names itself by, and
+/// the word of each command, in the order they came.
+#[derive(Clone)]
+struct Names<H> {
+    inner: H,
+    told: HostTold,
+}
+
+impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for Names<H> {
+    async fn call(
+        &self,
+        command: session::Command,
+        peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        let name = match &command {
+            session::Command::NameWindow { name } => Some(name.expose().to_owned()),
+            _ => None,
+        };
+        self.told.lock().unwrap().push((command.word(), name));
+        self.inner.call(command, peer).await
+    }
+
+    async fn link_ended(&self, peer: &session::Peer) {
+        self.inner.link_ended(peer).await;
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<tokio::sync::mpsc::Receiver<session::Pushed>, session::Refusal> {
+        self.inner.subscribe(since, peer).await
+    }
+}
+
+/// A window naming its links in `config`, on a host that keeps what it was told: its project's
+/// chats, and what the host was told.
+fn named_in(config: &Path, root: &Path) -> (HostedSessions, HostTold, tokio::runtime::Runtime) {
+    let runtime = a_runtime();
+    let host = Names {
+        inner: Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            StandIns::default(),
+        ),
+        told: Arc::default(),
+    };
+    let told = Arc::clone(&host.told);
+    let (connection, _link) = in_memory(host, &runtime);
+    connection.naming_in(config.to_path_buf());
+    (HostedSessions::new(connection, root), told, runtime)
+}
+
+#[test]
+fn the_window_names_each_projects_link_first_by_the_name_it_keeps_across_restarts() {
+    let config = tempfile::tempdir().unwrap();
+    let (_dir, root) = a_project();
+    let (sessions, told, _runtime) = named_in(config.path(), &root);
+    sessions.hold().unwrap();
+    let first = told.lock().unwrap().clone();
+    let Some(("name_window", Some(name))) = first.first().cloned() else {
+        panic!("the link's first command names the window: {first:?}");
+    };
+    assert_eq!(name.len(), 32);
+    drop(sessions);
+
+    // The window restarts: its new link names it the same way.
+    let (sessions, told, _runtime) = named_in(config.path(), &root);
+    sessions.hold().unwrap();
+    assert_eq!(
+        told.lock().unwrap().first().cloned(),
+        Some(("name_window", Some(name.clone())))
+    );
+
+    // A window that keeps its names elsewhere names itself otherwise.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let (sessions, told, _runtime) = named_in(elsewhere.path(), &root);
+    sessions.hold().unwrap();
+    let other = told.lock().unwrap().first().cloned();
+    assert!(
+        matches!(&other, Some(("name_window", Some(other))) if *other != name),
+        "{other:?}"
+    );
+}
+
+/// Everything logged while it is the thread's subscriber, as text.
+#[derive(Clone, Default)]
+struct Logged(Arc<Mutex<String>>);
+
+impl tracing::field::Visit for Logged {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.0
+            .lock()
+            .unwrap()
+            .push_str(&format!("{}={value:?}\n", field.name()));
+    }
+}
+
+impl tracing::Subscriber for Logged {
+    fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        span.record(&mut self.clone());
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _span: &tracing::span::Id, values: &tracing::span::Record<'_>) {
+        values.record(&mut self.clone());
+    }
+
+    fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        event.record(&mut self.clone());
+    }
+
+    fn enter(&self, _span: &tracing::span::Id) {}
+
+    fn exit(&self, _span: &tracing::span::Id) {}
+}
+
+/// A host that refuses the window's name, as one that holds it for another link would.
+#[derive(Clone)]
+struct RefusesNames(Hosting);
+
+impl session::Host for RefusesNames {
+    async fn call(
+        &self,
+        command: session::Command,
+        peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        if let session::Command::NameWindow { .. } = command {
+            return Err(session::Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "another window's link holds this name now".into(),
+            });
+        }
+        self.0.call(command, peer).await
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<tokio::sync::mpsc::Receiver<session::Pushed>, session::Refusal> {
+        self.0.subscribe(since, peer).await
+    }
+}
+
+#[test]
+fn the_name_the_window_keeps_is_never_logged() {
+    let config = tempfile::tempdir().unwrap();
+    let (_dir, root) = a_project();
+    let runtime = a_runtime();
+    let (connection, _link) = in_memory(
+        RefusesNames(Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            StandIns::default(),
+        )),
+        &runtime,
+    );
+    connection.naming_in(config.path().to_path_buf());
+    let sessions = HostedSessions::new(connection, &root);
+
+    let logged = Logged::default();
+    tracing::subscriber::with_default(logged.clone(), || {
+        sessions
+            .hold()
+            .expect("a refused name leaves the link as it was");
+    });
+
+    let name = purlis_core::windownames::name_for(config.path(), &root).unwrap();
+    let logged = logged.0.lock().unwrap().clone();
+    assert!(
+        logged.contains("did not take the window's name"),
+        "{logged}"
+    );
+    assert!(!logged.contains(name.expose()), "{logged}");
+}

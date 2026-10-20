@@ -220,6 +220,9 @@ pub struct Connection {
     /// Held while a root's link is being opened, by the root: one root never gets two links,
     /// and nothing waits for another root's.
     opening: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
+    /// The config home whose session host's folder keeps the name the window gives each root's
+    /// link (`purlis_core::windownames`, #2623), where the window names its links.
+    names_in: Mutex<Option<PathBuf>>,
 }
 
 /// Opens another `local-ui` link to the window's host, waiting at most the time it is given: one
@@ -248,6 +251,13 @@ impl Connection {
         *state = Linked::Ready(link);
         drop(state);
         self.changed.notify_all();
+    }
+
+    /// Name the window on each project root's link by the name it keeps for that root in
+    /// `config`'s session host folder (#2623), so a host that relays the link to a runner names
+    /// the window the same way after it restarts, and the window takes back its runner chats.
+    pub fn naming_in(&self, config: PathBuf) {
+        *lock(&self.names_in) = Some(config);
     }
 
     /// The host ended unexpectedly and is being started again (#2007): a start waits for the
@@ -286,8 +296,43 @@ impl Connection {
             .clone()
             .ok_or_else(|| no_host("there is no way to open another link to it"))?;
         let link = Arc::new(dial(within).map_err(|why| no_host(&why))?);
+        // Before anything else is sent on it.
+        self.name_the_window(&link, root);
         lock(&self.projects).insert(root.to_path_buf(), Arc::clone(&link));
         Ok(link)
+    }
+
+    /// The window names itself on `link`, `root`'s, by the name it keeps for that root
+    /// (`name_window`, #2623): only to a host that knows the word, and only where the window
+    /// names its links. A name that cannot be kept or is refused leaves the link as it was,
+    /// one the window takes nothing back on after a restart. The name is never said.
+    fn name_the_window(&self, link: &HostLink, root: &Path) {
+        let Some(config) = lock(&self.names_in).clone() else {
+            return;
+        };
+        if link.version() < NAMES_ITSELF {
+            return;
+        }
+        let name = match purlis_core::windownames::name_for(&config, root) {
+            Ok(name) => name,
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: the window keeps no name for the link of {}: {why}",
+                    root.display()
+                );
+                return;
+            }
+        };
+        let named = link.call(Command::NameWindow {
+            name: purlis_session_protocol::browsing::Secret::new(name.expose().to_owned()),
+        });
+        if let Err(why) = named {
+            tracing::warn!(
+                "purlis: the session host did not take the window's name for the link of {}: \
+                 {why}",
+                root.display()
+            );
+        }
     }
 
     /// There is no link, for `why`: every chat start says so from now on.
@@ -1512,6 +1557,13 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
         }
     })
 }
+
+/// The session protocol version whose host takes the window's name for a link (#2623).
+const NAMES_ITSELF: purlis_session_protocol::version::Version =
+    purlis_session_protocol::version::Version {
+        major: 1,
+        minor: 31,
+    };
 
 /// The session protocol version whose host says what a window that comes back reattaches
 /// (#2006).

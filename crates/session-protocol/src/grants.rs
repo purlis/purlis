@@ -43,6 +43,7 @@
 //! | `take_over`, `hand_back`, `browser_input`, `size_browser`: the person driving a browser (1.14) | yes | | | | | |
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | |
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
+//! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -165,6 +166,12 @@
 //!   for the desktop the link's handshake proved, never another. No other scope is granted it,
 //!   the window's included, whose own host holds no peers; and a relaying host refuses it, so it
 //!   never reaches a runner but from the desktop that removes it.
+//! - **`name_window` is the window's, on a link to its own host** (1.31, #2623). It names the
+//!   window by the name it keeps for that link across its restarts, so its host's relay names it
+//!   to a runner the same way after a restart, and the window takes back its runner chats. Only
+//!   `local-ui` sends it: a name another scope gave would take the window's chats. A relaying host
+//!   never sends it on, and says only a digest of it to the other host, so `remote-link` is never
+//!   granted it, and a runner never learns the name.
 
 use crate::auth::Scope;
 
@@ -237,6 +244,9 @@ pub enum Power {
     /// `unpair` (1.25, #2525): the desktop on a link between hosts taken out of the runner's
     /// peers, as it removes the runner.
     Unpair,
+    /// `name_window` (1.31, #2623): the window names itself on a link to its own host, by the
+    /// name it keeps for that link. The window's alone.
+    NameWindow,
 }
 
 impl Scope {
@@ -250,6 +260,8 @@ impl Scope {
                 power,
                 P::List | P::View | P::Write | P::Resize | P::Stop | P::Start | P::Subscribe
             ),
+            // Only the window names itself: every other scope is refused it below, as none of
+            // their rows lists it.
             S::RemoteLink => matches!(
                 power,
                 P::List

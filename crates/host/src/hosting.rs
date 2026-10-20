@@ -2825,6 +2825,9 @@ impl session::Host for Hosting {
                 .await
             }
             Command::TakeBack { window } => self.take_back(window, peer),
+            // The window takes its own chats back with `programs_of`: a host that relays
+            // nothing has nothing to do with its name (#2623).
+            Command::NameWindow { .. } => Ok(Answer::Done),
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),
