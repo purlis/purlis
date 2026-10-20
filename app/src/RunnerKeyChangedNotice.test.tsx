@@ -12,7 +12,7 @@ import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 
 /**
  * **A runner that answered a relayed link with another key is said in a window Notice**
- * (#2752): once for the project, with Open Pools, and gone once its chats are reconnected.
+ * (#2752): once for the project, with Open Pools settings, and gone once its chats are reconnected.
  */
 
 const PLANE = "/planes/one";
@@ -46,7 +46,7 @@ describe("a runner whose key changed", () => {
     await told({});
     await waitFor(() => expect(notice()).not.toBeNull());
     expect(screen.getByText(/answered with another key/)).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "Open Pools" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open Pools settings" }));
     expect(onOpenPools).toHaveBeenCalledOnce();
 
     // Another project's runner is not this one's.

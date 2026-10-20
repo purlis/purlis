@@ -9,8 +9,8 @@ D-2752-3).
    are dimmed, then that the runner's key changed (`chats-reconnecting`, `key_changed`). Each
    chat's pane stays dimmed: unlike a link that is only down, the host does not link to that
    runner again until it is removed and added anew. The window says why in one Notice at its
-   own level, with **Open Pools**, where the pool is removed, and **Dismiss**, and puts it away
-   once the chats are said to be reconnected. *Rejected:* a Notice on each chat's pane, since a
+   own level, with **Open Pools settings**, where the pool is removed, and **Dismiss**, and
+   puts it away once the chats are said to be reconnected. *Rejected:* a Notice on each chat's pane, since a
    runner's outage is one state for the project and never a notice for each chat (#2496).
    *D-2752-1.*
 2. **The Notice names no pool.** The window's link does not say which pool's runner it is

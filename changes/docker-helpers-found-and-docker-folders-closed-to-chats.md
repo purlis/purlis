@@ -2,7 +2,7 @@
 
 - **The window says when a runner's key changed.** When the runner a project's chats run on
   answers with another key than the one it was paired with, a Notice says so once for the
-  project, with Open Pools (#2752).
+  project, with Open Pools settings (#2752).
 
 ### Fixed
 
