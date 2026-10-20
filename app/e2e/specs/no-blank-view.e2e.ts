@@ -181,6 +181,7 @@ function drawn(what: string, body: Body): void {
 const VIEW_TABS: { typed: string; id: string; title: string | null }[] = [
   { typed: "Open dispatches", id: "dispatches.show", title: "Dispatches" },
   { typed: "Open shared memory", id: "memory.shared", title: "Shared memory" },
+  { typed: "Open Skill studio", id: "skills.studio", title: "Skill studio" },
 ];
 
 describe("no blank view", function () {

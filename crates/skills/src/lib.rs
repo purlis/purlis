@@ -9,13 +9,13 @@
 //! with a one-line [`Reason`]. A harness adapter asks it and turns the answer into argv, env and
 //! config for its harness. It never reads a skill folder itself (ADR 0063).
 //!
-//! **Built-in skills only, for now.** A built-in skill ships inside purlis: one directory,
-//! `skills/` inside the bundled plugin, with a folder per skill holding its `SKILL.md`. That
-//! directory is the one source: every harness is handed the same files, and none gets a copy.
-//! The plane's levels (project, workspace, persona and local skills), harness skills and repo
-//! skills arrive in later slices behind the `skill-studio` flag; the interface already takes
-//! the plane and the chat's workspace and persona, so those slices add answers and no
-//! arguments.
+//! **Built-in and project skills, for now** (ADR 0099). A built-in skill ships inside purlis:
+//! one directory, `skills/` inside the bundled plugin, with a folder per skill holding its
+//! `SKILL.md`. A project skill is a folder in the plane's `skills/` (SK-2, #2765). Every skill is
+//! handed to a harness from where it lies, and none gets a copy. Grants, the workspace, persona
+//! and local levels, harness skills and repo skills arrive in later slices behind the
+//! `skill-studio` flag; the interface already takes the plane and the chat's workspace and
+//! persona, so those slices add answers and no arguments.
 //!
 //! **Harness-agnostic.** The crate knows no harness by name. A chat's harness is described by
 //! what it can do with skills ([`HarnessSkills`]), which purlis-core's harness declaration
@@ -57,6 +57,19 @@ pub enum Route {
 pub enum Origin {
     /// It ships inside purlis, in the bundled plugin's `skills/`. It cannot be turned off.
     BuiltIn,
+    /// The project's: a folder in the plane's `skills/` (ADR 0099). It reaches chats at the
+    /// plane root, and a workspace's chats only through its grant.
+    Project,
+}
+
+impl Origin {
+    /// The level a person is shown: `built-in`, `project`.
+    pub fn level(self) -> &'static str {
+        match self {
+            Self::BuiltIn => "built-in",
+            Self::Project => "project",
+        }
+    }
 }
 
 /// What a chat's harness can do with skills: all this crate needs to know about it.
@@ -97,7 +110,7 @@ pub struct Effective {
 /// One skill a chat does not get, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeftOut {
-    /// Its folder's name: a folder left out may name no skill.
+    /// Its name, or its folder's name where it is left out for naming none.
     pub name: String,
     pub origin: Origin,
     /// Its folder.
@@ -112,6 +125,10 @@ pub struct LeftOut {
 pub enum Reason {
     /// The folder is not a whole skill, so no harness would load it.
     NotASkill(Missing),
+    /// A project skill, for a chat in a workspace its grant does not reach (ADR 0099 §2).
+    NotGranted,
+    /// A skill of the same name, from the level named, is in the set instead (ADR 0099 §3).
+    NameTaken(Origin),
 }
 
 /// What a folder lacks to be a whole skill.
@@ -137,6 +154,14 @@ impl std::fmt::Display for Reason {
             Self::NotASkill(Missing::Description) => {
                 f.write_str("not a skill: its SKILL.md names no `description`")
             }
+            Self::NotGranted => f.write_str(
+                "not granted to this workspace: a project skill is for chats at the project's root \
+                 until the project grants it",
+            ),
+            Self::NameTaken(Origin::BuiltIn) => f.write_str(
+                "a built-in skill has this name, and a built-in skill is never replaced",
+            ),
+            Self::NameTaken(by) => write!(f, "hidden by another {} skill of this name", by.level()),
         }
     }
 }
@@ -151,16 +176,13 @@ pub struct SkillSet {
 }
 
 impl SkillSet {
-    /// The one directory every effective skill sits in, a folder per skill, or `None` for a set
-    /// with none: what a harness on [`Route::Config`] or [`Route::Briefing`] is told.
-    ///
-    /// One, because every skill in a set is a built-in skill, and those sit in one directory.
-    /// The slice that brings skills from a second directory changes this to a list, and so
-    /// every caller with it: none of them can drop a directory without being told.
-    pub fn dir(&self) -> Option<&Path> {
+    /// The one directory the effective built-in skills sit in, a folder per skill, or `None` for
+    /// a set with none: the bundle's `skills/`, which every route hands over as it is.
+    pub fn built_in_dir(&self) -> Option<&Path> {
         let mut dirs = self
             .effective
             .iter()
+            .filter(|effective| effective.origin == Origin::BuiltIn)
             .filter_map(|effective| effective.skill.path.parent().and_then(Path::parent));
         let dir = dirs.next()?;
         debug_assert!(
@@ -169,39 +191,106 @@ impl SkillSet {
         );
         Some(dir)
     }
+
+    /// The effective skills that come from the plane, by name: what a route hands over beside
+    /// the built-in directory (ADR 0063 as amended 2026-10-20). Each has one name in the set.
+    pub fn from_the_plane(&self) -> impl Iterator<Item = &Effective> {
+        self.effective
+            .iter()
+            .filter(|effective| effective.origin != Origin::BuiltIn)
+    }
 }
 
-/// What `chat`'s skill set is, and why, on `machine` in the plane at `_plane` (`None` for a chat
-/// purlis knows no plane for).
+/// What `chat`'s skill set is, and why, on `machine` in the plane at `plane` (`None` for a chat
+/// purlis knows no plane for, which gets the built-in skills alone).
 ///
-/// Today every built-in skill reaches every chat by its harness's route, and a built-in folder
-/// that is not a whole skill is left out with the reason. The plane and the chat's workspace and
-/// persona decide nothing yet: the plane's levels read them (SK-2 on).
-pub fn skill_set(_plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -> SkillSet {
-    let Some(dir) = machine.built_in else {
-        return SkillSet::default();
-    };
+/// Every built-in skill reaches every chat by its harness's route. A project skill (the plane's
+/// `skills/<name>/`) reaches a chat at the plane root; a chat in a workspace is told it was not
+/// granted there, until grants are read (#2767). A plane skill whose name a built-in skill has is
+/// left out, and so is the second of two project folders that name one skill (ADR 0099 §3). A
+/// folder that is not a whole skill is left out with what it lacks.
+pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -> SkillSet {
     let mut set = SkillSet::default();
-    for folder in read::scan(dir) {
-        match folder {
-            Ok(skill) => set.effective.push(Effective {
-                skill,
-                route: chat.harness.route,
-                origin: Origin::BuiltIn,
-            }),
-            Err((folder, missing)) => set.left_out.push(LeftOut {
-                name: folder
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                origin: Origin::BuiltIn,
-                folder,
-                reason: Reason::NotASkill(missing),
-            }),
-        }
+    let route = chat.harness.route;
+    if let Some(dir) = machine.built_in {
+        level(&mut set, dir, Origin::BuiltIn, route, |_| None);
+    }
+    if let Some(plane) = plane {
+        level(
+            &mut set,
+            &plane.join(PROJECT_DIR),
+            Origin::Project,
+            route,
+            |_| chat.workspace.is_some().then_some(Reason::NotGranted),
+        );
     }
     set.effective
         .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
     set.left_out.sort_by(|a, b| a.name.cmp(&b.name));
     set
+}
+
+/// The folder, at the plane root, the project's skills sit in, a folder per skill (ADR 0099).
+pub const PROJECT_DIR: &str = "skills";
+
+/// Every folder in `dir`, a level's, into `set`: each whole skill the chat gets, unless `held`
+/// says why not or a skill of its name is already in the set; every other folder left out with
+/// its reason. Folders are taken in the order of their names, so a tie inside one level always
+/// goes the same way.
+fn level(
+    set: &mut SkillSet,
+    dir: &Path,
+    origin: Origin,
+    route: Route,
+    held: impl Fn(&Skill) -> Option<Reason>,
+) {
+    let mut folders = read::scan(dir);
+    folders.sort_by(|a, b| folder_of(a).cmp(folder_of(b)));
+    for folder in folders {
+        let skill = match folder {
+            Ok(skill) => skill,
+            Err((folder, missing)) => {
+                set.left_out.push(LeftOut {
+                    name: folder
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                    origin,
+                    folder,
+                    reason: Reason::NotASkill(missing),
+                });
+                continue;
+            }
+        };
+        let taken = set
+            .effective
+            .iter()
+            .find(|effective| effective.skill.name == skill.name)
+            .map(|effective| Reason::NameTaken(effective.origin));
+        match taken.or_else(|| held(&skill)) {
+            None => set.effective.push(Effective {
+                skill,
+                route,
+                origin,
+            }),
+            Some(reason) => set.left_out.push(LeftOut {
+                name: skill.name,
+                origin,
+                folder: skill
+                    .path
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default(),
+                reason,
+            }),
+        }
+    }
+}
+
+/// The folder a scanned entry is about.
+fn folder_of(entry: &Result<Skill, (PathBuf, Missing)>) -> &Path {
+    match entry {
+        Ok(skill) => skill.path.parent().unwrap_or(&skill.path),
+        Err((folder, _)) => folder,
+    }
 }

@@ -44,6 +44,7 @@ import type {
 import { activityTitle, activityView } from "./activity";
 import { chatNetworkTitle, chatNetworkView } from "./chatNetwork";
 import { DISPATCHES_TITLE, DISPATCHES_VIEW } from "./dispatches";
+import { SKILL_STUDIO_TITLE, SKILL_STUDIO_VIEW } from "./skillStudio";
 import { backSaid } from "./chatState";
 import { handedOff, tasksOf, type ListedChat } from "./chatsTree";
 import { MAIN } from "./here";
@@ -688,6 +689,8 @@ export type Now = {
    * vault is the plane's, so these rows are the same whichever workspace is focused.
    */
   vaults?: readonly string[];
+  /** Whether the Skill studio's flag is on (#2765): its row is offered only then. */
+  skillStudio?: boolean;
   /**
    * The focused workspace's open todos, by slug and title (`Panels.todos`), one close and one
    * forget row each. Only the focused workspace's: the Todos panel is the one surface that
@@ -1318,6 +1321,8 @@ export const networkId = (tab: number) => `tab.network:${tab}`;
 
 /** The catalogue's id for the row that opens the project's Dispatches tab (#1452). */
 export const DISPATCHES_SHOW = "dispatches.show";
+/** The Skill studio (#2765), offered only while its flag is on. */
+export const SKILL_STUDIO_SHOW = "skills.studio";
 
 /** An offer that can run, spelled once so `reason` cannot drift from `available`. */
 function can(id: string, title: string, does: Does, name?: string): Offer {
@@ -2335,6 +2340,15 @@ export function catalogue(now: Now): Offer[] {
       }),
       note: "The work this project's chats handed to other chats, in a tab of its own.",
     });
+    if (now.skillStudio)
+      offers.push({
+        ...can(SKILL_STUDIO_SHOW, "Open Skill studio", {
+          verb: "openView",
+          view: SKILL_STUDIO_VIEW,
+          title: SKILL_STUDIO_TITLE,
+        }),
+        note: "Every skill this project's chats get, and why any other is left out.",
+      });
   }
 
   // **Curation actions (ADR 0061)**: one row per action a workspace, a persona or the plane is
