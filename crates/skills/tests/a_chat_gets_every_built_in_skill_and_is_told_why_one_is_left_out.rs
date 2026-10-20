@@ -28,6 +28,7 @@ fn chat(route: Route) -> Chat<'static> {
     Chat {
         workspace: Some("smart-ide"),
         persona: Some("steward"),
+        turned_off: &[],
         harness: HarnessSkills { route },
     }
 }
@@ -174,6 +175,7 @@ fn the_planes_harness_folders_and_the_levels_not_read_yet_do_not_change_the_set(
         &Chat {
             workspace: None,
             persona: None,
+            turned_off: &[],
             harness: HarnessSkills {
                 route: Route::Briefing,
             },

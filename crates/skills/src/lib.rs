@@ -12,7 +12,7 @@
 //! **The levels** (ADR 0099). A built-in skill ships inside purlis: one directory, `skills/`
 //! inside the bundled plugin, with a folder per skill holding its `SKILL.md`. A project skill is
 //! a folder in the plane's `skills/` (SK-2, #2765), and reaches a workspace's chats only through
-//! its [`Grant`], which a workspace can turn off ([`turned_off`]) and never widen. A workspace
+//! its [`Grant`], which a workspace can turn off ([`Chat::turned_off`]) and never widen. A workspace
 //! skill is a folder in `workspaces/<ws>/skills/`, for that workspace's chats alone (SK-4,
 //! #2767). Each plane level also has its **local** skills, in `skills.local/` beside its
 //! `skills/`, read only while git keeps them on this machine ([`Machine::kept_local`]); [`share`]
@@ -31,7 +31,7 @@ mod grant;
 mod read;
 mod share;
 
-pub use grant::{Grant, grant_of, set_grant, turned_off};
+pub use grant::{Grant, grant_of, set_grant};
 pub use read::{DIR_IN_BUNDLE, frontmatter, in_bundle, listing, read};
 pub use share::{named, share};
 
@@ -107,14 +107,18 @@ pub struct Chat<'a> {
     pub workspace: Option<&'a str>,
     /// The persona it runs as, or `None` for a chat on no persona.
     pub persona: Option<&'a str>,
+    /// The names of the project skills its workspace turned off (`settings.skills.off`, which
+    /// purlis-core's Workspace settings layer reads). It only narrows: a name whose skill is not
+    /// granted to the workspace stays not granted. Empty for a chat at the project's root.
+    pub turned_off: &'a [String],
     /// Its harness, by what it can do with skills.
     pub harness: HarnessSkills,
 }
 
 /// **Whether git keeps a local skill's folder on this machine** (the live/local rule, ADR 0048):
 /// `Ok` where git ignores its `SKILL.md` or the plane is no git repository, otherwise what git
-/// said, as the middle of a sentence ("git would commit skills.local/x/SKILL.md"). purlis-core
-/// asks git; this crate only asks purlis-core.
+/// said, as the end of a sentence a person reads ("git would commit it"). purlis-core asks git;
+/// this crate only asks purlis-core.
 pub type KeptLocal<'a> = dyn Fn(&Path) -> Result<(), String> + Sync + 'a;
 
 /// What this machine holds that a chat's skills can come from.
@@ -171,8 +175,8 @@ pub enum Reason {
     /// A project skill, for a chat in a workspace its grant does not reach (ADR 0099 §2).
     NotGranted,
     /// A project skill whose grant cannot be read, so it is read as `root`, for a chat in a
-    /// workspace: the file's name and what is wrong with it.
-    GrantUnread { file: String, why: String },
+    /// workspace: what is wrong with it.
+    GrantUnread(String),
     /// A project skill granted to the chat's workspace, which turned it off (ADR 0099 §2).
     TurnedOff,
     /// A skill of the same name, from the level named, is in the set instead (ADR 0099 §3).
@@ -211,14 +215,12 @@ impl std::fmt::Display for Reason {
                 "not granted to this workspace: a project skill is for chats at the project's root \
                  until the project grants it",
             ),
-            Self::GrantUnread { file, why } => write!(
+            Self::GrantUnread(why) => write!(
                 f,
-                "not granted to this workspace: its grant in {file} cannot be read ({why}), so \
-                 it is for chats at the project's root only"
+                "not granted to this workspace: its grant cannot be read ({why}), so it is for \
+                 chats at the project's root only"
             ),
-            Self::TurnedOff => f.write_str(
-                "turned off in this workspace (settings.skills.off in its workspace.json)",
-            ),
+            Self::TurnedOff => f.write_str("turned off in this workspace"),
             Self::NameTaken {
                 by: Origin::BuiltIn,
                 ..
@@ -294,6 +296,14 @@ pub fn level_dir(plane: &Path, workspace: Option<&str>, local: bool) -> Option<P
     }
 }
 
+/// The file beside a skill's `folder` that holds what purlis alone knows about it:
+/// `<folder>.toml` (ADR 0099 §1). Share moves it with the folder.
+pub(crate) fn beside(folder: &Path) -> PathBuf {
+    let mut name = folder.file_name().unwrap_or_default().to_os_string();
+    name.push(".toml");
+    folder.with_file_name(name)
+}
+
 /// Whether `name` is one plain path component, as a workspace's folder name is.
 pub(crate) fn plain(name: &str) -> bool {
     let mut parts = Path::new(name).components();
@@ -335,9 +345,6 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
                 }
             }
         }
-        let off = workspace
-            .map(|ws| turned_off(plane, ws))
-            .unwrap_or_default();
         for local in [true, false] {
             let Some(dir) = level_dir(plane, None, local) else {
                 continue;
@@ -348,7 +355,7 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
                     return Some(why);
                 }
                 chat.workspace
-                    .and_then(|ws| reach(folder, ws, &off, &skill.name))
+                    .and_then(|ws| reach(folder, ws, chat.turned_off, &skill.name))
             });
         }
     }
@@ -363,12 +370,7 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
 fn reach(folder: &Path, workspace: &str, off: &[String], name: &str) -> Option<Reason> {
     let grant = match grant_of(folder) {
         Ok(grant) => grant,
-        Err(why) => {
-            return Some(Reason::GrantUnread {
-                file: grant::file_name(folder),
-                why,
-            });
-        }
+        Err(why) => return Some(Reason::GrantUnread(why)),
     };
     if !plain(workspace) || !grant.reaches(workspace) {
         return Some(Reason::NotGranted);
@@ -382,15 +384,15 @@ fn reach(folder: &Path, workspace: &str, off: &[String], name: &str) -> Option<R
 fn kept_here(machine: &Machine<'_>, folder: &Path) -> Option<Reason> {
     let Some(ask) = machine.kept_local else {
         return Some(Reason::NotKeptLocal(
-            "a local skill is read only while git keeps it on this machine, and purlis could not \
-             ask git whether it is ignored"
+            "a local skill is used only while it stays on this machine, and purlis could not ask \
+             git whether it does"
                 .to_owned(),
         ));
     };
     ask(folder).err().map(|why| {
         Reason::NotKeptLocal(format!(
-            "a local skill is read only while git keeps it on this machine, and {why}: add \
-             /{LOCAL_DIR}/ to the plane's .gitignore"
+            "a local skill is used only while it stays on this machine, and {why}: purlis \
+             reinit keeps it here"
         ))
     })
 }

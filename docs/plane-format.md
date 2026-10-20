@@ -1097,6 +1097,10 @@ key refuses.
     this machine. In the baseline under its own comment, added by `init` when missing, and by
     `reinit` under ``added by `purlis reinit` — the plane root's session records stay on this
     machine``. Deleting the line shares them.
+  - `/skills.local/` and `/workspaces/*/skills.local/` — **purlis only** (ADR 0099 §1, #2874): every
+    level's local skills stay on this machine. In the baseline under its own comment, added by
+    `init` when missing, and by `reinit` under ``added by `purlis reinit` — local skills stay on
+    this machine``. A save excludes them as well, whatever this file says.
   - `__pycache__/`, `*.py[cod]`, `.venv/`, `.DS_Store` (`charter/commands.py:1107`–`:1112`)
   - Presence detection is **whole-line, stripped**, except `.charter/` which is a substring
     test on the body (`charter/commands.py:1136`) — both quirks are deliberate and recorded.
@@ -1366,9 +1370,12 @@ outside the project and removes it when the flow ends, so it adds none of them (
   only where git says its `SKILL.md` is ignored (`git check-ignore`, through
   `purlis_core::profiles::kept_local`), or where the plane is no git repository. A folder git
   would commit, or one git could not answer for, is left out with git's answer and the fix.
-- **Git:** must be ignored; a `skills.local/` git would carry is not read. purlis does not
-  write its ignore line yet: `/skills.local/` in the plane's `.gitignore` is the person's to
-  add, and the left-out line says so.
+- **Git:** must be ignored; a `skills.local/` git would carry is not read. `purlis init` writes
+  `/skills.local/` and `/workspaces/*/skills.local/` into the plane's `.gitignore`, and
+  `purlis reinit` adds them, under their own header, to a plane made before them
+  (`scaffold::SKILLS_LOCAL_IGNORES`, #2874). **A save never stages one** whatever the
+  `.gitignore` says: its stage and the standing's status both exclude `skills.local/**` and
+  `workspaces/*/skills.local/**` (`planegit::SAVE_STAGES`).
 
 ### `workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills
 
@@ -1665,7 +1672,7 @@ next layer down answers.
 | `settings.theme.icons` | str | The icon theme the file trees draw while this workspace is in front (FM-3, #1106): the same values as `charter.toml`'s `[theme].icons`, over it and under `charter.local.toml`'s. | `crates/purlis-core/src/extension/project/theme.rs` `resolve_icons` |
 | `settings.theme.colour` | str | The workspace's colour (purlis#281): one of `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, or `#rrggbb`, whose hue is taken. **A workspace's alone**: the project's files cannot set one, and no other layer overrides it. It picks no theme; the window tints the accent, the focus ring and this workspace's tab and chat strip shades of the theme it draws with the hue, at the same luminance, and leaves text and the terminal as they are. Any other value is ignored with a sentence, and the workspace has no colour. | `crates/purlis-core/src/extension/project/theme.rs` `resolve`, `colour_of`; the tint, `app/src/theme/tint.ts` |
 | any other key in `settings.theme`, or `settings.theme` that is not an object | — | Refused by the Workspace level's save, and ignored by the reader: a workspace's theme holds `use`, `appearance`, `icons` and `colour`. | `crates/purlis-core/src/extension/project/theme.rs` `refusals_in_workspace` |
-| `settings.skills.off` | list of str | **ADR 0099 §2, #2767; experimental** behind the `skill-studio` flag. The names of project skills this workspace's chats do not get, though their grant reaches it: each is left out "turned off in this workspace". It only narrows: a skill not granted here stays "not granted to this workspace", and a workspace skill, a built-in skill or a name of no skill is not affected. Written by `purlis skill grant <name> -w <ws> --off` and `--on`; `--on` for a skill not granted here is refused, saying the grant that would reach it. A workspace's setting only: `charter.toml` and `charter.local.toml` hold no `[skills]`. | `purlis_skills::turned_off`; written through `purlis_core::settings::workspace::save` |
+| `settings.skills.off` | list of str | **ADR 0099 §2, #2767; experimental** behind the `skill-studio` flag. The names of project skills this workspace's chats do not get, though their grant reaches it: each is left out "turned off in this workspace". It only narrows: a skill not granted here stays "not granted to this workspace", and a workspace skill, a built-in skill or a name of no skill is not affected. Written by `purlis skill grant <name> -w <ws> --off` and `--on`; `--on` for a skill not granted here is refused, saying the grant that would reach it. A workspace's setting only: `charter.toml` and `charter.local.toml` hold no `[skills]`. | `purlis_core::skills::turned_off`, through the Workspace settings layer, and handed to `purlis_skills::skill_set` as the chat's `turned_off`; written through `purlis_core::settings::workspace::save` |
 | any other key in `settings.skills`, or `settings.skills.off` that is not a list of strings | — | Refused by the Workspace level's save, and ignored by the reader, which then turns nothing off. | `crates/purlis-core/src/settings/workspace.rs` `skills_refused` |
 | any other key in `settings`, or `settings` that is not an object | — | Refused by the save, and ignored by the reader: a workspace's settings hold `extensions`, `harness_plugins` and `theme` and nothing else. | `crates/purlis-core/src/settings/workspace.rs` `refusals` |
 

@@ -36,6 +36,9 @@ pub struct StudioSkill {
     /// Its name, or its folder's where it names none.
     pub name: String,
     pub level: Level,
+    /// Its level as a person reads it: `project`, `local workspace`, the words the command line
+    /// shows (`purlis_core::skills::level_shown`).
+    pub label: String,
     /// Whether it is a local skill, kept on this machine in its level's `skills.local/`, which
     /// Share makes shared.
     pub local: bool,
@@ -87,6 +90,7 @@ pub(crate) fn studio(
         .map(|row| StudioSkill {
             name: row.name,
             level: row.origin.into(),
+            label: purlis_core::skills::level_shown(row.origin, row.local),
             local: row.local,
             grant: row.grant,
             on: row.left_out.is_none(),

@@ -7,11 +7,25 @@ import { commands, type Studio, type StudioSkill } from "./bindings";
 import { EmptyState } from "./EmptyState";
 import { Notice } from "./Notice";
 import { Select } from "./primitives/Select";
-import { skillStudioTitle, skillStudioView } from "./skillStudio";
+import {
+  AT_THE_ROOT,
+  inWorkspace,
+  skillStudioTitle,
+  skillStudioView,
+  workspaceOf,
+  type StudioScope,
+} from "./skillStudio";
 import type { ViewRef } from "./tabs";
 
-/** What the picker's plane-root choice is sent as: no workspace. */
-const AT_THE_ROOT = "";
+/** A scope as the picker's value: the root, or `in:<workspace>`. */
+function choiceOf(scope: StudioScope): string {
+  return scope.at === "root" ? "root" : `in:${scope.workspace}`;
+}
+
+/** The scope a picker's value names. */
+function scopeOfChoice(choice: string): StudioScope {
+  return choice.startsWith("in:") ? inWorkspace(choice.slice(3)) : AT_THE_ROOT;
+}
 
 /**
  * **The Skill studio's tab** (SK-2, #2765; SK-4, #2767): one chat's skill set, at the project's
@@ -22,13 +36,13 @@ const AT_THE_ROOT = "";
  */
 export function SkillStudioTab({
   plane,
-  workspace,
+  scope,
   changed,
   onOpenView,
 }: {
   plane: string;
-  /** The workspace whose chats it shows; `undefined` for a chat at the project's root. */
-  workspace?: string;
+  /** Whose chats it shows: a chat at the project's root, or in one workspace. */
+  scope: StudioScope;
   changed: number;
   /** Opens the studio on another workspace's chats, in its own tab. */
   onOpenView?: (view: ViewRef, title: string) => void;
@@ -37,9 +51,10 @@ export function SkillStudioTab({
   const [refused, setRefused] = useState<string>();
   const [shareRefused, setShareRefused] = useState<string>();
   const [shared, setShared] = useState(0);
+  const workspace = workspaceOf(scope);
   useEffect(() => {
     let live = true;
-    void commands.skillStudio(plane, workspace ?? null).then((answer) => {
+    void commands.skillStudio(plane, workspace).then((answer) => {
       if (!live) return;
       if (answer.status === "ok") {
         setStudio(answer.data);
@@ -77,7 +92,7 @@ export function SkillStudioTab({
     );
 
   const share = (skill: StudioSkill) => {
-    void commands.skillShare(plane, workspace ?? null, skill.name).then((answer) => {
+    void commands.skillShare(plane, workspace, skill.name).then((answer) => {
       if (answer.status === "error") setShareRefused(answer.error);
       else {
         setShareRefused(undefined);
@@ -90,13 +105,16 @@ export function SkillStudioTab({
       <Select
         className="search-scope"
         aria-label="Whose chats"
-        value={workspace ?? AT_THE_ROOT}
+        value={choiceOf(scope)}
         options={[
-          { value: AT_THE_ROOT, label: "A chat at the project's root" },
-          ...studio.workspaces.map((name) => ({ value: name, label: `A chat in ${name}` })),
+          { value: choiceOf(AT_THE_ROOT), label: "A chat at the project's root" },
+          ...studio.workspaces.map((name) => ({
+            value: choiceOf(inWorkspace(name)),
+            label: `A chat in ${name}`,
+          })),
         ]}
         onValueChange={(to) => {
-          const next = to === AT_THE_ROOT ? undefined : to;
+          const next = scopeOfChoice(to);
           onOpenView?.(skillStudioView(next), skillStudioTitle(next));
         }}
       />
@@ -126,7 +144,7 @@ export function SkillStudioTab({
     <div className="skill-studio" data-testid="skill-studio">
       {picker}
       <p className="honest">
-        {workspace
+        {workspace !== null
           ? `Every skill a chat in ${workspace} gets, and why any other is left out.`
           : "Every skill a chat at the project's root gets, and why any other is left out."}
       </p>
@@ -157,7 +175,7 @@ export function SkillStudioTab({
                 <code>{skill.name}</code>
               </td>
               <td>
-                {skill.local ? `${skill.level}, local` : skill.level}
+                {skill.label}
                 {skill.local && (
                   <>
                     {" "}
@@ -165,7 +183,7 @@ export function SkillStudioTab({
                       type="button"
                       className="ui-button"
                       onClick={() => share(skill)}
-                      title="Move it into the shared skills/ folder, so the next save commits it"
+                      title="Give it to the team: the next save commits it with the project"
                     >
                       Share
                     </button>

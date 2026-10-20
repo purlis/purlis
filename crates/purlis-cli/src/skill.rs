@@ -138,8 +138,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 let state = if on { "on" } else { "off" };
                 if changed {
                     voice::ok(&format!(
-                        "{name} is {state} in {workspace}. purlis save shares it with the team \
-                         where {workspace} is LIVE."
+                        "{name} is {state} in {workspace}. purlis save commits it where \
+                         {workspace} is LIVE."
                     ));
                 } else {
                     voice::ok(&format!("{name} was already {state} in {workspace}."));
@@ -152,19 +152,21 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
         },
         SkillCommand::Grant { name, grant, .. } => {
-            let Some(grant) = grant_of_words(&grant) else {
-                voice::err(
-                    "Say where it reaches: root (the project's root only), all (every \
-                     workspace), or the workspaces' names. To turn it off in a workspace: purlis \
-                     skill grant <name> -w <workspace> --off",
-                );
-                return Ok(2);
+            let grant = match Grant::from_words(&grant) {
+                Ok(grant) => grant,
+                Err(why) => {
+                    voice::err(&format!(
+                        "{why}. Say where it reaches: root (the project's root only), all (every \
+                         workspace), or the workspaces' names. To turn it off in a workspace: \
+                         purlis skill grant <name> -w <workspace> --off"
+                    ));
+                    return Ok(2);
+                }
             };
             match purlis_core::skills::grant(root, &name, &grant) {
                 Ok(_) => {
                     voice::ok(&format!(
-                        "{name} is granted to {}. purlis save shares it with the team.",
-                        reach_words(&grant)
+                        "{name} is granted to {grant}. purlis save commits it."
                     ));
                     Ok(0)
                 }
@@ -192,34 +194,9 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
     }
 }
 
-/// The grant the words of `purlis skill grant <name> …` say: `root`, `all`, or workspace names.
-/// `None` for none, or `root` or `all` beside other words.
-fn grant_of_words(words: &[String]) -> Option<Grant> {
-    match words {
-        [] => None,
-        [one] if one == "root" => Some(Grant::Root),
-        [one] if one == "all" => Some(Grant::All),
-        names if names.iter().any(|n| n == "root" || n == "all") => None,
-        names => Some(Grant::Only(names.to_vec())),
-    }
-}
-
-/// Where `grant` reaches, as a sentence says it.
-fn reach_words(grant: &Grant) -> String {
-    match grant {
-        Grant::Root => "the project's root only".to_owned(),
-        Grant::All => "every workspace".to_owned(),
-        Grant::Only(names) => names.join(", "),
-    }
-}
-
-/// The level a row is shown at: `project`, or `project, local` for a local skill.
+/// The level a row is shown at, as the studio shows it: `project`, `local project`.
 fn level(row: &StudioRow) -> String {
-    if row.local {
-        format!("{}, local", row.origin.level())
-    } else {
-        row.origin.level().to_owned()
-    }
+    purlis_core::skills::level_shown(row.origin, row.local)
 }
 
 /// `on`, or why it is left out.

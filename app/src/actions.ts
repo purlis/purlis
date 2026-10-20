@@ -48,6 +48,7 @@ import {
   SKILL_STUDIO_IN,
   SKILL_STUDIO_TITLE,
   SKILL_STUDIO_VIEW,
+  inWorkspace,
   skillStudioTitle,
   skillStudioView,
 } from "./skillStudio";
@@ -2108,8 +2109,8 @@ export function catalogue(now: Now): Offer[] {
           "Open in Skill studio",
           {
             verb: "openView",
-            view: skillStudioView(workspace),
-            title: skillStudioTitle(workspace),
+            view: skillStudioView(inWorkspace(workspace)),
+            title: skillStudioTitle(inWorkspace(workspace)),
           },
           workspace,
         ),

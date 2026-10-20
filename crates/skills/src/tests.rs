@@ -22,6 +22,8 @@ fn whole(name: &str) -> String {
 struct Plane {
     _tmp: tempfile::TempDir,
     root: PathBuf,
+    /// What each workspace turned off, as purlis-core reads it from its settings.
+    off: std::cell::RefCell<std::collections::HashMap<String, Vec<String>>>,
 }
 
 impl Plane {
@@ -31,7 +33,11 @@ impl Plane {
         for ws in ["smart-ide", "ops"] {
             std::fs::create_dir_all(root.join("workspaces").join(ws)).unwrap();
         }
-        Self { _tmp: tmp, root }
+        Self {
+            _tmp: tmp,
+            root,
+            off: Default::default(),
+        }
     }
 
     fn project(&self) -> PathBuf {
@@ -55,12 +61,11 @@ impl Plane {
         std::fs::write(self.project().join(format!("{folder}.toml")), text).unwrap();
     }
 
-    fn manifest(&self, ws: &str, json: &str) {
-        std::fs::write(
-            self.root.join("workspaces").join(ws).join("workspace.json"),
-            json,
-        )
-        .unwrap();
+    fn turn_off(&self, ws: &str, names: &[&str]) {
+        self.off.borrow_mut().insert(
+            ws.to_owned(),
+            names.iter().map(|name| (*name).to_owned()).collect(),
+        );
     }
 
     /// The set of a chat in `workspace` (`None`: at the plane root), with git keeping every
@@ -70,6 +75,9 @@ impl Plane {
     }
 
     fn set_with(&self, workspace: Option<&str>, kept: &KeptLocal<'_>) -> SkillSet {
+        let off = workspace
+            .and_then(|ws| self.off.borrow().get(ws).cloned())
+            .unwrap_or_default();
         skill_set(
             Some(&self.root),
             &Machine {
@@ -79,6 +87,7 @@ impl Plane {
             &Chat {
                 workspace,
                 persona: None,
+                turned_off: &off,
                 harness: HarnessSkills {
                     route: Route::Plugin,
                 },
@@ -187,14 +196,13 @@ fn a_grant_that_cannot_be_read_is_read_as_root_and_says_why() {
         .collect();
     assert_eq!(
         reasons[0],
-        "not granted to this workspace: its grant in deploy.toml cannot be read (grant is \
-         \"everyone\", which is none of \"root\", \"all\" or a list of workspace names), so \
-         it is for chats at the project's root only"
+        "not granted to this workspace: its grant cannot be read (grant is \"everyone\", which \
+         is none of \"root\", \"all\" or a list of workspace names), so it is for chats at the \
+         project's root only"
     );
     assert!(
-        reasons[1].starts_with(
-            "not granted to this workspace: its grant in lint.toml cannot be read (it is not TOML"
-        ),
+        reasons[1]
+            .starts_with("not granted to this workspace: its grant cannot be read (it is not TOML"),
         "{}",
         reasons[1]
     );
@@ -207,10 +215,7 @@ fn a_workspace_turns_a_granted_skill_off_and_its_chats_are_told_so() {
     skill(&plane.project(), "lint", &whole("lint"));
     plane.grant("deploy", "grant = \"all\"\n");
     plane.grant("lint", "grant = \"all\"\n");
-    plane.manifest(
-        "smart-ide",
-        r#"{"name": "smart-ide", "settings": {"skills": {"off": ["deploy"]}}}"#,
-    );
+    plane.turn_off("smart-ide", &["deploy"]);
 
     let set = plane.set(Some("smart-ide"));
 
@@ -221,7 +226,7 @@ fn a_workspace_turns_a_granted_skill_off_and_its_chats_are_told_so() {
             "deploy",
             Origin::Project,
             false,
-            "turned off in this workspace (settings.skills.off in its workspace.json)".to_owned()
+            "turned off in this workspace".to_owned()
         )]
     );
     assert_eq!(
@@ -241,10 +246,7 @@ fn a_workspace_cannot_widen_a_grant_by_naming_a_skill_it_was_not_granted() {
     // left out, as not granted, and there is no list that turns one on.
     let plane = Plane::new();
     skill(&plane.project(), "deploy", &whole("deploy"));
-    plane.manifest(
-        "smart-ide",
-        r#"{"settings": {"skills": {"off": ["deploy"], "on": ["deploy"]}}}"#,
-    );
+    plane.turn_off("smart-ide", &["deploy"]);
 
     let set = plane.set(Some("smart-ide"));
 
@@ -253,23 +255,6 @@ fn a_workspace_cannot_widen_a_grant_by_naming_a_skill_it_was_not_granted() {
         left_out(&set),
         [("deploy", Origin::Project, false, NOT_GRANTED.to_owned())]
     );
-    assert_eq!(turned_off(&plane.root, "smart-ide"), ["deploy"]);
-}
-
-#[test]
-fn a_turn_off_list_that_is_not_a_list_of_names_turns_nothing_off() {
-    let plane = Plane::new();
-    skill(&plane.project(), "deploy", &whole("deploy"));
-    plane.grant("deploy", "grant = \"all\"\n");
-    plane.manifest(
-        "smart-ide",
-        r#"{"settings": {"skills": {"off": "deploy"}}}"#,
-    );
-    plane.manifest("ops", "not json");
-
-    assert_eq!(effective(&plane.set(Some("smart-ide"))).len(), 1);
-    assert_eq!(effective(&plane.set(Some("ops"))).len(), 1);
-    assert!(turned_off(&plane.root, "smart-ide").is_empty());
 }
 
 #[test]
@@ -375,10 +360,7 @@ fn a_workspace_skill_reaches_only_that_workspaces_chats() {
 fn a_workspaces_turn_off_list_does_not_reach_its_own_skills() {
     let plane = Plane::new();
     skill(&plane.workspace("smart-ide"), "review", &whole("review"));
-    plane.manifest(
-        "smart-ide",
-        r#"{"settings": {"skills": {"off": ["review"]}}}"#,
-    );
+    plane.turn_off("smart-ide", &["review"]);
 
     assert_eq!(
         effective(&plane.set(Some("smart-ide"))),
@@ -452,7 +434,7 @@ fn a_local_skill_git_would_carry_is_left_out_with_gits_answer() {
     let asked = std::sync::Mutex::new(Vec::new());
     let kept = |folder: &Path| -> Result<(), String> {
         asked.lock().unwrap().push(folder.to_path_buf());
-        Err("git would commit skills.local/scratch/SKILL.md".to_owned())
+        Err("git would commit it".to_owned())
     };
 
     let set = plane.set_with(None, &kept);
@@ -464,8 +446,8 @@ fn a_local_skill_git_would_carry_is_left_out_with_gits_answer() {
             "scratch",
             Origin::Project,
             true,
-            "a local skill is read only while git keeps it on this machine, and git would \
-             commit skills.local/scratch/SKILL.md: add /skills.local/ to the plane's .gitignore"
+            "a local skill is used only while it stays on this machine, and git would commit it: \
+             purlis reinit keeps it here"
                 .to_owned()
         )]
     );
@@ -486,6 +468,7 @@ fn without_a_way_to_ask_git_no_local_skill_is_read() {
         &Chat {
             workspace: None,
             persona: None,
+            turned_off: &[],
             harness: HarnessSkills {
                 route: Route::Config,
             },
@@ -498,7 +481,7 @@ fn without_a_way_to_ask_git_no_local_skill_is_read() {
         set.left_out[0]
             .reason
             .to_string()
-            .contains("purlis could not ask git whether it is ignored"),
+            .contains("purlis could not ask git whether it does"),
         "{}",
         set.left_out[0].reason
     );
@@ -636,6 +619,7 @@ fn a_workspace_or_local_skill_never_takes_a_built_in_skills_name() {
         &Chat {
             workspace: Some("smart-ide"),
             persona: None,
+            turned_off: &[],
             harness: HarnessSkills {
                 route: Route::Plugin,
             },
@@ -736,4 +720,18 @@ fn named_finds_a_skills_folder_by_its_name_not_its_folders() {
         Some(plane.project().join("the-deploy-folder"))
     );
     assert_eq!(named(&plane.project(), "the-deploy-folder"), None);
+}
+
+#[test]
+fn the_words_of_a_grant_are_read_by_the_grant_files_rule() {
+    let words = |list: &[&str]| -> Vec<String> { list.iter().map(|w| (*w).to_owned()).collect() };
+    assert_eq!(Grant::from_words(&words(&["root"])), Ok(Grant::Root));
+    assert_eq!(Grant::from_words(&words(&["all"])), Ok(Grant::All));
+    assert_eq!(
+        Grant::from_words(&words(&["ops", "web"])),
+        Ok(Grant::Only(words(&["ops", "web"])))
+    );
+    assert!(Grant::from_words(&[]).is_err());
+    assert!(Grant::from_words(&words(&["all", "ops"])).is_err());
+    assert!(Grant::from_words(&words(&["../x"])).is_err());
 }

@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { commands, type PlaneId } from "../bindings";
+import { counted } from "../dispatches";
 import { usePlaneChanged } from "../planeChanged";
 import { SKILL_STUDIO_IN } from "../skillStudio";
 import type { LiveSetting, SettingsGroup } from "./groups";
@@ -26,10 +27,10 @@ export function workspaceSkillsGroup(plane: PlaneId, workspace: string): Setting
 
 /** The one line the group says: how many skills the workspace's chats get, and how many not. */
 export function skillsSummary(on: number, leftOut: number): string {
-  const skills = (n: number) => (n === 1 ? "1 skill" : `${n} skills`);
   if (on === 0 && leftOut === 0) return "No skills reach this workspace's chats yet.";
-  if (leftOut === 0) return `Its chats get ${skills(on)}.`;
-  return `Its chats get ${skills(on)}, and ${leftOut} more ${leftOut === 1 ? "is" : "are"} left out, each with why in the studio.`;
+  const gets = `Its chats get ${counted(on, "skill", "skills")}`;
+  if (leftOut === 0) return `${gets}.`;
+  return `${gets}, and ${counted(leftOut, "more is", "more are")} left out, each with why in the studio.`;
 }
 
 function summarySetting(plane: PlaneId, workspace: string): LiveSetting {

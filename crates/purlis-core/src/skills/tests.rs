@@ -256,8 +256,8 @@ fn a_local_skill_is_read_only_while_git_ignores_it() {
         .expect("left out");
     assert_eq!(
         left.reason.to_string(),
-        "a local skill is read only while git keeps it on this machine, and git would commit \
-         skills.local/scratch/SKILL.md: add /skills.local/ to the plane's .gitignore"
+        "a local skill is used only while it stays on this machine, and git would commit it: \
+         purlis reinit keeps it here"
     );
 
     std::fs::write(plane.path().join(".gitignore"), "/skills.local/\n").unwrap();
@@ -268,4 +268,23 @@ fn a_local_skill_is_read_only_while_git_ignores_it() {
             .any(|e| e.skill.name == "scratch" && e.local),
         "{set:?}"
     );
+}
+
+#[test]
+fn what_a_workspace_turned_off_is_read_from_its_settings_and_a_list_of_no_names_turns_nothing_off()
+{
+    let plane = granting_plane();
+    let manifest = plane.path().join("workspaces/smart-ide/workspace.json");
+    std::fs::write(
+        &manifest,
+        r#"{"settings": {"skills": {"off": ["deploy", "lint"]}}}"#,
+    )
+    .unwrap();
+    assert_eq!(turned_off(plane.path(), "smart-ide"), ["deploy", "lint"]);
+
+    std::fs::write(&manifest, r#"{"settings": {"skills": {"off": "deploy"}}}"#).unwrap();
+    assert!(turned_off(plane.path(), "smart-ide").is_empty());
+    std::fs::write(&manifest, "not json").unwrap();
+    assert!(turned_off(plane.path(), "smart-ide").is_empty());
+    assert!(turned_off(plane.path(), "no-such-workspace").is_empty());
 }

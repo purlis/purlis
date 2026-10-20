@@ -13,7 +13,7 @@
 
 - A level's `skills.local/<name>/` is read only where `git check-ignore` says its `SKILL.md` is ignored, or where the plane is no git repository. This is the same rule as `charter.local.toml`'s. A tracked file counts as not ignored.
 - A folder git would commit, or one git could not answer for, is left out with git's words and the fix, in the skill set's one line. It is never read quietly.
-- **purlis does not write the ignore line yet.** `init` and `reinit` write the plane's `.gitignore` from a recorded baseline. Adding `/skills.local/` there moves recorded answers, and that change belongs with the Skill studio's create (#2770), which is the first writer of a local skill. Until then the left-out line names the line to add. A workspace's `skills.local/` is already ignored under `/workspaces/*/*`, because the LIVE block un-ignores only the workspace's `skills/`.
+- **Two guards keep a local skill out of git.** `init` writes `/skills.local/` and `/workspaces/*/skills.local/` into the plane's `.gitignore`, and `reinit` adds them to an older plane. A save's stage and the standing's status also exclude every level's `skills.local/`, whatever the `.gitignore` says. A save stages the whole tree, so one lost line would otherwise commit a person's local skills to the team (#2874). The left-out line of a local skill git would commit says that `purlis reinit` keeps it on this machine.
 - **Share** moves the folder, with its `<name>.toml`, from `skills.local/` into `skills/` at the same level, and refuses when that folder name is taken there. A local project skill reaches workspaces by its own grant, as a shared one does.
 
 ## The narrowest copy, in order

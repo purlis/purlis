@@ -100,7 +100,7 @@ import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } f
 import { PROPOSED_CHANGE_VIEW } from "./proposedChangeOpen";
 import { ProposedChangeTab } from "./ProposedChangeTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
-import { SKILL_STUDIO_VIEW, isSkillStudio } from "./skillStudio";
+import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
 import {
   SAVING_VIEW,
@@ -601,7 +601,7 @@ export function ViewPane({
           <SkillStudioTab
             key={`${plane}\u0000${view.key}`}
             plane={plane}
-            workspace={view.key === "" ? undefined : view.key}
+            scope={scopeOf(view)}
             changed={changed + onDisk}
             onOpenView={onOpenView}
           />

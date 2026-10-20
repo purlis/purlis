@@ -1520,8 +1520,8 @@ fn git_ignore_state(root: &Path, git: Option<&Path>, timeout: std::time::Duratio
 
 /// **Whether git keeps the local skill in `folder` on this machine** (ADR 0099 §1, the live/local
 /// rule of ADR 0048 for a level's `skills.local/`): `Ok` where git ignores its `SKILL.md`, or the
-/// plane at `root` is no git repository; otherwise what git says, as `purlis_skills::KeptLocal`
-/// takes it. One `git check-ignore` of the one file, which counts a tracked file as not ignored.
+/// plane at `root` is no git repository; otherwise what git says, in words a person reads and
+/// with no path, as `purlis_skills::KeptLocal` takes it. One `git check-ignore` of the one file, which counts a tracked file as not ignored.
 pub fn kept_local(root: &Path, folder: &Path) -> Result<(), String> {
     kept_local_within(root, folder, None, GIT_TIMEOUT)
 }
@@ -1546,9 +1546,9 @@ pub fn kept_local_within(
     };
     match state {
         GitState::Ignored | GitState::NotARepo => Ok(()),
-        GitState::Committable | GitState::Tracked => Err(format!("git would commit {rel}")),
+        GitState::Committable | GitState::Tracked => Err("git would commit it".to_owned()),
         GitState::Unknown(why) => Err(format!(
-            "git could not say whether {rel} is ignored ({})",
+            "git could not say whether it does ({})",
             shown::short(&why)
         )),
     }

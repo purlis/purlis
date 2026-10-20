@@ -8698,6 +8698,11 @@ export type StudioSkill = {
 	name: string,
 	level: Level,
 	/**
+	 *  Its level as a person reads it: `project`, `local workspace`, the words the command line
+	 *  shows (`purlis_core::skills::level_shown`).
+	 */
+	label: string,
+	/**
 	 *  Whether it is a local skill, kept on this machine in its level's `skills.local/`, which
 	 *  Share makes shared.
 	 */

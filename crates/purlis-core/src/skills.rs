@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 pub use purlis_skills::{
     Chat, DIR_IN_BUNDLE, Effective, Grant, HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing,
     Origin, PROJECT_DIR, Reason, Route, Skill, SkillSet, grant_of, in_bundle, level_dir,
-    level_shown, listing, named, read, set_grant, share, turned_off,
+    level_shown, listing, named, read, set_grant, share,
 };
 
 use crate::harness::{Harness, Kit};
@@ -258,6 +258,9 @@ fn ask(
         Some(at) => crate::profiles::kept_local(at.plane, folder),
         None => Err("there is no plane to ask git about".to_owned()),
     };
+    let off = plane
+        .and_then(|at| Some(turned_off(at.plane, at.workspace?)))
+        .unwrap_or_default();
     purlis_skills::skill_set(
         plane.map(|at| at.plane),
         &Machine {
@@ -267,9 +270,26 @@ fn ask(
         &Chat {
             workspace: plane.and_then(|at| at.workspace),
             persona,
+            turned_off: &off,
             harness: HarnessSkills { route },
         },
     )
+}
+
+/// **The project skills the workspace `workspace` turned off** (#2767): `settings.skills.off`,
+/// as the Workspace settings layer reads its `workspace.json`. Empty where it names none, or
+/// holds something other than a list of names, which that layer's save refuses to write.
+pub fn turned_off(plane: &Path, workspace: &str) -> Vec<String> {
+    use crate::settings::workspace::{SKILLS, SKILLS_OFF};
+    crate::settings::workspace::read(plane, workspace)
+        .and_then(|table| {
+            let names = table.get(SKILLS)?.get(SKILLS_OFF)?.as_array()?;
+            names
+                .iter()
+                .map(|name| name.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()
+        })
+        .unwrap_or_default()
 }
 
 /// The folder of the project skill named `name` in the plane at `plane`: in its `skills/`, else

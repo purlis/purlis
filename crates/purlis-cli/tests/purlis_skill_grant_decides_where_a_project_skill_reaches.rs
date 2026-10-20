@@ -177,7 +177,7 @@ fn a_workspace_turns_a_granted_skill_off_and_on_but_never_on_one_it_was_not_gran
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(
         project.state_in("alpha", "deploy"),
-        "turned off in this workspace (settings.skills.off in its workspace.json)"
+        "turned off in this workspace"
     );
     assert_eq!(project.state_in("beta", "deploy"), "on");
 

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
+import { AT_THE_ROOT, inWorkspace } from "./skillStudio";
 import { catalogue, SKILL_STUDIO_SHOW, type Now } from "./actions";
 import { noTabs } from "./tabs";
 
@@ -30,6 +31,7 @@ describe("the Skill studio", () => {
         {
           name: "deploy",
           level: "project",
+          label: "project",
           local: false,
           grant: "root",
           on: true,
@@ -40,6 +42,7 @@ describe("the Skill studio", () => {
         {
           name: "secrets",
           level: "built-in",
+          label: "built-in",
           local: false,
           grant: null,
           on: true,
@@ -50,6 +53,7 @@ describe("the Skill studio", () => {
         {
           name: "review",
           level: "project",
+          label: "project",
           local: false,
           grant: "root",
           on: false,
@@ -60,7 +64,7 @@ describe("the Skill studio", () => {
       ],
     });
 
-    render(<SkillStudioTab plane="p" changed={0} />);
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
 
     const deploy = await screen.findByTestId("skill-deploy");
     expect(within(deploy).getByText("project")).toBeInTheDocument();
@@ -86,6 +90,7 @@ describe("the Skill studio", () => {
           {
             name: "lint",
             level: "workspace",
+            label: "workspace",
             local: false,
             grant: null,
             on: true,
@@ -96,6 +101,7 @@ describe("the Skill studio", () => {
           {
             name: "lint",
             level: "project",
+            label: "project",
             local: false,
             grant: "all",
             on: false,
@@ -107,7 +113,7 @@ describe("the Skill studio", () => {
       };
     });
 
-    render(<SkillStudioTab plane="p" workspace="alpha" changed={0} />);
+    render(<SkillStudioTab plane="p" scope={inWorkspace("alpha")} changed={0} />);
 
     const mine = await screen.findByTestId("skill-lint");
     expect(within(mine).getByText("workspace")).toBeInTheDocument();
@@ -139,6 +145,7 @@ describe("the Skill studio", () => {
           {
             name: "scratch",
             level: "project",
+            label: shared ? "project" : "local project",
             local: !shared,
             grant: "root",
             on: true,
@@ -150,9 +157,9 @@ describe("the Skill studio", () => {
       };
     });
 
-    render(<SkillStudioTab plane="p" changed={0} />);
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
     const row = await screen.findByTestId("skill-scratch");
-    expect(within(row).getByText(/project, local/)).toBeInTheDocument();
+    expect(within(row).getByText(/local project/)).toBeInTheDocument();
     within(row).getByRole("button", { name: "Share" }).click();
 
     await waitFor(() =>
@@ -163,7 +170,7 @@ describe("the Skill studio", () => {
 
   it("says it is not on while its flag is off", async () => {
     answering({ on: false, workspace: null, workspaces: [], skills: [] });
-    render(<SkillStudioTab plane="p" changed={0} />);
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
     expect(await screen.findByTestId("skill-studio-off")).toBeInTheDocument();
   });
 

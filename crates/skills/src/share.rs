@@ -50,9 +50,8 @@ pub fn share(plane: &Path, workspace: Option<&str>, name: &str) -> Result<PathBu
             "{shown} is already there, so nothing was moved: rename one of the two folders first"
         ));
     }
-    let mut toml_name = folder.clone();
-    toml_name.push(".toml");
-    let (toml_from, toml_to) = (local.join(&toml_name), shared.join(&toml_name));
+    let (toml_from, toml_to) = (crate::beside(&from), crate::beside(&to));
+    let toml_name = toml_from.file_name().unwrap_or_default().to_os_string();
     if toml_from.is_file() && toml_to.symlink_metadata().is_ok() {
         return Err(format!(
             "{} is already there, so nothing was moved: rename one of the two folders first",

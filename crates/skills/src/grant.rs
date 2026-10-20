@@ -5,10 +5,11 @@
 //!
 //! A project skill's **grant** is kept beside its folder, in `<folder>.toml`, as `grant`: never
 //! inside `SKILL.md`, which stays the open format. A workspace's **turn-off list** is
-//! `settings.skills.off` in its `workspace.json`: it can only take away what a grant gave, so
-//! there is no list that turns a skill on.
+//! purlis-core's to read (its Workspace settings layer) and comes in as [`crate::Chat`]'s
+//! `turned_off`: it can only take away what a grant gave, so there is no list that turns a
+//! skill on.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// The key, in a skill's `<folder>.toml`, that holds its grant.
 pub const KEY: &str = "grant";
@@ -25,6 +26,21 @@ pub enum Grant {
 }
 
 impl Grant {
+    /// The grant the words of `purlis skill grant <name> …` say: `root`, `all`, or workspace
+    /// names, read by the same rule as a grant file's `grant` (one word is a string, more are a
+    /// list), or why they say none.
+    pub fn from_words(words: &[String]) -> Result<Grant, String> {
+        let value = match words {
+            [] => return Err("no grant was named".to_owned()),
+            [one] if one == "root" || one == "all" => toml::Value::String(one.clone()),
+            names if names.iter().any(|name| name == "root" || name == "all") => {
+                return Err("root and all each stand alone, never beside a workspace".to_owned());
+            }
+            names => toml::Value::Array(names.iter().cloned().map(toml::Value::String).collect()),
+        };
+        grant_in(&value)
+    }
+
     /// Whether a chat in `workspace` gets the skill. A chat at the plane root always does.
     pub fn reaches(&self, workspace: &str) -> bool {
         match self {
@@ -46,16 +62,9 @@ impl std::fmt::Display for Grant {
     }
 }
 
-/// The file beside `folder` that holds what purlis alone knows about its skill.
-fn file_of(folder: &Path) -> PathBuf {
-    let mut name = folder.file_name().unwrap_or_default().to_os_string();
-    name.push(".toml");
-    folder.with_file_name(name)
-}
-
-/// That file's name, as a person is told it: `deploy.toml`.
-pub(crate) fn file_name(folder: &Path) -> String {
-    file_of(folder)
+/// The name of the file beside `folder`, as a person is told it: `deploy.toml`.
+fn file_name(folder: &Path) -> String {
+    crate::beside(folder)
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
@@ -65,7 +74,7 @@ pub(crate) fn file_name(folder: &Path) -> String {
 /// or holds no `grant`, or why it cannot be read. A reader treats an error as `root`, the
 /// narrowest grant, and says why.
 pub fn grant_of(folder: &Path) -> Result<Grant, String> {
-    let Ok(text) = std::fs::read_to_string(file_of(folder)) else {
+    let Ok(text) = std::fs::read_to_string(crate::beside(folder)) else {
         return Ok(Grant::Root);
     };
     let table = text
@@ -102,7 +111,7 @@ fn grant_in(value: &toml::Value) -> Result<Grant, String> {
 /// else is left in it. A file that is not TOML is refused, and left as it was. The file is
 /// written beside itself and renamed over, so a reader never sees half of it.
 pub fn set_grant(folder: &Path, grant: &Grant) -> Result<(), String> {
-    let file = file_of(folder);
+    let file = crate::beside(folder);
     let name = file_name(folder);
     let text = match std::fs::read_to_string(&file) {
         Ok(text) => text,
@@ -145,36 +154,6 @@ pub fn set_grant(folder: &Path, grant: &Grant) -> Result<(), String> {
     temp.persist(&file)
         .map(|_| ())
         .map_err(|why| format!("{name} could not be written ({why}), so nothing changed"))
-}
-
-/// **The names the workspace `workspace` turned off**: `settings.skills.off` in its
-/// `workspace.json`. Empty where the file, the key or a list of names is not there: a list that
-/// cannot be read turns nothing off, and the Workspace level's save refuses to write one.
-pub fn turned_off(plane: &Path, workspace: &str) -> Vec<String> {
-    if !crate::plain(workspace) {
-        return Vec::new();
-    }
-    let path = plane
-        .join("workspaces")
-        .join(workspace)
-        .join("workspace.json");
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return Vec::new();
-    };
-    let Some(items) = doc
-        .pointer("/settings/skills/off")
-        .and_then(serde_json::Value::as_array)
-    else {
-        return Vec::new();
-    };
-    items
-        .iter()
-        .map(|item| item.as_str().map(str::to_owned))
-        .collect::<Option<Vec<_>>>()
-        .unwrap_or_default()
 }
 
 fn first_line(text: &str) -> &str {

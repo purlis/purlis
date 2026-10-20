@@ -702,6 +702,7 @@ const ORDINARY: Answers = {
       {
         name: "deploy",
         level: "project",
+        label: "project",
         local: false,
         grant: "all",
         on: true,
@@ -712,6 +713,7 @@ const ORDINARY: Answers = {
       {
         name: "half",
         level: "project",
+        label: "local project",
         local: true,
         grant: "root",
         on: false,

@@ -6,8 +6,6 @@ grilled with the operator on 2026-10-20; ticket #2765 (SK-2). It widens
 three routes now carry the plane's skills as well as the built-in ones, which its amendment of
 2026-10-20 in [`0063/`](0063/) records.
 
-Amended 2026-10-20 by #2767, which settled the turn-off list and the git rule for local skills: [`0099/`](0099/).
-
 **Built by #2765** (project skills at the plane root, on every harness, and a read-only Skill
 studio), then #2767 (grants, workspace and local skills), #2768 (persona skills), #2769 (harness
 and repo skills) and #2782 (lifecycle states).
@@ -134,3 +132,10 @@ purlis types it for the person, rather than restarting, is #2770's to decide.
   workspace folder may not take.
 - The mirror of the plane's `.claude/skills` into clones retires with the migration (#2784), which
   moves those skills to project skills granted `"all"`.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0099/`](0099/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).
