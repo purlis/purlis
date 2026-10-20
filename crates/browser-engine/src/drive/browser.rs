@@ -2397,6 +2397,13 @@ impl Browser {
                     Some(session),
                 );
             }
+            // Said where the drag's own failure is what its call answers.
+            if let (Err(_), Err(why)) = (&dragged, &handed_back) {
+                tracing::warn!(
+                    "purlis: a browser was not told to stop handing its drags over after a drag \
+                     that failed: {why}"
+                );
+            }
             let note = dragged?;
             handed_back.map_err(refusal)?;
             Ok(note)
@@ -3331,6 +3338,14 @@ impl Inner {
                             && let Some(page) = state.page_mut(&target)
                         {
                             page.settle.forget_session(&session, now);
+                        }
+                        // A drag ended on a session that is gone is answered by nobody (#2839).
+                        if state
+                            .cancels_late
+                            .as_ref()
+                            .is_some_and(|(on, _)| *on == session)
+                        {
+                            state.cancels_late = None;
                         }
                         state.sessions.remove(&session);
                     }

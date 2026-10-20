@@ -5606,6 +5606,7 @@ dependencies = [
  "stand-in",
  "tempfile",
  "thiserror 2.0.21",
+ "tracing",
  "ureq",
  "zeroize",
  "zip 9.0.3",

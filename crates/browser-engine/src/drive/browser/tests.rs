@@ -1276,6 +1276,22 @@ fn a_drag_cut_before_the_engine_tells_of_its_own_drag_cancels_that_drag_once_it_
 }
 
 #[test]
+fn a_drag_s_mark_goes_with_its_session() {
+    let (browser, engine) = browser();
+    super::lock(&browser.inner.state).cancels_late = Some(("S-PAYMENT".to_owned(), (1.0, 2.0)));
+    engine.emit(
+        "Target.detachedFromTarget",
+        json!({"sessionId":"S-PAYMENT","targetId":"PAYMENT-FRAME"}),
+        None,
+    );
+    let start = std::time::Instant::now();
+    while super::lock(&browser.inner.state).cancels_late.is_some() {
+        assert!(start.elapsed() < Duration::from_secs(5), "the mark stayed");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[test]
 fn a_word_of_the_engine_s_drag_while_no_drag_was_asked_for_is_not_acted_on() {
     let (browser, engine) = browser();
     engine.emit(
