@@ -77,3 +77,26 @@ fn a_root_whose_link_is_open_is_never_let_go_of_to_make_room() {
     // Every other root came after it, so it is the one used longest ago, and it is still kept.
     assert_eq!(name_for(config.path(), &live, &[]).unwrap(), first);
 }
+
+#[test]
+fn a_forgotten_roots_name_is_let_go_of_and_no_other() {
+    let config = tempfile::tempdir().unwrap();
+    let (a, b) = (Path::new("/projects/a"), Path::new("/projects/b"));
+    let first = name_for(config.path(), a, &[]).unwrap();
+    let other = name_for(config.path(), b, &[]).unwrap();
+
+    forget(config.path(), a).unwrap();
+
+    // Its link names itself anew, and takes nothing back.
+    assert_ne!(name_for(config.path(), a, &[]).unwrap(), first);
+    assert_eq!(name_for(config.path(), b, &[]).unwrap(), other);
+}
+
+#[test]
+fn forgetting_a_root_with_no_names_kept_writes_nothing() {
+    let config = tempfile::tempdir().unwrap();
+
+    forget(config.path(), Path::new("/projects/a")).unwrap();
+
+    assert!(!crate::machine::charterd(config.path()).join(FILE).exists());
+}
