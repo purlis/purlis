@@ -483,6 +483,10 @@ struct Inner {
     state: Mutex<State>,
     /// Held while a saver is started, so two windows asking at once start one.
     starting_a_saver: Mutex<()>,
+    /// Held while a confinement's ports are withdrawn as its last link ends, or given back as its
+    /// window takes it back (#2625): each acts only on the ports still [`Confinement::unheld`],
+    /// so whichever runs first, a port is carried after a take-back.
+    porting: Mutex<()>,
     switch: Switch,
     /// What reads a stop written elsewhere (#2190): the binary's, or nothing.
     elsewhere: OnceLock<Box<dyn StopsElsewhere>>,
@@ -566,6 +570,10 @@ struct Confinement {
     /// it (#2511): what takes it back after a re-link. None for any other: the host's own
     /// window's, or one made or composed for a link that named no window.
     window: Option<String>,
+    /// The ports of the machine its plan gave that the host withdrew because no link was left
+    /// to withdraw one (#2407), and gives back as its window takes it back (#2625). Never one a
+    /// window withdrew, which stays withdrawn.
+    unheld: Vec<u16>,
 }
 
 /// Whose a confinement is: the link that made it, until a start names it, then that program's.
@@ -852,6 +860,7 @@ impl Hosting {
                 host_record,
                 state: Mutex::default(),
                 starting_a_saver: Mutex::new(()),
+                porting: Mutex::new(()),
                 switch,
                 elsewhere: OnceLock::new(),
                 seen_elsewhere: Mutex::new(None),
@@ -1923,6 +1932,27 @@ impl Hosting {
             }
         }
         taken.sort();
+        // Each port withdrawn as its last link ended is given back, as the person gave it
+        // (#2625).
+        let giving: Vec<String> = taken
+            .iter()
+            .filter(|id| {
+                state
+                    .confinements
+                    .get(*id)
+                    .is_some_and(|held| !held.unheld.is_empty())
+            })
+            .cloned()
+            .collect();
+        drop(state);
+        if !giving.is_empty() {
+            let weak = Arc::downgrade(&self.inner);
+            off_the_runtime(move || {
+                for id in giving {
+                    give_back(&weak, &id);
+                }
+            });
+        }
         Ok(Answer::TakenBack {
             confinements: taken,
         })
@@ -2126,6 +2156,7 @@ impl Hosting {
                     confining,
                     plan,
                     window,
+                    unheld: Vec::new(),
                 },
             );
         }
@@ -2346,6 +2377,7 @@ impl Beside for ForTheProgram {
                     confining,
                     plan: plan.clone(),
                     window,
+                    unheld: Vec::new(),
                 },
             );
         }
@@ -2368,7 +2400,8 @@ struct Unheld {
 /// **Takes the name of `peer`'s link off each confinement `whose` picks** (#2444), once that
 /// link has ended. A chat's confinement left named to no link, by a link that cannot take its
 /// chat back, is to carry none of the machine's ports it was given from now on: nobody is left
-/// to withdraw one (#2407). Those are answered, and kept as withdrawn in its plan.
+/// to withdraw one (#2407). Those are answered, and kept as withdrawn in its plan until its
+/// window takes it back, which gives them back (#2625).
 fn unname(state: &mut State, peer: &Peer, whose: impl Fn(&Owner) -> bool) -> Vec<Unheld> {
     let link = link_of(peer);
     let comes_back = peer.scope().may(Power::Reattach);
@@ -2389,6 +2422,7 @@ fn unname(state: &mut State, peer: &Peer, whose: impl Fn(&Owner) -> bool) -> Vec
             .collect();
         if !ports.is_empty() {
             held.plan.withdrawn.extend(&ports);
+            held.unheld.extend(&ports);
             unheld.push(Unheld {
                 id: id.clone(),
                 confining: Arc::clone(&held.confining),
@@ -2403,12 +2437,27 @@ fn unname(state: &mut State, peer: &Peer, whose: impl Fn(&Owner) -> bool) -> Vec
 /// (#2407). One whose port cannot be withdrawn is ended: it carries no port nobody is left to
 /// withdraw. Blocking: a proxy's end waits on its listeners.
 fn withdraw(hosting: &Weak<Inner>, unheld: Vec<Unheld>) {
+    let Some(inner) = hosting.upgrade() else {
+        return;
+    };
+    let _porting = lock_porting(&inner);
     for Unheld {
         id,
         confining,
         ports,
     } in unheld
     {
+        // A port given back meanwhile, its window having taken the chat back, stays carried.
+        let still = hosting_of(&inner)
+            .state()
+            .confinements
+            .get(&id)
+            .map(|held| held.unheld.clone())
+            .unwrap_or_default();
+        let ports: Vec<u16> = ports
+            .into_iter()
+            .filter(|port| still.contains(port))
+            .collect();
         let withdrawn = ports.into_iter().all(|port| {
             confining
                 .change(&session::ReachChange::WithdrawPort { port })
@@ -2424,6 +2473,59 @@ fn withdraw(hosting: &Weak<Inner>, unheld: Vec<Unheld>) {
             });
             drop((confining, ending));
         }
+    }
+}
+
+fn hosting_of(inner: &Arc<Inner>) -> Hosting {
+    Hosting {
+        inner: Arc::clone(inner),
+    }
+}
+
+fn lock_porting(inner: &Inner) -> std::sync::MutexGuard<'_, ()> {
+    inner
+        .porting
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// **Gives back each port the host withdrew from confinement `id` because no link was left**
+/// (#2625), now its window has taken the chat back: as the plan gave it. Only a port still
+/// [`Confinement::unheld`], so not one the window withdrew since. Each port is checked, given
+/// back and marked so under the host's state lock, which a window's withdrawal marks its port
+/// under before its proxy hears it: whichever comes first, a port the window withdrew ends
+/// withdrawn. A port the proxy cannot give back stays withdrawn. Blocking, on the porting lane.
+fn give_back(hosting: &Weak<Inner>, id: &str) {
+    let Some(inner) = hosting.upgrade() else {
+        return;
+    };
+    let _porting = lock_porting(&inner);
+    let hosting = hosting_of(&inner);
+    let ports = hosting
+        .state()
+        .confinements
+        .get(id)
+        .map(|held| held.unheld.clone())
+        .unwrap_or_default();
+    for port in ports {
+        let mut state = hosting.state();
+        let Some(held) = state.confinements.get_mut(id) else {
+            return;
+        };
+        if !held.unheld.contains(&port) {
+            continue;
+        }
+        // A set removal in the proxy: cheap enough to make under the lock.
+        if let Err(why) = held.confining.give_back(port) {
+            drop(state);
+            crate::say(&format!(
+                "port {port} stays withdrawn from confinement {id}, which could not carry it \
+                 again: {why}"
+            ));
+            continue;
+        }
+        held.unheld.retain(|unheld| *unheld != port);
+        held.plan.withdrawn.retain(|withdrawn| *withdrawn != port);
     }
 }
 
@@ -2643,10 +2745,19 @@ impl session::Host for Hosting {
                 change,
             } => {
                 let confining = self.confinement(&confinement, peer)?;
-                confining
-                    .change(&change)
-                    .map(|retry| Answer::ReachChanged { retry })
-                    .map_err(not_started)
+                // A port the window withdraws stays withdrawn: never one to give back (#2625).
+                // Marked so before the proxy hears it, under the lock a give-back checks each
+                // port under, so a give-back either ran before it or never gives this port back.
+                if let session::ReachChange::WithdrawPort { port } = change
+                    && let Some(held) = self.state().confinements.get_mut(&confinement)
+                {
+                    held.unheld.retain(|unheld| *unheld != port);
+                    if !held.plan.withdrawn.contains(&port) {
+                        held.plan.withdrawn.push(port);
+                    }
+                }
+                let retry = confining.change(&change).map_err(not_started)?;
+                Ok(Answer::ReachChanged { retry })
             }
             Command::ReachOf { confinement } => {
                 Ok(Answer::Reach(self.confinement(&confinement, peer)?.now()))

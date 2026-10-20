@@ -426,6 +426,18 @@ impl Reach {
             .insert(port);
     }
 
+    /// **`port` of this machine, withdrawn, is carried again** by every copy of this reach, as
+    /// it was given (#2625): a runner's chat whose port was withdrawn because no window was left
+    /// to withdraw it, taken back by its window. Only a port the reach lists is ever carried, so
+    /// one it never gave stays refused.
+    pub fn give_back(&self, port: u16) {
+        self.withdrawn
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&port);
+    }
+
     /// Whether `port` of this machine was withdrawn ([`Self::withdraw`]).
     pub fn withdrew(&self, port: u16) -> bool {
         self.withdrawn.holds(port)

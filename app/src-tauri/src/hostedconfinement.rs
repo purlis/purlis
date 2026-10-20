@@ -91,6 +91,10 @@ impl purlis_host::Confining for HeldHere {
     fn now(&self) -> ReachNow {
         self.0.now()
     }
+
+    fn give_back(&self, port: u16) -> Result<(), String> {
+        self.0.give_back_port(port)
+    }
 }
 
 /// **What the window tells of a proxy the host runs** (#1999): the closures it would have
