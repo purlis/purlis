@@ -20,7 +20,7 @@ export const PICKED = "purlis-light";
 const plane = (process.env.PURLIS_PICKED_PLANE ??= (() => {
   const made = copyFixturePlane();
   // A project picks in its Shared file (`purlis_core::extension::project::theme`).
-  appendFileSync(join(made, "charter.toml"), `\n[theme]\nuse = "${PICKED}"\n`);
+  void appendFileSync; void join; // mutation check: no pick written
   return made;
 })());
 
