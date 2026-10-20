@@ -13,7 +13,8 @@
 //! - **A runner's device id and public link key are kept once** ([`keep`]): a later answer for
 //!   a runner already kept, with another device id or key, is refused and what was kept stays
 //!   ([`Refused::KeyChanged`]), as is a device id or key another kept runner holds, or the
-//!   desktop's own device id or link key.
+//!   desktop's own device id or link key. Device ids are compared without regard to case: a
+//!   device id is a ULID, which reads the same in either (#2741).
 //! - **Removing a runner removes everything it is** ([`remove`]): the desktop from the
 //!   runner's peers while the link is up, its container and home volume for a Docker pool,
 //!   whatever state they are in, and its row. Whatever could not be removed is said with how to
@@ -359,7 +360,7 @@ fn keep_as(
     }
     let kept = &mut held.runners;
     if let Some(there) = kept.iter().find(|kept| kept.name() == name) {
-        return if &there.made == made && &there.pinned == answered {
+        return if &there.made == made && same_pin(&there.pinned, answered) {
             Ok(there.clone())
         } else {
             Err(Refused::KeyChanged {
@@ -367,7 +368,7 @@ fn keep_as(
             })
         };
     }
-    if answered.device == ours.device {
+    if same_device(&answered.device, &ours.device) {
         return Err(Refused::Other(format!(
             "runner {name} answered with this machine's own device id, so purlis did not keep \
              it; remove the runner and make it again"
@@ -379,10 +380,9 @@ fn keep_as(
              it; remove the runner and make it again"
         )));
     }
-    if let Some(other) = kept
-        .iter()
-        .find(|kept| kept.pinned.device == answered.device || kept.pinned.key == answered.key)
-    {
+    if let Some(other) = kept.iter().find(|kept| {
+        same_device(&kept.pinned.device, &answered.device) || kept.pinned.key == answered.key
+    }) {
         return Err(Refused::Other(format!(
             "runner {name} answered with the device id or key of runner {}, so purlis did not \
              keep it; remove runner {name} and make it again",
@@ -397,6 +397,17 @@ fn keep_as(
     kept.push(new.clone());
     write(config_root, &held)?;
     Ok(new)
+}
+
+/// Whether two device ids are one: a device id is a ULID, which reads the same in either case
+/// (#2741).
+fn same_device(one: &str, other: &str) -> bool {
+    one.eq_ignore_ascii_case(other)
+}
+
+/// Whether two pins are one: the same device id, in either case, and the same key.
+fn same_pin(one: &Pinned, other: &Pinned) -> bool {
+    same_device(&one.device, &other.device) && one.key == other.key
 }
 
 /// What [`remove`] did, part by part: each `Err` is what is left, said with how to remove it.

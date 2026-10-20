@@ -143,6 +143,36 @@ fn a_runner_answering_another_runners_or_this_machines_device_id_or_key_is_not_k
     assert_eq!(read(config.path()).unwrap().len(), 1);
 }
 
+/// A device id is a ULID, which reads the same in either case, so two spellings of one id
+/// differing only in case are one id to every check [`keep`] makes (#2741).
+#[test]
+fn device_ids_differing_only_in_case_are_one_id() {
+    let config = tempfile::tempdir().unwrap();
+    let first = answered("01JB0RUNNER0000000000000000");
+    let kept = keep(config.path(), &made(), &first, &OURS).unwrap();
+    // The kept runner answering its own id in lower case, with its own key, is as it was kept.
+    let lower = Pinned {
+        device: first.device.to_ascii_lowercase(),
+        key: first.key,
+    };
+    assert_eq!(keep(config.path(), &made(), &lower, &OURS).unwrap(), kept);
+    // Another runner answering the first one's id, or this desktop's, in lower case is refused.
+    let second = other_made("second", &"b".repeat(64));
+    for refused in [
+        answered(&first.device.to_ascii_lowercase()),
+        answered(&OURS.device.to_ascii_lowercase()),
+    ] {
+        assert!(
+            matches!(
+                keep(config.path(), &second, &refused, &OURS),
+                Err(Refused::Other(_))
+            ),
+            "{refused:?} was kept"
+        );
+    }
+    assert_eq!(read(config.path()).unwrap(), vec![kept]);
+}
+
 /// A runner that answers with this desktop's own link key is refused, and nothing is kept
 /// (#2683): the key is the one this desktop presents on its links.
 #[test]
