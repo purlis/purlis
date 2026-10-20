@@ -6,12 +6,14 @@ import {
   chmodSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -527,7 +529,27 @@ export function copyFixturePlane(name = "daily"): string {
       mkdirSync(join(root, rel), { recursive: true });
     }
   }
+  oneMoment(root, new Date());
   return root;
+}
+
+/**
+ * Gives every file and directory under `dir` the same modification time, `at`.
+ *
+ * **A copy's times are the order the copy was made in**, and that order is the filesystem's:
+ * `cpSync` walks the directory listing, which ext4 hands out in hash order. A plane's first
+ * open pins its most recently active workspaces, newest first, and recency is read off these
+ * times (`Store::pin_the_most_active`). Left alone, whether `alpha` or `beta` was copied last
+ * decided the strip's order, and a runner could draw `beta, alpha` (#2715). One moment for
+ * the whole copy makes every workspace equally active, which the core then orders by name.
+ */
+function oneMoment(dir: string, at: Date): void {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) oneMoment(path, at);
+    if (!lstatSync(path).isSymbolicLink()) utimesSync(path, at, at);
+  }
+  utimesSync(dir, at, at);
 }
 
 /**

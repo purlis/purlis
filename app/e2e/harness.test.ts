@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { execFileSync } from "node:child_process";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { describe, expect, it } from "vitest";
 import {
+  copyFixturePlane,
   LONG_ASKED_COMMAND,
   singleQuoted,
   theRunsEnvironment,
@@ -59,5 +61,28 @@ describe("the home a launched app is given", () => {
 describe("the long ask the reporting harness raises", () => {
   it("is a 200-character line, with the words the core puts before a command", () => {
     expect(`Run a command: ${LONG_ASKED_COMMAND}`).toHaveLength(200);
+  });
+});
+
+/**
+ * A fixture copy says nothing about which workspace was worked in last (#2715). The first
+ * open pins the most recently active workspaces, newest first, off these times; a copy that
+ * kept the times it was written at would order the strip by the filesystem's listing.
+ */
+describe("a copy of a fixture plane", () => {
+  it("gives every file and directory in it one modification time", () => {
+    const root = copyFixturePlane();
+    const times = new Set<number>();
+    const walk = (dir: string): void => {
+      times.add(statSync(dir).mtimeMs);
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (entry.isFile()) times.add(statSync(path).mtimeMs);
+      }
+    };
+    walk(join(root, "workspaces"));
+    walk(join(root, ".charter"));
+    expect(times.size).toBe(1);
   });
 });
