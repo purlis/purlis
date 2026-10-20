@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792488592767,
+  "lastUpdate": 1792491000549,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3770,6 +3770,42 @@ window.BENCHMARK_DATA = {
             "value": 321.4,
             "unit": "MB",
             "extra": "median of 6 samples: 334.1, 322.7, 323.5, 319.3, 320.1, 265.8 MB; window 149.3 MB, session host 164.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "770f17b1ec6e92c9d29b2422d441482a26ab1f28",
+          "message": "The window is told a project a re-link could not hold, and holds it again (#2721)\n\n* Move the relay's and the grants table's tests to files of their own\n\nA move alone: no test's name or body changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The window is told a project a re-link could not hold, and holds it again\n\nWhen the last pass of a carry-over cannot hold a project the window\nholds, the desktop's relay pushes the window `not_held` (session\nprotocol 1.30), with the project and the runner's own words. It is the\nrelay's own word: one the runner pushes is never handed on.\n\nOn `not_held` the window stops counting the project as held on that\nlink and holds it again at once, with what a first hold does: hook\nlines, numbers dealt, the kept board. Where the runner refuses again,\nevery command that needs the hold tries again and is refused in words\nthat say the project is not held where its chats run, then the\nrunner's. A project held again on the same link tells its reconnects\nonce.\n\nADR 0078 amended 2026-10-20 for #2645.\n\nCloses #2645\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T13:30:33+04:00",
+          "tree_id": "c3dc634d2121ed086d74e4f58a50d7b6461d64c3",
+          "url": "https://github.com/purlis/purlis/commit/770f17b1ec6e92c9d29b2422d441482a26ab1f28"
+        },
+        "date": 1792490999076,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1029,
+            "unit": "MB",
+            "extra": "median of 3 samples: 828, 1029, 1093 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 317.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 317, 321.4, 317.4, 318.4, 319.4, 230.3 MB; window 146.9 MB, session host 170.7 MB"
           }
         ]
       }
