@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792478852587,
+  "lastUpdate": 1792481650677,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3592,6 +3592,42 @@ window.BENCHMARK_DATA = {
             "value": 363.7,
             "unit": "MB",
             "extra": "median of 6 samples: 361.8, 374, 366.1, 363.6, 363.8, 247.6 MB; window 156.1 MB, session host 208.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e155e64c0c27bac89d1244b9f2c8cf029c11899d",
+          "message": "The internal-address floor reads Teredo and ISATAP addresses (#2678) (#2720)\n\n* The internal-address floor reads Teredo and ISATAP addresses (#2678)\n\nA Teredo address is judged as the server and the client IPv4 addresses\nit carries, and an ISATAP address as the IPv4 address it carries and as\nitself. relayed-internal covers each internal one as that IPv4 address,\nand a range that takes in Teredo addresses is refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Review: covers chains tunnelled readings under NAT64; group-bit ISATAP tests; docs\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T10:47:13+04:00",
+          "tree_id": "11e9e6da1ab6ba72e2594b2343f0d07f1a111a7e",
+          "url": "https://github.com/purlis/purlis/commit/e155e64c0c27bac89d1244b9f2c8cf029c11899d"
+        },
+        "date": 1792481649118,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 922,
+            "unit": "MB",
+            "extra": "median of 3 samples: 733, 922, 1051 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 324.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 360.2, 355.6, 327.6, 321.5, 322.2, 256.3 MB; window 157.3 MB, session host 164.6 MB"
           }
         ]
       }
