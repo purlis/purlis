@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792496807699,
+  "lastUpdate": 1792499731823,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19110,6 +19110,48 @@ window.BENCHMARK_DATA = {
             "value": 100.89546,
             "unit": "ms",
             "extra": "median of 5 runs: 99.812, 100.354, 100.895, 102.211, 102.550 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "47dab253b050afaf53eef11430cff4e54df29c2a",
+          "message": "Theme: real-path e2e for forced colours and the native window (#2754)\n\n* Theme: real-path e2e for forced colours and the native window\n\nThe forced-colours scenario turns forced colours on in the real WebView and\nchecks computed styles on the window's own controls: the focus ring,\nselection, the needs-you counts, danger, state marks, switches and dialogs.\nA run of its own launches the app on a fixture project that picks\npurlis-light and reads the native window back light, with no draw asked by\nthe test.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Mutation check: no pick written, and no forced colours placed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Back from the mutation check: the pick is written and forced colours are placed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Forced colours: the sheet's query is held exactly, and the header names what the e2e holds\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Mutation check: what needs you drawn on Canvas, with forced colours still placed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Back from the mutation check: what needs you is drawn in Mark again\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T16:33:41+04:00",
+          "tree_id": "30ab5d5a046b83cce235cca338e65412da1fe89b",
+          "url": "https://github.com/purlis/purlis/commit/47dab253b050afaf53eef11430cff4e54df29c2a"
+        },
+        "date": 1792499729799,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.428121,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.410, 0.416, 0.428, 0.436, 0.444 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.655618,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.067, 16.270, 16.656, 16.866, 16.868 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1804625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.497, 101.686, 102.180, 102.566, 102.848 ms"
           }
         ]
       }
