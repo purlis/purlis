@@ -28,7 +28,7 @@ import {
 import { Choice, SettingActions, type Badge, type RowIds } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { OptionsList } from "./themeOptions";
-import { useSpecimen } from "./themeSpecimens";
+import { useOnScreen, useSpecimen } from "./themeSpecimens";
 
 /**
  * **Settings › Theme is a gallery** (spec #2313, #2331): a card per theme a choice at this level
@@ -94,8 +94,12 @@ function keyOf(at: ThemeAt | null): string {
   return at === null ? "" : `${at.plane}\u0000${at.workspace ?? ""}`;
 }
 
-/** Whether the gallery hears the theme folders change. */
-let following = false;
+/** The gallery's one listener for the theme folders changing, once it hears them: what stops
+ *  it. */
+let following: Promise<() => void> | undefined;
+
+/** Which life of the galleries this is: an answer to an ask of an earlier one is dropped. */
+let life = 0;
 
 /**
  * **Every gallery shown is asked again when a theme folder changes on disk** (#2324): the core
@@ -103,12 +107,13 @@ let following = false;
  * read again as the core reads them. One listener for the life of the window.
  */
 function followFolders(): void {
-  if (following) return;
-  following = true;
-  listen(THEME_FOLDERS_CHANGED, () => {
+  if (following !== undefined) return;
+  const heard = listen(THEME_FOLDERS_CHANGED, () => {
     for (const [key, at] of places) if (interest.has(key)) reread(at);
-  }).catch(() => {
-    following = false;
+  });
+  following = heard;
+  heard.catch(() => {
+    if (following === heard) following = undefined;
   });
 }
 
@@ -121,12 +126,14 @@ function reread(at: ThemeAt | null): void {
   const key = keyOf(at);
   if (asking.has(key)) return;
   asking.add(key);
+  const asked = life;
   void commands
     .themeGallery(at)
     .then(
       (answer) => {
-        // Nothing shows this level any more: the answer is not kept.
-        if (!interest.has(key)) return;
+        // Nothing shows this level any more, or the galleries were forgotten since: the answer
+        // is not kept.
+        if (asked !== life || !interest.has(key)) return;
         const given = answer.status === "ok" ? (answer.data as ThemeGallery | null) : null;
         answers.set(
           key,
@@ -136,10 +143,11 @@ function reread(at: ThemeAt | null): void {
         );
       },
       (why: unknown) => {
-        if (interest.has(key)) answers.set(key, { trouble: String(why) });
+        if (asked === life && interest.has(key)) answers.set(key, { trouble: String(why) });
       },
     )
     .finally(() => {
+      if (asked !== life) return;
       asking.delete(key);
       told();
     });
@@ -182,13 +190,17 @@ function useGallery(at: ThemeAt | null): Read {
 /** How many rows show each level's gallery. */
 const interest = new Map<string, number>();
 
-/** For tests: forget every gallery read. */
+/** For tests: forget every gallery read, and stop hearing the theme folders, so nothing one
+ *  test started reaches the next. */
 export function forgetGalleries(): void {
+  life++;
   answers.clear();
   asking.clear();
   interest.clear();
   places.clear();
-  following = false;
+  drawnThemes.clear();
+  void following?.then((stop) => stop()).catch(() => undefined);
+  following = undefined;
 }
 
 /** Whether `read` is the core's answer. */
@@ -570,6 +582,9 @@ function Pictures({
   /** The id of the line saying why a refused card is refused: the card's description. */
   refusedId: string;
 }) {
+  // Only a card on screen is pictured (#2614): the rest are asked for as they scroll in.
+  const box = useRef<HTMLDivElement>(null);
+  const seen = useOnScreen(box);
   if (card.refused)
     return (
       <p id={refusedId} className="text-sm text-text-secondary">
@@ -581,7 +596,7 @@ function Pictures({
   // A picture is kept by what it is drawn with: the theme's stamp and the values chosen here.
   const values = isYours(card, yours) ? JSON.stringify(yours?.options ?? {}) : "";
   return (
-    <div className="flex gap-1">
+    <div ref={box} className="flex gap-1">
       {shown.map((one) => (
         <Picture
           key={one.id}
@@ -589,6 +604,7 @@ function Pictures({
           card={card}
           stamp={`${card.stamp}\u0000${values}`}
           appearance={one.id}
+          seen={seen}
         />
       ))}
       {more > 0 && <span className="text-sm text-text-secondary">+{more}</span>}
@@ -601,14 +617,17 @@ function Picture({
   card,
   stamp,
   appearance,
+  seen,
 }: {
   at: ThemeAt | null;
   card: GalleryCard;
   /** What the picture is kept by. */
   stamp: string;
   appearance: string;
+  /** Whether its card is on screen: a picture is asked for only then. */
+  seen: boolean;
 }) {
-  const picture = useSpecimen(at, card.id, card.level, stamp, appearance);
+  const picture = useSpecimen(at, card.id, card.level, stamp, appearance, seen);
   // The card names the theme; a picture adds nothing a screen reader needs.
   if (picture.state === "drawn")
     return (
