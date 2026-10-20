@@ -365,6 +365,7 @@ macro_rules! app_commands {
                 extensions::set_extension_on,
                 extensions::open_extension_record,
                 extensions::theme_in_force,
+                extensions::theme_in_force_at,
                 extensions::theme_font,
                 extensions::theme_person,
                 specimen::theme_specimen,

@@ -2537,11 +2537,28 @@ export const commands = {
 	 *  the draft is drawn only while it holds every hard floor; its last good version stays
 	 *  otherwise. `kept` asks for the theme as kept, without any draft: what Compare shows while
 	 *  it is held. The drafts are watched with the folders.
+	 * 
+	 *  The window's alone (#2697): a link is served [`theme_in_force_at`], the same answer read the
+	 *  same way, which watches nothing for anyone.
 	 */
 	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
 } | null, kept: boolean | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at, kept })),
+	/**
+	 *  **The theme in force at a project and workspace, with no window** (#2697): what
+	 *  [`theme_in_force`] answers for the same question, read the same way, and served on a link.
+	 *  It takes no window and points no theme watch anywhere, so a link's call never changes what
+	 *  any window watches.
+	 * 
+	 *  **It draws the theme as kept, never a chat's draft** (#2332): a draft is drawn in the
+	 *  person's own window, for the chats this app records working where it is, and is watched with
+	 *  that window's folders. A link is answered the theme the levels choose.
+	 */
+	themeInForceAt: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
+	plane: PlaneId,
+	workspace: string | null,
+} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at })),
 	/**
 	 *  **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
 	 *  read again by the core's theme engine from inside the theme's folder, under its cap, and only

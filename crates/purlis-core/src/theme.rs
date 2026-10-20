@@ -106,7 +106,8 @@ pub use check::{FITS, Finding, Fit, PAIRS, Pair, Report};
 pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
 pub use fonts::{
     BOLD, CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES,
-    MOST_FONT_BYTES, NORMAL, Style, StyleDrawn, served, styles_drawn, without_a_face,
+    MOST_FONT_BYTES, Measured, NORMAL, SETTLED, Style, StyleDrawn, served, styles_drawn,
+    without_a_face,
 };
 pub use format::{Library, MOST_APPEARANCES, Named, THEME_JSON};
 pub use geometry::Geometry;
@@ -159,6 +160,8 @@ mod icons_tests;
 mod import_tests;
 #[cfg(test)]
 mod levels_tests;
+#[cfg(test)]
+mod measured_tests;
 #[cfg(test)]
 mod native_tests;
 #[cfg(test)]

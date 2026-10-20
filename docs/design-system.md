@@ -114,9 +114,14 @@ created in both for the theme its first frame draws, so nothing of another colou
 it. That theme is the one the levels choose for the project and the workspace the window opens
 on, resolved once as the window is created (#2602): the creation script, the native window and
 the page's first frame take that one answer, and the window's later ask of what is in force
-answers it again, so nothing is repainted. The system's contrast is read natively at creation
-where purlis can (#2582): Increase contrast on macOS, the desktop portal's `contrast` on Linux.
-Where nothing is read, the
+answers it again, so nothing is repainted. A project's font files are hashed once as the
+window is created (#2696): the check that the remembered project is still trusted hands its
+digests to the read of its theme folders, and each frame takes the faces the one before it read;
+with a project at the font budget (64 files, 32 MiB), the core's part of creating the main window
+measured 24 ms, against ADR 0026's 2 s start. The system's contrast is read natively at creation
+where purlis can (#2582): Increase contrast on macOS, and on Linux the desktop portal's
+`contrast`, which purlis hears again each time it changes, so a window created after a change
+starts in the new setting. Where nothing is read, the
 page picks with `prefers-contrast` among the frames it is handed for both. The page
 hands both over again whenever it draws another theme
 (`app/src/theme/native.ts`, `app/src-tauri/src/nativewindow.rs`). A theme that follows the
@@ -819,7 +824,8 @@ drawn, the gallery says so.
   the stop at rest (`roving.ts`); selection does not follow the focus, so moving through the
   cards writes nothing. Nothing in the group takes the focus by itself.
 - The machine default, an option's value, a duplicate and Open folder are the window's alone
-  (`WINDOW_ONLY`); the gallery's reads are served as `theme_in_force` is.
+  (`WINDOW_ONLY`); the gallery's reads are served on a link, as `theme_in_force_at` is: the
+  theme in force with no window, which moves no window's theme watch (#2697).
 
 ### Where a user's theme lives
 
