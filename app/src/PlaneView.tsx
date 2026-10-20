@@ -394,6 +394,15 @@ import type {
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
 import { useSkillStudioOn } from "./skillStudio";
+import {
+  SkillRunsHere,
+  skillOfRun,
+  skillTitle,
+  skillView,
+  useSkillRuns,
+  wantRun,
+  type RunsOf,
+} from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
@@ -715,6 +724,8 @@ export const PlaneView = memo(function PlaneView({
    *  say that something over there needs you. */
   const chats = useChats(plane);
   const doings = useDoings(plane);
+  // The skill run open in each chat, for the chip on its tab (SK-3).
+  const skillRuns = useSkillRuns(plane);
   // **Only the shares this view draws from, each redrawing it only when it changes** (SC-3).
   // A chat's own state is not one of them: its tab, its explorer row and its pane read that
   // themselves, so a chat that only went from running to waiting redraws those and not this.
@@ -7520,6 +7531,15 @@ export const PlaneView = memo(function PlaneView({
       showView(activityView(session), activityTitle(nameOfNow.current(session)));
   });
   const activityFromChip = useCallback((session: number) => activityNow.current(session), []);
+  /** Opens a skill's tab on run `run`, from the chip of the run open in a tab's chat (SK-3). */
+  const openSkillRun = useCallback(
+    (used: string, run: string) => {
+      const skill = skillOfRun(used);
+      wantRun(skill, run);
+      showView(skillView(skill), skillTitle(skill));
+    },
+    [showView],
+  );
 
   /**
    * **A tab on the strip was pressed.** One that is behind comes forward, on whatever it was
@@ -8448,6 +8468,7 @@ export const PlaneView = memo(function PlaneView({
       chats={chats}
       tasksBelow={tasksBelow}
       doings={doings}
+      skillRuns={skillRuns}
       references={referenceChats}
       memoryTargets={memoryTargets}
       readOnly={readOnlySaid}
@@ -8860,6 +8881,7 @@ export const PlaneView = memo(function PlaneView({
                 usedFromChip={usedFromChip}
                 stopAllOf={stopAllOf}
                 activityFromChip={activityFromChip}
+                openSkillRun={openSkillRun}
                 freshOf={freshOf}
                 freshMarkOf={freshMarkOf}
                 planeUpdates={planeUpdates}
@@ -9501,6 +9523,7 @@ function Lent({
   chats,
   tasksBelow,
   doings,
+  skillRuns,
   references,
   memoryTargets,
   readOnly,
@@ -9516,6 +9539,8 @@ function Lent({
   tasksBelow: ReadonlyMap<number, TasksBelow>;
   /** What each working chat is doing, for the one line under its name (#1493). */
   doings: DoingsOf;
+  /** The skill run open in each chat, for the chip on its tab (SK-3). */
+  skillRuns: RunsOf;
   references: ChatsForReferences;
   /** The project's memory stores and LIVE workspaces, for the memory lists' Move (#1190). */
   memoryTargets: MemoryTargets;
@@ -9538,23 +9563,25 @@ function Lent({
     <ChatsHere.Provider value={chats}>
       <TasksBelowLent below={tasksBelow}>
         <DoingsHere.Provider value={doings}>
-          <ReferenceChats.Provider value={references}>
-            <MemoryStores.Provider value={memoryTargets}>
-              <ReadOnlySaid.Provider value={readOnly}>
-                <ReadOnlyMendable.Provider value={mendable}>
-                  <PersonaMarks.Provider value={personas.marks}>
-                    <ReloadPersonaMarks.Provider value={personas.reload}>
-                      <AskPersonaOpener value={askPersona}>
-                        <BriefOpener value={brief}>
-                          <AnswerOpener value={answer}>{children}</AnswerOpener>
-                        </BriefOpener>
-                      </AskPersonaOpener>
-                    </ReloadPersonaMarks.Provider>
-                  </PersonaMarks.Provider>
-                </ReadOnlyMendable.Provider>
-              </ReadOnlySaid.Provider>
-            </MemoryStores.Provider>
-          </ReferenceChats.Provider>
+          <SkillRunsHere.Provider value={skillRuns}>
+            <ReferenceChats.Provider value={references}>
+              <MemoryStores.Provider value={memoryTargets}>
+                <ReadOnlySaid.Provider value={readOnly}>
+                  <ReadOnlyMendable.Provider value={mendable}>
+                    <PersonaMarks.Provider value={personas.marks}>
+                      <ReloadPersonaMarks.Provider value={personas.reload}>
+                        <AskPersonaOpener value={askPersona}>
+                          <BriefOpener value={brief}>
+                            <AnswerOpener value={answer}>{children}</AnswerOpener>
+                          </BriefOpener>
+                        </AskPersonaOpener>
+                      </ReloadPersonaMarks.Provider>
+                    </PersonaMarks.Provider>
+                  </ReadOnlyMendable.Provider>
+                </ReadOnlySaid.Provider>
+              </MemoryStores.Provider>
+            </ReferenceChats.Provider>
+          </SkillRunsHere.Provider>
         </DoingsHere.Provider>
       </TasksBelowLent>
     </ChatsHere.Provider>

@@ -2044,6 +2044,14 @@ button.show-more:focus-visible {
   visibility: hidden;
 }
 
+/* The skill run open in a tab's chat (SK-3): the skill's name, cut short where it is long. */
+.tab-skill-run .skill-run-name {
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tab-tasks-counts .count svg {
   width: 0.75rem;
   height: 0.75rem;
@@ -8680,4 +8688,9 @@ textarea.ui-field {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A skill's tab (SK-3): the run its chip opened it on stands out in its Runs panel. */
+.skill-tab .ui-table tr[data-wanted] {
+  background: var(--surface-hover);
 }

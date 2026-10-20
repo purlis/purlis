@@ -377,6 +377,18 @@ export function singleQuoted(text: string): string {
  */
 export const ASKS_A_PERMISSION = join(THE_RUNS_TREE, "asks-a-permission");
 
+/**
+ * **While this file is in the run's tree, the reporting harness uses a skill and holds its turn**
+ * (SK-3, #2766): after its output it runs the `PostToolUse` hook of a Skill tool call naming
+ * {@link USED_SKILL} through the real binary, so the window opens a skill run on the chat's tab,
+ * and it does not say its turn ended, so the run stays open until the chat ends. A spec writes
+ * it before it starts its chat and removes it after.
+ */
+export const USES_A_SKILL = join(THE_RUNS_TREE, "uses-a-skill");
+
+/** The skill the reporting harness uses while {@link USES_A_SKILL} is there. */
+export const USED_SKILL = "e2e-run-probe";
+
 /** What the reporting harness says once the window allowed its permission ask. */
 export const INBOX_ALLOWED = "carried on: the window allowed it";
 
@@ -424,13 +436,33 @@ export function writeReportingShell(fakeHarness: string, charter: string): strin
       // The permission ask, only while a spec asks for it (`ASKS_A_PERMISSION`): Codex's hook
       // payload, the decision the hook prints, and the line that says the chat went on.
       `  --hook ${singleQuoted(permissionHook(charter))} \\`,
-      `  --hook ${JSON.stringify(`${charter} hook stop </dev/null`)} \\`,
+      `  --hook ${singleQuoted(skillHook(charter))} \\`,
+      `  --hook ${singleQuoted(`[ -f ${singleQuoted(USES_A_SKILL)} ] || ${singleQuoted(charter)} hook stop </dev/null`)} \\`,
       "  --interactive",
       "",
     ].join("\n"),
   );
   chmodSync(shell, 0o755);
   return shell;
+}
+
+/**
+ * The reporting harness's skill hook: nothing unless {@link USES_A_SKILL} is there, and then the
+ * end of one Skill tool call, as Claude Code's `PostToolUse` says it.
+ */
+function skillHook(charter: string): string {
+  const payload = JSON.stringify({
+    session_id: "scenario",
+    hook_event_name: "PostToolUse",
+    tool_name: "Skill",
+    tool_use_id: "toolu_e2e_skill",
+    tool_input: { skill: USED_SKILL },
+  });
+  return [
+    `if [ -f ${singleQuoted(USES_A_SKILL)} ]; then`,
+    `  printf '%s' ${singleQuoted(payload)} | ${singleQuoted(charter)} hook posttooluse-skill`,
+    "fi",
+  ].join("\n");
 }
 
 /**
