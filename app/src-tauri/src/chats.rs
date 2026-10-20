@@ -378,6 +378,36 @@ struct Running {
     /// tools and line the runner compiled there, so this window holds no record of what its
     /// sandbox compiled to, and a restart would not give it one (#2692).
     composed_by_its_host: bool,
+    /// **Whose persona grants it runs with, as its start read them** (#2691): on a profile, the
+    /// grants a handoff left it holding, else its own persona's, else the project's default
+    /// persona at its start; on no profile, none ([`grants_persona_of`]). The persona its
+    /// sandbox was compiled for.
+    /// Fixed at the start, as its sandbox is: an Allow of its own grants or a new default
+    /// changes it at the next start.
+    grants_as: Option<String>,
+}
+
+/// **The personas a chat is named by** (#2691), from one read of the app's record of its run
+/// ([`Chats::persona_of`]), so every path names it from the same place.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatPersona {
+    /// The persona it was started as: **whose vaults it may use**, as every brokered read of a
+    /// vault judges it (`secret exec`, a browser login's vault, #2599). Never a fallback: a
+    /// chat on no persona uses no persona's vault.
+    pub started_as: Option<String>,
+    /// **Whose grants it runs with** ([`Running::grants_as`]): the persona its tools, hosts and
+    /// browser sites are its by, what its browser reaches and what its Asks are about.
+    pub grants: Option<String>,
+}
+
+impl Running {
+    /// [`Chats::persona_of`], of this run.
+    fn persona(&self) -> ChatPersona {
+        ChatPersona {
+            started_as: self.chat.persona.clone(),
+            grants: self.grants_as.clone(),
+        }
+    }
 }
 
 /// [`Running::started_with`].
@@ -2554,14 +2584,13 @@ impl Chats {
         // compile per chat made the asks grow with the square of the chats open.
         let mut compiled: Vec<(StartKey, CompiledNow)> = Vec::new();
         for (session, chat, harness, started, with) in running {
-            // A chat on a profile takes a persona's grants (#1362); one on no profile, none.
-            let persona = chat.profile.as_ref().and_then(|_| {
-                let as_started = Chat {
+            let persona = grants_persona_of(
+                &Chat {
                     held: with.held.clone(),
                     ..chat.clone()
-                };
-                purlis_core::start::runs_with(&as_started, &self.project)
-            });
+                },
+                &self.project,
+            );
             // Everything the compile below reads of the chat, and nothing else.
             let key = StartKey {
                 harness,
@@ -3543,6 +3572,7 @@ impl Chats {
                 },
                 ran,
                 composed_by_its_host: on_the_runner,
+                grants_as: grants_persona_of(chat, &self.project),
             },
         );
         lock(&self.sizes).insert(session, size);
@@ -4431,6 +4461,14 @@ impl Chats {
             .or_else(|| running.harness.map(|harness| harness.name().to_owned()))
     }
 
+    /// **The personas chat `session` is named by** (#2691): the one it was started as, whose
+    /// vaults it may use, and the one whose grants it runs with, as its start read them. The
+    /// one place a browser login, a browser's reach and its Asks name a chat's persona. None
+    /// for a chat this app does not have open.
+    pub fn persona_of(&self, session: u32) -> Option<ChatPersona> {
+        lock(&self.open).get(&session).map(Running::persona)
+    }
+
     /// **Who asks for chat `session`'s browser login** (#2560), and whether it runs with no
     /// sandbox at all by the record of how its run started (#2636), read under one hold of the
     /// open chats so both
@@ -4460,7 +4498,8 @@ impl Chats {
                 root: root.to_path_buf(),
                 env: purlis_core::secrets::Env::from_process(),
                 chat: session,
-                persona: running.chat.persona.clone(),
+                // Whose vaults it may use, as `secret exec` judges them (#2599, #2691).
+                persona: running.persona().started_as,
                 folder: running.chat.cwd.clone(),
                 confines,
                 harness: running.harness,
@@ -5785,6 +5824,15 @@ fn what_its_hooks_read(
         env,
         &purlis_core::hoststart::Watched { cwd, sandboxed, id },
     );
+}
+
+/// **Whose persona grants `chat` runs with, as its sandbox is compiled for them** (#1362,
+/// #2691): on a profile, the grants a handoff left it holding, else its own persona's, else the
+/// project's default persona (`purlis_core::start::runs_with`); on no profile, none.
+fn grants_persona_of(chat: &Chat, project: &std::path::Path) -> Option<String> {
+    chat.profile
+        .as_ref()
+        .and_then(|_| purlis_core::start::runs_with(chat, project))
 }
 
 /// **How a run this window starts is sandboxed, by its own record** (#2636): in the sandbox

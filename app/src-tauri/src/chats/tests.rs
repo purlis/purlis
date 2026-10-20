@@ -2574,6 +2574,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             ran: Some(purlis_session_protocol::session::RunSandbox::By(
                 "seatbelt".to_owned(),
             )),
+            grants_as: None,
         },
     );
 
@@ -2645,6 +2646,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                     "seatbelt".to_owned(),
                 )),
                 composed_by_its_host: false,
+                grants_as: None,
             },
         );
     };
@@ -3080,6 +3082,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                     "seatbelt".to_owned(),
                 )),
                 composed_by_its_host: false,
+                grants_as: None,
             },
         );
     };
@@ -7268,6 +7271,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 started_with: StartedWith::default(),
                 ran: ran.clone(),
                 composed_by_its_host: false,
+                grants_as: None,
             },
         );
         let case = format!("compiled {}, recorded {ran:?}", confines.is_some());
@@ -7706,6 +7710,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 confines,
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
+                grants_as: None,
             },
         );
     };
@@ -7756,6 +7761,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
                 ran: Some(purlis_session_protocol::session::RunSandbox::Off),
+                grants_as: None,
             },
         );
     };
@@ -7767,6 +7773,87 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
     let (handed, _) = chats.login_asker(plane.path(), 2).expect("open");
     assert_eq!(handed.persona.as_deref(), Some("qa"), "its own persona");
     assert!(chats.login_asker(plane.path(), 3).is_none());
+}
+
+/// #2691: one function names a chat's persona for a browser login, its browser's reach and its
+/// Asks, read from the app's record of its start. After a handoff that left a chat on a profile
+/// holding another's grants, a login's vault is its own persona's, as `secret exec` judges it,
+/// and its browser is the held persona's, as its sandbox was compiled. A chat on a profile and
+/// no persona uses no persona's vault, and its browser is the project's default persona's at its
+/// start. A chat on no profile runs with no persona's grants. Each is fixed at the start.
+#[test]
+fn one_function_names_a_chats_persona_for_every_path_after_a_handoff_too() {
+    let plane = tempfile::tempdir().expect("a project");
+    for name in ["devops", "qa"] {
+        let persona = plane.path().join("personas").join(name);
+        std::fs::create_dir_all(&persona).expect("a persona");
+        std::fs::write(
+            persona.join("persona.md"),
+            format!("---\nname: {name}\n---\n# {name}\n"),
+        )
+        .expect("its file");
+    }
+    let default_is = |persona: &str| {
+        std::fs::write(
+            plane.path().join(purlis_core::plane::MANIFEST),
+            format!("[persona]\ndefault = \"{persona}\"\n"),
+        )
+        .expect("charter.toml");
+    };
+    default_is("devops");
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let start = |persona: Option<&str>, held: Option<&str>, profile: Option<&str>| {
+        chats
+            .start_ready(
+                &Chat {
+                    persona: persona.map(str::to_owned),
+                    held: held.map(|held| purlis_core::reopen::HeldGrants {
+                        persona: Some(held.to_owned()),
+                    }),
+                    profile: profile.map(str::to_owned),
+                    cwd: Some(plane.path().to_path_buf()),
+                    ..chat("claude", "a chat", None)
+                },
+                &a_harness_ready(None),
+                SIZE,
+            )
+            .expect("it starts")
+    };
+    let handed = start(Some("qa"), Some("devops"), Some("work"));
+    let on_none = start(None, None, Some("work"));
+    let no_profile = start(Some("qa"), Some("devops"), None);
+    let named = |started_as: Option<&str>, grants: Option<&str>| {
+        Some(ChatPersona {
+            started_as: started_as.map(str::to_owned),
+            grants: grants.map(str::to_owned),
+        })
+    };
+    assert_eq!(chats.persona_of(handed), named(Some("qa"), Some("devops")));
+    assert_eq!(chats.persona_of(on_none), named(None, Some("devops")));
+    assert_eq!(
+        chats.persona_of(no_profile),
+        named(Some("qa"), None),
+        "a chat on no profile is compiled with no persona's grants"
+    );
+    // A login reads the same record for its vault: the persona it was started as.
+    let login_as = |session| {
+        chats
+            .login_asker(plane.path(), session)
+            .and_then(|(asker, _)| asker.persona)
+    };
+    assert_eq!(login_as(handed).as_deref(), Some("qa"));
+    assert_eq!(login_as(on_none), None, "no default stands in for a vault");
+
+    // Fixed at the start: its own grants allowed, or a new default, change it at the next.
+    assert!(chats.allow_own_grants(handed));
+    default_is("qa");
+    assert_eq!(chats.persona_of(handed), named(Some("qa"), Some("devops")));
+    assert_eq!(chats.persona_of(on_none), named(None, Some("devops")));
+    assert_eq!(
+        chats.persona_of(99),
+        None,
+        "a chat this app does not have open"
+    );
 }
 
 /// A board of live asks that writes down what it was told (#2629), standing in for a chat's
@@ -7865,6 +7952,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 ran: Some(purlis_session_protocol::session::RunSandbox::By(
                     "seatbelt".to_owned(),
                 )),
+                grants_as: None,
             },
         );
     }
