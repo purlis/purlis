@@ -1441,7 +1441,9 @@ impl Store {
                 (when, name)
             })
             .collect();
-        ranked.sort_by(|one, other| other.0.total_cmp(&one.0));
+        // Newest first, and a tie by name: the strip draws the pins in this order, so it
+        // must not hang on which of two equally active workspaces the disk listed first.
+        ranked.sort_by(|one, other| other.0.total_cmp(&one.0).then_with(|| one.1.cmp(&other.1)));
         for (_, name) in ranked.into_iter().take(FIRST_OPEN_PINS) {
             if entry.pinned_workspaces.len() >= MOST_PINNED_WORKSPACES {
                 break;
