@@ -4213,6 +4213,21 @@ impl Confinement {
             Proxied::Elsewhere(elsewhere) => elsewhere.held.withdraw_port(port),
         }
     }
+
+    /// **`port` of this machine, withdrawn, is carried by its proxy again as it was given**
+    /// (#2625): what a runner does for a chat whose port it withdrew because no window was left,
+    /// once its window takes it back. Only a proxy of this process's own gives one back.
+    pub fn give_back_port(&self, port: u16) -> Result<(), String> {
+        match &self.proxy {
+            Proxied::Here(proxy) => {
+                proxy.give_back_port(port);
+                Ok(())
+            }
+            Proxied::Elsewhere(_) => Err(format!(
+                "port {port} is given back only by the session host that runs the chat's proxy"
+            )),
+        }
+    }
 }
 
 /// Each harness's own form of the policy, one variant per compiler.

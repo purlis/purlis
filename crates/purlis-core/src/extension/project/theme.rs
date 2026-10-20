@@ -28,6 +28,15 @@
 //! A value that is none of the shapes is ignored with a sentence and the next layer down is used,
 //! as a setting's is ([`super::Ignored`]).
 //!
+//! # Option values (#2707)
+//!
+//! `[theme] options`, and a workspace's `settings.theme.options`, name a value of each of the
+//! picked theme's options by the option's id (`options = { accent = "teal" }`), as the person's
+//! choice does (`crate::theme::choices`). They belong to the layer's pick: the theme levels draw
+//! them over that theme when its layer is the one that chose (`crate::theme::levels`), and an
+//! option a layer names no value for draws the theme's default. Options with no pick choose
+//! nothing.
+//!
 //! # The icon theme (FM-3, #1106)
 //!
 //! `[theme] icons` picks the icons the file trees draw, from the same layers in the same order:
@@ -69,6 +78,10 @@ pub fn is_appearance(value: &str) -> bool {
 /// What a value that is not an appearance is told.
 pub const NOT_AN_APPEARANCE: &str = "which is not system or the id of one of the theme's \
                                      appearances";
+
+/// The key in [`TABLE`] that names a value of each of the picked theme's options (#2707): a table
+/// of option ids, each with one of its values' ids.
+pub const OPTIONS: &str = "options";
 
 /// The key in [`TABLE`] that picks the icon theme (FM-3, #1106).
 pub const ICONS: &str = "icons";
@@ -240,6 +253,8 @@ pub struct Said {
     icons: Layers,
     /// Each layer's [`APPEARANCE`], as found (#2323).
     appearance: Layers,
+    /// Each layer's [`OPTIONS`], as found (#2707).
+    options: Layers,
     /// The workspace's `settings.theme.colour`, as found.
     colour: Option<toml::Value>,
     /// The workspace these were read in, when they were.
@@ -283,6 +298,11 @@ impl Said {
                 local: local.and_then(|text| said(text, APPEARANCE)),
                 workspace: None,
             },
+            options: Layers {
+                shared: shared.and_then(|text| said(text, OPTIONS)),
+                local: local.and_then(|text| said(text, OPTIONS)),
+                workspace: None,
+            },
             ..Self::default()
         }
     }
@@ -300,6 +320,7 @@ impl Said {
         self.workspace = settings.as_ref().and_then(|top| said_in(top, USE));
         self.icons.workspace = settings.as_ref().and_then(|top| said_in(top, ICONS));
         self.appearance.workspace = settings.as_ref().and_then(|top| said_in(top, APPEARANCE));
+        self.options.workspace = settings.as_ref().and_then(|top| said_in(top, OPTIONS));
         self.colour = settings.as_ref().and_then(|top| said_in(top, COLOUR));
         self.workspace_name = Some(name.to_owned());
         self
@@ -363,6 +384,20 @@ impl Said {
         (
             used.and_then(toml::Value::as_str),
             self.appearance.of(source).and_then(toml::Value::as_str),
+        )
+    }
+
+    /// **The option values the layer `source` names** (#2707), as the person's choice holds them
+    /// ([`crate::theme::choices::values_from`]): each whose option and value are ids, at most as
+    /// many as a theme may have options; anything else is left out, as is a value that is not a
+    /// table. A layer other than Shared, Local and the workspace names none.
+    pub fn options_in(&self, source: Source) -> crate::theme::Values {
+        let table = self.options.of(source).and_then(toml::Value::as_table);
+        crate::theme::choices::values_from(
+            table
+                .into_iter()
+                .flatten()
+                .map(|(id, value)| (id.as_str(), value.as_str())),
         )
     }
 
@@ -735,6 +770,16 @@ pub fn keyed(text: &str, file: &str) -> Vec<Refusal> {
                     &at,
                 ));
             }
+            OPTIONS => out.extend(
+                options_refused(value, &format!("{TABLE}.{OPTIONS} in {file}"), |option| {
+                    format!("{TABLE}.{OPTIONS}.{option} in {file}")
+                })
+                .into_iter()
+                .map(|(why, option)| match option {
+                    Some(option) => Refusal::at(why, &[TABLE, OPTIONS, option]),
+                    None => Refusal::at(why, &[TABLE, OPTIONS]),
+                }),
+            ),
             USE | APPEARANCE | ICONS => {}
             _ => {
                 let colour = if key == COLOUR {
@@ -744,8 +789,8 @@ pub fn keyed(text: &str, file: &str) -> Vec<Refusal> {
                 };
                 out.push(Refusal::at(
                     format!(
-                        "{TABLE}.{} in {file} is not read — [{TABLE}] holds {USE}, {APPEARANCE} \
-                         and {ICONS} and nothing else{colour}",
+                        "{TABLE}.{} in {file} is not read — [{TABLE}] holds {USE}, {APPEARANCE}, \
+                         {OPTIONS} and {ICONS} and nothing else{colour}",
                         toml_edit::Key::new(key.as_str()).display_repr()
                     ),
                     &at,
@@ -797,16 +842,91 @@ pub fn keyed_in_workspace(top: &toml::Table, file: &str) -> Vec<Refusal> {
             APPEARANCE if !value.as_str().is_some_and(is_appearance) => {
                 format!("{at} is {value}, {NOT_AN_APPEARANCE}")
             }
+            OPTIONS => {
+                let named =
+                    |option: &str| format!("{WORKSPACE_AT}{TABLE}.{OPTIONS}.{option} in {file}");
+                for (why, option) in options_refused(value, &at, named) {
+                    let path: &[&str] = match option {
+                        Some(option) => &[TABLE, OPTIONS, option],
+                        None => &[TABLE, OPTIONS],
+                    };
+                    out.push(Refusal::at(why, path));
+                }
+                continue;
+            }
             USE | APPEARANCE | COLOUR | ICONS => continue,
             _ => format!(
-                "{at} is not read — a workspace's {TABLE} holds {USE}, {APPEARANCE}, {ICONS} and \
-                 {COLOUR} and nothing else"
+                "{at} is not read — a workspace's {TABLE} holds {USE}, {APPEARANCE}, {OPTIONS}, \
+                 {ICONS} and {COLOUR} and nothing else"
             ),
         };
         out.push(Refusal::at(said, &[TABLE, key.as_str()]));
     }
     out
 }
+
+/// What is refused in an [`OPTIONS`] value, `at` naming the key and `named` each option's key
+/// in a sentence: not a table; more options than a theme may have; an option whose id is not
+/// one; a value that is not an id. Each with the option it is about, when it is about one.
+///
+/// What the file holds is quoted as a sentence may show it: each option's key as TOML writes it
+/// (`display_repr`), so no character of it is drawn raw, and each value escaped and cut to
+/// [`QUOTED`].
+fn options_refused<'a>(
+    value: &'a toml::Value,
+    at: &str,
+    named: impl Fn(&str) -> String,
+) -> Vec<(String, Option<&'a str>)> {
+    use crate::theme::choices::{MOST_VALUES, is_id};
+    let quoted = |value: &toml::Value| crate::shown::readable(&value.to_string(), QUOTED);
+    let named = |option: &str| named(&toml_edit::Key::new(option).display_repr());
+    let Some(table) = value.as_table() else {
+        return vec![(
+            format!(
+                "{at} is {}, which is not a table of option ids and their values",
+                quoted(value)
+            ),
+            None,
+        )];
+    };
+    let mut out = Vec::new();
+    if table.len() > MOST_VALUES {
+        out.push((
+            format!(
+                "{at} names {} options, more than the {MOST_VALUES} a theme may have",
+                table.len()
+            ),
+            None,
+        ));
+        return out;
+    }
+    for (option, given) in table {
+        if !is_id(option) {
+            out.push((
+                format!(
+                    "{} is {} for an option whose id is not one — an option and its value are \
+                     each named by their id",
+                    named(option),
+                    quoted(given)
+                ),
+                Some(option.as_str()),
+            ));
+        } else if !given.as_str().is_some_and(is_id) {
+            out.push((
+                format!(
+                    "{} is {}, which is not the id of one of the option's values",
+                    named(option),
+                    quoted(given)
+                ),
+                Some(option.as_str()),
+            ));
+        }
+    }
+    out
+}
+
+/// The most of a value from a file an options refusal quotes.
+const QUOTED: usize = 80;
 
 #[cfg(test)]
 mod tests;

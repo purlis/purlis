@@ -103,6 +103,14 @@ impl DevTools for Connection {
 /// The script that says whether a document has loaded: a constant, never the caller's words.
 pub(crate) const READY_STATE: &str = "document.readyState";
 
+/// The script that answers once its document has drawn two frames (#2690): what a scroll moved
+/// is then drawn, and the browser routes input by where it is drawn now. A constant.
+pub(crate) const DRAWN_TWICE: &str =
+    "new Promise((drawn) => requestAnimationFrame(() => requestAnimationFrame(() => drawn(true))))";
+
+/// How long a document is given to draw those two frames.
+const DRAWN_WITHIN: Duration = Duration::from_secs(1);
+
 /// The function that chooses a drop-down's options, given the drop-down as it is in purlis's
 /// own world (#2138). A constant: the options the caller named reach it only as its argument,
 /// a value.
@@ -1784,7 +1792,28 @@ impl Browser {
     /// The page point at the centre of `at`, brought into view first when `scroll`: the
     /// element in its own document, then, outermost first, each frame between around the point
     /// where the element is in it. Where the frames are drawn is read again after those scrolls.
+    /// Where the element is not shown through every frame on the first read, each frame element
+    /// is scrolled into view, outermost first, and read again before it is answered "not shown"
+    /// (#2690). The point is only ever one the page's own window shows.
     fn point(&self, target: &Ref, at: &Located, scroll: bool) -> Result<(f64, f64), Refusal> {
+        let point = self.aimed(target, at, scroll)?;
+        if self.in_window(&at.page_session, point) {
+            Ok(point)
+        } else {
+            Err(Refusal::NotShown(target.clone()))
+        }
+    }
+
+    /// Whether `point`, in CSS pixels of the page on `session`, lies inside what the page's own
+    /// window shows of it, at least half a pixel in from every edge: the viewport events are
+    /// dispatched in. Unknown is not inside.
+    fn in_window(&self, session: &str, (x, y): (f64, f64)) -> bool {
+        self.viewport_of(session, true)
+            .is_some_and(|window| shown(x, y, (window.width, window.height)))
+    }
+
+    /// [`Browser::point`], before it is held to the page's window.
+    fn aimed(&self, target: &Ref, at: &Located, scroll: bool) -> Result<(f64, f64), Refusal> {
         if scroll {
             let _ = self.gated(|| {
                 self.devtools().call(
@@ -1794,11 +1823,26 @@ impl Browser {
                 )
             })?;
         }
-        let (place, centre) = self.placed_centre(target, at)?;
+        let (mut place, mut centre) = self.placed_centre(target, at)?;
         if !scroll || at.boundaries.is_empty() {
             return place
                 .drawn_at(centre)
                 .ok_or_else(|| Refusal::NotShown(target.clone()));
+        }
+        if place.through(centre).is_none() {
+            // A frame below the fold of the frame around it hides the element until it is
+            // scrolled to: each frame element is brought into view, outermost first, and the
+            // frames read again.
+            for (owner, (_, parent_session)) in place.owners.iter().zip(&at.boundaries) {
+                let _ = self.gated(|| {
+                    self.devtools().call(
+                        "DOM.scrollIntoViewIfNeeded",
+                        json!({ "backendNodeId": owner }),
+                        Some(parent_session),
+                    )
+                })?;
+            }
+            (place, centre) = self.placed_centre(target, at)?;
         }
         let (_, boxes) = place
             .through(centre)
@@ -1820,6 +1864,10 @@ impl Browser {
                 return Err(refusal(CallError::TimedOut));
             }
         }
+        // The browser routes a press by where each document is drawn, which follows a scroll by
+        // a frame or more: each document between the page and the element draws the scroll
+        // before it is aimed at.
+        self.drawn_twice(at);
         // A scroll into view may still be carried to the documents around the element after it
         // answers: aim only once two reads apart say the same.
         let mut last = self.placed_centre(target, at)?;
@@ -1838,6 +1886,35 @@ impl Browser {
             .then(|| place.drawn_at(centre))
             .flatten()
             .ok_or_else(|| Refusal::NotShown(target.clone()))
+    }
+
+    /// Waits, in purlis's own world in each document from the page to `at`'s, for that document
+    /// to draw two frames, each for at most [`DRAWN_WITHIN`]. A document that draws nothing in
+    /// that time is not waited for longer: where it is drawn is still read and contained.
+    fn drawn_twice(&self, at: &Located) {
+        let inner_sessions = at
+            .boundaries
+            .iter()
+            .skip(1)
+            .map(|(_, parent)| parent.as_str())
+            .chain(std::iter::once(at.node_session.as_str()));
+        let documents = std::iter::once((at.page_session.as_str(), at.target.as_str()))
+            .chain(inner_sessions.zip(at.boundaries.iter().map(|(frame, _)| frame.as_str())));
+        for (session, frame) in documents {
+            let _ = self.in_world(session, frame, |world| {
+                self.devtools().call_within(
+                    "Runtime.evaluate",
+                    json!({
+                        "expression": DRAWN_TWICE,
+                        "uniqueContextId": world.unique,
+                        "awaitPromise": true,
+                        "returnByValue": true,
+                    }),
+                    Some(session),
+                    DRAWN_WITHIN,
+                )
+            });
+        }
     }
 
     /// Where the frames between the page and `at` are drawn, and `at`'s centre in its own

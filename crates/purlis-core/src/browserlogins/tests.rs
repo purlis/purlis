@@ -8,8 +8,8 @@
 use std::path::Path;
 
 use super::{
-    Declared, FILE, Keys, Store, hold, identity_of, mark, open_into, seal, sweep, unseal,
-    wipe_profile,
+    DIR, Declared, FILE, Keys, Store, hold, hold_since, identity_of, kept_with, lock_keys, mark,
+    open_into, removed, seal, sweep, unseal, wipe_profile,
 };
 use crate::secrets::keyring::FileStore;
 
@@ -381,4 +381,125 @@ fn a_store_is_never_made_through_a_link() {
             "{linked:?}"
         );
     }
+}
+
+// ---- Tightened after #2021 (#2693) ----
+
+#[test]
+fn opening_a_store_waits_for_a_write_back_under_way() {
+    let base = tempfile::tempdir().unwrap();
+    let (data, browser) = (base.path().join("data"), base.path().join("browser"));
+    let keyring = FileStore::at(base.path().join("keyring.json"));
+    a_signed_in_browser(&browser);
+    let store = shop("claude");
+    hold(&data, &store)
+        .unwrap()
+        .unwrap()
+        .keep(&browser, &keys(&keyring))
+        .unwrap();
+    // A write-back holds the keyring's lock from its read of the generation to its write.
+    let writing = lock_keys(&data).unwrap();
+    let (opened, done) = std::sync::mpsc::channel();
+    let (into, at) = (base.path().join("copy"), data.clone());
+    let keyring_path = base.path().join("keyring.json");
+    let opening = std::thread::spawn(move || {
+        let keyring = FileStore::at(keyring_path);
+        let _ = opened.send(open_into(&at, &shop("claude"), &into, &keys(&keyring)));
+    });
+
+    assert!(
+        done.recv_timeout(std::time::Duration::from_millis(300))
+            .is_err(),
+        "it reads the store and its generation only once the write is done"
+    );
+    drop(writing);
+    assert!(done.recv().unwrap().unwrap(), "it opens as last written");
+    opening.join().unwrap();
+}
+
+#[test]
+fn a_hold_taken_for_a_browser_that_began_before_its_profile_was_removed_makes_nothing() {
+    let base = tempfile::tempdir().unwrap();
+    let data = base.path().join("data");
+    let began = std::time::SystemTime::now();
+    // The profile never kept a login, and is removed while its browser runs.
+    removed(&data, "claude").unwrap();
+
+    let why = hold_since(&data, &shop("claude"), began).unwrap_err();
+
+    assert!(why.contains("removed"), "{why}");
+    assert!(
+        !data.join(DIR).join("claude").exists(),
+        "no folder made again"
+    );
+    // A browser that begins after it, as a new profile of the name's, keeps as any.
+    assert!(hold(&data, &shop("claude")).unwrap().is_some());
+}
+
+#[test]
+fn a_removed_profile_with_no_store_is_still_marked_removed() {
+    let base = tempfile::tempdir().unwrap();
+    let data = base.path().join("data");
+    let keyring = FileStore::at(base.path().join("keyring.json"));
+    let began = std::time::SystemTime::now();
+
+    wipe_profile(
+        &data,
+        &base.path().join("browsers"),
+        "claude",
+        &keys(&keyring),
+    )
+    .unwrap();
+
+    assert!(hold_since(&data, &shop("claude"), began).is_err());
+    assert!(!data.join(DIR).join("claude").exists());
+}
+
+#[test]
+fn no_login_is_kept_on_a_build_that_lists_nothing_it_leaves_out() {
+    assert!(kept_with(&["Cache"]).is_ok());
+    let why = kept_with(&[]).unwrap_err();
+    assert!(why.contains("not kept on this build"), "{why}");
+}
+
+#[test]
+fn a_hold_taken_just_before_its_profile_was_removed_writes_nothing_back() {
+    let base = tempfile::tempdir().unwrap();
+    let (data, browser) = (base.path().join("data"), base.path().join("browser"));
+    let keyring = FileStore::at(base.path().join("keyring.json"));
+    a_signed_in_browser(&browser);
+    let store = shop("claude");
+    let began = std::time::SystemTime::now();
+    let held = hold_since(&data, &store, began).unwrap().expect("held");
+
+    removed(&data, "claude").unwrap();
+
+    let why = held.keep(&browser, &keys(&keyring)).unwrap_err();
+    assert!(why.contains("removed"), "{why}");
+    assert!(
+        !store.dir(&data).join(FILE).exists(),
+        "no state.sealed left"
+    );
+}
+
+#[test]
+fn a_removal_marked_again_replaces_its_mark_whole() {
+    let base = tempfile::tempdir().unwrap();
+    let data = base.path().join("data");
+    removed(&data, "claude").unwrap();
+    let began = std::time::SystemTime::now();
+    removed(&data, "claude").unwrap();
+
+    assert!(hold_since(&data, &shop("claude"), began).is_err());
+    let left: Vec<_> = std::fs::read_dir(data.join(DIR))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(".removed-"))
+        .collect();
+    assert_eq!(
+        left,
+        [".removed-claude"],
+        "nothing written beside it is left"
+    );
 }

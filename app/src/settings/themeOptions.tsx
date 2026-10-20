@@ -30,11 +30,17 @@ export function useOptionsInForce(): readonly WindowOption[] | undefined {
   return options;
 }
 
-/** The level whose choice made a value, as its badge names it, and where that choice is kept. */
+/** The level whose choice made a value, as its badge names it, and where that choice is kept:
+ *  the person's on this machine, or a committed default the team shares (#2707). */
 const LEVELS: Record<string, { label: string; where: string }> = {
-  "workspace-choice": { label: "Workspace", where: "your choice for this workspace" },
-  "project-choice": { label: "Project", where: "your choice for this project" },
-  "machine-default": { label: "This machine", where: "your machine default" },
+  "workspace-choice": {
+    label: "Workspace",
+    where: "your choice for this workspace on this machine",
+  },
+  "workspace-default": { label: "Team", where: "this workspace's committed default" },
+  "project-choice": { label: "Project", where: "your choice for this project on this machine" },
+  "project-default": { label: "Team", where: "this project's committed default" },
+  "machine-default": { label: "This machine", where: "your machine default on this machine" },
 };
 
 /** Where an option's value comes from, as its badge says it: the level whose choice made it,
@@ -50,7 +56,7 @@ export function optionBadge(option: WindowOption): Badge {
     ? { label: "Chosen", says: `${option.label} is drawn as it was chosen for this theme.` }
     : {
         label: level.label,
-        says: `${option.label} is drawn as ${level.where} on this machine has it.`,
+        says: `${option.label} is drawn as ${level.where} has it.`,
       };
 }
 

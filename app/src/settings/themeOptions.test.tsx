@@ -79,6 +79,16 @@ describe("Settings › Theme › Options (#2325, #2331)", () => {
     );
   });
 
+  it("names a committed default's value as the team's (#2707)", async () => {
+    answering(() => [{ ...ACCENT, level: "project-default" }]);
+    render(<Row />);
+    const accent = await screen.findByText(/^Accent: Teal/);
+    expect(accent.textContent).toContain("Team");
+    expect(accent.querySelector(".ui-setting-badge")?.getAttribute("title")).toBe(
+      "Accent is drawn as this project's committed default has it.",
+    );
+  });
+
   it("says when the theme drawn has no options", async () => {
     answering(() => []);
     render(<Row />);
