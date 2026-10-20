@@ -138,7 +138,7 @@ impl Browser {
     /// What the viewport of `session`'s document shows, in CSS pixels: the page's visual
     /// viewport where elements are drawn on the screen, or, `in_document`, the document's own
     /// layout viewport where its elements are laid out (a frame read in a session of its own).
-    fn viewport_of(&self, session: &str, in_document: bool) -> Option<Rect> {
+    pub(super) fn viewport_of(&self, session: &str, in_document: bool) -> Option<Rect> {
         self.devtools()
             .call("Page.getLayoutMetrics", json!({}), Some(session))
             .ok()

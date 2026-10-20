@@ -115,6 +115,27 @@ fn a_device_id_and_key_are_written_and_read_as_one_line() {
     }
 }
 
+/// A key is read in its one spelling (#2683): X25519 ignores a key's last bit, so a key with
+/// it set is the same key spelled another way, and it is refused rather than taken for
+/// another key.
+#[test]
+fn a_public_key_with_its_ignored_last_bit_set_is_refused() {
+    let line = |last: &str| format!(r#"{{"device":"01JA","key":"{}{last}"}}"#, "00".repeat(31));
+    assert!(from_line(&line("7f")).is_ok());
+    for set in ["80", "ff"] {
+        assert!(
+            from_line(&line(set)).is_err(),
+            "a key ending {set} was taken"
+        );
+    }
+    let ours = desktop();
+    assert_eq!(
+        ours.key.as_bytes()[31] & 0x80,
+        0,
+        "a made key never sets it"
+    );
+}
+
 fn write_peers(folder: &std::path::Path, text: &str) {
     purlis_same_user::PrivateDirectory::open(&crate::machine::dir(folder))
         .unwrap()

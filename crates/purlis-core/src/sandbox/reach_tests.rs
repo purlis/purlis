@@ -309,6 +309,26 @@ fn a_withdrawn_port_is_carried_no_longer_by_name_or_by_address() {
     }
 }
 
+/// #2625: a port withdrawn and given back is carried again, by every copy, as it was given;
+/// one never given stays refused however it is given back.
+#[test]
+fn a_port_given_back_is_carried_again_as_it_was_given_and_only_then() {
+    let reach = granted(50795);
+    let carrying = reach.clone();
+    let before = reach.decide("127.0.0.1", 50795, HTTPS, &[]);
+    reach.withdraw(50795);
+    reach.give_back(50795);
+    reach.give_back(50796);
+    for one in [&reach, &carrying] {
+        assert_eq!(one.decide("127.0.0.1", 50795, HTTPS, &[]), before);
+        assert!(!one.withdrew(50795));
+        assert_eq!(
+            one.decide("127.0.0.1", 50796, HTTPS, &[]),
+            Decision::Refused(Refused::LocalAddress)
+        );
+    }
+}
+
 /// #1999: a reach written down for the session host and read back there is the same reach,
 /// layer by layer and in the same order, with what policy pins, the ports withdrawn and the
 /// floor, so the proxy the host starts decides exactly as one started here would.

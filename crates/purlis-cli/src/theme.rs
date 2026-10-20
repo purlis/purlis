@@ -41,6 +41,14 @@
 //! folder (`theme::drafts`), and `check draft:<folder>` checks it as the window draws it: with
 //! its hard floors, which keep a draft that breaks one from being drawn.
 //!
+//! **Each level's choice** (#2707): `list` shows, after the themes, what every level chose,
+//! nearest first: the person's choice and the committed default of each workspace, of the
+//! project and the person's machine default, each with the level of the theme folder it reads
+//! (`from`), its appearance and its option values. `check` names the levels that chose the theme
+//! it checks. The levels are read by the engine ([`theme::Levels::read`]) exactly as the window
+//! reads them; whether a choice is drawn where it is made is the window's to resolve, since it
+//! hangs on the extensions in force and the system's appearance there.
+//!
 //! **The exit is a linter's.** `check` exits 0 when the theme is drawn, notes and warnings or
 //! not (a contrast finding is the author's call, ADR 0097 §2); 1 when it is refused, or is a
 //! draft that breaks a hard floor; 2 when there is no such theme here.
@@ -454,18 +462,21 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
     match command {
         ThemeCommand::List { json } => {
             let found = available(here);
+            let chosen = every_choice(here);
             if *json {
                 let themes: Vec<Value> = found.iter().map(Found::summary_json).collect();
+                let choices: Vec<Value> = chosen.iter().map(Chose::json).collect();
                 println!(
                     "{}",
                     json!({
                         "schema": SCHEMA,
                         "theme_schema": theme::SCHEMA_URL,
-                        "themes": themes
+                        "themes": themes,
+                        "choices": choices,
                     })
                 );
             } else {
-                print!("{}", table(&found));
+                print!("{}{}", table(&found), choices_table(&chosen));
             }
             ExitCode::SUCCESS
         }
@@ -487,10 +498,16 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
                 }
             };
             let checked = checks(&found);
+            let chosen: Vec<Chose> = every_choice(here)
+                .into_iter()
+                .filter(|one| one.id.as_deref() == Some(found.id.as_str()))
+                .collect();
             if *json {
-                println!("{}", checked_json(&found, &checked));
+                let mut said = checked_json(&found, &checked);
+                said["chosen"] = chosen.iter().map(Chose::json).collect();
+                println!("{said}");
             } else {
-                print!("{}", checked_text(&found, &checked, &|_, _| None));
+                print!("{}", checked_text(&found, &checked, &chosen, &|_, _| None));
             }
             // A draft that breaks a hard floor is not drawn: the linter's 1, as a refusal is.
             let undrawn = matches!(found.from, From::Draft { .. })
@@ -678,7 +695,7 @@ fn imported_text(
             .then(|| imported.palette_entry(appearance, token))
             .flatten()
     };
-    out.push_str(&checked_text(found, checked, &entry));
+    out.push_str(&checked_text(found, checked, &[], &entry));
     if let Some(path) = written {
         let path = shown::readable(&path.display().to_string(), PATH_LIMIT);
         out.push_str(&format!(
@@ -896,6 +913,201 @@ fn available(here: Here<'_>) -> Vec<Found> {
         found.extend(extensions(config));
     }
     found
+}
+
+/// **One level's choice** (#2707): the level of the precedence that made it, the workspace it
+/// is made for (levels 1 and 2), the choice as the engine read it, placed at the level of the
+/// folder it reads, and the id `list` names the theme it picks by.
+struct Chose {
+    level: theme::Level,
+    workspace: Option<String>,
+    choice: theme::Choice,
+    /// `None` for a choice of a theme folder no level within its reach has.
+    id: Option<String>,
+}
+
+impl Chose {
+    /// Who chose, as the CHOSEN BY column and the check's `chosen by:` line say it.
+    fn by(&self) -> String {
+        let place = match &self.workspace {
+            Some(name) => format!("{WORKSPACE} {}", shown::short(name)),
+            None => match self.level {
+                theme::Level::MachineDefault | theme::Level::Purlis => MACHINE.to_owned(),
+                _ => PROJECT.to_owned(),
+            },
+        };
+        let whose = match self.level {
+            theme::Level::WorkspaceDefault | theme::Level::ProjectDefault => "committed",
+            _ => "yours",
+        };
+        format!("{place}, {whose}")
+    }
+
+    /// Its option values as `<option>=<value>`, by the option's id; `None` with none.
+    fn values_said(&self) -> Option<String> {
+        (!self.choice.options.is_empty()).then(|| {
+            self.choice
+                .options
+                .iter()
+                .map(|(option, value)| format!("{option}={value}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+    }
+
+    /// As `list --json` (`choices`) and `check --json` (`chosen`) answer it.
+    fn json(&self) -> Value {
+        json!({
+            "level": self.level,
+            "workspace": self.workspace,
+            "theme": self.choice.theme,
+            "id": self.id,
+            "from": self.choice.from.map(Reach::word),
+            "appearance": self.choice.appearance,
+            "options": self.choice.options,
+        })
+    }
+}
+
+/// **What every level chose here**, nearest first, as the engine reads the levels: each
+/// workspace's (by name) person's choice and committed default, then the project's, then the
+/// person's machine default. Outside a plane, the machine default alone.
+fn every_choice(here: Here<'_>) -> Vec<Chose> {
+    let mut chosen = Vec::new();
+    let mut take = |levels: theme::Levels, workspace: Option<&str>, wanted: &[theme::Level]| {
+        let at = match workspace {
+            Some(name) => Level::Workspace(name.to_owned()),
+            None => Level::Project,
+        };
+        let folders = folders(here, &at);
+        for (level, choice) in levels.each() {
+            if !wanted.contains(&level) {
+                continue;
+            }
+            let choice = choice.clone().placed(&folders, level.reach());
+            let id = id_of(here, &choice, level.reach(), workspace);
+            chosen.push(Chose {
+                level,
+                workspace: workspace.map(str::to_owned),
+                choice,
+                id,
+            });
+        }
+    };
+    let Some(plane) = here.plane else {
+        take(
+            theme::Levels::read(here.config, None, None),
+            None,
+            &[theme::Level::MachineDefault],
+        );
+        return chosen;
+    };
+    let workspaces = purlis_core::workspaces::Plane::open(plane)
+        .workspaces()
+        .unwrap_or_default();
+    for name in &workspaces {
+        take(
+            theme::Levels::read(here.config, Some(plane), Some(name)),
+            Some(name),
+            &[
+                theme::Level::WorkspaceChoice,
+                theme::Level::WorkspaceDefault,
+            ],
+        );
+    }
+    take(
+        theme::Levels::read(here.config, Some(plane), None),
+        None,
+        &[
+            theme::Level::ProjectChoice,
+            theme::Level::ProjectDefault,
+            theme::Level::MachineDefault,
+        ],
+    );
+    chosen
+}
+
+/// The id `list` names the theme `choice` picks by, made at a level that reaches `reach` (in
+/// `workspace`, for a workspace's): Purlis or Purlis Classic, an extension's
+/// `<extension>/<theme>`, a theme folder's `<level>:<folder>` at the level it names, or the
+/// person's own (`mine`) for the old `system` id when that has a dark and a light appearance.
+/// `None` for a folder no level within reach has, or a level nearer than the choice reaches.
+fn id_of(
+    here: Here<'_>,
+    choice: &theme::Choice,
+    reach: Reach,
+    workspace: Option<&str>,
+) -> Option<String> {
+    use extension::project::theme::Pick;
+    Some(match Pick::parse(&choice.theme)? {
+        Pick::BuiltIn(id) if id == theme::PURLIS => theme::PURLIS.to_owned(),
+        Pick::BuiltIn(_) => theme::CLASSIC.to_owned(),
+        Pick::Extension { id, name } => format!("{id}/{name}"),
+        Pick::System => {
+            let theirs = theme::read_theirs(here.config).theme;
+            let both = theirs.as_ref().is_some_and(|one| {
+                one.of(theme::Appearance::Dark).is_some()
+                    && one.of(theme::Appearance::Light).is_some()
+            });
+            if both { MINE } else { theme::CLASSIC }.to_owned()
+        }
+        Pick::Folder(name) => {
+            let from = choice.from.filter(|level| *level >= reach)?;
+            let level = match from {
+                Reach::Machine => Level::Machine,
+                Reach::Project => Level::Project,
+                Reach::Workspace => Level::Workspace(workspace?.to_owned()),
+            };
+            level.id(&name)
+        }
+    })
+}
+
+/// What every level chose, as a person reads it, after the themes: one row each, nearest
+/// first, with the level of the folder it reads, its appearance and its option values (`-` for
+/// none). Nothing when no level chose.
+fn choices_table(chosen: &[Chose]) -> String {
+    if chosen.is_empty() {
+        return String::new();
+    }
+    let header = ["CHOSEN BY", "THEME", "FROM", "APPEARANCE", "OPTIONS"];
+    let none = || "-".to_owned();
+    let rows: Vec<[String; 5]> = chosen
+        .iter()
+        .map(|one| {
+            [
+                one.by(),
+                shown::short(&one.choice.theme),
+                one.choice.from.map_or_else(none, |it| it.word().to_owned()),
+                one.choice
+                    .appearance
+                    .as_deref()
+                    .map_or_else(none, shown::short),
+                one.values_said()
+                    .map_or_else(none, |it| shown::readable(&it, 240)),
+            ]
+        })
+        .collect();
+    let mut widths = header.map(str::len);
+    for row in &rows {
+        for (width, cell) in widths.iter_mut().zip(row) {
+            *width = (*width).max(cell.len());
+        }
+    }
+    let line = |cells: [&str; 5]| {
+        let padded: Vec<String> = cells
+            .iter()
+            .zip(widths)
+            .map(|(cell, width)| format!("{cell:width$}"))
+            .collect();
+        format!("  {}\n", padded.join("  ").trim_end())
+    };
+    let mut out = "chosen, nearest first:\n".to_owned();
+    out.push_str(&line(header));
+    for row in &rows {
+        out.push_str(&line([&row[0], &row[1], &row[2], &row[3], &row[4]]));
+    }
+    out
 }
 
 /// The levels' theme folders as the window reads them in front of `level`: the machine's alone,
@@ -1475,6 +1687,7 @@ fn options_line(theme: &Theme) -> Option<String> {
 fn checked_text(
     found: &Found,
     checked: &[theme::Checked],
+    chosen: &[Chose],
     entry: &dyn Fn(&str, &str) -> Option<String>,
 ) -> String {
     let mut out = String::new();
@@ -1504,6 +1717,19 @@ fn checked_text(
     ));
     if let Some(line) = options_line(theme) {
         out.push_str(&line);
+    }
+    if !chosen.is_empty() {
+        let each: Vec<String> = chosen
+            .iter()
+            .map(|one| match one.values_said() {
+                Some(values) => format!("{} ({values})", one.by()),
+                None => one.by(),
+            })
+            .collect();
+        out.push_str(&format!(
+            "chosen by: {}\n",
+            shown::readable(&each.join("; "), 480)
+        ));
     }
     if found.notes.is_empty() {
         out.push_str("left out: nothing\n");

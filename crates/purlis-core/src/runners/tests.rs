@@ -5,7 +5,11 @@ use super::*;
 use crate::dockerpool::tests::{FakeDocker, ID, inspected, made};
 use purlis_session_protocol::hostlink::LinkKey;
 
-const OURS: &str = "01JA0DESKT0P00000000000000";
+/// This desktop: its device id and the public half of the link key it links with.
+static OURS: std::sync::LazyLock<Pinned> = std::sync::LazyLock::new(|| Pinned {
+    device: "01JA0DESKT0P00000000000000".into(),
+    key: LinkKey::generate().unwrap().public(),
+});
 
 fn answered(device: &str) -> Pinned {
     Pinned {
@@ -32,7 +36,7 @@ fn other_made(name: &str, id: &str) -> Made {
 fn a_kept_runner_is_read_back_as_it_was_paired() {
     let config = tempfile::tempdir().unwrap();
     let runner = answered("01JB0RUNNER0000000000000000");
-    let kept = keep(config.path(), &made(), &runner, OURS).unwrap();
+    let kept = keep(config.path(), &made(), &runner, &OURS).unwrap();
     assert_eq!(read(config.path()).unwrap(), vec![kept.clone()]);
     assert_eq!(kept.pinned, runner);
     assert_eq!(kept.made, made());
@@ -47,7 +51,7 @@ fn the_kept_file_holds_the_ruled_keys_for_its_user_alone() {
         config.path(),
         &made(),
         &answered("01JB0RUNNER0000000000000000"),
-        OURS,
+        &OURS,
     )
     .unwrap();
     let path = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
@@ -85,12 +89,12 @@ fn the_kept_file_holds_the_ruled_keys_for_its_user_alone() {
 fn a_second_answer_with_another_key_for_a_kept_runner_is_refused_and_the_pin_stays() {
     let config = tempfile::tempdir().unwrap();
     let first = answered("01JB0RUNNER0000000000000000");
-    let kept = keep(config.path(), &made(), &first, OURS).unwrap();
+    let kept = keep(config.path(), &made(), &first, &OURS).unwrap();
     for later in [
         answered("01JB0RUNNER0000000000000000"),
         answered("01JC0ANOTHER000000000000000"),
     ] {
-        let refused = keep(config.path(), &made(), &later, OURS).unwrap_err();
+        let refused = keep(config.path(), &made(), &later, &OURS).unwrap_err();
         assert_eq!(
             refused,
             Refused::KeyChanged {
@@ -105,19 +109,19 @@ fn a_second_answer_with_another_key_for_a_kept_runner_is_refused_and_the_pin_sta
     // Another container under the kept name is refused the same way.
     let elsewhere = other_made("first", &"a".repeat(64));
     assert!(matches!(
-        keep(config.path(), &elsewhere, &first, OURS),
+        keep(config.path(), &elsewhere, &first, &OURS),
         Err(Refused::KeyChanged { .. })
     ));
     assert_eq!(read(config.path()).unwrap(), vec![kept.clone()]);
     // The same answer again is the runner as it was kept.
-    assert_eq!(keep(config.path(), &made(), &first, OURS).unwrap(), kept);
+    assert_eq!(keep(config.path(), &made(), &first, &OURS).unwrap(), kept);
 }
 
 #[test]
 fn a_runner_answering_another_runners_or_this_machines_device_id_or_key_is_not_kept() {
     let config = tempfile::tempdir().unwrap();
     let first = answered("01JB0RUNNER0000000000000000");
-    keep(config.path(), &made(), &first, OURS).unwrap();
+    keep(config.path(), &made(), &first, &OURS).unwrap();
     let second = other_made("second", &"b".repeat(64));
     let same_key = Pinned {
         device: "01JC0SECOND0000000000000000".into(),
@@ -126,17 +130,34 @@ fn a_runner_answering_another_runners_or_this_machines_device_id_or_key_is_not_k
     for refused in [
         answered("01JB0RUNNER0000000000000000"),
         same_key,
-        answered(OURS),
+        answered(&OURS.device),
     ] {
         assert!(
             matches!(
-                keep(config.path(), &second, &refused, OURS),
+                keep(config.path(), &second, &refused, &OURS),
                 Err(Refused::Other(_))
             ),
             "{refused:?} was kept"
         );
     }
     assert_eq!(read(config.path()).unwrap().len(), 1);
+}
+
+/// A runner that answers with this desktop's own link key is refused, and nothing is kept
+/// (#2683): the key is the one this desktop presents on its links.
+#[test]
+fn a_runner_answering_this_desktops_own_link_key_is_not_kept() {
+    let config = tempfile::tempdir().unwrap();
+    let ours_again = Pinned {
+        device: "01JB0RUNNER0000000000000000".into(),
+        key: OURS.key,
+    };
+    let refused = keep(config.path(), &made(), &ours_again, &OURS).unwrap_err();
+    assert!(
+        matches!(&refused, Refused::Other(why) if why.contains("this machine's own link key")),
+        "{refused}"
+    );
+    assert!(read(config.path()).unwrap().is_empty());
 }
 
 #[test]
@@ -158,7 +179,7 @@ fn a_kept_file_of_another_shape_is_refused_and_never_replaced() {
                 config.path(),
                 &made(),
                 &answered("01JB0RUNNER0000000000000000"),
-                OURS
+                &OURS
             )
             .is_err()
         );
@@ -175,7 +196,7 @@ fn removing_a_runner_unpairs_it_removes_its_container_and_volume_and_forgets_it(
         config.path(),
         &made(),
         &answered("01JB0RUNNER0000000000000000"),
-        OURS,
+        &OURS,
     )
     .unwrap();
     let fake = FakeDocker::new(&inspected());
@@ -209,7 +230,7 @@ fn a_runner_whose_link_is_down_is_still_removed_with_its_container() {
         config.path(),
         &made(),
         &answered("01JB0RUNNER0000000000000000"),
-        OURS,
+        &OURS,
     )
     .unwrap();
     let fake = FakeDocker::new(&inspected());
@@ -222,7 +243,7 @@ fn a_runner_whose_link_is_down_is_still_removed_with_its_container() {
         config.path(),
         &made(),
         &answered("01JB0RUNNER0000000000000000"),
-        OURS,
+        &OURS,
     )
     .unwrap();
     let removed = remove(config.path(), &fake.docker(), "first", Some(&failing)).unwrap();
@@ -236,7 +257,7 @@ fn a_removal_that_fails_says_what_is_left_and_keeps_the_runner_to_remove_again()
         config.path(),
         &made(),
         &answered("01JB0RUNNER0000000000000000"),
-        OURS,
+        &OURS,
     )
     .unwrap();
     let fake = FakeDocker::new(&inspected());

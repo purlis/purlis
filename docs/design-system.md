@@ -679,10 +679,11 @@ reader each refuse such a name in one sentence (`crates/purlis-core/src/theme/po
 default (`purlis_core::theme::resolve_levels`):
 
 1. the person's choice for this workspace on this machine;
-2. the workspace's committed default (LIVE workspaces only): `settings.theme.use` and
-   `settings.theme.appearance` in its `workspace.json`;
+2. the workspace's committed default (LIVE workspaces only): `settings.theme.use`,
+   `settings.theme.appearance` and `settings.theme.options` in its `workspace.json`;
 3. the person's choice for the project;
-4. the project's committed default: `[theme] use` and `[theme] appearance` in its manifest;
+4. the project's committed default: `[theme] use`, `[theme] appearance` and `[theme] options`
+   in its manifest;
 5. the person's machine default, else their own `theme.json`;
 6. Purlis (Purlis Classic until the switch-over), or the first theme in force from an extension
    the project has on.
@@ -732,6 +733,27 @@ another theme starts from its defaults, and re-choosing a theme drops the values
 has. Both choices are compared as written, so a choice with no `from` is the folder it reads now.
 A `from` that names no level leaves the choice out, and
 a value that is not an id is left out of it.
+
+**A committed default carries option values too** (#2707): `options` names a value of each
+of the picked theme's options by the option's id, as a choice's does, and is drawn the same
+way, onto the theme before it is drawn, so the consent floors hold over every value. The
+person's choice beats it, nearest level first, and a choice's values are its own: a person's
+choice of the same theme with no values draws the theme's defaults, not the team's. Options with
+no `use` choose nothing; an option or a value that is not an id is left out when read and
+refused when saved. In Settings › Theme a committed default's value is badged Team, and setting
+an option where it is drawn makes it the person's choice, starting from the team's values: those
+values are copied into the person's choice, so later changes the team commits no longer reach
+them there while that choice stands.
+
+```toml
+[theme]
+use = "brand"
+options = { accent = "teal" }
+```
+
+`purlis theme list` shows each level's choice after the themes, nearest first, with the level
+of the folder it reads, its appearance and its option values, and `purlis theme check` names the
+levels that chose the theme it checks (`purlis docs show themes`).
 
 A project's `charter.local.toml` `[theme]` pick, and a LOCAL workspace's `settings.theme`, are
 the person's choice where that file holds none, and are copied into it once, with a Notice. A
