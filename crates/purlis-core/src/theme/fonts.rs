@@ -321,11 +321,13 @@ impl Store {
     }
 }
 
-/// **A theme folder, held**: where it is, for a sentence, and the handle its fonts are opened
-/// from, or why its fonts are not read.
+/// **A theme folder, held**: where it is, and the handle its fonts are opened from, or why its
+/// fonts are not read.
 #[derive(Debug, Clone)]
 pub(crate) struct ThemeDir {
     path: PathBuf,
+    /// Where it is as its level and its path there (#2763), for a folder of a level.
+    placed: Option<std::sync::Arc<super::Placed>>,
     handle: Result<Store, String>,
     /// For a project's or a workspace's folder: the font files the person approved with the
     /// project, path to digest, and this folder's path in the project. `None` for the person's
@@ -348,6 +350,7 @@ impl ThemeDir {
     pub(crate) fn held(path: PathBuf, handle: std::os::fd::OwnedFd) -> Self {
         Self {
             path,
+            placed: None,
             handle: Ok(Store::Held(std::sync::Arc::new(handle))),
             approved: None,
         }
@@ -358,6 +361,7 @@ impl ThemeDir {
     pub(crate) fn built_in(path: PathBuf, files: &'static [(&'static str, &'static [u8])]) -> Self {
         Self {
             path,
+            placed: None,
             handle: Ok(Store::BuiltIn(files)),
             approved: None,
         }
@@ -385,6 +389,7 @@ impl ThemeDir {
     pub(crate) fn refusing(path: PathBuf, why: String) -> Self {
         Self {
             path,
+            placed: None,
             handle: Err(why),
             approved: None,
         }
@@ -392,21 +397,36 @@ impl ThemeDir {
 
     /// The folder at `path`, held by `dir`, a handle on it the caller opened refusing a link,
     /// or why it could not be: a theme folder named on the command line, and the person's own
-    /// config folder (`super::opened`).
-    pub(crate) fn opened(path: PathBuf, dir: Result<super::opened::Held, String>) -> Self {
+    /// config folder (`super::opened`). `shown` names it in a sentence.
+    pub(crate) fn opened(
+        path: PathBuf,
+        shown: &str,
+        dir: Result<super::opened::Held, String>,
+    ) -> Self {
         match dir {
             #[cfg(unix)]
             Ok(dir) => Self::held(path, dir),
             #[cfg(not(unix))]
             Ok(dir) => match dir {},
             Err(why) => Self::refusing(
-                path.clone(),
-                format!(
-                    "purlis could not open {} to read its fonts: {why}",
-                    path.display()
-                ),
+                path,
+                format!("purlis could not open {shown} to read its fonts: {why}"),
             ),
         }
+    }
+
+    /// The folder, at `placed` (#2763): every complaint said of it names it so.
+    #[must_use]
+    pub(crate) fn placed(self, placed: super::Placed) -> Self {
+        Self {
+            placed: Some(std::sync::Arc::new(placed)),
+            ..self
+        }
+    }
+
+    /// Where it is as its level and its path there, for a folder of a level.
+    pub(crate) fn at(&self) -> Option<&super::Placed> {
+        self.placed.as_deref()
     }
 
     /// **The handle the folder is held by**, or why it is not held: what an export packs from
@@ -425,7 +445,7 @@ impl ThemeDir {
         }
     }
 
-    /// The folder, for a sentence.
+    /// The folder on disk.
     pub(crate) fn path(&self) -> &Path {
         &self.path
     }
