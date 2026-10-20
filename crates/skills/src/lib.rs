@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 
 mod read;
 
-pub use read::{DIR_IN_BUNDLE, LISTED_ENV, frontmatter, in_bundle, listed_from, listing, read};
+pub use read::{DIR_IN_BUNDLE, frontmatter, in_bundle, listing, read};
 
 /// A skill, as a chat is told about it: a folder in the open SKILL.md format.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,9 +80,9 @@ pub struct Chat<'a> {
 /// What this machine holds that a chat's skills can come from.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Machine<'a> {
-    /// The bundled plugin directory the app ships, whose `skills/` holds the built-in skills,
-    /// where the app found it.
-    pub bundle: Option<&'a Path>,
+    /// The directory the built-in skills sit in, a folder per skill: the bundled plugin's
+    /// `skills/` ([`in_bundle`]), where the app found it.
+    pub built_in: Option<&'a Path>,
 }
 
 /// One skill a chat gets.
@@ -151,36 +151,38 @@ pub struct SkillSet {
 }
 
 impl SkillSet {
-    /// The directories the effective skills sit in, each once, in the order of the skills: what
-    /// a harness on [`Route::Config`] or [`Route::Briefing`] is told. A skill's directory is the
-    /// one holding its folder.
-    pub fn dirs(&self) -> Vec<&Path> {
-        let mut dirs: Vec<&Path> = Vec::new();
-        for effective in &self.effective {
-            let Some(dir) = effective.skill.path.parent().and_then(Path::parent) else {
-                continue;
-            };
-            if !dirs.contains(&dir) {
-                dirs.push(dir);
-            }
-        }
-        dirs
+    /// The one directory every effective skill sits in, a folder per skill, or `None` for a set
+    /// with none: what a harness on [`Route::Config`] or [`Route::Briefing`] is told.
+    ///
+    /// One, because every skill in a set is a built-in skill, and those sit in one directory.
+    /// The slice that brings skills from a second directory changes this to a list, and so
+    /// every caller with it: none of them can drop a directory without being told.
+    pub fn dir(&self) -> Option<&Path> {
+        let mut dirs = self
+            .effective
+            .iter()
+            .filter_map(|effective| effective.skill.path.parent().and_then(Path::parent));
+        let dir = dirs.next()?;
+        debug_assert!(
+            dirs.all(|other| other == dir),
+            "every built-in skill sits in one directory"
+        );
+        Some(dir)
     }
 }
 
-/// What `chat`'s skill set is, and why, on `machine` in the plane at `plane` (`None` for a chat
+/// What `chat`'s skill set is, and why, on `machine` in the plane at `_plane` (`None` for a chat
 /// purlis knows no plane for).
 ///
 /// Today every built-in skill reaches every chat by its harness's route, and a built-in folder
 /// that is not a whole skill is left out with the reason. The plane and the chat's workspace and
 /// persona decide nothing yet: the plane's levels read them (SK-2 on).
-pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -> SkillSet {
-    let _read_from_the_plane_levels_on = (plane, chat.workspace, chat.persona);
-    let Some(dir) = machine.bundle.and_then(in_bundle) else {
+pub fn skill_set(_plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -> SkillSet {
+    let Some(dir) = machine.built_in else {
         return SkillSet::default();
     };
     let mut set = SkillSet::default();
-    for folder in read::scan(&dir) {
+    for folder in read::scan(dir) {
         match folder {
             Ok(skill) => set.effective.push(Effective {
                 skill,

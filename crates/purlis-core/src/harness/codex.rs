@@ -82,7 +82,7 @@ impl HarnessAdapter for Codex {
     /// directory for one session ([`Harness::skills`]), so the chat is started with the
     /// directory of the skills its set holds ([`crate::skills::for_chat`]) in
     /// [`crate::skills::LISTED_ENV`], which a Codex hook inherits, and the briefing lists
-    /// them. Built-in skills sit in one directory, the bundle's, so there is one to name.
+    /// what its set holds ([`crate::skills::briefed`]).
     ///
     /// Its sandbox, where the plane turned it on, is not here: charter's wrap runs the whole
     /// line ([`crate::sandbox::Applied::line`], and [`crate::sandbox::codex`] has the
@@ -101,8 +101,7 @@ impl HarnessAdapter for Codex {
         StateHooks::ThisSessionOnly {
             args,
             env: crate::skills::for_chat(kit, Harness::Codex)
-                .dirs()
-                .first()
+                .dir()
                 .map(|dir| {
                     (
                         crate::skills::LISTED_ENV.to_owned(),

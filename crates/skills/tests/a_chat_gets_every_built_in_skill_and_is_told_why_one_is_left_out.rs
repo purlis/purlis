@@ -36,7 +36,7 @@ fn set_for(plane: &Path, plugin: &Path, route: Route) -> SkillSet {
     skill_set(
         Some(plane),
         &Machine {
-            bundle: Some(plugin),
+            built_in: Some(&plugin.join("skills")),
         },
         &chat(route),
     )
@@ -134,18 +134,18 @@ fn a_built_in_folder_that_is_not_a_whole_skill_is_left_out_with_a_one_line_reaso
 fn a_machine_without_the_bundle_gives_a_chat_no_skills_and_leaves_none_out() {
     let tmp = tempfile::tempdir().unwrap();
 
-    for bundle in [None, Some(tmp.path().join("no-such-plugin"))] {
+    for built_in in [None, Some(tmp.path().join("no-such-plugin/skills"))] {
         let set = skill_set(
             Some(tmp.path()),
             &Machine {
-                bundle: bundle.as_deref(),
+                built_in: built_in.as_deref(),
             },
             &chat(Route::Config),
         );
 
         assert!(set.effective.is_empty());
         assert!(set.left_out.is_empty());
-        assert!(set.dirs().is_empty());
+        assert_eq!(set.dir(), None);
     }
 }
 
@@ -170,7 +170,7 @@ fn a_planes_own_skill_folders_do_not_change_the_set_yet() {
     let without = skill_set(
         None,
         &Machine {
-            bundle: Some(&plugin),
+            built_in: Some(&plugin.join("skills")),
         },
         &Chat {
             workspace: None,
@@ -199,5 +199,5 @@ fn the_set_names_the_directory_its_skills_are_handed_over_in() {
 
     let set = set_for(tmp.path(), &plugin, Route::Config);
 
-    assert_eq!(set.dirs(), [plugin.join("skills").as_path()]);
+    assert_eq!(set.dir(), Some(plugin.join("skills").as_path()));
 }

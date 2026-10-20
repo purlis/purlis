@@ -309,22 +309,11 @@ pub fn def_path(root: &Path, name: &str) -> PathBuf {
 /// Line-based, no quote stripping and no nesting: the text between the first two `---`,
 /// stripped, each line holding a `:` split at the first one, both halves stripped, and a
 /// pair kept only when its key is not empty.
+///
+/// The one rule a `SKILL.md`'s frontmatter is read by too, so it is
+/// [`purlis_skills::frontmatter`]'s.
 pub fn frontmatter(text: &str) -> Vec<(String, String)> {
-    let Some(rest) = text.strip_prefix("---") else {
-        return Vec::new();
-    };
-    let Some(end) = rest.find("---") else {
-        return Vec::new();
-    };
-    let block = memstore::py_strip(&rest[..end]);
-    crate::mdsection::split_lines(block)
-        .into_iter()
-        .filter_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            let key = memstore::py_strip(key);
-            (!key.is_empty()).then(|| (key.to_string(), memstore::py_strip(value).to_string()))
-        })
-        .collect()
+    purlis_skills::frontmatter(text)
 }
 
 /// A persona's own definition, loaded — its frontmatter pairs — or `None` when it does

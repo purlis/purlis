@@ -27,9 +27,9 @@ impl HarnessAdapter for ClaudeCode {
     /// the environment. Without the plugin there is nothing to arm: a chat reads `unknown`,
     /// rather than being half-armed from a second place.
     ///
-    /// Its skills take [`crate::skills::Route::Plugin`]: every skill in its set
-    /// ([`crate::skills::for_chat`]) is a built-in skill, and those are the plugin's own
-    /// `skills/`, which `--plugin-dir` already loads. So nothing more is handed over for them.
+    /// Its skills take [`crate::skills::Route::Plugin`]: the directory of its set
+    /// ([`crate::skills::for_chat`]) is the plugin's own `skills/`, which `--plugin-dir`
+    /// already loads, so nothing more is handed over for them.
     ///
     /// `--settings` MERGES with the settings already in force rather than replacing them
     /// (measured on claude 2.1.276), and a key it names wins over the project's (measured on
@@ -51,6 +51,14 @@ impl HarnessAdapter for ClaudeCode {
         let Some(plugin) = kit.plugin else {
             return StateHooks::None;
         };
+        let skills = crate::skills::for_chat(kit, Harness::ClaudeCode);
+        debug_assert!(
+            skills
+                .dir()
+                .is_none_or(|dir| dir == plugin.join(crate::skills::DIR_IN_BUNDLE)),
+            "a Claude Code chat's skills are its plugin's own: {:?}",
+            skills.dir()
+        );
         // Claude Code carries its sandbox in the same `--settings`, as compiled for the folder
         // the chat runs in (its manifests, #1336). A form of another kind is not one, and the
         // chat is armed with nothing rather than started without it.

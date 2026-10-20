@@ -12,11 +12,6 @@ use crate::{Missing, Skill};
 /// `skills/` itself, which is why it is this name.
 pub const DIR_IN_BUNDLE: &str = "skills";
 
-/// The variable a chat whose harness cannot load its skills is started with: the skills
-/// directory, which its `SessionStart` briefing then lists ([`listed_from`]). Set by the app for
-/// such a chat alone, so a harness that loads the skills itself is never briefed on them twice.
-pub const LISTED_ENV: &str = "PURLIS_SKILLS_DIR";
-
 /// A skill's file inside its folder.
 const FILE: &str = "SKILL.md";
 
@@ -69,10 +64,10 @@ pub fn read(dir: &Path) -> Vec<Skill> {
 /// A `SKILL.md`'s frontmatter, as `key: value` pairs in the order written: one line per key,
 /// which is how every built-in skill is written.
 ///
-/// The same rule a persona's frontmatter is read by (`purlis_core::personas::frontmatter`), and
-/// purlis-core holds the two to one answer by test: the block between the first two `---`,
-/// split into lines as Python's `str.splitlines` splits them, each line at its first `:`, key and
-/// value stripped as Python's `str.strip` strips, and a line with an empty key dropped.
+/// The one rule purlis reads a frontmatter by, a persona's too
+/// (`purlis_core::personas::frontmatter`): the block between the first two `---`, split into
+/// lines as Python's `str.splitlines` splits them, each line at its first `:`, key and value
+/// stripped as Python's `str.strip` strips, and a line with an empty key dropped.
 pub fn frontmatter(text: &str) -> Vec<(String, String)> {
     let Some(rest) = text.strip_prefix("---") else {
         return Vec::new();
@@ -143,7 +138,7 @@ pub fn listing(skills: &[Skill]) -> Option<String> {
         return None;
     }
     let mut text = String::from(
-        "⬢ **purlis's skills** — this harness does not load them itself, so they are listed \
+        "⬢ **purlis's built-in skills** — this harness does not load them itself, so they are listed \
          here. When a request matches one, read its `SKILL.md` and follow it before acting; a \
          prompt that names a skill by its name means this list.",
     );
@@ -156,12 +151,6 @@ pub fn listing(skills: &[Skill]) -> Option<String> {
         ));
     }
     Some(text)
-}
-
-/// The listing of the skills in the directory [`LISTED_ENV`] names, or none where it is unset.
-pub fn listed_from(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
-    let dir = env(LISTED_ENV).filter(|dir| !dir.is_empty())?;
-    listing(&read(Path::new(&dir)))
 }
 
 #[cfg(test)]

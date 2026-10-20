@@ -17,7 +17,7 @@
 //! a Reporter with several planes would be asked repeatedly until the safeguard became a
 //! reflex."* charter-app also already writes its panic log to Tauri's `app_log_dir()`.
 //!
-//! **Eight things, and nothing else:**
+//! **Nine things, and nothing else:**
 //!
 //! - **the planes recently opened**, so the opener has something to offer;
 //! - **whether the operator approved each one**, and *what it would do when opened* at the
@@ -46,6 +46,12 @@
 //!   may go unused. The person ruled these keys and their home on 2026-10-18: the device's budget
 //!   follows this machine's memory, so it belongs to no project, and a team's committed file must
 //!   never set another person's machine. Each is absent until set, and absent is purlis's default.
+//! - **the flags turned on on this machine** ([`Store::flags`], #2764): a feature that lands in
+//!   slices stays behind one until it is whole, and is then removed with its flag. Today there
+//!   is one, `skill-studio` (spec #2762). A flag is how one person tries what is unfinished, so
+//!   it belongs to no project, and a committed file must never turn it on for a team. It is
+//!   neither the channel nor the build: both channels' binaries are the same (ADR 0092), and a
+//!   flag is off on either until it is turned on here. Each is absent until turned on.
 //!
 //! **The fourth was three until ADR 0040, and the fifth and sixth are newer still; the count
 //! is load-bearing.** ADR 0040 and ADR 0066 are the amendments: ADR 0066 argues the sixth (a
@@ -1045,6 +1051,8 @@ pub struct Store {
     /// The browser limits set on this machine (#2023, ruled 2026-10-18): each absent one is
     /// purlis's default ([`crate::browserlimits`]).
     pub browsers: BrowserLimits,
+    /// The flags turned on on this machine (#2764): each off until turned on.
+    pub flags: Flags,
 }
 
 /// **The browser limits set on this machine** (#2023): `browsers.per_project`,
@@ -1057,6 +1065,14 @@ pub struct BrowserLimits {
     pub on_this_device: Option<u32>,
     /// `0` is never: a chat's browser does not stop for going unused.
     pub idle_minutes: Option<u32>,
+}
+
+/// **The flags turned on on this machine** (#2764): `flags.<name>` in the file, `true` when on.
+/// Anything else, or a name this build does not know, is off.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Flags {
+    /// `skill-studio`: the Skill studio's slices, until its finish line (spec #2762, SK-23).
+    pub skill_studio: bool,
 }
 
 /// A device's id (ADR 0066): random, minted at the first launch that finds none, and the only
@@ -1164,6 +1180,18 @@ fn browsers_of(raw: Option<&serde_json::Value>) -> BrowserLimits {
         per_project: one(Limit::PerProject),
         on_this_device: one(Limit::OnThisDevice),
         idle_minutes: one(Limit::IdleMinutes),
+    }
+}
+
+/// The flags off the file's `flags` table: a flag is on only where it is `true`.
+fn flags_of(raw: Option<&serde_json::Value>) -> Flags {
+    let on = |name: &str| {
+        raw.and_then(|table| table.get(name))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    };
+    Flags {
+        skill_studio: on(crate::skills::STUDIO_FLAG),
     }
 }
 
@@ -2309,6 +2337,7 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
             .and_then(serde_json::Value::as_str)
             .and_then(crate::updates::IsoWeek::named),
         browsers: browsers_of(doc.get("browsers")),
+        flags: flags_of(doc.get("flags")),
     }
 }
 
@@ -2515,6 +2544,21 @@ struct OnDisk {
     /// Left out until a browser limit is set, for the same reason (#2023).
     #[serde(skip_serializing_if = "BrowsersOnDisk::is_unset")]
     browsers: BrowsersOnDisk,
+    /// Left out while no flag is on, for the same reason (#2764).
+    #[serde(skip_serializing_if = "FlagsOnDisk::is_unset")]
+    flags: FlagsOnDisk,
+}
+
+#[derive(serde::Serialize)]
+struct FlagsOnDisk {
+    #[serde(rename = "skill-studio", skip_serializing_if = "is_false")]
+    skill_studio: bool,
+}
+
+impl FlagsOnDisk {
+    fn is_unset(&self) -> bool {
+        !self.skill_studio
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -2608,6 +2652,9 @@ impl From<&Store> for OnDisk {
                 per_project: store.browsers.per_project,
                 on_this_device: store.browsers.on_this_device,
                 idle_minutes: store.browsers.idle_minutes,
+            },
+            flags: FlagsOnDisk {
+                skill_studio: store.flags.skill_studio,
             },
             recents: store
                 .recents

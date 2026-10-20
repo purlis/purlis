@@ -33,8 +33,7 @@ impl HarnessAdapter for Opencode {
     ///
     /// Its skills are its set's ([`crate::skills::for_chat`]): their directory is handed to
     /// the shim as its option, which adds them to the skills opencode discovers for this
-    /// process ([`Harness::skills`]). Built-in skills sit in one directory, the bundle's, so
-    /// there is one to hand.
+    /// process ([`Harness::skills`]).
     ///
     /// It cannot report `SessionEnd`: quitting opencode fires no event and runs no exit
     /// handler in a plugin (measured). The app sees the process end.
@@ -63,10 +62,7 @@ impl HarnessAdapter for Opencode {
                     crate::opencode::CONFIG_ENV.to_owned(),
                     crate::opencode::session_config(
                         &shim,
-                        crate::skills::for_chat(kit, Harness::Opencode)
-                            .dirs()
-                            .first()
-                            .copied(),
+                        crate::skills::for_chat(kit, Harness::Opencode).dir(),
                         Some(kit.binary),
                         sandbox.applied().is_some(),
                     ),
