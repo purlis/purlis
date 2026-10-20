@@ -331,3 +331,70 @@ fn the_review_state_is_found_once_per_set_of_faces_a_refusal_waits_on() {
     let more = crate::extensions::review_kept(&root, &two, || Some(ThemeReview::More));
     assert_eq!(more, Some(ThemeReview::More));
 }
+
+/// What the window draws for the draft `typed` of a chat at the plane root of `at`, which the
+/// chat started from the project's folder of that name.
+fn a_draft_of_typed(at: &Refused) -> (crate::themedrafts::WindowDraft, PathBuf) {
+    let chat = crate::chats::Drafting {
+        session: 7,
+        id: purlis_core::reopen::mint(),
+        name: "chat 7".to_owned(),
+        workspace: None,
+    };
+    let place = theme::drafts::Place {
+        plane: &at.root,
+        workspace: None,
+    };
+    let path = theme::drafts::start(Some(&at.config), place, &chat.id, "typed")
+        .expect("a draft")
+        .path;
+    (drafted(at, &chat), path)
+}
+
+fn drafted(at: &Refused, chat: &crate::chats::Drafting) -> crate::themedrafts::WindowDraft {
+    crate::themedrafts::drafted_here(
+        &at.config,
+        &at.root,
+        None,
+        std::slice::from_ref(chat),
+        &theme::Levels::default(),
+        false,
+        theme::Contrast::Standard,
+    )
+    .expect("a draft")
+    .1
+}
+
+#[test]
+fn a_draft_refused_for_a_face_the_project_brings_with_those_bytes_offers_review() {
+    // #2708: the draft carries the project's face as the project now brings it, which this
+    // machine has not approved: the project's trust ask is what lifts the refusal.
+    let at = refused();
+    let (draft, _) = a_draft_of_typed(&at);
+    assert!(!draft.refused.is_empty(), "{draft:?}");
+    assert_eq!(draft.review, Some(ThemeReview::Fonts));
+}
+
+#[test]
+fn a_draft_whose_face_is_at_the_project_s_path_with_other_bytes_offers_no_review() {
+    // The same path the project brings a face at, with bytes the project does not bring: no
+    // approval of the project's would draw it.
+    let at = refused();
+    let (_, path) = a_draft_of_typed(&at);
+    std::fs::write(path.join("fonts/ui.woff2"), woff2(3)).expect("the draft's own face");
+    let chat_id = path
+        .parent()
+        .and_then(|chat| chat.file_name())
+        .and_then(|name| name.to_str())
+        .expect("its chat")
+        .to_owned();
+    let chat = crate::chats::Drafting {
+        session: 7,
+        id: chat_id,
+        name: "chat 7".to_owned(),
+        workspace: None,
+    };
+    let draft = drafted(&at, &chat);
+    assert!(!draft.refused.is_empty(), "{draft:?}");
+    assert_eq!(draft.review, None);
+}

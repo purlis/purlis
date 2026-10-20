@@ -172,7 +172,8 @@ ratio and the tint it was found in (`hard floors: broken in 1 of 4 combinations:
   seen on its surfaces** (`focus.ring`), and **the terminal's words are readable**
   (`terminal.foreground` on the terminal and its find matches). A theme draft that breaks one is
   not drawn (below); for a kept theme, a broken hard floor is a finding, and the theme is
-  drawn.
+  drawn. **A hard floor covers colour only**: a face, a size or a spacing can still make words
+  hard to read. For a theme draft, the revert key is the way out (below).
 
 The exit is a linter's: **0** when the theme is drawn (notes and warnings or not), **1** when it
 is refused, **2** when there is no such theme.
@@ -283,20 +284,35 @@ over theme files only.
   level) and deletes the draft, then asks once whether the theme becomes the workspace's (or the
   project's) committed default or stays your own choice there. The strip says where Keep puts it
   before you press it (`Keep puts it in the project's themes, for every workspace`), and Keep asks
-  before it replaces a theme folder that is there. Keep does what you were shown, or nothing:
-  when where it puts the draft, or the folder there, changed since, it is refused. Only a draft the window draws is kept, with
+  before it replaces a theme folder that is there, saying when that folder is not what the draft
+  started from: a draft's start records the folder it copied, and a change to it since (your own
+  edit, a pull, another chat's write) is said before Keep replaces it. Keep does what you were
+  shown, or nothing: when where it puts the draft, or the folder there, changed since, it is
+  refused. Only a draft the window draws is kept, with
   the files that were checked, and only the font files the theme names and the project
   approved. **Revert** deletes the draft. **Compare** draws the theme as kept while it is held.
+  While a draft is drawn, the Notice of a kept theme that is refused waits, and the strip says
+  so; Revert brings it back.
 - **The revert key**, ⌘⇧⌫ on macOS and Ctrl+Shift+Backspace elsewhere, deletes every draft
-  drawn where the window is, at once.
+  drawn where the window is, at once. It is the way out of a draft whose face, size or spacing
+  makes the window hard to read, which no hard floor measures: it works whatever the window
+  looks like.
 - **Closing a chat** that owns a draft asks Keep or Revert, saying where Keep puts each and what
   it replaces; neither close is offered until it is answered. A close that ends several chats
-  asks about the drafts of each. Where purlis cannot tell whether a chat has a draft, the close
-  is refused, with why.
+  asks about the drafts of each, and Keep then asks who draws each theme it kept. Where purlis
+  cannot tell whether a chat has a draft, the close is refused, with why. A chat is closed in
+  purlis's own window, and a link is told nothing of its drafts.
+- **The drafts of a chat that is no longer open are deleted**: once purlis's record of the open
+  chats no longer holds it (it was closed, or a launch did not reopen it), nothing names its
+  drafts, and they go. Each chat's drafts folder names the clone whose purlis made it, and only
+  that clone deletes it: clones that share one state folder (`$PURLIS_HOME`) keep each other's
+  drafts.
 - **Moving a theme up a level**: in Settings › Theme, **Use in the whole project** moves a
   workspace's theme folder to the project's `themes/`, and **Copy to my machine** copies a
   project's or a workspace's to your own, carrying only the font files you approved with the
-  project. Neither replaces a folder of that name that is there.
+  project. Neither replaces a folder of that name that is there. A theme in the project's
+  `themes/` is committed for everyone on the project's next save, even when it came from a
+  workspace that is local.
 
 ## Making a theme with a chat
 

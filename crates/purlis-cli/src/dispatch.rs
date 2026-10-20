@@ -414,6 +414,7 @@ pub fn send(
             | Answer::Recorded { .. }
             | Answer::Written { .. }
             | Answer::Said { .. }
+            | Answer::Drafted { .. }
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
             | Answer::Working(_)
@@ -630,6 +631,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Recorded { .. }
             | Answer::Written { .. }
             | Answer::Said { .. }
+            | Answer::Drafted { .. }
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
             | Answer::Working(_)

@@ -109,11 +109,11 @@ The app writes the draft and says what the window draws. Exit 1 means it is not 
 breaks a hard floor (primary text, the focus ring, the terminal's words, each at 3:1), and the
 answer names the pair and its ratio. Fix that first.
 
-Look at it with purlis's `theme_preview` tool: the theme specimen, in each appearance, side by
-side with the theme it starts from. It shows sample content only. A purlis whose
-`theme_preview` takes only its built-in themes cannot picture the draft yet; then look at the
-theme it extends, judge the draft by the check, and ask the person how it looks in their window,
-where it is drawn.
+Look at it with purlis's `theme_preview` tool: name the draft as `draft:<folder>` and draw the
+theme specimen in each appearance, with each option value the theme has, side by side with the
+theme as kept (`side_by_side: {"theme": "<folder>"}`). A new theme has no kept folder yet: put it
+beside the theme it extends (`side_by_side: {"theme": "purlis-classic"}`). It shows sample
+content only.
 
 ```bash
 purlis theme check draft:<folder> --json
