@@ -60,8 +60,8 @@ add it again.
 purlis persona curation remove <persona> <id>
 ```
 
-purlis's own actions are `charter/safe-remove`, `charter/compact` and
-`charter/add-curation-action`. A persona's action with one of their ids or labels is refused,
+purlis's own actions are `charter/safe-remove`, `charter/compact`,
+`charter/add-curation-action` and `charter/create-theme`. A persona's action with one of their ids or labels is refused,
 so choose another.
 
 ## 3. Check it

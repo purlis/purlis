@@ -378,6 +378,7 @@ macro_rules! app_commands {
                 themegallery::theme_choose_option,
                 themegallery::theme_duplicate,
                 themegallery::theme_open_folder,
+                themegallery::theme_chat,
                 themedrafts::theme_drafts_of_chat,
                 themedrafts::theme_draft_keep,
                 themedrafts::theme_draft_revert,

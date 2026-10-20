@@ -611,6 +611,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The value of a theme option at a level (#2527): it writes how the person's window looks
     // on this machine, so only their press in Settings › Theme makes it.
     "theme_choose_option",
+    // Settings › Theme's New theme and Edit with a chat (#2333): a chat started with a prompt
+    // typed into it, as `curate` starts one, by the person's press in the window.
+    "theme_chat",
     // A chat's theme draft (#2332): Keep writes it into a theme folder, Revert and the revert key
     // delete drafts, and the moves up a level write the project's or the person's themes. Each
     // is the person's command, never a chat's.

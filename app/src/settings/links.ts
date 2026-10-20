@@ -136,6 +136,29 @@ export function askProfileSignIn(plane: string, profile: string, provider?: stri
   );
 }
 
+/**
+ * **New theme** and **Edit with a chat** (#2333): the project's window opens a chat at the level
+ * Settings › Theme is at, with a prompt that names purlis's theme skill typed into it and never
+ * sent (`theme_chat`, ADR 0061). Settings' gallery sends it; `PlaneView` hears it. The window
+ * names the level and, for Edit, the card's theme and its folder's level; the core writes the
+ * prompt.
+ */
+export const THEME_CHAT = "charter-theme-chat";
+
+/** What the gallery asked of a project's window: which project and workspace, and the card's
+ *  theme (`null` for New theme) with its folder's level. */
+export type ThemeChatAsk = {
+  plane: string;
+  workspace: string | null;
+  theme: string | null;
+  from: string | null;
+};
+
+/** Asks the window of the project `ask.plane` to open a theme chat. */
+export function askThemeChat(ask: ThemeChatAsk): void {
+  window.dispatchEvent(new CustomEvent<ThemeChatAsk>(THEME_CHAT, { detail: ask }));
+}
+
 /** The catalogue's rows a link out of Settings runs, by the ids `actions.ts` gives them. */
 export const OPEN_EXTENSIONS = "extensions.show";
 /** The Extensions group's link, at every level: where an extension is installed and approved. */

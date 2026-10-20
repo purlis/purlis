@@ -1978,5 +1978,134 @@ fn the_check_names_each_level_that_chose_the_theme_with_its_values() {
         ),
         "{}",
         text.out
+
+// ---- the theme skill (#2333) ------------------------------------------------------------- //
+
+/// The theme skill purlis's plugin ships: a chat runs what it says.
+fn theme_skill() -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../app/src-tauri/plugin/skills/theme/SKILL.md"),
+    )
+    .expect("the theme skill")
+}
+
+/// Each `purlis theme <command> …` the skill names, as `(command, its flags)`: in a code span,
+/// or on a line of a code block, to the end of either.
+fn skill_theme_commands(page: &str) -> Vec<(String, Vec<String>)> {
+    let mut texts = Vec::new();
+    let mut fenced = false;
+    for line in page.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            texts.push(trimmed.to_owned());
+        } else {
+            texts.extend(line.split('`').skip(1).step_by(2).map(str::to_owned));
+        }
+    }
+    texts
+        .iter()
+        .filter_map(|text| {
+            let rest = text.split("purlis theme ").nth(1)?;
+            let mut words = rest.split_whitespace();
+            let command = words.next()?.to_owned();
+            let flags = words
+                .filter(|word| word.starts_with("--"))
+                .map(|word| word.trim_end_matches(['`', ',', '.']).to_owned())
+                .collect();
+            Some((command, flags))
+        })
+        .collect()
+}
+
+#[test]
+fn every_theme_command_the_theme_skill_names_is_one_purlis_has_with_its_flags_and_these_tests_run()
+{
+    let page = theme_skill();
+    let named = skill_theme_commands(&page);
+    let commands: std::collections::BTreeSet<&str> =
+        named.iter().map(|(command, _)| command.as_str()).collect();
+    assert_eq!(
+        commands.into_iter().collect::<Vec<_>>(),
+        ["check", "draft", "export", "import", "list"],
+        "the skill's create, edit, check and share paths each name their command: {named:?}"
+    );
+    let rig = Rig::new();
+    let this = include_str!("theme.rs");
+    for (command, flags) in &named {
+        let help = rig.run(&[command, "--help"]);
+        assert_eq!(help.code, 0, "purlis theme {command}: {}", help.err);
+        for flag in flags {
+            assert!(
+                help.out.contains(flag.as_str()),
+                "`purlis theme {command}` has no {flag}:\n{}",
+                help.out
+            );
+            assert!(
+                this.contains(&format!("\"{flag}\"")),
+                "no test here runs {flag}"
+            );
+        }
+        assert!(
+            this.contains(&format!("run(&[\"{command}\""))
+                || this.contains(&format!("run_in(&[\"{command}\""))
+                || this.contains(&format!("&[\"{command}\", ")),
+            "no test here runs `purlis theme {command}`"
+        );
+    }
+}
+
+#[test]
+fn the_skill_s_scan_finds_a_command_in_a_code_span_and_a_code_block_with_its_flags() {
+    let page = "Run `purlis theme check draft:x --json`.\n\n```bash\npurlis theme draft x --save --from \"$TMPDIR/x\"\n```\nThen purlis theme list is prose.\n";
+    assert_eq!(
+        skill_theme_commands(page),
+        vec![
+            ("check".to_owned(), vec!["--json".to_owned()]),
+            (
+                "draft".to_owned(),
+                vec!["--save".to_owned(), "--from".to_owned()]
+            ),
+        ]
+    );
+}
+
+#[test]
+fn the_skill_s_import_and_export_write_into_a_folder_of_the_chat_s_own() {
+    // The skill imports into, and exports to, a folder under the chat's temporary folder,
+    // never into a level's themes or the plane.
+    let rig = Rig::new();
+    let scratch = rig.dir.path().join("tmp");
+    let imported = scratch.join("purlis-theme-import");
+    let source = rig.fixture("harbor.yaml");
+    let ran = rig.run(&[
+        "import",
+        source.to_str().expect("a path"),
+        "--into",
+        imported.to_str().expect("a path"),
+    ]);
+    assert_eq!(ran.code, 0, "{}{}", ran.out, ran.err);
+    assert!(imported.join("harbor/theme.json").is_file());
+    assert!(
+        !rig.config().join("themes").exists(),
+        "nothing in your own themes"
+    );
+
+    let zip = scratch.join("purlis-classic.zip");
+    let ran = rig.run(&[
+        "export",
+        "purlis-classic",
+        "--to",
+        zip.to_str().expect("a path"),
+    ]);
+    assert_eq!(ran.code, 0, "{}{}", ran.out, ran.err);
+    assert!(zip.is_file());
+    assert!(
+        !rig.plane().join("purlis-classic.zip").exists(),
+        "nothing written where the chat works"
     );
 }

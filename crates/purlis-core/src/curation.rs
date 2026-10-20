@@ -218,7 +218,7 @@ pub struct Builtin {
 /// draws a longer paste as a placeholder nobody can read (`Harness::why_drawn_as_a_placeholder`,
 /// ADR 0061 amended 2026-09-27). The skill is named in words, not by a slash command, so the
 /// same line works in every harness that reaches charter's skills.
-pub const BUILTINS: [Builtin; 3] = [
+pub const BUILTINS: [Builtin; 4] = [
     Builtin {
         id: "safe-remove",
         label: "Safe remove",
@@ -244,7 +244,20 @@ pub const BUILTINS: [Builtin; 3] = [
         template: "Use purlis's add-curation-action skill to add a curation action to the persona \
                    {subject.name}.",
     },
+    // The first of purlis's own on the plane (spec #2313, #2333): a chat at the plane root makes
+    // the project's theme, one in a workspace that workspace's.
+    Builtin {
+        id: CREATE_THEME,
+        label: "Create a theme",
+        skill: "theme",
+        on: &[Kind::Workspace, Kind::Plane],
+        at_plane_root: false,
+        template: "Use purlis's theme skill to create a theme for the {subject.kind} {subject.name}.",
+    },
 ];
+
+/// The id of purlis's own "Create a theme" (#2333), which Settings › Theme's New theme opens too.
+pub const CREATE_THEME: &str = "create-theme";
 
 /// The subject name `charter persona lint` renders a persona's prompt with, to ask whether it
 /// would still be read whole: long, as a real workspace's name can be.
