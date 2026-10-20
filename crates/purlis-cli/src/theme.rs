@@ -1190,6 +1190,7 @@ fn mine(config: &Path) -> Option<Found> {
                     said: why.clone(),
                     token: None,
                     awaits_approval: None,
+                    at: None,
                 }]
             } else {
                 theirs.complaints
@@ -1489,6 +1490,7 @@ fn this_chats_draft(here: Here<'_>, folder: &str) -> Result<Found, Vec<Complaint
             said: why,
             token: None,
             awaits_approval: None,
+            at: None,
         }]
     };
     let plane = here
@@ -1527,6 +1529,7 @@ fn refusal(why: String) -> Resolved {
             said: why,
             token: None,
             awaits_approval: None,
+            at: None,
         }],
         refused: true,
     }
