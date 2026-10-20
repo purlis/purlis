@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A chat's browser, end to end on a real engine** (#2243, #2294, spec #2008): every hop at
-//! once, as the person runs it, the person taking the browser over included. Each hop has its own tests against a stand-in for the next; here
-//! none is stood in for.
+//! once, as the person runs it, the person taking the browser over included. Each hop has its
+//! own tests against a stand-in for the next; here none is stood in for.
 //!
 //! - **The chat** is the repo's fake harness, run in a real `purlis serve` as the window runs
 //!   its chats there by default ([`crate::hostedsessions::chats_in_the_host`]). It starts
