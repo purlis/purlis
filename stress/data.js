@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792518927414,
+  "lastUpdate": 1792521133581,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4130,6 +4130,42 @@ window.BENCHMARK_DATA = {
             "value": 327.4,
             "unit": "MB",
             "extra": "median of 6 samples: 305, 369.5, 336.7, 327, 327.8, 282.2 MB; window 152.7 MB, session host 174.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2057dce9483eee9ad679231eefd1ba9bfd93094b",
+          "message": "SK-1: purlis-skills works out a chat's skill set, and why (#2787)\n\n* SK-1: purlis-skills works out a chat's skill set, and why\n\nA new purlis-skills crate answers \"what is this chat's skill set, and\nwhy\": given the plane, the machine and a chat (workspace, persona,\nharness), it returns every effective skill with its route and origin,\nand every skill left out with a one-line reason. Only built-in skills\nexist today, so behaviour does not change.\n\nThe Codex and opencode adapters ask it for the set (through\npurlis_core::skills::for_chat) and turn it into env and config;\nClaude Code's built-ins keep riding --plugin-dir. The skills model,\nreader and briefing listing move into the crate, re-exported from\npurlis_core::skills so every caller is unchanged.\n\nAdds the skill-studio flag: off by default, on for a machine that\ntakes the dev channel, PURLIS_SKILL_STUDIO=1/0 overrides. It hides\nnothing yet.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-1: move the skills tests to their modules' tests.rs\n\nA move alone (CONTRIBUTING.md, \"Where tests live\"): read_tests.rs\nbecomes read/tests.rs, purlis-core's skills_tests.rs becomes\nskills/tests.rs, both declared with #[cfg(test)] mod tests;, and the\nseam's test file is named for the behaviour it holds. No test's name\nor body changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-1: answer the review: one source per answer, flag on the machine\n\n- The briefing lists what the chat's skill set holds\n  (skills::briefed, the same ask as the adapters), not a fresh read of\n  the directory: listed_from and LISTED_ENV leave purlis-skills.\n- Claude Code asks for_chat too, and holds in a debug assertion that the\n  set's directory is its plugin's skills/.\n- SkillSet::dir() is the one accessor (replacing dirs()); it asserts\n  every skill sits in that one directory.\n- Machine { built_in } names the built-in skills directory.\n- personas::frontmatter calls purlis_skills::frontmatter; the copy and\n  its guard test go.\n- The skill-studio flag is a machine setting (machine.json flags,\n  the ninth thing the store holds), off on every channel until turned\n  on, with PURLIS_SKILL_STUDIO over it: studio_shown becomes studio_on.\n  A dev-channel default would be a third channel difference (ADR 0092).\n- The briefing heading says built-in skills, as CONTEXT.md does.\n- skill_set takes _plane rather than binding a placeholder.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T21:36:11+04:00",
+          "tree_id": "c333d77c6347473cab6cc81a42ec4beb2b2c360b",
+          "url": "https://github.com/purlis/purlis/commit/2057dce9483eee9ad679231eefd1ba9bfd93094b"
+        },
+        "date": 1792521131491,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1093,
+            "unit": "MB",
+            "extra": "median of 3 samples: 828, 1093, 1122 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 310.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 303.3, 353.5, 317.4, 310.3, 311.2, 236 MB; window 147.2 MB, session host 165.2 MB"
           }
         ]
       }
