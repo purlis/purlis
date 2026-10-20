@@ -382,6 +382,9 @@ fn a_teredo_or_isatap_address_carrying_a_refused_ipv4_one_is_refused() {
         "2001:0:7f00:1::39cc:9bf6",
         // Teredo, client 169.254.169.254 (5601:5601 flipped).
         "2001:0:cb00:7107::5601:5601",
+        // Teredo under the pre-RFC prefix, server 127.0.0.1 and client 169.254.169.254.
+        "3ffe:831f:7f00:1::39cc:9bf6",
+        "3ffe:831f:cb00:7107::5601:5601",
         // ISATAP, 127.0.0.1, in both interface identifiers.
         "2606:4700:1::5efe:7f00:1",
         "2606:4700:1:0:200:5efe:a9fe:a9fe",
