@@ -721,6 +721,11 @@ struct Keeping {
     /// This device's keyring, and its id, where a test names them: this machine's otherwise.
     keyring: Arc<dyn crate::secrets::keyring::Store>,
     device: Option<String>,
+    /// When the browser began: a profile removed since keeps nothing of it (#2693).
+    began: std::time::SystemTime,
+    /// Whether it has done nothing yet: no act and no input of the person's (#2693). Only a
+    /// fresh browser, or one opened from that very store, is kept as a login's store.
+    fresh: bool,
 }
 
 /// The store `kept` names.
@@ -738,7 +743,16 @@ impl Keeping {
             _live: None,
             keyring: Arc::new(crate::secrets::keyring::OsStore),
             device: None,
+            began: std::time::SystemTime::now(),
+            fresh: true,
         }
+    }
+
+    /// The browser acted, or the person took it over: what it holds from now may be of other
+    /// sites, or another session of the login's own, so it is no longer kept as a login's
+    /// store unless it was opened from that store (#2693).
+    fn browsed(&mut self) {
+        self.fresh = false;
     }
 
     /// This device's key for kept logins.
@@ -763,7 +777,7 @@ impl Keeping {
         });
         // Marked, and the mark held, before a byte of the store is written into the folder.
         self.mark(&store)?;
-        let hold = crate::browserlogins::hold(&self.home, &store)?;
+        let hold = crate::browserlogins::hold_since(&self.home, &store, self.began)?;
         let keys = self.keys()?;
         // A store that does not open is never half opened: the browser starts fresh, and the
         // login fills it as any.
@@ -810,13 +824,21 @@ impl Keeping {
             );
         }
         let a_copy = self.opened_from.as_ref() == Some(keep);
+        if self.opened_from.is_none() && !self.fresh {
+            return Some(
+                "this browser went to other pages before the login, so its logins are not \
+                 kept: to keep them, log in from a new browser (browser_new, then \
+                 browser_login)"
+                    .to_owned(),
+            );
+        }
         let Ok(store) = store_of(keep) else {
             return Some("its logins could not be kept".to_owned());
         };
         if !a_copy && self.mark(&store).is_err() {
             return Some("its logins could not be kept".to_owned());
         }
-        match crate::browserlogins::hold(&self.home, &store) {
+        match crate::browserlogins::hold_since(&self.home, &store, self.began) {
             Ok(Some(hold)) => {
                 self.writes = Some((keep.clone(), hold));
                 None
@@ -885,6 +907,14 @@ struct EngineScreen {
 }
 
 impl EngineScreen {
+    /// It acted, or the person drove it (#2693).
+    fn browsed(&self) {
+        self.keeping
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .browsed();
+    }
+
     fn with<T>(&self, act: impl FnOnce(&Arc<Browser>) -> T) -> Option<T> {
         self.held
             .lock()
@@ -941,6 +971,7 @@ impl Screen for EngineScreen {
     }
 
     fn act(&self, call_id: &str, act: Act, epoch: u64) -> Result<Browsed, NotActed> {
+        self.browsed();
         let id = CallId::new(call_id).map_err(|why| NotActed::Refused(why.to_string()))?;
         let call = call_of(act).map_err(NotActed::Refused)?;
         // The call waits on the engine: it is made outside the lock, so frames and a stop are
@@ -1007,6 +1038,7 @@ impl Screen for EngineScreen {
     }
 
     fn take_over(&self) -> u64 {
+        self.browsed();
         // Outside the lock, as an act is: it returns once no act of the agent's can reach a
         // page.
         self.with(Arc::clone)
@@ -1019,6 +1051,7 @@ impl Screen for EngineScreen {
     }
 
     fn input(&self, input: &wire::Input) -> Result<(), NotTaken> {
+        self.browsed();
         let browser = self.with(Arc::clone).ok_or(NotTaken::Ended)?;
         browser.person_input(&input_of(input)).map_err(not_taken)
     }

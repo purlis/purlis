@@ -18,7 +18,11 @@
 //!   and generation are sealed in with it, so a store moved elsewhere, or an older copy of one,
 //!   does not open. A store that does not open is never half opened: the browser starts fresh.
 //! - **One writer** ([`hold`]): a browser that holds a store's lock writes it back when it ends;
-//!   any other browser opened from it is a copy, and what it changes is discarded.
+//!   any other browser opened from it is a copy, and what it changes is discarded. A store is
+//!   opened, and held, under the keyring's lock, so neither meets a write-back half done; and a
+//!   browser that began before its profile was removed never makes a store under it ([`removed`]).
+//! - **Only where the build says what it leaves out** ([`kept_with`]): a build whose list of what
+//!   is not kept is empty keeps no login.
 //! - **A browser's folder says whose it is** ([`Mark`]): a mark beside it, held locked while the
 //!   browser runs, so what a browser that ended outright left behind is found and removed
 //!   ([`sweep`]).
@@ -68,6 +72,64 @@ pub const MOST_BYTES: u64 = 256 << 20;
 use purlis_browser_engine::launch::NOT_KEPT;
 #[cfg(not(unix))]
 const NOT_KEPT: &[&str] = &[];
+
+/// **Whether a build that leaves out `not_kept` keeps logins at all** (#2693): never where it
+/// names nothing, as a build for a platform whose engine's folder purlis has not laid out, so
+/// no cache, home or log is ever sealed for want of a list.
+pub fn kept_with(not_kept: &[&str]) -> Result<(), String> {
+    if not_kept.is_empty() {
+        return Err(
+            "logins are not kept on this build: it does not say what of a browser's folder to \
+             leave out"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+/// The mark of profile `profile`'s removal, beside the stores: it says when, in nanoseconds
+/// since the epoch, from the clock a browser's beginning is read by (never a file's time,
+/// which some file systems keep coarser).
+fn removed_mark(dir: &Path, profile: &str) -> PathBuf {
+    dir.join(format!(".removed-{profile}"))
+}
+
+/// **Marks profile `profile` removed now** (#2693), whether or not it kept a login, under the
+/// keyring's lock: a browser that began before this never makes a store under its name, and one
+/// that begins after it, of a new profile of that name, keeps as any.
+pub fn removed(data: &Path, profile: &str) -> Result<(), String> {
+    if !plain(profile) {
+        return Ok(());
+    }
+    let _keys = lock_keys(data)?;
+    mark_removed(&data.join(DIR), profile)
+}
+
+/// [`removed`], the keyring's lock held already.
+fn mark_removed(dir: &Path, profile: &str) -> Result<(), String> {
+    let mark = removed_mark(dir, profile);
+    let at = nanos(std::time::SystemTime::now());
+    let _ = fs::remove_file(&mark);
+    private_file(&mark, at.to_string().as_bytes())
+        .map_err(|e| format!("the profile's removal could not be kept for its browsers ({e})"))
+}
+
+fn nanos(at: std::time::SystemTime) -> u128 {
+    at.duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos())
+}
+
+/// Whether profile `profile` was removed at or after `since`. A mark that cannot be read says
+/// it was: nothing is kept for a profile whose removal is in doubt.
+fn removed_since(dir: &Path, profile: &str, since: std::time::SystemTime) -> bool {
+    match fs::read_to_string(removed_mark(dir, profile)) {
+        Ok(said) => said
+            .trim()
+            .parse::<u128>()
+            .map_or(true, |at| at >= nanos(since)),
+        Err(e) => e.kind() != io::ErrorKind::NotFound,
+    }
+}
 
 /// Whether `name` is a plain name a store's place may hold.
 fn plain(name: &str) -> bool {
@@ -539,10 +601,27 @@ pub struct Hold {
     dir: PathBuf,
 }
 
-/// **The hold on `store`**, or `None` where another browser holds it: then a browser opened
-/// from it is a copy.
+/// **The hold on `store`** for a browser that begins now, or `None` where another browser holds
+/// it: then a browser opened from it is a copy.
 pub fn hold(data: &Path, store: &Store) -> Result<Option<Hold>, String> {
-    let root = kept_dir(data)?;
+    hold_since(data, store, std::time::SystemTime::now())
+}
+
+/// **[`hold`], for a browser that began at `since`**: refused, with nothing made, where its
+/// profile was removed since (#2693). Taken under the keyring's lock, which a removal holds.
+pub fn hold_since(
+    data: &Path,
+    store: &Store,
+    since: std::time::SystemTime,
+) -> Result<Option<Hold>, String> {
+    kept_with(NOT_KEPT)?;
+    let _keys = lock_keys(data)?;
+    let root = data.join(DIR);
+    if removed_since(&root, &store.profile, since) {
+        return Err(
+            "its profile was removed after this browser began, so nothing of it is kept".to_owned(),
+        );
+    }
     let dir = store.dir(data);
     let made = |e: io::Error| format!("the kept logins' folder could not be made ({e})");
     let profile = root.join(&store.profile);
@@ -599,6 +678,7 @@ impl Hold {
     /// key at the store's next generation; the file is replaced whole, never written over in
     /// place, and the keyring learns the generation once the file is there.
     pub fn keep(&self, folder: &Path, keys: &Keys<'_>) -> Result<(), String> {
+        kept_with(NOT_KEPT)?;
         // Under the keyring's lock, which a profile's removal holds as it wipes.
         let _keys = lock_keys(&self.data)?;
         if !self.still_there() {
@@ -624,6 +704,10 @@ impl Hold {
 /// **Opens `store` into `into`**, a browser's fresh data folder: whether there was one that
 /// opened, as last written. A store that does not open writes nothing into `into`.
 pub fn open_into(data: &Path, store: &Store, into: &Path, keys: &Keys<'_>) -> Result<bool, String> {
+    kept_with(NOT_KEPT)?;
+    // The file and its generation are read as one under the keyring's lock (#2693), which a
+    // write-back holds from its read of the generation to its write: never one without the other.
+    let writing = lock_keys(data)?;
     let file = store.dir(data).join(FILE);
     let sealed = match fs::read(&file) {
         Ok(sealed) => sealed,
@@ -633,6 +717,7 @@ pub fn open_into(data: &Path, store: &Store, into: &Path, keys: &Keys<'_>) -> Re
     let Some(held) = keys.read()? else {
         return Ok(false);
     };
+    drop(writing);
     let place = store.place();
     let Some(generation) = held.stores.get(&place).copied() else {
         return Err("the kept logins do not open on this device, so none were used".to_owned());
@@ -744,10 +829,9 @@ pub fn wipe_profile(
         return Ok(false);
     }
     sweep(folders, None, &|of, _| of == profile);
-    if !data.join(DIR).is_dir() {
-        return Ok(false);
-    }
     let _keys = lock_keys(data)?;
+    // Whatever it kept, no browser of it that began before now makes a store again (#2693).
+    mark_removed(&data.join(DIR), profile)?;
     let dir = data.join(DIR).join(profile);
     let had = match fs::remove_dir_all(&dir) {
         Ok(()) => true,
@@ -758,6 +842,10 @@ pub fn wipe_profile(
             ));
         }
     };
+    // Nothing wiped asks no keyring.
+    if !had {
+        return Ok(false);
+    }
     // A store is a folder: the keyring's lock beside them is none.
     let left = fs::read_dir(data.join(DIR))
         .map(|entries| {

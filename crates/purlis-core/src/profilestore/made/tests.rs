@@ -767,3 +767,26 @@ fn removing_a_profile_wipes_its_kept_browser_logins_and_their_key() {
         "no store left, no key"
     );
 }
+
+/// A profile that never kept a login is marked removed all the same (#2693): a browser of it
+/// still running never makes a store under its name.
+#[test]
+fn removing_a_profile_that_kept_no_login_leaves_its_running_browsers_nothing_to_keep_under() {
+    let mut machine = Machine::new();
+    let data = machine._dir.path().join("data");
+    machine.store = machine
+        .store
+        .clone()
+        .keyring_in(machine._dir.path().join("keyring.json"));
+    machine.create("work", "claude", 100).unwrap();
+    let began = std::time::SystemTime::now();
+    let kept =
+        crate::browserlogins::Store::new("work", "steward", "shop-login", "0123456789abcdef")
+            .unwrap();
+
+    let removal = removal(&machine.store, "work").unwrap();
+    remove(&machine.store, "work", &removal).unwrap();
+
+    assert!(crate::browserlogins::hold_since(&data, &kept, began).is_err());
+    assert!(!data.join(crate::browserlogins::DIR).join("work").exists());
+}
