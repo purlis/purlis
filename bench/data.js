@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792533036723,
+  "lastUpdate": 1792534683064,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19782,6 +19782,48 @@ window.BENCHMARK_DATA = {
             "value": 101.73237499999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.011, 101.676, 101.732, 102.192, 102.294 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2df226df2754e3c998f12b75b17b1ae189b7882e",
+          "message": "ADR 0101: six Skill studio capabilities, and their extensions are confined (SK-14, SK-16) (#2850)\n\n* ADR 0101: six Skill studio capabilities, and their extensions are confined\n\nSkillSource, Grader, SkillLint, SkillTemplate, StudioPanel and\nSkillRouter join ADR 0053's vocabulary, each with a built-in first user,\nexperimental until the finish line and then public API v1. Under the\noperator's confine-first ruling an extension that declares one runs in\nthe chat sandbox profile with network only to its declared hosts,\namending ADR 0041. A Grader asks purlis to run its chats; the neutral\nGrader interface and the evals/ fixture layout are recorded.\n\nRefs #2762\nRefs #2777\nRefs #2779\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* ADR 0101: close the confinement loopholes from review\n\nEvery build refuses third-party studio capabilities until confinement is\nin; declared hosts may never be a model provider's and are refused in the\nmanifest and at the proxy; on a machine that cannot confine, the whole\nextension does not load; the read scope is its own folder and what purlis\nhands it. The Grade request defaults to three arms, the wire table is cut\nto messages and purpose, the 0041 and 0053 amendments are short pointers,\nand CONTEXT.md gains the six studio capabilities.\n\nRefs #2762\nRefs #2777\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* ADR 0101: link ADR 0099\n\nRefs #2762\nRefs #2777\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T02:08:23+04:00",
+          "tree_id": "42ee53061a7f5ceb0f5de6f419eca945e7976019",
+          "url": "https://github.com/purlis/purlis/commit/2df226df2754e3c998f12b75b17b1ae189b7882e"
+        },
+        "date": 1792534681635,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.679014,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.659, 0.664, 0.679, 0.686, 0.707 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5083245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.423, 16.466, 16.508, 16.605, 16.933 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1088455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.506, 101.544, 102.109, 102.160, 102.362 ms"
           }
         ]
       }
