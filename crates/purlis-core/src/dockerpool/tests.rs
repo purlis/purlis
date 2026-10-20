@@ -609,8 +609,9 @@ fn pairing_runs_the_bridge_to_pair_as_the_runners_user_and_group_in_the_containe
 /// of its folder: `run` with `id`, `container inspect` with `inspect`, `volume inspect` with
 /// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and
 /// `exec` with `paired`, after keeping its standard input, and `container ls` with
-/// `containers`. `run` fails where `run-fails` is there. `container rm` and `volume rm` exit with what `rm-fails-container` or
-/// `rm-fails-volume` holds, else what `rm-fails` holds, 0 when there is none.
+/// `containers`; `run` fails where `run-fails` is there. `container rm` and `volume rm` exit
+/// with what `rm-fails-container` or `rm-fails-volume` holds, else what `rm-fails` holds, 0
+/// when there is none.
 pub(crate) struct FakeDocker {
     dir: tempfile::TempDir,
 }
@@ -621,7 +622,8 @@ impl FakeDocker {
         let at = |name: &str| dir.path().join(name).display().to_string();
         let script = format!(
             "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  \
-             'run '*) [ -f '{run_fails}' ] && {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
+             'run '*) [ -f '{run_fails}' ] && \
+             {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') cat '{inspect}' ;;\n  \
              'volume inspect') cat '{volume}' ;;\n  \
              'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \

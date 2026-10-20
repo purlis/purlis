@@ -71,6 +71,54 @@ fn a_pool_this_machine_does_not_keep_is_never_reached() {
     assert!(refused.contains("has no runner"), "{refused}");
 }
 
+#[test]
+fn a_link_to_a_runner_reads_this_desktops_key_and_never_makes_one() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path(), Docker("/nonexistent/docker".into()));
+    let image = Image::pinned(&format!(
+        "ghcr.io/purlis/purlis-runner@sha256:{}",
+        "0".repeat(64)
+    ))
+    .unwrap();
+    purlis_core::runners::record_pool(
+        config.path(),
+        &Pool::new("builds", image.clone(), Set::default()).unwrap(),
+    )
+    .unwrap();
+    let made = purlis_core::dockerpool::Made {
+        container: purlis_core::dockerpool::ContainerId::new(&"a".repeat(64)).unwrap(),
+        runner: purlis_core::dockerpool::Runner::new(
+            "builds",
+            image,
+            purlis_core::dockerpool::User::new(10001, 10001).unwrap(),
+            "/home/purlis",
+        )
+        .unwrap(),
+    };
+    let runner = purlis_session_protocol::hostlink::Pinned {
+        device: "01JB0RUNNER0000000000000000".into(),
+        key: purlis_session_protocol::hostlink::LinkKey::generate()
+            .unwrap()
+            .public(),
+    };
+    let desktop = purlis_session_protocol::hostlink::Pinned {
+        device: purlis_core::machine::device_id(config.path()).unwrap(),
+        key: purlis_session_protocol::hostlink::LinkKey::generate()
+            .unwrap()
+            .public(),
+    };
+    let locked = purlis_core::runners::lock(config.path());
+    purlis_core::runners::keep_for_its_pool(config.path(), &made, &runner, &desktop, &locked)
+        .unwrap();
+    drop(locked);
+    let refused = ToARunner::of(&machine, "builds").err().unwrap();
+    assert!(refused.contains("not in your keychain"), "{refused}");
+    assert!(
+        !config.path().join("keyring.json").exists(),
+        "a link made a key"
+    );
+}
+
 /// **A pool added on this machine, reached by the window through its own host** (#2679): the
 /// window's link is relayed by the desktop's host to the pool's runner, through `docker exec`
 /// and the key pinned at its pairing. It needs Docker and a runner image of this build named by
@@ -89,7 +137,7 @@ fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
     );
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine(config.path(), docker.clone());
-    let desktop = machine.desktop().unwrap().pinned();
+    let desktop = machine.desktop_made().unwrap().pinned();
     let name = format!(
         "test-{}",
         std::time::SystemTime::now()
