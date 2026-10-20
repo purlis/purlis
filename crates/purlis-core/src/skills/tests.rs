@@ -107,3 +107,165 @@ fn a_briefing_lists_what_the_chats_set_holds_and_not_a_folder_it_leaves_out() {
     assert!(text.contains("- `kept` — Is kept."), "{text}");
     assert!(!text.contains("undescribed"), "{text}");
 }
+
+/// A plane for the grant and Share orchestration (#2767): its `charter.toml`, a workspace
+/// `smart-ide`, and a project skill `deploy`. No git repository: a local skill in it is read.
+fn granting_plane() -> tempfile::TempDir {
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(plane.path().join("workspaces/smart-ide")).unwrap();
+    let deploy = plane.path().join("skills/deploy");
+    std::fs::create_dir_all(&deploy).unwrap();
+    std::fs::write(
+        deploy.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Ships it.\n---\n",
+    )
+    .unwrap();
+    plane
+}
+
+fn gets(plane: &Path, workspace: Option<&str>) -> Vec<String> {
+    in_the_studio(None, plane, workspace)
+        .effective
+        .into_iter()
+        .map(|e| e.skill.name)
+        .collect()
+}
+
+#[test]
+fn a_grant_reaches_the_workspace_it_names_and_the_studio_shows_it() {
+    let plane = granting_plane();
+    assert!(gets(plane.path(), Some("smart-ide")).is_empty());
+
+    let folder = grant(
+        plane.path(),
+        "deploy",
+        &Grant::Only(vec!["smart-ide".to_owned()]),
+    )
+    .unwrap();
+
+    assert_eq!(folder, plane.path().join("skills/deploy"));
+    assert_eq!(gets(plane.path(), Some("smart-ide")), ["deploy"]);
+}
+
+#[test]
+fn a_grant_to_a_workspace_the_plane_does_not_have_is_refused_and_writes_nothing() {
+    let plane = granting_plane();
+
+    let refused = grant(
+        plane.path(),
+        "deploy",
+        &Grant::Only(vec!["smart-id".into()]),
+    )
+    .unwrap_err();
+
+    assert!(refused.contains("no workspace \"smart-id\""), "{refused}");
+    assert!(!plane.path().join("skills/deploy.toml").exists());
+}
+
+#[test]
+fn a_workspace_turns_a_granted_skill_off_and_back_on_in_its_own_settings() {
+    let plane = granting_plane();
+    grant(plane.path(), "deploy", &Grant::All).unwrap();
+
+    assert_eq!(switch(plane.path(), "smart-ide", "deploy", false), Ok(true));
+    assert!(gets(plane.path(), Some("smart-ide")).is_empty());
+    let manifest =
+        std::fs::read_to_string(plane.path().join("workspaces/smart-ide/workspace.json")).unwrap();
+    assert!(manifest.contains("\"off\""), "{manifest}");
+    assert_eq!(
+        switch(plane.path(), "smart-ide", "deploy", false),
+        Ok(false),
+        "already off: nothing is written"
+    );
+
+    assert_eq!(switch(plane.path(), "smart-ide", "deploy", true), Ok(true));
+    assert_eq!(gets(plane.path(), Some("smart-ide")), ["deploy"]);
+    assert!(turned_off(plane.path(), "smart-ide").is_empty());
+}
+
+#[test]
+fn a_workspace_cannot_turn_on_a_skill_the_project_did_not_grant_it_and_is_told_why() {
+    let plane = granting_plane();
+
+    let refused = switch(plane.path(), "smart-ide", "deploy", true).unwrap_err();
+
+    assert_eq!(
+        refused,
+        "deploy is not granted to smart-ide, so it cannot be turned on there: a workspace only \
+         turns off what the project granted it. The project grants it at its root: purlis skill \
+         grant deploy smart-ide"
+    );
+    assert!(
+        !plane
+            .path()
+            .join("workspaces/smart-ide/workspace.json")
+            .exists()
+    );
+}
+
+#[test]
+fn a_local_skill_in_a_plane_that_is_no_git_repository_is_read_and_shared() {
+    let plane = granting_plane();
+    let scratch = plane.path().join("skills.local/scratch");
+    std::fs::create_dir_all(&scratch).unwrap();
+    std::fs::write(
+        scratch.join("SKILL.md"),
+        "---\nname: scratch\ndescription: Tries it.\n---\n",
+    )
+    .unwrap();
+    let set = in_the_studio(None, plane.path(), None);
+    assert!(
+        set.effective
+            .iter()
+            .any(|e| e.skill.name == "scratch" && e.local),
+        "{set:?}"
+    );
+
+    let moved = share_here(plane.path(), None, "scratch").unwrap();
+
+    assert_eq!(moved, plane.path().join("skills/scratch"));
+    let set = in_the_studio(None, plane.path(), None);
+    assert!(
+        set.effective
+            .iter()
+            .any(|e| e.skill.name == "scratch" && !e.local)
+    );
+}
+
+#[test]
+fn a_local_skill_is_read_only_while_git_ignores_it() {
+    // The live/local rule of ADR 0048, for `skills.local/` (#2767): one git would commit is left
+    // out with git's answer and the fix; ignored, it is in the set.
+    let plane = granting_plane();
+    let init = crate::testgit::run(plane.path(), &["init", "-q"]);
+    assert_eq!(init.code, Some(0), "git init: {}", init.err);
+    let scratch = plane.path().join("skills.local/scratch");
+    std::fs::create_dir_all(&scratch).unwrap();
+    std::fs::write(
+        scratch.join("SKILL.md"),
+        "---\nname: scratch\ndescription: Tries it.\n---\n",
+    )
+    .unwrap();
+
+    let set = in_the_studio(None, plane.path(), None);
+    let left = set
+        .left_out
+        .iter()
+        .find(|l| l.name == "scratch")
+        .expect("left out");
+    assert_eq!(
+        left.reason.to_string(),
+        "a local skill is read only while git keeps it on this machine, and git would commit \
+         skills.local/scratch/SKILL.md: add /skills.local/ to the plane's .gitignore"
+    );
+
+    std::fs::write(plane.path().join(".gitignore"), "/skills.local/\n").unwrap();
+    let set = in_the_studio(None, plane.path(), None);
+    assert!(
+        set.effective
+            .iter()
+            .any(|e| e.skill.name == "scratch" && e.local),
+        "{set:?}"
+    );
+}

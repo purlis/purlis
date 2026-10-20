@@ -597,8 +597,14 @@ export function ViewPane({
           />
         ) : isSkillStudio(view) ? (
           /* The Skill studio (#2765): read from the project's skill folders, again when the
-             plane changes on disk. */
-          <SkillStudioTab key={plane} plane={plane} changed={changed + onDisk} />
+             plane changes on disk; keyed by the workspace whose chats it shows (#2767). */
+          <SkillStudioTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            workspace={view.key === "" ? undefined : view.key}
+            changed={changed + onDisk}
+            onOpenView={onOpenView}
+          />
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its
              chat through the catalogue's verb, or its session record as any record opens. It

@@ -44,7 +44,13 @@ import type {
 import { activityTitle, activityView } from "./activity";
 import { chatNetworkTitle, chatNetworkView } from "./chatNetwork";
 import { DISPATCHES_TITLE, DISPATCHES_VIEW } from "./dispatches";
-import { SKILL_STUDIO_TITLE, SKILL_STUDIO_VIEW } from "./skillStudio";
+import {
+  SKILL_STUDIO_IN,
+  SKILL_STUDIO_TITLE,
+  SKILL_STUDIO_VIEW,
+  skillStudioTitle,
+  skillStudioView,
+} from "./skillStudio";
 import { backSaid } from "./chatState";
 import { handedOff, tasksOf, type ListedChat } from "./chatsTree";
 import { MAIN } from "./here";
@@ -88,6 +94,9 @@ import {
 import { RESTORING_HAS_NO_CLOSE } from "./restoringChats";
 import { SIDE_KEYS_SAID } from "./sideKeys";
 import { SETTINGS_GROUPS } from "./settings/catalogue";
+
+/** The Workspace level's Skills group (#2767), behind the Skill studio's flag. */
+const WORKSPACE_SKILLS = "workspace.skills";
 import { profilePage } from "./settings/profileAddress";
 import { askSettingsLink, linkToGroup, settingsPlace, type SettingsLink } from "./settings/links";
 import {
@@ -2090,6 +2099,22 @@ export function catalogue(now: Now): Offer[] {
       }),
       note: `${workspace}: Settings at its level — live, repos, extensions, appearance and plugins.`,
     });
+    // Its chats' skills (#2767): the Skill studio on this workspace, behind the studio's flag.
+    // The Skills row of its Settings level runs it.
+    if (now.skillStudio)
+      offers.push({
+        ...can(
+          `${SKILL_STUDIO_IN}${workspace}`,
+          "Open in Skill studio",
+          {
+            verb: "openView",
+            view: skillStudioView(workspace),
+            title: skillStudioTitle(workspace),
+          },
+          workspace,
+        ),
+        note: `${workspace}: every skill its chats get, and why any other is left out.`,
+      });
     // Its cross-repo changes (charter#470), for the workspace in front of the operator: a view
     // tab keyed by the workspace and filed on its strip, which asks the forge when it opens and
     // when its Refresh is pressed, never on a switch.
@@ -2182,7 +2207,13 @@ export function catalogue(now: Now): Offer[] {
     ...can("pool.add", "Add a Docker pool…", { verb: "addDockerPool" }),
     note: "A runner on your Docker, held to the limits you set.",
   });
-  offers.push(...settingsGroupRows(now.plane, now.focused === OUTSIDE ? undefined : now.focused));
+  offers.push(
+    ...settingsGroupRows(
+      now.plane,
+      now.focused === OUTSIDE ? undefined : now.focused,
+      now.skillStudio ?? false,
+    ),
+  );
   offers.push(...profilePageRows(now.plane, now.profiles));
 
   // **A finished task's Merge… and Discard branch…, on its row's menu** (#1534): for a task
@@ -3329,7 +3360,11 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
  * one; and the focused workspace's only, as the Workspace settings… row is about the workspace
  * the panels show. The labels are `settings/catalogue.ts`'s, held to the builders by its test.
  */
-function settingsGroupRows(plane: string | undefined, workspace: string | undefined): Offer[] {
+function settingsGroupRows(
+  plane: string | undefined,
+  workspace: string | undefined,
+  skillStudio: boolean,
+): Offer[] {
   const opens = (group: string, extra: { plane?: string; workspace?: string }): Does => ({
     verb: "openSettingsGroup",
     group,
@@ -3356,7 +3391,10 @@ function settingsGroupRows(plane: string | undefined, workspace: string | undefi
       note: `The project's Settings, at ${one.label}.`,
     });
   if (workspace === undefined) return rows;
-  for (const one of SETTINGS_GROUPS.workspace)
+  // The Skills group only while the Skill studio's flag is on (#2767).
+  for (const one of SETTINGS_GROUPS.workspace.filter(
+    (group) => group.id !== WORKSPACE_SKILLS || skillStudio,
+  ))
     rows.push({
       ...can(
         `settings.group:${one.id}:${workspace}`,

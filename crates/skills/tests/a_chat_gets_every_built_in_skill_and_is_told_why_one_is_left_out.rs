@@ -37,6 +37,7 @@ fn set_for(plane: &Path, plugin: &Path, route: Route) -> SkillSet {
         Some(plane),
         &Machine {
             built_in: Some(&plugin.join("skills")),
+            ..Machine::default()
         },
         &chat(route),
     )
@@ -139,6 +140,7 @@ fn a_machine_without_the_bundle_gives_a_chat_no_skills_and_leaves_none_out() {
             Some(tmp.path()),
             &Machine {
                 built_in: built_in.as_deref(),
+                ..Machine::default()
             },
             &chat(Route::Config),
         );
@@ -151,20 +153,15 @@ fn a_machine_without_the_bundle_gives_a_chat_no_skills_and_leaves_none_out() {
 
 #[test]
 fn the_planes_harness_folders_and_the_levels_not_read_yet_do_not_change_the_set() {
-    // Built-in and project skills are purlis's to hand over until the workspace and persona
-    // levels arrive (#2767, #2768): the plane's `.claude/skills`, and folders where those levels
-    // will be, change nothing. The project's `skills/` is `a_project_skill_reaches_chats_at_the_
-    // plane_root.rs`'s.
+    // Built-in, project and workspace skills are purlis's to hand over until the persona level
+    // arrives (#2768): the plane's `.claude/skills`, and the folder where that level will be,
+    // change nothing. The project's `skills/` is `a_project_skill_reaches_chats_at_the_
+    // plane_root.rs`'s, and the workspace's is `src/tests.rs`'s (#2767).
     let tmp = tempfile::tempdir().unwrap();
     let plugin = bundle(tmp.path());
     skill(&plugin.join("skills"), "secrets", &whole("secrets"));
     let plane = tmp.path().join("plane");
     skill(&plane.join(".claude/skills"), "house", &whole("house"));
-    skill(
-        &plane.join("workspaces/smart-ide/skills"),
-        "ws",
-        &whole("ws"),
-    );
     skill(&plane.join("personas/steward/skills"), "own", &whole("own"));
 
     let with_plane = set_for(&plane, &plugin, Route::Briefing);
@@ -172,6 +169,7 @@ fn the_planes_harness_folders_and_the_levels_not_read_yet_do_not_change_the_set(
         None,
         &Machine {
             built_in: Some(&plugin.join("skills")),
+            ..Machine::default()
         },
         &Chat {
             workspace: None,

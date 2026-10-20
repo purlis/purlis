@@ -185,7 +185,7 @@ fn a_settings_key_no_reader_reads_is_refused() {
         refusals(text, "alpha"),
         vec![
             "settings.colour in workspaces/alpha/workspace.json is not read — a workspace's \
-             settings hold extensions, harness_plugins, theme and nothing else"
+             settings hold extensions, harness_plugins, theme, skills and nothing else"
                 .to_owned()
         ]
     );
@@ -899,5 +899,35 @@ fn a_workspaces_theme_and_harness_plugin_refusals_carry_their_keys() {
     assert_eq!(
         key_of("is not true or false"),
         keys(&["harness_plugins", "codex", "a.b"])
+    );
+}
+
+#[test]
+fn a_workspaces_skill_turn_off_list_is_read_and_any_other_shape_is_refused() {
+    // #2767: `settings.skills.off`, a list of names, and nothing else under `skills`.
+    let ok = r#"{"settings": {"skills": {"off": ["deploy"]}}}"#;
+    assert!(
+        refusals(ok, "alpha").is_empty(),
+        "{:?}",
+        refusals(ok, "alpha")
+    );
+
+    let said = refusals(
+        r#"{"settings": {"skills": {"off": "deploy", "on": ["x"]}}}"#,
+        "alpha",
+    );
+    assert_eq!(said.len(), 2, "{said:?}");
+    assert!(said.iter().any(|why| why.starts_with(
+        "settings.skills.off in workspaces/alpha/workspace.json is not a list of skill names"
+    )));
+    assert!(said.iter().any(|why| {
+        why.starts_with("settings.skills.on in workspaces/alpha/workspace.json is not read")
+    }));
+    assert_eq!(
+        refusals(r#"{"settings": {"skills": true}}"#, "alpha"),
+        [
+            "settings.skills in workspaces/alpha/workspace.json is not an object — a workspace's \
+          skills are {\"off\": [\"<skill>\", …]}"
+        ]
     );
 }

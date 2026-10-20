@@ -1518,6 +1518,42 @@ fn git_ignore_state(root: &Path, git: Option<&Path>, timeout: std::time::Duratio
     }
 }
 
+/// **Whether git keeps the local skill in `folder` on this machine** (ADR 0099 §1, the live/local
+/// rule of ADR 0048 for a level's `skills.local/`): `Ok` where git ignores its `SKILL.md`, or the
+/// plane at `root` is no git repository; otherwise what git says, as `purlis_skills::KeptLocal`
+/// takes it. One `git check-ignore` of the one file, which counts a tracked file as not ignored.
+pub fn kept_local(root: &Path, folder: &Path) -> Result<(), String> {
+    kept_local_within(root, folder, None, GIT_TIMEOUT)
+}
+
+/// [`kept_local`] against a named `git`, waiting `timeout` for it.
+pub fn kept_local_within(
+    root: &Path,
+    folder: &Path,
+    git: Option<&Path>,
+    timeout: std::time::Duration,
+) -> Result<(), String> {
+    let file = folder.join("SKILL.md");
+    let rel = file.strip_prefix(root).unwrap_or(&file);
+    let rel = rel.to_string_lossy().replace('\\', "/");
+    let state = match git_answer(root, git, &["check-ignore", "-q", "--", &rel], timeout) {
+        Ok(out) => match out.code {
+            Some(0) => GitState::Ignored,
+            Some(1) => GitState::Committable,
+            _ => failed(&out, out.stderr.trim()),
+        },
+        Err(state) => state,
+    };
+    match state {
+        GitState::Ignored | GitState::NotARepo => Ok(()),
+        GitState::Committable | GitState::Tracked => Err(format!("git would commit {rel}")),
+        GitState::Unknown(why) => Err(format!(
+            "git could not say whether {rel} is ignored ({})",
+            shown::short(&why)
+        )),
+    }
+}
+
 /// A git that exited non-zero: not a repository, or an unknown with git's first line.
 fn failed(out: &Answered, said: &str) -> GitState {
     if out.code == Some(128) && said.contains("not a git repository") {

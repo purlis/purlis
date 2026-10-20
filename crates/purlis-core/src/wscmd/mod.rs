@@ -171,6 +171,8 @@ pub fn live_block<'a>(root: &Path, names: impl IntoIterator<Item = &'a str>) -> 
             format!("!/workspaces/{n}/work/**"),
             format!("!/workspaces/{n}/sessions"),
             format!("!/workspaces/{n}/sessions/**"),
+            format!("!/workspaces/{n}/skills"),
+            format!("!/workspaces/{n}/skills/**"),
             format!("!/workspaces/{n}/changes"),
             format!("!/workspaces/{n}/changes/**"),
             format!("/workspaces/{n}/changes/log/"),
@@ -334,6 +336,7 @@ pub fn meta_paths(root: &Path, name: &str) -> Vec<String> {
         "todos",
         crate::work::log::DIR_NAME,
         crate::sessionrecord::DIR,
+        purlis_skills::PROJECT_DIR,
     ]
     .into_iter()
     .filter(|rel| dir.join(rel).exists())

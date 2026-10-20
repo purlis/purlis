@@ -696,10 +696,14 @@ const ORDINARY: Answers = {
   dispatches: { rows: DISPATCHES, undrawn: 1 },
   skill_studio: {
     on: true,
+    workspace: null,
+    workspaces: ["alpha"],
     skills: [
       {
         name: "deploy",
         level: "project",
+        local: false,
+        grant: "all",
         on: true,
         left_out: null,
         description: "Deploys the site.",
@@ -708,6 +712,8 @@ const ORDINARY: Answers = {
       {
         name: "half",
         level: "project",
+        local: true,
+        grant: "root",
         on: false,
         left_out: "not a skill: its SKILL.md names no `description`",
         description: "",
@@ -1066,7 +1072,7 @@ const STATES: State[] = [
   {
     name: "the Skill studio, with no skills yet",
     view: { from: null, view: "skill-studio", key: "" },
-    answers: { skill_studio: { on: true, skills: [] } },
+    answers: { skill_studio: { on: true, workspace: null, workspaces: [], skills: [] } },
     drawn: /This project has no skills yet/,
   },
   {

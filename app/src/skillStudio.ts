@@ -18,6 +18,23 @@ export const SKILL_STUDIO_VIEW: ViewRef = { from: null, view: "skill-studio", ke
 /** What the Skill studio's tab is called. */
 export const SKILL_STUDIO_TITLE = "Skill studio";
 
+/**
+ * **The Skill studio filtered to one workspace's chats** (#2767): the same view, keyed by the
+ * workspace, so a Skills summary row opens it on that workspace and the studio's own picker can
+ * show another. `undefined` is a chat at the project's root, the view's own key.
+ */
+export function skillStudioView(workspace?: string): ViewRef {
+  return { ...SKILL_STUDIO_VIEW, key: workspace ?? "" };
+}
+
+/** What the studio's tab is called while it shows `workspace`'s chats. */
+export function skillStudioTitle(workspace?: string): string {
+  return workspace ? `${SKILL_STUDIO_TITLE} · ${workspace}` : SKILL_STUDIO_TITLE;
+}
+
+/** The catalogue row that opens the studio on `workspace`'s chats (#2767). */
+export const SKILL_STUDIO_IN = "skills.studio:";
+
 /** Whether `view` is the Skill studio. */
 export function isSkillStudio(view: ViewRef): boolean {
   return view.from === null && view.view === SKILL_STUDIO_VIEW.view;

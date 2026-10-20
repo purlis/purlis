@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { useSkillStudioOn } from "../skillStudio";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import * as Menu from "../overlays/dropdown-menu";
 import { Check, LoaderCircle } from "lucide-react";
@@ -309,9 +310,10 @@ function WorkspaceLevelTab({
   ...switcher
 }: Switcher & { plane: PlaneId; workspace: string }) {
   const level = useWorkspaceLevel(plane, workspace);
+  const skillStudio = useSkillStudioOn();
   const groups = useMemo(
-    () => (level.state === "read" ? workspaceGroups(level.read, level.reread) : []),
-    [level],
+    () => (level.state === "read" ? workspaceGroups(level.read, level.reread, skillStudio) : []),
+    [level, skillStudio],
   );
   // The manifest as its whole text (NO-7, #1232), written through the level's driver as Edit as
   // TOML's files are: the core checks it, against the text the edit began from.

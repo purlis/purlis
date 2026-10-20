@@ -3,20 +3,43 @@
 
 import { useEffect, useState } from "react";
 import { LoaderCircle, Sparkles } from "lucide-react";
-import { commands, type Studio } from "./bindings";
+import { commands, type Studio, type StudioSkill } from "./bindings";
 import { EmptyState } from "./EmptyState";
+import { Notice } from "./Notice";
+import { Select } from "./primitives/Select";
+import { skillStudioTitle, skillStudioView } from "./skillStudio";
+import type { ViewRef } from "./tabs";
+
+/** What the picker's plane-root choice is sent as: no workspace. */
+const AT_THE_ROOT = "";
 
 /**
- * **The Skill studio's tab** (SK-2, #2765): every built-in and project skill, with its level,
- * and why each one a chat at the plane root does not get is left out. Read only: making,
- * editing and granting skills come with #2770 and #2767.
+ * **The Skill studio's tab** (SK-2, #2765; SK-4, #2767): one chat's skill set, at the project's
+ * root or in one workspace. Every skill the chat gets, with its level, and every one it does not
+ * get with the one line that says why: not granted, turned off, hidden by a narrower copy (both
+ * copies are listed), or not a skill. A local skill offers Share. Making and editing skills come
+ * with #2770.
  */
-export function SkillStudioTab({ plane, changed }: { plane: string; changed: number }) {
+export function SkillStudioTab({
+  plane,
+  workspace,
+  changed,
+  onOpenView,
+}: {
+  plane: string;
+  /** The workspace whose chats it shows; `undefined` for a chat at the project's root. */
+  workspace?: string;
+  changed: number;
+  /** Opens the studio on another workspace's chats, in its own tab. */
+  onOpenView?: (view: ViewRef, title: string) => void;
+}) {
   const [studio, setStudio] = useState<Studio>();
   const [refused, setRefused] = useState<string>();
+  const [shareRefused, setShareRefused] = useState<string>();
+  const [shared, setShared] = useState(0);
   useEffect(() => {
     let live = true;
-    void commands.skillStudio(plane).then((answer) => {
+    void commands.skillStudio(plane, workspace ?? null).then((answer) => {
       if (!live) return;
       if (answer.status === "ok") {
         setStudio(answer.data);
@@ -26,7 +49,7 @@ export function SkillStudioTab({ plane, changed }: { plane: string; changed: num
     return () => {
       live = false;
     };
-  }, [plane, changed]);
+  }, [plane, workspace, changed, shared]);
 
   if (refused !== undefined)
     return (
@@ -52,36 +75,104 @@ export function SkillStudioTab({ plane, changed }: { plane: string; changed: num
         testid="skill-studio-off"
       />
     );
+
+  const share = (skill: StudioSkill) => {
+    void commands.skillShare(plane, workspace ?? null, skill.name).then((answer) => {
+      if (answer.status === "error") setShareRefused(answer.error);
+      else {
+        setShareRefused(undefined);
+        setShared((n) => n + 1);
+      }
+    });
+  };
+  const picker = (
+    <div className="vault-tools">
+      <Select
+        className="search-scope"
+        aria-label="Whose chats"
+        value={workspace ?? AT_THE_ROOT}
+        options={[
+          { value: AT_THE_ROOT, label: "A chat at the project's root" },
+          ...studio.workspaces.map((name) => ({ value: name, label: `A chat in ${name}` })),
+        ]}
+        onValueChange={(to) => {
+          const next = to === AT_THE_ROOT ? undefined : to;
+          onOpenView?.(skillStudioView(next), skillStudioTitle(next));
+        }}
+      />
+    </div>
+  );
   if (studio.skills.length === 0)
     return (
-      <EmptyState
-        headline="This project has no skills yet"
-        body="The skills this project's chats get are listed here, with any that are left out and why."
-        mark={Sparkles}
-        testid="skill-studio-empty"
-      />
+      <div className="skill-studio">
+        {picker}
+        <EmptyState
+          headline="This project has no skills yet"
+          body="The skills this project's chats get are listed here, with any that are left out and why."
+          mark={Sparkles}
+          testid="skill-studio-empty"
+        />
+      </div>
     );
+  // The first row of a name is the copy the chat gets, or its only copy; each row after it is a
+  // copy that one hides.
+  const seen = new Map<string, number>();
+  const testid = (name: string) => {
+    const before = seen.get(name) ?? 0;
+    seen.set(name, before + 1);
+    return before === 0 ? `skill-${name}` : `skill-${name}-hidden-${before}`;
+  };
   return (
     <div className="skill-studio" data-testid="skill-studio">
+      {picker}
       <p className="honest">
-        Every skill a chat at the project's root gets, and why any other is left out.
+        {workspace
+          ? `Every skill a chat in ${workspace} gets, and why any other is left out.`
+          : "Every skill a chat at the project's root gets, and why any other is left out."}
       </p>
+      {shareRefused !== undefined && (
+        <Notice
+          cause="skill-share-refused"
+          tone="trouble"
+          label="The skill was not shared"
+          onDismiss={() => setShareRefused(undefined)}
+        >
+          {shareRefused}
+        </Notice>
+      )}
       <table className="ui-table" aria-label="Skills">
         <thead>
           <tr>
             <th scope="col">Skill</th>
             <th scope="col">Level</th>
+            <th scope="col">Granted to</th>
             <th scope="col">In a chat</th>
             <th scope="col">What it does</th>
           </tr>
         </thead>
         <tbody>
           {studio.skills.map((skill) => (
-            <tr key={`${skill.level}\u0000${skill.folder}`} data-testid={`skill-${skill.name}`}>
+            <tr key={`${skill.level}\u0000${skill.folder}`} data-testid={testid(skill.name)}>
               <td>
                 <code>{skill.name}</code>
               </td>
-              <td>{skill.level}</td>
+              <td>
+                {skill.local ? `${skill.level}, local` : skill.level}
+                {skill.local && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      className="ui-button"
+                      onClick={() => share(skill)}
+                      title="Move it into the shared skills/ folder, so the next save commits it"
+                    >
+                      Share
+                    </button>
+                  </>
+                )}
+              </td>
+              <td>{skill.grant ?? ""}</td>
               <td>{skill.on ? "On" : `Left out: ${skill.left_out ?? ""}`}</td>
               <td>{skill.description}</td>
             </tr>
