@@ -1358,6 +1358,125 @@ fn an_action_answers_once_its_late_data_has_arrived() {
     );
 }
 
+/// The listing of `browser`'s pages.
+fn pages_of(browser: &Browser, n: u32) -> Vec<crate::drive::PageInfo> {
+    match browser.call(&id(n), Call::Pages).unwrap().content {
+        Content::Pages(pages) => pages,
+        other => panic!("not pages: {other:?}"),
+    }
+}
+
+/// A second page, opened by the engine and attached to.
+fn a_second_page(browser: &Browser, engine: &Engine) {
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"More","url":"http://fixture.test/more.html","attached":false}}),
+        None,
+    );
+    let start = std::time::Instant::now();
+    while super::lock(&browser.inner.state)
+        .page("PAGE-7")
+        .is_none_or(|p| p.session.is_none())
+    {
+        assert!(start.elapsed() < Duration::from_secs(5), "never attached");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn a_page_whose_title_does_not_come_does_not_hold_the_listing_past_its_deadline() {
+    let (browser, engine) = browser();
+    a_second_page(&browser, &engine);
+    // Every page's renderer is stuck: each read takes 1.5 s, past the listing's whole second.
+    engine.on(|sent, _| {
+        if sent.method == "Runtime.evaluate" && sent.params["expression"] == TITLE {
+            std::thread::sleep(Duration::from_millis(1500));
+            return Some(Err(CallError::TimedOut));
+        }
+        None
+    });
+    let started = std::time::Instant::now();
+    let pages = pages_of(&browser, 1);
+    assert!(
+        started.elapsed() < Duration::from_millis(2500),
+        "{:?}",
+        started.elapsed()
+    );
+    let titles: Vec<&str> = pages.iter().map(|p| p.title.as_str()).collect();
+    assert_eq!(
+        titles,
+        ["Frames and fields", "More"],
+        "as the engine told them"
+    );
+    let reads = engine
+        .sent("Runtime.evaluate")
+        .iter()
+        .filter(|s| s.params["expression"] == TITLE)
+        .count();
+    assert_eq!(reads, 1, "no read is started past the deadline");
+}
+
+#[test]
+fn a_title_read_from_a_document_the_page_has_since_left_is_not_kept() {
+    let (browser, engine) = browser();
+    // The page loads another document while its title is read: the read is of the one before.
+    engine.on(|sent, engine| {
+        if sent.method == "Runtime.evaluate" && sent.params["expression"] == TITLE {
+            engine.emit(
+                "Page.frameNavigated",
+                json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-5","url":"http://fixture.test/more.html","name":"","securityOrigin":"http://fixture.test","mimeType":"text/html"},"type":"Navigation"}),
+                Some("S-PAGE-1"),
+            );
+            std::thread::sleep(Duration::from_millis(50));
+            return Some(Ok(json!({"result":{"type":"string","value":"The page before"}})));
+        }
+        None
+    });
+    assert_eq!(pages_of(&browser, 1)[0].title, "Frames and fields");
+}
+
+#[test]
+fn a_huge_title_is_cut_and_one_past_the_read_s_bound_keeps_the_title_told() {
+    let (browser, engine) = browser();
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-1".into(), "t".repeat(5000));
+    assert_eq!(
+        pages_of(&browser, 1)[0].title.chars().count(),
+        super::MOST_TITLE_CHARS
+    );
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-1".into(), "t".repeat(200_000));
+    // Past the read's bound the read fails, and the title kept is the last one read.
+    assert_eq!(
+        pages_of(&browser, 2)[0].title.chars().count(),
+        super::MOST_TITLE_CHARS
+    );
+}
+
+#[test]
+fn a_huge_title_the_tree_names_is_cut() {
+    let (browser, engine) = browser();
+    {
+        let mut model = super::lock(&engine.model);
+        for node in model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap() {
+            if node["role"]["value"] == "RootWebArea" {
+                node["name"]["value"] = json!("t".repeat(5000));
+            }
+        }
+    }
+    snapshot(&browser, 1);
+    let kept = super::lock(&browser.inner.state)
+        .page("PAGE-1")
+        .unwrap()
+        .title
+        .chars()
+        .count();
+    // The tree cuts a long name itself; the page keeps no more than a title's bound either way.
+    assert!(kept <= super::MOST_TITLE_CHARS, "{kept}");
+}
+
 #[test]
 fn a_title_a_script_set_is_listed_though_the_engine_never_told_of_it() {
     let (browser, engine) = browser();

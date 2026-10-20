@@ -192,10 +192,20 @@ pub(crate) const ACTIVE_ELEMENT: &str = r"(() => {
   return at && at !== document.body && at !== document.documentElement ? at.tagName : '';
 })()";
 
+/// The first [`MOST_TITLE_CHARS`] of `title`.
+fn kept_title(title: &str) -> String {
+    title.chars().take(MOST_TITLE_CHARS).collect()
+}
+
 /// How long the driver gives the engine to say whether a document has loaded.
 const READY_STATE_WITHIN: Duration = Duration::from_secs(2);
-/// How long the driver gives the engine to read a page's title from its document (#2753).
-const TITLE_WITHIN: Duration = Duration::from_secs(1);
+/// How long listing the pages gives the engine to read every page's title from its document,
+/// all of them together (#2753): past it, the pages left keep the title the engine told of.
+const TITLES_WITHIN: Duration = Duration::from_secs(1);
+/// The most bytes the answer to one page's title read may take (#2753).
+const MOST_TITLE_BYTES: usize = 64 << 10;
+/// The most characters of a page's title kept, as the engine cuts the titles it tells of.
+const MOST_TITLE_CHARS: usize = 4096;
 /// How often a wait looks again.
 const POLL: Duration = Duration::from_millis(50);
 /// How often a wait for text reads the page again.
@@ -1335,17 +1345,27 @@ impl Browser {
 
     /// Reads each page's title from its document, in purlis's own world (#2753). The engine
     /// tells of a title by `Target.targetInfoChanged`, and Chrome does not always send it after
-    /// a script sets `document.title`; a page whose title cannot be read within
-    /// [`TITLE_WITHIN`] keeps the title it was told of.
+    /// a script sets `document.title`. Every read together is given [`TITLES_WITHIN`], a world
+    /// made for one included; a page not read by then, or whose answer is past
+    /// [`MOST_TITLE_BYTES`], keeps the title it has. A read is kept only while the page still
+    /// shows the document it was read from, and only its first [`MOST_TITLE_CHARS`].
     fn read_titles(&self) {
-        let pages: Vec<(String, String)> = lock(&self.inner.state)
+        let deadline = Instant::now() + TITLES_WITHIN;
+        let pages: Vec<(String, String, u64)> = lock(&self.inner.state)
             .pages
             .iter()
-            .filter_map(|p| Some((p.target.clone(), p.session.clone()?)))
+            .filter_map(|p| Some((p.target.clone(), p.session.clone()?, p.shows)))
             .collect();
-        for (target, session) in pages {
-            let read = self.in_world(&session, &target, |world| {
-                self.devtools().call_within(
+        for (target, session, shows) in pages {
+            if Instant::now() >= deadline {
+                break;
+            }
+            let read = self.in_world_by(&session, &target, deadline, |world| {
+                let left = deadline.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(CallError::TimedOut);
+                }
+                self.devtools().call_within_bounded(
                     "Runtime.evaluate",
                     json!({
                         "expression": TITLE,
@@ -1353,13 +1373,15 @@ impl Browser {
                         "returnByValue": true,
                     }),
                     Some(&session),
-                    TITLE_WITHIN,
+                    left,
+                    MOST_TITLE_BYTES,
                 )
             });
             if let Some(title) = read
                 .ok()
-                .and_then(|r| r.pointer("/result/value")?.as_str().map(str::to_owned))
+                .and_then(|r| r.pointer("/result/value")?.as_str().map(kept_title))
                 && let Some(page) = lock(&self.inner.state).page_mut(&target)
+                && page.shows == shows
             {
                 page.title = title;
             }
@@ -1700,7 +1722,7 @@ impl Browser {
             // The tree names the document's title as it is now, which the engine may not have
             // told of (#2753): the pages are listed under it from here on.
             if !snapshot.title().is_empty() {
-                snapshot.title().clone_into(&mut page.title);
+                page.title = kept_title(snapshot.title());
             }
             let page = &*page;
             let title = if snapshot.title().is_empty() {
