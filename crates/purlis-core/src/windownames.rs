@@ -72,7 +72,8 @@ struct KeptName {
 }
 
 /// **The name the window keeps for `root`'s link**, in the config home `config_root`: the one it
-/// keeps, or one minted now and kept. A file that cannot be read as one is started again. The
+/// keeps, or one minted now and kept. A file that cannot be read as one, or is too long to be
+/// one, is started again. The
 /// roots in `open`, whose links are open now, are never let go of to make room.
 pub fn name_for(config_root: &Path, root: &Path, open: &[std::path::PathBuf]) -> io::Result<Name> {
     let (folder, _lock) = locked(config_root)?;
@@ -147,15 +148,34 @@ fn locked(config_root: &Path) -> io::Result<(purlis_same_user::PrivateDirectory,
 }
 
 /// What [`FILE`] in `folder` keeps: nothing where there is none, or where it does not read as
-/// one, which starts it again.
+/// one, which starts it again. So does a file of this user's alone that is past what a private
+/// file is read up to (#2744): it is no file the window wrote, and refusing it would leave every
+/// later link unnamed. A file another user could read or write, or a link, is still refused.
 fn read(folder: &purlis_same_user::PrivateDirectory) -> io::Result<Kept> {
-    let mut kept: Kept = match purlis_same_user::read_private_file(&folder.path().join(FILE)) {
+    let path = folder.path().join(FILE);
+    let mut kept: Kept = match purlis_same_user::read_private_file(&path) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Kept::default(),
+        Err(err) if too_long_but_private(&path) => {
+            tracing::warn!("purlis: the window's names are started again: {err}");
+            Kept::default()
+        }
         Err(err) => return Err(err),
     };
     kept.version = 1;
     Ok(kept)
+}
+
+/// Whether `path` is a regular file, not a link, of this user's that nobody else may read or
+/// write, and longer than [`purlis_same_user::read_private_file`] reads.
+fn too_long_but_private(path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::symlink_metadata(path).is_ok_and(|found| {
+        found.file_type().is_file()
+            && found.uid() == purlis_same_user::Uid::effective().as_raw()
+            && found.mode() & 0o077 == 0
+            && found.len() > purlis_same_user::A_PRIVATE_FILE_IS_AT_MOST
+    })
 }
 
 fn write(folder: &purlis_same_user::PrivateDirectory, kept: &Kept) -> io::Result<()> {
