@@ -81,7 +81,8 @@ pub const TURN: std::time::Duration =
     std::time::Duration::from_secs(LOOKUP.as_secs() + BUDGET.as_secs() * AT_MOST as u64);
 
 /// **How long the tool waits on the app**: one budget for a gallery picture to give way to the
-/// chat ([`turns`], #2614), the chat's whole [`TURN`], and a little for the reply.
+/// chat, or to end when the gallery was owed it ([`turns`], #2614, #2751), the chat's whole
+/// [`TURN`], and a little for the reply.
 pub const ASKED_WITHIN: std::time::Duration =
     std::time::Duration::from_secs(BUDGET.as_secs() + TURN.as_secs() + 5);
 
@@ -712,7 +713,8 @@ fn own(complaints: &[Complaint], noise: &[Complaint]) -> Vec<Complaint> {
 }
 
 /// **`text` as a chat is told it**: the plane's path left out (what follows is the project's
-/// own), the person's config home named as such, and any other absolute path not said.
+/// own), the person's config home named as such, and any other absolute path not said, with
+/// the words of a path that has spaces in it ([`unpathed`]).
 fn redacted(at: &Reached<'_>, text: &str) -> String {
     let mut text = text.to_owned();
     if let Some(plane) = at.plane {
@@ -729,17 +731,67 @@ fn redacted(at: &Reached<'_>, text: &str) -> String {
             text = text.replace(&config, "your purlis config folder");
         }
     }
-    text.split(' ')
-        .map(|word| {
-            let bare = word.trim_start_matches(['(', '"', '\'', '`']);
-            if bare.starts_with('/') || bare.starts_with('~') || bare.starts_with('\\') {
-                "a path".to_owned()
-            } else {
-                word.to_owned()
+    unpathed(&text)
+}
+
+/// **`text` with each absolute path said as "a path"**: a word that starts one, and each word
+/// after it that goes on with it, as a path with a space in it does. A path opened by a bracket
+/// or a quote goes on to the word that closes it; any other, over each word with a `/` or `\\`
+/// in it, a file's name (a `.` inside it), or one that ends where the path ends (a `:`). What
+/// closes the path's last word (`:`, `,`, `;`, `)`, `.`, a quote) is kept.
+fn unpathed(text: &str) -> String {
+    const OPENS: [(char, char); 4] = [('(', ')'), ('"', '"'), ('\'', '\''), ('`', '`')];
+    const ENDS: [char; 7] = [':', ',', ';', ')', '"', '\'', '`'];
+    let starts = |word: &str| {
+        let bare = word.trim_start_matches(['(', '"', '\'', '`']);
+        bare.starts_with('/') || bare.starts_with('~') || bare.starts_with('\\')
+    };
+    let goes_on = |word: &str| {
+        let bare = word.trim_end_matches(ENDS).trim_end_matches('.');
+        bare.contains(['/', '\\'])
+            || bare.trim_matches('.').contains('.')
+            || (word.ends_with(':') && !bare.is_empty())
+    };
+    let words: Vec<&str> = text.split(' ').collect();
+    let mut said = Vec::with_capacity(words.len());
+    let mut at = 0;
+    while at < words.len() {
+        let word = words[at];
+        at += 1;
+        if !starts(word) {
+            said.push(word.to_owned());
+            continue;
+        }
+        let opened = &word[..word.len() - word.trim_start_matches(['(', '"', '\'', '`']).len()];
+        let closer = opened
+            .chars()
+            .next()
+            .and_then(|open| OPENS.iter().find(|(one, _)| *one == open))
+            .map(|(_, close)| *close);
+        let mut last = word;
+        match closer {
+            Some(close) => {
+                // To the word that closes it, the text's end at most.
+                let mut closed = word[opened.len()..].contains(close);
+                while !closed && at < words.len() {
+                    last = words[at];
+                    at += 1;
+                    closed = last.contains(close);
+                }
             }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+            None => {
+                while !last.ends_with(ENDS) && at < words.len() && goes_on(words[at]) {
+                    last = words[at];
+                    at += 1;
+                }
+            }
+        }
+        let kept = &last[last
+            .trim_end_matches(|end| ENDS.contains(&end) || end == '.')
+            .len()..];
+        said.push(format!("{opened}a path{kept}"));
+    }
+    said.join(" ")
 }
 
 /// `resolved`'s theme, or why the engine refused it, in what was said of it alone (`noise` is
