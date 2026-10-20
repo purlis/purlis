@@ -67,9 +67,11 @@ impl World {
         let root = top.join("project");
         std::fs::create_dir_all(&root).unwrap();
         git(&root, &["init", "-q", "-b", "main"]);
+        // As a LIVE workspace's lines keep it: its file and its memory go with the project, its
+        // clones do not.
         std::fs::write(
             root.join(".gitignore"),
-            "/.purlis/\n/workspaces/*/*\n!/workspaces/*/workspace.md\n",
+            "/.purlis/\n/workspaces/*/*\n!/workspaces/*/workspace.md\n!/workspaces/*/memory\n",
         )
         .unwrap();
         committed(&root, purlis_core::plane::MANIFEST, "");
