@@ -88,6 +88,9 @@ pub fn changed(root: &Path, locks: &Locks) -> Option<Change> {
     if locks.scope_removed(Level::Project).is_some() {
         return None;
     }
+    // Nor where the project's sandbox is not in force, where none counts (#2691): a site seen
+    // here is not told as taken out, and stays seen for when it counts again.
+    Plane::read(root).in_force(locks)?;
     let now: Vec<String> = committed(root, locks)
         .iter()
         .map(ToString::to_string)

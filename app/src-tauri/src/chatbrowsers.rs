@@ -2270,13 +2270,14 @@ pub(crate) fn in_its_hosts_sandbox(name: &str) -> String {
     )
 }
 
-/// The persona chat `session` runs with, from the app's own record of it, never from what
-/// the chat says (`purlis_core::start::runs_with`): none for a chat this window does not have
-/// open.
+/// The persona whose grants chat `session` runs with, as its start read them, from the app's
+/// own record of it and never from what the chat says ([`crate::chats::Chats::persona_of`],
+/// #2691): what its browser reaches and its Asks are about. None for a chat this window does not
+/// have open, or one that runs with no persona's grants.
 fn persona_of(held: &crate::planes::Held, session: u32) -> Option<String> {
     held.chats()
-        .recorded_chat(session)
-        .and_then(|chat| purlis_core::start::runs_with(&chat, held.root()))
+        .persona_of(session)
+        .and_then(|persona| persona.grants)
 }
 
 /// **Chat `session`'s persona, as its browser is decided** (#2241): the persona it runs with,

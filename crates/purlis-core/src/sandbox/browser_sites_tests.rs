@@ -143,6 +143,24 @@ fn a_project_without_the_sandbox_has_no_browser_site_to_tell() {
     assert_eq!(in_force(project.path(), &none()), Vec::<Host>::new());
 }
 
+/// #2691: in a project that has not turned the sandbox on, a committed browser site counts for
+/// no browser, even one recorded as seen here, so nothing in the project's file widens what a
+/// browser reaches there without the person's Allow on this machine.
+#[test]
+fn a_committed_site_counts_for_no_browser_in_a_project_without_the_sandbox_even_once_seen() {
+    let project = a_project("[sandbox]\nbrowser-sites = [\"a.example:443\"]\n");
+    super::super::local::keep_browser_sites_seen(project.path(), vec!["a.example:443".to_owned()])
+        .expect("seen here");
+    assert_eq!(committed(project.path(), &none()), Vec::<Host>::new());
+    assert_eq!(in_force(project.path(), &none()), Vec::<Host>::new());
+    // Not told as taken out either: it stays seen for when the sandbox is on again.
+    assert_eq!(changed(project.path(), &none()), None);
+    assert_eq!(
+        super::super::local::browser_sites_seen(project.path()),
+        ["a.example:443"]
+    );
+}
+
 #[test]
 fn allowing_one_for_everyone_writes_it_to_the_manifest_and_counts_as_seen_here() {
     let project = a_project("schema = 1\n# ours\n[sandbox]\nmode = \"on\"\n");
