@@ -1280,7 +1280,7 @@ fn a_gitignore_with_every_rule_is_left_byte_for_byte() {
     let path = dir.path().join(".gitignore");
     let body = "build/\n!/workspaces/.gitkeep\nkeep/.charter/out\nkeep/.purlis/out\n\
                 /.claude/settings.local.json\n/charter.local.toml\n/purlis.local.toml\n\
-                /sessions/\n";
+                /sessions/\n/skills.local/\n/workspaces/*/skills.local/\n";
     std::fs::write(&path, body).expect("a .gitignore");
 
     assert_eq!(ensure_gitignore(&path), Ok(false));
@@ -1305,7 +1305,7 @@ fn a_gitignore_missing_the_local_files_gets_only_those_appended() {
         std::fs::read_to_string(&path).expect("read"),
         "node_modules/\n!/workspaces/.gitkeep\n/.charter/\n\n# added by `charter \
          init`\n/.purlis/\n/.claude/settings.local.json\n/charter.local.toml\n\
-         /purlis.local.toml\n/sessions/\n"
+         /purlis.local.toml\n/sessions/\n/skills.local/\n/workspaces/*/skills.local/\n"
     );
 }
 
@@ -1318,7 +1318,8 @@ fn a_gitignore_missing_the_workspace_anchor_gets_both_workspace_lines() {
     std::fs::write(
         &path,
         "# no .charter/ or .purlis/ here, please\n/.claude/settings.local.json\n\
-         /charter.local.toml\n/purlis.local.toml\n/sessions/\n",
+         /charter.local.toml\n/purlis.local.toml\n/sessions/\n/skills.local/\n\
+         /workspaces/*/skills.local/\n",
     )
     .expect("a .gitignore");
 
@@ -1326,8 +1327,9 @@ fn a_gitignore_missing_the_workspace_anchor_gets_both_workspace_lines() {
     assert_eq!(
         std::fs::read_to_string(&path).expect("read"),
         "# no .charter/ or .purlis/ here, please\n/.claude/settings.local.json\n\
-         /charter.local.toml\n/purlis.local.toml\n/sessions/\n\n# added by `charter \
-         init`\n/workspaces/*/*\n!/workspaces/.gitkeep\n"
+         /charter.local.toml\n/purlis.local.toml\n/sessions/\n/skills.local/\n\
+         /workspaces/*/skills.local/\n\n# added by `charter init`\n/workspaces/*/*\n\
+         !/workspaces/.gitkeep\n"
     );
 }
 
@@ -1356,7 +1358,10 @@ fn a_gitignore_missing_the_plane_roots_session_records_gets_that_line_appended()
     assert_eq!(ensure_gitignore(&path), Ok(true));
     assert_eq!(
         std::fs::read_to_string(&path).expect("read"),
-        format!("{body}\n# added by `charter init`\n/sessions/\n")
+        format!(
+            "{body}\n# added by `charter init`\n/sessions/\n/skills.local/\n\
+             /workspaces/*/skills.local/\n"
+        )
     );
 }
 
@@ -1875,4 +1880,50 @@ fn the_first_clone_is_named_after_origin_unless_origin_ends_in_no_name() {
 
     let (_dir, root) = a_repo("https://example.com/acme/Not A Name.git");
     assert_eq!(first_clone_name(&root), "plane");
+}
+
+/// A level's local skills stay on this machine (ADR 0099 §1, #2767): a fresh plane ignores the
+/// plane root's and every workspace's `skills.local/`.
+#[test]
+fn a_fresh_plane_keeps_every_levels_local_skills_on_this_machine() {
+    for line in SKILLS_LOCAL_IGNORES {
+        assert!(
+            GITIGNORE_BASELINE.lines().any(|one| one == line),
+            "{line}: {GITIGNORE_BASELINE}"
+        );
+    }
+    assert_eq!(
+        SKILLS_LOCAL_IGNORES,
+        ["/skills.local/", "/workspaces/*/skills.local/"]
+    );
+}
+
+/// ...and `reinit` adds them to a plane made before them, once.
+#[test]
+fn reinit_keeps_every_levels_local_skills_on_this_machine_and_adds_the_lines_once() {
+    let (_dir, root) = empty_plane();
+    init(&at(&root, false), &plain());
+    let mut old = GITIGNORE_BASELINE.to_owned();
+    for line in SKILLS_LOCAL_IGNORES {
+        old = old.replace(&format!("{line}\n"), "");
+    }
+    std::fs::write(root.join(".gitignore"), &old).expect("an old .gitignore");
+
+    let outcome = reinit(&at(&root, true));
+
+    assert_eq!(outcome.code, 0, "{:?}", outcome.said);
+    let text = std::fs::read_to_string(root.join(".gitignore")).expect("a .gitignore");
+    assert!(
+        text.ends_with(
+            "\n\n# added by `charter reinit` — local skills stay on this machine\n\
+             /skills.local/\n/workspaces/*/skills.local/\n"
+        ),
+        "{text}"
+    );
+    reinit(&at(&root, true));
+    assert_eq!(
+        std::fs::read_to_string(root.join(".gitignore")).expect("a .gitignore"),
+        text,
+        "a second reinit adds nothing"
+    );
 }

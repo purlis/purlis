@@ -231,6 +231,11 @@ pub const GITIGNORE_BASELINE: &str = "\
 # machine's own, like a LOCAL workspace's; delete this line to share them with the plane.
 /sessions/
 
+# Local skills, at the plane root and in each workspace (skills.local/): this machine's own,
+# never committed. Move one into skills/ (Share) to give it to the team.
+/skills.local/
+/workspaces/*/skills.local/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -271,6 +276,12 @@ fn state_ignores() -> Vec<String> {
 /// workspace, LOCAL until it is made LIVE; the plane root has no such switch, so its records
 /// take the side that publishes nothing by itself. Un-ignoring the line shares them.
 pub const PLANE_SESSIONS_IGNORE: &str = "/sessions/";
+
+/// The local skills of the plane root and of each workspace (ADR 0099 §1, #2767), kept on this
+/// machine: a level's `skills.local/` is read only while git ignores it, and these lines are
+/// what make a fresh plane's ignored. A workspace's is already under `/workspaces/*/*`; its
+/// line keeps it ignored once the workspace is LIVE and its own `skills/` is un-ignored.
+pub const SKILLS_LOCAL_IGNORES: [&str; 2] = ["/skills.local/", "/workspaces/*/skills.local/"];
 
 /// A path that resolves somewhere charter will not write: `(the path as named, where it lands)`.
 type Escape = (String, String);
@@ -716,6 +727,20 @@ pub fn reinit(place: &Place) -> Outcome {
                 run.failed = true;
             }
         }
+        match append_gitignore(
+            &path,
+            &SKILLS_LOCAL_IGNORES,
+            "added by `charter reinit` — local skills stay on this machine",
+        ) {
+            Ok(written) if !written.is_empty() => run
+                .created
+                .push(format!(".gitignore ({})", written.join(", "))),
+            Ok(_) => {}
+            Err(e) => {
+                run.err(format!("could not read or write {} ({e})", path.display()));
+                run.failed = true;
+            }
+        }
     }
     merge_rules(&mut run, root);
 
@@ -1080,6 +1105,11 @@ fn ensure_gitignore(path: &Path) -> Result<bool, String> {
     }
     if !lines.contains(&PLANE_SESSIONS_IGNORE) {
         missing.push(PLANE_SESSIONS_IGNORE);
+    }
+    for line in SKILLS_LOCAL_IGNORES {
+        if !lines.contains(&line) {
+            missing.push(line);
+        }
     }
     if missing.is_empty() {
         return Ok(false);
