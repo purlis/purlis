@@ -664,12 +664,12 @@ impl State {
         }
     }
 
-    /// Forgets `frame` and every frame inside it.
-    fn frame_gone(&mut self, target: &str, frame: &str) {
+    /// Forgets `frame` and every frame inside it, and answers them.
+    fn frame_gone(&mut self, target: &str, frame: &str) -> Vec<String> {
         self.generations += 1;
         let shows = self.generations;
         let Some(page) = self.page_mut(target) else {
-            return;
+            return Vec::new();
         };
         let mut gone = vec![frame.to_owned()];
         let mut at = 0;
@@ -691,6 +691,7 @@ impl State {
             self.refs.forget_frame(id);
             self.excluded.retain(|key| &key.frame != id);
         }
+        gone
     }
 }
 
@@ -3392,7 +3393,11 @@ impl Inner {
                         && let (Some(session), Some(frame)) = (&event.session_id, text("/frameId"))
                         && let Some(target) = state.page_of_session(session)
                     {
-                        state.frame_gone(&target, &frame);
+                        let gone = state.frame_gone(&target, &frame);
+                        // What they had loading or open went with them (#2841).
+                        if let Some(page) = state.page_mut(&target) {
+                            page.settle.frames_gone(session, &gone, now);
+                        }
                     }
                 }
                 // A drag of the agent's started the engine's own (#2136): it is carried on by
