@@ -321,6 +321,8 @@ pub(crate) struct Window {
     pub(crate) planes: Planes,
     pub(crate) held: Arc<Held>,
     pub(crate) browsers: Arc<WindowBrowsers>,
+    /// The chats' browsers as the window drives them, with how many acts are in flight.
+    pub(crate) acting: Arc<Acting>,
     pub(crate) root: PathBuf,
     /// Ended after the planes let go, before the folders it serves from go.
     pub(crate) host: Host,
@@ -377,11 +379,15 @@ impl Window {
 
         let host = host();
         let browsers = Arc::new(WindowBrowsers::new(host.session.connection()));
+        let acting = Arc::new(Acting {
+            browsers: Arc::clone(&browsers),
+            in_flight: std::sync::atomic::AtomicUsize::new(0),
+        });
         let planes = crate::hostedsessions::chats_in_the_host(
             Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None),
             &host.session.connection(),
         )
-        .driving_browsers_with(Arc::clone(&browsers) as Arc<dyn crate::chatbrowsers::Driver>);
+        .driving_browsers_with(Arc::clone(&acting) as Arc<dyn crate::chatbrowsers::Driver>);
         let held = planes
             .held(&planes.open(&root))
             .expect("the project is held");
@@ -389,6 +395,7 @@ impl Window {
             planes,
             held,
             browsers,
+            acting,
             root,
             host,
             _project: project,
@@ -484,6 +491,65 @@ impl Window {
             }
         }
         said
+    }
+}
+
+/// **The window's browsers, as its chats drive them**, counting the acts in flight: what a test
+/// waits on to take a browser over while a call of the agent's runs.
+pub(crate) struct Acting {
+    browsers: Arc<WindowBrowsers>,
+    in_flight: std::sync::atomic::AtomicUsize,
+}
+
+impl Acting {
+    /// How many acts of the chats' are being carried out now.
+    pub(crate) fn in_flight(&self) -> usize {
+        self.in_flight.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl crate::chatbrowsers::Driver for Acting {
+    fn start(
+        &self,
+        root: &Path,
+        reach: purlis_session_protocol::browsing::BrowserReach,
+        kept: Option<purlis_session_protocol::browsing::KeptLogin>,
+    ) -> Result<String, crate::chatbrowsers::NotStarted> {
+        self.browsers.start(root, reach, kept)
+    }
+
+    fn act(
+        &self,
+        program: &str,
+        call_id: &str,
+        act: purlis_session_protocol::browsing::Act,
+        reach: purlis_session_protocol::browsing::BrowserReach,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::chatbrowsers::Refused> {
+        use std::sync::atomic::Ordering;
+        self.in_flight.fetch_add(1, Ordering::SeqCst);
+        let acted = self.browsers.act(program, call_id, act, reach);
+        self.in_flight.fetch_sub(1, Ordering::SeqCst);
+        acted
+    }
+
+    fn log_in(
+        &self,
+        program: &str,
+        login: purlis_session_protocol::browsing::LogIn,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::chatbrowsers::Refused> {
+        self.browsers.log_in(program, login)
+    }
+
+    fn close(&self, program: &str) -> Result<(), String> {
+        self.browsers.close(program)
+    }
+
+    fn stop(&self, program: &str) -> Result<(), String> {
+        self.browsers.stop(program)
+    }
+
+    fn driven(&self) -> Result<Vec<String>, String> {
+        self.browsers.driven()
     }
 }
 
@@ -650,6 +716,15 @@ pub(crate) fn red_pixels(png_bytes: &[u8]) -> usize {
         .chunks(channels)
         .filter(|pixel| pixel.len() >= 3 && pixel[0] > 200 && pixel[1] < 60 && pixel[2] < 60)
         .count()
+}
+
+/// Waits until `done`, at most [`PATIENCE`].
+pub(crate) fn until(what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + PATIENCE;
+    while !done() {
+        assert!(Instant::now() < deadline, "{what} never happened");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 /// Whether `bytes` are a PNG.
@@ -1130,7 +1205,7 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
         "browser_wait_for_text",
         json!({ "text": "words this page never shows", "seconds": 60 }),
     );
-    std::thread::sleep(Duration::from_secs(2));
+    until("the wait to be in flight", || window.acting.in_flight() > 0);
     window
         .browsers
         .take_over(&program)
@@ -1179,7 +1254,8 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
         "their keys reached the page: {}",
         read.text
     );
-    tools.call("browser_screenshot", json!({}));
+    let form_shot = tools.done("browser_screenshot", json!({}));
+    assert_eq!(form_shot.images.len(), 1, "{form_shot:?}");
     tools.call("browser_find", json!({ "text": "Password" }));
     let show = ref_on(
         &tools
@@ -1190,7 +1266,8 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
     tools.done("browser_click", json!({ "target": show, "changes": true }));
     tools.done("browser_snapshot", json!({}));
     tools.call("browser_find", json!({ "text": "User name" }));
-    tools.call("browser_screenshot", json!({}));
+    let shown_shot = tools.done("browser_screenshot", json!({}));
+    assert_eq!(shown_shot.images.len(), 1, "{shown_shot:?}");
 
     // The page that echoes what is typed.
     tools.done(
@@ -1225,7 +1302,14 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
         .expect("they hand it back");
     tools.done("browser_snapshot", json!({}));
     tools.call("browser_find", json!({ "text": "Say something" }));
-    tools.call("browser_screenshot", json!({}));
+    let echo_shot = tools.done("browser_screenshot", json!({}));
+    assert_eq!(echo_shot.images.len(), 1, "{echo_shot:?}");
+    // The page draws its echo of what was typed in the fixture's red: none of it is left to see.
+    assert_eq!(
+        red_pixels(&echo_shot.images[0]),
+        0,
+        "what the person typed is painted over wherever the page draws it"
+    );
 
     for said in &tools.told {
         for typed in [THEIR_NAME, THEIR_PASSWORD, THEIR_ECHO] {
