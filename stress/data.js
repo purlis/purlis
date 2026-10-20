@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792454703380,
+  "lastUpdate": 1792454726388,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6932,6 +6932,42 @@ window.BENCHMARK_DATA = {
             "value": 652.6,
             "unit": "MB",
             "extra": "median of 6 samples: 612.7, 646, 652.4, 652.8, 653.5, 740.4 MB; window 406 MB, session host 246.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a3934d7d6b9e480401583d9fc4e3b6050506d268",
+          "message": "Theme import: tune base16 and terminal mappings for purlis contrast (#2714)\n\n* Theme import: tune base16 and terminal mappings for purlis contrast\n\nEach kind's recipes tune what its mapping table filled, so an imported\ntheme reads where the source's own colours allow it: the row under the\npointer halfway between base01 and base02, selected text in the source's\nwords, and a muted word, a comment or a hue that does not read walked\ntoward the source's words a tenth at a time along its own scale. A\nterminal's own colours are never tuned. The recipes are printed beside\neach table in the docs and tested.\n\nCloses #2589\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme import: review items for the recipes\n\n- The walk loads each trial with a checking library, so it registers no\n  fonts.\n- A test holds the state and icon hues apart after tuning.\n- The Fill row reads \"when the theme's selection.background is filled\".\n- A terminal import's ANSI warning names the palette entry that holds the\n  colour, where the person changes it (warnings_said_naming,\n  Imported::palette_entry).\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T03:19:22+04:00",
+          "tree_id": "bd50b7ed8814d05a5ed86b4b33706f215bf2c3a3",
+          "url": "https://github.com/purlis/purlis/commit/a3934d7d6b9e480401583d9fc4e3b6050506d268"
+        },
+        "date": 1792454724533,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1531.3,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1370.1, 1531.3, 1646.6 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 640.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 602.5, 627, 638.9, 641.5, 642.1, 739.4 MB; window 388.3 MB, session host 251.8 MB"
           }
         ]
       }
