@@ -1408,7 +1408,8 @@ _Avoid_: built-ins (for core features), platform
 **Extension**:
 A directory the operator installs and approves on this machine, whose manifest declares what it
 contributes and which capabilities it asks for. Its program runs as the operator, one question
-at a time.
+at a time, except an extension that declares a Skill studio capability, which runs confined in
+a chat's sandbox profile, reaching only the hosts it declares (ADR 0101).
 _Avoid_: plugin, add-on, module
 
 **Built-in extension**:
@@ -1419,7 +1420,8 @@ _Avoid_: bundled plugin, first-party plugin, core extension
 **Capability**:
 One thing purlis does for an extension that asked for it in its manifest and was approved,
 such as showing a badge or adding a CLI command. It describes purlis's conduct, never a limit
-on the extension.
+on the extension. The six studio capabilities (SkillSource, Grader, SkillLint, SkillTemplate,
+StudioPanel, SkillRouter) also confine the extension that declares them (ADR 0101).
 _Avoid_: permission, grant (that is a runner's **Grant**), power
 
 **Facts file**:
