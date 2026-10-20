@@ -583,3 +583,232 @@ fn a_theme_whose_fonts_are_past_the_cap_is_handed_to_no_page() {
     );
     assert!(painter.handed.lock().unwrap().is_empty());
 }
+
+/// Purlis Classic's dark, looked up as a specimen's lookup would.
+fn classic_dark() -> Result<Looked, String> {
+    Ok(Looked {
+        handed: Handed::of(WindowTheme::from(
+            purlis_core::theme::built_in("purlis-dark").unwrap(),
+        ))?,
+        appearance: Appearance::Dark,
+        high_contrast: false,
+    })
+}
+
+#[test]
+fn a_lookup_that_leaves_less_than_a_picture_s_budget_of_the_turn_never_reaches_paint() {
+    let painter = Recording::default();
+    let slow = std::time::Duration::from_millis(60);
+    let drawing = on_turn(
+        &painter,
+        &[specimen("purlis-classic", None)],
+        Who::Chat,
+        // The turn has a picture's budget and a little more; the lookup takes longer than the
+        // little more.
+        themepreview::BUDGET + slow / 2,
+        || {
+            move |_: &Specimen| {
+                std::thread::sleep(slow);
+                classic_dark()
+            }
+        },
+    );
+    assert_eq!(drawing.answer, Err(over_budget()));
+    assert!(!drawing.began);
+    assert!(painter.handed.lock().unwrap().is_empty());
+    assert_eq!(painter.turns().held(), None, "the turn ended with it");
+}
+
+#[test]
+fn a_gallery_picture_asked_during_a_chat_s_lookup_is_answered_busy() {
+    let painter = Recording::default();
+    let (looking, is_looking) = mpsc::channel::<()>();
+    let (looked, is_looked) = mpsc::channel::<()>();
+    std::thread::scope(|scope| {
+        let chat = scope.spawn(|| {
+            on_turn(
+                &painter,
+                &[specimen("purlis-classic", None)],
+                Who::Chat,
+                themepreview::TURN,
+                move || {
+                    move |_: &Specimen| {
+                        // The chat's lookup reads its themes, and has not drawn yet.
+                        looking.send(()).unwrap();
+                        is_looked.recv().unwrap();
+                        classic_dark()
+                    }
+                },
+            )
+        });
+        is_looking.recv().unwrap();
+        assert_eq!(
+            painted(
+                Some(&painter),
+                None,
+                &[specimen("purlis-classic", None)],
+                Who::Gallery
+            ),
+            Err(BUSY.to_owned())
+        );
+        assert!(painter.handed.lock().unwrap().is_empty());
+        looked.send(()).unwrap();
+        let drawing = chat.join().unwrap();
+        assert!(
+            drawing.began && drawing.answer.is_ok(),
+            "{:?}",
+            drawing.answer
+        );
+    });
+}
+
+#[test]
+fn a_theme_refused_by_its_id_is_not_spaced_so_the_chat_may_ask_again_at_once() {
+    let painter = Recording::default();
+    let refused = answered_here(Some(&painter), &ask(7, vec![specimen("nord", None)]));
+    assert!(matches!(refused, Answer::No { .. }), "{refused:?}");
+    let again = answered_here(
+        Some(&painter),
+        &ask(7, vec![specimen("purlis-classic", None)]),
+    );
+    assert!(matches!(again, Answer::Previewed { .. }), "{again:?}");
+    // That one began a picture: the next is spaced.
+    let spaced = answered_here(
+        Some(&painter),
+        &ask(7, vec![specimen("purlis-classic", None)]),
+    );
+    assert!(
+        matches!(spaced, Answer::No { ref why } if why.contains("ask again in")),
+        "{spaced:?}"
+    );
+}
+
+/// A painter whose page takes `page` to draw, looking for a chat to give way to as the app's
+/// own does ([`Turn::wait`]).
+struct Paging {
+    turns: Turns,
+    spacing: Spacing,
+    page: std::time::Duration,
+    drawn: Mutex<Vec<Who>>,
+}
+
+impl Paging {
+    fn new(page: std::time::Duration) -> Self {
+        Self {
+            turns: Turns::new(),
+            spacing: Spacing::new(),
+            page,
+            drawn: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl Painter for Paging {
+    fn turns(&self) -> &Turns {
+        &self.turns
+    }
+
+    fn spacing(&self) -> &Spacing {
+        &self.spacing
+    }
+
+    fn paint(&self, handed: &Handed, turn: &Turn<'_>) -> Result<Picture, String> {
+        // The page never says it is drawn: its time running out is its picture.
+        let (_page, never) = mpsc::channel::<()>();
+        match turn.wait(&never, Instant::now() + self.page) {
+            Err(Waited::GaveWay) => Err(BUSY.to_owned()),
+            _ => {
+                self.drawn.lock().unwrap().push(turn.who());
+                Ok(Picture {
+                    png: handed.theme.name.as_bytes().to_vec(),
+                    width: 1,
+                    height: 1,
+                })
+            }
+        }
+    }
+}
+
+/// **The gallery's cards on screen, `cards` of them, drawn while `chats` chats loop
+/// `theme_preview`**: each chat asks again the moment it is answered; with `fresh`, every ask is
+/// a chat of its own, which no spacing holds back. The window asks again for a picture answered
+/// busy every few milliseconds, far more eagerly than it does. How many chat pictures were drawn
+/// meanwhile, once every card has its picture; fails if they do not within a generous time.
+fn cards_drawn_while_chats_loop(chats: u32, fresh: bool, cards: usize) -> usize {
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    let painter = Paging::new(std::time::Duration::from_millis(15));
+    let done = AtomicBool::new(false);
+    let next = AtomicU32::new(100);
+    // Every chat is open, at the root of a plane no theme folder is in.
+    let open = |_: u32| {
+        Some(ChatAt {
+            plane: std::env::temp_dir().join("purlis-specimen-no-plane"),
+            workspace: None,
+            id: None,
+        })
+    };
+    let pictures = std::thread::scope(|scope| {
+        for n in 1..=chats {
+            let (painter, done, next) = (&painter, &done, &next);
+            scope.spawn(move || {
+                while !done.load(Ordering::Relaxed) {
+                    let chat = if fresh {
+                        next.fetch_add(1, Ordering::Relaxed)
+                    } else {
+                        n
+                    };
+                    answered(
+                        &open,
+                        None,
+                        Some(painter),
+                        &ask(chat, vec![specimen("purlis-classic", None)]),
+                    );
+                }
+            });
+        }
+        let started = Instant::now();
+        let mut pictures = 0;
+        // Past the time, the chats are stopped before the test fails, so it fails, not hangs.
+        while pictures < cards && started.elapsed() < std::time::Duration::from_secs(20) {
+            match painted(
+                Some(&painter),
+                None,
+                &[specimen("purlis-classic", None)],
+                Who::Gallery,
+            ) {
+                Ok(_) => pictures += 1,
+                Err(why) => {
+                    if why != BUSY {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+            }
+        }
+        done.store(true, Ordering::Relaxed);
+        pictures
+    });
+    assert_eq!(
+        pictures, cards,
+        "the gallery drew {pictures} of its {cards} cards' pictures while {chats} chats looped"
+    );
+    let drawn = painter.drawn.lock().unwrap();
+    assert_eq!(
+        drawn.iter().filter(|who| **who == Who::Gallery).count(),
+        cards
+    );
+    drawn.iter().filter(|who| **who == Who::Chat).count()
+}
+
+#[test]
+fn the_gallery_s_cards_get_their_pictures_while_one_chat_loops_theme_preview() {
+    let chats = cards_drawn_while_chats_loop(1, false, 6);
+    assert!(chats >= 1, "the chat was drawn too");
+}
+
+#[test]
+fn the_gallery_s_cards_get_their_pictures_while_several_chats_loop_theme_preview() {
+    let chats = cards_drawn_while_chats_loop(3, true, 6);
+    // The chats are not starved either: they are drawn between the gallery's pictures.
+    assert!(chats >= 5, "the chats were drawn {chats} pictures");
+}

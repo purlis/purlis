@@ -2,19 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **How often one chat is drawn a specimen** (#2536): at most once every [`GAP`], counted from
-//! the end of its last turn on the painter. A chat goes ahead of Settings › Theme's pictures
-//! ([`super::turns`]), so a chat asking again and again would leave the gallery none; with a gap
-//! at least one specimen's budget long, a gallery picture asked for after a chat's turn is drawn
-//! whole before that chat may take the painter again.
+//! the end of its last turn that began a picture (#2751). Each chat is spaced on its own: one
+//! chat's asks never hold back another's, and one chat asking again and again cannot take every
+//! turn from the chats asking beside it. A turn that drew nothing, a theme refused by its id
+//! for one, is not counted, so the chat may ask again at once.
 //!
-//! Each chat is spaced on its own: one chat's asks never hold back another's. What is kept is
-//! when each chat's last turn ended, and only while that is within the gap.
+//! The gallery's share of the painter is not this module's: after a chat's turn the gallery
+//! asked during, it is owed one picture ([`super::turns`]), however many chats ask.
+//!
+//! What is kept is when each chat's last counted turn ended, and only while that is within the
+//! gap.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-/// **The least time between the end of one chat's turn and its next**: one specimen's budget.
+/// **The least time between the end of one chat's turn that drew and its next**: one specimen's
+/// budget.
 pub const GAP: Duration = super::BUDGET;
 
 /// When each chat's last turn ended, by a key the app gives each chat.
@@ -39,7 +43,7 @@ impl Spacing {
         }
     }
 
-    /// The chat `chat`'s turn ended at `now`.
+    /// The chat `chat`'s turn, which began a picture, ended at `now`.
     pub fn ended(&self, chat: &str, now: Instant) {
         self.ended
             .lock()
@@ -51,7 +55,7 @@ impl Spacing {
     pub fn said(left: Duration) -> String {
         format!(
             "this chat was drawn a theme specimen a moment ago, and one chat is drawn one at most \
-             every {} s so Settings › Theme's pictures are drawn between: ask again in {} s",
+             every {} s so other chats are drawn between: ask again in {} s",
             GAP.as_secs(),
             left.as_secs().max(1)
         )

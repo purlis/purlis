@@ -54,6 +54,8 @@ import { OutLink } from "./OutLink";
 import { standingIn, type Standing } from "./standing";
 import { OffWhenReadOnly, useReadOnlyMendable, useReadOnlySaid } from "../ReadOnlyLine";
 import { LivesHere } from "../LivesHere";
+import { usePools } from "../pools";
+import { POOLS } from "./pools";
 
 /**
  * **Settings** (SE-16, #1166; the spec on #558, rulings V89a–i): the one tab where a setting is
@@ -120,7 +122,13 @@ type Switcher = {
 };
 
 function YouLevel({ plane, levels, onLevelChange }: Switcher & { plane?: PlaneId }) {
-  const groups = useMemo(() => youGroups(plane), [plane]);
+  // Nothing about pools shows while this machine keeps none (#2679).
+  const pools = usePools();
+  const anyPool = pools.read.state === "read" && pools.read.shown.pools.length > 0;
+  const groups = useMemo(
+    () => youGroups(plane).filter((group) => group.id !== POOLS || anyPool),
+    [plane, anyPool],
+  );
   const where = atCreation().layout.path || "the layout file";
   return (
     <Shown

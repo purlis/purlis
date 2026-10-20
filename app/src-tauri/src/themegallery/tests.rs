@@ -214,3 +214,90 @@ fn the_persons_own_theme_json_drawn_is_said_with_what_following_does_with_it() {
     assert_eq!(shown.theirs, None);
     assert_eq!(shown.chosen.as_deref(), Some("purlis-classic"));
 }
+
+#[test]
+fn a_place_offers_an_extension_s_themes_once_approved_and_has_them_on_where_its_project_does() {
+    // #2751: what a chat's specimen and the gallery reach of an extension's themes is the
+    // place's `on` and `offered`, read here as the window reads them.
+    let home = tempfile::tempdir().unwrap();
+    let config = home.path().join("config");
+    let ext = home.path().join("ext");
+    std::fs::create_dir_all(&ext).unwrap();
+    std::fs::write(
+        ext.join(extension::MANIFEST),
+        r#"{"version":1,"id":"solarized","name":"Solarized",
+            "contributes":{"themes":[{"name":"Solarized Dark","file":"dark.json"}],
+                           "panels":[{"id":"p","title":"P"}]}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        ext.join("dark.json"),
+        r##"{"name":"Solarized Dark","appearance":"dark","tokens":{"surface.base":"#101010"}}"##,
+    )
+    .unwrap();
+    let plane = home.path().join("plane");
+    for dir in [".purlis", "workspaces/alpha", "workspaces/beta"] {
+        std::fs::create_dir_all(plane.join(dir)).unwrap();
+    }
+    std::fs::write(
+        plane.join("workspaces/beta/workspace.json"),
+        r#"{"settings": {"extensions": {"solarized": {"enabled": false}}}}"#,
+    )
+    .unwrap();
+    let survey = |config: &Path| {
+        crate::extensions::offered_of(&extension::survey(config, &extension::BuiltIn::none()))
+    };
+    let place = |workspace: &str| {
+        Place::offering(
+            config.clone(),
+            Some(plane.clone()),
+            Some(workspace.to_owned()),
+            survey,
+        )
+    };
+    let drawn = |place: &Place, workspace: &str| {
+        purlis_core::themepreview::resolved(
+            &purlis_core::themepreview::Reached {
+                config: Some(&config),
+                plane: Some(&plane),
+                workspace: Some(workspace),
+                chat: None,
+                shelf: place.shelf(),
+            },
+            &purlis_core::themepreview::Specimen {
+                theme: "solarized/Solarized Dark".to_owned(),
+                appearance: None,
+                high_contrast: false,
+                options: Values::new(),
+            },
+        )
+        .map(|drawn| {
+            drawn
+                .theme
+                .expect("a theme")
+                .value("surface.base")
+                .to_owned()
+        })
+    };
+    let found = extension::install(&config, &extension::BuiltIn::none(), &ext).unwrap();
+    // Installed and on, but not approved (it brings a panel, so it is asked about): nothing of
+    // it is offered, so nothing is drawn.
+    let unapproved = place("alpha");
+    assert!(unapproved.offered.is_empty());
+    assert!(drawn(&unapproved, "alpha").is_err());
+    extension::approve(&config, found.id(), &found.path, &found.fingerprint).unwrap();
+    let alpha = place("alpha");
+    let offered: Vec<(&str, &str)> = alpha
+        .offered
+        .iter()
+        .map(|one| (one.extension.as_str(), one.name.as_str()))
+        .collect();
+    assert_eq!(offered, [("solarized", "Solarized Dark")]);
+    assert_eq!(alpha.on.as_deref(), Some(&["solarized".to_owned()][..]));
+    assert_eq!(drawn(&alpha, "alpha").as_deref(), Ok("#101010"));
+    // Off where the workspace turned it off: offered still, on nowhere there, and not drawn.
+    let beta = place("beta");
+    assert_eq!(beta.offered.len(), 1);
+    assert_eq!(beta.on.as_deref(), Some(&[][..]));
+    assert!(drawn(&beta, "beta").is_err());
+}

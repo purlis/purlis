@@ -107,6 +107,8 @@ import {
   type ViewRef,
 } from "./tabs";
 import { isBrowser } from "./browsers";
+import { anyPoolKept, startAddingAPool } from "./pools";
+import { POOLS } from "./settings/pools";
 import { isDriven } from "./browserDriving";
 
 /**
@@ -517,6 +519,7 @@ export type Does =
   /** Opens the Settings tab at the You level (SE-23): this machine's settings, whatever is
    *  focused, so they stay one palette row away while a project is in front (V89c). */
   | { verb: "openYourSettings" }
+  | { verb: "addDockerPool" }
   /** Opens Settings at one group (#1201): a row per group, by the group's address. A You group
    *  carries the project in front when there is one, and none when the window has no project;
    *  a Project group carries its project, and a Workspace group its project and workspace. */
@@ -2168,6 +2171,12 @@ export function catalogue(now: Now): Offer[] {
     ...can("settings.you", "Your settings…", { verb: "openYourSettings" }),
     note: "Your text sizes and your editor, on this machine.",
   });
+  // **Add a Docker pool…** (#2679): the way to this machine's first pool, there with or without
+  // a project, as Your settings… is. Nothing else about pools is listed until one is kept.
+  offers.push({
+    ...can("pool.add", "Add a Docker pool…", { verb: "addDockerPool" }),
+    note: "A runner on your Docker, held to the limits you set.",
+  });
   offers.push(...settingsGroupRows(now.plane, now.focused === OUTSIDE ? undefined : now.focused));
   offers.push(...profilePageRows(now.plane, now.profiles));
 
@@ -3242,6 +3251,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "openYourSettings":
       doing.openYourSettings();
       return DID;
+    case "addDockerPool":
+      startAddingAPool();
+      return DID;
     case "readAgain":
       doing.readAgain();
       return DID;
@@ -3309,7 +3321,9 @@ function settingsGroupRows(plane: string | undefined, workspace: string | undefi
     group,
     ...extra,
   });
-  const rows: Offer[] = SETTINGS_GROUPS.you.map((one) => ({
+  // The Pools group only once this machine keeps a pool (#2679).
+  const you = SETTINGS_GROUPS.you.filter((one) => one.id !== POOLS || anyPoolKept());
+  const rows: Offer[] = you.map((one) => ({
     ...can(
       `settings.group:${one.id}`,
       `Your settings: ${one.label}`,

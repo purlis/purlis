@@ -1010,3 +1010,24 @@ fn docker_is_found_where_its_installers_put_it_before_the_path() {
         installed.unwrap_or_else(|| home.path().join(".orbstack/bin/docker"))
     );
 }
+
+#[test]
+fn an_image_this_machine_does_not_hold_is_pulled_by_its_digest_before_it_is_read() {
+    let fake = FakeDocker::new(&inspected());
+    // No image held: it is pulled by its digest, and read again.
+    assert!(fake.docker().declared(&image()).is_err());
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("pull --quiet {}", image().as_str())),
+        "{log}"
+    );
+    assert_eq!(log.matches("image inspect").count(), 2, "{log}");
+    // An image held is read, and nothing is pulled.
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "image",
+        r#"[{"Config":{"User":"10001:10001","Env":["HOME=/home/purlis"]}}]"#,
+    );
+    assert!(fake.docker().declared(&image()).is_ok());
+    assert!(!fake.file("log").contains("pull"), "{}", fake.file("log"));
+}

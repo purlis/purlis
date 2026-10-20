@@ -141,8 +141,9 @@ values layered first, and the line says in how many of them the window holds one
 in 4 combinations`, `held in 1 of 4 combinations:`). Under it, each combination that breaks one names the floors it breaks and
 the tokens the window draws as purlis's own for them (`dark, ember on: danger is
 distinguishable from primary — purlis draws its own danger.base`). Last, `hard floors:` says each hard floor
-a combination breaks as the window draws it, the consent floors held first, with the pair, its
-ratio and the tint it was found in (`hard floors: broken in 1 of 4 combinations:`, then
+a combination breaks as the window draws it, the consent floors held first, with the pair and
+each layer under it as a warning names them, its ratio and the tint it was found in
+(`hard floors: broken in 1 of 4 combinations:`, then
 `dark, ember on: primary text is readable on every surface: text.primary on surface.sunken is
 1.12, under 3`), or `none broken in 4 combinations`. A theme some level chose says so under its name: `chosen by: project, committed
 (accent=teal); machine, yours`, each level with its option values.
@@ -225,9 +226,10 @@ holds a consent floor: its `appearance` and `options` as a warning's, the `floor
 `allow-apart`, `danger`, `danger-apart`, `state-marks`) and the `tokens` drawn as purlis's own.
 `hard_floors` has one entry for each hard floor a combination breaks: its `appearance` and
 `options` as a warning's, the `floor` (`primary-text`, `focus-ring`, `terminal-text`), the
-`front` and `back` tokens (`under` for a wash), the `ratio` and the `tint`, `null` for the theme
-as it is; `[]` means none is broken. `clean` is true with no error, no note, no warning and no
-floor held; it covers those only, never hard floors, which `hard_floors` reports on its own.
+`front` and `back` tokens (`under` for a wash, and `beneath` when that is a wash laid over
+another in turn, as a warning's pair), the `ratio` and the `tint`, `null` for the theme as it
+is; `[]` means none is broken. `clean` is true with no error, no note, no warning and no floor
+held; it covers those only, never hard floors, which `hard_floors` reports on its own.
 `schema` is the version of this shape, in both answers: a reader checks it first. A theme
 folder's `from` is `{"kind": "folder", "path"}`, a theme file's `{"kind": "file", "path"}`.
 `chosen` lists each level that chose the theme checked, nearest first, as `list --json`'s

@@ -563,6 +563,9 @@ pub struct Chats {
     /// This device's id, the origin device of every chat minted here; `None` where the machine
     /// store has none to give (ADR 0031), which a chat records as `unknown`.
     device: Option<String>,
+    /// This machine's config home, where the pools this machine keeps and which workspaces run
+    /// their chats on one are (#2679); `None` where nothing is kept there, a test's.
+    pools_in: Option<PathBuf>,
     /// What each chat closed this launch was, by number, for a start in one's place: its ids,
     /// and where it stood in a lineage.
     let_go: Mutex<HashMap<u32, LetGo>>,
@@ -1048,6 +1051,7 @@ impl Chats {
             untaken: Mutex::new(HashMap::new()),
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
+            pools_in: None,
             let_go: Mutex::new(HashMap::new()),
             never_started: Mutex::new(None),
             shipped: crate::Shipped::default(),
@@ -1186,6 +1190,12 @@ impl Chats {
         self.device = device;
     }
 
+    /// Reads where each workspace runs its chats from this machine's config home `config`
+    /// (#2679): a workspace whose chats run on a pool starts none here.
+    pub fn keeping_pools_in(&mut self, config: Option<PathBuf>) {
+        self.pools_in = config;
+    }
+
     /// This device's id, as [`Self::on_device`] gave it, or `None` where the machine store has
     /// none. It names the work link log a chat's link goes in (ADR 0088 §3).
     pub fn device(&self) -> Option<&str> {
@@ -1221,6 +1231,14 @@ impl Chats {
             .collect();
         out.sort_by_key(|one| one.session);
         out
+    }
+
+    /// For tests: the open chat `session` as one whose record holds no id.
+    #[cfg(test)]
+    pub fn forget_id_of(&self, session: u32) {
+        if let Some(one) = lock(&self.open).get_mut(&session) {
+            one.chat.identity.id = None;
+        }
     }
 
     /// Calls `tell` when a chat that was announced never started after all.
@@ -2970,6 +2988,17 @@ impl Chats {
         // for a start; what a start begins (a run, its trust event, a first message, the
         // credentials it is handed) is not, since nothing starts: it is the run it was.
         let reattaching = self.reattaches(chat, why);
+        // **A workspace set to run its chats on a pool starts none here** (#2679): this
+        // machine's store says where its chats run, and a pool's runner does not hold the
+        // project yet, so the start is refused in words, never run on this machine instead.
+        #[cfg(unix)]
+        if !reattaching && let Some(config) = &self.pools_in {
+            purlis_core::pools::starts_here(
+                config,
+                &self.project,
+                workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
+            )?;
+        }
         // **A harness chat on a runner is started by its names** (#2446): the runner composes
         // it, with the sandbox, hooks and line it makes for itself, and writes its run and its
         // sandbox's audit in its own event log. The window composes none of it, and carries on

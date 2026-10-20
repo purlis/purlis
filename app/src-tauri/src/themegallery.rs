@@ -207,6 +207,17 @@ pub(crate) struct Place {
 impl Place {
     /// The level `at` names, read from the config home and the plane the window holds.
     pub(crate) fn read(config: PathBuf, plane: Option<PathBuf>, workspace: Option<String>) -> Self {
+        Self::offering(config, plane, workspace, offered_now)
+    }
+
+    /// [`Self::read`], with the extension themes approved under the config home as `offered`
+    /// surveys them.
+    fn offering(
+        config: PathBuf,
+        plane: Option<PathBuf>,
+        workspace: Option<String>,
+        offered: impl FnOnce(&Path) -> Arc<[Offered]>,
+    ) -> Self {
         let workspace = plane.as_ref().and(workspace);
         let reach = match (&plane, &workspace) {
             (None, _) => Reach::Machine,
@@ -226,7 +237,7 @@ impl Place {
         });
         Self {
             folders: Folders::of(Some(&config), plane.as_deref(), workspace.as_deref()),
-            offered: offered_now(&config),
+            offered: offered(&config),
             config,
             plane,
             workspace,

@@ -7,7 +7,7 @@
 //! Settings › Theme shows them on a theme's card, so the two say the same thing in the same
 //! words. A chat reads the findings as the engine reports them (`purlis theme check --json`).
 
-use super::check::Finding;
+use super::check::{Finding, laid};
 use super::{Checked, Density, PALETTE, Style, Theme};
 use crate::shown;
 
@@ -117,19 +117,12 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
     let mut found: Vec<Warning> = Vec::new();
     for finding in findings {
         let (subject, floor, tint, ratio) = match finding {
-            Finding::Contrast { tint, pair, ratio } => {
-                let over: String = [pair.under, pair.beneath]
-                    .into_iter()
-                    .flatten()
-                    .map(|layer| format!(" over {layer}"))
-                    .collect();
-                (
-                    format!("{} on {}{over}", pair.front, pair.back),
-                    Some(pair.floor),
-                    *tint,
-                    Some(*ratio),
-                )
-            }
+            Finding::Contrast { tint, pair, ratio } => (
+                laid(pair.front, pair.back, [pair.under, pair.beneath]),
+                Some(pair.floor),
+                *tint,
+                Some(*ratio),
+            ),
             Finding::Ansi {
                 tint,
                 token,
