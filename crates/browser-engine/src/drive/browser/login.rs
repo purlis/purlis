@@ -22,6 +22,12 @@
 //! login fails with a sentence. Only the page's own document is searched for the form: a field
 //! inside a frame is never filled.
 //!
+//! **Its scripts run in purlis's own world** (#2138, #2613): the fields are found by scripts
+//! run in purlis's world in the page's document, and focused, asked and cleared through that
+//! world's own objects, so nothing the page's scripts redefine steers which field gets a value.
+//! A world the engine no longer has, or cannot make, fills nothing more: the login fails with a
+//! sentence and the browser is handed back, or, where a value already went in, is ended.
+//!
 //! **The browser holds the login from the first fill**: `bind`, the caller's, holds what the
 //! browser reaches to the declared origin before the first value goes in. Where it cannot, no
 //! value goes in.
@@ -88,12 +94,13 @@ pub(crate) const FIELD_LENGTH: &str = r"function () {
   return typeof this.value === 'string' ? this.value.length : -1;
 }";
 
-/// The function that empties a field purlis filled, run on the field: a constant.
-pub(crate) const CLEAR_FIELD: &str = r"function () {
-  const own = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this), 'value');
-  if (own && own.set) own.set.call(this, ''); else this.value = '';
-  this.dispatchEvent(new Event('input', { bubbles: true }));
-  this.dispatchEvent(new Event('change', { bubbles: true }));
+/// The function that empties a field purlis filled, given the field as it is in purlis's own
+/// world: a constant.
+pub(crate) const CLEAR_FIELD: &str = r"function (field) {
+  const own = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value');
+  if (own && own.set) own.set.call(field, ''); else field.value = '';
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  field.dispatchEvent(new Event('change', { bubbles: true }));
 }";
 
 /// **How a login ended**: who drives the browser now and under which epoch, and what the login
@@ -223,16 +230,26 @@ impl Browser {
         let target = self.go_to(login)?;
         let within = self.inner.limits.login_within;
         let deadline = Instant::now() + within;
-        let shows_form = |this: &Self| -> Result<bool, Refusal> {
-            Ok(this.on_origin(&target, origin)
-                && (this.shows(&target, PASSWORD_FIELD)? == Some(true)
-                    || (login.user.is_some() && this.shows(&target, NAME_FIELD)? == Some(true))))
+        // Whether the page shows its form: unknown (`None`) while it cannot be read.
+        let shows_form = |this: &Self| -> Result<Option<bool>, Refusal> {
+            if !this.on_origin(&target, origin) {
+                return Ok(Some(false));
+            }
+            let password = this.shows(&target, PASSWORD_FIELD)?;
+            if password == Some(true) || login.user.is_none() {
+                return Ok(password);
+            }
+            Ok(match this.shows(&target, NAME_FIELD)? {
+                Some(true) => Some(true),
+                name => password.and(name),
+            })
         };
         // Opened from kept logins, a page that asks for nothing is signed in already: twice
-        // read, so a page between documents is not taken for one (#2021).
-        if login.only_if_asked && !shows_form(self)? {
+        // read, so a page between documents is not taken for one (#2021), and never a page
+        // that cannot be read.
+        if login.only_if_asked && shows_form(self)? == Some(false) {
             self.pause(LOOK_AGAIN)?;
-            if !shows_form(self)? {
+            if shows_form(self)? == Some(false) {
                 let shown = lock(&self.inner.state)
                     .current
                     .clone()
@@ -245,9 +262,19 @@ impl Browser {
                 return Ok(answer);
             }
         }
-        while !shows_form(self)? {
+        loop {
+            let shown = shows_form(self)?;
+            if shown == Some(true) {
+                break;
+            }
             if Instant::now() >= deadline {
-                return Err(if self.on_origin(&target, origin) {
+                return Err(if shown.is_none() {
+                    not_logged_in(format!(
+                        "purlis could not read the login page on {origin} within {} seconds, so \
+                         nothing was filled",
+                        within.as_secs()
+                    ))
+                } else if self.on_origin(&target, origin) {
                     not_logged_in(format!(
                         "no login form appeared on {origin} within {} seconds, so nothing was \
                          filled",
@@ -402,18 +429,24 @@ impl Browser {
         }
     }
 
-    /// The field `script` finds in `target`'s own document, if it finds one; [`Refusal::Unknown`]
-    /// where the page cannot be read now.
+    /// The field `script` finds in `target`'s own document, run in purlis's own world there, if
+    /// it finds one: an object of that world. [`Refusal::Unknown`] where the page cannot be read
+    /// now, or the world cannot be had.
     fn field(&self, target: &str, script: &str) -> Result<Option<Found>, Refusal> {
         let session = self.page_session(target)?;
         let on = Some(session.as_str());
         let found = self
-            .devtools()
-            .call(
-                "Runtime.evaluate",
-                json!({ "expression": script, "returnByValue": false }),
-                on,
-            )
+            .in_world(&session, target, |world| {
+                self.devtools().call(
+                    "Runtime.evaluate",
+                    json!({
+                        "expression": script,
+                        "uniqueContextId": world.unique,
+                        "returnByValue": false,
+                    }),
+                    on,
+                )
+            })
             .map_err(|_| Refusal::Unknown)?;
         if found.get("exceptionDetails").is_some() {
             return Err(Refusal::Unknown);
@@ -617,7 +650,9 @@ impl Browser {
     }
 
     /// Empties each field in `filled` that `target`'s page still shows on `origin`: what a login
-    /// that did not go through leaves behind.
+    /// that did not go through leaves behind. Each is resolved into purlis's own world and
+    /// emptied by a function run in that world by its unique id, so an element of any other
+    /// world is refused by the engine; one that cannot be is left.
     fn clear(&self, target: &str, origin: &str, filled: &[NodeKey]) {
         if !self.on_origin(target, origin) {
             return;
@@ -627,26 +662,38 @@ impl Browser {
         };
         let on = Some(session.as_str());
         for key in filled.iter().filter(|key| key.frame == target) {
-            let Ok(resolved) = self.devtools().call(
-                "DOM.resolveNode",
-                json!({ "backendNodeId": key.backend }),
-                on,
-            ) else {
-                continue;
-            };
-            let Some(object) = resolved.pointer("/object/objectId").and_then(Value::as_str) else {
-                continue;
-            };
-            let _ = self.gated(|| {
-                self.devtools().call(
-                    "Runtime.callFunctionOn",
-                    json!({ "objectId": object, "functionDeclaration": CLEAR_FIELD }),
+            let _ = self.in_world(&session, target, |world| {
+                let resolved = self.devtools().call(
+                    "DOM.resolveNode",
+                    json!({ "backendNodeId": key.backend, "executionContextId": world.id }),
                     on,
-                )
+                )?;
+                let Some(object) = resolved.pointer("/object/objectId").and_then(Value::as_str)
+                else {
+                    return Ok(Value::Null);
+                };
+                let cleared = self.gated(|| {
+                    self.devtools().call(
+                        "Runtime.callFunctionOn",
+                        json!({
+                            "uniqueContextId": world.unique,
+                            "functionDeclaration": CLEAR_FIELD,
+                            "arguments": [{ "objectId": object }],
+                        }),
+                        on,
+                    )
+                });
+                let _ = self.devtools().call(
+                    "Runtime.releaseObject",
+                    json!({ "objectId": object }),
+                    on,
+                );
+                // A world the engine refuses the element in is made again, once.
+                match cleared {
+                    Ok(done) => done.map(|_| Value::Null),
+                    Err(_) => Ok(Value::Null),
+                }
             });
-            let _ =
-                self.devtools()
-                    .call("Runtime.releaseObject", json!({ "objectId": object }), on);
         }
     }
 }
