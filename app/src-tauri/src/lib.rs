@@ -4737,6 +4737,7 @@ mod tests {
             "retry_chat_that_did_not_start",
             "reopen_finished_task",
             "curate",
+            "theme_chat",
             "relaunch",
             "restart_chat_without_sandbox",
             "restart_chat",

@@ -333,8 +333,9 @@ how it is cited and nothing here is renumbered.
 
 31. **A curation action is a chat opened with its prompt typed and never sent.** The operator
     reviews the prompt and presses Enter, and nothing can opt out of that. It is offered on a
-    workspace, a persona or the plane. purlis's own three come first (`charter/safe-remove`,
-    `charter/compact` — "Compact & improve" — and `charter/add-curation-action`), ship inside the
+    workspace, a persona or the plane. purlis's own four come first (`charter/safe-remove`,
+    `charter/compact` — "Compact & improve" — `charter/add-curation-action` and
+    `charter/create-theme` — "Create a theme", on workspaces and the plane), ship inside the
     binary and cannot be overridden; then each persona's, declared one file per action at
     `personas/<persona>/curation/<id>.md` and run by that persona. A template has four
     variables and no expansion of anything else. A persona's file that is broken, or that takes

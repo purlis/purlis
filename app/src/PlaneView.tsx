@@ -442,10 +442,12 @@ import {
   PROFILE_SIGN_IN,
   SETTINGS_ACTION,
   SETTINGS_LINK,
+  THEME_CHAT,
   type ProfileSignInAsk,
   type SettingsActionAsk,
   type SettingsLink,
   type SettingsLinkAsk,
+  type ThemeChatAsk,
 } from "./settings/links";
 import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
@@ -4971,6 +4973,40 @@ export const PlaneView = memo(function PlaneView({
     },
     [change, plane],
   );
+
+  /**
+   * **Settings › Theme's New theme and Edit with a chat** (#2333): the core opens the chat at the
+   * gallery's level with its prompt typed and never sent, as a curation chat is opened, and its
+   * tab goes on the strip it is filed under, in front. A refusal is the core's sentence.
+   */
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<ThemeChatAsk>).detail;
+      if (wanted.plane !== plane) return;
+      void commands
+        .themeChat(
+          { plane, workspace: wanted.workspace },
+          wanted.theme,
+          wanted.from,
+          STARTING_SIZE.columns,
+          STARTING_SIZE.rows,
+        )
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+        .then((started) => {
+          if (started.status === "error") {
+            setReport({ from: "theme-chat", refused: true, words: started.error });
+            return;
+          }
+          const chat = started.data;
+          setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
+          change((tabs) =>
+            openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+          );
+        });
+    };
+    window.addEventListener(THEME_CHAT, asked);
+    return () => window.removeEventListener(THEME_CHAT, asked);
+  }, [change, plane]);
 
   /**
    * **"Start a chat here"** on a file or folder row (FM-9): a chat the core starts on the

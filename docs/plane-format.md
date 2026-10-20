@@ -3170,10 +3170,10 @@ that runs it.
     in braces. A single `}` on its own stays text, as it always was.
   - **An action that has an error is not offered**, and the list that leaves it out says so
     with a warning naming the file. So is one whose id or label is one of purlis's built-in
-    actions' (`charter/safe-remove`, `charter/compact`, `charter/add-curation-action`; labels
-    compared case-insensitively): a built-in cannot be overridden or impersonated. Nor is any
-    action of a persona named `charter`, whose ids would read `charter/<id>`; the name is
-    reserved (see [`personas/`](#personas)).
+    actions' (`charter/safe-remove`, `charter/compact`, `charter/add-curation-action`,
+    `charter/create-theme`; labels compared case-insensitively): a built-in cannot be
+    overridden or impersonated. Nor is any action of a persona named `charter`, whose ids would
+    read `charter/<id>`; the name is reserved (see [`personas/`](#personas)).
   - **Keep the prompt to one short line.** It is typed to be read before the operator presses
     Enter, and a harness draws a longer paste as a placeholder nobody can read: Claude Code
     2.1.283 over 800 characters or at 4 lines, Codex 0.147.0 over 1,000 characters, opencode

@@ -18,6 +18,8 @@ import {
 import { putBack, showing } from "../theme/hoverPreview";
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, property } from "../theme/theme";
 import type { LiveSetting } from "./groups";
+import { ReadOnlySaid } from "../ReadOnlyLine";
+import { THEME_CHAT, type ThemeChatAsk } from "./links";
 import { forgetGalleries, themeRows } from "./themeGallery";
 import { BUSY_WAIT_MS, forgetSpecimens, keptSpecimens, MOST_KEPT } from "./themeSpecimens";
 
@@ -422,6 +424,55 @@ describe("under the chosen card (#2331)", () => {
     await waitFor(() =>
       expect(asked("theme_open_folder")).toEqual([{ at: null, theme: "dusk", from: "machine" }]),
     );
+  });
+
+  it("asks the project's window for a theme chat: New theme here, Edit with a chat on the chosen card (#2333)", async () => {
+    const { asked } = core(shown({ yours: mine("team", null, "project"), drawn: "project:team" }));
+    const heard: ThemeChatAsk[] = [];
+    const hear = (event: Event) => heard.push((event as CustomEvent<ThemeChatAsk>).detail);
+    window.addEventListener(THEME_CHAT, hear);
+    try {
+      render(<Group at={{ plane: PLANE, workspace: "alpha" }} />);
+      await cards();
+      fireEvent.click(screen.getByRole("button", { name: "Edit with a chat" }));
+      fireEvent.click(screen.getByRole("button", { name: "New theme" }));
+      expect(heard).toEqual([
+        { plane: PLANE, workspace: "alpha", theme: "team", from: "project" },
+        { plane: PLANE, workspace: "alpha", theme: null, from: null },
+      ]);
+      // The window asks; the project's window opens the chat. Nothing is written from here.
+      expect(asked("theme_chat")).toEqual([]);
+    } finally {
+      window.removeEventListener(THEME_CHAT, hear);
+    }
+  });
+
+  it("opens no theme chat in a read-only project, and says why", async () => {
+    core(shown({ yours: mine("team", null, "project"), drawn: "project:team" }));
+    render(
+      <ReadOnlySaid.Provider value="This project is read-only.">
+        <Group at={{ plane: PLANE, workspace: null }} />
+      </ReadOnlySaid.Provider>,
+    );
+    await cards();
+    for (const name of ["Edit with a chat", "New theme"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveProperty("disabled", true);
+      expect(button.getAttribute("title")).toBe(
+        "This project is read-only. A theme made here could not be kept.",
+      );
+    }
+  });
+
+  it("opens no theme chat at the machine's level, where no project is, and says why", async () => {
+    core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
+    render(<Group at={null} />);
+    await cards();
+    for (const name of ["Edit with a chat", "New theme"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveProperty("disabled", true);
+      expect(button.getAttribute("title")).toContain("at the Project or Workspace level");
+    }
   });
 
   it("offers neither on a theme a folder of your own cannot extend, nor a folder it has not", async () => {

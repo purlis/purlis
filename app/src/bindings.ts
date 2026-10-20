@@ -2707,6 +2707,14 @@ export const commands = {
 	workspace: string | null,
 } | null, theme: string, from: string | null) => typedError<null, string>(__TAURI_INVOKE("theme_open_folder", { at, theme, from })),
 	/**
+	 *  **New theme** and **Edit with a chat** (#2333): a chat at the level `at` names, with a prompt
+	 *  that names purlis's theme skill typed into it and never sent (ADR 0061), as the Curate menu's
+	 *  Create a theme opens one. With `theme`, the prompt names that card's theme, of the level
+	 *  `from`; the card is one this level's gallery shows, never a name the window made up. The
+	 *  machine's level has no project for a chat to work in, so it is never asked.
+	 */
+	themeChat: (at: ThemeAt, theme: string | null, from: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("theme_chat", { at, theme, from, columns, rows })),
+	/**
 	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
 	 *  draft, where Keep puts it. Empty for a chat with none.
 	 */

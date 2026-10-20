@@ -290,6 +290,26 @@ over theme files only.
   project's or a workspace's to your own, carrying only the font files you approved with the
   project. Neither replaces a folder of that name that is there.
 
+## Making a theme with a chat
+
+purlis's **theme** skill guides a chat through making a theme: from a brand colour, an image or a
+screenshot, a Figma frame, an imported theme or another theme. It also edits, checks and shares
+one. The chat works through a theme draft, so the theme is drawn live where the chat works, and
+it loops: save the draft, look at the theme specimen (`theme_preview`), `purlis theme check
+draft:<folder>`, fix. It finishes with a clean check, or names each warning it leaves and why.
+The person keeps or reverts the draft on its strip.
+
+A chat started in a workspace makes that workspace's theme; one at the plane root makes the
+project's. Start one:
+
+- by asking any chat for a theme, which reaches the skill by its name;
+- with **Create a theme** in a workspace's or the plane's **Curate** menu;
+- from Settings › Theme at the Project or Workspace level: **New theme**, or **Edit with a chat**
+  on the chosen theme, which names that theme by its id from `purlis theme list`.
+
+Each opens a chat with its prompt typed and never sent: read it and press Enter. A read-only
+project keeps no theme, so Settings › Theme offers neither button there and says why.
+
 ## The schema a theme names
 
 A theme's `$schema` names the published schema, so an editor completes token names and flags a

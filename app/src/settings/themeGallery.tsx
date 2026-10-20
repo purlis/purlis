@@ -27,6 +27,8 @@ import {
   type Theme,
 } from "../theme/theme";
 import { Choice, SettingActions, type Badge, type RowIds } from "./components";
+import { askThemeChat } from "./links";
+import { useReadOnlySaid } from "../ReadOnlyLine";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { OptionsList } from "./themeOptions";
 import { useOnScreen, useSpecimen } from "./themeSpecimens";
@@ -848,17 +850,22 @@ function checkRow(group: string, at: ThemeAt | null): LiveSetting {
   };
 }
 
+/** Why New theme and Edit with a chat wait for a project: a chat works in one. */
+const NO_CHAT_HERE =
+  "A chat makes a theme in a project: open Settings › Theme at the Project or Workspace level.";
+
 /**
  * **What a card does to the person's own themes**: Duplicate as my theme, and Open folder; and
  * the moves up a level (#2332): **Use in the whole project** moves a workspace's theme to the
  * project, and **Copy to my machine** copies a project's or a workspace's theme to the person's
- * own, with only the font files approved with the project.
+ * own, with only the font files approved with the project. **Edit with a chat** and **New theme**
+ * (#2333) open a chat at this level on purlis's theme skill, its prompt typed and never sent.
  */
 function folderRow(group: string, at: ThemeAt | null): LiveSetting {
   return {
     id: `${group}.folder`,
     label: "This theme",
-    help: "Duplicate the chosen theme as a theme folder of your own that extends it, open its folder, or move it up a level: a workspace's to the whole project, a project's or a workspace's to your machine.",
+    help: "Duplicate the chosen theme as a theme folder of your own that extends it, open its folder, have a chat edit it or make a new one, or move it up a level: a workspace's to the whole project, a project's or a workspace's to your machine.",
     writes: "this machine",
     useControl: function useThemeFolder() {
       const read = useGallery(at);
@@ -866,6 +873,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
       const card = gallery === undefined ? undefined : chosenCard(gallery);
       const [said, setSaid] = useState<string>();
       const [error, setError] = useState<readonly string[]>();
+      const readOnly = useReadOnlySaid();
       const duplicate = () => {
         if (card === undefined) return;
         void commands.themeDuplicate(at, card.id, card.level).then((made) => {
@@ -895,6 +903,25 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
         void drawWhatIsInForce();
       };
       const workspace = at?.workspace ?? null;
+      // New theme and Edit with a chat (#2333): the project's window opens the chat here, its
+      // prompt typed and never sent.
+      // Why no theme chat opens here: no project at the machine's level, and a read-only one
+      // could not keep the draft.
+      const noChat =
+        at === null
+          ? NO_CHAT_HERE
+          : readOnly === undefined
+            ? undefined
+            : `${readOnly} A theme made here could not be kept.`;
+      const chat = (edited: GalleryCard | undefined) => {
+        if (at === null || noChat !== undefined) return;
+        askThemeChat({
+          plane: at.plane,
+          workspace,
+          theme: edited?.id ?? null,
+          from: edited?.level ?? null,
+        });
+      };
       const inWorkspace = card?.from === "workspace" && workspace !== null;
       const inProject = card?.from === "project" || inWorkspace;
       const toProject = () => {
@@ -947,6 +974,29 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
                 onClick={open}
               >
                 Open folder
+              </button>
+              <button
+                type="button"
+                className="ui-button"
+                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+                tabIndex={0}
+                disabled={card === undefined || noChat !== undefined}
+                title={noChat}
+                onClick={() => chat(card)}
+              >
+                Edit with a chat
+              </button>
+              <button
+                type="button"
+                className="ui-button"
+                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+                tabIndex={0}
+                // Once the core has answered for this level, as every button here waits.
+                disabled={gallery === undefined || noChat !== undefined}
+                title={noChat}
+                onClick={() => chat(undefined)}
+              >
+                New theme
               </button>
               <button
                 type="button"

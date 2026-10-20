@@ -333,9 +333,21 @@ fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curati
         .ok_or_else(|| {
             format!("'{action}' is not offered on {spec} any more, so nothing was opened.")
         })?;
+    open_chosen(held, chosen, &name_of(&root, &subject), size)
+}
+
+/// Opens the chat for `chosen`, an action the core resolved, on the subject the operator knows
+/// as `shown`: a curation action's, or Settings › Theme's New theme and Edit with a chat
+/// ([`crate::themegallery::theme_chat`], #2333).
+pub(crate) fn open_chosen(
+    held: &Arc<Held>,
+    chosen: Resolved,
+    shown: &str,
+    size: Size,
+) -> Result<Curating, String> {
+    let root = held.root().to_path_buf();
     let profile = launch_profile(&root)?;
-    let name_shown = name_of(&root, &subject);
-    let label = tab_label(&chosen.label, &name_shown);
+    let label = tab_label(&chosen.label, shown);
     let typed = start_typed(
         held,
         ChatTyped {
@@ -1666,11 +1678,12 @@ mod tests {
             [
                 ("charter/safe-remove", None),
                 ("charter/compact", None),
+                ("charter/create-theme", None),
                 ("ops/long", Some("ops")),
                 ("ops/tidy", Some("ops")),
             ]
         );
-        let tidy = &alpha.actions[3];
+        let tidy = &alpha.actions[4];
         assert_eq!(tidy.runner.as_deref(), Some("ops"));
         assert!(tidy.cwd.ends_with("workspaces/alpha"), "{}", tidy.cwd);
         assert_eq!(tidy.prompt, "Tidy alpha.\nThen say so.");

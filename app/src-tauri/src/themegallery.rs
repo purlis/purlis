@@ -33,6 +33,7 @@ use purlis_core::theme::levels::Reach;
 use purlis_core::theme::{
     self, Choice, Folders, Level, LevelInputs, Levels, Offered, On, Values, choices,
 };
+use purlis_core::themechat;
 
 use crate::extensions::{
     ThemeAt, ThemeInForce, WindowOption, WindowOptionValue, WindowTheme, YourTheme, built_in,
@@ -797,6 +798,59 @@ pub async fn theme_open_folder(
     app.opener()
         .open_path(folder.display().to_string(), None::<&str>)
         .map_err(|e| format!("the system did not open {theme}'s folder: {e}"))
+}
+
+/// **New theme** and **Edit with a chat** (#2333): a chat at the level `at` names, with a prompt
+/// that names purlis's theme skill typed into it and never sent (ADR 0061), as the Curate menu's
+/// Create a theme opens one. With `theme`, the prompt names that card's theme, of the level
+/// `from`; the card is one this level's gallery shows, never a name the window made up. The
+/// machine's level has no project for a chat to work in, so it is never asked.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_chat(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    at: ThemeAt,
+    theme: Option<String>,
+    from: Option<String>,
+    columns: u16,
+    rows: u16,
+) -> Result<crate::curation::Curating, String> {
+    let level = level_of(from.as_deref())?;
+    let held = planes.held(&at.plane)?;
+    let config = config_root()?;
+    crate::off_the_window("starting the theme chat", move || {
+        let root = held.root().to_path_buf();
+        let workspace = at.workspace;
+        let chosen = match theme {
+            None => themechat::chat(&root, workspace.as_deref(), themechat::Asked::New)?,
+            Some(theme) => {
+                let place = Place::read(config, Some(root.clone()), workspace.clone());
+                let card = gallery::cards(&place.shelf())
+                    .into_iter()
+                    .find(|card| card.is(&theme, level))
+                    .ok_or_else(|| {
+                        format!(
+                            "{} is not a theme here any more, so no chat was opened",
+                            purlis_core::shown::short(&theme)
+                        )
+                    })?;
+                themechat::chat(&root, workspace.as_deref(), themechat::Asked::Edit(&card))?
+            }
+        };
+        let shown = workspace.clone().unwrap_or_else(|| {
+            root.file_name().map_or_else(
+                || root.display().to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            )
+        });
+        crate::curation::open_chosen(
+            &held,
+            chosen,
+            &shown,
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
 }
 
 #[cfg(test)]
