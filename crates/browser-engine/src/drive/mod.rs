@@ -603,6 +603,9 @@ pub struct Limits {
     /// How long a login purlis performs waits for its form to show, and then for its password
     /// field to go (#2016).
     pub login_within: Duration,
+    /// How long a drag waits after its last move for the engine to say its own drag started
+    /// (#2136).
+    pub drag_starts_within: Duration,
 }
 
 impl Default for Limits {
@@ -615,6 +618,7 @@ impl Default for Limits {
             longest_wait: Duration::from_secs(60),
             answers_kept: 256,
             login_within: LOGIN_WAIT,
+            drag_starts_within: Duration::from_millis(150),
         }
     }
 }
