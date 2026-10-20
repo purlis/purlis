@@ -10,12 +10,20 @@
 //! **A chat never sees the person's window, and three things make that so**:
 //!
 //! - **the page is handed the theme and nothing else** ([`creation_script`]): the built-in
-//!   themes, compiled into the core, and the one theme asked for. No project, chat, path, layout
-//!   or setting of the person's is in it;
+//!   themes, compiled into the core, the one theme asked for, the colour it is tinted with, and
+//!   the bytes of the theme's own fonts (#2536), which the page makes its faces from, since it
+//!   may ask purlis for nothing. No project, chat, path, layout or setting of the person's is in
+//!   it;
 //! - **its window is granted no command** ([`label`] matches no capability in `capabilities/`),
 //!   so the page cannot ask the core for anything of the person's even if it tried;
 //! - **every word, line and colour on it is the page's own fixture**, drawn from the app's
 //!   real components.
+//!
+//! **Where a chat's specimen is resolved** (#2536): where that chat works, by this app's record
+//! of it ([`ChatAt`]): its plane, its workspace and its id, never what the chat sent. The theme
+//! engine looks the theme's id up there ([`themepreview::resolved`]), as the window resolves a
+//! choice of it there, and the page tints it with that workspace's colour, as the window is
+//! tinted there.
 //!
 //! **How it is drawn.** A hidden window of [`themepreview::WIDTH`] × [`themepreview::HEIGHT`]
 //! loads the page, which draws itself and then sets its title to [`READY`]; the webview is then
@@ -29,12 +37,14 @@
 //! and that picture gives way and is answered [`BUSY`], so the chat is drawn next; the window
 //! asks for the picture again later.
 
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, mpsc};
 use std::time::Instant;
 
 use purlis_core::hookwire::{Answer, ThemePreviewAsk};
+use purlis_core::themepreview::spacing::Spacing;
 use purlis_core::themepreview::turns::{Turn, Turns, Waited, Who};
-use purlis_core::themepreview::{self, Painted, Specimen};
+use purlis_core::themepreview::{self, Painted, Reached, Specimen};
 
 use crate::extensions::WindowTheme;
 
@@ -58,14 +68,62 @@ pub struct Picture {
     pub height: u32,
 }
 
+/// **What the specimen's page is handed** (#2536): the theme, drawn by the engine with its floors
+/// held; the workspace colour the window is tinted with where the chat works, `None` for none;
+/// and the bytes of each face of the theme's fonts, by its digest.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Handed {
+    pub theme: WindowTheme,
+    pub tint: Option<String>,
+    pub faces: Vec<(String, Vec<u8>)>,
+}
+
+impl Handed {
+    /// `theme`, untinted, with the faces its fonts name, or why they cannot be handed.
+    pub fn of(theme: WindowTheme) -> Result<Self, String> {
+        let faces = themepreview::faces_of(
+            [&theme.fonts.ui, &theme.fonts.mono, &theme.fonts.terminal]
+                .into_iter()
+                .flat_map(|font| font.faces.iter().map(|face| face.asset.as_str())),
+        )?;
+        Ok(Self {
+            theme,
+            tint: None,
+            faces,
+        })
+    }
+}
+
 /// **What draws a specimen**: the app's hidden window ([`InTheApp`]), or a test's stand-in.
 pub trait Painter: Send + Sync {
     /// Whose turn it is to be drawn: one at a time, a chat ahead of the gallery.
     fn turns(&self) -> &Turns;
 
-    /// Draws the specimen in `theme` on `turn`, within the budget, or says why it could not:
-    /// [`BUSY`] when the turn gave way to a chat ([`Turn::wait`]).
-    fn paint(&self, theme: &WindowTheme, turn: &Turn<'_>) -> Result<Picture, String>;
+    /// How often each chat is drawn: at most once a gap ([`themepreview::spacing`]), so a chat
+    /// asking again and again leaves Settings › Theme its pictures.
+    fn spacing(&self) -> &Spacing;
+
+    /// Draws the specimen of what `handed` holds on `turn`, within the budget, or says why it
+    /// could not: [`BUSY`] when the turn gave way to a chat ([`Turn::wait`]).
+    fn paint(&self, handed: &Handed, turn: &Turn<'_>) -> Result<Picture, String>;
+}
+
+/// **Where a chat works, as this app knows it** (#2536): the plane it was started in, the
+/// workspace it works in (`None` at the plane root), and its id, whose theme drafts are its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatAt {
+    pub plane: PathBuf,
+    pub workspace: Option<String>,
+    pub id: Option<String>,
+}
+
+impl ChatAt {
+    /// What the chat is spaced by: its id, else the plane and its number here.
+    fn key(&self, chat: u32) -> String {
+        self.id
+            .clone()
+            .unwrap_or_else(|| format!("{}#{chat}", self.plane.display()))
+    }
 }
 
 /// The painter this app draws with, once its window machinery is up ([`install`]).
@@ -81,34 +139,62 @@ pub fn install(app: &tauri::AppHandle) {
     let _ = PAINTER.set(Arc::new(InTheApp {
         app: app.clone(),
         turns: Turns::new(),
+        spacing: Spacing::new(),
     }));
 }
 
 /// **Answers a chat's `theme_preview`** ([`purlis_core::hookwire::Ask::ThemePreview`]): each
-/// specimen asked for, drawn by `painter` in the theme the engine resolves, in order.
+/// specimen asked for, looked up where the chat works (`chat_at`, this app's record of the chat
+/// the line's token is of; `None` for one it does not have open), drawn by `painter` in the
+/// theme the engine resolves there, in order. `config` is this machine's config home.
 pub fn answered(
-    is_open: &dyn Fn(u32) -> bool,
+    chat_at: &dyn Fn(u32) -> Option<ChatAt>,
+    config: Option<PathBuf>,
     painter: Option<&dyn Painter>,
     asks: &ThemePreviewAsk,
 ) -> Answer {
     let no = |why: String| Answer::No { why };
-    if !is_open(asks.chat) {
+    let Some(at) = chat_at(asks.chat) else {
         return no(format!(
             "chat {} is not one this purlis window has open, and only such a chat is drawn the \
              theme specimen",
             asks.chat
         ));
+    };
+    // The tool's bounds, held again here: a chat may write the line itself.
+    if let Err(why) = themepreview::checked(&asks.specimens) {
+        return no(why);
     }
-    match painted(painter, &asks.specimens, Who::Chat) {
+    let key = at.key(asks.chat);
+    if let Err(left) = painter.map_or(Ok(()), |one| one.spacing().may(&key, Instant::now())) {
+        return no(Spacing::said(left));
+    }
+    let answer = painted(
+        painter,
+        config.map(|config| (config, at)),
+        &asks.specimens,
+        Who::Chat,
+    );
+    // A turn taken is spaced from its end, whatever it drew; an ask answered busy took none.
+    if let Some(one) = painter
+        && answer.as_ref().err().is_none_or(|why| why != BUSY)
+    {
+        one.spacing().ended(&key, Instant::now());
+    }
+    match answer {
         Ok(painted) => Answer::Previewed { painted },
         Err(why) => no(why),
     }
 }
 
 /// Each of `specimens` drawn by `painter` on one turn of `who`'s, or why not: [`BUSY`] when it is
-/// not `who`'s turn ([`themepreview::turns`]).
+/// not `who`'s turn ([`themepreview::turns`]). Looked up where the chat at `at` works, with this
+/// machine's config home; the built-in themes alone with no `at`, as for a chat on a machine with
+/// no config home. The turn is taken first, so the lookup, the font read, the tint and the
+/// pictures are all drawn on it, within [`themepreview::TURN`].
 pub fn painted(
     painter: Option<&dyn Painter>,
+    at: Option<(PathBuf, ChatAt)>,
     specimens: &[Specimen],
     who: Who,
 ) -> Result<Vec<Painted>, String> {
@@ -122,14 +208,45 @@ pub fn painted(
         return Err(NO_PAINTER.to_owned());
     };
     let turn = turn_of(painter, who)?;
+    let until = Instant::now() + themepreview::TURN;
+    let tint = at.as_ref().and_then(|(_, chat)| colour_of(chat));
+    let place = at.map(|(config, chat)| {
+        let place = crate::themegallery::Place::read(
+            config.clone(),
+            Some(chat.plane.clone()),
+            chat.workspace.clone(),
+        );
+        (config, chat, place)
+    });
     specimens
         .iter()
         .map(|specimen| {
-            // Drawn as the window draws it: the consent floors held (ADR 0097 §6).
-            let drawn = themepreview::drawn(specimen)?;
-            let theme = drawn.theme.ok_or_else(|| NO_THEME.to_owned())?;
             let started = Instant::now();
-            let picture = painter.paint(&WindowTheme::from(&theme), &turn)?;
+            // Drawn as the window draws it there: the consent floors held (ADR 0097 §6).
+            let drawn = match &place {
+                None => themepreview::resolved(&Reached::nowhere(), specimen)?,
+                Some((config, chat, place)) => themepreview::resolved(
+                    &Reached {
+                        config: Some(config),
+                        plane: Some(&chat.plane),
+                        workspace: chat.workspace.as_deref(),
+                        chat: chat.id.as_deref(),
+                        shelf: place.shelf(),
+                    },
+                    specimen,
+                )?,
+            };
+            let theme = drawn.theme.ok_or_else(|| NO_THEME.to_owned())?;
+            let handed = Handed {
+                tint: tint.clone(),
+                ..Handed::of(WindowTheme::from(&theme))?
+            };
+            // No picture is begun that could end past the turn's time: the caller has stopped
+            // waiting by then.
+            if Instant::now() + themepreview::BUDGET > until {
+                return Err(over_budget());
+            }
+            let picture = painter.paint(&handed, &turn)?;
             Ok(Painted {
                 preview: purlis_core::theme::is_preview(&specimen.theme),
                 theme: specimen.theme.clone(),
@@ -142,6 +259,13 @@ pub fn painted(
             })
         })
         .collect()
+}
+
+/// **The colour the window is tinted with where `chat` works**: its workspace's, as its
+/// manifest holds it ([`themepreview::workspace_colour`]); `None` at the plane root and for a
+/// workspace with none.
+fn colour_of(chat: &ChatAt) -> Option<String> {
+    themepreview::workspace_colour(&chat.plane, chat.workspace.as_deref()?)
 }
 
 /// **`who`'s turn on `painter`**, or [`BUSY`]: a chat waits for a gallery picture to give way,
@@ -161,20 +285,35 @@ const NO_PAINTER: &str = "this purlis window cannot draw the theme specimen yet:
 
 /// **What the specimen page is handed**, as the script that runs before any of its own: the
 /// built-in themes (`__CHARTER_AT_CREATION__`'s `built_in`, which the window's theme module
-/// reads at its start) and the one theme to draw with the size to lay it out at ([`GIVEN`]).
-/// **Nothing else**: this is the
-/// whole of what the page knows, and it is built from `theme` and the compiled-in built-ins
-/// alone.
-pub fn creation_script(theme: &WindowTheme) -> String {
+/// reads at its start), and on [`GIVEN`] the one theme to draw, the size to lay it out at, the
+/// colour to tint it with (`null` for none) and its fonts' faces, each by its digest as base64
+/// (#2536). **Nothing else**: this is the whole of what the page knows, and it is built from
+/// `handed` and the compiled-in built-ins alone.
+pub fn creation_script(handed: &Handed) -> String {
+    use base64::Engine as _;
     let built_in: Vec<WindowTheme> = purlis_core::theme::built_ins()
         .iter()
         .map(WindowTheme::from)
         .collect();
     let at_creation = serde_json::json!({ "built_in": built_in });
+    let faces: serde_json::Map<String, serde_json::Value> = handed
+        .faces
+        .iter()
+        .map(|(asset, bytes)| {
+            (
+                asset.clone(),
+                base64::engine::general_purpose::STANDARD
+                    .encode(bytes)
+                    .into(),
+            )
+        })
+        .collect();
     let given = serde_json::json!({
-        "theme": theme,
+        "theme": handed.theme,
         "width": themepreview::WIDTH,
         "height": themepreview::HEIGHT,
+        "tint": handed.tint,
+        "faces": faces,
     });
     format!(
         "Object.defineProperty(window, \"__CHARTER_AT_CREATION__\", {{ value: Object.freeze({at_creation}) }});\n\
@@ -217,6 +356,7 @@ pub async fn theme_specimen(
                 theme: theme.clone(),
                 appearance: *appearance,
                 high_contrast: false,
+                options: purlis_core::theme::Values::new(),
             })
             .is_ok()
     });
@@ -225,6 +365,7 @@ pub async fn theme_specimen(
             theme,
             appearance,
             high_contrast: false,
+            options: purlis_core::theme::Values::new(),
         }),
         None => {
             let place = match at {
@@ -244,6 +385,7 @@ pub async fn theme_specimen(
     let one = tauri::async_runtime::spawn_blocking(move || match specimen {
         Ask::BuiltIn(specimen) => painted(
             painter().as_deref(),
+            None,
             std::slice::from_ref(&specimen),
             Who::Gallery,
         )
@@ -266,7 +408,8 @@ pub async fn theme_specimen(
             let painter = painter().ok_or_else(|| NO_PAINTER.to_owned())?;
             let turn = turn_of(painter.as_ref(), Who::Gallery)?;
             let started = Instant::now();
-            let picture = painter.paint(&theme, &turn)?;
+            // A card is drawn as the gallery draws it: untinted, in its own fonts.
+            let picture = painter.paint(&Handed::of(theme.clone())?, &turn)?;
             let appearance = if theme.appearance == "light" {
                 purlis_core::theme::Appearance::Light
             } else {
@@ -325,6 +468,7 @@ pub struct SpecimenPicture {
 struct InTheApp {
     app: tauri::AppHandle,
     turns: Turns,
+    spacing: Spacing,
 }
 
 /// How many specimen windows this app has made, for each one's label.
@@ -335,7 +479,11 @@ impl Painter for InTheApp {
         &self.turns
     }
 
-    fn paint(&self, theme: &WindowTheme, turn: &Turn<'_>) -> Result<Picture, String> {
+    fn spacing(&self) -> &Spacing {
+        &self.spacing
+    }
+
+    fn paint(&self, handed: &Handed, turn: &Turn<'_>) -> Result<Picture, String> {
         use tauri::{WebviewUrl, WebviewWindowBuilder};
         // One at a time, and no queue: `turn` is the painter's, and an ask that found it taken
         // was answered at once ([`themepreview::turns`]).
@@ -353,7 +501,7 @@ impl Painter for InTheApp {
             .visible(false)
             .focused(false)
             .skip_taskbar(true)
-            .initialization_script(creation_script(theme))
+            .initialization_script(creation_script(handed))
             .on_new_window(crate::navguard::no_new_window)
             .on_document_title_changed(move |_, title| {
                 if title == READY {

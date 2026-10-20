@@ -250,7 +250,10 @@ chat's drafts, in its folder, when the chat asks. In a chat purlis started:
   it (Purlis Classic's whole `theme.json` is about a fifth of that), and a larger one is refused
   before it is sent;
 - `purlis theme check draft:<folder>` checks the draft exactly as the window draws it, and exits
-  1 when it breaks a hard floor.
+  1 when it breaks a hard floor;
+- the `theme_preview` tool draws the theme specimen of `draft:<folder>`, the chat's own draft, and
+  can draw it side by side with the theme as kept (`side_by_side: {"theme": "<folder>"}`). A chat
+  is drawn only its own drafts, and a draft that breaks a hard floor is not drawn.
 
 A draft's fonts are the ones its folder already has, as approved with the project; a save hands
 over theme files only.

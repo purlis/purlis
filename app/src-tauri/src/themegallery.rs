@@ -193,7 +193,7 @@ impl From<Card> for GalleryCard {
 
 /// **What a gallery is read from at one level**: the levels' theme folders, how far a choice
 /// there reaches, and whose extension themes are in force there.
-struct Place {
+pub(crate) struct Place {
     config: PathBuf,
     plane: Option<PathBuf>,
     workspace: Option<String>,
@@ -206,7 +206,7 @@ struct Place {
 
 impl Place {
     /// The level `at` names, read from the config home and the plane the window holds.
-    fn read(config: PathBuf, plane: Option<PathBuf>, workspace: Option<String>) -> Self {
+    pub(crate) fn read(config: PathBuf, plane: Option<PathBuf>, workspace: Option<String>) -> Self {
         let workspace = plane.as_ref().and(workspace);
         let reach = match (&plane, &workspace) {
             (None, _) => Reach::Machine,
@@ -235,7 +235,7 @@ impl Place {
         }
     }
 
-    fn shelf(&self) -> Shelf<'_> {
+    pub(crate) fn shelf(&self) -> Shelf<'_> {
         Shelf {
             folders: &self.folders,
             reach: self.reach,

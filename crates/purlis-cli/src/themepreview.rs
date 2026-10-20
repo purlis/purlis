@@ -14,10 +14,9 @@ use purlis_core::themepreview;
 
 use crate::brokered::NotTaken;
 
-/// How long the tool waits on the app: one budget for a gallery picture to give way to the chat
-/// ([`themepreview::turns`], #2614), each specimen's budget, and a little for the reply.
-const ASKED_WITHIN: Duration =
-    Duration::from_secs(themepreview::BUDGET.as_secs() * (themepreview::AT_MOST as u64 + 1) + 5);
+/// How long the tool waits on the app: the core's own count, which holds the lookup, the font
+/// read and the tint as well as each picture's budget ([`themepreview::ASKED_WITHIN`]).
+const ASKED_WITHIN: Duration = themepreview::ASKED_WITHIN;
 
 /// The tool called with `args`: what to tell the model, and the pictures the app attached.
 pub fn tool(

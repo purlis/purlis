@@ -3091,6 +3091,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
                 theme: "purlis-classic".to_owned(),
                 appearance: None,
                 high_contrast: false,
+                options: purlis_core::theme::Values::new(),
             }],
         }),
         // A theme draft (#2332): it names a theme folder, written for the asking chat alone.
