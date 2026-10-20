@@ -1686,6 +1686,60 @@ fn a_page_whose_title_cannot_be_read_keeps_the_title_the_engine_told_of() {
 }
 
 #[test]
+fn a_page_settles_once_a_frame_with_a_request_open_detaches() {
+    let (browser, engine) = browser();
+    // A frame inside the page asks for data, and goes before the engine says it ended.
+    engine.emit(
+        "Page.frameAttached",
+        json!({"frameId":"ADS-FRAME","parentFrameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    engine.emit(
+        "Network.requestWillBeSent",
+        json!({"requestId":"9.1","loaderId":"L9","frameId":"ADS-FRAME","request":{"url":"http://fixture.test/ads-data"},"type":"Fetch"}),
+        Some("S-PAGE-1"),
+    );
+    // What the page waits for, as its settling reads it now.
+    let waits = || {
+        super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .unwrap()
+            .settle
+            .waiting_for(std::time::Instant::now(), limits().quiet)
+    };
+    let until = |done: &dyn Fn(&[String]) -> bool, what: &str| {
+        let start = std::time::Instant::now();
+        while !done(&waits()) {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "{what}: {:?}",
+                waits()
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    };
+    until(
+        &|w| w.iter().any(|w| w.contains("ads-data")) && w.len() == 1,
+        "the request never counted alone",
+    );
+    let before = browser.call(&id(1), Call::Pages).unwrap();
+    assert!(
+        matches!(&before.settled, Settled::No(why) if why.iter().any(|w| w.contains("ads-data"))),
+        "{:?}",
+        before.settled
+    );
+    engine.emit(
+        "Page.frameDetached",
+        json!({"frameId":"ADS-FRAME","reason":"remove"}),
+        Some("S-PAGE-1"),
+    );
+    // The page settles a quiet while after the detach.
+    until(&|w| w.is_empty(), "the page never settled");
+    let after = browser.call(&id(2), Call::Pages).unwrap();
+    assert_eq!(after.settled, Settled::Yes);
+}
+
+#[test]
 fn a_page_whose_document_has_not_loaded_has_not_settled() {
     let (browser, engine) = browser_with(Limits {
         settle_within: Duration::from_millis(200),
