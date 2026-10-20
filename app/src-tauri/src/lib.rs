@@ -2810,6 +2810,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<projectsettings::Rescreened>()
         .typ::<chatbrowsers::BrowsersEnded>()
         .typ::<chatbrowsers::BrowsersListed>()
+        // What `theme-drafts-close-handed` carries (#2761).
+        .typ::<themedrafts::CloseHanded>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
         // What `chats-reconnecting` carries (#2496).
@@ -2824,6 +2826,8 @@ fn commands() -> Builder<tauri::Wry> {
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
         // window asks again later, matching it whole.
         .constant("SPECIMEN_BUSY", specimen::BUSY)
+        // The event a link's close of chats with theme drafts reaches the window on (#2761).
+        .constant("CLOSE_HANDED", themedrafts::CLOSE_HANDED)
 }
 
 /// Where the generated TypeScript lives.

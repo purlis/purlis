@@ -597,6 +597,7 @@ export const PlaneView = memo(function PlaneView({
   firstChatAsked,
   shellAsked,
   fileAsked,
+  closeAsked,
   awayRefused,
   onAway,
   waiting,
@@ -660,6 +661,9 @@ export const PlaneView = memo(function PlaneView({
   /** A file ⌘P found in THIS project (FM-7), opened in its file tab once per `at`; with a
    *  `line`, a jump to it (a search hit, FM-8), opened in the branch's file tab at that line. */
   fileAsked?: { place: Place; path: string; line?: number; at: number };
+  /** A link's close of chats with theme drafts, handed to THIS project (#2761), asked here once
+   *  per `at`: the chats it ends. */
+  closeAsked?: { sessions: readonly number[]; at: number };
   /** This project's dispatches refused while nobody was at their chat (#1507), which the
    *  window holds: updates in the Inbox (#1693), and a part of the away summary (#1551). */
   awayRefused?: readonly AwayRefusal[];
@@ -7153,6 +7157,8 @@ export const PlaneView = memo(function PlaneView({
     ownTabs?: number;
     /** The closing chat's theme drafts (#2332), which the close asks Keep or Revert about. */
     drafts?: readonly WindowDraft[];
+    /** Whether a link asked for this close (#2761): the dialog says so. */
+    fromALink?: boolean;
   }>();
   /** The themes kept as their chat closed (#2332), each asked in turn who draws it (#2708). */
   const [keptOnClose, setKeptOnClose] = useState<readonly KeptOnClose[]>([]);
@@ -7174,8 +7180,8 @@ export const PlaneView = memo(function PlaneView({
    * was refused and nothing has happened yet. The palette reads this answer to say what a row
    * did, and "nothing to say" is the right thing to say about a question still on screen.
    */
-  const run = useCallback(
-    async (offer: Offer): Promise<Ran> => {
+  const askToEnd = useCallback(
+    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
       if (offer.available && endsAChat(offer.does)) {
         const ending = chatsEndedBy(offer.does, now.current, askedByNow);
         // **A close ends no task** (#1488): the tasks whose panes a tab's close takes go back
@@ -7204,9 +7210,13 @@ export const PlaneView = memo(function PlaneView({
           };
         };
         // **The theme drafts of every chat the close ends** (#2332), which it asks Keep or Revert
-        // about; on a link, nothing is asked (#2708).
+        // about; on a link, nothing is asked (#2708), and a close with drafts waits in the
+        // window (#2761).
         const found = await draftsOfClosing(commands, plane, ending);
-        if (!found.ok) return { ok: false, refused: found.refused };
+        if (!found.ok)
+          return "handed" in found
+            ? { ok: true, said: found.handed }
+            : { ok: false, refused: found.refused };
         const drafts = found.drafts;
         if (ending.length !== 1) {
           // A close of several chats at once asks nothing about what each started: those
@@ -7221,6 +7231,7 @@ export const PlaneView = memo(function PlaneView({
             keeps: theirs.some((one) => one.running.length > 0),
             back,
             drafts,
+            fromALink,
           });
           return { ok: true };
         }
@@ -7253,13 +7264,61 @@ export const PlaneView = memo(function PlaneView({
         const ownTabs = tasksPlacedBelow(now.current, session, askedByNow).filter(
           (one) => one.placed === "tab",
         ).length;
-        setEndingChat({ offer, session, smart, running, closing, shows, back, ownTabs, drafts });
+        setEndingChat({
+          offer,
+          session,
+          smart,
+          running,
+          closing,
+          shows,
+          back,
+          ownTabs,
+          drafts,
+          fromALink,
+        });
         return { ok: true };
       }
       return carryOut(offer);
     },
     [askedByNow, carryOut, plane, setEndingChat],
   );
+  const run = useCallback((offer: Offer) => askToEnd(offer, false), [askToEnd]);
+
+  /**
+   * **A link's close of chats with theme drafts, handed to this window** (#2761): asked here as
+   * the window's own close of the tab that holds them is, Keep or Revert first, and the dialog
+   * says a link asked. Nothing is asked while another close question is on screen, so a link
+   * never changes what the person is answering; nor for chats no tab here holds alone, which
+   * the person closes here themselves.
+   */
+  const closeHandled = useRef(closeAsked?.at);
+  useEffect(() => {
+    if (closeAsked === undefined || closeHandled.current === closeAsked.at) return;
+    closeHandled.current = closeAsked.at;
+    if (endingChat !== undefined || keptOnClose.length > 0) return;
+    const asked = new Set(closeAsked.sessions);
+    const tab = now.current.order.find((id) =>
+      panesOf(now.current, id).some((one) => asked.has(one.session)),
+    );
+    const offer = tab === undefined ? undefined : by(`tab.close:${tab}`);
+    const ends =
+      offer === undefined || !offer.available || !endsAChat(offer.does)
+        ? []
+        : chatsEndedBy(offer.does, now.current, askedByNow);
+    if (
+      offer === undefined ||
+      ends.length !== asked.size ||
+      !ends.every((session) => asked.has(session))
+    ) {
+      setReport({
+        from: "close-handed",
+        refused: true,
+        words: CLOSE_HANDED_NOT_HERE,
+      });
+      return;
+    }
+    void askToEnd(offer, true);
+  }, [askToEnd, askedByNow, by, closeAsked, endingChat, keptOnClose]);
 
   /**
    * **Keeps or reverts a closing chat's theme drafts** (#2332), as its close was answered, while
@@ -9280,6 +9339,7 @@ export const PlaneView = memo(function PlaneView({
               back={endingChat.back}
               ownTabs={endingChat.ownTabs}
               drafts={endingChat.drafts}
+              fromALink={endingChat.fromALink}
               onEnd={(stop, keepDrafts) => {
                 const { offer: ending, session, drafts } = endingChat;
                 setEndingChat(undefined);
@@ -9736,6 +9796,10 @@ function chatsEndedBy(does: Offer["does"], tabs: Tabs, askedBy: AskedBy): number
   const going = panesOf(tabs, tab.id).find((one) => one.pane === tab.focused);
   return going === undefined ? [] : [going.session];
 }
+
+/** What the window says when a link's close names chats no tab here holds alone (#2761). */
+const CLOSE_HANDED_NOT_HERE =
+  "A link asked to close chats that have theme drafts, and no tab here holds just those chats: close them here, and answer Keep or Revert.";
 
 /** Why Smart close is not offered on a tab holding more than one chat. */
 const MORE_THAN_ONE_CHAT =

@@ -115,6 +115,7 @@ import { TitleBar, useTitleBarRoom } from "./TitleBar";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
+import { useCloseHanded } from "./closeHanded";
 import { useAwayRefusals } from "./dispatchAway";
 import { useUpdates } from "./Updates";
 import { StripTablist, useTabIds } from "./StripTablist";
@@ -1837,6 +1838,12 @@ function App() {
     [registry.held],
   );
   useNotificationLanding(landOnNotified);
+  /** A link's close of chats with theme drafts (#2761): asked in that project, brought to the
+   *  front. */
+  const closeAsk = useCloseHanded(
+    (plane) => planesNow.current.includes(plane),
+    (plane) => setShowing({ at: "plane", plane }),
+  );
 
   /**
    * **Every project's dispatches refused while nobody was there** (#1507): updates in each
@@ -2390,6 +2397,7 @@ function App() {
           firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
           shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
           fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
+          closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
           awayRefused={awayRefusals.held[plane]}
           onAway={answerAway}
           waiting={registry.held[plane]}

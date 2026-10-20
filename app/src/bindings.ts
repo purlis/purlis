@@ -2741,6 +2741,16 @@ export const commands = {
 	 */
 	themeDraftsOfChat: (plane: PlaneId, session: number) => typedError<WindowDraft[], string>(__TAURI_INVOKE("theme_drafts_of_chat", { plane, session })),
 	/**
+	 *  **A link's close of chats that have theme drafts is handed to the window** (#2761): closing a
+	 *  chat, and its drafts' Keep and Revert, are the window's alone, so a link never settles a
+	 *  draft. The window holding the project is brought to the front and told the chats
+	 *  ([`CLOSE_HANDED`]); it asks the person there, Keep or Revert first, and closes nothing
+	 *  unasked. Answers whether the close was handed: `false` when none of `sessions` is a chat open
+	 *  here with a draft, or no window holds the project, and the link refuses the close as it
+	 *  refuses any of the window's own commands. Nothing of the drafts is answered.
+	 */
+	handDraftsCloseToTheWindow: (plane: PlaneId, sessions: number[]) => typedError<boolean, string>(__TAURI_INVOKE("hand_drafts_close_to_the_window", { plane, sessions })),
+	/**
 	 *  **Keep** pressed: the engine copies the draft of the chat `session` into the real folder it is
 	 *  a draft of and deletes the draft. Answers what it did, in a sentence. Only a draft the window
 	 *  draws is kept, and only as the person was shown it: `kept_to` (`workspace` or `project`, as
@@ -3540,6 +3550,8 @@ export const commands = {
 };
 
 /* Constants */
+export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
+
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
 export const SPECIMEN_BUSY = "purlis is drawing another theme specimen, and draws one at a time: ask again in a moment" as const;
@@ -4794,6 +4806,12 @@ export type ChosenInstruction = {
 	repo: string,
 	file: string,
 	text: string,
+};
+
+/**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
+export type CloseHanded = {
+	plane: PlaneId,
+	sessions: number[],
 };
 
 /**
