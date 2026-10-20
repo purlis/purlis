@@ -34,6 +34,7 @@ import {
   RefreshCw,
   Save,
   Send,
+  Sparkles,
   Settings2,
   UserRound,
 } from "lucide-react";
@@ -99,6 +100,8 @@ import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } f
 import { PROPOSED_CHANGE_VIEW } from "./proposedChangeOpen";
 import { ProposedChangeTab } from "./ProposedChangeTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
+import { SKILL_STUDIO_VIEW, isSkillStudio } from "./skillStudio";
+import { SkillStudioTab } from "./SkillStudioTab";
 import {
   SAVING_VIEW,
   LICENCES_VIEW,
@@ -272,6 +275,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [SESSION_VIEW]: History,
   /** The project's dispatches (#1452). */
   [DISPATCHES_VIEW.view]: Send,
+  /** Every skill a chat in the project gets, and why (#2765), behind its flag. */
+  [SKILL_STUDIO_VIEW.view]: Sparkles,
   /** One chat's Activity (#1495). */
   [ACTIVITY_VIEW]: Activity,
   /** One chat's Network (#1662). */
@@ -590,6 +595,10 @@ export function ViewPane({
             changed={changed + onDisk}
             onOpenView={onOpenView}
           />
+        ) : isSkillStudio(view) ? (
+          /* The Skill studio (#2765): read from the project's skill folders, again when the
+             plane changes on disk. */
+          <SkillStudioTab key={plane} plane={plane} changed={changed + onDisk} />
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its
              chat through the catalogue's verb, or its session record as any record opens. It
