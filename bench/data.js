@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792499731823,
+  "lastUpdate": 1792502607128,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19152,6 +19152,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1804625,
             "unit": "ms",
             "extra": "median of 5 runs: 101.497, 101.686, 102.180, 102.566, 102.848 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e7ab54383d51463f2d7a454087042d80c01a6eac",
+          "message": "Theme drafts: follow-ups from review (#2757)\n\n* Theme drafts: follow-ups from review (#2708)\n\nA draft's start records the real folder it copied, and Keep says when\nthat folder changed since before it replaces it, compare-and-set as for\nwhere it goes and what it replaces. After a close, who draws each kept\ntheme is asked in turn. A link is told only how many drafts a chat has;\nthe drafts themselves are the window's. The drafts of chats the plane's\nrecord no longer holds are deleted when it is written. Whether a draft\nwas made travels as a field of the answer. The strip says when a\nrefused kept theme's Notice waits, the refused draft's Notice says\nReview and allow approves the project's own font files, and Use in the\nwhole project says the next save commits it for everyone. The docs say\na hard floor covers colour only and the revert key is the way out. The\ntheme skill names draft:<folder> in its preview step.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme drafts: a sweep deletes only its own clone's drafts (#2708)\n\nEach chat's drafts folder records the clone whose app made it, and a\nsweep deletes only that clone's, so clones sharing one state folder keep\neach other's drafts; a folder that names no clone stays. The start and\nowner records are read and written refusing a link and anything that is\nnot a plain file. A link is served nothing of a closing chat's drafts:\nits close is refused as any window-only command is. An older app's\nanswer to a draft ask is read as that app said it. Who draws each kept\ntheme is asked even when a later Keep is refused. The theme skill says\nwhat a new theme's specimen goes beside.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T17:21:51+04:00",
+          "tree_id": "061cb6f91872099a27a7d40b9b2e51f658e29fc5",
+          "url": "https://github.com/purlis/purlis/commit/e7ab54383d51463f2d7a454087042d80c01a6eac"
+        },
+        "date": 1792502605748,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5416335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.533, 0.539, 0.542, 0.546, 0.550 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.356518,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.173, 16.293, 16.357, 16.530, 16.919 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.282342,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.183, 101.011, 101.282, 102.195, 102.351 ms"
           }
         ]
       }
