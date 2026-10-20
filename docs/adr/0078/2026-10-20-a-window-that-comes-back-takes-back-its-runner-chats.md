@@ -3,8 +3,9 @@
 **Built by #2623** on the amendment of 2026-10-18 for #2511, under which the desktop's relay
 named each window link with a name of that link's own: a window that restarted, or linked again
 to its own desktop host, was a new window to the runner, and its runner chats stayed out of its
-reach until they ended. What follows was decided in #2623. Items 1 and 3 are **as the steward
-directed** on 2026-10-20; the rest are *decided in implementation, to be confirmed*.
+reach until they ended. What follows was decided in #2623. Item 1's file is **as ruled by the
+person on 2026-10-20**; items 1 and 3 are otherwise as the steward directed that day; the rest
+are *decided in implementation, to be confirmed*.
 
 1. **The window keeps a name for each project root's link, on this machine.** A random 128-bit
    name, minted the first time the root's link opens, kept in
@@ -12,7 +13,8 @@ directed** on 2026-10-20; the rest are *decided in implementation, to be confirm
    every chat is denied; never committed, never sent anywhere but to the window's own host,
    never logged (plane-format.md). Not derived from anything another process can read, such as
    the device id or the root: a client that could compute it could claim it first.
-   *As the steward directed* (D-2623-1).
+   *Ruled by the person on 2026-10-20: yes to `<config>/purlisd/window-names.json` as proposed*
+   (D-2623-1).
 2. **The window names itself on the link, first** (`name_window`, session protocol 1.31). It is
    the link's first command, sent only to a host that knows the word. A refusal leaves the link
    as it was, one that takes nothing back after a restart. Only `local-ui` is granted it.
