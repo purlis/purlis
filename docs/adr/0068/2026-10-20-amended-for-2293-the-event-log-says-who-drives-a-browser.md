@@ -3,7 +3,7 @@
 Spec #2008's Events ask that the host's event log say when a browser's driver changes and that
 the person or purlis typed, never what, and never carry page content or values. This note says
 which events are written, by whom, and what is in them. The session protocol does not change.
-Items 1 to 6 are **decided in implementation, to be confirmed** (D-2293-1 to D-2293-6).
+Items 1 to 7 are **decided in implementation, to be confirmed** (D-2293-1 to D-2293-7).
 
 1. **Three kinds.** `browser.driver_changed` says who drives a browser now: `agent`, `person`
    (who took it over) or `purlis` (while it performs a declared login, #2016).
@@ -29,5 +29,10 @@ Items 1 to 6 are **decided in implementation, to be confirmed** (D-2293-1 to D-2
    writer refuses a browser named by anything but a program's id (letters, digits, `-`, `_`, at
    most 64), reads no field more, and composes the body itself. *D-2293-5.*
 6. **Best effort.** A take-over, Done or a login is never refused because its event was not
-   written: the write is warned of in the window's log. A window started again reads who drives
-   from the host and does not say it again. *D-2293-6.*
+   written: the write is warned of in the window's log. A window started again learns who drives
+   from the host, as it opens a view of the browser or before a login, and does not say it again;
+   a login the host refuses because the person drives says nothing. An event whose browser's
+   project is not held is written nowhere, never in another project's log. *D-2293-6.*
+7. **No origin yet.** ADR 0089 §13 has `browser.typed` carry the page's origin. These events carry
+   none: the host does not know a page's origin when it writes them. The origin is left to the
+   ticket that writes the other browser events. *D-2293-7.*

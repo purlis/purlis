@@ -343,7 +343,9 @@ mod hosted {
                 login,
             };
             // purlis drives it while it logs in (#2293), unless the person does: the host
-            // refuses the login then.
+            // refuses the login then. Who drives it is the host's word where this window has
+            // none yet: a window started again may log in before it watches the browser.
+            self.seed_from_the_host(&link, program);
             let purlis_drives = self.driver_said(program) != Drives::Person;
             if purlis_drives {
                 self.drove(program, Drives::Purlis);
@@ -499,6 +501,28 @@ mod hosted {
                 .iter()
                 .find(|(_, held)| held.browsers.iter().any(|one| one == program))
                 .map(|(root, _)| root.clone())
+        }
+
+        /// **Who drives `program`, as the host lists it**, kept where this window has not said
+        /// it yet: the person's take-over a window before this one said. Kept, not said again.
+        fn seed_from_the_host(&self, link: &HostLink, program: &str) {
+            if lock(&self.logged).contains_key(program) {
+                return;
+            }
+            let person = matches!(
+                link.call(Command::List),
+                Ok(Answer::Chats(listed)) if listed.iter().any(|one| {
+                    one.chat == program && one.driver == Some(Driver::Person)
+                })
+            );
+            if person {
+                lock(&self.logged)
+                    .entry(program.to_owned())
+                    .or_insert(Logged {
+                        driver: Drives::Person,
+                        typed: false,
+                    });
+            }
         }
 
         /// Who drives `program`, as the window last said it.

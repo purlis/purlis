@@ -989,3 +989,36 @@ fn a_person_sending_their_browser_to_an_address_hands_it_back_in_the_log() {
         [driver(Drives::Person), driver(Drives::Agent)]
     );
 }
+
+#[test]
+fn a_window_started_again_says_nothing_of_a_login_the_host_refuses_as_the_person_drives() {
+    // #2293: the person took it over under the window before; this one has watched nothing.
+    use crate::chatbrowsers::{Driver, Refused};
+    use purlis_core::eventlog::browsing::Said;
+    use purlis_session_protocol::browsing::{LogIn, Secret};
+
+    let window = window();
+    let program = window.browsers.open(&window.root).unwrap();
+    window.browsers.take_over(&program).unwrap();
+
+    let said: Arc<Mutex<Vec<Said>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let again = WindowBrowsers::new(Arc::clone(&window.browsers.connection))
+        .saying(Arc::new(move |_, one| saying.lock().unwrap().push(one)));
+    let login = LogIn {
+        address: "https://shop.example.test/login".into(),
+        user: None,
+        password: Secret::new("correct horse battery staple".into()),
+        keep: None,
+    };
+    let refused = Driver::log_in(&again, &program, login);
+
+    assert!(
+        matches!(&refused, Err(Refused::Said(why)) if why.contains("the person has taken this browser over")),
+        "{refused:?}"
+    );
+    assert!(
+        said.lock().unwrap().is_empty(),
+        "the person drives it: no driver of purlis's or the agent's is said"
+    );
+}

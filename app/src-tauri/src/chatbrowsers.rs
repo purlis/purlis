@@ -3300,8 +3300,8 @@ pub fn idle_swept(held: &crate::planes::Held, now: u64) {
 
 /// **Writes what the window says of a browser in the event log** (#2293), under the chat whose
 /// browser it is, in whichever of `projects` has it; for a browser no chat uses, with no chat,
-/// in the project at `root` it was started in, or any project held. A write that fails is
-/// warned of, and never holds up what the person did.
+/// in the project at `root` it was started in, and nowhere where that project is not held. A
+/// write that fails is warned of, and never holds up what the person did.
 pub fn say(
     projects: &[Arc<crate::planes::Held>],
     root: Option<&Path>,
@@ -3316,11 +3316,14 @@ pub fn say(
         projects
             .iter()
             .find(|held| root.is_some_and(|root| held.root() == root))
-            .or_else(|| projects.first())
             .map(|held| (held, None))
     };
+    // Never another project's log: one whose project is not held is written nowhere.
     let Some((held, number)) = of_a_chat.or_else(started_in) else {
-        tracing::debug!("purlis: no project is held to write a browser's driver in the event log");
+        tracing::warn!(
+            "purlis: {} was not written to the event log: the browser's project is not held",
+            said.kind()
+        );
         return;
     };
     let kind = said.kind();
