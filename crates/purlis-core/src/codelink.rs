@@ -911,9 +911,11 @@ pub fn current_branch(repo: &Path) -> Option<String> {
     born.ok().then_some(branch)
 }
 
-/// Whether `dir` is the top of a git repository of its own: a clone, whose `.git` is a folder.
+/// Whether `dir` is the top of a git repository: a clone, whose `.git` is a folder, or a work
+/// tree whose `.git` names its git directory, which purlis's git runner reads only where it
+/// takes one ([`crate::worktree::link`]).
 pub fn a_repository(dir: &Path) -> bool {
-    dir.join(".git").is_dir()
+    dir.join(".git").exists()
 }
 
 /// What one send hands the link: the refs to name, the branch to check out where nothing is

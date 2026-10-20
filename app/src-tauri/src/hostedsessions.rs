@@ -124,7 +124,7 @@ pub fn chats_in_the_host(
 /// **The project at `root`'s chats, each on the host its workspace runs them on** (#2046):
 /// `here`, or the runner of the pool `config`'s store names for its workspace, reached through
 /// a link the window's host relays to it.
-fn routed(
+pub(crate) fn routed(
     here: Box<dyn SessionHost>,
     connection: &Arc<Connection>,
     config: &Path,
