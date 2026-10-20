@@ -461,3 +461,45 @@ fn no_login_is_kept_on_a_build_that_lists_nothing_it_leaves_out() {
     let why = kept_with(&[]).unwrap_err();
     assert!(why.contains("not kept on this build"), "{why}");
 }
+
+#[test]
+fn a_hold_taken_just_before_its_profile_was_removed_writes_nothing_back() {
+    let base = tempfile::tempdir().unwrap();
+    let (data, browser) = (base.path().join("data"), base.path().join("browser"));
+    let keyring = FileStore::at(base.path().join("keyring.json"));
+    a_signed_in_browser(&browser);
+    let store = shop("claude");
+    let began = std::time::SystemTime::now();
+    let held = hold_since(&data, &store, began).unwrap().expect("held");
+
+    removed(&data, "claude").unwrap();
+
+    let why = held.keep(&browser, &keys(&keyring)).unwrap_err();
+    assert!(why.contains("removed"), "{why}");
+    assert!(
+        !store.dir(&data).join(FILE).exists(),
+        "no state.sealed left"
+    );
+}
+
+#[test]
+fn a_removal_marked_again_replaces_its_mark_whole() {
+    let base = tempfile::tempdir().unwrap();
+    let data = base.path().join("data");
+    removed(&data, "claude").unwrap();
+    let began = std::time::SystemTime::now();
+    removed(&data, "claude").unwrap();
+
+    assert!(hold_since(&data, &shop("claude"), began).is_err());
+    let left: Vec<_> = std::fs::read_dir(data.join(DIR))
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(".removed-"))
+        .collect();
+    assert_eq!(
+        left,
+        [".removed-claude"],
+        "nothing written beside it is left"
+    );
+}

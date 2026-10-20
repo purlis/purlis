@@ -109,9 +109,15 @@ pub fn removed(data: &Path, profile: &str) -> Result<(), String> {
 fn mark_removed(dir: &Path, profile: &str) -> Result<(), String> {
     let mark = removed_mark(dir, profile);
     let at = nanos(std::time::SystemTime::now());
-    let _ = fs::remove_file(&mark);
-    private_file(&mark, at.to_string().as_bytes())
-        .map_err(|e| format!("the profile's removal could not be kept for its browsers ({e})"))
+    // Written beside it and moved over it, so a write that fails leaves the mark before it.
+    let beside = dir.join(format!(".removed-{profile}.{}", std::process::id()));
+    let _ = fs::remove_file(&beside);
+    private_file(&beside, at.to_string().as_bytes())
+        .and_then(|()| fs::rename(&beside, &mark))
+        .map_err(|e| {
+            let _ = fs::remove_file(&beside);
+            format!("the profile's removal could not be kept for its browsers ({e})")
+        })
 }
 
 fn nanos(at: std::time::SystemTime) -> u128 {
@@ -599,6 +605,8 @@ pub struct Hold {
     store: Store,
     data: PathBuf,
     dir: PathBuf,
+    /// When its browser began: a removal of its profile since keeps nothing of it (#2693).
+    since: std::time::SystemTime,
 }
 
 /// **The hold on `store`** for a browser that begins now, or `None` where another browser holds
@@ -641,6 +649,7 @@ pub fn hold_since(
             store: store.clone(),
             data: data.to_path_buf(),
             dir,
+            since,
         })),
         Err(fs::TryLockError::WouldBlock) => Ok(None),
         Err(fs::TryLockError::Error(e)) => Err(format!("the kept logins could not be held ({e})")),
@@ -683,6 +692,13 @@ impl Hold {
         let _keys = lock_keys(&self.data)?;
         if !self.still_there() {
             return Err("its profile's kept logins were wiped, so nothing is kept".to_owned());
+        }
+        // Its profile removed after it began, the hold taken just before (#2693).
+        if removed_since(&self.data.join(DIR), &self.store.profile, self.since) {
+            return Err(
+                "its profile was removed after this browser began, so nothing of it is kept"
+                    .to_owned(),
+            );
         }
         let mut held = keys.read_or_make()?;
         let place = self.store.place();

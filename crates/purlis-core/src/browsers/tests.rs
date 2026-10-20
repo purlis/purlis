@@ -634,6 +634,71 @@ fn a_browser_that_went_elsewhere_before_its_first_login_is_not_kept_as_that_logi
 }
 
 #[test]
+fn a_browser_in_which_another_login_was_tried_keeps_no_later_one() {
+    // #2693: the first login's session may be in it, though its store was not written.
+    let base = tempfile::tempdir().unwrap();
+    let home = base.path().join("data");
+    let keyring = std::sync::Arc::new(crate::secrets::keyring::FileStore::at(
+        base.path().join("keyring.json"),
+    ));
+    let first = kept_login();
+    let second = wire::KeptLogin {
+        login: "mail-login".into(),
+        ..kept_login()
+    };
+    // The first login's store is held by another browser: this one keeps none of it.
+    let _elsewhere = crate::browserlogins::hold(&home, &super::store_of(&first).unwrap())
+        .unwrap()
+        .expect("held elsewhere");
+    let folder = browsers_in(&home).join("one");
+    signed_in(&folder);
+    let mut it = keeping(&home, &folder, &keyring);
+    it.tried(Some(&first));
+    assert!(it.keep(&first).is_some(), "held elsewhere");
+
+    it.tried(Some(&second));
+    let said = it.keep(&second).expect("it is told");
+
+    assert!(said.contains("not kept"), "{said}");
+    assert!(it.writes.is_none());
+    it.write_back();
+    assert!(!super::store_of(&second).unwrap().exists(&home));
+}
+
+#[test]
+fn the_same_login_tried_again_is_still_kept() {
+    let base = tempfile::tempdir().unwrap();
+    let home = base.path().join("data");
+    let keyring = std::sync::Arc::new(crate::secrets::keyring::FileStore::at(
+        base.path().join("keyring.json"),
+    ));
+    let folder = browsers_in(&home).join("one");
+    signed_in(&folder);
+    let mut it = keeping(&home, &folder, &keyring);
+    it.tried(Some(&kept_login()));
+    it.tried(Some(&kept_login()));
+
+    assert_eq!(it.keep(&kept_login()), None);
+}
+
+#[test]
+fn a_browser_in_which_a_login_that_keeps_nothing_was_tried_keeps_no_later_one() {
+    let base = tempfile::tempdir().unwrap();
+    let home = base.path().join("data");
+    let keyring = std::sync::Arc::new(crate::secrets::keyring::FileStore::at(
+        base.path().join("keyring.json"),
+    ));
+    let folder = browsers_in(&home).join("one");
+    signed_in(&folder);
+    let mut it = keeping(&home, &folder, &keyring);
+    it.tried(None);
+    it.tried(Some(&kept_login()));
+
+    assert!(it.keep(&kept_login()).is_some());
+    assert!(it.writes.is_none());
+}
+
+#[test]
 fn a_browser_opened_from_its_store_keeps_it_however_it_browsed_since() {
     let base = tempfile::tempdir().unwrap();
     let home = base.path().join("data");

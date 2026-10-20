@@ -75,13 +75,15 @@ impl Homes {
     fn wipe_kept_logins(&self, name: &str) -> Result<(), String> {
         let folders = crate::browsers::browsers_in(&self.data);
         crate::browserlogins::sweep(&folders, None, &|of, _| of == name);
-        // Nothing to wipe asks no keyring for a device id or a key; a browser of it running now
-        // never makes a store again, kept before or not (#2693).
+        // Marked removed under the keyring's lock before anything is decided (#2693): a browser
+        // of it running now never makes a store again, kept before or not, and one that took
+        // its hold before the mark is wiped below or refused at its write-back.
+        if let Err(why) = crate::browserlogins::removed(&self.data, name) {
+            tracing::warn!("purlis: profile {name} is removed all the same: {why}");
+        }
+        // Nothing to wipe asks no keyring for a device id or a key.
         let dir = self.data.join(crate::browserlogins::DIR).join(name);
         if !dir.exists() {
-            if let Err(why) = crate::browserlogins::removed(&self.data, name) {
-                tracing::warn!("purlis: profile {name} is removed all the same: {why}");
-            }
             return Ok(());
         }
         let store: Box<dyn crate::secrets::keyring::Store> = match &self.keyring {

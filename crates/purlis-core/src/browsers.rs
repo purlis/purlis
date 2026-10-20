@@ -325,6 +325,7 @@ impl Browsers for EngineBrowsers {
         .map_err(|why| why.to_string())?;
         Ok(Arc::new(EngineScreen {
             process: browser.process(),
+            fresh: Arc::clone(&keeping.fresh),
             keeping: Arc::new(Mutex::new(keeping)),
             sites,
             held: Mutex::new(Some(Held {
@@ -724,8 +725,12 @@ struct Keeping {
     /// When the browser began: a profile removed since keeps nothing of it (#2693).
     began: std::time::SystemTime,
     /// Whether it has done nothing yet: no act and no input of the person's (#2693). Only a
-    /// fresh browser, or one opened from that very store, is kept as a login's store.
-    fresh: bool,
+    /// fresh browser, or one opened from that very store, is kept as a login's store. Apart
+    /// from the lock its keeping is under, so marking it never waits on a write-back.
+    fresh: Arc<std::sync::atomic::AtomicBool>,
+    /// The kept login of each login tried in it, `None` for one that keeps none (#2693): it
+    /// keeps a login only where every one tried was that one.
+    tried: Vec<Option<wire::KeptLogin>>,
 }
 
 /// The store `kept` names.
@@ -744,15 +749,26 @@ impl Keeping {
             keyring: Arc::new(crate::secrets::keyring::OsStore),
             device: None,
             began: std::time::SystemTime::now(),
-            fresh: true,
+            fresh: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            tried: Vec::new(),
         }
     }
 
     /// The browser acted, or the person took it over: what it holds from now may be of other
     /// sites, or another session of the login's own, so it is no longer kept as a login's
     /// store unless it was opened from that store (#2693).
-    fn browsed(&mut self) {
-        self.fresh = false;
+    #[cfg(test)]
+    fn browsed(&self) {
+        self.fresh.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// A login was tried in it, keeping `keep` (#2693), whatever came of it: it may have signed
+    /// the browser in.
+    fn tried(&mut self, keep: Option<&wire::KeptLogin>) {
+        let keep = keep.cloned();
+        if !self.tried.contains(&keep) {
+            self.tried.push(keep);
+        }
     }
 
     /// This device's key for kept logins.
@@ -824,7 +840,14 @@ impl Keeping {
             );
         }
         let a_copy = self.opened_from.as_ref() == Some(keep);
-        if self.opened_from.is_none() && !self.fresh {
+        if self.tried.iter().any(|tried| tried.as_ref() != Some(keep)) {
+            return Some(
+                "another login was tried in this browser, so this one's logins are not kept: to \
+                 keep them, log in from a new browser (browser_new, then browser_login)"
+                    .to_owned(),
+            );
+        }
+        if self.opened_from.is_none() && !self.fresh.load(std::sync::atomic::Ordering::SeqCst) {
             return Some(
                 "this browser went to other pages before the login, so its logins are not \
                  kept: to keep them, log in from a new browser (browser_new, then \
@@ -901,6 +924,8 @@ struct EngineScreen {
     process: Option<u32>,
     /// What it keeps of a kept login (#2021): written back as its engine ends.
     keeping: Arc<Mutex<Keeping>>,
+    /// Whether it has done nothing yet (#2693): its keeping's, marked without its lock.
+    fresh: Arc<std::sync::atomic::AtomicBool>,
     /// Its judge, shared with its reach proxy (#2018): none for a browser given no reach.
     sites: Option<Arc<judge::SiteJudge>>,
     held: Mutex<Option<Held>>,
@@ -909,10 +934,7 @@ struct EngineScreen {
 impl EngineScreen {
     /// It acted, or the person drove it (#2693).
     fn browsed(&self) {
-        self.keeping
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .browsed();
+        self.fresh.store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn with<T>(&self, act: impl FnOnce(&Arc<Browser>) -> T) -> Option<T> {
@@ -988,12 +1010,12 @@ impl Screen for EngineScreen {
     fn log_in(&self, asked: &wire::LogIn) -> Result<LoginEnded, NotActed> {
         let (mut login, site) = login_of(asked).map_err(NotActed::Refused)?;
         // Opened from this very kept login, a page that asks for nothing is signed in already.
-        let opened_from = self
-            .keeping
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .opened_from
-            .clone();
+        // Tried from here, whatever comes of it (#2693).
+        let opened_from = {
+            let mut keeping = self.keeping.lock().unwrap_or_else(PoisonError::into_inner);
+            keeping.tried(asked.keep.as_ref());
+            keeping.opened_from.clone()
+        };
         login.only_if_asked = asked.keep.is_some() && opened_from == asked.keep;
         let Some(sites) = &self.sites else {
             return Err(NotActed::Refused(
@@ -1038,11 +1060,12 @@ impl Screen for EngineScreen {
     }
 
     fn take_over(&self) -> u64 {
-        self.browsed();
         // Outside the lock, as an act is: it returns once no act of the agent's can reach a
         // page.
-        self.with(Arc::clone)
-            .map_or(0, |browser| browser.take_over())
+        self.with(Arc::clone).map_or(0, |browser| {
+            self.browsed();
+            browser.take_over()
+        })
     }
 
     fn hand_back(&self) -> u64 {
@@ -1051,9 +1074,11 @@ impl Screen for EngineScreen {
     }
 
     fn input(&self, input: &wire::Input) -> Result<(), NotTaken> {
-        self.browsed();
         let browser = self.with(Arc::clone).ok_or(NotTaken::Ended)?;
-        browser.person_input(&input_of(input)).map_err(not_taken)
+        browser
+            .person_input(&input_of(input))
+            .map_err(not_taken)
+            .inspect(|()| self.browsed())
     }
 
     fn size_to(&self, width: u16, height: u16) -> Result<(), NotTaken> {
