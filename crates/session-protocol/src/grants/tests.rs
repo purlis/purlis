@@ -83,6 +83,17 @@ fn only_a_relaying_host_takes_back_its_windows_runner_chats() {
 }
 
 #[test]
+fn only_the_window_names_itself_to_its_host() {
+    for scope in Scope::ALL {
+        assert_eq!(
+            scope.may(Power::NameWindow),
+            scope == Scope::LocalUi,
+            "{scope}"
+        );
+    }
+}
+
+#[test]
 fn only_a_desktop_on_its_link_to_a_runner_unpairs() {
     for scope in Scope::ALL {
         assert_eq!(

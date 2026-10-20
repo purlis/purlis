@@ -133,3 +133,4 @@
 {"reply":{"re":98,"ok":{"programs":[{"program":"01J9ZQ3V7K8M2N4P6R8T0V2X4Z","kind":"harness","number":3,"process":4242,"run":"01J9RUN0000000000000000000","sandbox":{"by":"seatbelt"},"cols":120,"rows":40},{"program":"01J9ZQ8000000000000000000E","kind":"shell","number":4,"sandbox":"off","cols":80,"rows":24}]}}}
 {"reply":{"re":99,"ok":{"program_started":{"program":"01J9ZQ5000000000000000000F","number":12,"process":4244,"confined":{"confinement":"01J9CNFNMNT0000000000000005","http":50813,"socks":50814,"tmp":"/tmp/purlis-chat-12"},"sandbox":{"by":"proxy"}}}}}
 {"pushed":{"not_held":{"project":"01J9PRJCT00000000000000000","why":"that folder is not there"}}}
+{"call":{"id":100,"command":"name_window","name":"0123456789abcdef0123456789abcdef"}}
