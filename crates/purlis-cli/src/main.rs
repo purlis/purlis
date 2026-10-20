@@ -51,6 +51,7 @@ mod scan;
 mod secret;
 mod session;
 mod shellguard;
+mod skill;
 mod statusline;
 mod theme;
 mod themepreview;
@@ -268,6 +269,11 @@ enum Command {
     /// Personas: their memory.
     #[command(subcommand)]
     Persona(memory::PersonaCommand),
+
+    /// Skills: the ones a chat in this project gets, and why each other one is left out (behind
+    /// the `skill-studio` flag).
+    #[command(subcommand)]
+    Skill(skill::SkillCommand),
 
     /// Read/write secrets in a vault; values stay out of the model.
     #[command(subcommand)]
@@ -1031,6 +1037,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             WorkspaceCommand::List | WorkspaceCommand::Current | WorkspaceCommand::Recall { .. },
         )
         | Command::Persona(memory::PersonaCommand::List)
+        | Command::Skill(_)
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
         | Command::Harness(HarnessCommand::List | HarnessCommand::Show { .. })
@@ -3338,6 +3345,7 @@ fn run(command: Command) -> Result<u8, String> {
         Command::Worktree(command) => return piece::run(&here, command),
         Command::Change(command) => return change::run(&here, command),
         Command::Curation(command) => return curation::run(here.plane.root(), command),
+        Command::Skill(command) => return skill::run(here.plane.root(), command),
         Command::Session(command) => return session::run(&here, command),
         Command::Workspace(WorkspaceCommand::Remember {
             text,

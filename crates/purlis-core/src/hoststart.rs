@@ -43,6 +43,9 @@ pub struct Kit {
     pub binary: Option<PathBuf>,
     pub plugin: Option<PathBuf>,
     pub git_hooks: Option<crate::githooks::GitHooks>,
+    /// Where the folders of links a chat is handed the plane's skills by are laid out
+    /// ([`crate::skills::lay_out`]): `<app data>/skill-sets`, where purlis has a data folder.
+    pub skill_sets: Option<PathBuf>,
 }
 
 impl Kit {
@@ -53,6 +56,7 @@ impl Kit {
             binary: self.binary.as_deref(),
             plugin: self.plugin.as_deref(),
             git_hooks: self.git_hooks.as_ref().map(crate::githooks::GitHooks::dir),
+            skill_sets: self.skill_sets.as_deref(),
         }
     }
 
@@ -68,6 +72,7 @@ impl Kit {
             binary,
             plugin,
             git_hooks,
+            skill_sets: skill_sets_here(),
         }
     }
 
@@ -98,6 +103,7 @@ impl Kit {
             binary: Some(binary),
             plugin,
             git_hooks,
+            skill_sets: Some(skill_sets_in(data)),
         }
     }
 
@@ -110,6 +116,7 @@ impl Kit {
                 binary: binary.ok(),
                 plugin: None,
                 git_hooks: None,
+                skill_sets: None,
             },
         }
     }
@@ -117,6 +124,38 @@ impl Kit {
 
 /// The folder of the app's data folder the window writes purlis's git hooks in at its launch.
 pub const GIT_HOOKS: &str = "git-hooks";
+
+/// The folder of the app's data folder a chat's folder of links to the plane's skills is laid
+/// out in ([`crate::skills::lay_out`]).
+pub const SKILL_SETS: &str = "skill-sets";
+
+/// [`SKILL_SETS`] in this user's app data folder, beside the git hooks the window writes there.
+pub fn skill_sets_here() -> Option<PathBuf> {
+    dirs::data_dir().map(|data| skill_sets_in(&data))
+}
+
+/// [`SKILL_SETS`] in the app data folder of the data home `data`: the one spelling of its path.
+pub fn skill_sets_in(data: &Path) -> PathBuf {
+    data.join(crate::names::BUNDLE_ID.write).join(SKILL_SETS)
+}
+
+/// **The folder of links a chat in `root` is handed the plane's skills by**, laid out by the host
+/// before the chat is armed, where the Skill studio's flag is `on` and `kit` says where folders
+/// go ([`crate::skills::lay_out_for_chat`]). `None` otherwise, and for a set with no plane skill.
+pub fn plane_skills_laid_out(
+    on: bool,
+    root: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    kit: &Kit,
+) -> Option<PathBuf> {
+    if !on {
+        return None;
+    }
+    let sets = kit.skill_sets.as_deref()?;
+    let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
+    crate::skills::lay_out_for_chat(root, workspace, persona, built_in.as_deref(), sets)
+}
 
 /// The host's [`Beside`], as two calls: what starts a confinement and what writes the log.
 impl<C, R> Beside for (C, R)
@@ -536,10 +575,22 @@ pub fn armed(
             None => Ok((Vec::new(), Vec::new())),
         };
     };
+    // The plane's skills, only while the Skill studio's flag is on (ADR 0099, #2786): their
+    // folder of links laid out here, by the host, as the git hooks are, so the adapter only
+    // turns the set into words (ADR 0063 as amended 2026-10-20).
+    let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
+    let on = crate::skills::studio_on_here();
+    let linked = plane_skills_laid_out(on, root, workspace.as_deref(), persona, kit);
+    let skills = on.then_some(crate::skills::PlaneSkills {
+        plane: root,
+        workspace: workspace.as_deref(),
+        linked: linked.as_deref(),
+    });
     let armed = crate::harness::Kit {
         binary,
         plugin: kit.plugin.as_deref(),
         persona: persona.map(|persona| crate::harness::As { root, persona }),
+        skills,
     };
     match harness.state_hooks(armed, cwd, plugins, sandbox) {
         StateHooks::ThisSessionOnly { args, env, .. } => Ok((args, env)),

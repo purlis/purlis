@@ -16,6 +16,16 @@ fn the_skill_studio_flag_is_off_until_this_machine_turns_it_on() {
 }
 
 #[test]
+fn turning_the_skill_studio_on_is_kept_in_this_machines_store_and_off_again() {
+    let config = tempfile::tempdir().unwrap();
+
+    set_studio_on(config.path(), true).unwrap();
+    assert!(crate::machine::read(config.path()).store.flags.skill_studio);
+    set_studio_on(config.path(), false).unwrap();
+    assert!(!crate::machine::read(config.path()).store.flags.skill_studio);
+}
+
+#[test]
 fn the_variable_turns_the_skill_studio_flag_on_or_off_over_what_the_machine_says() {
     let set =
         |value: &'static str| move |name: &str| (name == STUDIO_ENV).then(|| value.to_owned());
@@ -38,6 +48,7 @@ fn the_variable_turns_the_skill_studio_flag_on_or_off_over_what_the_machine_says
 fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
     let plugin = crate::harness::testing::bundled_plugin();
     let kit = Kit {
+        skills: None,
         binary: Path::new("/bin/purlis"),
         plugin: Some(&plugin),
         persona: None,
@@ -56,7 +67,7 @@ fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
             "{harness:?}"
         );
         assert!(set.left_out.is_empty(), "{:?}", set.left_out);
-        assert_eq!(set.dir(), Some(plugin.join("skills").as_path()));
+        assert_eq!(set.built_in_dir(), Some(plugin.join("skills").as_path()));
     }
 }
 
@@ -64,14 +75,14 @@ fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
 fn only_a_chat_started_with_the_variable_is_briefed_on_its_skills() {
     let root = Path::new("/plane");
     let unset = |_: &str| None;
-    assert_eq!(briefed(root, &unset), None);
+    assert_eq!(briefed(root, None, &unset), None);
     let empty = |name: &str| (name == LISTED_ENV).then(String::new);
-    assert_eq!(briefed(root, &empty), None);
+    assert_eq!(briefed(root, None, &empty), None);
 
     let skills = crate::harness::testing::bundled_plugin().join("skills");
     let dir = skills.display().to_string();
     let set = move |name: &str| (name == LISTED_ENV).then(|| dir.clone());
-    let text = briefed(root, &set).expect("listed");
+    let text = briefed(root, None, &set).expect("listed");
 
     assert!(text.contains("`safe-remove`"), "{text}");
     assert!(text.contains(&skills.join("safe-remove/SKILL.md").display().to_string()));
@@ -91,7 +102,7 @@ fn a_briefing_lists_what_the_chats_set_holds_and_not_a_folder_it_leaves_out() {
     let named = dir.display().to_string();
     let env = move |name: &str| (name == LISTED_ENV).then(|| named.clone());
 
-    let text = briefed(tmp.path(), &env).expect("listed");
+    let text = briefed(tmp.path(), None, &env).expect("listed");
 
     assert!(text.contains("- `kept` — Is kept."), "{text}");
     assert!(!text.contains("undescribed"), "{text}");
