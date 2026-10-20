@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792537470034,
+  "lastUpdate": 1792539544924,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19908,6 +19908,48 @@ window.BENCHMARK_DATA = {
             "value": 101.954091,
             "unit": "ms",
             "extra": "median of 5 runs: 101.471, 101.916, 101.954, 102.520, 102.915 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5713dfaf6332e9d8bcfe22fb60345b37915c97bb",
+          "message": "Browsers: a drag leaves no engine drag behind, however late the engine tells of it (#2858)\n\n* Browsers: a drag leaves no engine drag behind, however late the engine tells of it (#2839)\n\nA drag of the agent's that ends without the engine's word that its own drag\nstarted leaves a mark of where it ended. A word that comes later, in the\ndrag's own wait or after it, is answered by cancelling the engine's drag\nthere; a word with no drag before it is not acted on.\n\nA real-Chrome test cuts a native drag by taking over and checks that the\nnext drag drops.\n\nCloses #2839\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a drag's mark goes with its session, and a failed hand-back is said (#2839)\n\nRefs #2839\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T03:37:31+04:00",
+          "tree_id": "0a5339ca5699cb215dcd587ac8550bf6bde9f01b",
+          "url": "https://github.com/purlis/purlis/commit/5713dfaf6332e9d8bcfe22fb60345b37915c97bb"
+        },
+        "date": 1792539543063,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.39830350000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.355, 0.382, 0.398, 0.419, 0.423 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.541046,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.423, 16.491, 16.541, 16.737, 16.962 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.81304499999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.048, 101.438, 101.813, 102.583, 103.020 ms"
           }
         ]
       }
