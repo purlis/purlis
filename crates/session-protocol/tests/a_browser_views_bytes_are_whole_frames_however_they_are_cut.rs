@@ -162,3 +162,16 @@ fn an_address_is_cut_to_its_origin_and_nothing_else() {
         assert_eq!(origin_of(address).as_deref(), origin, "{address}");
     }
 }
+
+#[test]
+fn an_origin_longer_than_a_whole_dns_name_is_none_and_an_origin_is_its_own_origin() {
+    let long = format!("https://{}.example", "a".repeat(250));
+    assert_eq!(origin_of(&long), None);
+    for origin in [
+        "http://localhost:5173",
+        "https://docs.example.test",
+        "https://[::1]:8443",
+    ] {
+        assert_eq!(origin_of(origin).as_deref(), Some(origin), "{origin}");
+    }
+}

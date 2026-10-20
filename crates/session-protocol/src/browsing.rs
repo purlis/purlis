@@ -308,7 +308,9 @@ pub struct KeptLogin {
 
 /// **The origin of `address`** (1.35, #2300): `scheme://host[:port]`, lower-cased, for an http
 /// or https address whose host is written in ASCII, as the engine records a page's; nothing for
-/// any other. Never its user, path, query or fragment: what a browser view's chip may name.
+/// any other, or one longer than [`MOST_ORIGIN_BYTES`]. Never its user, path, query or
+/// fragment: what a browser view's chip may name. An origin it answers is its own origin, so a
+/// reader checks what it was sent by it.
 pub fn origin_of(address: &str) -> Option<String> {
     let (scheme, rest) = address.split_once("://")?;
     let scheme = scheme.to_ascii_lowercase();
@@ -325,8 +327,13 @@ pub fn origin_of(address: &str) -> Option<String> {
     if host.is_empty() || !plain || host.starts_with(':') {
         return None;
     }
-    Some(format!("{scheme}://{}", host.to_ascii_lowercase()))
+    let origin = format!("{scheme}://{}", host.to_ascii_lowercase());
+    (origin.len() <= MOST_ORIGIN_BYTES).then_some(origin)
 }
+
+/// The longest origin [`origin_of`] answers (1.35): a whole DNS name and a port fit in it, so
+/// one longer is no web page's.
+pub const MOST_ORIGIN_BYTES: usize = 255;
 
 /// Who drives a browser (1.14): the agent, through its acts, or the person who took it over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

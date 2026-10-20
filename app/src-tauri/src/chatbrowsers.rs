@@ -286,8 +286,9 @@ pub struct ChatBrowsers {
     limits: LimitsNow,
     /// The browsers the person drives now, by program (#2023): never stopped for going unused.
     person_drives: Mutex<Vec<String>>,
-    /// The browsers purlis performs a login in now, by program (#2300).
-    logging_in: Mutex<Vec<String>>,
+    /// The browsers purlis performs a login in now, by program, and how many logins it
+    /// performs in each (#2300): two at once in one browser each hold the mark until it ends.
+    logging_in: Mutex<HashMap<String, usize>>,
     /// The pinned browsers whose chat has closed (#2022), each listed by what its chat was
     /// called: the workspace's, until the person stops it or hands it to a chat, Stop all, or a
     /// quit. Never counted toward the project's chats' browsers: they are the person's now.
@@ -1195,7 +1196,7 @@ impl ChatBrowsers {
         for one in &mut listed {
             one.driver = if person.contains(&one.program) {
                 Some(BrowserDriver::Person)
-            } else if purlis.contains(&one.program) {
+            } else if purlis.contains_key(&one.program) {
                 Some(BrowserDriver::Purlis)
             } else {
                 None
@@ -1224,9 +1225,14 @@ impl ChatBrowsers {
                 .logging_in
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            logging_in.retain(|one| one != program);
+            let logins = logging_in.entry(program.to_owned()).or_default();
             if now {
-                logging_in.push(program.to_owned());
+                *logins += 1;
+            } else {
+                *logins = logins.saturating_sub(1);
+            }
+            if *logins == 0 {
+                logging_in.remove(program);
             }
         }
         self.relisted();

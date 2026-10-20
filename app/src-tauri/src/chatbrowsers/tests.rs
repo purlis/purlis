@@ -2670,3 +2670,23 @@ fn a_browsers_row_says_purlis_drives_it_while_it_logs_in_and_the_window_is_told_
         "handed back once it answered"
     );
 }
+
+#[test]
+fn two_logins_at_once_in_one_browser_hold_its_purlis_mark_until_both_have_answered() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    used_at_1000(&browsers, &hosted);
+    let driver = |browsers: &ChatBrowsers| browsers.listed()[0].driver;
+
+    browsers.purlis_drives("program-1", true);
+    browsers.purlis_drives("program-1", true);
+    browsers.purlis_drives("program-1", false);
+    assert_eq!(
+        driver(&browsers),
+        Some(BrowserDriver::Purlis),
+        "the other login still runs"
+    );
+
+    browsers.purlis_drives("program-1", false);
+    assert_eq!(driver(&browsers), None);
+}

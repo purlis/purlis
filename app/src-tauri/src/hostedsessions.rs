@@ -1074,10 +1074,10 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
                         (lock(sink).frames)(Some(crate::browsers::aim_said(&aim)), image);
                     }
                 }
-                // Where its page is, its origin alone (#2300).
+                // Where its page is, its origin alone (#2300), as this window reads one.
                 ORIGIN => {
                     if let Some(origin) = frame.origin() {
-                        (lock(sink).origins)(origin);
+                        (lock(sink).origins)(an_origin(origin));
                     }
                 }
                 _ => {}
@@ -1097,6 +1097,17 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
     if finish {
         finish_view(shared, view);
     }
+}
+
+/// **What a host said of a page's origin, as the window takes it** (#2300): an origin, exactly
+/// as [`purlis_session_protocol::browsing::origin_of`] writes one, or none. A view may be drawn
+/// from a runner's host (#2542), and the chip is purlis's own words outside the page: anything
+/// else a host sends (text, a path, a long string, a character that turns the line around) is
+/// read as no origin.
+pub(crate) fn an_origin(said: Option<String>) -> Option<String> {
+    said.filter(|origin| {
+        purlis_session_protocol::browsing::origin_of(origin).as_deref() == Some(origin.as_str())
+    })
 }
 
 /// Hand `text` to view `view`'s pane, if it still has one.
