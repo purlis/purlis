@@ -214,6 +214,12 @@ fn glstate(root: &Path) -> String {
     text
 }
 
+/// A skill run's id in a skill log row: a ULID.
+fn run_id() -> &'static regex::Regex {
+    static RUN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RUN.get_or_init(|| regex::Regex::new(r#""run": "[0-9A-HJKMNP-TV-Z]{26}""#).expect("a pattern"))
+}
+
 fn logged(root: &Path) -> Result<String, String> {
     let mut rows = Vec::new();
     for sub in ["_dispatch", "_skills"] {
@@ -235,6 +241,9 @@ fn logged(root: &Path) -> Result<String, String> {
                 .into_owned();
             let month = name.split('.').next().unwrap_or_default().to_owned();
             for line in std::fs::read_to_string(&f).expect("a log reads").lines() {
+                // A skill run's id is minted afresh at every run (SK-3): its place is recorded,
+                // and its value never is.
+                let line = run_id().replace_all(line, r#""run": "<run>""#);
                 rows.push(format!("{sub}/{month}: {line}"));
             }
         }
