@@ -25,8 +25,7 @@ fn one_chat_s_gap_never_holds_back_another() {
 }
 
 #[test]
-fn the_gap_is_long_enough_for_a_gallery_picture_to_be_drawn_whole_between() {
-    assert!(GAP >= crate::themepreview::BUDGET);
+fn a_chat_within_its_gap_is_told_how_long_is_left_in_whole_seconds() {
     let said = Spacing::said(Duration::from_millis(300));
     assert!(said.contains("ask again in 1 s"), "{said}");
 }

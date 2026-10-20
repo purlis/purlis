@@ -591,7 +591,7 @@ pub(crate) fn offered_now(root: &std::path::Path) -> Arc<[purlis_core::theme::Of
 }
 
 /// Each theme in force, resolved from the text its fingerprint was taken over.
-fn offered_of(seen: &extension::Survey) -> Arc<[purlis_core::theme::Offered]> {
+pub(crate) fn offered_of(seen: &extension::Survey) -> Arc<[purlis_core::theme::Offered]> {
     in_force(seen)
         .into_iter()
         .map(|one| purlis_core::theme::Offered::of(one.extension, one.name, &one.text))

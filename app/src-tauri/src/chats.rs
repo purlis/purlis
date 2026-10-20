@@ -1233,6 +1233,14 @@ impl Chats {
         out
     }
 
+    /// For tests: the open chat `session` as one whose record holds no id.
+    #[cfg(test)]
+    pub fn forget_id_of(&self, session: u32) {
+        if let Some(one) = lock(&self.open).get_mut(&session) {
+            one.chat.identity.id = None;
+        }
+    }
+
     /// Calls `tell` when a chat that was announced never started after all.
     ///
     /// The announcement has to come before the program, so a program that then fails to start
