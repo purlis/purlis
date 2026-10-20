@@ -194,9 +194,20 @@ use crate::view::{Limits, Views};
 /// 1.29 added that record to a program's start (#2692): `program_started` says how its host
 /// applied the sandbox to the run it started (`sandbox`), so a window hears it of a chat its
 /// host composed by its names as it starts.
+///
+/// 1.30 added a relaying host telling its client a project it no longer holds for it (#2645,
+/// ADR 0078 as amended 2026-10-20): the pushed notice `not_held`, with the project and the
+/// other host's words, said when a link to the other host could not hold a project the client
+/// holds as what its link stands on was carried over to it.
+///
+/// 1.31 added a window naming itself to its own host (#2623): `name_window`, the first command
+/// on a link, carries the name the window keeps for that link across its restarts, so a
+/// relaying host names the window by it to the other host and the window takes back its runner
+/// chats after a restart. The window's alone, never sent on, and never shown by `Debug`. A host
+/// before 1.31 refuses it `unknown_command`, and its window takes nothing back after a restart.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 29,
+    minor: 31,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -505,6 +516,13 @@ pub enum Command {
     /// ([`crate::grants::Power::TakeBack`]). A link names one window: another name is refused
     /// [`MALFORMED`].
     TakeBack { window: String },
+    /// The window names itself on a link to its own host (1.31, #2623), as the link's first
+    /// command: the name it keeps for this link across its restarts, on this machine alone.
+    /// Answered [`Answer::Done`]. A relaying host names the window to the other host by a digest
+    /// of it, never the name ([`Command::TakeBack`]); a host that relays nothing has nothing to
+    /// do with it. The window's alone ([`crate::grants::Power::NameWindow`]), never sent on, and
+    /// never shown by `Debug`.
+    NameWindow { name: crate::browsing::Secret },
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -1167,6 +1185,15 @@ pub enum Pushed {
     /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
     /// client's link stands on carried over to it: its views draw again, each from a snapshot.
     LinkBack {},
+    /// The link a relaying host reaches the other host over could not hold `project` as what
+    /// the client's link stands on was carried over to it, in the other host's words (1.30,
+    /// #2645): the relaying host no longer holds it there for the client, and the other host
+    /// refuses a command for it until the client holds it again. The relaying host's own word,
+    /// pushed only to a link that holds the project, and never one the other host said.
+    NotHeld {
+        project: String,
+        why: String,
+    },
 }
 
 wire_words!(Command {
@@ -1213,6 +1240,7 @@ wire_words!(Command {
     SizeBrowser => "size_browser",
     LogIn => "log_in",
     TakeBack => "take_back",
+    NameWindow => "name_window",
     Unpair => "unpair",
 });
 
@@ -1258,6 +1286,7 @@ impl Command {
             Command::ProgramsOf { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
+            Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
         }
     }
@@ -1270,6 +1299,7 @@ impl Pushed {
     pub fn heard_with(&self) -> Option<Power> {
         match self {
             Pushed::Heard { .. } => Some(Power::Heard),
+            Pushed::NotHeld { .. } => Some(Power::Hold),
             Pushed::Saving { .. } | Pushed::WhoIsMidTurn { .. } => Some(Power::Save),
             Pushed::Sandbox { .. } => Some(Power::Confine),
             Pushed::Event(_)
@@ -1325,6 +1355,7 @@ wire_words!(Pushed {
     WhoIsMidTurn => "who_is_mid_turn",
     LinkDown => "link_down",
     LinkBack => "link_back",
+    NotHeld => "not_held",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -1723,6 +1754,7 @@ impl Lane {
             | Command::MidTurn { .. }
             | Command::Quit
             | Command::TakeBack { .. }
+            | Command::NameWindow { .. }
             | Command::Unpair => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
@@ -2600,7 +2632,8 @@ impl Subscribed {
                 | Pushed::Saving { .. }
                 | Pushed::WhoIsMidTurn { .. }
                 | Pushed::LinkDown { .. }
-                | Pushed::LinkBack {} => {}
+                | Pushed::LinkBack {}
+                | Pushed::NotHeld { .. } => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;

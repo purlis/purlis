@@ -205,10 +205,10 @@ fn theme_preview_with_no_app_says_the_app_draws_the_specimen_and_the_session_goe
     let said = server.call("theme_preview", json!({ "theme": "purlis-classic" }));
     assert_eq!(said["isError"], true, "{said}");
     assert!(text(&said).contains("the purlis app draws it"), "{said}");
-    // A theme this purlis does not have is refused before any app is asked.
-    let said = server.call("theme_preview", json!({ "theme": "solarized" }));
+    // What is no theme's id, a path among them, is refused before any app is asked (#2536).
+    let said = server.call("theme_preview", json!({ "theme": "/etc/passwd" }));
     assert_eq!(said["isError"], true, "{said}");
-    assert!(text(&said).contains("no theme `solarized`"), "{said}");
+    assert!(text(&said).contains("is not a theme's id"), "{said}");
     assert_eq!(server.call("todo_list", json!({}))["isError"], false);
 }
 

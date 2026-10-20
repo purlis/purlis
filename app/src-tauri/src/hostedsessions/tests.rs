@@ -31,8 +31,9 @@ pub(crate) fn in_memory<H: session::Host + Clone>(
             .expect("the window speaks to the host"),
     );
     let handle = runtime.handle().clone();
-    let dial: Dial =
-        Arc::new(move |within| open_within(&handle, within, a_link_to(hosting.clone(), || {})));
+    let dial: Dial = Arc::new(move |within, naming| {
+        open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
     let connection = Arc::new(Connection::default());
     connection.ready(Arc::clone(&link), dial);
     (connection, link)
@@ -46,6 +47,16 @@ async fn a_link_to<H: session::Host>(
 ) -> Result<HostLink, String> {
     let client = a_bare_link_to(hosting, closed).await?;
     HostLink::over(client, tokio::runtime::Handle::current(), || {}).await
+}
+
+/// [`a_link_to`], the window naming itself on it first by `naming` (#2623), as the window's
+/// binary dials each project root's link.
+async fn a_named_link_to<H: session::Host>(
+    hosting: H,
+    naming: Option<purlis_session_protocol::browsing::Secret>,
+) -> Result<HostLink, String> {
+    let client = a_bare_link_to(hosting, || {}).await?;
+    HostLink::over_named(client, tokio::runtime::Handle::current(), || {}, naming).await
 }
 
 /// The link [`a_link_to`] speaks over, bare: for a test that speaks the protocol itself.
@@ -1052,7 +1063,7 @@ fn a_host_on(runtime: &tokio::runtime::Runtime) -> OneHost {
     );
     let dial: Dial = {
         let (handle, serving) = (runtime.handle().clone(), Arc::clone(&serving));
-        Arc::new(move |within| {
+        Arc::new(move |within, _naming| {
             open_within(
                 &handle,
                 within,
@@ -1254,7 +1265,7 @@ fn a_call_that_cannot_wait_never_waits_behind_another_roots_link_being_opened() 
     let go = Mutex::new(go);
     connection.ready(
         window,
-        Arc::new(move |within| {
+        Arc::new(move |within, _naming| {
             let _ = entered.send(());
             let _ = go.lock().unwrap().recv_timeout(within);
             Err("held up".to_owned())
@@ -1365,7 +1376,7 @@ impl Comeback {
                 Arc::clone(&cuts),
                 self.runtime.handle().clone(),
             );
-            Arc::new(move |within| {
+            Arc::new(move |within, _naming| {
                 open_within(
                     &handle,
                     within,
@@ -2253,4 +2264,406 @@ fn a_harness_chat_on_a_runner_is_started_there_by_its_names_and_its_asks_reach_t
         .open(None, &a_shell("true"), &|_| {})
         .expect("a shell starts from the window's launch");
     until("the runner runs the shell", || runs.ran().len() == ran + 1);
+}
+
+/// A host between the window and `inner` that counts the holds the window sends, and refuses
+/// each, in a runner's words, while the test says so.
+#[derive(Clone)]
+struct Holds<H> {
+    inner: H,
+    tried: Arc<Mutex<usize>>,
+    refusing: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// What the runner says as it refuses a hold.
+const NOT_THERE: &str = "that folder is not there";
+
+impl<H> Holds<H> {
+    fn new(inner: H) -> Self {
+        Holds {
+            inner,
+            tried: Arc::default(),
+            refusing: Arc::default(),
+        }
+    }
+
+    fn tried(&self) -> usize {
+        *self.tried.lock().unwrap()
+    }
+}
+
+impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for Holds<H> {
+    async fn call(
+        &self,
+        command: session::Command,
+        peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        if let session::Command::HoldProject { .. } = command {
+            *self.tried.lock().unwrap() += 1;
+            if self.refusing.load(Ordering::Relaxed) {
+                return Err(session::Refusal {
+                    code: session::NOT_ALLOWED.into(),
+                    why: NOT_THERE.into(),
+                });
+            }
+        }
+        self.inner.call(command, peer).await
+    }
+
+    async fn link_ended(&self, peer: &session::Peer) {
+        self.inner.link_ended(peer).await;
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<tokio::sync::mpsc::Receiver<session::Pushed>, session::Refusal> {
+        self.inner.subscribe(since, peer).await
+    }
+}
+
+/// A project's chats whose host says what the test pushes, through `holds`, which counts the
+/// window's holds: and the project's id, as its host knows it.
+fn hosted_holding() -> (Hosted, Holds<Hosting>, Between<Holds<Hosting>>, String) {
+    let runs = StandIns::default();
+    let holds = Holds::new(Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+    ));
+    let between = Between::new(holds.clone(), false);
+    let hosted = hosted_in(between.clone(), runs);
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&hosted.root).unwrap();
+    (hosted, holds, between, project)
+}
+
+#[test]
+fn a_project_a_re_link_could_not_hold_is_held_again_by_the_window() {
+    let (hosted, holds, between, project) = hosted_holding();
+    let (id, _seen) = a_drawn_chat(&hosted);
+    let held = holds.tried();
+    assert!(held > 0);
+
+    between
+        .pushes
+        .send(session::Pushed::NotHeld {
+            project: project.clone(),
+            why: NOT_THERE.into(),
+        })
+        .unwrap();
+
+    until("the window holds the project again", || {
+        holds.tried() > held
+    });
+    // Its chats carry on, and a new one starts.
+    hosted.sessions.input(id, b"typed").unwrap();
+    hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("a chat starts in the project held again");
+}
+
+#[test]
+fn a_project_the_runner_will_not_hold_again_is_said_to_be_not_held_in_the_runners_words() {
+    let (hosted, holds, between, project) = hosted_holding();
+    a_drawn_chat(&hosted);
+    let held = holds.tried();
+    holds.refusing.store(true, Ordering::Relaxed);
+
+    between
+        .pushes
+        .send(session::Pushed::NotHeld {
+            project,
+            why: NOT_THERE.into(),
+        })
+        .unwrap();
+    until("the window tries to hold the project again", || {
+        holds.tried() > held
+    });
+
+    let refused = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect_err("no chat starts in a project the runner does not hold");
+    assert!(refused.starts_with(NOT_HELD), "{refused}");
+    assert!(refused.contains(NOT_THERE), "{refused}");
+}
+
+#[test]
+fn a_project_another_project_was_not_held_for_is_left_held() {
+    let (hosted, holds, between, _project) = hosted_holding();
+    a_drawn_chat(&hosted);
+    let held = holds.tried();
+
+    between
+        .pushes
+        .send(session::Pushed::NotHeld {
+            project: "01J9PRJCTANOTHER0000000000".into(),
+            why: NOT_THERE.into(),
+        })
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("a chat starts");
+    assert_eq!(holds.tried(), held);
+}
+
+/// Each command's word a host was told, in the order they came, with the name of each
+/// `name_window`.
+type HostTold = Arc<Mutex<Vec<(&'static str, Option<String>)>>>;
+
+/// A host between the window and `inner` that keeps each name the window names itself by, and
+/// the word of each command, in the order they came.
+#[derive(Clone)]
+struct Names<H> {
+    inner: H,
+    told: HostTold,
+}
+
+impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for Names<H> {
+    async fn call(
+        &self,
+        command: session::Command,
+        peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        let name = match &command {
+            session::Command::NameWindow { name } => Some(name.expose().to_owned()),
+            _ => None,
+        };
+        self.told.lock().unwrap().push((command.word(), name));
+        self.inner.call(command, peer).await
+    }
+
+    async fn link_ended(&self, peer: &session::Peer) {
+        self.inner.link_ended(peer).await;
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<tokio::sync::mpsc::Receiver<session::Pushed>, session::Refusal> {
+        self.inner.subscribe(since, peer).await
+    }
+}
+
+/// A window naming its links in `config`, on a host that keeps what it was told: its project's
+/// chats, and what the host was told.
+fn named_in(config: &Path, root: &Path) -> (HostedSessions, HostTold, tokio::runtime::Runtime) {
+    let runtime = a_runtime();
+    let host = Names {
+        inner: Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            StandIns::default(),
+        ),
+        told: Arc::default(),
+    };
+    let told = Arc::clone(&host.told);
+    let (connection, _link) = in_memory(host, &runtime);
+    connection.naming_in(config.to_path_buf());
+    (HostedSessions::new(connection, root), told, runtime)
+}
+
+#[test]
+fn the_window_names_each_projects_link_first_by_the_name_it_keeps_across_restarts() {
+    let config = tempfile::tempdir().unwrap();
+    let (_dir, root) = a_project();
+    let (sessions, told, _runtime) = named_in(config.path(), &root);
+    sessions.hold().unwrap();
+    let first = told.lock().unwrap().clone();
+    let Some(("name_window", Some(name))) = first.first().cloned() else {
+        panic!("the link's first command names the window: {first:?}");
+    };
+    assert_eq!(name.len(), 32);
+    drop(sessions);
+
+    // The window restarts: its new link names it the same way.
+    let (sessions, told, _runtime) = named_in(config.path(), &root);
+    sessions.hold().unwrap();
+    assert_eq!(
+        told.lock().unwrap().first().cloned(),
+        Some(("name_window", Some(name.clone())))
+    );
+
+    // A window that keeps its names elsewhere names itself otherwise.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let (sessions, told, _runtime) = named_in(elsewhere.path(), &root);
+    sessions.hold().unwrap();
+    let other = told.lock().unwrap().first().cloned();
+    assert!(
+        matches!(&other, Some(("name_window", Some(other))) if *other != name),
+        "{other:?}"
+    );
+}
+
+/// Everything logged while it is the thread's subscriber, as text.
+#[derive(Clone, Default)]
+struct Logged(Arc<Mutex<String>>);
+
+impl tracing::field::Visit for Logged {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.0
+            .lock()
+            .unwrap()
+            .push_str(&format!("{}={value:?}\n", field.name()));
+    }
+}
+
+impl tracing::Subscriber for Logged {
+    fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        span.record(&mut self.clone());
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _span: &tracing::span::Id, values: &tracing::span::Record<'_>) {
+        values.record(&mut self.clone());
+    }
+
+    fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        event.record(&mut self.clone());
+    }
+
+    fn enter(&self, _span: &tracing::span::Id) {}
+
+    fn exit(&self, _span: &tracing::span::Id) {}
+}
+
+/// A host that refuses the window's name, as one that holds it for another link would.
+#[derive(Clone)]
+struct RefusesNames(Hosting);
+
+impl session::Host for RefusesNames {
+    async fn call(
+        &self,
+        command: session::Command,
+        peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        if let session::Command::NameWindow { .. } = command {
+            return Err(session::Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "another window's link holds this name now".into(),
+            });
+        }
+        self.0.call(command, peer).await
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<tokio::sync::mpsc::Receiver<session::Pushed>, session::Refusal> {
+        self.0.subscribe(since, peer).await
+    }
+}
+
+#[test]
+fn the_name_the_window_keeps_is_never_logged() {
+    let config = tempfile::tempdir().unwrap();
+    let (_dir, root) = a_project();
+    let runtime = a_runtime();
+    let (connection, _link) = in_memory(
+        RefusesNames(Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            StandIns::default(),
+        )),
+        &runtime,
+    );
+    connection.naming_in(config.path().to_path_buf());
+    let sessions = HostedSessions::new(connection, &root);
+
+    let logged = Logged::default();
+    tracing::subscriber::with_default(logged.clone(), || {
+        sessions
+            .hold()
+            .expect("a refused name leaves the link as it was");
+    });
+
+    let name = purlis_core::windownames::name_for(config.path(), &root, &[]).unwrap();
+    let logged = logged.0.lock().unwrap().clone();
+    assert!(
+        logged.contains("did not take the window's name"),
+        "{logged}"
+    );
+    assert!(!logged.contains(name.expose()), "{logged}");
+}
+
+/// **A window that comes back takes back its runner chat** (#2623), over its own host's relay
+/// as the window's binary links: each project root's link names the window first, before it
+/// subscribes. The window that comes back names itself the same way on its new link, and acts on
+/// its chat's confinement on the runner again; a window that names itself nowhere does not.
+#[test]
+fn a_window_that_comes_back_acts_on_its_runner_chats_confinement_again() {
+    const CONFINEMENT: &str = "01J9CNFNMNT00000000000000W1";
+    let runtime = a_runtime();
+    let runner = Hosting::confining(
+        ComposesConfined,
+        purlis_host::standin::StandInConfines::default(),
+        StandIns::default(),
+    );
+    let relay = runtime.block_on(async move {
+        purlis_host::Relay::new(Arc::new(move || {
+            let runner = runner.clone();
+            Box::pin(async move { Ok(crate::behaviour::linked_to(runner).await) })
+        }))
+    });
+    let config = tempfile::tempdir().unwrap();
+    let (_dir, root) = a_project();
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&root).unwrap();
+    let hold = || session::Command::HoldProject {
+        project: project.clone(),
+        project_path: root.display().to_string(),
+    };
+    let reach = || session::Command::ReachOf {
+        confinement: CONFINEMENT.into(),
+    };
+    // A window, naming its links or not, and its project root's link.
+    let window = |named: bool| {
+        let (connection, _link) = in_memory(relay.clone(), &runtime);
+        if named {
+            connection.naming_in(config.path().to_path_buf());
+        }
+        let link = connection.of_project(&root, PATIENCE).unwrap();
+        link.call(hold()).expect("the runner holds the project");
+        (connection, link)
+    };
+
+    let (first, link) = window(true);
+    link.call(session::Command::StartProgram(Box::new(
+        session::StartProgram {
+            confinement: Some(CONFINEMENT.into()),
+            ..session::StartProgram::of(&project, ProgramKind::Harness)
+        },
+    )))
+    .expect("composed on the runner");
+    link.call(reach())
+        .expect("the window acts on its chat's confinement");
+    // The window goes, and its links with it.
+    drop((first, link));
+
+    let (_unnamed, other) = window(false);
+    assert!(
+        other.call(reach()).is_err(),
+        "a window that names itself nowhere takes nothing back"
+    );
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        // Until the host has let go of the link of the window that went, its name is held.
+        let (_again, link) = window(true);
+        if link.call(reach()).is_ok() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the window that came back never took its chat back"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }

@@ -661,12 +661,14 @@ fn colour(said: &Said, file: &str, ignored: &mut Vec<Ignored>) -> Option<Colour>
 /// read. Handed the workspace the caller already opened, so a listing of every workspace reads
 /// each manifest once.
 pub fn colour_of(ws: &crate::workspaces::Workspace) -> Option<Colour> {
-    let settings = ws
-        .manifest()
-        .0
-        .as_ref()
-        .and_then(crate::settings::workspace::table_of);
-    let said = Said::default().with_workspace(ws.name(), settings);
+    colour_of_manifest(ws.name(), ws.manifest().0.as_ref()?)
+}
+
+/// The colour the workspace `name`'s manifest `doc` gives it, as [`colour_of`] reads it, for a
+/// caller that read the manifest itself.
+pub fn colour_of_manifest(name: &str, doc: &serde_json::Value) -> Option<Colour> {
+    let settings = crate::settings::workspace::table_of(doc);
+    let said = Said::default().with_workspace(name, settings);
     colour(&said, "", &mut Vec::new())
 }
 
