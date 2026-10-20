@@ -148,3 +148,51 @@ fn the_same_request_id_in_two_frames_sessions_is_two_requests() {
         vec!["1 request still loading: http://fixture.test/a".to_owned()]
     );
 }
+
+/// A frame from another site's document: asked for in the page's session, and answered in the
+/// frame's own, which the engine gives the frame as it moves it to a process of its own (#2689).
+fn a_cross_site_frame_s_document(kind: &str) -> (Value, Value) {
+    (
+        serde_json::json!({"requestId":"5F3C1E0D9A","loaderId":"5F3C1E0D9A","frameId":"FRAME-1","request":{"url":"http://other.test/frame.html"},"type":kind}),
+        serde_json::json!({"requestId":"5F3C1E0D9A"}),
+    )
+}
+
+#[test]
+fn a_frame_s_document_answered_in_the_frame_s_own_session_no_longer_counts() {
+    let start = Instant::now();
+    let mut settle = Settle::new(start);
+    let (sent, done) = a_cross_site_frame_s_document("Document");
+    settle.observe(
+        "PAGE",
+        activity("Network.requestWillBeSent", &sent).unwrap(),
+        start,
+    );
+    settle.observe(
+        "FRAME",
+        activity("Network.loadingFinished", &done).unwrap(),
+        start,
+    );
+    assert!(settle.waiting_for(start + QUIET, QUIET).is_empty());
+}
+
+#[test]
+fn a_request_other_than_a_document_ended_in_another_session_still_counts() {
+    let start = Instant::now();
+    let mut settle = Settle::new(start);
+    let (sent, done) = a_cross_site_frame_s_document("Fetch");
+    settle.observe(
+        "PAGE",
+        activity("Network.requestWillBeSent", &sent).unwrap(),
+        start,
+    );
+    settle.observe(
+        "FRAME",
+        activity("Network.loadingFinished", &done).unwrap(),
+        start,
+    );
+    assert_eq!(
+        settle.waiting_for(start + QUIET, QUIET),
+        vec!["1 request still loading: http://other.test/frame.html".to_owned()]
+    );
+}
