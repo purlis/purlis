@@ -11403,3 +11403,29 @@ fn a_chat_started_in_the_host_is_listed_in_the_run_its_start_began() {
     planes.close(&id).expect("it closes");
     drop(runtime);
 }
+
+#[test]
+fn a_chat_open_in_a_workspace_with_no_id_is_drawn_specimens_from_the_plane_root_alone() {
+    // #2751: where a chat's specimen is looked up is this app's record of it, and a chat whose
+    // record holds no id reaches no workspace's theme folders and no draft.
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, chat) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let at = chat_at(&held, chat).expect("open");
+    assert_eq!(
+        at.workspace.as_deref(),
+        Some("alpha"),
+        "with its id, its workspace"
+    );
+    assert!(at.id.is_some());
+    held.chats().forget_id_of(chat);
+    assert_eq!(
+        chat_at(&held, chat),
+        Some(crate::specimen::ChatAt {
+            plane: held.root().to_path_buf(),
+            workspace: None,
+            id: None,
+        })
+    );
+}

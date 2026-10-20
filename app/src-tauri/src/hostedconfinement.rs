@@ -54,6 +54,10 @@ impl purlis_host::Confine for ConfinesHere {
         purlis_core::sandbox::hosted::fits_here(confining.project_path, &confining.confine.plan)
     }
 
+    fn gives_now(&self, project_path: &std::path::Path, port: u16) -> Result<(), String> {
+        purlis_core::sandbox::hosted::gives_here(project_path, port)
+    }
+
     fn confine(
         &self,
         confining: &purlis_host::ToConfine<'_>,

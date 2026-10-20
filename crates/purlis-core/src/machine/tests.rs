@@ -356,6 +356,31 @@ fn forgetting_a_plane_forgets_the_approval_and_closes_its_tab() {
     );
 }
 
+#[test]
+fn forgetting_a_project_lets_go_of_the_name_its_window_link_kept() {
+    let machine = machine();
+    let (gone, kept) = (Path::new("/planes/gone"), Path::new("/planes/kept"));
+    update(machine.path(), |store| {
+        store.remember(gone, 1);
+        store.remember(kept, 2);
+    })
+    .unwrap();
+    let named = crate::windownames::name_for(machine.path(), gone, &[]).unwrap();
+    let other = crate::windownames::name_for(machine.path(), kept, &[]).unwrap();
+
+    assert!(forget_project(machine.path(), gone).unwrap());
+
+    assert_ne!(
+        crate::windownames::name_for(machine.path(), gone, &[]).unwrap(),
+        named,
+        "a forgotten project's link would take its runner chats back"
+    );
+    assert_eq!(
+        crate::windownames::name_for(machine.path(), kept, &[]).unwrap(),
+        other
+    );
+}
+
 // ---------------------------------------------------------------- trust
 
 fn a_contribution(plugins: &[(&str, &str)], env: &[(&str, &str)]) -> Contribution {

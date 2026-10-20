@@ -1675,6 +1675,9 @@ fn the_check_reports_each_hard_floor_a_combination_breaks() {
     assert_eq!(first["appearance"], "dark");
     assert_eq!(first["options"], serde_json::json!({}));
     assert_eq!(first["tint"], serde_json::Value::Null);
+    // A pair on a plain ground is laid over no layer. (Every hard-floor pair over a wash is a
+    // consent pair, which the window holds before the hard floors are measured.)
+    assert!(first.get("beneath").is_none(), "{first:#}");
 }
 
 #[test]
@@ -2175,5 +2178,81 @@ fn the_skill_s_import_and_export_write_into_a_folder_of_the_chat_s_own() {
     assert!(
         !rig.plane().join("purlis-classic.zip").exists(),
         "nothing written where the chat works"
+    );
+}
+
+/// Each row of the skill's geometry table, as `(token, least, most, classic, compact)`: the
+/// tokens in its first cell, and each of the next three cells' values in the same order.
+fn skill_geometry_rows(page: &str) -> Vec<(String, f64, f64, f64, f64)> {
+    let number = |text: &str| -> f64 {
+        let text = text.trim().trim_end_matches("px").trim().replace('−', "-");
+        text.parse()
+            .unwrap_or_else(|_| panic!("not a number: {text:?}"))
+    };
+    let mut rows = Vec::new();
+    let mut lines = page
+        .lines()
+        .skip_while(|line| !line.starts_with("| Tokens | Bounds | Classic | Compact |"))
+        .skip(2);
+    for line in lines.by_ref().take_while(|line| line.starts_with('|')) {
+        let cells: Vec<&str> = line.trim_matches('|').split(" | ").collect();
+        let tokens: Vec<&str> = cells[0].split('`').skip(1).step_by(2).collect();
+        let bounds: Vec<&str> = cells[1].split(", ").collect();
+        let classic: Vec<&str> = cells[2].split(", ").collect();
+        let compact: Vec<&str> = cells[3].split(", ").collect();
+        assert!(
+            [bounds.len(), classic.len(), compact.len()] == [tokens.len(); 3],
+            "one value per token in {line:?}"
+        );
+        for (at, token) in tokens.iter().enumerate() {
+            let (least, most) = bounds[at]
+                .split_once('–')
+                .unwrap_or_else(|| panic!("a range: {:?}", bounds[at]));
+            rows.push((
+                (*token).to_owned(),
+                number(least),
+                number(most),
+                number(classic[at]),
+                number(compact[at]),
+            ));
+        }
+    }
+    rows
+}
+
+#[test]
+fn the_theme_skill_s_geometry_table_names_every_token_with_the_engine_s_bounds_and_values() {
+    let mut rows = skill_geometry_rows(&theme_skill());
+    let mut steps: Vec<(String, f64, f64, f64, f64)> = purlis_core::theme::geometry::STEPS
+        .iter()
+        .map(|one| {
+            (
+                one.token.to_owned(),
+                one.least,
+                one.most,
+                one.classic,
+                one.compact,
+            )
+        })
+        .collect();
+    // The table groups the tokens by what an author reaches for, corners first.
+    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    steps.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        rows, steps,
+        "the skill's table is the engine's STEPS: every token once, with its bounds, Classic's \
+         value and Classic's compact value"
+    );
+}
+
+#[test]
+fn the_skill_s_geometry_scan_reads_one_value_per_token_in_order() {
+    let page = "x\n\n| Tokens | Bounds | Classic | Compact | What it reaches |\n|---|---|---|---|---|\n| `a.b` `a.c` | 0–4 px, −4–0 px | 2, −2 | 1, −1 | x |\n\nafter\n| `not.read` | 1–2 | 1 | 1 | y |\n";
+    assert_eq!(
+        skill_geometry_rows(page),
+        vec![
+            ("a.b".to_owned(), 0.0, 4.0, 2.0, 1.0),
+            ("a.c".to_owned(), -4.0, 0.0, -2.0, -1.0),
+        ]
     );
 }

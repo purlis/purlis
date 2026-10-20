@@ -202,9 +202,6 @@ const DRAG_STEPS: usize = 10;
 const AT_REST_GAP: Duration = Duration::from_millis(30);
 /// How many reads a scrolled frame has to come to rest in before an act into it is not shown.
 const AT_REST_READS: usize = 10;
-/// How long a drag waits after its last move for the engine to say its own drag started
-/// (#2136).
-const DRAG_STARTS_WITHIN: Duration = Duration::from_millis(150);
 /// The most form submissions, and links followed, remembered until their request is seen
 /// (#2018).
 const FORMS_KEPT: usize = 16;
@@ -2351,7 +2348,7 @@ impl Browser {
         }
         // The engine says its drag started a moment after the move that started it.
         if carried.is_none() {
-            *carried = self.engine_drag(session, DRAG_STARTS_WITHIN);
+            *carried = self.engine_drag(session, self.inner.limits.drag_starts_within);
         }
         if let Some(data) = carried.as_mut() {
             // A drag of an element carries what the page put in it, never files.
