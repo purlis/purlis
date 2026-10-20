@@ -158,7 +158,7 @@ over the appearance as its colours are.
 | `font-size.xs` | px at 14px | 9–13 | 11 | 11 | the meta and label roles: badges, counts |
 | `font-size.sm` | px at 14px | 10–14 | 12 | 12 | the secondary role: secondary lines, help text |
 | `font-size.md` | px at 14px | 11–15 | 13 | 13 | the body role: a tab's title, dense lists, a menu's rows |
-| `font-size.base` | px at 14px | 12–18 | 14 | 14 | fields' and buttons' words, the heading role, the title bar |
+| `font-size.base` | px at 14px | 12–18 | 14 | 14 | fields', buttons' and segmented controls' words, the heading role |
 | `font-size.lg` | px at 14px | 13–22 | 16 | 16 | the title role |
 | `font-size.xl` | px at 14px | 16–28 | 20 | 20 | the Welcome page's heading and its doors' marks |
 | `font-weight.regular` | weight | 300–500 | 400 | 400 | the body, secondary, meta and code roles, menu rows |
@@ -192,9 +192,9 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 
 The project strip sits in the title bar, whose height no token reaches yet. **Still square,
 whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a tab's `×` closer, the
-settings gear on a strip, and every list and tree row but the palette's. **A 2px ring,
-whatever `focus-ring.*` says:** the strip tabs, a tab's `×` closer, the settings gear on a
-strip, a bare button, and any stop Tab lands on that draws no ring of its own.
+settings gear on a strip, and every list and tree row but the palette's. **The focus
+ring tokens reach the shared controls and list rows; every other focus ring is 2px**, whatever
+`focus-ring.*` says: the strip tabs, a tab's `×` closer and the strip gear among them.
 
 ### Density's compact layer
 

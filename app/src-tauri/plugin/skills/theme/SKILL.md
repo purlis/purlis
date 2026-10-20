@@ -137,7 +137,8 @@ tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fa
 **Still square, whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a
 tab's `×` closer, the settings gear on a strip, and every list and tree row but the palette's.
 Tell the person when they ask for rounder tabs or rows: the theme cannot round those yet. The
-strip tabs, the closer and the gear also keep a 2px focus ring whatever `focus-ring.*` says.
+focus ring tokens reach the shared controls and list rows; every other focus ring, the strip
+tabs', the closer's and the gear's among them, is 2px whatever `focus-ring.*` says.
 
 Done when the file is JSON with every value hex, a palette name, or a token's own type, and
 every shape and size inside its bounds.
