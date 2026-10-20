@@ -68,6 +68,9 @@ enum Twist {
     NoWorld,
     /// purlis's world in the page ends once the field is found, before it is filled.
     WorldGone,
+    /// As purlis clears what it filled, its world's number comes to name the page's own world,
+    /// with no word of it yet: as when the page moves to another process.
+    WorldReused,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -88,6 +91,7 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
     let submitted = Arc::new(AtomicBool::new(false));
     let seen = Arc::clone(&submitted);
     let typed = Arc::new(AtomicUsize::new(0));
+    let reused = AtomicBool::new(false);
     let navigated = |engine: &Engine, session: &str, loader: &str, url: &str| {
         let frame = session.trim_start_matches("S-");
         engine.emit(
@@ -127,6 +131,12 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                 let held = typed.load(Ordering::SeqCst);
                 let held = if twist == Twist::Shortens { held - 1 } else { held };
                 Some(Ok(json!({ "result": { "type": "number", "value": held } })))
+            }
+            "DOM.resolveNode"
+                if twist == Twist::WorldReused && !reused.swap(true, Ordering::SeqCst) =>
+            {
+                engine.worlds_reused_by_the_page();
+                None
             }
             "Page.createIsolatedWorld" if twist == Twist::NoWorld => {
                 Some(Err(crate::cdp::CallError::Engine {
@@ -563,7 +573,10 @@ fn every_script_a_login_runs_on_its_page_runs_in_purlis_s_own_world() {
             .any(|sent| sent.params["functionDeclaration"] == CLEAR_FIELD)
     );
     for sent in &run_on {
-        let object = sent.params["objectId"].as_str().unwrap_or_default();
+        let object = sent.params["objectId"]
+            .as_str()
+            .or_else(|| sent.params["arguments"][0]["objectId"].as_str())
+            .unwrap_or_default();
         assert!(
             object == "PASSWORD-1" || object.starts_with("OBJECT-"),
             "run on an object of purlis's world: {sent:?}"
@@ -609,4 +622,41 @@ fn a_login_whose_world_ends_before_the_fill_fills_nothing_and_hands_the_browser_
     assert!(inserted(&engine).is_empty());
     assert_eq!(ended.driver, Driver::Agent);
     assert!(engine.sent("Browser.close").is_empty());
+}
+
+#[test]
+fn a_field_is_cleared_only_in_purlis_s_world_though_its_number_now_names_the_pages() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, false, Twist::WorldReused);
+    let ended = browser.log_in(&login_at(ORIGIN), &|| Ok(())).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "not logged in: {}",
+        ended_as(&ended.outcome)
+    );
+    let clears: Vec<_> = engine
+        .sent("Runtime.callFunctionOn")
+        .into_iter()
+        .filter(|sent| sent.params["functionDeclaration"] == CLEAR_FIELD)
+        .collect();
+    assert!(!clears.is_empty(), "the field was cleared");
+    for clear in &clears {
+        assert!(
+            clear.params["uniqueContextId"]
+                .as_str()
+                .is_some_and(|unique| unique.starts_with("U-")),
+            "a clear names purlis's world by its unique id"
+        );
+        assert!(clear.params["objectId"].is_null());
+    }
+    // The element the stale number resolved to is the page's own: the engine refuses it in
+    // purlis's world, and the world is made again for the clear.
+    assert!(
+        clears
+            .iter()
+            .any(|clear| clear.params["arguments"][0]["objectId"]
+                .as_str()
+                .is_some_and(|object| object.starts_with("OBJECT-"))),
+        "cleared in a world of purlis's own"
+    );
 }

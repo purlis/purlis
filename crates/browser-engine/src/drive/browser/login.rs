@@ -94,12 +94,13 @@ pub(crate) const FIELD_LENGTH: &str = r"function () {
   return typeof this.value === 'string' ? this.value.length : -1;
 }";
 
-/// The function that empties a field purlis filled, run on the field: a constant.
-pub(crate) const CLEAR_FIELD: &str = r"function () {
-  const own = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this), 'value');
-  if (own && own.set) own.set.call(this, ''); else this.value = '';
-  this.dispatchEvent(new Event('input', { bubbles: true }));
-  this.dispatchEvent(new Event('change', { bubbles: true }));
+/// The function that empties a field purlis filled, given the field as it is in purlis's own
+/// world: a constant.
+pub(crate) const CLEAR_FIELD: &str = r"function (field) {
+  const own = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value');
+  if (own && own.set) own.set.call(field, ''); else field.value = '';
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  field.dispatchEvent(new Event('change', { bubbles: true }));
 }";
 
 /// **How a login ended**: who drives the browser now and under which epoch, and what the login
@@ -650,7 +651,8 @@ impl Browser {
 
     /// Empties each field in `filled` that `target`'s page still shows on `origin`: what a login
     /// that did not go through leaves behind. Each is resolved into purlis's own world and
-    /// emptied there; one that cannot be is left.
+    /// emptied by a function run in that world by its unique id, so an element of any other
+    /// world is refused by the engine; one that cannot be is left.
     fn clear(&self, target: &str, origin: &str, filled: &[NodeKey]) {
         if !self.on_origin(target, origin) {
             return;
@@ -670,10 +672,14 @@ impl Browser {
                 else {
                     return Ok(Value::Null);
                 };
-                let _ = self.gated(|| {
+                let cleared = self.gated(|| {
                     self.devtools().call(
                         "Runtime.callFunctionOn",
-                        json!({ "objectId": object, "functionDeclaration": CLEAR_FIELD }),
+                        json!({
+                            "uniqueContextId": world.unique,
+                            "functionDeclaration": CLEAR_FIELD,
+                            "arguments": [{ "objectId": object }],
+                        }),
                         on,
                     )
                 });
@@ -682,7 +688,11 @@ impl Browser {
                     json!({ "objectId": object }),
                     on,
                 );
-                Ok(Value::Null)
+                // A world the engine refuses the element in is made again, once.
+                match cleared {
+                    Ok(done) => done.map(|_| Value::Null),
+                    Err(_) => Ok(Value::Null),
+                }
             });
         }
     }

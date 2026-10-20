@@ -175,6 +175,6 @@ fn a_login_on_a_page_that_redefines_finding_and_focusing_a_field_goes_through() 
         "the login landed on the account page"
     );
     let shown = snapshot(&browser);
-    assert!(shown.contains("Account"), "{shown}");
-    assert!(!holds_a_value(&shown), "{shown}");
+    assert!(shown.contains("Account"), "the account page shows");
+    assert!(!holds_a_value(&shown), "the account page shows no value");
 }
