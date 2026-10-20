@@ -48,6 +48,7 @@ const launchers = [
   "wdio.state.conf.js",
   "wdio.bench.conf.js",
   "wdio.upgrade.conf.js",
+  "wdio.picked.conf.js",
 ];
 
 describe("every launcher starts the app inside a plane the run made", () => {

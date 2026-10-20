@@ -140,7 +140,12 @@ last layer of the window's stylesheet, says it again in system colours and with 
 each state mark's shape in `CanvasText`; a count of chats that need you in `Mark` and
 `MarkText`; a dashed outline on what ends or destroys and on a ground that says something is
 wrong; a switch's thumb and a radio's dot; and an outline
-round what is opened over the window. It holds only system colours, never a token.
+round what is opened over the window. It holds only system colours, never a token. The
+scenario run (`app/e2e/specs/forced-colors.e2e.ts`) turns forced colours on in the real WebView
+by placing the sheet's rules beside their media query, in the same layer and order, and checks
+each of these on the window's own controls as computed styles in the system colours the WebView
+resolves (#2583). A project's theme pick reaching the native window is checked by its own launch
+(`wdio.picked.conf.ts`).
 
 **Two tokens may look like one token and are not.** `needs-you.base` and `danger.base` were a
 single value before this — `--stop`, `#c05c5c`, "purlis's red" — and splitting them by meaning

@@ -28,8 +28,9 @@
 
    It is imported last, in its own layer, `forced` (`styles.css`), the last of the window's layers,
    so it is drawn over every rule a view, a control or a utility writes. `forced-colors.test.ts` holds it to the system's colours and to
-   each of the above; the WebView end-to-end suite (`e2e/specs/forced-colors.e2e.ts`) holds that
-   the built window carries it. */
+   each of the above; the WebView end-to-end suite (`e2e/specs/forced-colors.e2e.ts`, #2583) holds
+   that the built window carries it under this exact query, and that with forced colours active
+   each of the above is the computed style of the window's own controls. */
 
 @media (forced-colors: active) {
   /* What is selected or current: the system's pair, which forced colours leave alone only when

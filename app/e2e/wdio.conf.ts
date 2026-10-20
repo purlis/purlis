@@ -109,6 +109,8 @@ export const config: WebdriverIO.Config = {
     "./specs/**/*.finder.e2e.ts",
     // The layout-file spec needs its file on disk before the app starts (`wdio.layout.conf.ts`).
     "./specs/**/*.layout.e2e.ts",
+    // A project's theme pick needs its file on disk before the app starts (`wdio.picked.conf.ts`).
+    "./specs/**/*.picked.e2e.ts",
     // The upgrade spec needs an old install on disk before the app starts, and an app that
     // migrates at launch (`wdio.upgrade.conf.ts`).
     "./specs/**/*.upgrade.e2e.ts",
