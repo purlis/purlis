@@ -297,7 +297,7 @@ pub struct ChatBrowsers {
     /// The browsers signed in with a login purlis performed, by program, and with which (#2022):
     /// a hand-over goes only to a chat that may log in with it now, and no quit keeps where
     /// they were.
-    logins_held: Mutex<HashMap<String, HeldLogin>>,
+    logins_held: Mutex<HashMap<String, Vec<HeldLogin>>>,
     /// The browsers the person took over, by program (#2022): what they typed may be in a page,
     /// so no quit keeps where they were.
     person_typed: Mutex<Vec<String>>,
@@ -339,7 +339,12 @@ impl HeldLogin {
                 persona.unwrap_or("no persona")
             ));
         }
-        if allowed? != self.identity {
+        // Why it is not allowed may name the login's vault or declaration: the person is told
+        // only that it is not (D-2699-3).
+        let Ok(allowed) = allowed else {
+            return Err(format!("that chat may not log in with {} now", self.login));
+        };
+        if allowed != self.identity {
             return Err(format!(
                 "that chat's {} is declared otherwise than the one this browser signed in with",
                 self.login
@@ -797,6 +802,19 @@ impl ChatBrowsers {
             .retain(|program, _| keep(program));
     }
 
+    /// **`program` holds `login` from now** (#2699), beside every login it held before: a later
+    /// login never takes an earlier one's place, and the same one is kept once.
+    fn signed_in_with(&self, program: &str, login: HeldLogin) {
+        let mut held = self
+            .logins_held
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let logins = held.entry(program.to_owned()).or_default();
+        if !logins.contains(&login) {
+            logins.push(login);
+        }
+    }
+
     /// Whether a login, the person's take-over and an address are recorded of `program`.
     #[cfg(test)]
     pub fn records_of(&self, program: &str) -> (bool, bool, bool) {
@@ -885,21 +903,23 @@ impl ChatBrowsers {
                 "purlis is still ending that browser, so it is not handed over.".to_owned(),
             );
         }
-        // A browser signed in with a login goes only to a chat that may log in with it now.
+        // A browser signed in with logins goes only to a chat that may log in with every one
+        // of them now (#2699): each it was ever signed in with may still hold its session.
         let held = self
             .logins_held
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(program)
-            .cloned();
-        if let Some(held) = &held
-            && let Err(why) = may_log_in(held)
-        {
-            return Err(format!(
-                "This browser is signed in with {}, so it goes only to a chat that may log in \
-                 with {} now, and it stays with no chat: {why}.",
-                held.login, held.login
-            ));
+            .cloned()
+            .unwrap_or_default();
+        for held in &held {
+            if let Err(why) = may_log_in(held) {
+                return Err(format!(
+                    "This browser is signed in with {}, so it goes only to a chat that may log \
+                     in with {} now, and it stays with no chat: {why}.",
+                    held.login, held.login
+                ));
+            }
         }
         let mut chats = self.lock();
         let has = |chat: &Chat| chat.browsers.iter().any(|(_, one)| one == program);
@@ -1081,7 +1101,11 @@ impl ChatBrowsers {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         for one in &mut listed {
-            one.login = held.get(&one.program).map(|held| held.login.clone());
+            // The last it was signed in with.
+            one.login = held
+                .get(&one.program)
+                .and_then(|held| held.last())
+                .map(|held| held.login.clone());
         }
         drop(held);
         listed
@@ -1818,10 +1842,7 @@ impl ChatBrowsers {
                 })?;
             // Opened from a kept store, it holds that login from its first moment (#2699).
             if let Some(kept) = kept_as {
-                self.logins_held
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .insert(program.clone(), kept);
+                self.signed_in_with(&program, kept);
             }
             let name = format!("b{}", chat.next);
             chat.next += 1;
@@ -1965,17 +1986,14 @@ impl ChatBrowsers {
             ) => {
                 // Held from the moment it is tried, whatever its answer (#2022): a login that
                 // timed out, or that the person finished by hand, may have signed it in.
-                self.logins_held
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .insert(
-                        program.clone(),
-                        HeldLogin {
-                            persona: persona_now.clone(),
-                            login: declared.clone(),
-                            identity,
-                        },
-                    );
+                self.signed_in_with(
+                    &program,
+                    HeldLogin {
+                        persona: persona_now.clone(),
+                        login: declared.clone(),
+                        identity,
+                    },
+                );
                 driver.log_in(&program, login).map(|mut browsed| {
                     browsed.note = Some(logged_in_said(&declared, browsed.note.as_deref()));
                     browsed
