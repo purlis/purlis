@@ -512,6 +512,14 @@ impl Contribution {
         Self::read(plane).contributes
     }
 
+    /// [`Self::of`], keeping in `measured` what listing the plane's font files hashed, for the
+    /// theme read made with it (#2696, [`crate::theme::Folders::of_measured`]): a window's
+    /// creation checks the project it opens on is trusted and draws its theme with one hashing
+    /// of its fonts.
+    pub fn of_measured(plane: &Path, measured: &crate::theme::Measured) -> Self {
+        Self::read_measured(plane, measured).contributes
+    }
+
     /// What opening `plane` would do, right now, **and the record that says so**.
     ///
     /// Both halves fail **closed and quiet**: settings charter cannot read contribute nothing,
@@ -532,6 +540,11 @@ impl Contribution {
     /// between a human clicking a button and the app reading a file. Nothing here guards an
     /// approved plane, and nothing here holds the file.
     pub fn read(plane: &Path) -> Reading {
+        Self::read_measured(plane, &crate::theme::Measured::default())
+    }
+
+    /// [`Self::read`], keeping what the font files' listing hashed in `measured`.
+    fn read_measured(plane: &Path, measured: &crate::theme::Measured) -> Reading {
         let mut out = Self::default();
         if let Some(settings) = crate::layer::plane_settings(plane, crate::layer::SETTINGS) {
             out.plugins = settings
@@ -551,7 +564,7 @@ impl Contribution {
                     .insert(persona, crate::personagrant::grant_text(&grant));
             }
         }
-        out.fonts = crate::theme::levels::plane_fonts(plane);
+        out.fonts = crate::theme::levels::plane_fonts(plane, measured);
         let record = out.with_record(plane);
         Reading {
             contributes: out,

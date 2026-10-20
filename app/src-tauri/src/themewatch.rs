@@ -430,6 +430,31 @@ pub(crate) fn forget(label: &str) {
     }
 }
 
+/// The window `label` draws its theme from `target`, on the app's one watch, for a test: what
+/// [`follow`] does for a window, with nobody told.
+#[cfg(test)]
+pub(crate) fn follow_as(label: &str, target: Target) {
+    WATCH
+        .get_or_init(|| ThemeWatch::start(Arc::new(|_: &str, _| {})))
+        .set(label, target);
+}
+
+/// What each window on the app's one watch draws its theme from, for a test.
+#[cfg(test)]
+pub(crate) fn following() -> std::collections::BTreeMap<String, Target> {
+    WATCH
+        .get()
+        .map(|watch| {
+            watch
+                .lock()
+                .windows
+                .iter()
+                .map(|(label, (target, _))| (label.clone(), target.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Every folder watched now, for a test.
 #[cfg(test)]
 fn watching<W: notify::Watcher + Send + 'static>(

@@ -8,7 +8,7 @@
 //! - **A runner's device id and public link key are kept once** ([`keep`]): a later answer for
 //!   a runner already kept, with another device id or key, is refused and what was kept stays
 //!   ([`Refused::KeyChanged`]), as is a device id or key another kept runner holds, or the
-//!   desktop's own device id.
+//!   desktop's own device id or link key.
 //! - **Removing a runner removes everything it is** ([`remove`]): the desktop from the
 //!   runner's peers while the link is up, its container and home volume for a Docker pool,
 //!   whatever state they are in, and its row. Whatever could not be removed is said with how to
@@ -105,18 +105,19 @@ pub fn named(config_root: &Path, name: &str) -> Result<Option<Kept>, Refused> {
         .find(|kept| kept.name() == name))
 }
 
-/// Keep `answered`, what `made`'s runner's pairing answered, for `made`, on the desktop whose
-/// own device id is `ours`: once.
+/// Keep `answered`, what `made`'s runner's pairing answered, for `made`, on the desktop that is
+/// `ours` on its links (its device id and the public half of its link key, as the pairing
+/// handed them to the runner): once.
 ///
 /// A runner of this name kept already with the same container, device id and key is kept as
 /// it was. One with another device id or key is [`Refused::KeyChanged`], and so is one of
 /// another container: what was kept stays. A device id or key another kept runner holds, or
-/// the desktop's own device id, is refused.
+/// the desktop's own device id or link key, is refused.
 pub fn keep(
     config_root: &Path,
     made: &Made,
     answered: &Pinned,
-    ours: &str,
+    ours: &Pinned,
 ) -> Result<Kept, Refused> {
     let _held = crate::machine::Lock::named(config_root, RUNNERS_LOCK);
     let mut kept = read(config_root)?;
@@ -130,9 +131,15 @@ pub fn keep(
             })
         };
     }
-    if answered.device == ours {
+    if answered.device == ours.device {
         return Err(Refused::Other(format!(
             "runner {name} answered with this machine's own device id, so purlis did not keep \
+             it; remove the runner and make it again"
+        )));
+    }
+    if answered.key == ours.key {
+        return Err(Refused::Other(format!(
+            "runner {name} answered with this machine's own link key, so purlis did not keep \
              it; remove the runner and make it again"
         )));
     }

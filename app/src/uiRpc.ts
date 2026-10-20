@@ -1257,37 +1257,21 @@ export const commands = {
 	forgetExtension: __WINDOW_ONLY_RESULT,
 	setExtensionOn: __WINDOW_ONLY_RESULT,
 	openExtensionRecord: __WINDOW_ONLY_RESULT,
+	themeInForce: __WINDOW_ONLY_RESULT,
 	/**
-	 *  **The theme the window draws** (spec #2313): the core's theme engine resolves it from the six
-	 *  theme levels ([`purlis_core::theme::resolve_levels`], #2323) and the window only applies what
-	 *  comes back.
+	 *  **The theme in force at a project and workspace, with no window** (#2697): what
+	 *  [`theme_in_force`] answers for the same question, read the same way, and served on a link.
+	 *  It takes no window and points no theme watch anywhere, so a link's call never changes what
+	 *  any window watches.
 	 * 
-	 *  `at` is the project and workspace in front ([`ThemeAt`]); the engine reads their levels and
-	 *  theme folders itself. With no project in front, `pick` is what the window was told to draw,
-	 *  and the person's machine default is beneath it. `on` is the extensions the project has on
-	 *  (`extensions_on`), `None` with no project in front, when every approved extension's theme may
-	 *  be drawn. `light` is the operating system's appearance, which `system` follows; the window
-	 *  asks again when it changes.
-	 * 
-	 *  The themes approved extensions contribute come from a survey, which reads and fingerprints
-	 *  every extension's files, so it is taken only when the answer needs one and kept until
-	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
-	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
-	 * 
-	 *  **And the theme folders it is read from are watched for this window** (#2324,
-	 *  [`crate::themewatch`]): from the config home and the plane root held here, never from a path
-	 *  the window or a chat names. A save in one tells the window to ask again.
-	 * 
-	 *  **A theme draft of a chat working where the window is draws in place of every level**
-	 *  (#2332, [`crate::themedrafts`]): the chats are this app's own record of where each works, and
-	 *  the draft is drawn only while it holds every hard floor; its last good version stays
-	 *  otherwise. `kept` asks for the theme as kept, without any draft: what Compare shows while
-	 *  it is held. The drafts are watched with the folders.
+	 *  **It draws the theme as kept, never a chat's draft** (#2332): a draft is drawn in the
+	 *  person's own window, for the chats this app records working where it is, and is watched with
+	 *  that window's folders. A link is answered the theme the levels choose.
 	 */
-	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
+	themeInForceAt: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null, kept: boolean | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at, kept })),
+} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at })),
 	themeFont: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The person's density and font override, read by the core's theme engine** (#2326): what
