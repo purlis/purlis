@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792531397506,
+  "lastUpdate": 1792534414275,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4310,6 +4310,42 @@ window.BENCHMARK_DATA = {
             "value": 323,
             "unit": "MB",
             "extra": "median of 6 samples: 357.6, 310.1, 321.7, 324.4, 325.2, 218.3 MB; window 144.8 MB, session host 171.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "16c4583aa7351fd7cc2efaf5994d6fbd821a3d1f",
+          "message": "Theme docs: a geometry section in themes.md (#2847)\n\n* Theme docs: a geometry section in themes.md\n\n`purlis docs show themes` now has a Geometry section: every geometry\ntoken with its unit, bounds, Classic's comfortable and compact values\nand what it reaches; that geometry is set per appearance; density's\ncompact layer (`compact_of`); and the two line-fits checks in both\ndensities. A core test holds the table to STEPS row for row and the\nfit lines to FITS.\n\nThe theme skill keeps the corners and heights inline and points at the\ndocs for the rest; its test now holds each row it keeps to STEPS.\n\nCloses #2821\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme docs: format the geometry pins\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme docs: what the focus ring, space.8 and base reach; defaults under extends\n\nThe geometry table names what `focus-ring.width` and `.inset` reach\n(the selected row's edge too), and the docs name the rings held at\n2px. `space.8` reaches menu and tooltip widths. `font-size.base` and\n`font-weight.regular` name what they reach, and the docs say the\nwindow's own text size is the person's setting. A token a theme\nleaves out keeps the theme it extends, else Classic's.\n\nThe docs test now holds the count of fit lines, Classic's sums in\nboth densities, and the moved-token sentence built from STEPS; the\nskill test holds the skill's fit lines and moved tokens. The skill's\npointer to the docs sits below its table.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme docs: the focus ring's reach is open-ended; base reaches segmented controls\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T01:12:28+04:00",
+          "tree_id": "6c24ab7fcbe168dc4f9b24a23026f758a926ea26",
+          "url": "https://github.com/purlis/purlis/commit/16c4583aa7351fd7cc2efaf5994d6fbd821a3d1f"
+        },
+        "date": 1792534412824,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 903,
+            "unit": "MB",
+            "extra": "median of 3 samples: 830, 903, 1011 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 367.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 343.8, 399.5, 385.7, 367.5, 368.4, 249.7 MB; window 163.3 MB, session host 209.3 MB"
           }
         ]
       }
