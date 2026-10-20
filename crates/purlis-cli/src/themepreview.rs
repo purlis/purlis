@@ -82,6 +82,8 @@ mod tests {
                 painted: vec![Painted {
                     theme: "purlis-classic".into(),
                     appearance: Appearance::Light,
+                    high_contrast: false,
+                    preview: false,
                     width: 2560,
                     height: 1600,
                     millis: 700,
