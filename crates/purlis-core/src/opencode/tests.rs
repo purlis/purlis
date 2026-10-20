@@ -146,8 +146,14 @@ fn a_session_config_hands_the_shim_the_skills_directory_as_its_option() {
 fn the_app_chats_shim_adds_charters_skills_beside_the_operators_own() {
     let text = shim(Arming::Session);
     assert!(text.contains("config: async (cfg) =>"), "{text}");
-    // Appended to what is there, never in its place, and never twice.
-    assert!(text.contains("if (!paths.includes(skills)) cfg.skills.paths = [...paths, skills]"));
+    // Appended to what is there, never in its place, and never twice: one directory given as a
+    // string, or several as a list (ADR 0063 as amended 2026-10-20).
+    assert!(text.contains(
+        "const given = Array.isArray(options?.skills) ? options.skills : [options?.skills]"
+    ));
+    assert!(text.contains(
+        "cfg.skills.paths = [...paths, ...skills.filter((dir) => !paths.includes(dir))]"
+    ));
     assert!(text.contains("async (plugin, options) =>"), "{text}");
     // The installed guard is for opencode outside the app: it hands no skills.
     let guard = shim(Arming::GuardOnly(Path::new("/bin/charter")));
