@@ -362,7 +362,11 @@ async fn accept(
                                      windows as it holds");
                                 return;
                             }
-                            let _ = session::serve(link, hosting, None).await;
+                            // Its first command says whether it is this host's or relayed to
+                            // a runner this machine keeps (`relay_to`, 1.33, #2679).
+                            let _ =
+                                session::serve(link, crate::routing::Routed::new(hosting), None)
+                                    .await;
                         }
                         Err(refused) => say(&format!("a connection was refused: {refused}")),
                     }

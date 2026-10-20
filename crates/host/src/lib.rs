@@ -62,6 +62,8 @@ mod recording;
 #[cfg(unix)]
 mod relay;
 #[cfg(unix)]
+mod routing;
+#[cfg(unix)]
 mod serving;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
@@ -95,6 +97,8 @@ pub use purlis_session_protocol as protocol;
 pub use recording::{Ended, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
 pub use relay::{Dial, Keep, Relay};
+#[cfg(unix)]
+pub use routing::{RelaysTo, Routed};
 #[cfg(unix)]
 pub use serving::{
     Answering, HostError, LOCK, Pairing, Place, Unpairing, Window, serve, serve_answering,

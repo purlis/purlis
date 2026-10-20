@@ -609,8 +609,9 @@ fn pairing_runs_the_bridge_to_pair_as_the_runners_user_and_group_in_the_containe
 /// of its folder: `run` with `id`, `container inspect` with `inspect`, `volume inspect` with
 /// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and
 /// `exec` with `paired`, after keeping its standard input, and `container ls` with
-/// `containers`. `run` fails where `run-fails` is there. `container rm` and `volume rm` exit with what `rm-fails-container` or
-/// `rm-fails-volume` holds, else what `rm-fails` holds, 0 when there is none.
+/// `containers`; `run` fails where `run-fails` is there. `container rm` and `volume rm` exit
+/// with what `rm-fails-container` or `rm-fails-volume` holds, else what `rm-fails` holds, 0
+/// when there is none.
 pub(crate) struct FakeDocker {
     dir: tempfile::TempDir,
 }
@@ -621,7 +622,8 @@ impl FakeDocker {
         let at = |name: &str| dir.path().join(name).display().to_string();
         let script = format!(
             "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$1 $2\" in\n  \
-             'run '*) [ -f '{run_fails}' ] && {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
+             'run '*) [ -f '{run_fails}' ] && \
+             {{ echo 'the runtime refused it' >&2; exit 125; }}; cat '{id}' ;;\n  \
              'container inspect') cat '{inspect}' ;;\n  \
              'volume inspect') cat '{volume}' ;;\n  \
              'volume ls') cat '{volumes}' 2>/dev/null || true ;;\n  \
@@ -981,4 +983,30 @@ fn a_runner_is_not_made_where_a_container_of_its_name_is_already_there() {
     let log = fake.file("log");
     assert!(!log.contains("run "), "{log}");
     assert!(!log.contains(" rm "), "{log}");
+}
+
+#[test]
+fn docker_is_found_where_its_installers_put_it_before_the_path() {
+    let (on_path, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let path = format!("relative:{}", on_path.path().display());
+    let installed = DOCKER_INSTALLED
+        .iter()
+        .map(std::path::PathBuf::from)
+        .find(|at| at.is_file());
+    // None at home and none on the path: the error says how to get one, unless this machine has
+    // Docker where an installer puts it, which a test cannot take away.
+    match Docker::on_this_machine(Some(&path), Some(home.path())) {
+        Err(refused) => assert!(refused.0.contains("install Docker"), "{refused}"),
+        Ok(found) => assert_eq!(Some(found.0), installed),
+    }
+    stand_in::program(on_path.path(), "docker", "#!/bin/sh\n");
+    std::fs::create_dir_all(home.path().join(".orbstack/bin")).unwrap();
+    stand_in::program(&home.path().join(".orbstack/bin"), "docker", "#!/bin/sh\n");
+    // The path comes last: an installer's place is taken before it.
+    let found = Docker::on_this_machine(Some(&path), Some(home.path())).unwrap();
+    assert_ne!(found.0, on_path.path().join("docker"));
+    assert_eq!(
+        found.0,
+        installed.unwrap_or_else(|| home.path().join(".orbstack/bin/docker"))
+    );
 }

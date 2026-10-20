@@ -438,7 +438,7 @@ async fn the_window_is_told_once_that_the_link_is_down_and_then_that_it_is_back(
     window.cable.reach(Reach::Nothing);
     window.cable.cut();
     match window.pushed().await {
-        Pushed::LinkDown { why } => assert!(!why.is_empty()),
+        Pushed::LinkDown { why, .. } => assert!(!why.is_empty()),
         other => panic!("the window was told {other:?} before the link was down"),
     }
     // Host A tries again and again while nothing answers, and the window is told nothing more.
@@ -472,10 +472,12 @@ async fn a_host_at_the_other_end_with_a_key_that_is_not_pinned_is_never_linked()
     .await
     .expect("host A keeps trying");
 
+    // Refused as the runner's key having changed (1.33, #2679), so the window can offer to
+    // remove it.
     let refused = window.client.write(&program, b"typed").await.unwrap_err();
     assert_eq!(
         refused.refusal().map(|refusal| refusal.code.as_str()),
-        Some(session::NOT_STARTED)
+        Some(session::KEY_CHANGED)
     );
     assert!(window.another.ran().is_empty());
 }
@@ -1006,6 +1008,7 @@ impl session::Host for SaysItsLink {
         for pushed in [
             Pushed::LinkDown {
                 why: "host B's own link".into(),
+                key_changed: false,
             },
             Pushed::LinkBack {},
             Pushed::Event(event(1)),

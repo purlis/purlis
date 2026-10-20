@@ -69,7 +69,7 @@ async fn linked(
             tokio::spawn(async move { while links.next().await.is_some() {} });
             Ok(client)
         }
-        Ok(Some(Linked::Down(why))) => Err(why),
+        Ok(Some(Linked::Down(down))) => Err(down.why),
         Ok(None) => Err("the kept link ended".into()),
         Err(_) => Err("no link within the test's patience".into()),
     }
