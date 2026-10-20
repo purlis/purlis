@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792529529281,
+  "lastUpdate": 1792531381618,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4274,6 +4274,42 @@ window.BENCHMARK_DATA = {
             "value": 319.1,
             "unit": "MB",
             "extra": "median of 6 samples: 315.9, 342.8, 355.2, 318.7, 319.6, 249.4 MB; window 144.1 MB, session host 177.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7f6269443ec3377e4d3abf4719cb7fbdadaa4253",
+          "message": "Theme drafts: test the queued close question; a link hands a drafts close to the window (#2826)\n\n* Theme drafts: test the queued close question; a link hands a drafts close to the window (#2761)\n\nA close that keeps several theme drafts asks who draws each kept theme in\nturn, now tested at the window. A link's close of a chat that has drafts\nis handed to the window holding the project, which comes to the front and\nasks Keep or Revert there, saying a link asked and starting on Cancel; the\nlink is told the close waits in the window and settles nothing itself. A\nhanded close is not asked while another close question is on screen.\n\nThe drafts sweep adopts a chat's drafts folder that names no clone only in\nthe plane's own state folder, never under $PURLIS_HOME: it records this\nclone as the owner, then deletes the folder once its chat is gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme drafts: a link's close never moves the window over a question (#2761)\n\nThe window hears a handed close only when it is addressed to it, and asks\nit only when no question is up anywhere in the window; otherwise nothing\non screen changes and the project's status line says it was not asked.\nThe window, not the core, raises itself and brings the project forward.\nA link is answered the same whatever its chats have, and its list of\nchats is capped and read each once. A $PURLIS_HOME set to this plane's\nown state folder counts as this clone's own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme drafts: a link's close not asked is said once its ask is handled (#2761)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme drafts: a link's close waits on every dialog and on a close being asked (#2761)\n\nA handed close is not asked while any dialog is drawn in the window, nor\nwhile the person's own close is still being asked about: a close counts\nas a question from its first step. Whether a chat has a theme draft is\ntold by whether its drafts folder holds a theme folder, never by what\nthe draft says.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T00:42:59+04:00",
+          "tree_id": "cdc7c60fbf82573cd2df70c4df05a88cb36ff04e",
+          "url": "https://github.com/purlis/purlis/commit/7f6269443ec3377e4d3abf4719cb7fbdadaa4253"
+        },
+        "date": 1792531380377,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1012,
+            "unit": "MB",
+            "extra": "median of 3 samples: 830, 1012, 1055 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 323,
+            "unit": "MB",
+            "extra": "median of 6 samples: 357.6, 310.1, 321.7, 324.4, 325.2, 218.3 MB; window 144.8 MB, session host 171.6 MB"
           }
         ]
       }
