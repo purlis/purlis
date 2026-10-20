@@ -98,7 +98,7 @@ fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
             .as_nanos()
     );
     let pool = Pool::new(&name, Image::pinned(&image).unwrap(), Set::default()).unwrap();
-    purlis_core::pools::add(config.path(), &docker, &pool, &desktop, &desktop.device)
+    purlis_core::pools::add(config.path(), &docker, &pool, &desktop)
         .expect("the pool is added and its runner paired");
     let removes = scopeguard(config.path().to_path_buf(), docker.clone(), name.clone());
 
