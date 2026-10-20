@@ -8,6 +8,7 @@
 
 use serde_json::{Value, json};
 
+use super::super::DRAWN_TWICE;
 use super::{browser, id, mouse, ref_of, snapshot};
 use crate::drive::{Call, DragTo, Refusal};
 
@@ -389,4 +390,36 @@ fn a_click_on_an_element_of_the_page_left_of_its_window_is_answered_not_shown() 
 
     assert_eq!(answer, Err(Refusal::NotShown(more)));
     assert!(mouse(&engine).is_empty(), "nothing reaches the page");
+}
+
+#[test]
+fn each_document_draws_its_scroll_before_an_act_in_a_frame_is_aimed() {
+    let (browser, engine) = browser();
+    let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
+
+    browser.call(&id(2), Call::Click { target: pay }).unwrap();
+
+    let sent = engine.all_sent();
+    let last_scroll = sent
+        .iter()
+        .rposition(|s| s.method == "DOM.scrollIntoViewIfNeeded")
+        .unwrap();
+    let press = sent
+        .iter()
+        .position(|s| s.method == "Input.dispatchMouseEvent" && s.params["type"] == "mousePressed")
+        .unwrap();
+    for session in ["S-PAGE-1", "S-PAYMENT"] {
+        let drawn = sent
+            .iter()
+            .enumerate()
+            .find(|(_, s)| {
+                s.method == "Runtime.evaluate"
+                    && s.params["expression"] == DRAWN_TWICE
+                    && s.session.as_deref() == Some(session)
+            })
+            .map(|(n, s)| (n, s.params["uniqueContextId"].clone()))
+            .unwrap_or_else(|| panic!("{session} never drew its scroll"));
+        assert!(last_scroll < drawn.0 && drawn.0 < press, "{session}");
+        assert!(drawn.1.is_string(), "in purlis's own world");
+    }
 }

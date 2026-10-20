@@ -19,3 +19,9 @@ adds two rules; nothing else changes, and the session protocol does not.
 3. **A drag by an offset ends where the agent says.** The end of a drag by an offset is the
    agent's own point on the page, as before, and is not held to the window.
    *D-2690-3, decided in implementation, to be confirmed.*
+4. **Aimed once each document has drawn its scroll.** After the scrolls, each document from the
+   page to the element's is asked, in purlis's own world, to answer once it has drawn two frames,
+   for at most a second each, before where the frames are drawn is read for the aim: the browser
+   routes a press by where each document is drawn, which follows a scroll by a frame or more. A
+   document that draws nothing in that time is not waited for longer; the point is still read
+   and contained as above. *D-2690-4, decided in implementation, to be confirmed.*
