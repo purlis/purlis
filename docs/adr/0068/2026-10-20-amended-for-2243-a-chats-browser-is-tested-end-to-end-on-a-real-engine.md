@@ -24,3 +24,9 @@ Nothing a person or a chat sees changes.
    the engine for each test that starts one, so the tests are few and each covers a whole story.
    Off CI they run when `PURLIS_TEST_PINNED_ENGINE` is set. *D-2243-3, decided in
    implementation, to be confirmed.*
+4. **CI lets the test's engine make its sandbox.** Ubuntu 23.10 and later let a program make
+   user namespaces, which the engine's sandbox needs, only under an AppArmor profile that says
+   so. Chrome's own package installs one, and the engine purlis downloads has none, so it ends at
+   its start (#2835, which decides what purlis ships for this). Until then, the `rust` job
+   installs a profile for the engine under the temporary folder alone, and the engine's sandbox
+   stays on. *D-2243-5, decided in implementation, to be confirmed.*
