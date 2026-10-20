@@ -1213,6 +1213,82 @@ fn a_drag_cut_by_the_person_taking_over_is_cancelled_let_go_and_handed_back() {
 }
 
 #[test]
+fn a_drag_cut_before_the_engine_tells_of_its_own_drag_cancels_that_drag_once_it_does() {
+    // In this order: every move made with the button held, the person takes over, the drag
+    // stops waiting for the engine's word and ends, and only then does the engine say its own
+    // drag started (#2839).
+    let (browser, engine) = browser_with(Limits {
+        drag_starts_within: Duration::from_millis(50),
+        ..limits()
+    });
+    {
+        let mut model = super::lock(&engine.model);
+        model.native_drag = true;
+        model.drag_told_when_asked = true;
+    }
+    let browser = Arc::new(browser);
+    let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
+    let dragging = Arc::clone(&browser);
+    let call = std::thread::spawn(move || {
+        dragging.call(
+            &id(2),
+            Call::Drag {
+                from: volume,
+                to: DragTo::Offset { x: 40.0, y: -5.0 },
+            },
+        )
+    });
+    let held_moves = || {
+        engine
+            .sent("Input.dispatchMouseEvent")
+            .iter()
+            .filter(|s| s.params["type"] == "mouseMoved" && s.params["buttons"] == 1)
+            .count()
+    };
+    let started = std::time::Instant::now();
+    while held_moves() < super::DRAG_STEPS {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the drag never made its moves"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    browser.take_over();
+    assert!(call.join().unwrap().is_err());
+    assert!(
+        drag_kinds(&engine).is_empty(),
+        "no word yet, nothing to cancel"
+    );
+    assert!(drags_handed_back(&engine));
+    engine.tell_of_the_held_drag();
+    let told = std::time::Instant::now();
+    while drag_kinds(&engine).is_empty() {
+        assert!(
+            told.elapsed() < Duration::from_secs(5),
+            "the engine's late drag was never cancelled"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(drag_kinds(&engine), ["dragCancel"]);
+    let cancel = engine.sent("Input.dispatchDragEvent");
+    assert_eq!(cancel[0].params["data"]["items"][0]["data"], "card");
+    assert_eq!(cancel[0].session.as_deref(), Some("S-PAGE-1"));
+}
+
+#[test]
+fn a_word_of_the_engine_s_drag_while_no_drag_was_asked_for_is_not_acted_on() {
+    let (browser, engine) = browser();
+    engine.emit(
+        "Input.dragIntercepted",
+        json!({"data":{"items":[],"dragOperationsMask":1}}),
+        Some("S-PAGE-1"),
+    );
+    std::thread::sleep(Duration::from_millis(60));
+    snapshot(&browser, 1);
+    assert!(drag_kinds(&engine).is_empty());
+}
+
+#[test]
 fn a_drag_whose_browser_ends_on_the_way_is_handed_back() {
     let (browser, engine) = browser();
     super::lock(&engine.model).native_drag = true;
