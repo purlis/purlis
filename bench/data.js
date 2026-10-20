@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792481578935,
+  "lastUpdate": 1792483145682,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18732,6 +18732,48 @@ window.BENCHMARK_DATA = {
             "value": 102.05839900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 99.692, 101.134, 102.058, 102.180, 102.329 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bf16e06d79e73d854a8065b2687ac84838497b68",
+          "message": "Kept browser logins: open under the lock, keep only fresh browsers (#2730)\n\n* Kept browser logins: open under the lock, keep only fresh browsers\n\nA store's file and generation are read under the keyring's lock that a\nwrite-back holds. Removing a profile marks it removed, and a browser\nthat began before then never makes a store under it. A build with no\nlist of what is not kept keeps no login. Only a browser that did\nnothing before its first login, or one opened from that store, is kept.\nLinux backups are documented; sealing one site's cookies alone is\ndecided against (ADR 0095 amendment).\n\nCloses #2693\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Kept logins: re-check a removal at write-back, keep a login only alone\n\nA removal marks the profile under the lock before it decides anything, the\nmark replaced whole; a write-back checks it again. A browser keeps a login\nonly where every login tried in it was that one. Whether a browser is fresh\nis an atomic, and a refused input or take-over leaves it fresh.\n\nRefs #2693\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Kept logins: let go of a store once another login is tried\n\nA browser that holds one login's store and has another login tried in\nit writes nothing back, so that store stays as last written. The\nperson's input counts as it is sent. A profile removal that cannot mark\nthe profile removed removes nothing and says so.\n\nRefs #2693\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T11:56:45+04:00",
+          "tree_id": "4aa68e6e9104a3b89a4cf461bb33f2ea36c58e2c",
+          "url": "https://github.com/purlis/purlis/commit/bf16e06d79e73d854a8065b2687ac84838497b68"
+        },
+        "date": 1792483143999,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4709695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.464, 0.466, 0.471, 0.475, 0.480 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.270339999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.212, 16.264, 16.270, 16.303, 16.383 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.626239,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.341, 101.609, 101.626, 101.717, 101.758 ms"
           }
         ]
       }
