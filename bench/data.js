@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792524356855,
+  "lastUpdate": 1792525917290,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19572,6 +19572,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3701325,
             "unit": "ms",
             "extra": "median of 5 runs: 101.401, 102.266, 102.370, 102.709, 104.728 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5061598d7a83c0eebaa6707c0f0e6c3b87c36b98",
+          "message": "Theme e2e: the native window's background colour from a real pick (#2801)\n\n* Theme e2e: the native window's background colour from a real pick\n\nnative_window_drawn answers the window's background colour too, read back\nfrom the platform (NSWindow on macOS, the WebKitGTK webview on Linux), and\nthe picked-theme launch checks it against purlis-light's window.background,\nread from the resolved theme.\n\nCloses #2760\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Mutation (to be reverted): the window is given a colour one step off its theme's\n\nThrowaway: shows the picked launch's colour check fails when the window is\nnot given the theme's window.background. Reverted in the next commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Revert the mutation: the window is given its theme's colour again\n\nThe tree is the fix's again (a5579aa).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Native window read-back: an unread colour is null, checked against the drawn frame\n\nnative_window_drawn answers background as null where the platform gives no\ncolour, so the appearance is always read. The picked launch compares the\ncolour with the window.background of the frame the page draws.\n\nPart of #2760\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Native window read-back: the appearance's error is worded where it is read\n\nThe copy guide's reader reads a command's error where it is made; the colour\nhalf stays infallible.\n\nPart of #2760\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T23:26:02+04:00",
+          "tree_id": "daf0047e8fcd4f134f0accd8abcb2438a4ba7368",
+          "url": "https://github.com/purlis/purlis/commit/5061598d7a83c0eebaa6707c0f0e6c3b87c36b98"
+        },
+        "date": 1792525915556,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.517174,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.478, 0.492, 0.517, 0.518, 0.520 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.372473,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.164, 16.365, 16.372, 16.416, 16.463 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.84015099999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.610, 101.079, 101.840, 101.847, 102.063 ms"
           }
         ]
       }
