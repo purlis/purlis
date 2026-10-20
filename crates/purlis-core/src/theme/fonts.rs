@@ -42,11 +42,17 @@
 //! when this machine's approval of the project holds that file with those bytes' digest; any
 //! other refuses the theme. The person's own folders' faces need no approval.
 //!
+//! **A project's font file is hashed once for each read** (#2696, [`Measured`]): the trust
+//! check's listing of a project's fonts hands its digests to the theme read made with it, and
+//! each frame a window's creation resolves hands them to the next, for a file that is the same
+//! file, unchanged and settled. The digest is still checked against the approval, and a face is
+//! still served only once its bytes, read again, have it.
+//!
 //! **The CSS family name is purlis's**: a face is registered under a name the engine makes from
 //! its digest ([`Font::stack`]); the theme's `family` is a label, said in Settings, and never
 //! reaches a declaration.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -332,6 +338,8 @@ pub(crate) struct ThemeDir {
 struct Approved {
     files: std::sync::Arc<BTreeMap<String, String>>,
     folder: String,
+    /// What the read this folder is part of has hashed already.
+    measured: Measured,
 }
 
 impl ThemeDir {
@@ -357,14 +365,19 @@ impl ThemeDir {
 
     /// The folder, whose faces are read only when `files` (a project's approved font files,
     /// keyed by their path in the project) holds each with its digest; `folder` is its path
-    /// in the project.
+    /// in the project, and `measured` what the read it is part of has hashed already.
     #[must_use]
     pub(crate) fn approved_only(
         mut self,
         files: std::sync::Arc<BTreeMap<String, String>>,
         folder: String,
+        measured: Measured,
     ) -> Self {
-        self.approved = Some(Approved { files, folder });
+        self.approved = Some(Approved {
+            files,
+            folder,
+            measured,
+        });
         self
     }
 
@@ -460,6 +473,153 @@ fn kept() -> std::sync::MutexGuard<'static, BTreeMap<String, Vec<Kept>>> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// **The font files one read has hashed already** (#2696): each one's digest and size, by its
+/// path in the project and by the file as it was opened — its device, its inode, its size, and
+/// its modification and change times. A read that meets the same file again, with nothing of
+/// that changed, takes its digest from here instead of reading and hashing it a second time.
+///
+/// - **It lives as long as the read it is made for**: one window's creation, or one ask of the
+///   theme in force. Nothing keeps it for the process.
+/// - **Only a settled file is kept**: one whose change time is at least [`SETTLED`] before it was
+///   read. A file written since has a later change time, which no write can set back, so it is
+///   never taken for the one measured.
+/// - **Only a project's or a workspace's faces are asked here**, the files the trust check lists.
+///   A face it answers for is drawn only when its digest is the one the approval holds, and
+///   [`served`] answers its bytes only once they are read again and have that digest.
+#[derive(Debug, Clone)]
+pub struct Measured {
+    kept: std::sync::Arc<Mutex<Digests>>,
+    hashed: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    settled: std::time::Duration,
+}
+
+/// What a [`Measured`] holds: a file's digest and size, by its path in the project and the file
+/// as it was opened.
+type Digests = HashMap<(String, Stamp), (String, u64)>;
+
+/// How long before a file is read its change time is, at least, for its digest to be kept: two
+/// seconds, the coarsest timestamp a file system purlis reads keeps (FAT's), so a later write
+/// always has a later change time than the one kept.
+pub const SETTLED: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The most files one [`Measured`] keeps: every file a project's contribution lists, and the
+/// faces of the themes read with it.
+const MOST_MEASURED: usize = 4 * MOST_PROJECT_FONTS;
+
+impl Default for Measured {
+    fn default() -> Self {
+        Self::settled_after(SETTLED)
+    }
+}
+
+/// Two reads are the same read whatever they have measured: what is kept only saves work.
+impl PartialEq for Measured {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Measured {}
+
+impl Measured {
+    /// One that keeps a file whose change time is at least `settled` before it is read: a test's
+    /// fresh files are kept with [`std::time::Duration::ZERO`].
+    pub fn settled_after(settled: std::time::Duration) -> Self {
+        Self {
+            kept: std::sync::Arc::default(),
+            hashed: std::sync::Arc::default(),
+            settled,
+        }
+    }
+
+    /// How many font files the read it is made for has hashed.
+    pub fn hashed(&self) -> usize {
+        self.hashed.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// How many files it holds the digest of.
+    pub fn len(&self) -> usize {
+        self.lock().len()
+    }
+
+    /// Whether it holds none.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Digests> {
+        self.kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The digest and size of `named`, opened as `stamp`, when it was measured as that.
+    fn recall(&self, named: &str, stamp: &Stamp) -> Option<(String, u64)> {
+        self.lock().get(&(named.to_owned(), stamp.clone())).cloned()
+    }
+
+    /// Keeps `named`'s digest and size, hashed now from the file read as `stamp` at `read`,
+    /// when it had settled by then.
+    fn keep(
+        &self,
+        named: String,
+        stamp: Option<Stamp>,
+        read: std::time::SystemTime,
+        known: (String, u64),
+    ) {
+        self.hashed
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // A file whose size is not what was read changed while it was read.
+        let Some(stamp) = stamp.filter(|stamp| stamp.bytes == known.1) else {
+            return;
+        };
+        let settled = read
+            .checked_sub(self.settled)
+            .is_some_and(|by| stamp.changed <= by);
+        if !settled {
+            return;
+        }
+        let mut kept = self.lock();
+        if kept.len() < MOST_MEASURED {
+            kept.insert((named, stamp), known);
+        }
+    }
+}
+
+/// A file as it was opened: what a write to it, or a file put in its place, changes.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct Stamp {
+    device: u64,
+    inode: u64,
+    bytes: u64,
+    modified: (i64, i64),
+    changed: std::time::SystemTime,
+}
+
+impl Stamp {
+    /// The file `found` describes, from the descriptor it was opened as; `None` off unix.
+    #[cfg(unix)]
+    fn of(found: &std::fs::Metadata) -> Option<Self> {
+        use std::os::unix::fs::MetadataExt;
+        let changed = std::time::UNIX_EPOCH.checked_add(std::time::Duration::new(
+            u64::try_from(found.ctime()).ok()?,
+            u32::try_from(found.ctime_nsec()).ok()?,
+        ))?;
+        Some(Self {
+            device: found.dev(),
+            inode: found.ino(),
+            bytes: found.len(),
+            modified: (found.mtime(), found.mtime_nsec()),
+            changed,
+        })
+    }
+
+    #[cfg(not(unix))]
+    fn of(_found: &std::fs::Metadata) -> Option<Self> {
+        None
+    }
+}
+
 /// Whether `name` is a face's file name in `fonts/`: what [`face_file`] takes after `fonts/`.
 pub(crate) fn is_face_name(name: &str) -> bool {
     face_file(&format!("fonts/{name}")).is_some()
@@ -491,12 +651,14 @@ fn digest_of(listed: &str) -> &str {
 
 /// **The face `name` in the folder `fonts` holds, measured** for a project's contribution:
 /// opened from the handle refusing a link, a plain woff2 file of at most `most` bytes (and
-/// never past [`MOST_FONT_BYTES`]); its digest and its size, or `None`.
+/// never past [`MOST_FONT_BYTES`]); its digest and its size, or `None`. Kept in `memo` as
+/// `named`, its path in the project, for the theme read the contribution is handed to.
 #[cfg(unix)]
 pub(crate) fn measured(
     fonts: &std::os::fd::OwnedFd,
     name: &str,
     most: u64,
+    memo: (&Measured, String),
 ) -> Option<(String, u64)> {
     use std::io::Read;
     let most = most.min(MOST_FONT_BYTES);
@@ -515,10 +677,14 @@ pub(crate) fn measured(
     if !found.file_type().is_file() || found.len() > most {
         return None;
     }
+    let read = std::time::SystemTime::now();
     let mut bytes = Vec::new();
     (&mut open).take(most + 1).read_to_end(&mut bytes).ok()?;
     let size = bytes.len() as u64;
-    (size <= most && bytes.starts_with(WOFF2)).then(|| (hex(&bytes), size))
+    let known = (size <= most && bytes.starts_with(WOFF2)).then(|| (hex(&bytes), size))?;
+    let (measured, named) = memo;
+    measured.keep(named, Stamp::of(&found), read, known.clone());
+    Some(known)
 }
 
 /// Why a face of a project's or a workspace's theme folder that is read is not drawn: `named`,
@@ -590,7 +756,6 @@ fn missed(shown: &str, why: Missed) -> String {
 /// The face `name` in the folder `fonts` holds, opened from that handle refusing a link, read
 /// whole under the cap, and a woff2 file by its signature: its bytes, or why not.
 fn read_face(fonts: &Store, name: &str, shown: &str) -> Result<Vec<u8>, String> {
-    use std::io::Read;
     let fonts = match fonts {
         Store::Held(fonts) => fonts,
         Store::BuiltIn(files) => {
@@ -610,31 +775,80 @@ fn read_face(fonts: &Store, name: &str, shown: &str) -> Result<Vec<u8>, String> 
             return Ok(bytes.to_vec());
         }
     };
-    let mut open = held::face(fonts, name).map_err(|why| missed(shown, why))?;
+    let (mut open, _) = opened_face(fonts, name, shown)?;
+    read_opened(&mut open, shown)
+}
+
+/// The face `name` in the held folder `fonts`, opened from that handle refusing a link: a plain
+/// file under the cap, and what it is.
+fn opened_face(
+    fonts: &held::Handle,
+    name: &str,
+    shown: &str,
+) -> Result<(std::fs::File, std::fs::Metadata), String> {
+    let open = held::face(fonts, name).map_err(|why| missed(shown, why))?;
     let found = open
         .metadata()
         .map_err(|why| format!("purlis could not read {shown}: {why}"))?;
     if !found.file_type().is_file() {
         return Err(format!("{shown} is not a plain file"));
     }
-    let too_big = |bytes: u64| {
-        format!("{shown} is {bytes} bytes, and a font is never larger than {MOST_FONT_BYTES}")
-    };
     if found.len() > MOST_FONT_BYTES {
-        return Err(too_big(found.len()));
+        return Err(too_big(shown, found.len()));
     }
+    Ok((open, found))
+}
+
+/// Why `shown`, of `bytes` bytes, is not read.
+fn too_big(shown: &str, bytes: u64) -> String {
+    format!("{shown} is {bytes} bytes, and a font is never larger than {MOST_FONT_BYTES}")
+}
+
+/// The bytes of the face `open`, read whole under the cap, and a woff2 file by its signature.
+fn read_opened(open: &mut std::fs::File, shown: &str) -> Result<Vec<u8>, String> {
+    use std::io::Read;
     let mut bytes = Vec::new();
-    (&mut open)
-        .take(MOST_FONT_BYTES + 1)
+    open.take(MOST_FONT_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|why| format!("purlis could not read {shown}: {why}"))?;
     if bytes.len() as u64 > MOST_FONT_BYTES {
-        return Err(too_big(bytes.len() as u64));
+        return Err(too_big(shown, bytes.len() as u64));
     }
     if !bytes.starts_with(WOFF2) {
         return Err(format!("{shown} is not a woff2 file"));
     }
     Ok(bytes)
+}
+
+/// **The digest and size of the face `name`** in `fonts`, read as [`read_face`] reads it. For a
+/// project's or a workspace's face, `memo` is what this read has measured and its path in the
+/// project: the digest comes from there for the file already measured, unchanged, and is kept
+/// there once it is hashed here.
+fn digest_face(
+    fonts: &Store,
+    name: &str,
+    shown: &str,
+    memo: Option<(&Measured, String)>,
+) -> Result<(String, u64), String> {
+    let (Store::Held(held), Some((measured, named))) = (fonts, memo) else {
+        return read_face(fonts, name, shown).map(|bytes| {
+            let size = bytes.len() as u64;
+            (hex(&bytes), size)
+        });
+    };
+    let (mut open, found) = opened_face(held, name, shown)?;
+    let stamp = Stamp::of(&found);
+    if let Some(known) = stamp
+        .as_ref()
+        .and_then(|stamp| measured.recall(&named, stamp))
+    {
+        return Ok(known);
+    }
+    let read = std::time::SystemTime::now();
+    let bytes = read_opened(&mut open, shown)?;
+    let known = (hex(&bytes), bytes.len() as u64);
+    measured.keep(named, stamp, read, known.clone());
+    Ok(known)
 }
 
 /// **The bytes of the font file whose digest is `asset`**, for the window to make the face
@@ -934,15 +1148,20 @@ fn face_of(
             return None;
         }
     };
-    match read_face(fonts, &file, &shown) {
-        Ok(bytes) => {
-            let asset = hex(&bytes);
-            if let Some(approved) = folder.approved {
-                let named = format!("{}/fonts/{file}", approved.folder);
+    let named = folder
+        .approved
+        .map(|approved| format!("{}/fonts/{file}", approved.folder));
+    let memo = folder
+        .approved
+        .zip(named.clone())
+        .map(|(approved, named)| (&approved.measured, named));
+    match digest_face(fonts, &file, &shown, memo) {
+        Ok((asset, size)) => {
+            if let Some((approved, named)) = folder.approved.zip(named) {
                 let approved_digest = approved.files.get(&named).map(|listed| digest_of(listed));
                 if approved_digest != Some(asset.as_str()) {
                     let before = fonts.names_before(&file);
-                    let (why, listed) = unapproved(&named, bytes.len() as u64, approved, before);
+                    let (why, listed) = unapproved(&named, size, approved, before);
                     if listed {
                         folder
                             .awaiting
