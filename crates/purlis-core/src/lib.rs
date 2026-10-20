@@ -122,6 +122,8 @@ pub mod leakguard;
 pub mod leftovers;
 #[cfg(test)]
 mod lineartime;
+#[cfg(unix)]
+pub mod linkkey;
 pub mod livesub;
 pub mod localproject;
 pub mod machine;
@@ -157,6 +159,8 @@ pub mod planeroot;
 pub mod planesave;
 pub mod plugin;
 pub mod plugin_install;
+#[cfg(unix)]
+pub mod pools;
 pub mod process;
 pub mod profiles;
 pub mod profilesignin;

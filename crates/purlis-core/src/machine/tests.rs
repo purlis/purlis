@@ -2442,3 +2442,121 @@ fn only_an_ask_about_font_files_alone_grew_in_fonts_alone() {
     assert!(!Consent::Unchanged.grew_in_fonts_alone());
     assert!(!Consent::Noted(vec![Change::FontRemoved("f".to_owned())]).grew_in_fonts_alone());
 }
+
+// Where a workspace's chats run (#2679, ruled 2026-10-20): per machine and per workspace.
+
+#[test]
+fn where_a_workspaces_chats_run_is_kept_per_workspace_and_read_back() {
+    let machine = machine();
+    let mut store = remembering(&["/planes/a", "/planes/b"]);
+    assert_eq!(
+        store.set_chats_run_on(Path::new("/planes/a"), "ide", Some("builds")),
+        Ok(true)
+    );
+    assert_eq!(
+        store.set_chats_run_on(Path::new("/planes/a"), "ide", Some("builds")),
+        Ok(false)
+    );
+    assert_eq!(
+        store.chats_run_on(Path::new("/planes/a"), "ide"),
+        Some("builds")
+    );
+    assert_eq!(store.chats_run_on(Path::new("/planes/a"), "fleet"), None);
+    assert_eq!(store.chats_run_on(Path::new("/planes/b"), "ide"), None);
+
+    write(machine.path(), &store).unwrap();
+    let back = read(machine.path());
+    assert_eq!(back.store, store);
+    assert_eq!(back.dropped, Vec::new());
+    let text = std::fs::read_to_string(dir(machine.path()).join(FILE)).unwrap();
+    let file: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let a = file["recents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["plane"] == "/planes/a")
+        .unwrap();
+    assert_eq!(a["chatsRunOn"], serde_json::json!({ "ide": "builds" }));
+
+    // Back on this machine: the entry is gone, and so is the key.
+    assert_eq!(
+        store.set_chats_run_on(Path::new("/planes/a"), "ide", None),
+        Ok(true)
+    );
+    write(machine.path(), &store).unwrap();
+    let text = std::fs::read_to_string(dir(machine.path()).join(FILE)).unwrap();
+    assert!(!text.contains("chatsRunOn"), "{text}");
+}
+
+#[test]
+fn a_workspace_runs_on_a_pool_named_as_a_pool_is_and_in_a_plane_purlis_remembers() {
+    let mut store = remembering(&["/planes/a"]);
+    for refused in ["", "Builds", "a/b", "-x"] {
+        assert!(
+            store
+                .set_chats_run_on(Path::new("/planes/a"), "ide", Some(refused))
+                .is_err(),
+            "{refused:?} was taken as a pool"
+        );
+    }
+    assert!(
+        store
+            .set_chats_run_on(Path::new("/planes/a"), "a/b", Some("builds"))
+            .is_err()
+    );
+    assert!(
+        store
+            .set_chats_run_on(Path::new("/planes/nowhere"), "ide", Some("builds"))
+            .is_err()
+    );
+    assert_eq!(
+        store
+            .recent(Path::new("/planes/a"))
+            .unwrap()
+            .chats_run_on
+            .len(),
+        0
+    );
+}
+
+#[test]
+fn a_pool_name_purlis_would_not_write_runs_the_workspace_on_this_machine_and_says_so() {
+    let machine = machine();
+    write(machine.path(), &remembering(&["/planes/a"])).unwrap();
+    let path = dir(machine.path()).join(FILE);
+    let mut file: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    file["recents"][0]["chatsRunOn"] =
+        serde_json::json!({ "ide": "builds", "fleet": "Not A Pool", "a/b": "builds", "docs": 3 });
+    std::fs::write(&path, file.to_string()).unwrap();
+    let back = read(machine.path());
+    let kept = &back
+        .store
+        .recent(Path::new("/planes/a"))
+        .unwrap()
+        .chats_run_on;
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept["ide"], "builds");
+    assert_eq!(back.dropped.len(), 3, "{:?}", back.dropped);
+    assert!(
+        back.dropped
+            .iter()
+            .all(|dropped| dropped.to_string().contains("on this machine")),
+        "{:?}",
+        back.dropped
+    );
+}
+
+#[test]
+fn a_renamed_workspace_keeps_where_its_chats_run() {
+    let mut store = remembering(&["/planes/a"]);
+    store
+        .set_chats_run_on(Path::new("/planes/a"), "ide", Some("builds"))
+        .unwrap();
+    assert!(store.rename_workspace(Path::new("/planes/a"), "ide", "editor"));
+    assert_eq!(store.chats_run_on(Path::new("/planes/a"), "ide"), None);
+    assert_eq!(
+        store.chats_run_on(Path::new("/planes/a"), "editor"),
+        Some("builds")
+    );
+}

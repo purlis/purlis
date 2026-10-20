@@ -260,7 +260,7 @@ pub(crate) fn hex_of(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn bytes_of(hex: &str) -> Option<[u8; 32]> {
+pub(crate) fn bytes_of(hex: &str) -> Option<[u8; 32]> {
     if !is_lower_hex(hex, 64) {
         return None;
     }

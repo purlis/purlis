@@ -192,6 +192,26 @@ impl Limits {
         })
     }
 
+    /// Its CPUs, in thousandths.
+    pub fn millicpus(&self) -> u32 {
+        self.millicpus
+    }
+
+    /// Its memory, in MiB.
+    pub fn memory_mib(&self) -> u64 {
+        self.memory_mib
+    }
+
+    /// How many processes it may run.
+    pub fn pids(&self) -> u32 {
+        self.pids
+    }
+
+    /// The size of its `/tmp`, in MiB.
+    pub fn tmp_mib(&self) -> u64 {
+        self.tmp_mib
+    }
+
     /// `--cpus`'s value: whole CPUs, with thousandths where there are any.
     fn cpus(&self) -> String {
         let (whole, part) = (self.millicpus / 1000, self.millicpus % 1000);
