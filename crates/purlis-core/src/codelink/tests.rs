@@ -684,3 +684,33 @@ fn a_folder_that_is_not_a_repository_sends_and_fetches_nothing_and_one_on_no_bra
         Err(Refused::NotAllowed(_))
     ));
 }
+
+#[test]
+fn a_project_that_ignores_its_state_folder_is_still_snapshotted() {
+    let world = World::new();
+    std::fs::write(world.desktop.join(".gitignore"), "/.purlis/\n").unwrap();
+    git(&world.desktop, &["add", ".gitignore"]);
+    git(
+        &world.desktop,
+        &[
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "ignore",
+        ],
+    );
+    std::fs::create_dir_all(world.desktop.join(".purlis")).unwrap();
+    std::fs::write(world.desktop.join(".purlis/this-machine.json"), "{}").unwrap();
+    std::fs::write(world.desktop.join("fix.txt"), "a memory\n").unwrap();
+
+    let snapshot = snapshot(&world.desktop, &world.scratch(), &plane_leaves_out())
+        .expect("staged, whatever the project ignores")
+        .expect("the change is carried");
+    let listed = git(&world.desktop, &["ls-tree", "-r", "--name-only", &snapshot]);
+    assert!(listed.contains("fix.txt"), "{listed}");
+    assert!(!listed.contains(".purlis"), "{listed}");
+}

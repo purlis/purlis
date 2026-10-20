@@ -214,8 +214,17 @@ pub fn snapshot(
     let _ = std::fs::remove_file(&index);
     let empty = empty_tree(tree)?;
     let attr = format!("--attr-source={empty}");
+    // An ignored name is never staged, and git refuses a pathspec that names one: only what
+    // the work tree does not ignore is left out by name.
     let excluded: Vec<String> = leave_out
         .iter()
+        .filter(|left| {
+            !run(
+                tree,
+                &["check-ignore", "--quiet", "--no-index", "--", left.as_str()],
+            )
+            .is_ok_and(|ran| ran.ok())
+        })
         .map(|left| format!(":(top,exclude,literal){left}"))
         .collect();
     let mut adding = vec![
