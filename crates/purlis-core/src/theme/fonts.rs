@@ -523,16 +523,20 @@ pub(crate) fn measured(
 
 /// Why a face of a project's or a workspace's theme folder that is read is not drawn: `named`,
 /// its path in the project, of `size` bytes, whose digest is not the one the approval `files`
-/// holds for it, in a folder whose `fonts/` lists `before` face names ahead of it.
-fn unapproved(named: &str, size: u64, files: &Approved, before: usize) -> String {
+/// holds for it, in a folder whose `fonts/` lists `before` face names ahead of it. And whether
+/// the project's contribution lists it, so approving the project again can let it be drawn: a
+/// face past a listing limit is never listed, so never approved.
+fn unapproved(named: &str, size: u64, files: &Approved, before: usize) -> (String, bool) {
+    let past = |why: String| (why, false);
     match files.files.get(named) {
-        Some(_) => {
-            format!("{named} has changed since you approved this project, so it is not read")
-        }
-        None if before >= MOST_FOLDER_FONTS => format!(
+        Some(_) => (
+            format!("{named} has changed since you approved this project, so it is not read"),
+            true,
+        ),
+        None if before >= MOST_FOLDER_FONTS => past(format!(
             "{named} is past the {MOST_FOLDER_FONTS} font files purlis lists in a theme \
              folder's fonts/, so it is not read"
-        ),
+        )),
         None => {
             let bytes: u64 = files
                 .files
@@ -540,14 +544,18 @@ fn unapproved(named: &str, size: u64, files: &Approved, before: usize) -> String
                 .filter_map(|listed| listed.split(' ').nth(1)?.parse::<u64>().ok())
                 .sum();
             if files.files.len() >= MOST_PROJECT_FONTS || bytes + size > MOST_PROJECT_FONT_BYTES {
-                format!(
+                past(format!(
                     "{named} is past the {MOST_PROJECT_FONTS} font files ({} MiB) purlis lists \
                      in a project, so it is not read",
                     MOST_PROJECT_FONT_BYTES / 1024 / 1024
-                )
+                ))
             } else {
-                format!(
-                    "{named} is not a font file you approved with this project, so it is not read"
+                (
+                    format!(
+                        "{named} is not a font file you approved with this project, so it is \
+                         not read"
+                    ),
+                    true,
                 )
             }
         }
@@ -677,12 +685,35 @@ fn face_name(slot: &str, faces: &[Face]) -> String {
 }
 
 /// **Reads a theme's `fonts`** over `base` (its parent's, or core's), from `folder`, the theme's
-/// own folder when it is read from one. Says in `complaints` what refuses the theme.
+/// own folder when it is read from one. Says in `complaints` what refuses the theme; a face the
+/// project's approval does not hold is said as awaiting it (#2647), so the window can offer the
+/// project's trust ask.
 pub(super) fn read(
     raw: Option<&Value>,
     base: &Fonts,
     folder: Option<&ThemeDir>,
+    complaints: &mut Vec<super::Complaint>,
+) -> Fonts {
+    let mut said = Vec::new();
+    let mut awaiting: Vec<(usize, String)> = Vec::new();
+    let fonts = read_said(raw, base, folder, &mut said, &mut awaiting);
+    complaints.extend(said.into_iter().enumerate().map(|(at, one)| {
+        match awaiting.iter().find(|(place, _)| *place == at) {
+            Some((_, face)) => super::Complaint::awaiting_approval(one, face.clone()),
+            None => super::Complaint::said(one),
+        }
+    }));
+    fonts
+}
+
+/// [`read`], in sentences: `awaiting` gets the place in `complaints` of each that awaits the
+/// project's approval, with its face as `<path> <sha-256>`.
+fn read_said(
+    raw: Option<&Value>,
+    base: &Fonts,
+    folder: Option<&ThemeDir>,
     complaints: &mut Vec<String>,
+    awaiting: &mut Vec<(usize, String)>,
 ) -> Fonts {
     let mut fonts = base.clone();
     let Some(raw) = raw else {
@@ -715,6 +746,7 @@ pub(super) fn read(
         fonts: dir.fonts(),
         folder: folder.path(),
         approved: folder.approved.as_ref(),
+        awaiting: std::cell::RefCell::new(Vec::new()),
     };
     for (slot, font) in given {
         if !SLOTS.contains(&slot.as_str()) {
@@ -727,6 +759,7 @@ pub(super) fn read(
             *fonts.slot_mut(slot) = read;
         }
     }
+    awaiting.extend(inside.awaiting.into_inner());
     fonts
 }
 
@@ -736,6 +769,9 @@ struct Inside<'a> {
     fonts: Result<Store, Missed>,
     approved: Option<&'a Approved>,
     folder: &'a Path,
+    /// The place in the complaints of each face the approval does not hold but would, once the
+    /// project is approved again.
+    awaiting: std::cell::RefCell<Vec<(usize, String)>>,
 }
 
 /// One slot's font, or `None` (and why).
@@ -901,7 +937,14 @@ fn face_of(
                 let approved_digest = approved.files.get(&named).map(|listed| digest_of(listed));
                 if approved_digest != Some(asset.as_str()) {
                     let before = fonts.names_before(&file);
-                    complaints.push(unapproved(&named, bytes.len() as u64, approved, before));
+                    let (why, listed) = unapproved(&named, bytes.len() as u64, approved, before);
+                    if listed {
+                        folder
+                            .awaiting
+                            .borrow_mut()
+                            .push((complaints.len(), format!("{named} {asset}")));
+                    }
+                    complaints.push(why);
                     return None;
                 }
             }

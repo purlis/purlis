@@ -166,6 +166,23 @@ export const commands = {
 	 */
 	approvePlane: (path: string, contributes: PlaneContribution) => typedError<PlaneId, string>(__TAURI_INVOKE("approve_plane", { path, contributes })),
 	/**
+	 *  **The trust ask about a project already open** (#2647, ADR 0035): what the refused theme's
+	 *  Review and allow shows when a project's font file was added or changed after it was
+	 *  approved. The same [`Ask`] an open asks, with the changes first; `null` when this machine's
+	 *  approval already holds everything the project contributes.
+	 * 
+	 *  The person's yes is [`approve_plane`], the one path every approval takes. The window's
+	 *  alone (`WINDOW_ONLY`): only the person's press asks it, and no chat reaches it.
+	 * 
+	 *  On a blocking thread, for [`open_plane`]'s reason: it reads the project's settings, record
+	 *  and font files.
+	 */
+	reviewPlane: (plane: PlaneId) => typedError<{
+	ask: Ask,
+	/**  Each theme folder whose font files changed, in the order the changes name them. */
+	themes: FontTheme[],
+} | null, string>(__TAURI_INVOKE("review_plane", { plane })),
+	/**
 	 *  The projects a cold launch has to put back, and every one it would not take back.
 	 * 
 	 *  **Answered to the window rather than acted on here, and that is the whole shape of it.**
@@ -2614,6 +2631,15 @@ export const commands = {
 	 *  font file changed since it was approved, is never a silent fallback.
 	 */
 	refused: ThemeTrouble | null,
+	/**
+	 *  Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+	 *  of the project's or a workspace's theme folder that this machine's approval does not
+	 *  hold. `fonts`: the project asks about font files alone, and the refused Notice offers
+	 *  Review and allow (`review_plane`). `more`: it asks for more than font files, and the
+	 *  Notice offers no button. `unapproved`: this machine never approved the project, and the
+	 *  Notice offers no button. `null` otherwise.
+	 */
+	review: ThemeReview | null,
 } | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
 	/**
 	 *  **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names
@@ -6053,6 +6079,24 @@ export type FolderListing_Serialize = {
 	entries: FolderEntry_Serialize[],
 	/**  How many entries past those are not listed. */
 	more: number,
+};
+
+/**
+ *  **The trust ask a refused theme's Review and allow draws** (#2647): the project's [`Ask`],
+ *  about font files alone, and the theme folders those files belong to, which the dialog names.
+ */
+export type FontReview = {
+	ask: Ask,
+	/**  Each theme folder whose font files changed, in the order the changes name them. */
+	themes: FontTheme[],
+};
+
+/**  One theme folder whose font files a [`FontReview`] is about. */
+export type FontTheme = {
+	/**  The theme folder's name. */
+	theme: string,
+	/**  The workspace it is in; `null` for the project's own `themes/`. */
+	workspace: string | null,
 };
 
 /**  One forge account, as Settings lists it. */
@@ -10427,6 +10471,15 @@ export type ThemeInForce = {
 	 *  font file changed since it was approved, is never a silent fallback.
 	 */
 	refused: ThemeTrouble | null,
+	/**
+	 *  Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+	 *  of the project's or a workspace's theme folder that this machine's approval does not
+	 *  hold. `fonts`: the project asks about font files alone, and the refused Notice offers
+	 *  Review and allow (`review_plane`). `more`: it asks for more than font files, and the
+	 *  Notice offers no button. `unapproved`: this machine never approved the project, and the
+	 *  Notice offers no button. `null` otherwise.
+	 */
+	review: ThemeReview | null,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */
@@ -10436,6 +10489,15 @@ export type ThemeOption = {
 	/**  What the select shows. */
 	label: string,
 };
+
+/**  What a refused theme's Notice may offer (#2647, [`ThemeInForce::review`]). */
+export type ThemeReview = 
+/**  The project asks again about font files alone: Review and allow. */
+"fonts" | 
+/**  It asks for more than font files: no button, and where it is reviewed instead. */
+"more" | 
+/**  This machine never approved it: no button, and where it is reviewed instead. */
+"unapproved";
 
 /**
  *  What is wrong with one colour theme an extension is contributing (#2321), in the theme

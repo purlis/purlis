@@ -3374,15 +3374,42 @@ impl Planes {
         // `approve_and_open` reads again to compare what they read against what is there now.
         // The open arm keeps it, because it is about to run it.
         let reading = machine::Contribution::read(&root);
-        let consent = self.consent_to(&root, &reading.contributes);
-        if consent.must_ask() {
-            return Ok(Opening::Ask(Asking {
-                root,
-                contributes: reading.contributes,
-                consent,
-            }));
+        if let Some(asking) = self.asking(&root, reading.contributes) {
+            return Ok(Opening::Ask(asking));
         }
         Ok(Opening::Open(self.minted(&root, reading.record)))
+    }
+
+    /// **The trust ask about a project this process already holds, when it asks about font
+    /// files alone** (#2647): what it contributes now and how that differs from what this
+    /// machine approved, read as [`Self::open_if_approved`] reads it; `None` when the approval
+    /// already holds all of it.
+    ///
+    /// What the refused theme's Review and allow shows: a project's font file added or changed
+    /// while it is open is drawn only once the approval holds it. **Refused when the project
+    /// asks for anything more than font files** ([`machine::Consent::grew_in_fonts_alone`]): a
+    /// chat that can write the project can change a face whenever it likes, so the ask it can
+    /// raise from a theme is kept to the faces, and the rest is asked where the project is
+    /// opened. Asking attaches nothing and records nothing. The person's yes goes through
+    /// [`Self::approve_and_open`] like any other, which reads the project again and refuses if
+    /// it is not what was shown, and whose mint hands back the id a held plane already has
+    /// without putting its record back again.
+    pub fn review(&self, plane: &PlaneId) -> Result<Option<Asking>, String> {
+        let root = self.held(plane)?.root().to_path_buf();
+        let contributes = machine::Contribution::read(&root).contributes;
+        match self.asking(&root, contributes) {
+            Some(asking) if asking.first() => Err(NOT_APPROVED.to_owned()),
+            Some(asking) if !asking.consent.grew_in_fonts_alone() => {
+                Err(MORE_THAN_FONTS.to_owned())
+            }
+            asking => Ok(asking),
+        }
+    }
+
+    /// The question about `root`, which contributes `contributes` as just read, when this
+    /// machine's store does not already hold the yes to it.
+    fn asking(&self, root: &Path, contributes: machine::Contribution) -> Option<Asking> {
+        asking_of(self.config.as_deref(), root, contributes)
     }
 
     /// The operator's yes to a plane, and the open it authorises.
@@ -3473,20 +3500,6 @@ impl Planes {
             self.reopen(&id, &Approved(()), record);
         }
         id
-    }
-
-    /// What this machine's store says about opening `root` as it stands right now.
-    ///
-    /// **Every unreadable state is "ask".** No config home, a store charter would not read, a
-    /// platform charter keeps no store on: [`machine::read`] answers with an empty store in
-    /// each case, and an empty store's [`machine::Store::consent`] is
-    /// [`machine::Consent::New`]. Silence is never a yes — `profiletrust` opens its module
-    /// documentation refusing exactly that, and this is the same answer about a bigger grant.
-    fn consent_to(&self, root: &Path, contributes: &machine::Contribution) -> machine::Consent {
-        let Some(config) = self.config.as_deref() else {
-            return machine::Consent::New;
-        };
-        machine::read(config).store.consent(root, contributes)
     }
 
     /// Puts `root` at the front of this machine's list of planes.
@@ -4388,6 +4401,95 @@ pub enum Opening {
     Ask(Asking),
 }
 
+/// What the store in `config` says about opening `root` as it stands right now.
+///
+/// **Every unreadable state is "ask".** No config home, a store charter would not read, a
+/// platform charter keeps no store on: [`machine::read`] answers with an empty store in each
+/// case, and an empty store's [`machine::Store::consent`] is [`machine::Consent::New`].
+/// Silence is never a yes — `profiletrust` opens its module documentation refusing exactly
+/// that, and this is the same answer about a bigger grant.
+fn consent_of(
+    config: Option<&Path>,
+    root: &Path,
+    contributes: &machine::Contribution,
+) -> machine::Consent {
+    let Some(config) = config else {
+        return machine::Consent::New;
+    };
+    machine::read(config).store.consent(root, contributes)
+}
+
+/// The question about `root`, which contributes `contributes` as just read, when the store in
+/// `config` does not already hold the yes to it.
+fn asking_of(
+    config: Option<&Path>,
+    root: &Path,
+    contributes: machine::Contribution,
+) -> Option<Asking> {
+    let consent = consent_of(config, root, &contributes);
+    consent.must_ask().then(|| Asking {
+        root: root.to_path_buf(),
+        contributes,
+        consent,
+    })
+}
+
+/// Why a refused theme's Review and allow is not offered, and where the project is reviewed
+/// instead (#2647).
+pub(crate) const MORE_THAN_FONTS: &str = "this project asks for more than font files since you \
+     approved it, so it is not allowed from a theme. Close the project and open it again to \
+     review everything it asks for";
+
+/// Why a refused theme's Review and allow is not offered for a project this machine never
+/// approved (#2647): it is reviewed where it is opened.
+pub(crate) const NOT_APPROVED: &str = "this project has not been approved on this machine, so \
+     its font files are not allowed from a theme. Close the project and open it again to review \
+     everything it asks for";
+
+/// **What a refused theme's Notice may offer for the project at `root`** (#2647), from the
+/// store in `config`: Review and allow when it asks again about font files alone; no button,
+/// and why, when it asks for more or was never approved here; `None` when it asks about
+/// nothing. It reads and hashes what the project contributes, so the window's theme asks it
+/// only when the faces its refusal waits on change ([`crate::extensions::review_kept`]).
+pub(crate) fn theme_review(config: &Path, root: &Path) -> Option<crate::extensions::ThemeReview> {
+    use crate::extensions::ThemeReview;
+    let contributes = machine::Contribution::read(root).contributes;
+    let asking = asking_of(Some(config), root, contributes)?;
+    Some(if asking.first() {
+        ThemeReview::Unapproved
+    } else if asking.consent.grew_in_fonts_alone() {
+        ThemeReview::Fonts
+    } else {
+        ThemeReview::More
+    })
+}
+
+/// **The theme folders whose font files an ask is about** (#2647): each changed font file's
+/// theme folder, and the workspace it is in (`None` for the project's own `themes/`), in the
+/// order the changes name them, once each. What Review and allow names in its dialog.
+pub(crate) fn font_themes(consent: &machine::Consent) -> Vec<(String, Option<String>)> {
+    let mut themes: Vec<(String, Option<String>)> = Vec::new();
+    for change in consent.changes() {
+        let (machine::Change::FontAdded(path) | machine::Change::FontChanged(path)) = change else {
+            continue;
+        };
+        let parts: Vec<&str> = path.split('/').collect();
+        let found = match parts.as_slice() {
+            ["themes", theme, "fonts", _] => Some(((*theme).to_owned(), None)),
+            ["workspaces", workspace, "themes", theme, "fonts", _] => {
+                Some(((*theme).to_owned(), Some((*workspace).to_owned())))
+            }
+            _ => None,
+        };
+        if let Some(one) = found
+            && !themes.contains(&one)
+        {
+            themes.push(one);
+        }
+    }
+    themes
+}
+
 /// What the operator is being asked about, when a plane must be approved before it opens.
 pub struct Asking {
     /// The plane's root as charter resolved it — canonical, and the spelling the approval is
@@ -5005,3 +5107,7 @@ mod tests;
 #[cfg(test)]
 #[path = "planes_restoring_tests.rs"]
 mod restoring_tests;
+
+#[cfg(all(test, unix))]
+#[path = "planes_review_tests.rs"]
+mod review_tests;

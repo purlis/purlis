@@ -387,6 +387,12 @@ pub struct Complaint {
     /// The token it was about, when it was about one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    /// When it is a font file of the project's or a workspace's theme folder that this
+    /// machine's approval of the project does not hold (#2647), that face: its path in the
+    /// project and the sha-256 of the bytes read, as `<path> <sha-256>`. The project's trust
+    /// ask lists it, so a yes there lets it be drawn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub awaits_approval: Option<String>,
 }
 
 impl Complaint {
@@ -394,6 +400,7 @@ impl Complaint {
         Self {
             said: said.into(),
             token: None,
+            awaits_approval: None,
         }
     }
 
@@ -401,6 +408,16 @@ impl Complaint {
         Self {
             said: said.into(),
             token: Some(token.to_owned()),
+            awaits_approval: None,
+        }
+    }
+
+    /// [`Self::said`] of a project's font file the approval does not hold: `face` is its path
+    /// in the project and its digest.
+    fn awaiting_approval(said: impl Into<String>, face: String) -> Self {
+        Self {
+            awaits_approval: Some(face),
+            ..Self::said(said)
         }
     }
 }

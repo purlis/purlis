@@ -9,6 +9,7 @@ import {
   type ExtensionAsk,
   type ExtensionTheme,
   type InstalledExtensions,
+  type ThemeReview,
   type ThemeTrouble,
   type WindowOption,
   type PlaneId,
@@ -590,17 +591,31 @@ function followThemeFolders() {
  * Says, or takes back, that the theme chosen is not drawn and why (#2324): the engine refused
  * it — a save that is not a theme, a value out of its bounds, or a project's font file that
  * changed since the project was approved — and Purlis is drawn in its place.
+ *
+ * **When the engine says the project's approval would let it be drawn** (`review`, #2647), the
+ * Notice offers Review and allow for the project in front — its trust ask, asked again in place
+ * — only when what the project asks for again is font files alone (`fonts`). When it asks for
+ * more (`more`), or this machine never approved it (`unapproved`), the Notice offers no button
+ * and says the project is reviewed where it is opened.
  */
-function sayTheRefused(refused: ThemeTrouble | null | undefined) {
+function sayTheRefused(refused: ThemeTrouble | null | undefined, review: ThemeReview | null) {
   if (refused == null) {
     sayAboutThisMachine("theme refused", undefined);
     return;
   }
+  const plane = review === "fonts" ? where?.plane : undefined;
   sayAboutThisMachine("theme refused", {
     severity: "warn",
     detail: themeTroubleSaid(refused),
     remedy:
-      "fix it in its theme folder, and it is drawn again when you save; a project's font file is drawn once you approve the project again",
+      plane !== undefined
+        ? "review the font files that changed and allow them, and the theme is drawn with them; or fix it in its theme folder"
+        : review === "more"
+          ? "this project asks for more than font files since you approved it, so it is not allowed from a theme; close the project and open it again to review everything it asks for, or fix it in its theme folder"
+          : review === "unapproved"
+            ? "this project has not been approved on this machine, so its font files are not allowed from a theme; close the project and open it again to review everything it asks for, or fix it in its theme folder"
+            : "fix it in its theme folder, and it is drawn again when you save; a project's font file is drawn once you approve the project again",
+    ...(plane === undefined ? {} : { review: plane }),
   });
 }
 
@@ -663,7 +678,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   const handed = handedFor(picked);
   if (handed !== undefined) {
     following = false;
-    sayTheRefused(null);
+    sayTheRefused(null, null);
     // The person's own theme was drawn with the floors held as the window was created; a
     // built-in clears them.
     const theirs = atCreation().theme;
@@ -695,7 +710,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   if (mine !== drawing) return;
   following = given.follows_system === true;
   if (following) followSystem();
-  sayTheRefused(given.refused);
+  sayTheRefused(given.refused, given.review ?? null);
   if (given.theme) {
     const theme = given.theme as unknown as Theme;
     // The person's own theme file, drawn (no level chose): its way out is Use built-in.
