@@ -16,6 +16,7 @@ fn specimen(theme: &str, appearance: Option<Appearance>) -> Specimen {
     Specimen {
         theme: theme.to_owned(),
         appearance,
+        high_contrast: false,
     }
 }
 
@@ -101,7 +102,7 @@ fn no_theme_or_an_odd_value_is_refused_in_words_that_say_what_to_give() {
             json!({"theme": "purlis-classic", "appearance": "sepia"})
         ))
         .expect_err("refused")
-        .contains("`dark` or `light`")
+        .contains("`dark`, `light` or `dark-high-contrast`")
     );
     assert!(
         asked(&args(
@@ -179,6 +180,8 @@ fn the_model_is_told_what_each_picture_is_and_that_it_is_sample_content() {
     let painted = |theme: &str, appearance| Painted {
         theme: theme.to_owned(),
         appearance,
+        high_contrast: false,
+        preview: false,
         width: 2560,
         height: 1600,
         millis: 640,
@@ -210,6 +213,8 @@ fn a_picture_never_travels_inside_the_answer_s_json() {
     let painted = Painted {
         theme: "purlis-classic".to_owned(),
         appearance: Appearance::Light,
+        high_contrast: false,
+        preview: false,
         width: 1,
         height: 1,
         millis: 1,
@@ -219,5 +224,128 @@ fn a_picture_never_travels_inside_the_answer_s_json() {
     assert_eq!(
         wire,
         json!({"theme": "purlis-classic", "appearance": "light", "width": 1, "height": 1, "millis": 1})
+    );
+}
+
+fn sharp(theme: &str) -> Specimen {
+    Specimen {
+        theme: theme.to_owned(),
+        appearance: Some(Appearance::Dark),
+        high_contrast: true,
+    }
+}
+
+#[test]
+fn purlis_is_drawn_in_its_high_contrast_dark_when_that_is_asked_for() {
+    // #2709: the tool draws every appearance Purlis has.
+    assert_eq!(
+        asked(&args(
+            json!({"theme": "purlis", "appearance": "dark-high-contrast"})
+        )),
+        Ok(vec![sharp("purlis")])
+    );
+    let theme = chosen(&sharp("purlis")).expect("its high-contrast dark");
+    assert_eq!(
+        (theme.name.as_str(), theme.id.as_str()),
+        ("Purlis", "dark-high-contrast")
+    );
+    assert!(theme.high_contrast);
+    assert_eq!(drawn(&sharp("purlis")).expect("drawn").held, None);
+    // Its plain dark stays the one tagged dark and not high contrast.
+    let dark = chosen(&specimen("purlis", Some(Appearance::Dark))).expect("dark");
+    assert_eq!((dark.id.as_str(), dark.high_contrast), ("dark", false));
+}
+
+#[test]
+fn a_theme_with_no_high_contrast_appearance_is_refused_naming_the_one_that_has_it() {
+    for theme in ["purlis-classic", "purlis-dark"] {
+        let why = chosen(&sharp(theme)).expect_err("refused");
+        assert!(why.contains("no high-contrast appearance"), "{why}");
+        assert!(
+            why.contains("purlis with appearance `dark-high-contrast`"),
+            "{why}"
+        );
+    }
+}
+
+#[test]
+fn side_by_side_compares_purlis_s_dark_with_its_high_contrast_dark() {
+    assert_eq!(
+        asked(&args(json!({
+            "theme": "purlis",
+            "appearance": "dark",
+            "side_by_side": {"appearance": "dark-high-contrast"},
+        }))),
+        Ok(vec![
+            specimen("purlis", Some(Appearance::Dark)),
+            sharp("purlis")
+        ])
+    );
+    // A second specimen that changes only the theme keeps the first's appearance, high contrast
+    // and all, and is refused when that theme has none.
+    let why = asked(&args(json!({
+        "theme": "purlis",
+        "appearance": "dark-high-contrast",
+        "side_by_side": {"theme": "purlis-classic"},
+    })))
+    .expect_err("refused");
+    assert!(why.contains("no high-contrast appearance"), "{why}");
+}
+
+#[test]
+fn the_tool_says_purlis_is_a_preview_and_names_its_high_contrast_dark() {
+    let schema = (TOOLS[0].schema)();
+    assert_eq!(
+        schema["properties"]["appearance"]["enum"],
+        json!(["dark", "light", "dark-high-contrast"])
+    );
+    assert_eq!(
+        schema["properties"]["side_by_side"]["properties"]["appearance"]["enum"],
+        json!(["dark", "light", "dark-high-contrast"])
+    );
+    let theme = schema["properties"]["theme"]["description"]
+        .as_str()
+        .unwrap();
+    assert!(theme.contains("purlis, Purlis, a preview theme"), "{theme}");
+    assert!(TOOLS[0].description.contains("preview theme"));
+    let painted = Painted {
+        theme: "purlis".to_owned(),
+        appearance: Appearance::Dark,
+        high_contrast: true,
+        preview: true,
+        width: 2560,
+        height: 1600,
+        millis: 640,
+        png: Vec::new(),
+    };
+    let one = said(std::slice::from_ref(&painted));
+    assert!(
+        one.starts_with(
+            "The theme specimen in purlis (a preview theme, dark-high-contrast), 2560×1600 pixels"
+        ),
+        "{one}"
+    );
+    assert_eq!(
+        serde_json::to_value(&painted).expect("JSON"),
+        json!({
+            "theme": "purlis", "appearance": "dark", "high_contrast": true, "preview": true,
+            "width": 2560, "height": 1600, "millis": 640
+        })
+    );
+}
+
+#[test]
+fn an_ask_without_high_contrast_reads_as_it_did() {
+    // The ask travels from the chat's tool to the app: one written before #2709 still reads.
+    let old: Specimen =
+        serde_json::from_value(json!({"theme": "purlis", "appearance": "dark"})).expect("read");
+    assert_eq!(old, specimen("purlis", Some(Appearance::Dark)));
+    assert_eq!(
+        serde_json::to_value(&old).expect("JSON"),
+        json!({"theme": "purlis", "appearance": "dark"})
+    );
+    assert_eq!(
+        serde_json::to_value(sharp("purlis")).expect("JSON"),
+        json!({"theme": "purlis", "appearance": "dark", "high_contrast": true})
     );
 }

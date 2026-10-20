@@ -4258,3 +4258,26 @@ fn a_chat_on_no_persona_is_refused_a_login_though_the_project_has_a_default() {
     assert!(why.contains("runs as no persona"), "{why}");
     assert!(!why.contains(TOKEN), "{why}");
 }
+
+/// What a hand-over compares a signed-in browser by (#2699): the identity of the login as
+/// declared and allowed now, the one its values are read and its store kept by, read with no
+/// value; another declaration of the same name has another.
+#[test]
+fn a_login_allowed_now_answers_the_identity_its_values_are_read_by() {
+    let project = project();
+    std::fs::write(
+        project.path().join("team.json"),
+        serde_json::json!({"TOKEN": TOKEN, "OTHER": "x"}).to_string(),
+    )
+    .unwrap();
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "TOKEN", None)];
+    let (_, read_by) = login_and_identity_for(&asker, "shop-login", false).expect("the login");
+
+    let allowed = login_allowed(&asker, "shop-login", false).expect("allowed");
+    assert_eq!(allowed, read_by);
+
+    asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "OTHER", None)];
+    let declared_otherwise = login_allowed(&asker, "shop-login", false).expect("allowed");
+    assert_ne!(declared_otherwise, read_by);
+}

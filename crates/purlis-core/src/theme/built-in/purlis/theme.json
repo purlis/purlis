@@ -598,12 +598,27 @@
           "weight": 400
         },
         {
+          "file": "fonts/IBMPlexSans-Italic.woff2",
+          "weight": 400,
+          "style": "italic"
+        },
+        {
           "file": "fonts/IBMPlexSans-Medium.woff2",
           "weight": 500
         },
         {
+          "file": "fonts/IBMPlexSans-MediumItalic.woff2",
+          "weight": 500,
+          "style": "italic"
+        },
+        {
           "file": "fonts/IBMPlexSans-SemiBold.woff2",
           "weight": 600
+        },
+        {
+          "file": "fonts/IBMPlexSans-SemiBoldItalic.woff2",
+          "weight": 600,
+          "style": "italic"
         }
       ]
     },
@@ -613,6 +628,15 @@
         {
           "file": "fonts/JetBrainsMono-Regular.woff2",
           "weight": 400
+        },
+        {
+          "file": "fonts/JetBrainsMono-Italic.woff2",
+          "weight": 400,
+          "style": "italic"
+        },
+        {
+          "file": "fonts/JetBrainsMono-Bold.woff2",
+          "weight": 700
         }
       ]
     },
@@ -622,6 +646,15 @@
         {
           "file": "fonts/JetBrainsMono-Regular.woff2",
           "weight": 400
+        },
+        {
+          "file": "fonts/JetBrainsMono-Italic.woff2",
+          "weight": 400,
+          "style": "italic"
+        },
+        {
+          "file": "fonts/JetBrainsMono-Bold.woff2",
+          "weight": 700
         }
       ]
     }

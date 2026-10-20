@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sign in, redefined</title>
+<style>
+  body { margin: 0; font: 24px sans-serif; }
+  input, button { display: block; margin: 8px; font: 24px sans-serif; color: rgb(255, 0, 0); }
+</style></head>
+<body>
+  <h1>Sign in</h1>
+  <form id="form" action="account.html" method="get">
+    <label>User name <input name="username" autocomplete="username"></label>
+    <label>Password <input type="password" name="password" id="password"></label>
+    <button type="submit">Sign in</button>
+  </form>
+  <label>Notes <input id="notes"></label>
+  <script>
+    // The form goes only with a password in it.
+    const password = document.getElementById('password');
+    const notes = document.getElementById('notes');
+    document.getElementById('form').addEventListener('submit', (e) => {
+      if (!password.value) e.preventDefault();
+    });
+    // The page redefines what a script finding or focusing a field would use: every field
+    // found is the notes field, and every field focused gives the focus to it.
+    Document.prototype.querySelectorAll = () => [notes];
+    Document.prototype.querySelector = () => notes;
+    const focus = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function () { focus.call(notes); };
+  </script>
+</body></html>

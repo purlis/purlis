@@ -267,28 +267,33 @@ fn answered_started(
 }
 
 /// The one browser login a test chat has: `shop-login`, its values a test's own (#2016).
-fn logins(name: &str) -> Result<(LogIn, bool), String> {
-    // `shop-login` has no kept store yet; `kept-login` has one to open (#2021).
-    if name != "shop-login" && name != "kept-login" {
+fn logins(name: &str) -> super::ReadLogin {
+    // `shop-login` and `other-login` have no kept store yet; `kept-login` has one to open
+    // (#2021).
+    if !["shop-login", "other-login", "kept-login"].contains(&name) {
         return Err(format!("the persona declares no browser login {name}"));
     }
-    Ok((
-        LogIn {
+    Ok(super::LoginRead {
+        login: LogIn {
             address: "https://shop.example.test/login".into(),
             user: None,
             password: Secret::new(LOGIN_VALUE.into()),
             keep: Some(kept_as(name)),
         },
-        name == "kept-login",
-    ))
+        opens: name == "kept-login",
+        identity: IDENTITY.into(),
+    })
 }
+
+/// The identity of each test login, as declared and allowed (#2699).
+const IDENTITY: &str = "0123456789abcdef0123456789abcdef";
 
 fn kept_as(name: &str) -> purlis_session_protocol::browsing::KeptLogin {
     purlis_session_protocol::browsing::KeptLogin {
         profile: "claude".into(),
         persona: "steward".into(),
         login: name.into(),
-        identity: "0123456789abcdef0123456789abcdef".into(),
+        identity: IDENTITY.into(),
         address: "https://shop.example.test/login".into(),
     }
 }
@@ -2004,6 +2009,7 @@ fn a_signed_in_browser_goes_only_to_a_chat_that_may_log_in_with_that_login_now()
         [HeldLogin {
             persona: Some("qa".into()),
             login: "shop-login".into(),
+            identity: IDENTITY.into(),
         }]
     );
     assert!(browsers.is_kept("program-1"), "it stays with no chat");
@@ -2205,6 +2211,111 @@ fn a_login_with_a_kept_store_opens_in_a_browser_of_its_own_from_it() {
         Some("program-2".to_owned()),
         "the login goes into the browser opened from its store"
     );
+}
+
+#[test]
+fn a_browser_opened_from_a_kept_store_is_handed_only_to_a_chat_with_that_stores_identity() {
+    // #2699: it holds the store's login from its first moment, identity and all.
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    let steward = as_persona("steward", None, None);
+    answered_as(&browsers, &hosted, &ask(3, click()), &steward);
+    browsers.allow(3, false);
+    answered_as(&browsers, &hosted, &ask(3, click()), &steward);
+    // Its own browser, from the store: program-2 beside the chat's program-1.
+    answered_as(&browsers, &hosted, &ask(3, log_in("kept-login")), &steward);
+    browsers.pin(3, "program-2", true).unwrap();
+    browsers.forget(Some(&driver), 3, "Fix the login");
+    allowed_and_acting(&browsers, &hosted, 4);
+    let held: Mutex<Vec<HeldLogin>> = Mutex::default();
+    let declared_otherwise = |login: &HeldLogin| {
+        held.lock().unwrap().push(login.clone());
+        login.may_go_to(Some("steward"), Ok("another-identity".into()))
+    };
+
+    let why = hand_checked(&browsers, &hosted, "program-2", 4, &declared_otherwise).unwrap_err();
+
+    assert!(why.contains("declared otherwise"), "{why}");
+    let kept = kept_as("kept-login");
+    assert_eq!(
+        *held.lock().unwrap(),
+        [HeldLogin {
+            persona: Some(kept.persona),
+            login: kept.login,
+            identity: kept.identity,
+        }]
+    );
+    assert!(!browsers.is_in_use("program-2"), "it stays with no chat");
+    hand_checked(&browsers, &hosted, "program-2", 4, &|login| {
+        login.may_go_to(Some("steward"), Ok(IDENTITY.into()))
+    })
+    .expect("the same identity takes it");
+}
+
+#[test]
+fn a_browser_signed_in_with_two_logins_goes_only_to_a_chat_allowed_both() {
+    // #2699: the second login never takes the first one's place; its session may still be there.
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    let qa = as_persona("qa", None, None);
+    answered_as(&browsers, &hosted, &ask(3, click()), &qa);
+    browsers.allow(3, false);
+    answered_as(&browsers, &hosted, &ask(3, log_in("shop-login")), &qa);
+    answered_as(&browsers, &hosted, &ask(3, log_in("other-login")), &qa);
+    // A second try of the same login is held once.
+    answered_as(&browsers, &hosted, &ask(3, log_in("shop-login")), &qa);
+    browsers.pin(3, "program-1", true).unwrap();
+    browsers.forget(Some(&driver), 3, "Fix the login");
+    allowed_and_acting(&browsers, &hosted, 4);
+    let asked: Mutex<Vec<String>> = Mutex::default();
+
+    let why = hand_checked(&browsers, &hosted, "program-1", 4, &|login| {
+        asked.lock().unwrap().push(login.login.clone());
+        if login.login == "other-login" {
+            Ok(())
+        } else {
+            Err("not allowed".into())
+        }
+    })
+    .unwrap_err();
+
+    assert!(why.contains("shop-login"), "{why}");
+    assert!(!browsers.is_in_use("program-1"), "it stays with no chat");
+    asked.lock().unwrap().clear();
+    hand_checked(&browsers, &hosted, "program-1", 4, &|login| {
+        asked.lock().unwrap().push(login.login.clone());
+        Ok(())
+    })
+    .expect("allowed both");
+    assert_eq!(*asked.lock().unwrap(), ["shop-login", "other-login"]);
+}
+
+#[test]
+fn a_held_login_goes_only_to_the_same_persona_and_the_same_declaration_allowed_now() {
+    // #2699: the identity is compared whole, not the login's name.
+    let held = HeldLogin {
+        persona: Some("qa".into()),
+        login: "shop-login".into(),
+        identity: IDENTITY.into(),
+    };
+
+    held.may_go_to(Some("qa"), Ok(IDENTITY.into()))
+        .expect("the same login");
+    let why = held
+        .may_go_to(Some("qa"), Ok("fedcba9876543210fedcba9876543210".into()))
+        .unwrap_err();
+    assert!(why.contains("declared otherwise"), "{why}");
+    let why = held
+        .may_go_to(Some("steward"), Ok(IDENTITY.into()))
+        .unwrap_err();
+    assert!(why.contains("qa's login"), "{why}");
+    // Why it is not allowed is never passed on: it may name the vault or the declaration.
+    let why = held
+        .may_go_to(Some("qa"), Err("vault 'shop-vault' is not allowed".into()))
+        .unwrap_err();
+    assert_eq!(why, "that chat may not log in with shop-login now");
 }
 
 #[test]

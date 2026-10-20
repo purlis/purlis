@@ -482,6 +482,8 @@ fn each_theme_specimen_s_picture_goes_back_as_an_image_in_the_order_drawn() {
     let painted = |appearance, png: &[u8]| Painted {
         theme: "purlis-classic".into(),
         appearance,
+        high_contrast: false,
+        preview: false,
         width: 2,
         height: 1,
         millis: 9,

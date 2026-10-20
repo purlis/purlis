@@ -442,6 +442,22 @@ impl DevTools for Stand {
         hooked.unwrap_or_else(|| self.0.answer(&sent))
     }
 
+    /// As the connection holds an answer to a bound: past it, the call fails, alone (#2694).
+    fn call_within_bounded(
+        &self,
+        method: &str,
+        params: Value,
+        session: Option<&str>,
+        timeout: Duration,
+        most: usize,
+    ) -> Result<Value, CallError> {
+        let answer = self.call_within(method, params, session, timeout)?;
+        if serde_json::to_vec(&answer).map_or(0, |bytes| bytes.len()) > most {
+            return Err(CallError::TooLarge { most });
+        }
+        Ok(answer)
+    }
+
     fn dropped_events(&self) -> u64 {
         *super::lock(&self.0.dropped)
     }
@@ -680,6 +696,38 @@ fn a_page_too_heavy_to_read_whole_is_not_read_for_what_its_boxes_cut_off() {
             .iter()
             .any(|sent| sent.method == "DOMSnapshot.captureSnapshot"),
         "the layout was read"
+    );
+    assert!(snapshot(&browser, 2).contains("Read more"));
+}
+
+#[test]
+fn a_layout_answer_past_its_bound_marks_nothing_and_the_browser_still_answers() {
+    // #2694: a page whose layout answer carries more inline text than the read takes has the
+    // read fail alone: nothing is said to be cut off, and the browser goes on answering.
+    let (browser, engine) = browser();
+    lays_read_more_out_below_a_list(&engine);
+    {
+        let mut model = super::lock(&engine.model);
+        let drawn = model.drawn.get_mut("S-PAGE-1").unwrap();
+        drawn["strings"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("x".repeat(super::view::MOST_LAYOUT_BYTES)));
+    }
+    let text = snapshot(&browser, 1);
+    let line = |words: &str| {
+        text.lines()
+            .find(|l| l.contains(words))
+            .unwrap_or_else(|| panic!("no {words:?} in\n{text}"))
+            .to_owned()
+    };
+    assert!(!line("Read more").contains("out of view"), "{text}");
+    assert!(line("Below the fold").ends_with(" (out of view)"), "{text}");
+    assert!(
+        super::lock(&engine.sent)
+            .iter()
+            .any(|sent| sent.method == "DOMSnapshot.captureSnapshot"),
+        "the layout was asked for"
     );
     assert!(snapshot(&browser, 2).contains("Read more"));
 }

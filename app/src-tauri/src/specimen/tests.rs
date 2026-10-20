@@ -34,6 +34,7 @@ fn specimen(theme: &str, appearance: Option<Appearance>) -> Specimen {
     Specimen {
         theme: theme.to_owned(),
         appearance,
+        high_contrast: false,
     }
 }
 
