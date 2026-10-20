@@ -31,8 +31,9 @@ pub(crate) fn in_memory<H: session::Host + Clone>(
             .expect("the window speaks to the host"),
     );
     let handle = runtime.handle().clone();
-    let dial: Dial =
-        Arc::new(move |within| open_within(&handle, within, a_link_to(hosting.clone(), || {})));
+    let dial: Dial = Arc::new(move |within, naming| {
+        open_within(&handle, within, a_named_link_to(hosting.clone(), naming))
+    });
     let connection = Arc::new(Connection::default());
     connection.ready(Arc::clone(&link), dial);
     (connection, link)
@@ -46,6 +47,16 @@ async fn a_link_to<H: session::Host>(
 ) -> Result<HostLink, String> {
     let client = a_bare_link_to(hosting, closed).await?;
     HostLink::over(client, tokio::runtime::Handle::current(), || {}).await
+}
+
+/// [`a_link_to`], the window naming itself on it first by `naming` (#2623), as the window's
+/// binary dials each project root's link.
+async fn a_named_link_to<H: session::Host>(
+    hosting: H,
+    naming: Option<purlis_session_protocol::browsing::Secret>,
+) -> Result<HostLink, String> {
+    let client = a_bare_link_to(hosting, || {}).await?;
+    HostLink::over_named(client, tokio::runtime::Handle::current(), || {}, naming).await
 }
 
 /// The link [`a_link_to`] speaks over, bare: for a test that speaks the protocol itself.
@@ -1052,7 +1063,7 @@ fn a_host_on(runtime: &tokio::runtime::Runtime) -> OneHost {
     );
     let dial: Dial = {
         let (handle, serving) = (runtime.handle().clone(), Arc::clone(&serving));
-        Arc::new(move |within| {
+        Arc::new(move |within, _naming| {
             open_within(
                 &handle,
                 within,
@@ -1254,7 +1265,7 @@ fn a_call_that_cannot_wait_never_waits_behind_another_roots_link_being_opened() 
     let go = Mutex::new(go);
     connection.ready(
         window,
-        Arc::new(move |within| {
+        Arc::new(move |within, _naming| {
             let _ = entered.send(());
             let _ = go.lock().unwrap().recv_timeout(within);
             Err("held up".to_owned())
@@ -1365,7 +1376,7 @@ impl Comeback {
                 Arc::clone(&cuts),
                 self.runtime.handle().clone(),
             );
-            Arc::new(move |within| {
+            Arc::new(move |within, _naming| {
                 open_within(
                     &handle,
                     within,
@@ -2575,11 +2586,84 @@ fn the_name_the_window_keeps_is_never_logged() {
             .expect("a refused name leaves the link as it was");
     });
 
-    let name = purlis_core::windownames::name_for(config.path(), &root).unwrap();
+    let name = purlis_core::windownames::name_for(config.path(), &root, &[]).unwrap();
     let logged = logged.0.lock().unwrap().clone();
     assert!(
         logged.contains("did not take the window's name"),
         "{logged}"
     );
     assert!(!logged.contains(name.expose()), "{logged}");
+}
+
+/// **A window that comes back takes back its runner chat** (#2623), over its own host's relay
+/// as the window's binary links: each project root's link names the window first, before it
+/// subscribes. The window that comes back names itself the same way on its new link, and acts on
+/// its chat's confinement on the runner again; a window that names itself nowhere does not.
+#[test]
+fn a_window_that_comes_back_acts_on_its_runner_chats_confinement_again() {
+    const CONFINEMENT: &str = "01J9CNFNMNT00000000000000W1";
+    let runtime = a_runtime();
+    let runner = Hosting::confining(
+        ComposesConfined,
+        purlis_host::standin::StandInConfines::default(),
+        StandIns::default(),
+    );
+    let relay = runtime.block_on(async move {
+        purlis_host::Relay::new(Arc::new(move || {
+            let runner = runner.clone();
+            Box::pin(async move { Ok(crate::behaviour::linked_to(runner).await) })
+        }))
+    });
+    let config = tempfile::tempdir().unwrap();
+    let (_dir, root) = a_project();
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&root).unwrap();
+    let hold = || session::Command::HoldProject {
+        project: project.clone(),
+        project_path: root.display().to_string(),
+    };
+    let reach = || session::Command::ReachOf {
+        confinement: CONFINEMENT.into(),
+    };
+    // A window, naming its links or not, and its project root's link.
+    let window = |named: bool| {
+        let (connection, _link) = in_memory(relay.clone(), &runtime);
+        if named {
+            connection.naming_in(config.path().to_path_buf());
+        }
+        let link = connection.of_project(&root, PATIENCE).unwrap();
+        link.call(hold()).expect("the runner holds the project");
+        (connection, link)
+    };
+
+    let (first, link) = window(true);
+    link.call(session::Command::StartProgram(Box::new(
+        session::StartProgram {
+            confinement: Some(CONFINEMENT.into()),
+            ..session::StartProgram::of(&project, ProgramKind::Harness)
+        },
+    )))
+    .expect("composed on the runner");
+    link.call(reach())
+        .expect("the window acts on its chat's confinement");
+    // The window goes, and its links with it.
+    drop((first, link));
+
+    let (_unnamed, other) = window(false);
+    assert!(
+        other.call(reach()).is_err(),
+        "a window that names itself nowhere takes nothing back"
+    );
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        // Until the host has let go of the link of the window that went, its name is held.
+        let (_again, link) = window(true);
+        if link.call(reach()).is_ok() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the window that came back never took its chat back"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }

@@ -227,7 +227,14 @@ pub struct Connection {
 
 /// Opens another `local-ui` link to the window's host, waiting at most the time it is given: one
 /// for each project root the window holds there (#2178).
-pub type Dial = Arc<dyn Fn(Duration) -> Result<HostLink, String> + Send + Sync>;
+///
+/// It is given the name the window keeps for the project root the link is for (#2623), where
+/// it names its links: the link's first command says it ([`HostLink::over_named`]).
+pub type Dial = Arc<
+    dyn Fn(Duration, Option<purlis_session_protocol::browsing::Secret>) -> Result<HostLink, String>
+        + Send
+        + Sync,
+>;
 
 #[derive(Default)]
 enum Linked {
@@ -295,43 +302,38 @@ impl Connection {
         let dial = lock(&self.dial)
             .clone()
             .ok_or_else(|| no_host("there is no way to open another link to it"))?;
-        let link = Arc::new(dial(within).map_err(|why| no_host(&why))?);
-        // Before anything else is sent on it.
-        self.name_the_window(&link, root);
-        lock(&self.projects).insert(root.to_path_buf(), Arc::clone(&link));
-        Ok(link)
-    }
-
-    /// The window names itself on `link`, `root`'s, by the name it keeps for that root
-    /// (`name_window`, #2623): only to a host that knows the word, and only where the window
-    /// names its links. A name that cannot be kept or is refused leaves the link as it was,
-    /// one the window takes nothing back on after a restart. The name is never said.
-    fn name_the_window(&self, link: &HostLink, root: &Path) {
-        let Some(config) = lock(&self.names_in).clone() else {
-            return;
-        };
-        if link.version() < NAMES_ITSELF {
-            return;
-        }
-        let name = match purlis_core::windownames::name_for(&config, root) {
-            Ok(name) => name,
-            Err(why) => {
-                tracing::warn!(
-                    "purlis: the window keeps no name for the link of {}: {why}",
-                    root.display()
-                );
-                return;
-            }
-        };
-        let named = link.call(Command::NameWindow {
-            name: purlis_session_protocol::browsing::Secret::new(name.expose().to_owned()),
-        });
-        if let Err(why) = named {
+        // Named on the link as its first command, before it subscribes (#2623).
+        let naming = self.name_for(root);
+        let link = Arc::new(dial(within, naming).map_err(|why| no_host(&why))?);
+        if let Some(why) = &link.unnamed {
             tracing::warn!(
                 "purlis: the session host did not take the window's name for the link of {}: \
                  {why}",
                 root.display()
             );
+        }
+        lock(&self.projects).insert(root.to_path_buf(), Arc::clone(&link));
+        Ok(link)
+    }
+
+    /// **The name the window keeps for `root`'s link** (`purlis_core::windownames`, #2623),
+    /// where the window names its links: never evicted while a link of this window holds a root.
+    /// A name that cannot be kept leaves the link unnamed, one the window takes nothing back on
+    /// after a restart. The name is never said.
+    fn name_for(&self, root: &Path) -> Option<purlis_session_protocol::browsing::Secret> {
+        let config = lock(&self.names_in).clone()?;
+        let open: Vec<PathBuf> = lock(&self.projects).keys().cloned().collect();
+        match purlis_core::windownames::name_for(&config, root, &open) {
+            Ok(name) => Some(purlis_session_protocol::browsing::Secret::new(
+                name.expose().to_owned(),
+            )),
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: the window keeps no name for the link of {}: {why}",
+                    root.display()
+                );
+                None
+            }
         }
     }
 
@@ -451,6 +453,9 @@ pub struct HostLink {
     shared: Arc<Shared>,
     /// What hears the host on it, which keeps it open: the link closes once this ends.
     hearing: tokio::task::AbortHandle,
+    /// Why the host did not take the window's name on it, where it was named and did not
+    /// (#2623): said by whoever opened it, never with the name.
+    unnamed: Option<String>,
 }
 
 /// A link nobody holds any more is closed: one that opened after nobody waited for it, among
@@ -543,14 +548,37 @@ impl HostLink {
 
     /// Speak the session protocol on `link`, which the host admitted as `local-ui`: subscribe
     /// to word of programs ending, and take every view the host opens. Run on `runtime`;
-    /// `ended` is called once the link ends.
-    pub async fn over(
+    /// `ended` is called once the link ends. The tests' link, named nowhere: the window's own
+    /// opens each with [`Self::over_named`].
+    #[cfg(test)]
+    pub(crate) async fn over(
         link: Link,
         runtime: tokio::runtime::Handle,
         ended: impl FnOnce() + Send + 'static,
     ) -> Result<HostLink, String> {
+        Self::over_named(link, runtime, ended, None).await
+    }
+
+    /// [`Self::over`], the window naming itself first by `naming`, the name it keeps for the
+    /// project root this link is for (`name_window`, #2623): before it subscribes, so a host
+    /// that relays the link names the window by it to the runner. Only to a host that knows the
+    /// word. A refusal leaves the link unnamed, and is said without the name.
+    pub async fn over_named(
+        link: Link,
+        runtime: tokio::runtime::Handle,
+        ended: impl FnOnce() + Send + 'static,
+        naming: Option<purlis_session_protocol::browsing::Secret>,
+    ) -> Result<HostLink, String> {
         let (client, views, events) = Client::new(link);
         let client = Arc::new(client);
+        let unnamed = match naming.filter(|_| client.version() >= NAMES_ITSELF) {
+            Some(name) => client
+                .call(Command::NameWindow { name })
+                .await
+                .err()
+                .map(|why| why.to_string()),
+            None => None,
+        };
         client
             .subscribe(session::Since::new())
             .await
@@ -587,6 +615,7 @@ impl HostLink {
             runtime,
             shared,
             hearing,
+            unnamed,
         })
     }
 

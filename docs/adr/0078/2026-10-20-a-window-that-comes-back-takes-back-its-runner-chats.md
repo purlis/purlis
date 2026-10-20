@@ -12,11 +12,13 @@ are *decided in implementation, to be confirmed*.
    `<config>/purlisd/window-names.json`: `0600`, in the session host's `0700` folder, which
    every chat is denied; never committed, never sent anywhere but to the window's own host,
    never logged (plane-format.md). Not derived from anything another process can read, such as
-   the device id or the root: a client that could compute it could claim it first.
+   the device id or the root: a client that could compute it could claim it first. Kept for at
+   most 256 roots, by a digest of each root's path; the one used longest ago is let go of, never
+   one whose link is open.
    *Ruled by the person on 2026-10-20: yes to `<config>/purlisd/window-names.json` as proposed*
    (D-2623-1).
 2. **The window names itself on the link, first** (`name_window`, session protocol 1.31). It is
-   the link's first command, sent only to a host that knows the word. A refusal leaves the link
+   the link's first command, before it subscribes, sent only to a host that knows the word. A refusal leaves the link
    as it was, one that takes nothing back after a restart. Only `local-ui` is granted it.
    *Decided in implementation, to be confirmed* (D-2623-2).
 3. **The relay names the window to the runner by a digest of the name, never the name.** On each

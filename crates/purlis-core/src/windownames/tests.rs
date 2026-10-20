@@ -14,20 +14,20 @@ fn a_roots_name_is_128_random_bits_kept_the_same_across_restarts() {
     let config = tempfile::tempdir().unwrap();
     let (a, b) = (Path::new("/projects/a"), Path::new("/projects/b"));
 
-    let first = name_for(config.path(), a).unwrap();
+    let first = name_for(config.path(), a, &[]).unwrap();
     assert!(is_a_name(first.expose()), "{}", first.expose().len());
     // As the window that comes back asks again.
-    assert_eq!(name_for(config.path(), a).unwrap(), first);
-    assert_ne!(name_for(config.path(), b).unwrap(), first);
+    assert_eq!(name_for(config.path(), a, &[]).unwrap(), first);
+    assert_ne!(name_for(config.path(), b, &[]).unwrap(), first);
 
     let elsewhere = tempfile::tempdir().unwrap();
-    assert_ne!(name_for(elsewhere.path(), a).unwrap(), first);
+    assert_ne!(name_for(elsewhere.path(), a, &[]).unwrap(), first);
 }
 
 #[test]
 fn the_names_are_this_users_alone_in_the_session_hosts_folder() {
     let config = tempfile::tempdir().unwrap();
-    name_for(config.path(), Path::new("/projects/a")).unwrap();
+    name_for(config.path(), Path::new("/projects/a"), &[]).unwrap();
 
     let folder = crate::machine::charterd(config.path());
     assert_eq!(mode(&folder), 0o700);
@@ -38,7 +38,7 @@ fn the_names_are_this_users_alone_in_the_session_hosts_folder() {
 #[test]
 fn a_name_never_shows_in_debug() {
     let config = tempfile::tempdir().unwrap();
-    let name = name_for(config.path(), Path::new("/projects/a")).unwrap();
+    let name = name_for(config.path(), Path::new("/projects/a"), &[]).unwrap();
 
     let shown = format!("{name:?}");
     assert!(!shown.contains(name.expose()), "{shown}");
@@ -51,16 +51,29 @@ fn a_file_that_does_not_read_is_started_again() {
         purlis_same_user::PrivateDirectory::open(&crate::machine::charterd(config.path())).unwrap();
     folder.replace_file(FILE, b"not json").unwrap();
 
-    let name = name_for(config.path(), Path::new("/projects/a")).unwrap();
+    let name = name_for(config.path(), Path::new("/projects/a"), &[]).unwrap();
     assert!(is_a_name(name.expose()));
 }
 
 #[test]
 fn a_file_another_user_could_read_is_refused() {
     let config = tempfile::tempdir().unwrap();
-    name_for(config.path(), Path::new("/projects/a")).unwrap();
+    name_for(config.path(), Path::new("/projects/a"), &[]).unwrap();
     let file = crate::machine::charterd(config.path()).join(FILE);
     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
 
-    assert!(name_for(config.path(), Path::new("/projects/a")).is_err());
+    assert!(name_for(config.path(), Path::new("/projects/a"), &[]).is_err());
+}
+
+#[test]
+fn a_root_whose_link_is_open_is_never_let_go_of_to_make_room() {
+    let config = tempfile::tempdir().unwrap();
+    let live = std::path::PathBuf::from("/projects/live");
+    let first = name_for(config.path(), &live, &[]).unwrap();
+    for n in 0..MOST_NAMES {
+        let root = std::path::PathBuf::from(format!("/projects/{n}"));
+        name_for(config.path(), &root, std::slice::from_ref(&live)).unwrap();
+    }
+    // Every other root came after it, so it is the one used longest ago, and it is still kept.
+    assert_eq!(name_for(config.path(), &live, &[]).unwrap(), first);
 }

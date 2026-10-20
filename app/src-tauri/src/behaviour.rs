@@ -1761,7 +1761,7 @@ impl AWindow {
         let dial: crate::hostedsessions::Dial = {
             let (hosting, cuts, handle) =
                 (hosting.clone(), Arc::clone(&cuts), runtime.handle().clone());
-            Arc::new(move |within| {
+            Arc::new(move |within, _naming| {
                 crate::hostedsessions::open_within(
                     &handle,
                     within,
@@ -2218,7 +2218,9 @@ impl KilledWindow {
             .expect("the window speaks to the host");
         let dial: crate::hostedsessions::Dial = {
             let handle = runtime.handle().clone();
-            Arc::new(move |within| crate::hostedsessions::open_within(&handle, within, linked()))
+            Arc::new(move |within, _naming| {
+                crate::hostedsessions::open_within(&handle, within, linked())
+            })
         };
         let connection = Arc::new(Connection::default());
         connection.ready(Arc::new(link), dial);

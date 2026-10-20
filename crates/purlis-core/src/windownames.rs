@@ -33,7 +33,8 @@ const A_NAME_IS: usize = 16;
 
 /// The most roots the file keeps a name for. Past it, the name of a root not used for longest is
 /// let go of: its link names itself anew, and takes nothing back after the window's next start.
-const MOST_NAMES: usize = 1024;
+/// Never one whose link is open now.
+const MOST_NAMES: usize = 256;
 
 /// **The name the window keeps for one root's link**, as hex digits. Never shown by `Debug`.
 #[derive(Clone, PartialEq, Eq)]
@@ -56,7 +57,8 @@ impl std::fmt::Debug for Name {
 #[derive(Default, Serialize, Deserialize)]
 struct Kept {
     version: u32,
-    /// Each root's name, by the root's absolute path.
+    /// Each root's name, by a digest of the root's path ([`key_of`]): a fixed size, so the file
+    /// stays well within what a private file is read up to.
     names: BTreeMap<String, KeptName>,
 }
 
@@ -64,14 +66,15 @@ struct Kept {
 #[derive(Clone, Serialize, Deserialize)]
 struct KeptName {
     name: String,
-    /// When its link last named itself, in seconds since the epoch: what [`MOST_NAMES`] lets go
+    /// When its link last named itself, in milliseconds since the epoch: what [`MOST_NAMES`] lets go
     /// of first.
     used: u64,
 }
 
 /// **The name the window keeps for `root`'s link**, in the config home `config_root`: the one it
-/// keeps, or one minted now and kept. A file that cannot be read as one is started again.
-pub fn name_for(config_root: &Path, root: &Path) -> io::Result<Name> {
+/// keeps, or one minted now and kept. A file that cannot be read as one is started again. The
+/// roots in `open`, whose links are open now, are never let go of to make room.
+pub fn name_for(config_root: &Path, root: &Path, open: &[std::path::PathBuf]) -> io::Result<Name> {
     let folder = purlis_same_user::PrivateDirectory::open(&crate::machine::charterd(config_root))?;
     let lock = {
         use std::os::unix::fs::OpenOptionsExt;
@@ -91,25 +94,31 @@ pub fn name_for(config_root: &Path, root: &Path) -> io::Result<Name> {
         Err(err) => return Err(err),
     };
     kept.version = 1;
-    let key = root.display().to_string();
+    let key = key_of(root);
     let used = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs());
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        });
     let name = match kept.names.get(&key) {
         Some(one) if is_a_name(&one.name) => one.name.clone(),
         _ => mint()?,
     };
     kept.names.insert(
-        key,
+        key.clone(),
         KeptName {
             name: name.clone(),
             used,
         },
     );
+    // Never the root asked for, nor one whose link is open now.
+    let mut open: Vec<String> = open.iter().map(|root| key_of(root)).collect();
+    open.push(key);
     while kept.names.len() > MOST_NAMES {
         let Some(oldest) = kept
             .names
             .iter()
+            .filter(|(root, _)| !open.contains(root))
             .min_by_key(|(_, one)| one.used)
             .map(|(root, _)| root.clone())
         else {
@@ -120,6 +129,15 @@ pub fn name_for(config_root: &Path, root: &Path) -> io::Result<Name> {
     let text = serde_json::to_vec(&kept).map_err(io::Error::other)?;
     folder.replace_file(FILE, &text)?;
     Ok(Name(name))
+}
+
+/// What the file keeps `root`'s name under: a SHA-256 of its path, in hex.
+fn key_of(root: &Path) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(root.as_os_str().as_encoded_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn mint() -> io::Result<String> {
