@@ -295,9 +295,14 @@ pub fn answer(
         // browser of the chat whose token it carries, looked up among that chat's alone.
         Ask::Browse(browse) => crate::chatbrowsers::answered(held, &browse),
         // The theme specimen (#2330): no ticket, for the record's reason. The line names a theme
-        // and an appearance; the picture is of the specimen's own sample content.
+        // by its id, an appearance and option values; where the chat works, and whose drafts are
+        // its own, are this app's record of the chat whose token the line carries (#2536). The
+        // picture is of the specimen's own sample content.
         Ask::ThemePreview(asks) => crate::specimen::answered(
-            &|chat| is_open(held, chat),
+            &|chat| chat_at(held, chat),
+            // This machine's store as the app resolved it at startup, as a theme draft's ask
+            // reads it: never looked up again here.
+            held.config().map(std::path::Path::to_path_buf),
             crate::specimen::painter().as_deref(),
             &asks,
         ),
@@ -1503,6 +1508,24 @@ pub(crate) fn workspace_of(root: &std::path::Path, cwd: &std::path::Path) -> Opt
 
 fn no(why: String) -> Answer {
     Answer::No { why }
+}
+
+/// **Where the open chat `chat` works**, by this app's record of it (#2536): `None` for a chat
+/// it does not have open.
+fn chat_at(held: &Held, chat: u32) -> Option<crate::specimen::ChatAt> {
+    if !is_open(held, chat) {
+        return None;
+    }
+    let record = held
+        .chats()
+        .drafting()
+        .into_iter()
+        .find(|one| one.session == chat);
+    Some(crate::specimen::ChatAt {
+        plane: held.root().to_path_buf(),
+        workspace: record.as_ref().and_then(|one| one.workspace.clone()),
+        id: record.map(|one| one.id),
+    })
 }
 
 fn is_open(held: &Held, chat: u32) -> bool {

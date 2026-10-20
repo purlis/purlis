@@ -31,7 +31,7 @@ import {
 } from "../settings/components";
 import { look } from "../editor/look";
 import { DEFAULT_TEXT } from "../textDefaults";
-import { xtermTheme, type Theme } from "../theme/theme";
+import { drawnFont, xtermTheme, type Theme } from "../theme/theme";
 import { CHAT_LINES, EDITOR_FILE, EDITOR_TEXT, TERMINAL_LINES } from "./fixture";
 
 /** What a control is handed to do: nothing, the specimen never changes. */
@@ -66,7 +66,8 @@ function SpecimenTerminal({
     if (!where) return;
     const pane = new Terminal({
       fontSize: DEFAULT_TEXT.terminal,
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      // The theme's own terminal font, as every pane of the window draws it (#2536).
+      fontFamily: drawnFont("terminal", theme) ?? "monospace",
       theme: xtermTheme(theme),
       cols: 72,
       rows: lines.length + 1,
