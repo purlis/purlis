@@ -1517,13 +1517,114 @@ every harness. It cannot be turned off or edited. Each harness is handed the bui
 its own route, for the chat alone: Claude Code loads the plugin, opencode is told the directory
 through the shim, and a Codex chat is **briefed** on them, a list of names, descriptions and
 `SKILL.md` paths at `SessionStart` (ADR 0063).
-_Avoid_: purlis's skills, system skill, "Claude Code skills" for these; a copy of them anywhere
+_Avoid_: purlis's skills (every skill a person makes is a skill in purlis too), system skill,
+"Claude Code skills" for these; a copy of them anywhere
 
 **Skill set**:
 The skills one chat gets, each with the route its harness is handed it by and where it comes
 from, and every skill left out of it with a one-line reason. `purlis-skills` alone works it out
 (#2762); a harness adapter only turns it into argv, env and config.
 _Avoid_: loaded skills, available skills
+
+**Skill studio**:
+The one place where every skill a chat can get is listed, made, edited, installed, removed,
+observed and graded: a view tab, with each skill opening as its own. It is built behind the
+`skill-studio` flag until its **finish line** (spec #2762).
+_Avoid_: skill manager, skills page
+
+**Finish line** (of the Skill studio):
+The set of things that must all work before the Skill studio is shown to anyone. Until then it
+stays behind its flag.
+
+**Harness skill**:
+A skill a harness brings on its own, from the person's harness folders or from a harness plugin.
+purlis lists it and can turn it on or off for a project, but never edits it.
+_Avoid_: external skill, plugin skill
+
+**Repo skill**:
+A skill committed inside a repo a workspace clones, which the harness reads natively. purlis
+lists it and may turn it off, but never edits it.
+
+**Project skill**:
+A skill owned by the project, a folder in the plane's `skills/`. It is usable in chats at the
+**plane root**, and in a workspace's chats only where the project grants it (ADR 0099).
+
+**Workspace skill**:
+A skill owned by one workspace, in its `skills/`, usable only in that workspace's chats.
+
+**Persona skill**:
+A skill a persona loads wherever it runs, whether the persona owns it or names one owned
+elsewhere. It is not limited by the grants of the workspace it runs in.
+
+**Local skill**:
+A skill kept on the person's machine and not committed, so their team never gets it. Sharing it
+makes it an ordinary skill at the same level.
+_Avoid_: private skill, draft
+
+**Grant** (of a project skill):
+A project skill's statement of where it may be used: the plane root only (`root`, the
+default), every workspace (`all`), or a named list. A workspace can turn a granted skill off,
+never on one it was not granted (ADR 0099).
+_Avoid_: permission, share, scope
+
+**Manual-only skill**:
+A skill a harness never picks by itself. It runs only when it is asked for by name, and its
+description stays out of the chat's context.
+_Avoid_: hidden skill, disabled skill
+
+**Draft skill**:
+A new skill, or a change to one, waiting in the Skill studio for the person to accept. It is
+usually written by a chat.
+_Avoid_: pending skill, proposal
+
+**Deprecated skill**:
+A skill that still works but points to a replacement and is shown less.
+
+**Archived skill**:
+A skill kept in history that never loads until it is restored.
+
+**Pinned skill**:
+A skill a persona or workspace keeps always loaded, so no router hides it.
+
+**Skill owner**:
+A person named on a skill whose review a teammate's change needs on an org plane.
+
+**Skill source**:
+A git repository of skills, or a source an extension provides (SkillSource), that skills can be
+installed from. An installed skill is a pinned copy, updated only through a reviewed change
+(ADR 0100). It is not a **marketplace**.
+_Avoid_: marketplace, registry, feed
+
+**Marketplace**:
+The listing service of packs, extensions and personas (M47). A skill source is not a
+marketplace.
+
+**Skill run**:
+One use of a skill in a chat, from the moment it is invoked until the turn ends. What happens
+inside it counts toward the skill.
+_Avoid_: invocation, call, execution
+
+**Skill router**:
+What decides which skills a chat sees or can load for its task. One ships with purlis; others
+arrive as extensions.
+_Avoid_: skill selector, dispatcher (dispatch is persona work)
+
+**Grading framework**:
+A pluggable way of grading a skill. purlis ships one; others arrive as extensions.
+_Avoid_: eval engine, judge
+
+**Trigger test**:
+A grade of whether a harness picks the skill when it should and leaves it alone when it should
+not.
+
+**Outcome eval**:
+A grade of how well a skill does its job on fixture tasks.
+
+The skills' relationships: a **project skill** reaches a workspace only through a **grant**; a
+**persona skill** adds to what the chat has where it runs; when two levels hold a skill of the
+same name the narrower wins (persona, then workspace, then project, and local over shared), and
+a built-in skill's name is never taken; a **grading framework** produces **trigger tests** and
+**outcome evals**, and **skill runs** supply the live signals.
 
 **Vault**:
 A named set of secrets purlis keeps in the system keyring and hands to a command, never to

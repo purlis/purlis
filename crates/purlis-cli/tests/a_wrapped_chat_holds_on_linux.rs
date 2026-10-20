@@ -183,6 +183,7 @@ fn a_wrapped_chat_at_the_floor_never_writes_the_plugin_or_git_hooks_it_is_armed_
                     binary: None,
                     plugin: Some(&plugin),
                     git_hooks: Some(&git_hooks),
+                    skill_sets: None,
                 },
                 &root,
                 &[],

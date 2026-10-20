@@ -662,6 +662,7 @@ describe("the one list of actions", () => {
       "Your settings: Browsers",
       "Your settings: Accounts",
       "Your settings: Profiles",
+      "Your settings: Previews",
     ]);
     const hands = doing();
     await run(alone, "settings.group:you.editor", hands);
@@ -2413,8 +2414,9 @@ describe("the palette at fifty chats", () => {
     // 911 since #2326: Your settings: Density and fonts.
     // 914 since #2331: Settings › Theme at You, Project and Workspace. 915 since #2023: Your
     // settings: Browsers. 916 since #2176: New browser. 917 since #2679: Add a Docker pool….
-    // Your settings: Pools is offered only once this machine keeps a pool.
-    expect(offers).toHaveLength(917);
+    // Your settings: Pools is offered only once this machine keeps a pool. 918 since #2765:
+    // Your settings: Previews (Open Skill studio is offered only while its flag is on).
+    expect(offers).toHaveLength(918);
   });
 
   /**
