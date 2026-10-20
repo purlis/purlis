@@ -113,35 +113,27 @@ pub struct NativeDrawn {
 #[tauri::command]
 #[specta::specta]
 pub fn native_window_drawn(window: tauri::WebviewWindow) -> Result<NativeDrawn, String> {
-    answered(
-        window.theme().map_err(|err| err.to_string()),
-        given_colour(&window),
-    )
+    let theme = window
+        .theme()
+        .map_err(|err| format!("purlis could not read the window's appearance: {err}"))?;
+    Ok(answered(theme, given_colour(&window)))
 }
 
-/// **The answer for a window** whose platform said `theme` and `colour`: a theme that could not
-/// be read fails the answer, a colour that could not be read is `null` in it.
-fn answered(
-    theme: Result<tauri::Theme, String>,
-    colour: Result<[u8; 3], String>,
-) -> Result<NativeDrawn, String> {
+/// **The answer for a window** whose platform said `theme` and `colour`: a colour that could not
+/// be read is `null` in it, and never stops the appearance from being answered.
+fn answered(theme: tauri::Theme, colour: Result<[u8; 3], String>) -> NativeDrawn {
     let appearance = match theme {
-        Ok(tauri::Theme::Light) => "light",
-        Ok(_) => "dark",
-        Err(err) => {
-            return Err(format!(
-                "purlis could not read the window's appearance: {err}"
-            ));
-        }
+        tauri::Theme::Light => "light",
+        _ => "dark",
     };
     let background = colour
         .inspect_err(|why| tracing::debug!("purlis: no window colour was read back ({why})"))
         .ok()
         .map(hex);
-    Ok(NativeDrawn {
+    NativeDrawn {
         appearance: appearance.to_owned(),
         background,
-    })
+    }
 }
 
 /// How long the window's colour is waited for. Asked on the window's thread, the platform
@@ -275,21 +267,19 @@ mod tests {
     fn a_colour_the_platform_gives_no_reading_of_is_null_and_the_appearance_is_still_read() {
         let unread = Err("no colour on this platform".to_owned());
         assert_eq!(
-            answered(Ok(tauri::Theme::Light), unread),
-            Ok(NativeDrawn {
+            answered(tauri::Theme::Light, unread),
+            NativeDrawn {
                 appearance: "light".to_owned(),
                 background: None,
-            })
+            }
         );
         assert_eq!(
-            answered(Ok(tauri::Theme::Dark), Ok([0x19, 0x19, 0x17])),
-            Ok(NativeDrawn {
+            answered(tauri::Theme::Dark, Ok([0x19, 0x19, 0x17])),
+            NativeDrawn {
                 appearance: "dark".to_owned(),
                 background: Some("#191917".to_owned()),
-            })
+            }
         );
-        // The appearance is the one read that fails the answer.
-        assert!(answered(Err("gone".to_owned()), Ok([0, 0, 0])).is_err());
     }
 
     #[test]
