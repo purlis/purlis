@@ -85,7 +85,7 @@ impl World {
         let into = self.bundle_path("fix.bundle");
         let sent = bundle_branch(
             &self.desktop,
-            Some(&self.desktop),
+            Some((self.desktop.as_path(), &[][..])),
             "fix",
             have,
             &into,
@@ -268,15 +268,24 @@ fn a_branch_checked_out_on_the_runner_is_never_moved_under_it() {
         &runner,
         &["worktree", "add", "-q", tree.to_str().unwrap(), "fix"],
     );
+    let at_first = git(&runner, &["rev-parse", "fix"]);
+    // Sent again, with a newer commit, by bundle and by a commit the runner holds.
+    let have: Vec<String> = held_refs(&runner)
+        .unwrap()
+        .into_iter()
+        .map(|one| one.oid)
+        .collect();
+    commit(&world.desktop, "fix.txt", "newer here\n");
+    world.push_fix(&have);
     let main = Ref {
         name: "refs/heads/fix".into(),
         oid: git(&world.desktop, &["rev-parse", "main"]),
     };
-    // `main`'s commit came with `fix`'s history, so only the checkout holds the ref back.
-    let refused = receive(&runner, None, &[main], None).unwrap_err();
-    assert!(
-        matches!(&refused, Refused::NotAllowed(why) if why.contains("checked out")),
-        "{refused:?}"
+    receive(&runner, None, &[main], None).unwrap();
+    assert_eq!(
+        git(&runner, &["rev-parse", "fix"]),
+        at_first,
+        "the runner chat's branch is its own"
     );
 }
 
@@ -474,7 +483,7 @@ fn no_filter_the_work_tree_names_runs_on_its_snapshot() {
         ],
     );
     std::fs::write(world.desktop.join("fix.txt"), "dirty\n").unwrap();
-    let snapshot = snapshot(&world.desktop, &world.scratch())
+    let snapshot = snapshot(&world.desktop, &world.scratch(), &[])
         .unwrap()
         .expect("dirty");
     assert!(!mark.exists(), "a clean filter ran on the snapshot");
@@ -487,7 +496,10 @@ fn no_filter_the_work_tree_names_runs_on_its_snapshot() {
 #[test]
 fn a_clean_work_tree_has_no_snapshot() {
     let world = World::new();
-    assert_eq!(snapshot(&world.desktop, &world.scratch()).unwrap(), None);
+    assert_eq!(
+        snapshot(&world.desktop, &world.scratch(), &[]).unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -500,7 +512,7 @@ fn a_fresh_repository_is_checked_out_at_the_branch_with_its_uncommitted_work_and
     let into = world.bundle_path("fix.bundle");
     let sent = bundle_branch(
         &world.desktop,
-        Some(&world.desktop),
+        Some((world.desktop.as_path(), &[][..])),
         "fix",
         &[],
         &into,
@@ -512,9 +524,8 @@ fn a_fresh_repository_is_checked_out_at_the_branch_with_its_uncommitted_work_and
 
     assert_eq!(git(&runner, &["rev-parse", "HEAD"]), fix);
     assert_eq!(
-        git(&runner, &["symbolic-ref", "-q", "HEAD"]).len(),
-        0,
-        "on no branch"
+        git(&runner, &["symbolic-ref", "-q", "HEAD"]),
+        "refs/heads/fix"
     );
     let read = |file: &str| std::fs::read_to_string(runner.join(file)).ok();
     assert_eq!(read("fix.txt").as_deref(), Some("fixed better\n"));
@@ -533,7 +544,11 @@ fn a_fresh_repository_is_checked_out_at_the_branch_with_its_uncommitted_work_and
     let later = bundle_branch(&world.desktop, None, "fix", &have, &into, &world.scratch()).unwrap();
     let bundle = (later.bundled == Bundled::Wrote).then_some(into.as_path());
     let held = receive(&runner, bundle, &later.refs, Some("refs/heads/fix")).unwrap();
-    assert_eq!(named(&held, "refs/heads/fix").unwrap().oid, newer);
+    assert_eq!(
+        named(&held, "refs/heads/fix").unwrap().oid,
+        fix,
+        "the branch the runner has checked out is its own, and {newer} was not taken under it"
+    );
     assert_eq!(read("fix.txt").as_deref(), Some("the runner chat's work\n"));
     assert_eq!(git(&runner, &["rev-parse", "HEAD"]), fix);
 }
@@ -561,4 +576,110 @@ fn a_checkout_naming_a_ref_the_transfer_does_not_carry_is_refused_and_nothing_mo
         held_refs(&world.runner_repo()).unwrap_or_default(),
         Vec::new()
     );
+}
+
+#[test]
+fn a_snapshot_of_a_project_carries_none_of_its_state_or_local_settings() {
+    let world = World::new();
+    let left = plane_leaves_out();
+    assert!(left.iter().any(|name| name == ".purlis"), "{left:?}");
+    std::fs::create_dir_all(world.desktop.join(".purlis/vaults")).unwrap();
+    std::fs::write(
+        world.desktop.join(".purlis/vaults/forge.json"),
+        "{\"token\":\"x\"}",
+    )
+    .unwrap();
+    std::fs::write(world.desktop.join("purlis.local.toml"), "[sandbox]\n").unwrap();
+    // Nothing but what is left out: no snapshot at all.
+    assert_eq!(
+        snapshot(&world.desktop, &world.scratch(), &left).unwrap(),
+        None
+    );
+
+    std::fs::write(world.desktop.join("fix.txt"), "a memory\n").unwrap();
+    let snapshot = snapshot(&world.desktop, &world.scratch(), &left)
+        .unwrap()
+        .expect("the change is carried");
+    let listed = git(&world.desktop, &["ls-tree", "-r", "--name-only", &snapshot]);
+    assert!(listed.contains("fix.txt"), "{listed}");
+    assert!(!listed.contains(".purlis"), "{listed}");
+    assert!(!listed.contains("purlis.local.toml"), "{listed}");
+}
+
+/// The window's two ends over the link, as the link would carry them: `take_code` into the
+/// runner's repository, and `give_code` back from it.
+fn sent_to(runner: &Path) -> impl FnOnce(Sending<'_>) -> Result<Vec<Ref>, String> + '_ {
+    move |sending| {
+        receive(
+            runner,
+            sending.bundle,
+            &sending.refs,
+            Some(&sending.checkout),
+        )
+        .map_err(|why| why.to_string())
+    }
+}
+
+#[test]
+fn a_clone_is_sent_on_its_branch_with_its_work_and_its_runner_commits_come_back() {
+    let world = World::new();
+    std::fs::write(world.desktop.join("fix.txt"), "half done\n").unwrap();
+    let runner = world.runner_repo();
+
+    let held = send(&world.desktop, &[], &[], &world.scratch(), sent_to(&runner)).unwrap();
+    assert!(named(&held, "refs/heads/fix").is_some());
+    assert_eq!(
+        std::fs::read_to_string(runner.join("fix.txt")).unwrap(),
+        "half done\n",
+        "the runner's work tree has the uncommitted work"
+    );
+
+    // The runner's chat commits; the desktop fetches it back.
+    let on_the_runner = commit(&runner, "fix.txt", "done on the runner\n");
+    let scratch = world.scratch();
+    let kept = fetch_back(&world.desktop, "builds", &scratch, |have, into| {
+        give(&runner, &have, into)
+            .map(|(heads, bundled)| (heads, bundled == Bundled::Wrote))
+            .map_err(|why| why.to_string())
+    })
+    .unwrap();
+    assert!(
+        kept.iter()
+            .any(|one| one.name == "refs/remotes/builds/fix" && one.oid == on_the_runner),
+        "{kept:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(world.desktop.join("fix.txt")).unwrap(),
+        "half done\n",
+        "the desktop's own work is untouched"
+    );
+}
+
+#[test]
+fn a_folder_that_is_not_a_repository_sends_and_fetches_nothing_and_one_on_no_branch_says_so() {
+    let world = World::new();
+    let plain = world.top.join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    assert_eq!(
+        send(&plain, &[], &[], &world.scratch(), |_| panic!(
+            "nothing is sent"
+        ))
+        .unwrap(),
+        Vec::new()
+    );
+    assert_eq!(
+        fetch_back(&plain, "builds", &world.scratch(), |_, _| panic!(
+            "nothing is fetched"
+        ))
+        .unwrap(),
+        Vec::new()
+    );
+    let main = git(&world.desktop, &["rev-parse", "main"]);
+    git(&world.desktop, &["checkout", "-q", "--detach", &main]);
+    assert!(matches!(
+        send(&world.desktop, &[], &[], &world.scratch(), |_| panic!(
+            "nothing is sent"
+        )),
+        Err(Refused::NotAllowed(_))
+    ));
 }

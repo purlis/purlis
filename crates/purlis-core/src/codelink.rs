@@ -194,7 +194,15 @@ pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
 /// files that are not ignored included, whose parent is what `tree` has checked out. `None`
 /// where nothing is uncommitted. Staged in an index of its own, so what is staged in `tree` is
 /// left as it is, and with no attributes from the work tree, so no filter it names runs.
-pub fn snapshot(tree: &Path, scratch: &Path) -> Result<Option<String>, Refused> {
+///
+/// `leave_out` names folders and files, relative to the top of `tree`, that no snapshot carries,
+/// changed or new: as they are committed, or not at all ([`plane_leaves_out`]). A snapshot of
+/// nothing but those is none.
+pub fn snapshot(
+    tree: &Path,
+    scratch: &Path,
+    leave_out: &[String],
+) -> Result<Option<String>, Refused> {
     let status = run(tree, &["status", "--porcelain", "--untracked-files=all"])?;
     if !status.ok() {
         return Err(git_failed("read the work tree", &status));
@@ -206,18 +214,21 @@ pub fn snapshot(tree: &Path, scratch: &Path) -> Result<Option<String>, Refused> 
     let _ = std::fs::remove_file(&index);
     let empty = empty_tree(tree)?;
     let attr = format!("--attr-source={empty}");
-    let staged = [
-        vec![attr.as_str(), "read-tree", "HEAD"],
-        vec![
-            "-c",
-            "core.attributesFile=/dev/null",
-            attr.as_str(),
-            "add",
-            "--all",
-            "--",
-            ".",
-        ],
+    let excluded: Vec<String> = leave_out
+        .iter()
+        .map(|left| format!(":(top,exclude,literal){left}"))
+        .collect();
+    let mut adding = vec![
+        "-c",
+        "core.attributesFile=/dev/null",
+        attr.as_str(),
+        "add",
+        "--all",
+        "--",
+        ".",
     ];
+    adding.extend(excluded.iter().map(String::as_str));
+    let staged = [vec![attr.as_str(), "read-tree", "HEAD"], adding];
     for args in staged {
         let ran = git::run_with_index(tree, &index, &args).map_err(git_missing)?;
         if !ran.ok() {
@@ -229,6 +240,10 @@ pub fn snapshot(tree: &Path, scratch: &Path) -> Result<Option<String>, Refused> 
     let _ = std::fs::remove_file(&index);
     if !written.ok() {
         return Err(git_failed("write the uncommitted work", &written));
+    }
+    let committed = run(tree, &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"])?;
+    if committed.ok() && committed.line() == written.line() {
+        return Ok(None);
     }
     let commit = run(
         tree,
@@ -261,6 +276,17 @@ fn empty_tree(repo: &Path) -> Result<String, Refused> {
         return Err(git_failed("name the empty tree", &ran));
     }
     Ok(ran.line().to_owned())
+}
+
+/// **What no snapshot of a project's own repository carries**: purlis's state folder, where its
+/// vaults and this machine's sessions are, and the local settings file, under each of their
+/// names. Neither belongs on another machine, ignored by the project's `.gitignore` or not.
+pub fn plane_leaves_out() -> Vec<String> {
+    crate::names::STATE_DIR
+        .spellings()
+        .chain(crate::names::LOCAL_SETTINGS.spellings())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// What [`bundle`] made.
@@ -325,7 +351,7 @@ pub struct Sent {
 /// itself, the work tree and its index are left as they are.
 pub fn bundle_branch(
     repo: &Path,
-    tree: Option<&Path>,
+    tree: Option<(&Path, &[String])>,
     branch: &str,
     have: &[String],
     into: &Path,
@@ -352,7 +378,7 @@ pub fn bundle_branch(
         oid: at.line().to_owned(),
     }];
     let snapshot = match tree {
-        Some(tree) => snapshot(tree, scratch)?,
+        Some((tree, leave_out)) => snapshot(tree, scratch, leave_out)?,
         None => None,
     };
     let kept = format!("{SNAPSHOTS}{branch}");
@@ -410,9 +436,10 @@ fn heads_of(repo: &Path, path: &Path) -> Result<Vec<Ref>, Refused> {
 /// own. Answers every branch and snapshot `repo` holds after it.
 ///
 /// **`checkout`**, a branch among `refs`, is checked out in `repo`'s own work tree where nothing
-/// is checked out there yet: at the branch's commit, on no branch, with the uncommitted work of
-/// the branch's snapshot where `refs` carries one ([`check_out_fresh`]). A repository with
-/// something checked out is never checked out again, so a runner chat's work there is kept.
+/// is checked out there yet, with the uncommitted work of the branch's snapshot where `refs`
+/// carries one ([`check_out_fresh`]). A repository with something checked out is never checked
+/// out again, and a branch one of its work trees has checked out is never moved, so a runner
+/// chat's work there is kept.
 pub fn receive(
     repo: &Path,
     bundle: Option<&Path>,
@@ -433,7 +460,7 @@ pub fn receive(
                 .strip_prefix(HEADS)
                 .map(|branch| format!("{SNAPSHOTS}{branch}"))
                 .and_then(|kept| refs.iter().find(|one| one.name == kept));
-            Some((branch.oid.clone(), snapshot.map(|one| one.oid.clone())))
+            Some((branch.name.clone(), snapshot.map(|one| one.oid.clone())))
         }
         None => None,
     };
@@ -447,6 +474,9 @@ pub fn receive(
         }
     }
     made(repo)?;
+    // A branch a work tree of the runner's has checked out is the runner chat's own now: it is
+    // left as it is, whatever the desktop sends of it.
+    let checked_out = checked_out_in(repo)?;
     let carried_by_bundle = match bundle {
         Some(path) => {
             let heads = heads_of(repo, path)?;
@@ -461,7 +491,11 @@ pub fn receive(
             let path = path
                 .to_str()
                 .ok_or_else(|| Refused::Git("the bundle's path is not text".into()))?;
-            if !heads.is_empty() {
+            let taken: Vec<&Ref> = heads
+                .iter()
+                .filter(|head| !checked_out.contains(&head.name))
+                .collect();
+            if !taken.is_empty() {
                 let mut args: Vec<String> = FETCHES_WITH.iter().map(|s| (*s).to_owned()).collect();
                 args.extend(
                     [
@@ -474,7 +508,7 @@ pub fn receive(
                     ]
                     .map(str::to_owned),
                 );
-                args.extend(heads.iter().map(|head| format!("+{0}:{0}", head.name)));
+                args.extend(taken.iter().map(|head| format!("+{0}:{0}", head.name)));
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 let ran = git::run_network(repo, None, &args).map_err(git_missing)?;
                 if !ran.ok() {
@@ -485,14 +519,10 @@ pub fn receive(
         }
         None => Vec::new(),
     };
-    let checked_out = checked_out_in(repo)?;
-    for one in refs.iter().filter(|one| !carried_by_bundle.contains(one)) {
-        if checked_out.contains(&one.name) {
-            return Err(not_allowed(format!(
-                "{} is checked out on the runner, so it was not moved",
-                one.name
-            )));
-        }
+    for one in refs
+        .iter()
+        .filter(|one| !carried_by_bundle.contains(one) && !checked_out.contains(&one.name))
+    {
         if !holds_commit(repo, &one.oid) {
             return Err(not_allowed(format!(
                 "the runner does not hold {} and the bundle did not carry it, so {} was not moved",
@@ -504,21 +534,24 @@ pub fn receive(
             return Err(git_failed(&format!("move {}", one.name), &ran));
         }
     }
-    if let Some((commit, uncommitted)) = checking_out {
-        check_out_fresh(repo, &commit, uncommitted.as_deref())?;
+    if let Some((branch, uncommitted)) = checking_out {
+        check_out_fresh(repo, &branch, uncommitted.as_deref())?;
     }
     held_refs(repo)
 }
 
-/// **Check `repo`'s own work tree out at `commit`, on no branch, where nothing is checked out
-/// there yet**, with `uncommitted`'s files written over it as uncommitted work: changed files
-/// changed, new ones untracked, deleted ones gone. No attribute from the tree is read, so no
-/// filter it names runs. A repository with a commit checked out is left as it is.
+/// **Check `repo`'s own work tree out on `branch`, where nothing is checked out there yet**, with
+/// `uncommitted`'s files written over it as uncommitted work: changed files changed, new ones
+/// untracked, deleted ones gone. No attribute from the tree is read, so no filter it names runs.
+/// A repository with a commit checked out is left as it is.
 pub fn check_out_fresh(
     repo: &Path,
-    commit: &str,
+    branch: &str,
     uncommitted: Option<&str>,
 ) -> Result<(), Refused> {
+    let short = branch
+        .strip_prefix(HEADS)
+        .ok_or_else(|| not_allowed(format!("`{branch}` is not a branch to check out")))?;
     let checked_out = run(repo, &["rev-parse", "--verify", "--quiet", "HEAD"])?;
     if checked_out.ok() {
         return Ok(());
@@ -527,7 +560,7 @@ pub fn check_out_fresh(
     let attr = format!("--attr-source={empty}");
     let quiet = ["-c", "core.attributesFile=/dev/null", attr.as_str()];
     let mut args: Vec<&str> = quiet.to_vec();
-    args.extend(["checkout", "--quiet", "--detach", "--force", commit]);
+    args.extend(["checkout", "--quiet", "--force", "--no-guess", short, "--"]);
     let ran = run(repo, &args)?;
     if !ran.ok() {
         return Err(git_failed("check the code out", &ran));
@@ -723,6 +756,158 @@ pub fn take_back(
         }
     }
     refs_under(repo, &[prefix.as_str()])
+}
+
+/// The branch `repo` is on, where it is on one with a commit.
+pub fn current_branch(repo: &Path) -> Option<String> {
+    let ran = run(repo, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok()?;
+    let branch = ran.ok().then(|| ran.line().to_owned())?;
+    let born = run(repo, &["rev-parse", "--verify", "--quiet", "HEAD"]).ok()?;
+    born.ok().then_some(branch)
+}
+
+/// Whether `dir` is the top of a git repository of its own: a clone, whose `.git` is a folder.
+pub fn a_repository(dir: &Path) -> bool {
+    dir.join(".git").is_dir()
+}
+
+/// What one send hands the link: the refs to name, the branch to check out where nothing is
+/// checked out yet, and the bundle, where there is anything to carry.
+pub struct Sending<'a> {
+    pub refs: Vec<Ref>,
+    pub checkout: String,
+    pub bundle: Option<&'a Path>,
+}
+
+/// **The desktop sends the branch `repo` is on to a runner** ([`bundle_branch`]), with its
+/// uncommitted work less `leave_out`, leaving out what `have` (the runner's refs the last send
+/// answered) reaches, through `through`: the link's `take_code`, which answers the refs the
+/// runner holds after. A repository on no branch is refused in a sentence, and one that is not a
+/// repository sends nothing.
+pub fn send(
+    repo: &Path,
+    leave_out: &[String],
+    have: &[String],
+    scratch: &Path,
+    through: impl FnOnce(Sending<'_>) -> Result<Vec<Ref>, String>,
+) -> Result<Vec<Ref>, Refused> {
+    if !a_repository(repo) {
+        return Ok(Vec::new());
+    }
+    let branch = current_branch(repo).ok_or_else(|| {
+        not_allowed(format!(
+            "{} is on no branch, so it was not sent to the runner",
+            repo.display()
+        ))
+    })?;
+    let into = scratch.join("send.bundle");
+    let sent = bundle_branch(repo, Some((repo, leave_out)), &branch, have, &into, scratch)?;
+    let bundle = (sent.bundled == Bundled::Wrote).then_some(into.as_path());
+    let held = through(Sending {
+        refs: sent.refs,
+        checkout: format!("{HEADS}{branch}"),
+        bundle,
+    })
+    .map_err(Refused::Git);
+    let _ = std::fs::remove_file(&into);
+    held
+}
+
+/// **The desktop fetches a runner's branches back into `repo`** ([`take_back`]), as
+/// `refs/remotes/<pool>/<branch>`, through `through`: the link's `give_code`, given what `repo`
+/// already has and where to write the bundle, which answers the runner's branches and whether it
+/// wrote one. A folder that is not a repository fetches nothing.
+pub fn fetch_back(
+    repo: &Path,
+    pool: &str,
+    scratch: &Path,
+    through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
+) -> Result<Vec<Ref>, Refused> {
+    if !a_repository(repo) {
+        return Ok(Vec::new());
+    }
+    let mut have: Vec<String> = refs_under(repo, &[HEADS, &format!("refs/remotes/{pool}/")])?
+        .into_iter()
+        .map(|one| one.oid)
+        .collect();
+    have.sort();
+    have.dedup();
+    let into = scratch.join("fetch.bundle");
+    let (heads, wrote) = through(have, &into).map_err(Refused::Git)?;
+    let bundle = wrote.then_some(into.as_path());
+    let kept = take_back(repo, pool, bundle, &heads);
+    let _ = std::fs::remove_file(&into);
+    kept
+}
+
+/// **How a runner's session host moves code in the projects it keeps for its desktop** (#2046):
+/// this module's [`receive`] and [`give`], in the repository's folder of the project the host
+/// holds, which is never anywhere but the project's own folder or a workspace's repository in it
+/// ([`repo_in`]). What `purlis serve` gives its host.
+#[cfg(unix)]
+pub struct Moves;
+
+#[cfg(unix)]
+fn code_refused(why: Refused) -> purlis_host::protocol::session::Refusal {
+    use purlis_host::protocol::session;
+    let code = match &why {
+        Refused::NotAllowed(_) => session::NOT_ALLOWED,
+        Refused::Git(_) => session::NOT_STARTED,
+    };
+    session::Refusal {
+        code: code.into(),
+        why: why.to_string(),
+    }
+}
+
+#[cfg(unix)]
+fn wire_refs(refs: Vec<Ref>) -> Vec<purlis_host::protocol::session::CodeRef> {
+    refs.into_iter()
+        .map(|one| purlis_host::protocol::session::CodeRef {
+            name: one.name,
+            oid: one.oid,
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+impl purlis_host::Code for Moves {
+    fn take(
+        &self,
+        project: &Path,
+        repo: &str,
+        bundle: Option<&Path>,
+        refs: &[purlis_host::protocol::session::CodeRef],
+        checkout: Option<&str>,
+    ) -> Result<Vec<purlis_host::protocol::session::CodeRef>, purlis_host::protocol::session::Refusal>
+    {
+        let at = repo_in(project, repo).map_err(code_refused)?;
+        let refs: Vec<Ref> = refs
+            .iter()
+            .map(|one| Ref {
+                name: one.name.clone(),
+                oid: one.oid.clone(),
+            })
+            .collect();
+        receive(&at, bundle, &refs, checkout)
+            .map(wire_refs)
+            .map_err(code_refused)
+    }
+
+    fn give(
+        &self,
+        project: &Path,
+        repo: &str,
+        have: &[String],
+        into: &Path,
+    ) -> Result<
+        (Vec<purlis_host::protocol::session::CodeRef>, bool),
+        purlis_host::protocol::session::Refusal,
+    > {
+        let at = repo_in(project, repo).map_err(code_refused)?;
+        let (heads, bundled) = give(&at, have, into).map_err(code_refused)?;
+        Ok((wire_refs(heads), bundled == Bundled::Wrote))
+    }
 }
 
 fn run(dir: &Path, args: &[&str]) -> Result<git::Run, Refused> {

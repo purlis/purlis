@@ -577,10 +577,10 @@ pub enum Command {
     /// relayed for it.
     ///
     /// `checkout`, where it names a branch among `refs`, has a repository with nothing checked
-    /// out yet (one the host has just made) check its own work tree out at that branch's commit,
-    /// on no branch, with the branch's snapshot's uncommitted work in it where `refs` carries
-    /// one: what the runner's chats then work in. A repository with something checked out is
-    /// left as it is.
+    /// out yet (one the host has just made) check its own work tree out on that branch, with the
+    /// branch's snapshot's uncommitted work in it where `refs` carries one: what the runner's
+    /// chats then work in. A repository with something checked out is left as it is, and a
+    /// branch one of its work trees has checked out is the runner's own and is never moved.
     TakeCode {
         project: String,
         #[serde(default)]

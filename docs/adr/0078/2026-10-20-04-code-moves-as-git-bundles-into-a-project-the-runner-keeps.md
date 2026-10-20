@@ -3,7 +3,7 @@
 **Built by #2046** on §7 (RR-16) and §8. They are left as accepted, and this note says how code
 first crosses to a pool's runner and back. The protocol's part is ADR 0068's amendment of the
 same day. Item 1 was accepted by the steward on 2026-10-20 (D-2046-1). The rest is *decided in
-implementation, to be confirmed* (D-2046-5 to D-2046-8).
+implementation, to be confirmed* (D-2046-5 to D-2046-9).
 
 1. **A git bundle, not a remote helper.** §7 named `git-remote-purlis` as git's standard way for
    git on the desktop to reach the link. A bundle is git's own file of a pack and the refs it
@@ -22,9 +22,17 @@ implementation, to be confirmed* (D-2046-5 to D-2046-8).
 3. **What a runner takes** (`purlis_core::codelink::receive`). It takes only the refs the
    desktop named, each a branch (`refs/heads/…`) or a branch's snapshot of uncommitted work
    (`refs/purlis/snapshots/…`). Each name must be one git takes and none may be `HEAD`. A
-   bundle that carries any other ref is refused whole. A branch checked out in one of the
-   runner's work trees is never moved. A repository the runner makes for it has no hook and is
-   on no branch the desktop sends. *Decided in implementation, to be confirmed (D-2046-6).*
+   bundle that carries any other ref is refused whole. A repository the runner makes for it has
+   no hook and starts on no branch the desktop sends. The desktop's `checkout` is checked out,
+   on its branch and with its snapshot's uncommitted work, only where nothing is checked out yet.
+   From then on, a branch one of the runner's work trees has checked out is the runner chat's
+   own: the runner leaves it as it is, whatever the desktop sends of it, and the desktop takes
+   it back. *Decided in implementation, to be confirmed (D-2046-6).*
+6. **What a snapshot leaves out.** A snapshot of the project's own repository never carries
+   purlis's state folder (its vaults and this machine's sessions) or the local settings file,
+   ignored by the project or not (`purlis_core::codelink::plane_leaves_out`). A clone's snapshot
+   carries its uncommitted work whole; what its own `.gitignore` ignores stays here. *Decided in
+   implementation, to be confirmed (D-2046-9).*
 4. **What the desktop takes back** (`purlis_core::codelink::take_back`). It takes the runner's
    branches as `refs/remotes/<pool>/<branch>` and nowhere else, and removes a branch from there
    once the runner no longer has it. No local branch, work tree or index of the desktop's is

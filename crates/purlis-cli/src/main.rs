@@ -859,7 +859,7 @@ fn serve() -> ExitCode {
                     .heeding(purlis_core::halt::OnDisk(config.clone()))
                     // The projects it holds for its desktop, each in `<data>/projects/<id>`,
                     // and the code the desktop moves in them over the link (#2046).
-                    .moving_code_with(MovesCode),
+                    .moving_code_with(purlis_core::codelink::Moves),
                 ))
             },
             pairing,
@@ -930,81 +930,6 @@ impl purlis_host::Compose for Composes {
             confined,
             purlis_core::sandbox::Os::this(),
         )
-    }
-}
-
-/// **How `purlis serve` moves code in the projects it keeps for its desktop** (#2046): the
-/// core's ([`purlis_core::codelink`]), in the repository's folder of the project the host
-/// holds, which is never anywhere but the project's own folder or a workspace's repository in
-/// it.
-#[cfg(unix)]
-struct MovesCode;
-
-#[cfg(unix)]
-fn code_refused(why: purlis_core::codelink::Refused) -> purlis_host::protocol::session::Refusal {
-    use purlis_core::codelink::Refused;
-    use purlis_host::protocol::session;
-    let code = match &why {
-        Refused::NotAllowed(_) => session::NOT_ALLOWED,
-        Refused::Git(_) => session::NOT_STARTED,
-    };
-    session::Refusal {
-        code: code.into(),
-        why: why.to_string(),
-    }
-}
-
-#[cfg(unix)]
-fn refs_of(refs: Vec<purlis_core::codelink::Ref>) -> Vec<purlis_host::protocol::session::CodeRef> {
-    refs.into_iter()
-        .map(|one| purlis_host::protocol::session::CodeRef {
-            name: one.name,
-            oid: one.oid,
-        })
-        .collect()
-}
-
-#[cfg(unix)]
-impl purlis_host::Code for MovesCode {
-    fn take(
-        &self,
-        project: &std::path::Path,
-        repo: &str,
-        bundle: Option<&std::path::Path>,
-        refs: &[purlis_host::protocol::session::CodeRef],
-        checkout: Option<&str>,
-    ) -> Result<Vec<purlis_host::protocol::session::CodeRef>, purlis_host::protocol::session::Refusal>
-    {
-        let at = purlis_core::codelink::repo_in(project, repo).map_err(code_refused)?;
-        let refs: Vec<purlis_core::codelink::Ref> = refs
-            .iter()
-            .map(|one| purlis_core::codelink::Ref {
-                name: one.name.clone(),
-                oid: one.oid.clone(),
-            })
-            .collect();
-        purlis_core::codelink::receive(&at, bundle, &refs, checkout)
-            .map(refs_of)
-            .map_err(code_refused)
-    }
-
-    fn give(
-        &self,
-        project: &std::path::Path,
-        repo: &str,
-        have: &[String],
-        into: &std::path::Path,
-    ) -> Result<
-        (Vec<purlis_host::protocol::session::CodeRef>, bool),
-        purlis_host::protocol::session::Refusal,
-    > {
-        let at = purlis_core::codelink::repo_in(project, repo).map_err(code_refused)?;
-        let (heads, bundled) =
-            purlis_core::codelink::give(&at, have, into).map_err(code_refused)?;
-        Ok((
-            refs_of(heads),
-            bundled == purlis_core::codelink::Bundled::Wrote,
-        ))
     }
 }
 
