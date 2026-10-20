@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792525917290,
+  "lastUpdate": 1792527830118,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19614,6 +19614,48 @@ window.BENCHMARK_DATA = {
             "value": 101.84015099999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.610, 101.079, 101.840, 101.847, 102.063 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "36d1b1d16b009e3514c96333a868774a4293c52d",
+          "message": "Deps: rustls-webpki 0.103.16, webpki-roots and webpki-root-certs 1.0.10 (#2863)\n\nRUSTSEC-2026-0381, RUSTSEC-2026-0382 and RUSTSEC-2026-0383, published\ntoday, turn `rust (licences, advisories)` red on every pull request. Both\nlockfiles move to the fixed versions.\n\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T00:16:47+04:00",
+          "tree_id": "761b74e13dcccf439e431a5a086838996ff1afb7",
+          "url": "https://github.com/purlis/purlis/commit/36d1b1d16b009e3514c96333a868774a4293c52d"
+        },
+        "date": 1792527828503,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4657245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.455, 0.456, 0.466, 0.474, 0.485 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.221971000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.115, 16.189, 16.222, 16.226, 16.359 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.958493,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.655, 101.911, 101.958, 102.027, 102.253 ms"
           }
         ]
       }
