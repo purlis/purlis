@@ -32,6 +32,8 @@ pub(crate) enum Activity {
         url: String,
         /// Whether it asks for a frame's document.
         document: bool,
+        /// The frame that made it, where the engine says.
+        frame: Option<String>,
     },
     RequestEnded(String),
     /// Something that is not a load but resets the quiet while (a page opening, say).
@@ -65,6 +67,7 @@ pub(crate) fn activity(method: &str, params: &Value) -> Option<Activity> {
                 id,
                 url: url.to_owned(),
                 document: kind == "Document",
+                frame: text("frameId"),
             })
         }
         "Network.loadingFinished" | "Network.loadingFailed" => {
@@ -77,13 +80,21 @@ pub(crate) fn activity(method: &str, params: &Value) -> Option<Activity> {
     }
 }
 
+/// A request still open: its address, whether it asks for a frame's document, and the frame
+/// that made it.
+#[derive(Debug, Clone)]
+struct Open {
+    url: String,
+    document: bool,
+    frame: Option<String>,
+}
+
 /// One page's loads, as its events tell them.
 #[derive(Debug, Clone)]
 pub(crate) struct Settle {
     loading: HashSet<String>,
-    /// Open requests by (session, request id), with their addresses and whether each asks for
-    /// a frame's document.
-    requests: BTreeMap<(String, String), (String, bool)>,
+    /// Open requests by (session, request id).
+    requests: BTreeMap<(String, String), Open>,
     last_change: Instant,
 }
 
@@ -107,9 +118,20 @@ impl Settle {
             Activity::FrameStopped(frame) | Activity::FrameGone(frame) => {
                 self.loading.remove(&frame);
             }
-            Activity::RequestStarted { id, url, document } => {
-                self.requests
-                    .insert((session.to_owned(), id), (url, document));
+            Activity::RequestStarted {
+                id,
+                url,
+                document,
+                frame,
+            } => {
+                self.requests.insert(
+                    (session.to_owned(), id),
+                    Open {
+                        url,
+                        document,
+                        frame,
+                    },
+                );
             }
             Activity::RequestEnded(id) => {
                 if self
@@ -119,11 +141,26 @@ impl Settle {
                 {
                     // A frame's document, answered in the frame's own session.
                     self.requests
-                        .retain(|(_, open), (_, document)| !(*document && *open == id));
+                        .retain(|(_, open), request| !(request.document && *open == id));
                 }
             }
             Activity::Changed => {}
         }
+    }
+
+    /// Forgets what `frames` of `session` had loading or open (#2841): they detached, a frame
+    /// and every frame inside it, and their loads went with them. The page is quiet a quiet while
+    /// only from `now`.
+    pub(crate) fn frames_gone(&mut self, session: &str, frames: &[String], now: Instant) {
+        self.loading.retain(|frame| !frames.contains(frame));
+        self.requests.retain(|(s, _), request| {
+            s != session
+                || request
+                    .frame
+                    .as_ref()
+                    .is_none_or(|frame| !frames.contains(frame))
+        });
+        self.last_change = now;
     }
 
     /// Forgets what `session` had open: its frame went away with it.
@@ -148,7 +185,7 @@ impl Settle {
                 .requests
                 .values()
                 .take(NAMED)
-                .map(|(url, _)| url.as_str())
+                .map(|request| request.url.as_str())
                 .collect();
             let more = if n > NAMED {
                 format!(" and {} more", n - NAMED)
