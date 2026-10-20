@@ -1680,24 +1680,29 @@ fn the_check_reports_each_hard_floor_a_combination_breaks() {
 #[test]
 fn the_check_warns_once_for_each_style_drawn_without_a_face_naming_its_slot_and_style() {
     let rig = Rig::new();
-    // Code in JetBrains Mono's upright regular alone, with its comments drawn italic.
+    // Code in JetBrains Mono's upright regular and bold, with no italic, and its comments drawn
+    // italic.
     let themes = rig.dir.path().join("themes");
     let folder = themes.join("slant");
     std::fs::create_dir_all(folder.join("fonts")).expect("a fonts folder");
-    let regular = "fonts/JetBrainsMono-Regular.woff2";
-    std::fs::write(
-        folder.join(regular),
-        &purlis_core::theme::purlis_files()[regular],
-    )
-    .expect("a face");
+    let (regular, bold) = (
+        "fonts/JetBrainsMono-Regular.woff2",
+        "fonts/JetBrainsMono-Bold.woff2",
+    );
+    for face in [regular, bold] {
+        std::fs::write(folder.join(face), &purlis_core::theme::purlis_files()[face])
+            .expect("a face");
+    }
     std::fs::write(
         folder.join("theme.json"),
         serde_json::json!({
             "name": "Slant",
-            "extends": "purlis-classic",
             "fonts": { "mono": {
                 "family": "JetBrains Mono",
-                "faces": [{ "file": regular, "weight": 400 }]
+                "faces": [
+                    { "file": regular, "weight": 400 },
+                    { "file": bold, "weight": 700 }
+                ]
             } },
             "appearances": [{ "id": "dark", "appearance": "dark",
                 "tokens": { "syntax.comment.italic": true } }]
