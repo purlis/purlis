@@ -871,10 +871,20 @@ const made = new Set<string>();
  *  names it is made under. */
 const asked = new Map<string, Promise<ArrayBuffer | undefined>>();
 
+/** Each face being made: what {@link facesLoaded} waits on. */
+const making = new Set<Promise<void>>();
+
 /** Forgets the faces made and asked for, as a new launch would. For tests. */
 export function forgetFaces(): void {
   made.clear();
   asked.clear();
+  making.clear();
+}
+
+/** **Settles once every face asked for so far is made or given up** (#2536): what the theme
+ *  specimen waits on before it lays itself out, so it is pictured in the theme's own fonts. */
+export async function facesLoaded(): Promise<void> {
+  await Promise.all([...making]);
 }
 
 /** How a face's bytes are asked for: `theme_font` (`faces.ts` sets it, so this module stays
@@ -910,7 +920,7 @@ function loadFaces(theme: Theme, over: Person): void {
         bytes = fetch(face.asset).catch(() => undefined);
         asked.set(face.asset, bytes);
       }
-      void (async () => {
+      const pending = (async () => {
         try {
           const given = await bytes;
           if (given === undefined) return;
@@ -926,6 +936,8 @@ function loadFaces(theme: Theme, over: Person): void {
           // A face that cannot be made draws the family list's fallback; it is not asked again.
         }
       })();
+      making.add(pending);
+      void pending.finally(() => making.delete(pending));
     }
   }
 }
