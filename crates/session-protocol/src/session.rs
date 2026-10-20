@@ -194,9 +194,14 @@ use crate::view::{Limits, Views};
 /// 1.29 added that record to a program's start (#2692): `program_started` says how its host
 /// applied the sandbox to the run it started (`sandbox`), so a window hears it of a chat its
 /// host composed by its names as it starts.
+///
+/// 1.30 added a relaying host telling its client a project it no longer holds for it (#2645,
+/// ADR 0078 as amended 2026-10-20): the pushed notice `not_held`, with the project and the
+/// other host's words, said when a link to the other host could not hold a project the client
+/// holds as what its link stands on was carried over to it.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 29,
+    minor: 30,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -1167,6 +1172,15 @@ pub enum Pushed {
     /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
     /// client's link stands on carried over to it: its views draw again, each from a snapshot.
     LinkBack {},
+    /// The link a relaying host reaches the other host over could not hold `project` as what
+    /// the client's link stands on was carried over to it, in the other host's words (1.30,
+    /// #2645): the relaying host no longer holds it there for the client, and the other host
+    /// refuses a command for it until the client holds it again. The relaying host's own word,
+    /// pushed only to a link that holds the project, and never one the other host said.
+    NotHeld {
+        project: String,
+        why: String,
+    },
 }
 
 wire_words!(Command {
@@ -1270,6 +1284,7 @@ impl Pushed {
     pub fn heard_with(&self) -> Option<Power> {
         match self {
             Pushed::Heard { .. } => Some(Power::Heard),
+            Pushed::NotHeld { .. } => Some(Power::Hold),
             Pushed::Saving { .. } | Pushed::WhoIsMidTurn { .. } => Some(Power::Save),
             Pushed::Sandbox { .. } => Some(Power::Confine),
             Pushed::Event(_)
@@ -1325,6 +1340,7 @@ wire_words!(Pushed {
     WhoIsMidTurn => "who_is_mid_turn",
     LinkDown => "link_down",
     LinkBack => "link_back",
+    NotHeld => "not_held",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -2600,7 +2616,8 @@ impl Subscribed {
                 | Pushed::Saving { .. }
                 | Pushed::WhoIsMidTurn { .. }
                 | Pushed::LinkDown { .. }
-                | Pushed::LinkBack {} => {}
+                | Pushed::LinkBack {}
+                | Pushed::NotHeld { .. } => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;

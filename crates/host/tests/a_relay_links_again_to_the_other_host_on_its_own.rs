@@ -7,7 +7,8 @@
 //! projects again, subscribes again from the window's cursor and attaches the window's views again,
 //! each with a snapshot, under the numbers the window already knows them by, and hands no event
 //! twice. A project is held where the window holds it now, and a hold host B refuses is not carried
-//! (#2535). A command in flight as its link is renewed is answered on it. The window is told once
+//! (#2535), and the window is told so, in host B's words, as the carry-over ends; that is host A's
+//! word, never host B's (#2645). A command in flight as its link is renewed is answered on it. The window is told once
 //! that the link is down and once that it is back, and a renewal is neither (#2496). While no link
 //! is up, every command is refused in words and none is sent on later; a host at the far end whose
 //! key is not the one pinned is never linked; and over each new link the window takes back the
@@ -823,6 +824,59 @@ impl session::Host for SaysItsLink {
     }
 }
 
+/// A host B that says a project is not held, as host A says it to its client.
+#[derive(Clone)]
+struct SaysNotHeld;
+
+impl session::Host for SaysNotHeld {
+    async fn call(
+        &self,
+        _command: Command,
+        _peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        Ok(Answer::Done)
+    }
+
+    async fn subscribe(
+        &self,
+        _since: session::Since,
+        _peer: &session::Peer,
+    ) -> Result<mpsc::Receiver<Pushed>, session::Refusal> {
+        let (tell, told) = mpsc::channel(16);
+        for pushed in [
+            Pushed::NotHeld {
+                project: PROJECT.into(),
+                why: "host B's own word".into(),
+            },
+            Pushed::Event(event(1)),
+        ] {
+            tell.send(pushed).await.unwrap();
+        }
+        tokio::spawn(async move { tell.closed().await });
+        Ok(told)
+    }
+}
+
+#[tokio::test]
+async fn that_a_project_is_not_held_is_host_as_word_and_never_host_bs() {
+    let mut window = a_window_on(SaysNotHeld, StandIns::default(), never_renewed()).await;
+    let path = window._project.path().to_str().unwrap().to_owned();
+    window.client.hold_project(PROJECT, &path).await.unwrap();
+    window
+        .client
+        .subscribe(session::Since::new())
+        .await
+        .unwrap();
+
+    assert_eq!(window.pushed().await, Pushed::Event(event(1)));
+    assert!(
+        timeout(Duration::from_millis(300), window.events.recv())
+            .await
+            .is_err(),
+        "host B's word that a project is not held was handed to the window"
+    );
+}
+
 #[tokio::test]
 async fn whether_the_link_is_up_is_host_as_word_and_never_host_bs() {
     let mut window = a_window_on(SaysItsLink, StandIns::default(), never_renewed()).await;
@@ -1181,7 +1235,7 @@ async fn a_hold_host_b_refuses_through_a_carry_over_is_no_longer_carried_for_the
     let b = Gated::new();
     let path = tempfile::tempdir().unwrap();
     let path = path.path().to_str().unwrap().to_owned();
-    let window = watching_through(&b, &path).await;
+    let mut window = watching_through(&b, &path).await;
     b.refusing.lock().unwrap().insert(path.clone());
     carrying_over(&b).await;
     b.open.send_replace(true);
@@ -1194,6 +1248,14 @@ async fn a_hold_host_b_refuses_through_a_carry_over_is_no_longer_carried_for_the
     .await
     .expect("the carry-over's last pass tries the hold again");
     assert_eq!(b.held_on(1).get(PROJECT), None);
+    // The window is told, in host B's words, as the carry-over ends (#2645).
+    assert_eq!(
+        window.pushed().await,
+        Pushed::NotHeld {
+            project: PROJECT.into(),
+            why: "that folder is not there".into(),
+        }
+    );
 
     // Host B would take the hold now, and the next link is not sent it: the relay no longer
     // keeps the project for the window. A hold the window sends again is answered.

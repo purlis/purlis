@@ -2254,3 +2254,147 @@ fn a_harness_chat_on_a_runner_is_started_there_by_its_names_and_its_asks_reach_t
         .expect("a shell starts from the window's launch");
     until("the runner runs the shell", || runs.ran().len() == ran + 1);
 }
+
+/// A host between the window and `inner` that counts the holds the window sends, and refuses
+/// each, in a runner's words, while the test says so.
+#[derive(Clone)]
+struct Holds<H> {
+    inner: H,
+    tried: Arc<Mutex<usize>>,
+    refusing: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// What the runner says as it refuses a hold.
+const NOT_THERE: &str = "that folder is not there";
+
+impl<H> Holds<H> {
+    fn new(inner: H) -> Self {
+        Holds {
+            inner,
+            tried: Arc::default(),
+            refusing: Arc::default(),
+        }
+    }
+
+    fn tried(&self) -> usize {
+        *self.tried.lock().unwrap()
+    }
+}
+
+impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for Holds<H> {
+    async fn call(
+        &self,
+        command: session::Command,
+        peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        if let session::Command::HoldProject { .. } = command {
+            *self.tried.lock().unwrap() += 1;
+            if self.refusing.load(Ordering::Relaxed) {
+                return Err(session::Refusal {
+                    code: session::NOT_ALLOWED.into(),
+                    why: NOT_THERE.into(),
+                });
+            }
+        }
+        self.inner.call(command, peer).await
+    }
+
+    async fn link_ended(&self, peer: &session::Peer) {
+        self.inner.link_ended(peer).await;
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<tokio::sync::mpsc::Receiver<session::Pushed>, session::Refusal> {
+        self.inner.subscribe(since, peer).await
+    }
+}
+
+/// A project's chats whose host says what the test pushes, through `holds`, which counts the
+/// window's holds: and the project's id, as its host knows it.
+fn hosted_holding() -> (Hosted, Holds<Hosting>, Between<Holds<Hosting>>, String) {
+    let runs = StandIns::default();
+    let holds = Holds::new(Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+    ));
+    let between = Between::new(holds.clone(), false);
+    let hosted = hosted_in(between.clone(), runs);
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&hosted.root).unwrap();
+    (hosted, holds, between, project)
+}
+
+#[test]
+fn a_project_a_re_link_could_not_hold_is_held_again_by_the_window() {
+    let (hosted, holds, between, project) = hosted_holding();
+    let (id, _seen) = a_drawn_chat(&hosted);
+    let held = holds.tried();
+    assert!(held > 0);
+
+    between
+        .pushes
+        .send(session::Pushed::NotHeld {
+            project: project.clone(),
+            why: NOT_THERE.into(),
+        })
+        .unwrap();
+
+    until("the window holds the project again", || {
+        holds.tried() > held
+    });
+    // Its chats carry on, and a new one starts.
+    hosted.sessions.input(id, b"typed").unwrap();
+    hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("a chat starts in the project held again");
+}
+
+#[test]
+fn a_project_the_runner_will_not_hold_again_is_said_to_be_not_held_in_the_runners_words() {
+    let (hosted, holds, between, project) = hosted_holding();
+    a_drawn_chat(&hosted);
+    let held = holds.tried();
+    holds.refusing.store(true, Ordering::Relaxed);
+
+    between
+        .pushes
+        .send(session::Pushed::NotHeld {
+            project,
+            why: NOT_THERE.into(),
+        })
+        .unwrap();
+    until("the window tries to hold the project again", || {
+        holds.tried() > held
+    });
+
+    let refused = hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect_err("no chat starts in a project the runner does not hold");
+    assert!(refused.starts_with(NOT_HELD), "{refused}");
+    assert!(refused.contains(NOT_THERE), "{refused}");
+}
+
+#[test]
+fn a_project_another_project_was_not_held_for_is_left_held() {
+    let (hosted, holds, between, _project) = hosted_holding();
+    a_drawn_chat(&hosted);
+    let held = holds.tried();
+
+    between
+        .pushes
+        .send(session::Pushed::NotHeld {
+            project: "01J9PRJCTANOTHER0000000000".into(),
+            why: NOT_THERE.into(),
+        })
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("a chat starts");
+    assert_eq!(holds.tried(), held);
+}

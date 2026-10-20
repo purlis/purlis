@@ -16,11 +16,12 @@
 //! services a host left out of a plan made elsewhere (#2510), 1.25's desktop removing a runner
 //! (#2525), 1.26's services the window allowed a chat its host composes alone (#2590),
 //! 1.27's kept browser logins (#2021), 1.28's record of how a hosted program's run is
-//! sandboxed (#2636), and 1.29's same record on a program's start (#2692). Each must read back
-//! as it was recorded, by this build and so by every later one, which is what lets a client and
-//! a host one version apart talk. A frame kind added without being recorded fails here, so the
-//! promise grows on purpose. The UI RPC is not in it: it is private to one build of the app, and
-//! excluded from this promise (V7).
+//! sandboxed (#2636), 1.29's same record on a program's start (#2692), and 1.30's relaying host
+//! telling its client a project it no longer holds for it (#2645). Each must read back as it was
+//! recorded, by this build and so by every later one, which is what lets a client and a host one
+//! version apart talk. A frame kind added without being recorded fails here, so the promise grows
+//! on purpose. The UI RPC is not in it: it is private to one build of the app, and excluded from
+//! this promise (V7).
 //!
 //! And a host reads a later minor's frames the way the promise says: a field it does not know is
 //! ignored, a command it does not know is refused with `unknown_command` and the link carries on,
