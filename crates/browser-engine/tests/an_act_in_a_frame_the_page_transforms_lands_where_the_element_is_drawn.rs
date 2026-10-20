@@ -15,7 +15,7 @@
 
 mod common;
 
-use common::drive::{call, find, open, ref_on, sees};
+use common::drive::{call, find, next_id, open, ref_on, sees};
 use common::site::started;
 use purlis_browser_engine::drive::{Call, DragTo};
 
@@ -95,5 +95,17 @@ fn a_drag_in_a_frame_the_page_zooms_starts_and_ends_on_its_elements() {
 
 #[test]
 fn a_click_in_a_cross_site_frame_nested_below_a_middle_frames_fold_presses_the_button() {
-    assert!(the_click_counts("nested-pad.html"));
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "nested-pad.html");
+    let found = find(&browser, "Add one");
+    let add = ref_on(&found, "Add one");
+    let clicked = browser.call(&next_id(), Call::Click { target: add });
+    assert!(clicked.is_ok(), "the click answered {clicked:?}");
+    let seen = sees(&browser, "Count: 1");
+    // What the inner frame reads now: a count of 0 is a press that missed, no count at all a
+    // frame two deep that is not read.
+    let counted = find(&browser, "Count:");
+    assert!(seen, "the inner frame reads:\n{counted}\nthe button was found as:\n{found}");
 }
