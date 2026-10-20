@@ -563,6 +563,9 @@ pub struct Chats {
     /// This device's id, the origin device of every chat minted here; `None` where the machine
     /// store has none to give (ADR 0031), which a chat records as `unknown`.
     device: Option<String>,
+    /// This machine's config home, where the pools this machine keeps and which workspaces run
+    /// their chats on one are (#2679); `None` where nothing is kept there, a test's.
+    pools_in: Option<PathBuf>,
     /// What each chat closed this launch was, by number, for a start in one's place: its ids,
     /// and where it stood in a lineage.
     let_go: Mutex<HashMap<u32, LetGo>>,
@@ -1048,6 +1051,7 @@ impl Chats {
             untaken: Mutex::new(HashMap::new()),
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
+            pools_in: None,
             let_go: Mutex::new(HashMap::new()),
             never_started: Mutex::new(None),
             shipped: crate::Shipped::default(),
@@ -1184,6 +1188,12 @@ impl Chats {
     /// Says which device this is: the origin device of every chat minted from now on.
     pub fn on_device(&mut self, device: Option<String>) {
         self.device = device;
+    }
+
+    /// Reads where each workspace runs its chats from this machine's config home `config`
+    /// (#2679): a workspace whose chats run on a pool starts none here.
+    pub fn keeping_pools_in(&mut self, config: Option<PathBuf>) {
+        self.pools_in = config;
     }
 
     /// This device's id, as [`Self::on_device`] gave it, or `None` where the machine store has
@@ -2974,9 +2984,9 @@ impl Chats {
         // machine's store says where its chats run, and a pool's runner does not hold the
         // project yet, so the start is refused in words, never run on this machine instead.
         #[cfg(unix)]
-        if !reattaching && let Some(config) = purlis_core::machine::config_root() {
+        if !reattaching && let Some(config) = &self.pools_in {
             purlis_core::pools::starts_here(
-                &config,
+                config,
                 &self.project,
                 workspace_at_start(Some(&self.project), chat.cwd.as_deref()).as_deref(),
             )?;
