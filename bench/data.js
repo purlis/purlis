@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792529363123,
+  "lastUpdate": 1792530846582,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19698,6 +19698,48 @@ window.BENCHMARK_DATA = {
             "value": 102.08013600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.395, 100.728, 102.080, 102.716, 103.246 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f53952e7e58d97111326f6d3b994ffb567ca6d0d",
+          "message": "SK-2: a project skill reaches every harness and shows in a read-only Skill studio (#2829)\n\n* SK-2: decide skill levels, grants and ties, and document the keys\n\nADR 0099 records where skills live (built-in, project, workspace,\npersona, each shared or local), how a project skill reaches a workspace\n(its grant: master, all, or a list), that the narrowest copy of a name\nwins and purlis decides the tie before any harness sees it, that a\nbuilt-in skill's name is never taken, and how each harness takes a\nchange to its skills mid-chat, measured on Claude Code 2.1.304, Codex\n0.163.0 and opencode 1.18.33.\n\nADR 0063's amendment of 2026-10-20 says how the three routes carry the\nplane's skills: a folder of links in purlis's app data folder, a second\n--plugin-dir for Claude Code and a second skills path for opencode, and\nthe briefing for Codex.\n\nplane-format.md documents skills/, skills/<name>.toml's grant,\nskills.local/, the workspace and persona folders, and the skill-sets\nstore with its tier. CONTEXT.md takes the skill studio's terms.\n\nRefs #2765\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-2: a project skill reaches every harness and shows in the Skill studio\n\nA folder in the plane's skills/ is a project skill (ADR 0099). With\nthe skill-studio flag on, purlis-skills puts it in the set of every\nchat at the plane root, and tells a chat in a workspace it was not\ngranted there; a plane skill named like a built-in one, and the second\nof two folders naming one skill, are left out with the reason.\n\nEach harness is handed the set by its route (ADR 0063 as amended\n2026-10-20), and nothing is written where a harness looks for skills:\n- Claude Code: a second --plugin-dir, a folder of links laid out in\n  purlis's app data folder (skills::lay_out), named by a digest of the\n  set so a running chat's folder never changes;\n- opencode: the shim's skills option becomes a list, the built-in\n  directory and that folder's skills/;\n- Codex: PURLIS_SKILLS_PLANE=1 beside PURLIS_SKILLS_DIR, and the\n  SessionStart briefing lists the project skills from their folders.\nThe folder of links is held from a sandboxed chat's writes as the git\nhooks beside it are.\n\n`purlis skill list | show` and a read-only Skill studio view tab\n(palette: Open Skill studio) list built-in and project skills with\ntheir level and every left-out skill's reason. Both are behind the\nflag.\n\nChanges to SK-1's interface: harness::Kit gains `skills`\n(PlaneSkills: plane, workspace, where sets are laid out); SkillSet::dir\nbecomes built_in_dir and from_the_plane; skills::briefed takes the\nchat's workspace; opencode::session_config takes a list of\ndirectories; Origin::Project, Reason::NotGranted and\nReason::NameTaken are new.\n\nCloses #2765\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-2: answer CI: clippy, the ADR's link, the spec's import, no live region\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-2: read the studio's flag without holding the fence\n\nA chat's start asks it, and a fenced test build's config home may sit\noutside the fence: read there as no flag, as listed_here reads profiles.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-2: answer CI: skill is a core word, the shim from its template, unsteered tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-2: Preview: Skill studio, a switch in Settings › You\n\nSettings › You › Previews holds \"Preview: Skill studio\", which writes\nthis machine's skill-studio flag (skills::set_studio_on, through the\nwindow-only set_skill_studio_on), so the flagged studio can be turned on\nfrom the app. PURLIS_SKILL_STUDIO still decides over it where it is set.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-2: count the Previews row in the palette's tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-2: hold the shim to taking a list of skills directories\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-2: read the read-only skill list as JSON, built-in skills or none\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-2: answer the review: root, the window's words, a pure adapter\n\n- The grant value is \"root\", not \"master\" (CONTEXT.md avoids it):\n  ADR 0099 §2, plane-format.md and CONTEXT.md say the project's root.\n- ADR 0099 leaves SK-4's details to #2767 (where a workspace turns a\n  skill off, where local skills live), says a built-in skill's name is\n  never taken is this record's addition, and labels Codex's reload row\n  inferred from source, with why a live run could not start.\n- The host lays out the folder of links (hoststart::\n  plane_skills_laid_out, skills::lay_out_for_chat) before arming, as it\n  writes the git hooks; PlaneSkills carries it as `linked`, and an\n  adapter only turns the set into words.\n- One list for the window and the command line: skills::studio_rows,\n  and the built-in skills found one way (skills::built_in_here). `purlis\n  skill show` shows every copy of a name, the hidden ones with why.\n- The window says the project's root, names Settings › You › Previews\n  as the way to turn the studio on, and the switch is \"Skill studio\"\n  under Previews; the command line names the switch too.\n- The studio's level is an enum on the wire; skills::ask takes\n  PlaneSkills; one helper spells the skill-sets path.\n- A changelog fragment for the switch.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T01:10:12+04:00",
+          "tree_id": "b335cfa7cb781bc322ce3bc5236e6424773873f9",
+          "url": "https://github.com/purlis/purlis/commit/f53952e7e58d97111326f6d3b994ffb567ca6d0d"
+        },
+        "date": 1792530844605,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.441955,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.437, 0.437, 0.442, 0.463, 0.470 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.504210999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.280, 16.481, 16.504, 16.611, 16.877 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.19557,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.327, 101.377, 102.196, 103.149, 103.739 ms"
           }
         ]
       }
