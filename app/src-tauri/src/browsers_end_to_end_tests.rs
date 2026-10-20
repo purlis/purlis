@@ -617,7 +617,7 @@ fn a_chats_browser_tools_drive_a_real_engine_through_every_hop() {
     let snapshot = tools.done("browser_snapshot", json!({}));
     assert!(snapshot.text.contains("Count: 0"), "{}", snapshot.text);
     let found = tools.done("browser_find", json!({ "text": "Add one" }));
-    let add = ref_on(&found.text, "Add one");
+    let add = ref_on(&found.text, "button \"Add one\"");
     let clicked = tools.done("browser_click", json!({ "target": add, "changes": true }));
     assert!(clicked.text.contains("Count: 1"), "{}", clicked.text);
 
@@ -630,7 +630,7 @@ fn a_chats_browser_tools_drive_a_real_engine_through_every_hop() {
         &tools
             .done("browser_find", json!({ "text": "Password" }))
             .text,
-        "Password",
+        "textbox \"Password\"",
     );
     tools.done(
         "browser_type",
@@ -686,7 +686,7 @@ fn a_chats_browser_tools_drive_a_real_engine_through_every_hop() {
         &tools
             .done("browser_find", json!({ "text": "Show password" }))
             .text,
-        "Show password",
+        "button \"Show password\"",
     );
     tools.done("browser_click", json!({ "target": show, "changes": true }));
     tools.done("browser_snapshot", json!({}));
