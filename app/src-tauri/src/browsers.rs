@@ -27,6 +27,12 @@
 //! a crash of the window too, says whether the person still drives ([`BrowserWatching`]).
 //! These are the window's alone (`ui::WINDOW_ONLY`): what the person types is theirs.
 //!
+//! **The event log says who drives, and that someone typed, never what** (#2293). Each change
+//! of a browser's driver the window makes (the person taking it over, handing it back, purlis
+//! performing a login and handing it back to the agent) and the first key its driver types
+//! after it are told to whoever writes the log (`WindowBrowsers::saying`), by the browser's
+//! id alone.
+//!
 //! **A browser view drawn from a runner says it is reconnecting** while the link to that runner
 //! is down (#2542, as a runner's chats do, #2496): its view rides the window's own link, so
 //! the window follows what that link hears of the runner, and tells each view drawn from it
@@ -235,12 +241,13 @@ mod hosted {
     use std::sync::{Arc, Mutex, PoisonError};
     use std::time::Duration;
 
+    use purlis_core::eventlog::browsing::{Driver as Drives, Said, Typist};
     use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, Driver};
     use purlis_session_protocol::session::{
         self, Answer, Command, ProgramKind, StartProgram, ViewKind, ViewRole,
     };
 
-    use super::{BrowserInput, BrowserViewRole, BrowserWatching, InputOutcome, Went};
+    use super::{BrowserInput, BrowserViewRole, BrowserWatching, InputOutcome, KeyAct, Went};
     use crate::chatbrowsers::NotStarted;
     use crate::hostedsessions::{Connection, FrameSink, HostLink, Reconnect};
     use crate::reconnecting::Reconnection;
@@ -335,7 +342,13 @@ mod hosted {
                 program: program.to_owned(),
                 login,
             };
-            match link.call_refused_within(command, A_LOGIN_TAKES_AT_MOST) {
+            // purlis drives it while it logs in (#2293), unless the person does: the host
+            // refuses the login then.
+            let purlis_drives = self.driver_said(program) != Drives::Person;
+            if purlis_drives {
+                self.drove(program, Drives::Purlis);
+            }
+            let answered = match link.call_refused_within(command, A_LOGIN_TAKES_AT_MOST) {
                 Ok(Answer::Browsed(browsed)) => Ok(*browsed),
                 Ok(_) => Err(Refused::Said(
                     "the session host answered a login with something else".into(),
@@ -347,7 +360,16 @@ mod hosted {
                     Err(Refused::Gone)
                 }
                 Err(refusal) => Err(Refused::Said(refusal.why)),
+            };
+            // Back with the agent once it answers, unless the person took it over meanwhile;
+            // a login that went through typed what it filled.
+            if purlis_drives && self.driver_said(program) == Drives::Purlis {
+                if answered.is_ok() {
+                    self.typed(program, Typist::Purlis);
+                }
+                self.drove(program, Drives::Agent);
             }
+            answered
         }
 
         fn close(&self, program: &str) -> Result<(), String> {
@@ -394,7 +416,31 @@ mod hosted {
         /// Each view the window watches, and whether it is dimmed while its runner's link is
         /// down (#2542).
         dimming: Arc<Mutex<Dimming>>,
+        /// Told what the window says of a browser in the event log (#2293).
+        says: Says,
+        /// Who drives each browser, as the window last said it, by program (#2293).
+        logged: Arc<Mutex<HashMap<String, Logged>>>,
     }
+
+    /// **Told what the window says of a browser in the event log** (#2293): the project the
+    /// window started it in, where it did, and what it says. Whoever is told writes it; nothing
+    /// in it is a key, a value, an address or a page's text.
+    pub(crate) type Says = Arc<dyn Fn(Option<&Path>, Said) + Send + Sync + 'static>;
+
+    /// Who drives a browser, as the window last said it in the event log, and whether its
+    /// driver typed since (#2293): each change of driver is said once, and the first typing
+    /// after it.
+    #[derive(Debug, Clone, Copy)]
+    struct Logged {
+        driver: Drives,
+        typed: bool,
+    }
+
+    /// What every browser starts as: the agent's, nothing typed.
+    const STARTS: Logged = Logged {
+        driver: Drives::Agent,
+        typed: false,
+    };
 
     /// Told where a browser view stands while the link to the runner it is drawn from comes and
     /// goes (#2542).
@@ -434,7 +480,73 @@ mod hosted {
                 starting: Mutex::new(()),
                 dimming: Arc::default(),
                 acts: std::sync::atomic::AtomicU64::new(0),
+                says: Arc::new(|_, _| {}),
+                logged: Arc::default(),
             }
+        }
+
+        /// **`says` is told who drives each browser and that someone typed, never what**
+        /// (#2293), for the event log: the person taking a browser over and handing it back,
+        /// purlis performing a login, and the first key the person or purlis types while
+        /// driving.
+        pub(crate) fn saying(self, says: Says) -> Self {
+            WindowBrowsers { says, ..self }
+        }
+
+        /// The project the window started `program` in, where it did.
+        fn root_of(&self, program: &str) -> Option<PathBuf> {
+            self.projects()
+                .iter()
+                .find(|(_, held)| held.browsers.iter().any(|one| one == program))
+                .map(|(root, _)| root.clone())
+        }
+
+        /// Who drives `program`, as the window last said it.
+        fn driver_said(&self, program: &str) -> Drives {
+            lock(&self.logged)
+                .get(program)
+                .map_or(Drives::Agent, |logged| logged.driver)
+        }
+
+        /// **`driver` drives `program` now** (#2293): said where the window did not say so last.
+        fn drove(&self, program: &str, driver: Drives) {
+            {
+                let mut logged = lock(&self.logged);
+                let now = logged.entry(program.to_owned()).or_insert(STARTS);
+                if now.driver == driver {
+                    return;
+                }
+                *now = Logged {
+                    driver,
+                    typed: false,
+                };
+            }
+            self.say(Said::DriverChanged {
+                browser: program.to_owned(),
+                driver,
+            });
+        }
+
+        /// **`by` typed into `program`, which it drives** (#2293): said once for each stretch it
+        /// drives, never what.
+        fn typed(&self, program: &str, by: Typist) {
+            {
+                let mut logged = lock(&self.logged);
+                let now = logged.entry(program.to_owned()).or_insert(STARTS);
+                if now.typed {
+                    return;
+                }
+                now.typed = true;
+            }
+            self.say(Said::Typed {
+                browser: program.to_owned(),
+                by,
+            });
+        }
+
+        fn say(&self, said: Said) {
+            let root = self.root_of(said.browser());
+            (self.says)(root.as_deref(), said);
         }
 
         /// **At most `budget` browsers run on this device at once** (#2023): every browser the
@@ -546,10 +658,12 @@ mod hosted {
             {
                 Answer::ProgramStarted { program, .. } => {
                     let ended = Arc::clone(&self.ended);
+                    let logged = Arc::clone(&self.logged);
                     let named = program.clone();
                     link.when_it_ends(
                         &program,
                         Box::new(move |ending| {
+                            lock(&logged).remove(&named);
                             // Who ended it and why is in the session host's own line (#2745).
                             tracing::info!("{}", ended_said(&named, &ending));
                             ended(named);
@@ -604,6 +718,17 @@ mod hosted {
                     one.chat == program && one.driver == Some(Driver::Person)
                 })
             );
+            // The person still drives it, as a window before this one said: kept, not said
+            // again.
+            if person_drives && self.driver_said(program) != Drives::Person {
+                lock(&self.logged).insert(
+                    program.to_owned(),
+                    Logged {
+                        driver: Drives::Person,
+                        typed: false,
+                    },
+                );
+            }
             Ok(BrowserWatching {
                 view: attached.view,
                 width: attached.cols,
@@ -615,20 +740,20 @@ mod hosted {
         /// The person takes `program` over (#2014): the chat's acts are refused until they
         /// hand it back, and one in flight is cut.
         pub(crate) fn take_over(&self, program: &str) -> Result<(), String> {
-            self.link()?
-                .call(Command::TakeOver {
-                    program: program.to_owned(),
-                })
-                .map(|_| ())
+            self.link()?.call(Command::TakeOver {
+                program: program.to_owned(),
+            })?;
+            self.drove(program, Drives::Person);
+            Ok(())
         }
 
         /// The person hands `program` back to its chat (#2014).
         pub(crate) fn hand_back(&self, program: &str) -> Result<(), String> {
-            self.link()?
-                .call(Command::HandBack {
-                    program: program.to_owned(),
-                })
-                .map(|_| ())
+            self.link()?.call(Command::HandBack {
+                program: program.to_owned(),
+            })?;
+            self.drove(program, Drives::Agent);
+            Ok(())
         }
 
         /// One event of the person's in `program`, which they drive (#2014).
@@ -637,6 +762,14 @@ mod hosted {
             program: &str,
             input: BrowserInput,
         ) -> Result<InputOutcome, String> {
+            // A key pressed is typing, whatever it was: only that is said (#2293).
+            let keyed = matches!(
+                &input,
+                BrowserInput::Key {
+                    action: KeyAct::Down,
+                    ..
+                }
+            );
             let Some(input) = input.wire() else {
                 return Ok(InputOutcome::Missed);
             };
@@ -648,7 +781,12 @@ mod hosted {
                 LINK_WITHIN,
             );
             Ok(match sent {
-                Ok(_) => InputOutcome::Taken,
+                Ok(_) => {
+                    if keyed {
+                        self.typed(program, Typist::Person);
+                    }
+                    InputOutcome::Taken
+                }
                 Err(refusal) if refusal.code == session::INPUT_MISSED => InputOutcome::Missed,
                 Err(refusal) => InputOutcome::Refused { why: refusal.why },
             })
@@ -676,8 +814,9 @@ mod hosted {
                 Err(refusal) if refusal.code == session::NO_SUCH_CHAT => {
                     return Err(GONE.to_owned());
                 }
+                Ok(_) => self.drove(program, Drives::Agent),
                 // Not driven by the person: nothing to hand back.
-                _ => {}
+                Err(_) => {}
             }
             let act = |act: Act| -> Result<Browsed, String> {
                 let command = Command::Browse {
@@ -822,6 +961,7 @@ mod hosted {
             for held in self.projects().values_mut() {
                 held.browsers.retain(|one| one != program);
             }
+            lock(&self.logged).remove(program);
             Ok(())
         }
 

@@ -2302,6 +2302,30 @@ impl Hooks {
             .map_err(|why| format!("the event log refused it ({why}), so nothing was {done}"))
     }
 
+    /// **Writes what the window says of a browser** (#2293): who drives it, that someone typed
+    /// into it, or that the person handed it to a chat, under chat `number` where it is a chat's.
+    /// Refused where this machine has no event log open, or the log refused it.
+    pub fn record_browser(
+        &self,
+        root: &Path,
+        number: Option<u32>,
+        said: purlis_core::eventlog::browsing::Said,
+    ) -> Result<(), String> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| "purlis's event log is not open on this machine".to_owned())?;
+        events
+            .record(Entry::Browser {
+                plane: root.to_path_buf(),
+                number,
+                said,
+            })
+            .map_err(|why| why.to_string())
+    }
+
     /// **Audits a sandbox grant or revoke** (#1342) in the host's event log, under chat
     /// `number` where it came from one, and made durable before it answers. Refused where this
     /// machine has no event log open: a grant nobody recorded is never made.

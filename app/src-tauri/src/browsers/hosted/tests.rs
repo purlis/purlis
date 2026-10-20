@@ -832,3 +832,160 @@ fn a_browsers_end_is_logged_with_how_the_host_said_it_ended() {
     );
     assert!(super::ended_said("01K2", &Ending::WithTheHost).contains("session host"));
 }
+
+#[test]
+fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
+    // #2293: a take-over, the person's keys, the hand-back, and a login purlis performs.
+    use crate::chatbrowsers::Driver;
+    use purlis_core::eventlog::browsing::{Driver as Drives, Said, Typist};
+    use purlis_core::eventlog::{ArgsKey, Entry, Log, Recorder};
+    use purlis_session_protocol::browsing::{LogIn, Secret};
+
+    let Window {
+        browsers,
+        started,
+        root,
+        _dirs,
+        _runtime,
+    } = window();
+    type SaidAt = (Option<std::path::PathBuf>, Said);
+    let said: Arc<Mutex<Vec<SaidAt>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let browsers = browsers.saying(Arc::new(move |root, one| {
+        saying
+            .lock()
+            .unwrap()
+            .push((root.map(std::path::Path::to_path_buf), one));
+    }));
+    let program = browsers.open(&root).unwrap();
+    let screen = started.started()[0].clone();
+    browsers
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Arc::new(|_| {}),
+        )
+        .unwrap();
+    screen.shown().document = 5;
+    let key = |key: &str, physical: &str, action: KeyAct| BrowserInput::Key {
+        aim: "p1:5".to_owned(),
+        action,
+        key: key.into(),
+        physical: physical.into(),
+        key_code: 81,
+        modifiers: 0,
+    };
+
+    browsers.take_over(&program).unwrap();
+    browsers.take_over(&program).unwrap();
+    for typed in [
+        key("Q", "KeyQ", KeyAct::Down),
+        key("Q", "KeyQ", KeyAct::Up),
+        key("Ж", "KeyZ", KeyAct::Down),
+    ] {
+        assert_eq!(
+            browsers.input(&program, typed).unwrap(),
+            InputOutcome::Taken
+        );
+    }
+    browsers.hand_back(&program).unwrap();
+    let login = LogIn {
+        address: "https://shop.example.test/login?next=%2Fbasket".into(),
+        user: Some(Secret::new("ada@shop.example.test".into())),
+        password: Secret::new("correct horse battery staple".into()),
+        keep: None,
+    };
+    Driver::log_in(&browsers, &program, login).unwrap();
+
+    let said = said.lock().unwrap().clone();
+    assert!(
+        said.iter()
+            .all(|(at, _)| at.as_deref() == Some(root.as_path()))
+    );
+    let drives = |driver| Said::DriverChanged {
+        browser: program.clone(),
+        driver,
+    };
+    let typed = |by| Said::Typed {
+        browser: program.clone(),
+        by,
+    };
+    assert_eq!(
+        said.iter().map(|(_, one)| one.clone()).collect::<Vec<_>>(),
+        [
+            drives(Drives::Person),
+            typed(Typist::Person),
+            drives(Drives::Agent),
+            drives(Drives::Purlis),
+            typed(Typist::Purlis),
+            drives(Drives::Agent),
+        ],
+        "each change once, and the first key of each stretch"
+    );
+
+    // Written and read back: nothing typed, filled or visited is in the log.
+    let log = tempfile::tempdir().unwrap();
+    let mut recorder = Recorder::new(
+        Log::open(log.path(), "01J9ZZDEVICE0000000000000").unwrap(),
+        ArgsKey::open(log.path()).unwrap(),
+    );
+    for (_, said) in said {
+        recorder
+            .apply(Entry::Browser {
+                plane: root.clone(),
+                number: None,
+                said,
+            })
+            .unwrap();
+    }
+    let written = std::fs::read_to_string(log.path().join(purlis_core::eventlog::FILE)).unwrap();
+    assert_eq!(written.lines().count(), 6);
+    for never in [
+        "KeyQ",
+        "\"Q\"",
+        "Ж",
+        "KeyZ",
+        "p1:5",
+        "ada@",
+        "correct horse",
+        "shop.example.test",
+        "basket",
+    ] {
+        assert!(
+            !written.contains(never),
+            "{never:?} is in the log: {written}"
+        );
+    }
+}
+
+#[test]
+fn a_person_sending_their_browser_to_an_address_hands_it_back_in_the_log() {
+    // #2293: an address the person types hands the browser back first, and says so.
+    use purlis_core::eventlog::browsing::{Driver as Drives, Said};
+    use purlis_session_protocol::browsing::BrowserReach;
+
+    let Window {
+        browsers,
+        started: _started,
+        root,
+        _dirs,
+        _runtime,
+    } = window();
+    let said: Arc<Mutex<Vec<Said>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let browsers = browsers.saying(Arc::new(move |_, one| saying.lock().unwrap().push(one)));
+    let program = browsers.open(&root).unwrap();
+
+    browsers.take_over(&program).unwrap();
+    let _ = browsers.go(&program, "http://localhost:5173/", &BrowserReach::default());
+
+    let driver = |driver| Said::DriverChanged {
+        browser: program.clone(),
+        driver,
+    };
+    assert_eq!(
+        *said.lock().unwrap(),
+        [driver(Drives::Person), driver(Drives::Agent)]
+    );
+}
