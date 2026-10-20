@@ -32,7 +32,13 @@ fn a_line_signed_with_the_updaters_key_is_one_the_app_takes_for_that_version() {
         });
         let found =
             purlis_core::runnerimage::of_this_version(&manifest, &public, "0.4.2-dev.17").unwrap();
-        assert_eq!(found.unwrap().as_str(), LINE, "{password:?}");
+        // Which case failed is said by whether the key has a password, never by the password.
+        let sealed = password.is_some();
+        assert_eq!(
+            found.unwrap().as_str(),
+            LINE,
+            "a key with a password: {sealed}"
+        );
     }
 }
 
