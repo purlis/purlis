@@ -269,10 +269,41 @@ button, input { font: inherit; color: inherit; }
 .switcher button { border: 0; background: transparent; color: inherit; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 15px; }
 .switcher span { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- Themes as part keys (folds in "Prototype: a themable tab strip"). The components above never change;
+   each theme only sets the part values listed in its keys box. ---- */
+.win.t-classic .dtab { border-radius: 0; }
+.win.t-classic .dtab[aria-selected="true"]::before, .win.t-classic .dtab[aria-selected="true"]::after { display: none; }
+.win.t-classic .dtabs > .dtab + .dtab { margin-left: 0; box-shadow: inset 1px 0 0 var(--line); }
+.win.t-classic .dtab:not([aria-selected="true"]):hover::before { inset: 0; border-radius: 0; }
+.win.t-classic .body.docked .work, .win.t-classic .body.docked .work.first { border-radius: 0; }
+.win.t-classic .side, .win.t-classic .rpanel, .win.t-classic .bhalf { border-radius: 0; }
+.win.t-classic .wchip { border-radius: 0; height: 40px; box-shadow: inset 0 -2px 0 transparent; }
+.win.t-classic .wchip.here { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); }
+.win.t-classic .railbtn { border-radius: 4px; }
+.win.t-classic .act { border-radius: 0; }
+.win.t-classic .act.on { background: transparent; box-shadow: inset 2px 0 0 var(--accent); }
+
+.win.t-underline .dtab { border-radius: 0; padding: 0 2px; margin-right: 12px; }
+.win.t-underline .dtabs > .dtab + .dtab { margin-left: 12px; }
+.win.t-underline .dtab[aria-selected="true"] { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); }
+.win.t-underline .dtab[aria-selected="true"]::before, .win.t-underline .dtab[aria-selected="true"]::after { display: none; }
+.win.t-underline .dtab:not([aria-selected="true"]):hover::before { display: none; }
+.win.t-underline .body.docked .work, .win.t-underline .body.docked .work.first { border-radius: 6px; }
+.win.t-underline .side, .win.t-underline .rpanel, .win.t-underline .bhalf { border-radius: 6px; }
+.win.t-underline .wchip { border-radius: 999px; }
+.win.t-underline .wchip.here { background: var(--wash); color: var(--accent-text); }
+.win.t-underline .railbtn { border-radius: 50%; }
+.win.t-underline .act { border-radius: 50%; }
+.keysbox { position: fixed; right: 16px; bottom: 64px; width: min(360px, calc(100% - 32px)); max-height: 46vh; overflow: auto; background: var(--panel); color: var(--text); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.5); padding: 12px 14px; z-index: 55; font-size: 12px; }
+.keysbox h6 { margin: 0 0 6px; font-size: 12px; font-weight: 600; }
+.keysbox pre { margin: 0; font: 11px/1.6 var(--font-mono); color: var(--text-2); white-space: pre-wrap; }
 </style>
 
 <div class="win" id="win"></div>
+<div class="keysbox" id="keysbox" hidden><h6 id="keysname"></h6><pre id="keyspre"></pre></div>
 <div class="switcher" role="toolbar" aria-label="Prototype variants"><button id="prev" aria-label="Previous variant">‹</button><span id="vlabel"></span><button id="next" aria-label="Next variant">›</button>
+  <span class="seg3" id="themes" role="radiogroup" aria-label="Theme"><button role="radio" data-theme-pick="purlis">Purlis</button><button role="radio" data-theme-pick="classic">Classic</button><button role="radio" data-theme-pick="underline">Underline</button><button data-keys="1" aria-pressed="false">Keys</button></span>
   <span class="seg3" id="actpos" role="radiogroup" aria-label="Where the left activity bar sits"><button role="radio" data-actpos="column">Bar: column</button><button role="radio" data-actpos="tabs">Bar: tabs in panel</button></span></div>
 
 <script>
@@ -529,7 +560,7 @@ function wsPopover() {
 function render() {
   const r = [renderA, renderB, renderC, renderD][st.v]();
   const wsOnly = st.v === 3 && st.railMode === "show";
-  const w = $("#win"); w.className = "win " + r.cls; w.innerHTML = r.html + (st.open && st.v !== 1 ? (wsOnly ? wsPopover() : popover()) : "");
+  const w = $("#win"); w.className = "win " + r.cls; if (st.theme) applyTheme(); w.innerHTML = r.html + (st.open && st.v !== 1 ? (wsOnly ? wsPopover() : popover()) : "");
   $("#vlabel").textContent = `${VARIANTS[st.v].key} · ${VARIANTS[st.v].name}`;
   const ap = $("#actpos"); if (ap) { ap.hidden = st.v !== 3; ap.querySelectorAll("button").forEach(x => x.setAttribute("aria-checked", x.dataset.actpos === st.actPos)); }
   if (st.open && st.v !== 1) {
@@ -649,5 +680,36 @@ document.addEventListener("keydown", e => {
   if (e.target.closest && e.target.closest("input")) return;
   if (e.key === "ArrowLeft") go(st.v - 1); if (e.key === "ArrowRight") go(st.v + 1);
 });
+
+const THEME_KEYS = {
+  purlis: { name: "Purlis (the Figma design)", parts: {
+    "tabs.layout.attach": "panel", "tabs.tab.corner-radius": "8 8 0 0", "tabs.tab.selected.fill": "surface.raised", "tabs.tab.selected.flare": 8,
+    "tabs.tab.hover.fill": "surface.card", "tabs.tab.hover.inset": "3 0 5", "tabs.layout.dividers": "off",
+    "titlebar.workspace.corner-radius": 8, "titlebar.workspace.selected.fill": "surface.card",
+    "rail.button.corner-radius": 9, "activity.item.corner-radius": 9, "activity.item.selected.fill": "accent.wash", "panel.corner-radius": 12 } },
+  classic: { name: "Purlis Classic (today's look)", parts: {
+    "tabs.layout.attach": "panel", "tabs.tab.corner-radius": 0, "tabs.tab.selected.flare": 0, "tabs.layout.dividers": "on",
+    "tabs.tab.hover.inset": 0, "tabs.tab.selected.fill": "surface.raised",
+    "titlebar.workspace.corner-radius": 0, "titlebar.workspace.selected.fill": "transparent", "titlebar.workspace.selected.indicator": "accent.base",
+    "rail.button.corner-radius": 4, "activity.item.corner-radius": 0, "activity.item.selected.indicator": "accent.base", "panel.corner-radius": 0 } },
+  underline: { name: "Underline (a third-party theme)", parts: {
+    "tabs.layout.attach": "strip", "tabs.tab.corner-radius": 0, "tabs.tab.selected.fill": "transparent", "tabs.tab.selected.indicator": "accent.base",
+    "tabs.indicator.height": 2, "tabs.layout.gap": 24, "tabs.tab.hover.fill": "transparent",
+    "titlebar.workspace.corner-radius": "full", "titlebar.workspace.selected.fill": "accent.wash", "titlebar.workspace.selected.text": "accent.text",
+    "rail.button.corner-radius": "full", "activity.item.corner-radius": "full", "panel.corner-radius": 6 } },
+};
+st.theme = "purlis"; try { const t = localStorage.getItem("proto-switcher-theme"); if (THEME_KEYS[t]) st.theme = t; } catch (e) {}
+st.keys = false;
+function applyTheme() {
+  const w = $("#win"); ["classic", "underline"].forEach(t => w.classList.toggle("t-" + t, st.theme === t));
+  document.querySelectorAll("[data-theme-pick]").forEach(b => b.setAttribute("aria-checked", b.dataset.themePick === st.theme));
+  const k = $("#keysbox"); k.hidden = !st.keys; $("#keysname").textContent = THEME_KEYS[st.theme].name + " · its part keys";
+  $("#keyspre").textContent = JSON.stringify({ parts: THEME_KEYS[st.theme].parts }, null, 2);
+  const kb = document.querySelector("[data-keys]"); if (kb) kb.setAttribute("aria-pressed", st.keys);
+}
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-theme-pick]"); if (t) { st.theme = t.dataset.themePick; try { localStorage.setItem("proto-switcher-theme", st.theme); } catch (er) {} return applyTheme(); }
+  if (e.target.closest("[data-keys]")) { st.keys = !st.keys; return applyTheme(); }
+}, true);
 render();
 </script>
