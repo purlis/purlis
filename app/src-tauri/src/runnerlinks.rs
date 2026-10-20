@@ -142,7 +142,8 @@ pub fn relaying(
 ) -> purlis_host::RelaysTo {
     Arc::new(move |pool: &str| {
         let machine = machine()?;
-        let kept = purlis_core::runners::runner_for(&machine.config, pool)
+        // A pool's runner, or one of its runners that drains (`<pool>/<runner>`, #2865).
+        let (kept, _) = purlis_core::runners::reachable(&machine.config, pool)
             .map_err(|why| why.to_string())?;
         // A runner of another version than this desktop's is said, every time (#2749).
         if let Some(behind) = behind(&machine, &kept) {
@@ -150,6 +151,15 @@ pub fn relaying(
         }
         let to = ToARunner::of_kept(&machine, &kept)?;
         Ok(Arc::new(move || to.keep()) as purlis_host::Keep)
+    })
+}
+
+/// **Which runner the session host the window starts relays to drains** (#2865): one reached as
+/// `<pool>/<runner>`, which keeps its chats and starts no new one. Read from `config_root` as
+/// each `relay_to` is taken.
+pub fn drains_to(config_root: PathBuf) -> purlis_host::DrainsTo {
+    Arc::new(move |name: &str| {
+        purlis_core::runners::reachable(&config_root, name).is_ok_and(|(_, draining)| draining)
     })
 }
 
@@ -215,15 +225,18 @@ fn once_for(
     Ok(version)
 }
 
-/// **Whether a chat still runs on the runner `to`** (#2749): what a draining runner waits on
-/// before it is removed. One link, made and let go of; a runner that does not answer is not
+/// **How many chats still run on the runner `to`** (#2749, #2865): what a draining runner waits
+/// on before it is removed. One link, made and let go of; a runner that does not answer is not
 /// known to be idle.
-pub fn runs_a_chat(to: &ToARunner) -> Result<bool, String> {
+pub fn chats_on(to: &ToARunner) -> Result<u32, String> {
     on_one_link(to, async |linked| match linked {
         Ok(client) => client
             .list()
             .await
-            .map(|chats| chats.iter().any(|chat| chat.state != "ended"))
+            .map(|chats| {
+                u32::try_from(chats.iter().filter(|chat| chat.state != "ended").count())
+                    .unwrap_or(u32::MAX)
+            })
             .map_err(|why| why.to_string()),
         Err(down) => Err(down.why),
     })

@@ -51,6 +51,7 @@ beforeEach(() => {
     follows: true,
     draining: 0,
     named: null,
+    waiting: 0,
   };
   added = [];
   removed = [];
@@ -203,6 +204,7 @@ describe("You › This machine › Pools", () => {
       follows: true,
       draining: 1,
       named: null,
+      waiting: 2,
     };
     render(<App />);
     const nav = await yourSettings();
@@ -213,6 +215,11 @@ describe("You › This machine › Pools", () => {
         /Its runner runs purlis 0\.4\.2-dev\.16, and this machine runs 0\.4\.2-dev\.17\. New chats start on a runner of 0\.4\.2-dev\.17 once that version's runner image is published\./,
       ),
     ).toHaveTextContent(/1 older runner keeps its chats until they end, then purlis removes it\./);
+    expect(
+      within(group).getByText(
+        /2 chats still run there: end them to let purlis remove the older runners\./,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("tells you to build your own image again when its runner is behind", async () => {
@@ -224,6 +231,7 @@ describe("You › This machine › Pools", () => {
       follows: false,
       draining: 0,
       named: null,
+      waiting: 0,
     };
     render(<App />);
     const nav = await yourSettings();

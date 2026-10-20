@@ -74,7 +74,7 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
     let done = crate::off_the_window("moving pools to this version", move || {
         let machine = Machine::here(&config)?;
         Ok::<_, String>(follow_and_drain(&machine, image.as_ref(), &|to| {
-            crate::runnerlinks::runs_a_chat(to)
+            crate::runnerlinks::chats_on(to)
         }))
     })
     .await;
@@ -192,14 +192,39 @@ async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Found, St
     found_in(Some(&update.raw_json), &pubkey, &ours.to_string())
 }
 
+/// **How many chats each pool's draining runners still keep, as the last look found them**
+/// (#2865): what the Pools group says a pool's older runner waits on.
+#[cfg(unix)]
+pub fn waiting_on(config: &std::path::Path, pool: &str) -> u32 {
+    lock_waiting()
+        .iter()
+        .filter(|((home, of, _), _)| home == config && of == pool)
+        .map(|(_, chats)| *chats)
+        .sum()
+}
+
+/// A draining runner, by its config home, its pool and its name.
+#[cfg(unix)]
+type Waiting = (std::path::PathBuf, String, String);
+
+#[cfg(unix)]
+fn lock_waiting() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<Waiting, u32>> {
+    static WAITING: std::sync::Mutex<std::collections::BTreeMap<Waiting, u32>> =
+        std::sync::Mutex::new(std::collections::BTreeMap::new());
+    WAITING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// **Moves each pool of purlis's own image on `machine` to `image`, and removes each draining
-/// runner `runs_a_chat` says no chat is left on**: what was done, and what failed, a line each.
-/// With no `image`, only the draining runners.
+/// runner `chats_on` says no chat is left on**: what was done, and what failed, a line each.
+/// With no `image`, only the draining runners. How many chats each one still keeps is noted for
+/// the Pools group ([`waiting_on`]).
 #[cfg(unix)]
 pub fn follow_and_drain(
     machine: &Machine,
     image: Option<&Image>,
-    runs_a_chat: &dyn Fn(&ToARunner) -> Result<bool, String>,
+    chats_on: &dyn Fn(&ToARunner) -> Result<u32, String>,
 ) -> Vec<String> {
     let mut said = Vec::new();
     if let Some(image) = image {
@@ -245,9 +270,19 @@ pub fn follow_and_drain(
                 continue;
             }
         };
-        match runs_a_chat(&to) {
-            Ok(true) => continue,
-            Ok(false) => {}
+        let at = (
+            machine.config.clone(),
+            kept.pool().to_owned(),
+            kept.name().to_owned(),
+        );
+        match chats_on(&to) {
+            Ok(0) => {
+                lock_waiting().remove(&at);
+            }
+            Ok(chats) => {
+                lock_waiting().insert(at, chats);
+                continue;
+            }
             // Not known to be idle, so it stays until the next look.
             Err(why) => {
                 said.push(format!(

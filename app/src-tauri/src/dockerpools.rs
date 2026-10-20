@@ -90,6 +90,8 @@ pub struct PoolVersion {
     /// one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
     /// looked.
     pub named: Option<bool>,
+    /// How many chats those older runners still keep, as purlis last found them (#2865).
+    pub waiting: u32,
 }
 
 #[cfg(unix)]
@@ -319,6 +321,7 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         follows: pool.image().is_purlis_own(),
         draining: u32::try_from(draining).unwrap_or(u32::MAX),
         named: crate::poolfollow::this_versions_image_named(),
+        waiting: crate::poolfollow::waiting_on(&machine.config, name),
     })
 }
 

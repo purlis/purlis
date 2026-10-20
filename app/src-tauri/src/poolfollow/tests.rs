@@ -96,9 +96,10 @@ fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
     let machine = a_machine(config.path());
     a_pool_draining(&machine);
 
-    // A chat still runs on it: it stays.
-    follow_and_drain(&machine, None, &|_| Ok(true));
+    // Chats still run on it: it stays, and the pool says how many it waits on.
+    follow_and_drain(&machine, None, &|_| Ok(2));
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+    assert_eq!(waiting_on(&machine.config, "first"), 2);
     // It does not answer: not known to be idle, so it stays.
     let said = follow_and_drain(&machine, None, &|_| Err("down".into()));
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
@@ -109,11 +110,16 @@ fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
     );
 
     // No chat is left: it is removed, its container and home with it, and the pool's own stays.
-    let said = follow_and_drain(&machine, None, &|_| Ok(false));
+    let said = follow_and_drain(&machine, None, &|_| Ok(0));
     assert_eq!(names(&machine), ["first-fedcba98"]);
     assert!(
         said.iter().any(|line| line.contains("is removed")),
         "{said:?}"
+    );
+    assert_eq!(
+        waiting_on(&machine.config, "first"),
+        0,
+        "a removed runner waits on nothing"
     );
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(
@@ -137,7 +143,7 @@ fn a_pool_already_of_this_versions_image_or_of_a_teams_own_is_left_as_it_is() {
     )
     .unwrap();
 
-    let said = follow_and_drain(&machine, Some(&Image::pinned(NEW).unwrap()), &|_| Ok(true));
+    let said = follow_and_drain(&machine, Some(&Image::pinned(NEW).unwrap()), &|_| Ok(2));
 
     assert!(said.is_empty(), "{said:?}");
     assert!(

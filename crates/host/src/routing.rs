@@ -30,6 +30,11 @@ use crate::relay::{Keep, Relay};
 /// to it ([`Keep`]), or why there is none. Called off the runtime, as each `relay_to` is taken.
 pub type RelaysTo = Arc<dyn Fn(&str) -> Result<Keep, String> + Send + Sync>;
 
+/// **Whether the runner kept as the name it is handed drains** (#2865): one replaced by a runner
+/// of the desktop's version, which keeps its chats until they end. A link relayed to it starts
+/// no new program there. The binary's, or nothing, and no runner drains.
+pub type DrainsTo = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
 /// One link, served by this host or by a relay to a runner, as its first command decides: what
 /// the host serves each link it admits as (`crate::serve`).
 pub struct Routed {
@@ -38,6 +43,8 @@ pub struct Routed {
     /// The window's `name_window` (1.31), while the link is undecided: handed to whichever
     /// serves the link once it is decided, before anything else.
     named: Mutex<Option<Command>>,
+    /// The runner the link is relayed to drains (#2865): it starts no new program there.
+    draining: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Clone)]
@@ -71,6 +78,7 @@ impl Routed {
             hosting,
             route: Mutex::new(Route::Undecided),
             named: Mutex::new(None),
+            draining: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -108,6 +116,7 @@ impl Routed {
             }
             *route = Route::Relaying;
         }
+        let drains = self.hosting.drains().is_some_and(|drains| drains(&runner));
         let relayed = match self.hosting.relays() {
             None => Err("this host relays to no runner".to_owned()),
             Some(relays) => tokio::task::spawn_blocking(move || relays(&runner))
@@ -135,6 +144,8 @@ impl Routed {
             *lock(&self.route) = Route::Undecided;
             return Err(refused);
         }
+        self.draining
+            .store(drains, std::sync::atomic::Ordering::SeqCst);
         *lock(&self.route) = Route::There(relay.clone());
         // A link that ended while this was taken was ended as this host's: its relay is told
         // too, so the name it holds there goes with it.
@@ -191,6 +202,16 @@ impl session::Host for Routed {
             Goes::Here => {
                 self.named_here(peer).await;
                 session::Host::call(&self.hosting, command, peer).await
+            }
+            // A runner that drains keeps its chats, and starts no new one (#2865).
+            Goes::There(_)
+                if matches!(command, Command::StartProgram(_))
+                    && self.draining.load(std::sync::atomic::Ordering::SeqCst) =>
+            {
+                Err(not_allowed(
+                    "this runner is being replaced by one of this desktop's version: it keeps its \
+                     chats until they end, and new chats start on its pool's runner",
+                ))
             }
             Goes::There(relay) => session::Host::call(&relay, command, peer).await,
             Goes::Refused(refusal) => Err(refusal),

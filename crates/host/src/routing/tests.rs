@@ -118,7 +118,8 @@ fn a_desktop_waiting(
     };
     let relays: RelaysTo = Arc::new(move |name: &str| {
         waits();
-        if name != "builds" {
+        // `builds/old` is a runner of the pool `builds` that drains (#2865).
+        if name != "builds" && name != "builds/old" {
             return Err(format!("no runner named {name} is kept on this machine"));
         }
         let (connector, desktop, pinned) =
@@ -409,4 +410,45 @@ async fn a_link_that_ends_while_it_is_relayed_lets_go_of_its_name() {
         .await
         .unwrap()
         .expect("the name the ended link gave is free");
+}
+
+/// **A link relayed to a draining runner keeps its chats and starts no new one** (#2865): the
+/// window answers and watches what runs there, and a start is refused in words that say where
+/// new chats start. A link to the pool's runner starts chats as before.
+#[tokio::test]
+async fn a_link_to_a_draining_runner_reaches_its_chats_and_starts_none() {
+    let (a, _b) = a_desktop(Kept::pinned);
+    let a = a.draining_with(Arc::new(|name: &str| name == "builds/old"));
+    let start =
+        || session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell);
+
+    let old = routed(Scope::LocalUi, a.clone()).await;
+    tokio::time::timeout(PATIENCE, old.relay_to("builds/old"))
+        .await
+        .unwrap()
+        .expect("a draining runner is reached");
+    old.list().await.expect("its chats are listed");
+    let refused = old.start_program(start()).await.unwrap_err();
+    assert_eq!(code(&refused), Some(session::NOT_ALLOWED), "{refused}");
+    assert!(
+        refused
+            .to_string()
+            .contains("new chats start on its pool's runner"),
+        "{refused}"
+    );
+
+    let new = routed(Scope::LocalUi, a).await;
+    tokio::time::timeout(PATIENCE, new.relay_to("builds"))
+        .await
+        .unwrap()
+        .unwrap();
+    let started = new.start_program(start()).await;
+    assert!(
+        started
+            .as_ref()
+            .err()
+            .and_then(|why| code(why))
+            .is_none_or(|code| code != session::NOT_ALLOWED),
+        "the pool's runner refused a start as draining: {started:?}"
+    );
 }
