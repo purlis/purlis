@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useSyncExternalStore } from "react";
-import { commands, type PoolAdding, type PoolLink, type PoolsShown } from "./bindings";
+import {
+  commands,
+  type PoolAdding,
+  type PoolLink,
+  type PoolVersion,
+  type PoolsShown,
+} from "./bindings";
 
 /**
  * **This machine's Docker pools, as the window holds them** (#2679): one read, shared by the
@@ -14,6 +20,9 @@ import { commands, type PoolAdding, type PoolLink, type PoolsShown } from "./bin
  * **Each pool's runner is asked once whether it answers with the key pinned for it**
  * ({@link askLink}), as the group comes on screen: a runner whose key changed gets a Notice with
  * Remove.
+ *
+ * **Each pool's runner is asked its version too** ({@link askVersion}, #2749): a row whose
+ * runner runs another version than this machine says so.
  */
 type Read =
   | { state: "reading" }
@@ -26,6 +35,8 @@ export type Held = {
   adding: boolean;
   /** What each pool's runner answered, or that it is being asked, by the pool's name. */
   links: Readonly<Record<string, PoolLink | "asking">>;
+  /** Which version each pool's runner runs, by the pool's name, once it said (#2749). */
+  versions: Readonly<Record<string, PoolVersion>>;
   /** The pool being removed, while it is. */
   removing: string | undefined;
   /** Why the last removal was refused, or what it left, in the core's words. */
@@ -36,6 +47,7 @@ const START: Held = {
   read: { state: "reading" },
   adding: false,
   links: {},
+  versions: {},
   removing: undefined,
   said: undefined,
 };
@@ -125,6 +137,15 @@ export async function askLink(name: string) {
   set((was) => ({ ...was, links: { ...was.links, [name]: link } }));
 }
 
+/** Asks pool `name`'s runner which version it runs (#2749). A runner that does not say is drawn
+ *  as before: its link already says why it does not answer. */
+export async function askVersion(name: string) {
+  const said = await caught(commands.dockerPoolVersion(name));
+  if (said.status === "error" || typeof said.data !== "object" || said.data === null) return;
+  const version = said.data;
+  set((was) => ({ ...was, versions: { ...was.versions, [name]: version } }));
+}
+
 /** Removes pool `name`, its runner, its container and its home. */
 export async function removePool(name: string) {
   if (held.removing !== undefined) return;
@@ -133,10 +154,13 @@ export async function removePool(name: string) {
   set((was) => {
     const links = { ...was.links };
     Reflect.deleteProperty(links, name);
+    const versions = { ...was.versions };
+    Reflect.deleteProperty(versions, name);
     return {
       ...was,
       removing: undefined,
       links,
+      versions,
       said: said.status === "error" ? said.error : (said.data ?? undefined),
     };
   });

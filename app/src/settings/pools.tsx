@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import type { PoolLink, PoolRow } from "../bindings";
+import type { PoolLink, PoolRow, PoolVersion } from "../bindings";
 import * as AlertDialog from "../overlays/alert-dialog";
 import { AnswerBar } from "../AnswerBar";
 import { Notice } from "../Notice";
-import { askLink, removePool, startAddingAPool, usePools } from "../pools";
+import { askLink, askVersion, removePool, startAddingAPool, usePools } from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
@@ -19,6 +19,11 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  * group comes on screen. One whose key changed is refused on every link, so its row has a
  * Notice with Remove, which removes its runner whole, the pool with it. A runner that does not
  * answer says why, in Docker's or purlis's words.
+ *
+ * **A runner of another version than this machine's says so** ({@link versionSaid}, #2749):
+ * a pool of purlis's own image moves its new chats to a runner of this version on its own, and
+ * its older runner keeps its chats until they end; a pool of your own image does not, so its
+ * row says what to do.
  *
  * **Every Remove asks first** ({@link RemovePool}): it says what goes and that there is no undo,
  * and Remove pool removes it.
@@ -49,6 +54,32 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link.state === "linked") return "linked";
   if (link.state === "key_changed") return "key changed";
   return "not linked";
+}
+
+/** What a row says of its runner's version, where it is not this machine's; nothing where it
+ *  is. */
+export function versionSaid(version: PoolVersion | undefined): string | undefined {
+  if (version === undefined) return undefined;
+  const lines: string[] = [];
+  if (version.runner === null) {
+    lines.push(
+      `purlis could not read which version its runner runs, so it may not be ${version.desktop}: ${version.why ?? "it gave no reason"}`,
+    );
+  } else if (version.runner !== version.desktop) {
+    lines.push(
+      version.follows
+        ? `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. New chats start on a runner of ${version.desktop} once that version's runner image is published.`
+        : `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. Build your image from purlis ${version.desktop}, then add the pool again.`,
+    );
+  }
+  if (version.draining > 0) {
+    lines.push(
+      version.draining === 1
+        ? "1 older runner keeps its chats until they end, then purlis removes it."
+        : `${version.draining} older runners keep their chats until they end, then purlis removes them.`,
+    );
+  }
+  return lines.length === 0 ? undefined : lines.join(" ");
 }
 
 /**
@@ -104,11 +135,13 @@ export function RemovePool({
 function PoolEntry({
   pool,
   link,
+  version,
   removing,
   onAsk,
 }: {
   pool: PoolRow;
   link: PoolLink | "asking" | undefined;
+  version: PoolVersion | undefined;
   removing: boolean;
   /** Asks whether to remove it. */
   onAsk: () => void;
@@ -145,6 +178,9 @@ function PoolEntry({
       {typeof link === "object" && link.state === "down" && (
         <p className="ui-setting-help">{link.why}</p>
       )}
+      {versionSaid(version) !== undefined && (
+        <p className="ui-setting-help">{versionSaid(version)}</p>
+      )}
     </li>
   );
 }
@@ -160,7 +196,10 @@ const poolsList: LiveSetting = {
     const asked = names.join("\u0000");
     // Each runner is asked once, as the group comes on screen or a pool is added.
     useEffect(() => {
-      for (const name of asked === "" ? [] : asked.split("\u0000")) void askLink(name);
+      for (const name of asked === "" ? [] : asked.split("\u0000")) {
+        void askLink(name);
+        void askVersion(name);
+      }
     }, [asked]);
     return {
       grouped: true,
@@ -183,6 +222,7 @@ const poolsList: LiveSetting = {
                     key={pool.name}
                     pool={pool}
                     link={now.links[pool.name]}
+                    version={now.versions[pool.name]}
                     removing={now.removing === pool.name}
                     onAsk={() => setAsking(pool.name)}
                   />
