@@ -582,6 +582,31 @@ pub(crate) fn is_a_png(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x89PNG\r\n\x1a\n")
 }
 
+/// Runs `test`, an ignored test of this binary, again in a process of its own whose data home
+/// and config home are the test's, as the app's are its person's: what the window reads there
+/// is the test's, never this machine's.
+pub(crate) fn in_homes_of_its_own(test: &str) {
+    let homes = tempfile::tempdir().expect("the window's homes");
+    let mut again = std::process::Command::new(std::env::current_exe().expect("this test"));
+    again
+        .args([
+            "--exact",
+            test,
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(purlis_core::datahome::HOME_VAR, homes.path().join("data"))
+        .env(purlis_core::machine::HOME_VAR, homes.path().join("config"));
+    let ran = purlis_core::forklock::output(&mut again).expect("the test runs again");
+    assert!(
+        ran.status.success() && String::from_utf8_lossy(&ran.stdout).contains("1 passed"),
+        "{test} did not pass in homes of its own:\n{}\n{}",
+        String::from_utf8_lossy(&ran.stdout),
+        String::from_utf8_lossy(&ran.stderr)
+    );
+}
+
 // ---- #2243: a chat's browser tools, end to end ----
 
 /// The acceptance lines of #2243 and #2016's, on one browser through every hop: the first call
@@ -590,8 +615,24 @@ pub(crate) fn is_a_png(bytes: &[u8]) -> bool {
 /// back; a login purlis performs leaves no value in any answer, and the browser then reaches
 /// the login's site alone; and closing it is said in the window's log, with how its engine
 /// ended, its engine's log kept.
+///
+/// The window reads its data home and config home as the app does, from its environment, so
+/// the test runs again in a process of its own whose homes are the test's (a login reads the
+/// data home for a kept store, #2021).
 #[test]
 fn a_chats_browser_tools_drive_a_real_engine_through_every_hop() {
+    if !a_real_engine_runs_here() {
+        return;
+    }
+    in_homes_of_its_own(
+        "browsers_end_to_end_tests::the_browser_tools_through_every_hop_in_homes_of_their_own",
+    );
+}
+
+/// [`a_chats_browser_tools_drive_a_real_engine_through_every_hop`], in homes of its own.
+#[test]
+#[ignore = "run by a_chats_browser_tools_drive_a_real_engine_through_every_hop in homes of its own"]
+fn the_browser_tools_through_every_hop_in_homes_of_their_own() {
     if !a_real_engine_runs_here() {
         return;
     }
