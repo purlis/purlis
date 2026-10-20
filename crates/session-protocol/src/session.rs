@@ -211,9 +211,9 @@ use crate::view::{Limits, Views};
 /// kept its starts within the budget there.
 ///
 /// 1.33 added the window reaching a pool's runner through its own host (#2679, ADR 0078 §4):
-/// `relay_to`, the first command on a window's link, has the desktop's host relay that link to
-/// the runner it keeps under the name, and `link_down` says when the runner answered with
-/// another key than the one pinned for it (`key_changed`).
+/// `relay_to`, the first command on a window's link after its `name_window`, has the desktop's
+/// host relay that link to the runner it keeps under the name, and `link_down` says when the
+/// runner answered with another key than the one pinned for it (`key_changed`).
 pub const VERSION: Version = Version {
     major: 1,
     minor: 33,
@@ -545,9 +545,9 @@ pub enum Command {
     NameWindow { name: crate::browsing::Secret },
     /// The window asks the desktop's host to relay this link to `runner` (1.33, #2679, ADR 0078
     /// §4): the runner this machine keeps under that name, reached through its connector and
-    /// linked with the key pinned at its pairing. Sent only as a link's first command, before
-    /// `subscribe`; from then on the host relays every command on the link to that runner, as a
-    /// relaying host does. Answered [`Answer::Done`], or refused [`NOT_ALLOWED`] on a link that
+    /// linked with the key pinned at its pairing. Sent only as a link's first command but its
+    /// `name_window`, before `subscribe`; from then on the host relays every command on the link
+    /// to that runner, as a relaying host does, its `name_window` first. Answered [`Answer::Done`], or refused [`NOT_ALLOWED`] on a link that
     /// has sent anything else and [`NOT_STARTED`] for a runner this machine does not keep. The
     /// window's alone ([`crate::grants::Power::RelayTo`]).
     RelayTo { runner: String },

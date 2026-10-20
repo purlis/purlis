@@ -6,7 +6,8 @@
 //! host, which relays"*).
 //!
 //! - **A window's link names its runner with its first command** (`relay_to`), before it
-//!   subscribes: from then on every command on it goes to a [`Relay`] kept to that runner, and
+//!   subscribes, after only the window's own name (`name_window`, 1.31), which is handed to
+//!   whichever serves the link: from then on every command on it goes to a [`Relay`] kept to that runner, and
 //!   the runner's views, events and asks come back on it. A link whose first command is any
 //!   other is this host's, and a later `relay_to` on it is refused, so a link never changes
 //!   hands with what it holds.
@@ -34,6 +35,9 @@ pub type RelaysTo = Arc<dyn Fn(&str) -> Result<Keep, String> + Send + Sync>;
 pub struct Routed {
     hosting: Hosting,
     route: Mutex<Route>,
+    /// The window's `name_window` (1.31), while the link is undecided: handed to whichever
+    /// serves the link once it is decided, before anything else.
+    named: Mutex<Option<Command>>,
 }
 
 #[derive(Clone)]
@@ -66,6 +70,7 @@ impl Routed {
         Routed {
             hosting,
             route: Mutex::new(Route::Undecided),
+            named: Mutex::new(None),
         }
     }
 
@@ -109,19 +114,37 @@ impl Routed {
                 .await
                 .unwrap_or_else(|why| Err(format!("the runner could not be looked up: {why}"))),
         };
-        let mut route = lock(&self.route);
-        match relayed {
-            Ok(keep) => {
-                *route = Route::There(Relay::kept(keep));
-                Ok(Answer::Done)
-            }
+        let relay = match relayed {
+            Ok(keep) => Relay::kept(keep),
             Err(why) => {
-                *route = Route::Undecided;
-                Err(Refusal {
+                *lock(&self.route) = Route::Undecided;
+                return Err(Refusal {
                     code: session::NOT_STARTED.into(),
                     why,
-                })
+                });
             }
+        };
+        // The name the window gave this link goes to the relay first, which names the window
+        // by it to the runner.
+        let named = lock(&self.named).take();
+        if let Some(named) = named
+            && let Err(refused) = session::Host::call(&relay, named, peer).await
+        {
+            *lock(&self.route) = Route::Undecided;
+            return Err(refused);
+        }
+        *lock(&self.route) = Route::There(relay);
+        Ok(Answer::Done)
+    }
+}
+
+impl Routed {
+    /// The window's name, kept while the link was undecided, handed to this host now that the
+    /// link is its own.
+    async fn named_here(&self, peer: &Peer) {
+        let named = lock(&self.named).take();
+        if let Some(named) = named {
+            let _ = session::Host::call(&self.hosting, named, peer).await;
         }
     }
 }
@@ -138,8 +161,21 @@ impl session::Host for Routed {
         if let Command::RelayTo { runner } = command {
             return self.relay_to(runner, peer).await;
         }
+        // The window names itself first (1.31) and may still relay the link after: its name is
+        // kept until the link is decided.
+        if let Command::NameWindow { .. } = &command {
+            let route = lock(&self.route);
+            if matches!(*route, Route::Undecided) {
+                *lock(&self.named) = Some(command);
+                return Ok(Answer::Done);
+            }
+            drop(route);
+        }
         match self.goes() {
-            Goes::Here => session::Host::call(&self.hosting, command, peer).await,
+            Goes::Here => {
+                self.named_here(peer).await;
+                session::Host::call(&self.hosting, command, peer).await
+            }
             Goes::There(relay) => session::Host::call(&relay, command, peer).await,
             Goes::Refused(refusal) => Err(refusal),
         }

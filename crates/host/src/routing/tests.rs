@@ -249,3 +249,27 @@ async fn a_runner_that_answers_with_another_key_is_refused_as_its_key_changed_an
     assert_eq!(code(&refused), Some(session::KEY_CHANGED), "{refused}");
     assert!(!stopped(&b).await);
 }
+
+#[tokio::test]
+async fn a_window_that_names_itself_first_is_still_relayed_and_its_name_goes_with_it() {
+    let (a, b) = a_desktop(Kept::pinned);
+    let window = routed(Scope::LocalUi, a.clone()).await;
+    window
+        .call(Command::NameWindow {
+            name: purlis_session_protocol::browsing::Secret::new(
+                "0123456789abcdef0123456789abcdef".into(),
+            ),
+        })
+        .await
+        .unwrap();
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(PATIENCE, window.stop_all())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stopped(&b).await);
+    assert!(!stopped(&a).await);
+}
