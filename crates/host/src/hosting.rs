@@ -2491,34 +2491,41 @@ fn lock_porting(inner: &Inner) -> std::sync::MutexGuard<'_, ()> {
 
 /// **Gives back each port the host withdrew from confinement `id` because no link was left**
 /// (#2625), now its window has taken the chat back: as the plan gave it. Only a port still
-/// [`Confinement::unheld`], so not one the window withdrew since. A port the proxy cannot give
-/// back stays withdrawn. Blocking, on the porting lane.
+/// [`Confinement::unheld`], so not one the window withdrew since. Each port is checked, given
+/// back and marked so under the host's state lock, which a window's withdrawal marks its port
+/// under before its proxy hears it: whichever comes first, a port the window withdrew ends
+/// withdrawn. A port the proxy cannot give back stays withdrawn. Blocking, on the porting lane.
 fn give_back(hosting: &Weak<Inner>, id: &str) {
     let Some(inner) = hosting.upgrade() else {
         return;
     };
     let _porting = lock_porting(&inner);
     let hosting = hosting_of(&inner);
-    let Some((confining, ports)) = hosting
+    let ports = hosting
         .state()
         .confinements
         .get(id)
-        .map(|held| (Arc::clone(&held.confining), held.unheld.clone()))
-    else {
-        return;
-    };
+        .map(|held| held.unheld.clone())
+        .unwrap_or_default();
     for port in ports {
-        if let Err(why) = confining.give_back(port) {
+        let mut state = hosting.state();
+        let Some(held) = state.confinements.get_mut(id) else {
+            return;
+        };
+        if !held.unheld.contains(&port) {
+            continue;
+        }
+        // A set removal in the proxy: cheap enough to make under the lock.
+        if let Err(why) = held.confining.give_back(port) {
+            drop(state);
             crate::say(&format!(
                 "port {port} stays withdrawn from confinement {id}, which could not carry it \
                  again: {why}"
             ));
             continue;
         }
-        if let Some(held) = hosting.state().confinements.get_mut(id) {
-            held.unheld.retain(|unheld| *unheld != port);
-            held.plan.withdrawn.retain(|withdrawn| *withdrawn != port);
-        }
+        held.unheld.retain(|unheld| *unheld != port);
+        held.plan.withdrawn.retain(|withdrawn| *withdrawn != port);
     }
 }
 
@@ -2738,8 +2745,9 @@ impl session::Host for Hosting {
                 change,
             } => {
                 let confining = self.confinement(&confinement, peer)?;
-                let retry = confining.change(&change).map_err(not_started)?;
-                // A port the window withdrew stays withdrawn: never one to give back (#2625).
+                // A port the window withdraws stays withdrawn: never one to give back (#2625).
+                // Marked so before the proxy hears it, under the lock a give-back checks each
+                // port under, so a give-back either ran before it or never gives this port back.
                 if let session::ReachChange::WithdrawPort { port } = change
                     && let Some(held) = self.state().confinements.get_mut(&confinement)
                 {
@@ -2748,6 +2756,7 @@ impl session::Host for Hosting {
                         held.plan.withdrawn.push(port);
                     }
                 }
+                let retry = confining.change(&change).map_err(not_started)?;
                 Ok(Answer::ReachChanged { retry })
             }
             Command::ReachOf { confinement } => {

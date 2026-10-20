@@ -656,3 +656,50 @@ async fn a_port_the_person_withdrew_stays_withdrawn_after_a_re_link() {
         "a port the person withdrew was given back"
     );
 }
+
+/// The person withdraws a port while the runner is giving it back after a re-link: the port
+/// ends withdrawn, whichever lands first (#2625).
+#[tokio::test]
+async fn a_port_the_person_withdraws_while_it_is_given_back_ends_withdrawn() {
+    let runner = a_runner();
+    let (first, first_events, _) = runner.relayed_for(WINDOW).await;
+    first
+        .call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the runner");
+    first
+        .start_program(running_in(MADE))
+        .await
+        .expect("runs in the window's confinement");
+    drop((first, first_events));
+    runner.unheld(MADE).await;
+    // Each give-back now waits a while for the person's withdrawal to land first.
+    runner
+        .confines
+        .give_backs_wait_for_a_withdrawal(Duration::from_millis(500));
+
+    let (again, _events, _) = runner.relayed_for(WINDOW).await;
+    changed(&again, MADE, ReachChange::WithdrawPort { port: 5432 })
+        .await
+        .expect("the person withdraws the port");
+    tokio::time::sleep(Duration::from_millis(800)).await;
+
+    let seen = runner.confines.seen();
+    let made = seen
+        .iter()
+        .find(|one| one.confine.confinement == MADE)
+        .unwrap();
+    let last_withdrawal = made
+        .changes
+        .iter()
+        .rposition(|change| *change == ReachChange::WithdrawPort { port: 5432 })
+        .unwrap();
+    assert!(
+        made.given_back_after
+            .last()
+            .is_none_or(|given_after| last_withdrawal >= *given_after),
+        "given back after the person withdrew it: {:?}, {:?}",
+        made.changes,
+        made.given_back_after
+    );
+}

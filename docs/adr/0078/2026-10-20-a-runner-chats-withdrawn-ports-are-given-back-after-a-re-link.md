@@ -15,7 +15,10 @@ and is marked *decided in implementation, to be confirmed*.
    recorded as withdrawn in the confinement's plan and is never one the runner gives back,
    whenever the window's withdrawal lands. *Decided in implementation, to be confirmed*
    (D-2625-2).
-3. **A withdrawal and a give-back never cross.** Both run on one lane of the runner's host, and
-   each acts only on the ports still withdrawn for want of a window, so a re-link that comes
-   back before the withdrawal ran leaves the port carried. *Decided in implementation, to be
-   confirmed* (D-2625-3).
+3. **A withdrawal and a give-back never cross.** The runner's own withdrawals as a last link
+   ends and its give-backs run on one lane, and each acts only on the ports still withdrawn for
+   want of a window, so a re-link that comes back before the withdrawal ran leaves the port
+   carried. A window's withdrawal marks its port withdrawn, and no longer one to give back,
+   before the proxy hears it; a give-back checks, gives back and marks each port under the same
+   lock. Whichever lands first, a port the person withdrew ends withdrawn. *Decided in
+   implementation, to be confirmed* (D-2625-3).

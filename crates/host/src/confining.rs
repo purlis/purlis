@@ -99,7 +99,8 @@ pub trait Confining: Send + Sync + 'static {
     fn now(&self) -> ReachNow;
     /// `port` of the machine, which the host withdrew because no window was left to withdraw
     /// it, is carried again as its plan gave it (#2625): its window took the chat back. Never a
-    /// port the window withdrew.
+    /// port the window withdrew. Called under the host's state lock, so it does no more than
+    /// mark the port carried, and never calls back into the host.
     fn give_back(&self, port: u16) -> Result<(), String>;
 }
 

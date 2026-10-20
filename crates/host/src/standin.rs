@@ -297,6 +297,8 @@ pub struct Confinement {
     pub changes: Vec<ReachChange>,
     /// Each port the host gave back to it, in order (#2625).
     pub given_back: Vec<u16>,
+    /// How many changes it had been told as each port was given back.
+    pub given_back_after: Vec<usize>,
     pub ended: bool,
     tell: Tell,
     askable: Askable,
@@ -324,6 +326,9 @@ struct Held {
     holding: bool,
     waiting: usize,
     refusing_changes: Option<String>,
+    /// How long a give-back waits for the port to be withdrawn first, at most, where it waits
+    /// (#2625): a withdrawal that lands while a give-back is under way.
+    give_back_waits: Option<std::time::Duration>,
     /// Why a plan made on another machine does not fit, where it says none does (#2445).
     not_fitting: Option<String>,
     /// Each plan made on another machine it was asked to fit, with the project's path here.
@@ -413,6 +418,12 @@ impl StandInConfines {
     pub fn refuse_changes(&self, why: &str) {
         self.2.held.lock().unwrap().refusing_changes = Some(why.to_owned());
     }
+
+    /// From now on each give-back waits, `long` at most, for its port to be withdrawn once more
+    /// first (#2625).
+    pub fn give_backs_wait_for_a_withdrawal(&self, long: std::time::Duration) {
+        self.2.held.lock().unwrap().give_back_waits = Some(long);
+    }
 }
 
 struct StandInConfining {
@@ -453,6 +464,7 @@ impl crate::confining::Confine for StandInConfines {
             alone: confining.alone.to_vec(),
             changes: Vec::new(),
             given_back: Vec::new(),
+            given_back_after: Vec::new(),
             ended: false,
             tell,
             askable,
@@ -494,10 +506,31 @@ impl Confining for StandInConfining {
     }
 
     fn give_back(&self, port: u16) -> Result<(), String> {
-        if let Some(why) = self.all.2.held.lock().unwrap().refusing_changes.clone() {
+        let (refusing, waits) = {
+            let held = self.all.2.held.lock().unwrap();
+            (held.refusing_changes.clone(), held.give_back_waits)
+        };
+        if let Some(why) = refusing {
             return Err(why);
         }
-        self.all.with(&self.id, |one| one.given_back.push(port));
+        if let Some(long) = waits {
+            let withdrawals = || {
+                self.all.with(&self.id, |one| {
+                    one.changes
+                        .iter()
+                        .filter(|change| **change == ReachChange::WithdrawPort { port })
+                        .count()
+                })
+            };
+            let (before, until) = (withdrawals(), std::time::Instant::now() + long);
+            while std::time::Instant::now() < until && withdrawals() == before {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+        self.all.with(&self.id, |one| {
+            one.given_back.push(port);
+            one.given_back_after.push(one.changes.len());
+        });
         Ok(())
     }
 
