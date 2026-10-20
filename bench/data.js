@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792483145682,
+  "lastUpdate": 1792484758394,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18774,6 +18774,48 @@ window.BENCHMARK_DATA = {
             "value": 101.626239,
             "unit": "ms",
             "extra": "median of 5 runs: 101.341, 101.609, 101.626, 101.717, 101.758 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "536f66e9f2a31bb11fa1a248954ab0ef4110f2a2",
+          "message": "Settings › Theme paints only visible cards and yields to a chat's preview (#2740)\n\n* Settings › Theme pictures only the cards on screen, keeps a bounded few, and its tests pass in any order\n\nThe gallery asks for a card's pictures once the card is on screen, and a\npicture still waiting its turn when its card scrolls away is not asked\nfor. At most MOST_KEPT pictures are kept beside the ones on screen; the\none shown least recently is let go first.\n\nForgetting the pictures and galleries between tests now ends everything\na test started: an answer to an earlier ask is dropped, a wait for a busy\npainter is cleared, and the folder listener is stopped. The re-read test\nnow runs before the pictures test, the order that used to fail.\n\nPart of #2614, #2698.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A chat's theme preview goes ahead of gallery pictures, and the old system id is no special case\n\nThe specimen painter has one holder at a time (themepreview::turns): a\ngallery picture takes it only when it is free and no chat waits, and a\nchat that finds a gallery picture being drawn waits while that picture\ngives way.\n\nThe old system id names the person's own theme.json, else Purlis\nClassic, and is followed as any theme is. Drawn::theirs says when the\nperson's own theme.json is drawn, and Settings › Theme says so: \"Drawn\nhere: your own theme.json, following the system\", or that it stays in\nits one appearance.\n\nPart of #2614, #2615.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Settings › Theme: review fixes for the gallery's pictures and the system id\n\n- theme_preview's deadline is one budget longer, so it stays above a\n  chat's wait for a gallery picture to give way.\n- A system choice that names an appearance is pinned by a levels test.\n- The picture bound reads as 48 in all, never letting go of one on screen.\n- useOnScreen hands out a callback ref, so a refused card that becomes a\n  theme while the tab is open is watched once its box renders.\n\nPart of #2614, #2615.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Regenerate the UI RPC client for the gallery's theirs field\n\nWritten by `cargo test -p purlis-app -- --ignored`, as the bindings are.\n\nPart of #2615.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T12:24:36+04:00",
+          "tree_id": "0397a8739b1fd7a64fad49be00440b9a34f65af6",
+          "url": "https://github.com/purlis/purlis/commit/536f66e9f2a31bb11fa1a248954ab0ef4110f2a2"
+        },
+        "date": 1792484756671,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46270900000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.454, 0.459, 0.463, 0.469, 0.470 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.17304,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.110, 16.151, 16.173, 16.384, 17.080 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.707138,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.877, 101.405, 101.707, 101.759, 103.047 ms"
           }
         ]
       }
