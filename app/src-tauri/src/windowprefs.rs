@@ -80,6 +80,9 @@ struct Frame {
 pub(crate) struct CreatedOn {
     pub(crate) plane: std::path::PathBuf,
     pub(crate) workspace: Option<String>,
+    /// The project's font files the creation has hashed already (#2696): the trust check's,
+    /// for a remembered project, so its theme is read with no second hashing.
+    pub(crate) measured: theme::Measured,
 }
 
 impl CreatedOn {
@@ -88,9 +91,15 @@ impl CreatedOn {
     /// one its explorer was focused on, else the plane root. A guess and no more: a window that
     /// shows another draws that one's theme once it knows, as it always did.
     pub(crate) fn plane(plane: &Path) -> Self {
+        Self::measured(plane, theme::Measured::default())
+    }
+
+    /// [`Self::plane`], with the font files `measured` has hashed already.
+    fn measured(plane: &Path, measured: theme::Measured) -> Self {
         Self {
             workspace: workspace_in_front(plane),
             plane: plane.to_path_buf(),
+            measured,
         }
     }
 
@@ -102,6 +111,9 @@ impl CreatedOn {
     /// machine.** Running purlis in a project is that yes; a remembered one is drawn only while
     /// the store's approval of it holds for what it contributes now, the check the restore makes
     /// before it opens it (`Planes::open_if_approved`). Otherwise the machine's levels decide.
+    ///
+    /// **Its font files are hashed once** (#2696): what the check hashed is handed to the read of
+    /// its theme folders, which takes a face's digest from it for the same file, unchanged.
     pub(crate) fn main(config_root: Option<&Path>, launched: Option<&Path>) -> Option<Self> {
         Self::main_of(launched, || {
             config_root.map(|root| purlis_core::machine::read(root).store)
@@ -120,11 +132,12 @@ impl CreatedOn {
         let remembered = remembered()?;
         let first = remembered.windows.first()?;
         let plane = first.planes.get(first.active)?;
-        let contributes = purlis_core::machine::Contribution::of(plane);
+        let measured = theme::Measured::default();
+        let contributes = purlis_core::machine::Contribution::of_measured(plane, &measured);
         if remembered.consent(plane, &contributes).must_ask() {
             return None;
         }
-        Some(Self::plane(plane))
+        Some(Self::measured(plane, measured))
     }
 }
 
@@ -162,7 +175,9 @@ impl FirstFrame {
         let plane = on.map(|on| on.plane.as_path());
         let workspace = on.and_then(|on| on.workspace.as_deref());
         let levels = theme::Levels::read(config_root, plane, workspace);
-        let folders = theme::Folders::of(config_root, plane, workspace);
+        // One read for every frame: a face is hashed once for all of them (#2696).
+        let measured = on.map_or_else(theme::Measured::default, |on| on.measured.clone());
+        let folders = theme::Folders::of_measured(config_root, plane, workspace, measured);
         let drawn = |system, contrast| {
             theme::first_frame(&theme::LevelInputs {
                 levels: &levels,
@@ -791,6 +806,7 @@ mod tests {
             CreatedOn {
                 plane: self.plane.clone(),
                 workspace: workspace.map(str::to_owned),
+                measured: theme::Measured::default(),
             }
         }
 
@@ -1168,5 +1184,165 @@ mod tests {
         assert_eq!(at["theme"]["found"], false);
         assert_eq!(at["theme"]["theme"], serde_json::Value::Null);
         assert_eq!(at["built_in"].as_array().map(Vec::len), Some(2));
+    }
+
+    /// **A project at the font budget**: 64 font files, 32 MiB, in three theme folders, the one
+    /// chosen naming 24 of them (8 for each slot), with both appearances and a high-contrast one
+    /// of each, so the first frame resolves four times. Approved on this machine and remembered
+    /// in front of the first window.
+    fn at_the_font_budget() -> Places {
+        const FILE: usize = 512 * 1024;
+        let places = Places::new("[theme]\nuse = \"team\"\nappearance = \"system\"\n");
+        let themes = places.plane.join("themes");
+        let mut seed: u64 = 0x2696;
+        let mut faces = Vec::new();
+        for (folder, files) in [("team", 24), ("two", 24), ("three", 16)] {
+            let fonts = themes.join(folder).join("fonts");
+            std::fs::create_dir_all(&fonts).unwrap();
+            for one in 0..files {
+                let mut bytes = b"wOF2".to_vec();
+                while bytes.len() < FILE {
+                    seed = seed
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1_442_695_040_888_963_407);
+                    bytes.extend_from_slice(&seed.to_le_bytes());
+                }
+                bytes.truncate(FILE);
+                let name = format!("Face{one:02}.woff2");
+                std::fs::write(fonts.join(&name), bytes).unwrap();
+                if folder == "team" {
+                    faces.push(name);
+                }
+            }
+            if folder != "team" {
+                Places::put(&themes, folder, r#"{"name":"Other"}"#);
+            }
+        }
+        let slot = |at: usize| {
+            let listed: Vec<String> = faces[at * 8..at * 8 + 8]
+                .iter()
+                .enumerate()
+                .map(|(n, file)| format!(r#"{{"file":"fonts/{file}","weight":{}}}"#, 100 * (n + 1)))
+                .collect();
+            format!(r#"{{"family":"Team","faces":[{}]}}"#, listed.join(","))
+        };
+        Places::put(
+            &themes,
+            "team",
+            &format!(
+                r##"{{"name":"Team","appearances":[
+                    {{"id":"dark","appearance":"dark","tokens":{{"window.background":"#202020"}}}},
+                    {{"id":"dark-more","appearance":"dark","high-contrast":true,
+                     "tokens":{{"window.background":"#000000"}}}},
+                    {{"id":"light","appearance":"light","tokens":{{"window.background":"#f4f4f4"}}}},
+                    {{"id":"light-more","appearance":"light","high-contrast":true,
+                     "tokens":{{"window.background":"#ffffff"}}}}],
+                    "fonts":{{"ui":{},"mono":{},"terminal":{}}}}}"##,
+                slot(0),
+                slot(1),
+                slot(2)
+            ),
+        );
+        let contributes = purlis_core::machine::Contribution::of(&places.plane);
+        assert_eq!(
+            contributes.fonts.len(),
+            64,
+            "the budget's 64 files are listed"
+        );
+        // As a project's files are by the time a window opens on it: settled.
+        std::thread::sleep(theme::SETTLED + std::time::Duration::from_millis(100));
+        purlis_core::machine::update(&places.config, |store| {
+            store.approve(&places.plane, 1, contributes);
+            store.windows = vec![purlis_core::machine::Window {
+                planes: vec![places.plane.clone()],
+                active: 0,
+            }];
+        })
+        .unwrap();
+        places
+    }
+
+    #[test]
+    fn a_remembered_project_s_fonts_are_hashed_once_as_the_main_window_is_created() {
+        // #2696: the trust check hashes each font file the project brings, and the first
+        // frame's read takes those digests for the same files, unchanged.
+        let places = Places::new("[theme]\nuse = \"team\"\nappearance = \"system\"\n");
+        let fonts = places.plane.join("themes/team/fonts");
+        std::fs::create_dir_all(&fonts).unwrap();
+        let face = b"wOF2 the team's face, hashed once as the window is created";
+        std::fs::write(fonts.join("Team.woff2"), face).unwrap();
+        Places::put(
+            &places.plane.join("themes"),
+            "team",
+            r#"{"name":"Team","appearances":[{"id":"dark","appearance":"dark"},
+                {"id":"light","appearance":"light"}],
+                "fonts":{"ui":{"family":"Team","faces":[{"file":"fonts/Team.woff2"}]}}}"#,
+        );
+        purlis_core::machine::update(&places.config, |store| {
+            store.approve(
+                &places.plane,
+                1,
+                purlis_core::machine::Contribution::of(&places.plane),
+            );
+            store.windows = vec![purlis_core::machine::Window {
+                planes: vec![places.plane.clone()],
+                active: 0,
+            }];
+        })
+        .unwrap();
+        std::thread::sleep(theme::SETTLED + std::time::Duration::from_millis(100));
+        let on = CreatedOn::main(Some(&places.config), None).expect("the project is trusted");
+        assert_eq!(on.measured.hashed(), 1);
+        // Two frames for each contrast, one per appearance: the face is not hashed again.
+        let created = places.created(Some(&on), None);
+        assert!(created.follows_system);
+        assert_eq!(on.measured.hashed(), 1);
+        let at = defined(&created.script);
+        assert_eq!(at["first"]["frames"][0]["theme"]["name"], "Team");
+        let digest: String = {
+            use sha2::Digest;
+            sha2::Sha256::digest(face)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect()
+        };
+        assert!(
+            theme::served(&digest).is_ok(),
+            "its face is drawn and served"
+        );
+    }
+
+    #[test]
+    #[ignore = "a measurement: run it in a release build, `--ignored --nocapture`"]
+    // The number is the measurement's whole point, read with `--nocapture`.
+    #[allow(clippy::disallowed_macros)]
+    fn creating_the_main_window_on_a_project_at_the_font_budget_is_timed() {
+        // #2696: what the main window's creation reads on the main thread, against ADR 0026's
+        // 2 s start budget, for a remembered project at the font budget.
+        let places = at_the_font_budget();
+        let mut took = Vec::new();
+        for _ in 0..7 {
+            let started = std::time::Instant::now();
+            let on = CreatedOn::main(Some(&places.config), None);
+            let checked = started.elapsed();
+            let created =
+                at_creation_from(&TheirsKept::new(), Some(&places.config), on.as_ref(), None);
+            took.push((started.elapsed(), checked));
+            // Each of the 64 files hashed once: the check's, which the four frames' reads take.
+            assert_eq!(on.as_ref().map(|on| on.measured.hashed()), Some(64));
+            assert_eq!(on.map(|on| on.plane), Some(places.plane.clone()));
+            let at = defined(&created.script);
+            assert_eq!(at["first"]["frames"].as_array().map(Vec::len), Some(4));
+            assert_eq!(at["first"]["frames"][0]["theme"]["name"], "Team");
+        }
+        took.sort();
+        let (median, checked) = took[took.len() / 2];
+        eprintln!(
+            "creation at the font budget: median {median:?} (the trust check {checked:?}), \
+             fastest {:?}, slowest {:?}",
+            took[0].0,
+            took[took.len() - 1].0
+        );
+        assert!(median < std::time::Duration::from_secs(2), "{median:?}");
     }
 }

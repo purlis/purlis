@@ -156,14 +156,14 @@ fn a_runner_container_is_linked_to_the_desktop_it_paired_and_to_no_other() {
 
         // The desktop keeps the runner's key once (#2525).
         let config = tempfile::tempdir().unwrap();
-        purlis_core::runners::keep(config.path(), &made, &runner_pinned, &pinned.device)
+        purlis_core::runners::keep(config.path(), &made, &runner_pinned, &pinned)
             .expect("the runner is kept");
         let changed = Pinned {
             device: runner_pinned.device.clone(),
             key: LinkKey::generate().unwrap().public(),
         };
         assert!(matches!(
-            purlis_core::runners::keep(config.path(), &made, &changed, &pinned.device),
+            purlis_core::runners::keep(config.path(), &made, &changed, &pinned),
             Err(purlis_core::runners::Refused::KeyChanged { .. })
         ));
 
