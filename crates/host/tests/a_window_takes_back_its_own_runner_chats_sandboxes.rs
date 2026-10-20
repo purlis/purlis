@@ -10,7 +10,8 @@
 //! link. A sandbox the window made on a link a renewal is replacing, before its chat started, is
 //! the window's on its new link too, and passes to it as the old link ends (#2624). A port the
 //! runner withdrew as the window's last link ended is given back as the window takes the chat
-//! back, and one the person withdrew stays withdrawn (#2625). Here the
+//! back, and one the person withdrew stays withdrawn (#2625); one the runner's policy no longer
+//! gives at the re-link stays withdrawn too (#2738). Here the
 //! runner's host is spoken to directly, each link of the desktop's admitted as
 //! `remote-link`, so the links' ends are the test's to choose; the confinements and programs are
 //! stand-ins, so none of this needs a terminal.
@@ -702,4 +703,45 @@ async fn a_port_the_person_withdraws_while_it_is_given_back_ends_withdrawn() {
         made.changes,
         made.given_back_after
     );
+}
+
+/// The runner's policy stopped giving a port while the window was away: the port the runner
+/// withdrew as the window's last link ended is checked against the policy as it is at the
+/// re-link, and not given back (#2738). It stays withdrawn for want of a window, so a re-link
+/// once the policy gives it again gives it back.
+#[tokio::test]
+async fn a_port_the_runners_policy_no_longer_gives_is_not_given_back_after_a_re_link() {
+    let runner = a_runner();
+    let (first, first_events, _) = runner.relayed_for(WINDOW).await;
+    first
+        .call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the runner");
+    first
+        .start_program(running_in(MADE))
+        .await
+        .expect("runs in the window's confinement");
+    drop((first, first_events));
+    runner.unheld(MADE).await;
+    runner.confines.no_longer_gives(5432);
+
+    let (again, again_events, taken) = runner.relayed_for(WINDOW).await;
+    assert_eq!(taken, [MADE]);
+    assert!(
+        !given_back(&runner, MADE, Duration::from_millis(300)).await,
+        "a port the runner's policy no longer gives was given back"
+    );
+    assert!(
+        runner
+            .confines
+            .asked_whether_given()
+            .contains(&(runner.project.path().canonicalize().unwrap(), 5432)),
+        "the runner's policy was not asked: {:?}",
+        runner.confines.asked_whether_given()
+    );
+
+    drop((again, again_events));
+    runner.confines.gives_again(5432);
+    let (_back, _events, _) = runner.relayed_for(WINDOW).await;
+    assert!(given_back(&runner, MADE, PATIENCE).await, "given back");
 }
