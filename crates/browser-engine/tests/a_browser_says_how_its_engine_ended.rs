@@ -73,6 +73,10 @@ fn an_engine_a_signal_ended_says_it_ended_by_itself_with_that_signal() {
         Some(EngineExit::Signal("SIGKILL".into())),
         "{ending}"
     );
-    // Its process group is gone with it: a call answers that the browser has ended.
-    assert!(browser.call(&next_id(), Call::Pages).is_err());
+    // The browser holds no engine any more: its group was ended and reaped.
+    assert_eq!(browser.process(), None);
+    // An act answers that the browser has ended.
+    let address =
+        purlis_browser_engine::WebAddress::parse("http://fixture.test/frames.html").unwrap();
+    assert!(browser.call(&next_id(), Call::Open { address }).is_err());
 }
