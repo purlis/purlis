@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792518909400,
+  "lastUpdate": 1792518927414,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8368,6 +8368,42 @@ window.BENCHMARK_DATA = {
             "value": 670.9,
             "unit": "MB",
             "extra": "median of 6 samples: 624.8, 660.8, 667.4, 674.4, 675.7, 757.4 MB; window 398.9 MB, session host 272 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "de038fb9fd1e431cbb2dc1032f9e5169568581ab",
+          "message": "Runners: a forgotten project drops its window name, and a give-back re-checks the policy (#2809)\n\nForgetting a project on this machine removes the name its window link\nkept in window-names.json, and no other root's name. A file that holds\nno names is not written; a name that cannot be removed leaves the\nproject forgotten and is logged.\n\nBefore a runner gives back a port it withdrew for want of a window, it\nasks its own sandbox for the project whether that service is given now\n(Confine::gives_now, purlis_core::sandbox::hosted::gives_here). A port\nthe policy no longer gives stays withdrawn for want of a window, so a\nlater re-link gives it back once the policy gives it again.\n\nThe standing \"not held\" mark waits for the runner screen.\n\nADR 0078 amended 2026-10-20 for #2738.\n\nRefs #2738\n\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T21:08:02+04:00",
+          "tree_id": "508dd5e93f90a77dee79884bda90840037849f12",
+          "url": "https://github.com/purlis/purlis/commit/de038fb9fd1e431cbb2dc1032f9e5169568581ab"
+        },
+        "date": 1792518925902,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1527.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1344.1, 1527.1, 1565.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 668.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 634.5, 656.4, 664.5, 672.8, 673.2, 766.3 MB; window 399.2 MB, session host 269.5 MB"
           }
         ]
       }
