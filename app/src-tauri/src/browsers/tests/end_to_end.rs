@@ -711,10 +711,18 @@ fn the_browser_tools_through_every_hop_in_homes_of_their_own() {
         "browser_navigate",
         json!({ "address": unlisted.at("opened.html") }),
     );
+    // Its page never came: the browser shows the engine's own page for a load that failed,
+    // titled by its address, never the fixture's page titled "Opened".
     assert!(
-        refused.text.contains("the page did not load"),
+        !refused.text.contains("\"Opened\""),
         "the proxy refused it: {}",
         refused.text
+    );
+    let shown = tools.done("browser_snapshot", json!({}));
+    assert!(
+        !shown.text.contains("The opened page"),
+        "nothing of the page nobody allowed: {}",
+        shown.text
     );
     assert!(
         unlisted.heard().is_empty(),
