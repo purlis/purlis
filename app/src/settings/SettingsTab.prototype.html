@@ -1,0 +1,391 @@
+<title>Settings Page Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* PROTOTYPE (wayfinder #2799, M66). Throwaway: three structurally different settings pages (General, Saving,
+   Your hosts) in a mock purlis Settings tab, in the Purlis (Figma) palette. Layout concept: the tab fills the
+   window; scope switch and page nav on the left, the page on the right; a switcher bar at the bottom. */
+:root {
+  --behind: #f1efea; --window: #fcfbf8; --panel: #f4f2ee; --card: #ebe8e2; --hover: #e3e0d9; --line: #d9d5cd;
+  --text: #1d1c22; --text-2: #3d3b45; --muted: #5c5a66; --quiet: #6b6976;
+  --accent: #5b4bc4; --accent-text: #4a3cae; --wash: rgba(91,75,196,.12); --amber: #8a5a12; --amber-wash: rgba(176,120,30,.14);
+  --ok: #2f6b3a; --switch-bg: #1d1c22; --switch-fg: #fcfbf8;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --r-control: 7px; --r-field: 8px; --r-card: 10px; --r-panel: 12px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --behind: #121215; --window: #17171b; --panel: #1d1d22; --card: #24242a; --hover: #2a2a31; --line: #2f2f37;
+  --text: #e6e4ec; --text-2: #c9c7d2; --muted: #a09eab; --quiet: #8a8896;
+  --accent: #a99cf0; --accent-text: #c3baf5; --wash: rgba(169,156,240,.12); --amber: #e5c08a; --amber-wash: rgba(229,192,138,.10);
+  --ok: #8fc79a; --switch-bg: #e6e4ec; --switch-fg: #17171b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --behind: #121215; --window: #17171b; --panel: #1d1d22; --card: #24242a; --hover: #2a2a31; --line: #2f2f37;
+  --text: #e6e4ec; --text-2: #c9c7d2; --muted: #a09eab; --quiet: #8a8896;
+  --accent: #a99cf0; --accent-text: #c3baf5; --wash: rgba(169,156,240,.12); --amber: #e5c08a; --amber-wash: rgba(229,192,138,.10);
+  --ok: #8fc79a; --switch-bg: #e6e4ec; --switch-fg: #17171b; color-scheme: dark }
+
+html, body { height: 100%; }
+body { margin: 0; background: var(--behind); color: var(--text); font: 13px/1.45 var(--font-ui);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 72px; box-sizing: border-box; }
+* { box-sizing: border-box; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.tab { height: 100%; min-height: 560px; background: var(--panel); border-radius: var(--r-panel); display: grid; grid-template-columns: 236px minmax(0, 1fr); overflow: hidden; }
+.side { padding: 16px 12px; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 12px; border-right: 1px solid var(--line); background: var(--window); }
+.side h1 { margin: 0 4px; font-size: 15px; font-weight: 600; }
+.nav { overflow: auto; display: grid; gap: 2px; align-content: start; }
+.nav button { height: 30px; border: 0; background: transparent; text-align: left; padding: 0 10px; border-radius: var(--r-field); color: var(--text-2); cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.nav button:hover { background: var(--card); }
+.nav button[aria-current="page"] { background: var(--wash); color: var(--text); font-weight: 500; }
+/* Every item keeps the same left edge; a group's disclosure chevron sits at the trailing end of its row. */
+.nav .sub { padding-left: 22px; color: var(--muted); }
+.navgroup { position: relative; }
+.navgroup > button[data-page] { width: 100%; padding-right: 34px; }
+.nav .toggle { position: absolute; right: 2px; top: 2px; width: 26px; height: 26px; padding: 0; display: grid; place-items: center; color: var(--quiet); border-radius: var(--r-control); }
+.nav .toggle:hover { background: var(--hover); color: var(--text); }
+.chev { transition: transform .15s; }
+.toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.nav .count { margin-left: auto; font-size: 11px; color: var(--amber); }
+.main { overflow: auto; padding: 22px 28px 40px; }
+.page { max-width: 860px; display: grid; gap: 20px; }
+.page-head h2 { margin: 0; font-size: 18px; font-weight: 600; text-wrap: balance; }
+.page-head p { margin: 4px 0 0; color: var(--muted); max-width: 64ch; }
+.where { display: inline-flex; gap: 6px; align-items: center; color: var(--quiet); font-size: 12px; margin-top: 8px; }
+.where code { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2); }
+@media (max-width: 760px) { .tab { grid-template-columns: 1fr; } .side { border-right: 0; border-bottom: 1px solid var(--line); grid-template-rows: auto auto auto; } .nav { grid-auto-flow: column; overflow-x: auto; } .nav .sub { padding-left: 10px; } .main { padding: 18px 16px 32px; } }
+
+/* shared controls */
+.seg { display: inline-flex; background: var(--panel); border-radius: var(--r-control); padding: 2px; gap: 2px; }
+.side .seg { background: var(--card); }
+.seg button { height: 26px; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: var(--quiet); cursor: pointer; }
+.seg button[aria-checked="true"] { background: var(--window); color: var(--text); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.field, .select { height: 30px; border: 0; border-radius: var(--r-field); background: var(--window); padding: 0 10px; color: var(--text); width: 100%; }
+.select { appearance: none; padding-right: 28px; background-image: linear-gradient(45deg, transparent 50%, var(--quiet) 50%), linear-gradient(135deg, var(--quiet) 50%, transparent 50%); background-position: calc(100% - 15px) 13px, calc(100% - 10px) 13px; background-size: 5px 5px; background-repeat: no-repeat; cursor: pointer; }
+.field::placeholder { color: var(--quiet); }
+.switch { width: 34px; height: 20px; border-radius: 999px; background: var(--hover); border: 0; position: relative; cursor: pointer; flex: none; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: left .15s; }
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]::after { left: 17px; background: var(--window); }
+.btn { height: 28px; padding: 0 12px; border-radius: var(--r-control); border: 0; background: var(--hover); color: var(--text); cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { background: var(--line); }
+.btn.primary { background: var(--wash); color: var(--accent-text); font-weight: 500; }
+.btn.ghost { background: transparent; color: var(--muted); }
+.btn.ghost:hover { background: var(--card); }
+.btn.sm { height: 24px; padding: 0 9px; font-size: 12px; }
+.icon-btn { width: 28px; height: 28px; border: 0; border-radius: var(--r-control); background: transparent; color: var(--quiet); cursor: pointer; display: grid; place-items: center; }
+.icon-btn:hover { background: var(--card); color: var(--text); }
+.set { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--card); color: var(--muted); white-space: nowrap; }
+.badge.amber { background: var(--amber-wash); color: var(--amber); }
+.badge.ok { color: var(--ok); }
+.muted { color: var(--muted); }
+.quiet { color: var(--quiet); }
+.mono { font-family: var(--font-mono); font-size: 12px; }
+
+/* A: aligned two-column form */
+.groupA { display: grid; gap: 0; }
+.groupA h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+.groupA > p { margin: 0 0 8px; color: var(--quiet); font-size: 12px; }
+.rowA { display: grid; grid-template-columns: minmax(180px, 38%) minmax(0, 1fr) 64px; gap: 6px 20px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); }
+.rowA:first-of-type { border-top: 0; }
+.rowA .lab { display: grid; gap: 2px; padding-top: 5px; }
+.rowA .lab b { font-weight: 500; display: flex; gap: 6px; align-items: center; }
+.rowA .lab span { color: var(--quiet); font-size: 12px; }
+.rowA .ctl { display: flex; gap: 8px; align-items: center; min-height: 30px; flex-wrap: wrap; }
+.rowA .act { display: flex; justify-content: flex-end; min-height: 30px; align-items: center; }
+.rowA .ctl .select, .rowA .ctl .field { max-width: 320px; }
+@media (max-width: 760px) { .rowA { grid-template-columns: minmax(0,1fr) 40px; } .rowA .lab { grid-column: 1 / -1; } }
+.collapse summary { cursor: pointer; list-style: none; display: flex; gap: 6px; align-items: center; color: var(--muted); font-weight: 500; padding: 10px 0; border-top: 1px solid var(--line); }
+.collapse summary::before { content: "›"; transition: transform .15s; }
+.collapse[open] summary::before { transform: rotate(90deg); }
+
+/* B: inset grouped cards, controls trailing */
+.groupB { display: grid; gap: 6px; }
+.groupB h3 { margin: 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.cardB { background: var(--window); border-radius: var(--r-card); overflow: hidden; }
+.rowB { display: flex; align-items: center; gap: 16px; padding: 10px 14px; min-height: 52px; }
+.rowB + .rowB { border-top: 1px solid var(--line); }
+.rowB .lab { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.rowB .lab b { font-weight: 500; display: flex; gap: 6px; align-items: center; }
+.rowB .lab span { color: var(--quiet); font-size: 12px; }
+.rowB .ctl { flex: none; width: 240px; display: flex; justify-content: flex-end; gap: 6px; align-items: center; }
+.rowB .ctl .select, .rowB .ctl .field { width: 100%; }
+.groupB > .foot { margin: 0 4px; color: var(--quiet); font-size: 12px; }
+@media (max-width: 760px) { .rowB { flex-wrap: wrap; } .rowB .ctl { width: 100%; justify-content: flex-start; } }
+
+/* C: one searchable list with where-it-comes-from */
+.searchC { display: flex; gap: 8px; align-items: center; position: sticky; top: -22px; background: var(--panel); padding: 8px 0; z-index: 2; }
+.searchC .field { height: 34px; max-width: 420px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { height: 26px; padding: 0 10px; border-radius: 999px; border: 0; background: var(--card); color: var(--muted); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--wash); color: var(--accent-text); }
+.rowC { display: grid; grid-template-columns: minmax(0,1fr) 260px 120px 28px; gap: 12px; align-items: center; padding: 10px 12px; border-radius: var(--r-field); }
+.rowC:hover { background: var(--card); }
+.rowC .lab { display: grid; gap: 1px; min-width: 0; }
+.rowC .lab b { font-weight: 500; }
+.rowC .lab span { color: var(--quiet); font-size: 12px; }
+.rowC .lab .path { font-family: var(--font-mono); font-size: 11px; color: var(--quiet); }
+.from { font-size: 11.5px; color: var(--quiet); display: flex; gap: 6px; align-items: center; }
+.from.here { color: var(--accent-text); }
+.sectionC { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding: 14px 12px 4px; }
+@media (max-width: 860px) { .rowC { grid-template-columns: minmax(0,1fr) 28px; } .rowC .ctlC { grid-column: 1 / -1; } .rowC .from { grid-column: 1; } }
+
+/* hosts table, shared by A and C; B uses a grouped list */
+.tbl-wrap { overflow-x: auto; background: var(--window); border-radius: var(--r-card); }
+table { width: 100%; border-collapse: collapse; min-width: 560px; }
+th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--line); }
+td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.actions { text-align: right; white-space: nowrap; width: 1%; }
+td input[type=checkbox], th input[type=checkbox] { accent-color: var(--accent); }
+.bulk { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.bulk .grow { flex: 1; }
+
+/* switcher (not part of the design) */
+.switcher { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 4px; background: var(--switch-bg); color: var(--switch-fg); border-radius: 999px; padding: 4px; box-shadow: 0 6px 24px rgba(0,0,0,.35); font: 500 12px var(--font-ui); z-index: 50; max-width: calc(100% - 32px); }
+.switcher button { border: 0; background: transparent; color: inherit; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 15px; }
+.switcher span { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast { position: fixed; left: 50%; top: 24px; transform: translateX(-50%); background: var(--card); color: var(--text); padding: 8px 14px; border-radius: var(--r-card); font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.2); z-index: 60; }
+.menu { position: absolute; background: var(--card); border-radius: var(--r-card); padding: 4px; box-shadow: 0 10px 28px rgba(0,0,0,.3); z-index: 40; min-width: 200px; }
+.menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: var(--r-control); cursor: pointer; color: var(--text-2); }
+.menu button:hover { background: var(--hover); color: var(--text); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="tab" id="tab">
+  <aside class="side">
+    <h1>Settings</h1>
+    <div class="seg" role="radiogroup" aria-label="Level" id="levels"></div>
+    <nav class="nav" id="nav" aria-label="Settings pages"></nav>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+<div class="switcher" role="toolbar" aria-label="Prototype variants">
+  <button id="prev" aria-label="Previous variant">‹</button><span id="vlabel"></span><button id="next" aria-label="Next variant">›</button>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const LEVELS = ["You", "Project", "Workspace"];
+const PAGES = [
+  { id: "general", name: "General" }, { id: "saving", name: "Saving" }, { id: "harness", name: "Harness & profiles" },
+  { id: "sandbox", name: "Sandbox" }, { id: "hosts", name: "Your hosts", sub: true }, { id: "level", name: "Your level", sub: true },
+  { id: "phosts", name: "Persona hosts", sub: true }, { id: "network", name: "Network", sub: true },
+  { id: "dispatch", name: "Dispatch" }, { id: "forges", name: "Forges" }, { id: "ext", name: "Extensions" },
+  { id: "theme", name: "Theme" }, { id: "appearance", name: "Appearance" }, { id: "plugins", name: "Plugins" },
+];
+// value, where it is set ("here" = this level; otherwise the level it is inherited from), and the default.
+const S = {
+  general: { file: "charter.toml", blurb: "What a chat starts on when nothing else names it, the update channel, the version lock and where branch folders go. Your team sees this file.",
+    groups: [{ title: "Starting chats", rows: [
+      { key: "default-workspace", label: "Default workspace", help: "A chat that names no workspace opens here.", kind: "select", options: ["smart-ide", "charter", "issues"], value: "smart-ide", set: true, def: "the first workspace" },
+      { key: "default-persona", label: "Default persona", help: "Who a new chat is, unless it names someone.", kind: "select", options: ["steward", "devops", "nestjs-developer"], value: "steward", set: true, def: "none", extra: "Show steward" },
+    ]}, { title: "Updates", rows: [
+      { key: "update-channel", label: "Update channel", help: "Dev gets every build that passes; stable gets releases.", kind: "select", options: ["stable", "dev"], value: "dev", set: true, def: "stable" },
+      { key: "version-lock", label: "Version lock", help: "Hold everyone on this project to one purlis version.", kind: "text", value: "", placeholder: "Not locked", set: false, def: "not locked" },
+    ]}, { title: "Branches", advanced: true, rows: [
+      { key: "branch-folders", label: "Branch folders", help: "Where a chat's branch checkouts go, relative to the workspace.", kind: "text", value: "", placeholder: ".branches", set: false, def: ".branches" },
+    ]}]},
+  saving: { file: "charter.toml", blurb: "How far a save goes, for the project and for each workspace repo. purlis.local.toml overrides charter.toml key by key.",
+    groups: [{ title: "The project", rows: [
+      { key: "mode", label: "Mode", help: "pr-merge pushes, opens a pull request and merges it when its checks pass.", kind: "select", options: ["off", "commit", "push", "pr", "pr-merge"], value: "pr-merge", set: true, def: "commit", movable: true },
+      { key: "auto-save", label: "Auto-save", help: "Save on its own after a quiet spell.", kind: "switch", value: true, set: true, def: "off", movable: true },
+      { key: "auto-save-after", label: "Auto-save after", help: "How long the project must be quiet first.", kind: "text", value: "", placeholder: "5m", set: false, def: "5m", movable: true },
+      { key: "sign", label: "Sign commits", help: "Sign each save commit with your git signing key.", kind: "switch", value: false, set: false, def: "off", movable: true },
+    ]}, { title: "Branches", advanced: true, rows: [
+      { key: "target-branch", label: "Target branch", help: "Where a save's pull request lands.", kind: "text", value: "", placeholder: "main", set: false, def: "main", movable: true },
+      { key: "save-branch", label: "Save branch", help: "The branch this machine pushes saves to.", kind: "text", value: "", placeholder: "purlis/save/<machine>", set: false, def: "purlis/save/<machine>", movable: true },
+      { key: "trailer", label: "Assisted-by trailer", help: "Add an Assisted-by line naming the harness to each commit.", kind: "select", options: ["not set", "on", "off"], value: "not set", set: false, def: "on", movable: true },
+    ]}, { title: "Repo · ElasticPress", repo: true, rows: [
+      { key: "ep-mode", label: "Mode", help: "Off until set: purlis saves no repo until its mode says how.", kind: "select", options: ["not set", "off", "commit", "pr"], value: "not set", set: false, def: "off", movable: true },
+      { key: "ep-branch", label: "Branch", help: "The repo branch a save pushes.", kind: "text", value: "", placeholder: "main", set: false, def: "main", movable: true },
+      { key: "ep-sign", label: "Sign commits", help: "", kind: "switch", value: false, set: false, def: "off", movable: true },
+      { key: "ep-auto", label: "Auto-save", help: "", kind: "switch", value: false, set: false, def: "off", movable: true },
+    ]}, { title: "Deprecated", advanced: true, rows: [
+      { key: "memory-share", label: "[memory] share", help: "Replaced by memory scopes; kept until every machine has moved.", kind: "select", options: ["local", "shared"], value: "local", set: true, def: "local", deprecated: true },
+    ]}]},
+};
+const HOSTS = ["productionresultssa9.blob.core.windows.net","productionresultssa8.blob.core.windows.net","docs.gitlab.com","productionresultssa5.blob.core.windows.net","productionresultssa1.blob.core.windows.net","tuf-repo-cdn.sigstore.dev","tuf-repo.github.com","tmaproduction.blob.core.windows.net","docs.github.com","code.visualstudio.com","www.jetbrains.com","zed.dev","help.gitkraken.com","www.git-tower.com","www.sublimemerge.com","fork.dev","netlog-git.invalid","netlog-review.invalid","agent-sandbox.sigs.k8s.io"]
+  .map((h, i) => ({ host: h, port: h.startsWith("netlog-git") ? 8443 : 443, confirmed: i === 18, added: ["2 days ago","2 days ago","3 days ago","3 days ago","3 days ago","5 days ago","5 days ago","1 week ago","1 week ago","1 week ago","1 week ago","1 week ago","2 weeks ago","2 weeks ago","2 weeks ago","2 weeks ago","3 weeks ago","3 weeks ago","a month ago"][i], by: i < 8 ? "a chat's block" : "you" }));
+
+const state = { variant: 0, level: "Project", page: "general", q: "", hostQ: "", picked: new Set(), onlySet: false, values: {}, open: new Set(["sandbox"]) };
+try { const o = JSON.parse(localStorage.getItem("proto-settings-open") || "null"); if (Array.isArray(o)) state.open = new Set(o); } catch (e) {}
+const saveOpen = () => { try { localStorage.setItem("proto-settings-open", JSON.stringify([...state.open])); } catch (e) {} };
+const parentOf = id => { let par = null; for (const p of PAGES) { if (!p.sub) par = p; if (p.id === id) return p.sub ? par : null; } return null; };
+try { const v = localStorage.getItem("proto-settings-variant"); if (v !== null) state.variant = Math.max(0, Math.min(2, +v)); } catch (e) {}
+const VARIANTS = [
+  { key: "A", name: "Aligned form: label column, control column, one action column", render: renderA },
+  { key: "B", name: "Grouped cards: label left, control trailing", render: renderB },
+  { key: "C", name: "One searchable list: where each value comes from", render: renderC },
+];
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const val = r => state.values[r.key] ?? r.value;
+const unconfirmed = () => HOSTS.filter(h => !h.confirmed).length;
+const dots = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>';
+
+function control(r) {
+  const v = val(r);
+  if (r.kind === "select") return `<select class="select" id="f-${r.key}" data-key="${r.key}" aria-label="${esc(r.label)}">${r.options.map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+  if (r.kind === "switch") return `<button class="switch" role="switch" aria-checked="${!!v}" data-key="${r.key}" aria-label="${esc(r.label)}"></button>`;
+  return `<input class="field" id="f-${r.key}" data-key="${r.key}" value="${esc(v)}" placeholder="${esc(r.placeholder || "")}" aria-label="${esc(r.label)}">`;
+}
+const rowMenu = r => `<button class="icon-btn" data-menu="${r.key}" aria-label="More for ${esc(r.label)}" title="Reset, move to another file">${dots}</button>`;
+const setMark = r => r.set ? `<span class="set" title="Set at this level"></span>` : "";
+
+// A page with sub-pages is a group in the nav: its chevron opens and closes it, it opens itself when one of its
+// pages is current, and while closed it carries its children's count so nothing waiting is hidden.
+const chev = '<svg class="chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 3l3 3-3 3"/></svg>';
+function sideNav() {
+  $("#levels").innerHTML = LEVELS.map(l => `<button role="radio" aria-checked="${l === state.level}" data-level="${l}">${l}</button>`).join("");
+  const out = []; let parent = null;
+  PAGES.forEach((p, i) => {
+    const hasKids = !p.sub && PAGES[i + 1] && PAGES[i + 1].sub;
+    if (!p.sub) parent = hasKids ? p : null;
+    const count = p.id === "hosts" ? unconfirmed() : 0;
+    if (p.sub) {
+      if (!state.open.has(parent.id)) return;
+      out.push(`<button class="sub" data-page="${p.id}" aria-current="${p.id === state.page ? "page" : "false"}">${p.name}${count ? `<span class="count">${count}</span>` : ""}</button>`);
+      return;
+    }
+    if (hasKids) {
+      const open = state.open.has(p.id);
+      const kidCount = PAGES.slice(i + 1).filter((k, j, a) => a.slice(0, j + 1).every(x => x.sub)).reduce((n, k) => n + (k.id === "hosts" ? unconfirmed() : 0), 0);
+      out.push(`<div class="navgroup"><button data-page="${p.id}" aria-current="${p.id === state.page ? "page" : "false"}">${p.name}${!open && kidCount ? `<span class="count">${kidCount}</span>` : ""}</button><button class="toggle" data-toggle="${p.id}" aria-expanded="${open}" aria-label="${open ? "Collapse" : "Expand"} ${p.name}">${chev}</button></div>`);
+      return;
+    }
+    out.push(`<button data-page="${p.id}" aria-current="${p.id === state.page ? "page" : "false"}">${p.name}</button>`);
+  });
+  $("#nav").innerHTML = out.join("");
+}
+function head(p) {
+  const pg = PAGES.find(x => x.id === state.page), d = S[state.page];
+  return `<div class="page-head"><h2>${pg.name}</h2><p>${d ? d.blurb : "Hosts your chats here reach besides the project's, on this machine only."}</p>
+    <div class="where">Kept in <code>${d ? (state.level === "You" ? "~/.config/purlis/purlis.toml" : d.file) : "purlis.local.toml"}</code> · <button class="btn ghost sm" data-act="toml">Edit as TOML</button></div></div>`;
+}
+
+// ---- A
+function renderA() {
+  if (state.page === "hosts") return head() + hostsTable();
+  const d = S[state.page]; if (!d) return head() + placeholder();
+  return head() + d.groups.map(g => {
+    const rows = g.rows.map(r => `<div class="rowA">
+      <div class="lab"><b>${setMark(r)}${esc(r.label)}${r.deprecated ? ' <span class="badge amber">deprecated</span>' : ""}</b>${r.help ? `<span>${esc(r.help)}</span>` : ""}</div>
+      <div class="ctl">${control(r)}${r.extra ? `<button class="btn ghost sm">${r.extra}</button>` : ""}</div>
+      <div class="act">${rowMenu(r)}</div></div>`).join("");
+    if (g.advanced) return `<details class="collapse groupA"><summary>${esc(g.title)} · ${g.rows.length}</summary>${rows}</details>`;
+    return `<section class="groupA"><h3>${esc(g.title)}</h3>${g.repo ? '<p>This repo’s own settings, beside the project’s. The repo is listed in inventory/repos.json.</p>' : ""}${rows}</section>`;
+  }).join("");
+}
+// ---- B
+function renderB() {
+  if (state.page === "hosts") return head() + hostsGrouped();
+  const d = S[state.page]; if (!d) return head() + placeholder();
+  return head() + d.groups.map(g => `<section class="groupB"><h3>${esc(g.title)}</h3><div class="cardB">${g.rows.map(r => `<div class="rowB">
+      <div class="lab"><b>${setMark(r)}${esc(r.label)}${r.deprecated ? ' <span class="badge amber">deprecated</span>' : ""}</b>${r.help ? `<span>${esc(r.help)}</span>` : ""}</div>
+      <div class="ctl">${r.extra ? `<button class="btn ghost sm">${r.extra}</button>` : ""}${control(r)}${rowMenu(r)}</div></div>`).join("")}</div>
+      ${g.repo ? '<div class="foot">A repo’s defaults are mode off and auto-save off: purlis saves no repo until its mode says how.</div>' : ""}</section>`).join("");
+}
+// ---- C
+function renderC() {
+  const q = state.q.trim().toLowerCase();
+  const all = Object.entries(S).flatMap(([pid, d]) => d.groups.flatMap(g => g.rows.map(r => ({ ...r, pid, group: g.title }))));
+  const hits = all.filter(r => (!state.onlySet || r.set) && (!q || (r.label + " " + r.help + " " + r.key).toLowerCase().includes(q)));
+  const searching = q || state.onlySet;
+  const list = (searching ? hits : hits.filter(r => r.pid === state.page));
+  const top = `<div class="searchC"><input class="field" id="search" placeholder="Search every setting, every level" value="${esc(state.q)}" autocomplete="off">
+    <div class="chips"><button class="chip" aria-pressed="${state.onlySet}" data-act="onlyset">Set here</button></div></div>`;
+  if (!searching && state.page === "hosts") return head() + top + hostsTable();
+  if (!searching && !S[state.page]) return head() + top + placeholder();
+  let lastGroup = "";
+  const rows = list.map(r => {
+    const g = (searching ? PAGES.find(p => p.id === r.pid).name + " › " : "") + r.group;
+    const sec = g !== lastGroup ? `<div class="sectionC">${esc(g)}</div>` : ""; lastGroup = g;
+    return sec + `<div class="rowC"><div class="lab"><b>${esc(r.label)}${r.deprecated ? ' <span class="badge amber">deprecated</span>' : ""}</b>${r.help ? `<span>${esc(r.help)}</span>` : ""}<span class="path">${r.pid}.${r.key}</span></div>
+      <div class="ctlC">${control(r)}</div>
+      <div class="from ${r.set ? "here" : ""}">${r.set ? '<span class="set"></span>Set in Project' : `Default: ${esc(r.def)}`}</div>${rowMenu(r)}</div>`;
+  }).join("");
+  return (searching ? `<div class="page-head"><h2>${hits.length} setting${hits.length === 1 ? "" : "s"}</h2><p>Across every page and level.</p></div>` : head()) + top + (rows || `<p class="quiet">No setting matches “${esc(state.q)}”.</p>`);
+}
+
+function hostRows(list) {
+  return list.map(h => `<tr><td><input type="checkbox" aria-label="Select ${h.host}" data-pick="${h.host}" ${state.picked.has(h.host) ? "checked" : ""}></td>
+    <td class="mono">${h.host}<span class="quiet">:${h.port}</span></td>
+    <td>${h.confirmed ? '<span class="badge ok">Confirmed</span>' : '<span class="badge amber">Waiting for you</span>'}</td>
+    <td class="quiet">${h.added} · ${h.by}</td>
+    <td class="actions">${h.confirmed ? "" : `<button class="btn sm" data-confirm="${h.host}">Confirm</button> `}<button class="btn ghost sm" data-remove="${h.host}">Remove</button></td></tr>`).join("");
+}
+function hostsTable() {
+  const q = state.hostQ.trim().toLowerCase();
+  const list = HOSTS.filter(h => h.host.includes(q)).sort((a, b) => a.confirmed - b.confirmed);
+  const n = state.picked.size;
+  return `<div class="bulk"><input class="field" id="hostq" placeholder="Filter ${HOSTS.length} hosts" value="${esc(state.hostQ)}" style="max-width:280px" autocomplete="off">
+      <span class="grow"></span>${n ? `<span class="quiet">${n} selected</span><button class="btn sm" data-act="confirm-picked">Confirm</button><button class="btn ghost sm" data-act="remove-picked">Remove</button>` : `<button class="btn primary sm" data-act="confirm-all">Confirm all ${unconfirmed()} waiting</button><button class="btn sm" data-act="add">Add host</button>`}</div>
+    <div class="tbl-wrap"><table><thead><tr><th><input type="checkbox" aria-label="Select all" data-act="pick-all"></th><th>Host</th><th>Status</th><th>Added</th><th></th></tr></thead><tbody>${hostRows(list)}</tbody></table></div>`;
+}
+function hostsGrouped() {
+  const waiting = HOSTS.filter(h => !h.confirmed), done = HOSTS.filter(h => h.confirmed);
+  const item = h => `<div class="rowB"><div class="lab"><b class="mono" style="font-weight:400">${h.host}<span class="quiet">:${h.port}</span></b><span>${h.added} · ${h.by}</span></div>
+    <div class="ctl" style="width:auto">${h.confirmed ? "" : `<button class="btn sm" data-confirm="${h.host}">Confirm</button>`}<button class="btn ghost sm" data-remove="${h.host}">Remove</button></div></div>`;
+  return `<section class="groupB"><h3>Waiting for your Confirm · ${waiting.length}</h3>
+      <div class="cardB"><div class="rowB"><div class="lab"><b>Hosts a chat reached that nobody has confirmed</b><span>Confirmed hosts stay reachable after the next restart; the rest are dropped.</span></div>
+      <div class="ctl" style="width:auto"><button class="btn primary sm" data-act="confirm-all">Confirm all</button></div></div>${waiting.map(item).join("")}</div></section>
+    <details class="groupB" ${done.length < 6 ? "open" : ""}><summary class="collapse" style="list-style:none;cursor:pointer;margin:0 4px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)">Confirmed · ${done.length}</summary><div class="cardB">${done.map(item).join("")}</div></details>`;
+}
+const placeholder = () => `<p class="quiet">The prototype draws General, Saving and Your hosts. Pick one of those on the left.</p>`;
+
+function render() {
+  sideNav();
+  $("#main").innerHTML = `<div class="page">${VARIANTS[state.variant].render()}</div>`;
+  $("#vlabel").textContent = `${VARIANTS[state.variant].key} · ${VARIANTS[state.variant].name}`;
+}
+function go(i) { state.variant = (i + 3) % 3; try { localStorage.setItem("proto-settings-variant", state.variant); } catch (e) {} closeMenu(); render(); }
+function toast(m) { const t = $("#toast"); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2200); }
+function closeMenu() { document.querySelectorAll(".menu").forEach(m => m.remove()); }
+function openMenu(btn, key) {
+  closeMenu();
+  const r = Object.values(S).flatMap(d => d.groups.flatMap(g => g.rows)).find(x => x.key === key);
+  const m = document.createElement("div"); m.className = "menu"; m.setAttribute("role", "menu");
+  m.innerHTML = `<button role="menuitem" ${r.set ? "" : "disabled style='opacity:.5'"}>Reset to ${esc(r.def)}</button>${r.movable ? `<hr><button role="menuitem">Move to purlis.local.toml</button><button role="menuitem">Move to your settings</button>` : ""}<hr><button role="menuitem">Copy key <span class="mono quiet">${key}</span></button>`;
+  document.body.appendChild(m);
+  const b = btn.getBoundingClientRect(); m.style.top = (b.bottom + 4 + scrollY) + "px"; m.style.left = Math.max(8, b.right - 220) + "px";
+  m.addEventListener("click", e => { if (e.target.closest("button")) { toast("Prototype: " + e.target.closest("button").textContent.trim() + "."); closeMenu(); } });
+}
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("button, input[type=checkbox]"); if (!b) { closeMenu(); return; }
+  if (b.closest(".menu")) return;
+  if (b.id === "prev") return go(state.variant - 1);
+  if (b.id === "next") return go(state.variant + 1);
+  if (b.dataset.level) { state.level = b.dataset.level; return render(); }
+  if (b.dataset.toggle) { const id = b.dataset.toggle; state.open.has(id) ? state.open.delete(id) : state.open.add(id); saveOpen(); return render(); }
+  if (b.dataset.page) { state.page = b.dataset.page; state.q = ""; const par = parentOf(state.page); if (par) state.open.add(par.id); if (PAGES.some((p, i) => p.id === state.page && PAGES[i + 1] && PAGES[i + 1].sub)) state.open.add(state.page); saveOpen(); return render(); }
+  if (b.dataset.menu) { e.stopPropagation(); return openMenu(b, b.dataset.menu); }
+  if (b.classList.contains("switch")) { state.values[b.dataset.key] = !(val({ key: b.dataset.key, value: b.getAttribute("aria-checked") === "true" })); b.setAttribute("aria-checked", state.values[b.dataset.key]); return; }
+  if (b.dataset.pick) { b.checked ? state.picked.add(b.dataset.pick) : state.picked.delete(b.dataset.pick); return render(); }
+  if (b.dataset.act === "pick-all") { if (b.checked) HOSTS.forEach(h => state.picked.add(h.host)); else state.picked.clear(); return render(); }
+  if (b.dataset.confirm) { HOSTS.find(h => h.host === b.dataset.confirm).confirmed = true; toast(`Confirmed ${b.dataset.confirm}.`); return render(); }
+  if (b.dataset.remove) { const i = HOSTS.findIndex(h => h.host === b.dataset.remove); HOSTS.splice(i, 1); state.picked.delete(b.dataset.remove); toast(`Removed ${b.dataset.remove}.`); return render(); }
+  if (b.dataset.act === "confirm-all") { HOSTS.forEach(h => h.confirmed = true); toast("Confirmed every waiting host."); return render(); }
+  if (b.dataset.act === "confirm-picked") { HOSTS.forEach(h => { if (state.picked.has(h.host)) h.confirmed = true; }); state.picked.clear(); return render(); }
+  if (b.dataset.act === "remove-picked") { for (let i = HOSTS.length - 1; i >= 0; i--) if (state.picked.has(HOSTS[i].host)) HOSTS.splice(i, 1); state.picked.clear(); return render(); }
+  if (b.dataset.act === "onlyset") { state.onlySet = !state.onlySet; return render(); }
+  if (b.dataset.act) return toast("Prototype: " + b.textContent.trim() + ".");
+});
+document.addEventListener("input", e => {
+  if (e.target.id === "search") { state.q = e.target.value; render(); const s = $("#search"); s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+  if (e.target.id === "hostq") { state.hostQ = e.target.value; render(); const s = $("#hostq"); s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+  if (e.target.dataset && e.target.dataset.key) state.values[e.target.dataset.key] = e.target.value;
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeMenu();
+  if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable]")) return;
+  if (e.key === "ArrowLeft") go(state.variant - 1);
+  if (e.key === "ArrowRight") go(state.variant + 1);
+});
+render();
+</script>
