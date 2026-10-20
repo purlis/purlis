@@ -172,9 +172,10 @@ colour too close to the terminal's background: `token`, `ratio`, `floor`) or
 colour for selected text on a selection left to the platform) or `line-does-not-fit` (a line of
 words taller than the box it is drawn in: its `density`, the `fit` it breaks, a `size`, a
 `line_height` and a `height` token, and the `line` and the `room` it has, in px at the default
-text size). A control holds the window's words (`font-size.base`) and a strip a tab's title
-(`font-size.md`), each on the body line (`line-height.body`), in both densities. `tint` is the
-workspace colour it was found in, or `null` for the theme as it is and for a line. `held` has one entry for each combination
+text size). A field (`.ui-input`, `size.control` tall) holds the window's words
+(`font-size.base`) and a strip a tab's title (`font-size.md`), each on the body line
+(`line-height.body`), in both densities. A button's label sits on a line of 1, so it fits
+wherever a field's text does. `tint` is the workspace colour it was found in, or `null` for the theme as it is and for a line. `held` has one entry for each combination
 in which the window holds a consent floor: its `appearance` and `options` as a warning's, the
 `floors` (`ask`, `allow-apart`, `danger`, `danger-apart`, `state-marks`) and the `tokens` drawn
 as purlis's own. `hard_floors` is `null` until purlis checks them. `clean` is true with no
