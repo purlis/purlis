@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792536093911,
+  "lastUpdate": 1792537470034,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19866,6 +19866,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3467775,
             "unit": "ms",
             "extra": "median of 5 runs: 100.738, 101.121, 101.347, 102.167, 103.031 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e32127899b743a8ce9fbec873f31550a1791e4e9",
+          "message": "ADR 0063, amended: skill_find, skill_load and the MCP fallback route (SK-13) (#2852)\n\n* ADR 0063, amended: the MCP fallback route and skill_find/skill_load\n\npurlis's MCP server gets skill_find and skill_load on every harness; each\nload opens a skill run. A harness with MCP but no skill format gets\nskills through a fourth route, Mcp: the two tools plus a one-line\nbriefing pointer. ADR 0063 now links its amendments folder.\n\nRefs #2762\nRefs #2776\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* ADR 0063 amendment: narrowing through skill_load, and self-contained\n\nA skill loaded through skill_load keeps its narrowing where the harness\ncan apply it (Claude Code); where it cannot (Codex, opencode, the Mcp\nroute) the load and the badge say narrowing not applied. The amendment\nno longer leans on the other same-day amendment, and drops the bold\ndate line.\n\nRefs #2762\nRefs #2776\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T02:57:02+04:00",
+          "tree_id": "0ea5fd33b3d7d79e6d08a3ec8260f27aa4fd23c8",
+          "url": "https://github.com/purlis/purlis/commit/e32127899b743a8ce9fbec873f31550a1791e4e9"
+        },
+        "date": 1792537467905,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.634402,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.600, 0.629, 0.634, 0.653, 0.660 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.737488,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.457, 16.679, 16.737, 16.762, 16.985 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.954091,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.471, 101.916, 101.954, 102.520, 102.915 ms"
           }
         ]
       }
