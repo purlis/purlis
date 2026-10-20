@@ -300,11 +300,13 @@ over theme files only.
 - **Closing a chat** that owns a draft asks Keep or Revert, saying where Keep puts each and what
   it replaces; neither close is offered until it is answered. A close that ends several chats
   asks about the drafts of each, and Keep then asks who draws each theme it kept. Where purlis
-  cannot tell whether a chat has a draft, the close is refused, with why. A chat with drafts is
-  closed in purlis's own window: a link is told only how many drafts it has.
+  cannot tell whether a chat has a draft, the close is refused, with why. A chat is closed in
+  purlis's own window, and a link is told nothing of its drafts.
 - **The drafts of a chat that is no longer open are deleted**: once purlis's record of the open
   chats no longer holds it (it was closed, or a launch did not reopen it), nothing names its
-  drafts, and they go.
+  drafts, and they go. Each chat's drafts folder names the clone whose purlis made it, and only
+  that clone deletes it: clones that share one state folder (`$PURLIS_HOME`) keep each other's
+  drafts.
 - **Moving a theme up a level**: in Settings › Theme, **Use in the whole project** moves a
   workspace's theme folder to the project's `themes/`, and **Copy to my machine** copies a
   project's or a workspace's to your own, carrying only the font files you approved with the

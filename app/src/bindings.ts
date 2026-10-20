@@ -2717,16 +2717,10 @@ export const commands = {
 	/**
 	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
 	 *  draft, where Keep puts it. Empty for a chat with none. The window's alone: it names the chat
-	 *  and where it works, and what Keep would do, which only the window acts on; a link is served
-	 *  [`theme_drafts_of_chat_counted`].
+	 *  and where it works, and what Keep would do, which only the window acts on, as only the
+	 *  window closes a chat.
 	 */
 	themeDraftsOfChat: (plane: PlaneId, session: number) => typedError<WindowDraft[], string>(__TAURI_INVOKE("theme_drafts_of_chat", { plane, session })),
-	/**
-	 *  **How many theme drafts the chat `session` has**, as a link asks before it closes that chat
-	 *  (#2708): a number, and nothing of the drafts, the chat or where it works. Keep and Revert are
-	 *  the window's alone, so a link's close of a chat with drafts is the window's to ask about.
-	 */
-	themeDraftsOfChatCounted: (plane: PlaneId, session: number) => typedError<number, string>(__TAURI_INVOKE("theme_drafts_of_chat_counted", { plane, session })),
 	/**
 	 *  **Keep** pressed: the engine copies the draft of the chat `session` into the real folder it is
 	 *  a draft of and deletes the draft. Answers what it did, in a sentence. Only a draft the window

@@ -111,7 +111,9 @@ answer names the pair and its ratio. Fix that first.
 
 Look at it with purlis's `theme_preview` tool: name the draft as `draft:<folder>` and draw the
 theme specimen in each appearance, with each option value the theme has, side by side with the
-theme it starts from (`side_by_side: {"theme": "<folder>"}`). It shows sample content only.
+theme as kept (`side_by_side: {"theme": "<folder>"}`). A new theme has no kept folder yet: put it
+beside the theme it extends (`side_by_side: {"theme": "purlis-classic"}`). It shows sample
+content only.
 
 ```bash
 purlis theme check draft:<folder> --json

@@ -1356,12 +1356,6 @@ export const commands = {
 	themeOpenFolder: __WINDOW_ONLY_RESULT,
 	themeChat: __WINDOW_ONLY_RESULT,
 	themeDraftsOfChat: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **How many theme drafts the chat `session` has**, as a link asks before it closes that chat
-	 *  (#2708): a number, and nothing of the drafts, the chat or where it works. Keep and Revert are
-	 *  the window's alone, so a link's close of a chat with drafts is the window's to ask about.
-	 */
-	themeDraftsOfChatCounted: (plane: PlaneId, session: number) => typedError<number, string>(__TAURI_INVOKE("theme_drafts_of_chat_counted", { plane, session })),
 	themeDraftKeep: __WINDOW_ONLY_RESULT,
 	themeDraftRevert: __WINDOW_ONLY_RESULT,
 	themeDraftsRevertHere: __WINDOW_ONLY_RESULT,

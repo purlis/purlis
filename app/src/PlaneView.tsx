@@ -340,8 +340,8 @@ import { endedState, type Away } from "./TaskAway";
 import { useHeldAmong } from "./dispatchesHeld";
 import { useRefusedAmong } from "./vaultRefusals";
 import { type Asking } from "./NeedsYou";
-import { DRAFTS_IN_THE_WINDOW, EndingChat, type SmartAsk } from "./EndingChat";
-import { inTheWindow } from "./personaHostsAllow";
+import { EndingChat, type SmartAsk } from "./EndingChat";
+import { draftsOfClosing, settleClosingDrafts, type KeptOnClose } from "./closingDrafts";
 import { KeepAsk, ThemeDraftStrip } from "./ThemeDraftStrip";
 import { ChatAsk, focusAfterNoticeGone } from "./ChatAsk";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
@@ -7155,13 +7155,7 @@ export const PlaneView = memo(function PlaneView({
     drafts?: readonly WindowDraft[];
   }>();
   /** The themes kept as their chat closed (#2332), each asked in turn who draws it (#2708). */
-  const [keptOnClose, setKeptOnClose] = useState<
-    readonly {
-      folder: string;
-      workspace: string | null;
-      keptTo: string;
-    }[]
-  >([]);
+  const [keptOnClose, setKeptOnClose] = useState<readonly KeptOnClose[]>([]);
 
   /**
    * What every surface does with a row: ask first where a chat is about to end, then carry
@@ -7209,48 +7203,11 @@ export const PlaneView = memo(function PlaneView({
               : [],
           };
         };
-        // **On a link, the drafts are the window's to ask about** (#2708): Keep and Revert are
-        // its alone, so a link is told only how many each chat has, and a close of one that has
-        // any is refused, saying where it is answered.
-        if (!inTheWindow(commands, "themeDraftsOfChat")) {
-          const counted = await Promise.all(
-            ending.map((session) =>
-              commands
-                .themeDraftsOfChatCounted(plane, session)
-                .catch((err: unknown) => ({ status: "error" as const, error: String(err) })),
-            ),
-          );
-          for (const one of counted) {
-            if (one.status === "error")
-              return {
-                ok: false,
-                refused: `purlis could not tell whether this chat has a theme draft, so it is not closed: ${one.error}`,
-              };
-            if (typeof one.data === "number" && one.data > 0)
-              return { ok: false, refused: DRAFTS_IN_THE_WINDOW(one.data) };
-          }
-        }
         // **The theme drafts of every chat the close ends** (#2332), which it asks Keep or Revert
-        // about. Where purlis cannot tell, the close does not go on unasked: it is refused, and
-        // says why.
-        const draftsAsked = await Promise.all(
-          ending.map((session) =>
-            commands
-              .themeDraftsOfChat(plane, session)
-              .catch((err: unknown) => ({ status: "error" as const, error: String(err) })),
-          ),
-        );
-        const drafts: WindowDraft[] = [];
-        for (const one of draftsAsked) {
-          // An answer the core refused, or a call that failed, holds the close. An answer that
-          // is no list is a core with no drafts to ask about (an older one, a test's).
-          if (one.status === "error")
-            return {
-              ok: false,
-              refused: `purlis could not tell whether this chat has a theme draft, so it is not closed: ${one.error}`,
-            };
-          if (Array.isArray(one.data)) drafts.push(...one.data);
-        }
+        // about; on a link, nothing is asked (#2708).
+        const found = await draftsOfClosing(commands, plane, ending);
+        if (!found.ok) return { ok: false, refused: found.refused };
+        const drafts = found.drafts;
         if (ending.length !== 1) {
           // A close of several chats at once asks nothing about what each started: those
           // keep running, and the dialog says so where any is.
@@ -7312,39 +7269,20 @@ export const PlaneView = memo(function PlaneView({
   const settleDrafts = useCallback(
     async (drafts: readonly WindowDraft[] | undefined, keep: boolean | undefined) => {
       if (drafts === undefined || drafts.length === 0 || keep === undefined) return true;
-      for (const one of drafts) {
-        const done = keep
-          ? // The close row said what Keep puts where, and what it replaces: the answer is
-            // the person's yes to it.
-            await commands.themeDraftKeep(
-              plane,
-              one.session,
-              one.folder,
-              one.kept_to,
-              one.replaces,
-              one.changed,
-            )
-          : await commands.themeDraftRevert(plane, one.session, one.folder);
-        if (done.status === "error") {
-          sayAboutThisMachine("theme draft", {
-            severity: "warn",
-            detail: done.error,
-            remedy: "the chat is still open: fix its draft, or close it and answer Revert",
-          });
-          return false;
-        }
+      const settled = await settleClosingDrafts(commands, plane, drafts, keep);
+      // Who draws each theme kept, asked about every one in turn, even when a later one is
+      // refused (#2708).
+      if (settled.kept.length > 0) setKeptOnClose(settled.kept);
+      void drawWhatIsInForce();
+      if (settled.refused !== undefined) {
+        sayAboutThisMachine("theme draft", {
+          severity: "warn",
+          detail: settled.refused,
+          remedy: "the chat is still open: fix its draft, or close it and answer Revert",
+        });
+        return false;
       }
       sayAboutThisMachine("theme draft", undefined);
-      void drawWhatIsInForce();
-      // Who draws each theme kept, asked about every one in turn (#2708).
-      if (keep)
-        setKeptOnClose(
-          drafts.map((one) => ({
-            folder: one.folder,
-            workspace: one.workspace,
-            keptTo: one.kept_to,
-          })),
-        );
       return true;
     },
     [plane],

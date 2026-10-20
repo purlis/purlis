@@ -42,7 +42,9 @@
 //! replaces it, as it asks before it replaces any folder.
 //!
 //! **The drafts of a chat that is gone are deleted** ([`sweep`]): no strip names them, and no
-//! close asks about them.
+//! close asks about them. Each chat's drafts folder names the clone whose app made it (its
+//! [`crate::plane::CloneKey`]), and a sweep deletes only its own clone's: a state folder that
+//! `$PURLIS_HOME` shares between clones keeps every other clone's drafts.
 //!
 //! # The draft's fonts and its floors
 //!
@@ -400,7 +402,16 @@ pub fn revert(plane: &Path, draft: &Draft) -> Result<(), String> {
     })?;
     if let Some(chat) = folder.parent() {
         let _ = std::fs::remove_file(started_record(chat, &draft.folder));
-        let _ = std::fs::remove_dir(chat);
+        // A chat's folder that holds only its owner record holds no draft: it goes with it.
+        let only_owner = std::fs::read_dir(chat).is_ok_and(|listed| {
+            listed
+                .filter_map(Result::ok)
+                .all(|entry| entry.file_name() == OWNER)
+        });
+        if only_owner {
+            let _ = std::fs::remove_file(chat.join(OWNER));
+            let _ = std::fs::remove_dir(chat);
+        }
     }
     Ok(())
 }
@@ -617,12 +628,17 @@ pub fn start(
     let into = root.join(below).join(chat);
     crate::plane::private_dir(&root, &into)
         .map_err(|why| format!("purlis could not make {}: {why}", into.display()))?;
+    // Whose clone this chat's drafts folder is: a sweep deletes only its own (D-2708-8).
+    if std::fs::symlink_metadata(into.join(OWNER)).is_err() {
+        write_no_link(&root, &into.join(OWNER), &owner_of(place.plane))
+            .map_err(|why| format!("purlis could not make {}: {why}", into.display()))?;
+    }
     let path = super::stage(&into, folder, &files, false)
         .and_then(super::Staged::commit)
         .map_err(|why| why.to_string())?;
     // A record not written is a draft Keep asks about: it cannot tell what it started from.
     if let Some(from) = from {
-        let _ = std::fs::write(started_record(&into, folder), from);
+        let _ = write_no_link(&root, &started_record(&into, folder), &from);
     }
     Ok(Started {
         path,
@@ -663,8 +679,39 @@ fn started_from(below: &Path, digest: &str) -> String {
     format!("{}\n{digest}\n", slashed(below))
 }
 
-/// The most a start record is, read back.
+/// The most a start record or an owner record is, read back.
 const MOST_RECORD_BYTES: u64 = 1024;
+
+/// The record, in a chat's drafts folder, of the clone whose app made it.
+const OWNER: &str = ".owner";
+
+/// What a chat's drafts folder made by the app of the plane at `plane` names as its owner: the
+/// clone's key.
+fn owner_of(plane: &Path) -> String {
+    format!("{}\n", crate::plane::CloneKey::of(plane))
+}
+
+/// A small record of purlis's own at `path` below `root`, read refusing a link on the way or at
+/// it, and anything that is not a plain file, at most [`MOST_RECORD_BYTES`]; `None` otherwise.
+fn read_small(root: &Path, path: &Path) -> Option<String> {
+    use std::io::Read;
+    let file = crate::contain::open_no_link(root, path).ok()?;
+    if !file.metadata().ok()?.file_type().is_file() {
+        return None;
+    }
+    let mut text = String::new();
+    file.take(MOST_RECORD_BYTES)
+        .read_to_string(&mut text)
+        .ok()?;
+    Some(text)
+}
+
+/// Writes `text` to the record of purlis's own at `path` below `root`, refusing a link on the way
+/// or at it.
+fn write_no_link(root: &Path, path: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    crate::contain::create_no_link(root, path)?.write_all(text.as_bytes())
+}
 
 /// **What the real folder `folder` kept to `kept_to` is now**, as a draft's start records it:
 /// where it is, and the digest of its files, or `none` when nothing is there. `None` when it
@@ -689,21 +736,13 @@ fn real_now(plane: &Path, kept_to: &KeptTo, folder: &str) -> Option<String> {
 /// made, changed or deleted since. A draft with no record of its start, or a folder that cannot
 /// be read, counts as changed: Keep then asks.
 pub fn changed(plane: &Path, draft: &Draft) -> bool {
-    use std::io::Read;
     let Some(chat) = folder_of(plane, &draft.chat) else {
         return true;
     };
-    let record = started_record(&chat, &draft.folder);
     let (root, _) = root_of(plane);
-    if crate::contain::no_link_on_the_way(&root, &record).is_err() {
+    let Some(recorded) = read_small(&root, &started_record(&chat, &draft.folder)) else {
         return true;
-    }
-    let mut recorded = String::new();
-    let read = std::fs::File::open(&record)
-        .and_then(|file| file.take(MOST_RECORD_BYTES).read_to_string(&mut recorded));
-    if read.is_err() {
-        return true;
-    }
+    };
     real_now(plane, &draft.kept_to, &draft.folder).is_none_or(|now| now != recorded)
 }
 
@@ -713,8 +752,10 @@ pub const MOST_SWEPT: usize = 256;
 /// **Deletes the drafts of every chat that is not open** in the plane at `plane`: each chat's
 /// drafts folder whose chat is none of `open`, the chats the app has open or reopens at its next
 /// launch. No strip names such a draft and no close asks about it. At most [`MOST_SWEPT`] are
-/// looked at in one sweep; a name that is not a chat's id is left as it is. Answers how many
-/// chats' drafts were deleted.
+/// looked at in one sweep; a name that is not a chat's id is left as it is. **Only this clone's
+/// are deleted**: a folder whose owner record names another clone, or that has none, is not
+/// this plane's to delete, as in a state folder `$PURLIS_HOME` shares. Answers how many chats'
+/// drafts were deleted.
 pub fn sweep(plane: &Path, open: &[&str]) -> usize {
     let (root, below) = root_of(plane);
     let drafts = root.join(below);
@@ -724,6 +765,7 @@ pub fn sweep(plane: &Path, open: &[&str]) -> usize {
     let Ok(listed) = std::fs::read_dir(&drafts) else {
         return 0;
     };
+    let mine = owner_of(plane);
     let mut deleted = 0;
     for entry in listed.filter_map(Result::ok).take(MOST_SWEPT) {
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
@@ -734,6 +776,9 @@ pub fn sweep(plane: &Path, open: &[&str]) -> usize {
         }
         // The entry's own kind: a link is not followed, and not deleted through.
         if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        if read_small(&root, &entry.path().join(OWNER)).as_deref() != Some(mine.as_str()) {
             continue;
         }
         // The standard library's removal opens each folder below refusing a link.

@@ -203,8 +203,8 @@ fn draft_review(
 
 /// The theme drafts of the chat `session`, as the window asks before it closes that chat: each
 /// draft, where Keep puts it. Empty for a chat with none. The window's alone: it names the chat
-/// and where it works, and what Keep would do, which only the window acts on; a link is served
-/// [`theme_drafts_of_chat_counted`].
+/// and where it works, and what Keep would do, which only the window acts on, as only the
+/// window closes a chat.
 #[tauri::command]
 #[specta::specta]
 pub async fn theme_drafts_of_chat(
@@ -242,36 +242,6 @@ pub async fn theme_drafts_of_chat(
                 kept_refused: false,
             })
             .collect()
-    })
-    .await
-    .map_err(|err| format!("reading the chat's theme drafts did not finish: {err}"))
-}
-
-/// **How many theme drafts the chat `session` has**, as a link asks before it closes that chat
-/// (#2708): a number, and nothing of the drafts, the chat or where it works. Keep and Revert are
-/// the window's alone, so a link's close of a chat with drafts is the window's to ask about.
-#[tauri::command]
-#[specta::specta]
-pub async fn theme_drafts_of_chat_counted(
-    planes: tauri::State<'_, crate::planes::Planes>,
-    plane: crate::planes::PlaneId,
-    session: u32,
-) -> Result<u32, String> {
-    let held = planes.held(&plane)?;
-    let root = held.root().to_path_buf();
-    let chats: Vec<Drafting> = held
-        .chats()
-        .drafting()
-        .into_iter()
-        .filter(|one| one.session == session)
-        .collect();
-    let config = crate::extensions::config_root()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let Some(chat) = chats.first() else {
-            return 0;
-        };
-        let found = drafts_of(&config, &root, chat.workspace.as_deref(), &chats).len();
-        u32::try_from(found).unwrap_or(u32::MAX)
     })
     .await
     .map_err(|err| format!("reading the chat's theme drafts did not finish: {err}"))

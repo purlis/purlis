@@ -1357,6 +1357,25 @@ fn working_files(dir: &Path) -> Result<std::collections::BTreeMap<String, String
     Ok(files)
 }
 
+/// **What a draft ask's answer says was drafted**: its lines, its exit status, and whether the
+/// draft was made now. An app that answers [`Answer::Drafted`](purlis_core::hookwire::Answer)
+/// says so in a field; an older one answers `Said`, and its draft made now is the one said as
+/// done, as such an app said it (#2708). `None` for any other answer.
+fn drafted(
+    answer: purlis_core::hookwire::Answer,
+) -> Option<(Vec<purlis_core::repocmd::Say>, u8, bool)> {
+    match answer {
+        purlis_core::hookwire::Answer::Drafted { lines, code, made } => Some((lines, code, made)),
+        purlis_core::hookwire::Answer::Said { lines, code } => {
+            let made = lines
+                .iter()
+                .any(|line| matches!(line, purlis_core::repocmd::Say::Done(_)));
+            Some((lines, code, made))
+        }
+        _ => None,
+    }
+}
+
 /// `purlis theme draft <folder>`: **the app writes this chat's draft**, in the drafts folder of
 /// the chat whose token asks, and says what the window draws of it. Without `--save` it starts
 /// the draft and makes a working copy of it here; with `--save` it hands the working copy's theme
@@ -1394,8 +1413,12 @@ fn draft(here: Here<'_>, folder: &str, save: bool, from: Option<&str>) -> ExitCo
         std::time::Duration::from_secs(30),
     );
     let (code, newly) = match answer {
-        Ok(Ok(purlis_core::hookwire::Answer::Drafted { lines, code, made })) => {
+        Ok(Ok(
+            answer @ (purlis_core::hookwire::Answer::Drafted { .. }
+            | purlis_core::hookwire::Answer::Said { .. }),
+        )) => {
             // A draft made now: its working copy is made again from it.
+            let (lines, code, made) = drafted(answer).unwrap_or_default();
             for line in lines {
                 crate::speak(line);
             }
@@ -1914,4 +1937,48 @@ fn checked_json(found: &Found, checked: &[theme::Checked]) -> Value {
         "hard_floors": hard_floors,
         "clean": clean,
     })
+}
+
+#[cfg(test)]
+mod drafted_tests {
+    use purlis_core::hookwire::Answer;
+    use purlis_core::repocmd::Say;
+
+    #[test]
+    fn a_draft_answer_says_whether_it_made_the_draft_in_its_field() {
+        let said = Answer::Drafted {
+            lines: vec![Say::Done("saved".to_owned())],
+            code: 0,
+            made: false,
+        };
+        assert_eq!(
+            super::drafted(said).map(|(_, code, made)| (code, made)),
+            Some((0, false))
+        );
+    }
+
+    #[test]
+    fn an_older_app_s_answer_is_read_as_that_app_said_it_and_never_as_nothing_written() {
+        // An older app answers `Said`: the draft it wrote is printed and its exit kept, and a
+        // draft made now is the one it said as done.
+        let made = Answer::Said {
+            lines: vec![Say::Done("The theme draft dusk is started".to_owned())],
+            code: 0,
+        };
+        assert_eq!(
+            super::drafted(made).map(|(_, code, made)| (code, made)),
+            Some((0, true))
+        );
+        let there = Answer::Said {
+            lines: vec![Say::Info("The theme draft dusk is there".to_owned())],
+            code: 0,
+        };
+        assert_eq!(super::drafted(there).map(|(_, _, made)| made), Some(false));
+        assert_eq!(
+            super::drafted(Answer::No {
+                why: "no".to_owned()
+            }),
+            None
+        );
+    }
 }

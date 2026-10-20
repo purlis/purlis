@@ -666,3 +666,74 @@ fn a_sweep_never_deletes_through_a_link() {
     assert_eq!(drafts::sweep(&places.plane, &[]), 0);
     assert!(elsewhere.join("dusk").join(THEME_JSON).is_file());
 }
+
+#[test]
+fn a_sweep_deletes_only_this_clone_s_drafts_in_a_drafts_folder_two_planes_share() {
+    // Two clones whose state folder is one (`$PURLIS_HOME`): each chat's drafts folder names
+    // the clone whose app made it, and a sweep deletes only its own clone's.
+    let (one, two) = (Places::new(), Places::new());
+    let (mine, theirs, nobody_s) = (chat(), chat(), chat());
+    one.start(None, &mine, "dawn");
+    two.start(None, &theirs, "dusk");
+    // The other clone's chat folder, where the shared state folder holds it: beside this one's.
+    let shared = drafts::folder_of(&one.plane, &mine)
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::fs::rename(
+        drafts::folder_of(&two.plane, &theirs).unwrap(),
+        shared.join(&theirs),
+    )
+    .unwrap();
+    // A chat folder that names no clone is not this one's either.
+    put(
+        &shared.join(&nobody_s).join("noon"),
+        &dark("Noon", json!({})),
+    );
+    assert_eq!(drafts::sweep(&one.plane, &[]), 1);
+    assert!(
+        !shared.join(&mine).exists(),
+        "this clone's gone chat's drafts are deleted"
+    );
+    assert!(
+        shared.join(&theirs).join("dusk").is_dir(),
+        "the other clone's stay"
+    );
+    assert!(
+        shared.join(&nobody_s).join("noon").is_dir(),
+        "an unowned folder stays"
+    );
+    // The other clone sweeps its own, where it now is.
+    assert_eq!(drafts::sweep(&two.plane, &[]), 0);
+}
+
+#[test]
+fn a_start_record_that_is_not_a_plain_file_counts_as_changed() {
+    let places = Places::new();
+    let id = chat();
+    places.start(None, &id, "dusk");
+    let draft = places.drafts(None, &[&id]).remove(0);
+    let record = drafts::folder_of(&places.plane, &id)
+        .unwrap()
+        .join(".dusk.started");
+    std::fs::remove_file(&record).unwrap();
+    std::fs::create_dir(&record).unwrap();
+    assert!(drafts::changed(&places.plane, &draft));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_start_record_that_is_a_link_is_not_read() {
+    let places = Places::new();
+    let id = chat();
+    places.start(None, &id, "dusk");
+    let draft = places.drafts(None, &[&id]).remove(0);
+    let record = drafts::folder_of(&places.plane, &id)
+        .unwrap()
+        .join(".dusk.started");
+    let elsewhere = places.plane.join("elsewhere.started");
+    std::fs::rename(&record, &elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &record).unwrap();
+    assert!(drafts::changed(&places.plane, &draft));
+}
