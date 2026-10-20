@@ -123,7 +123,8 @@ line heights, the corners, the control and strip heights, the focus ring and the
 is a **geometry token** with a bound; a value outside it, a fraction where a whole number is due
 (every one but the line heights), or anything that is not a number refuses the theme with a
 sentence that names the bound. The engine writes what the window draws from the number. A
-theme names only what it changes; every other token keeps Purlis Classic's value.
+theme names only what it changes; every other token keeps the value of the theme it extends,
+and Purlis Classic's when it extends none.
 
 **Geometry is set per appearance**, in each appearance's `tokens` beside its colours:
 
@@ -138,8 +139,9 @@ theme names only what it changes; every other token keeps Purlis Classic's value
 
 An appearance that leaves a token out keeps the value of the appearance of the same id in the
 theme it extends, else Purlis Classic's. So a theme that rounds its corners in `dark` alone
-draws `light` square: name the tokens in every appearance. A theme option's value may set
-geometry too, within the same bounds, drawn over the appearance as its colours are.
+draws `light` as the theme it extends does, square if it extends Classic: name the tokens in
+every appearance. A theme option's value may set geometry too, within the same bounds, drawn
+over the appearance as its colours are.
 
 | Token | Unit | Bounds | Classic | Compact | What it reaches |
 |---|---|---|---|---|---|
@@ -151,15 +153,15 @@ geometry too, within the same bounds, drawn over the appearance as its colours a
 | `space.5` | px at 14px | 6–16 | 12 | 8 | padding, gaps and margins |
 | `space.6` | px at 14px | 8–24 | 16 | 12 | padding, gaps and margins |
 | `space.7` | px at 14px | 12–32 | 24 | 16 | padding, gaps and margins |
-| `space.8` | px at 14px | 16–48 | 32 | 24 | padding, gaps and margins: the largest step |
+| `space.8` | px at 14px | 16–48 | 32 | 24 | the largest padding and margins, and the width of menus and tooltips (a share of it) |
 | `font-size.2xs` | px at 14px | 8–12 | 10 | 10 | the small levels control |
 | `font-size.xs` | px at 14px | 9–13 | 11 | 11 | the meta and label roles: badges, counts |
 | `font-size.sm` | px at 14px | 10–14 | 12 | 12 | the secondary role: secondary lines, help text |
 | `font-size.md` | px at 14px | 11–15 | 13 | 13 | the body role: a tab's title, dense lists, a menu's rows |
-| `font-size.base` | px at 14px | 12–18 | 14 | 14 | the window's words, a field's and a button's; the heading role |
+| `font-size.base` | px at 14px | 12–18 | 14 | 14 | fields' and buttons' words, the heading role, the title bar |
 | `font-size.lg` | px at 14px | 13–22 | 16 | 16 | the title role |
 | `font-size.xl` | px at 14px | 16–28 | 20 | 20 | the Welcome page's heading and its doors' marks |
-| `font-weight.regular` | weight | 300–500 | 400 | 400 | the window's words |
+| `font-weight.regular` | weight | 300–500 | 400 | 400 | the body, secondary, meta and code roles, menu rows |
 | `font-weight.medium` | weight | 400–600 | 500 | 500 | a form's label: a setting's name, a choice's name |
 | `font-weight.strong` | weight | 500–800 | 600 | 600 | titles, headings, labels, a row's strong line |
 | `line-height.tight` | × text | 1–1.4 | 1.2 | 1.2 | a compact line: counts |
@@ -171,9 +173,9 @@ geometry too, within the same bounds, drawn over the appearance as its colours a
 | `radius.full` | px | 0–9999 | 9999 | 9999 | pills: counts, toggle tracks |
 | `size.control` | px at 14px | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
 | `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
-| `focus-ring.width` | px | 1–4 | 2 | 2 | both focus rings |
+| `focus-ring.width` | px | 1–4 | 2 | 2 | the focus ring of controls and list rows, and the selected row's edge |
 | `focus-ring.offset` | px | 0–4 | 2 | 2 | a control's ring, outside it |
-| `focus-ring.inset` | px | −4–0 | −2 | −2 | a row's or a tab's ring, inside it |
+| `focus-ring.inset` | px | −4–0 | −2 | −2 | a list row's or a segment's ring, inside it |
 | `elevation.raised-y` | px at 14px | 0–8 | 2 | 2 | how far a raised bar's shadow falls: the find bar |
 | `elevation.raised-blur` | px at 14px | 0–24 | 8 | 8 | how soft that shadow is |
 | `elevation.overlay-y` | px at 14px | 0–16 | 8 | 8 | how far an overlay's shadow falls: dialogs, popovers, menus, tooltips |
@@ -183,12 +185,16 @@ geometry too, within the same bounds, drawn over the appearance as its colours a
 so it grows with the person's text-size setting. *px* is a length that does not grow: corners
 and the focus ring. *weight* is a font weight. *× text* is a line height, a share of the text's
 own size, and the only kind that takes a fraction. **Classic** is Purlis Classic's comfortable
-value, and every theme's unless it names the token; **Compact** is Purlis Classic's compact
-value.
+value, which a theme that extends nothing draws unless it names the token; **Compact** is
+Purlis Classic's compact value. The window's own text size is the person's text-size setting,
+not a token: words with no size of their own (a list row's, a paragraph's) follow it, and every
+*px at 14px* length grows with it.
 
 The project strip sits in the title bar, whose height no token reaches yet. **Still square,
 whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a tab's `×` closer, the
-settings gear on a strip, and every list and tree row but the palette's.
+settings gear on a strip, and every list and tree row but the palette's. **A 2px ring,
+whatever `focus-ring.*` says:** the strip tabs, a tab's `×` closer, the settings gear on a
+strip, a bare button, and any stop Tab lands on that draws no ring of its own.
 
 ### Density's compact layer
 
@@ -205,7 +211,7 @@ What compact draws for each token (`compact_of` in the engine):
 
 - a token the `compact` layer names is drawn as it names it;
 - a token Purlis Classic's compact moves (its Compact differs from its Classic above:
-  `space.2` to `space.8`, `size.control`, `size.chrome`, `line-height.body`) is the smaller of
+  `space.2` to `space.8`, `line-height.body`, `size.control`, `size.chrome`) is the smaller of
   Classic's Compact and the appearance's own value, so compact is never looser than
   comfortable;
 - every other token keeps the appearance's own value.
@@ -220,12 +226,15 @@ drawn in. The check holds two lines, in both densities:
 - a field's words: `font-size.base` × `line-height.body` within `size.control`;
 - a strip's tab title: `font-size.md` × `line-height.body` within `size.chrome`.
 
-Purlis Classic fits each with room: 14 × 1.4 = 19.6 within 28 and 13 × 1.4 = 18.2 within 21
-comfortable, 14 × 1.3 = 18.2 within 24 and 13 × 1.3 = 16.9 within 18 compact. Compact is the
-tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and not compact
-(14 × 1.3 = 18.2, over 18). A line that does not fit is a `line-does-not-fit` warning that names
-its density (see [The theme check](#the-theme-check)); the theme is drawn. A button's label sits
-on a line of 1, so it fits wherever a field's words do. Every length here grows with the text
+Purlis Classic fits each with room:
+
+- comfortable: 14 × 1.4 = 19.6 within 28, and 13 × 1.4 = 18.2 within 21;
+- compact: 14 × 1.3 = 18.2 within 24, and 13 × 1.3 = 16.9 within 18.
+
+Compact is the tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and not
+compact (14 × 1.3 = 18.2, over 18). A line that does not fit is a `line-does-not-fit` warning that
+names its density (see [The theme check](#the-theme-check)); the theme is drawn. A button's label
+sits on a line of 1, so it fits wherever a field's words do. Every length here grows with the text
 size alike, so what fits at the default text size fits at every one.
 
 ## The theme check

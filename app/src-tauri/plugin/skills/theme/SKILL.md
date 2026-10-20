@@ -99,17 +99,14 @@ A draft brings no font. A face is drawn only when the project approved that file
 folder, and the window shows the person a Notice for a face it refuses. Tell the person about
 each font you named that their folder does not already have.
 
-**Shape and size** are tokens beside the colours, set in each appearance (one that leaves them
-out keeps the theme it extends): a whole number (the line heights take decimals) inside its
-bounds, or the theme is refused. `purlis docs show themes` has every one in its Geometry
-section: the spacing and type scales, the weights, the line heights, the focus ring and the
-shadows too, each with its unit, bounds, values and what it reaches. Read it before you set one
-this table leaves out. Offer them: the built-in Purlis theme sets `radius.md` 7, `radius.lg` 10,
-`radius.xl` 12, `size.control` 26, `size.chrome` 24 and `line-height.body` 1.55 in all three of
-its appearances. The top-level `compact` holds what compact density draws. A token it leaves out
-keeps the appearance's own value, except the ones Classic's compact moves (`space.2` to
-`space.8`, `size.control`, `size.chrome`, `line-height.body`): those take the smaller of
-Classic's compact and the appearance's own.
+**Shape and size** are tokens beside the colours, set in each appearance (one that leaves them out
+keeps the theme it extends): a whole number (the line heights take decimals) inside its bounds, or
+the theme is refused. Offer them: the built-in Purlis theme sets `radius.md` 7, `radius.lg` 10,
+`radius.xl` 12, `size.control` 26, `size.chrome` 24 and `line-height.body` 1.55 in all three of its
+appearances. The top-level `compact` holds what compact density draws. A token it leaves out keeps
+the appearance's own value, except the ones Classic's compact moves (`space.2` to `space.8`,
+`line-height.body`, `size.control`, `size.chrome`): those take the smaller of Classic's compact and
+the appearance's own.
 
 Most asks for another shape come down to the corners and the heights:
 
@@ -123,6 +120,12 @@ Most asks for another shape come down to the corners and the heights:
 | `size.control` | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
 | `size.chrome` | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
 
+`purlis docs show themes` has every one in its Geometry section: the spacing and type scales,
+the weights, the line heights, the focus ring and the shadows too, each with its unit, bounds,
+values and what it reaches. Read it before you set one this table leaves out. The window's own
+text size is the person's text-size setting, which no theme sets: point them at it when they
+ask for bigger words.
+
 Sizes are px at the default text size and grow with it; corners and the focus ring do not. The
 project strip sits in the title bar, whose height no token reaches yet.
 
@@ -133,7 +136,8 @@ tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fa
 
 **Still square, whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a
 tab's `×` closer, the settings gear on a strip, and every list and tree row but the palette's.
-Tell the person when they ask for rounder tabs or rows: the theme cannot round those yet.
+Tell the person when they ask for rounder tabs or rows: the theme cannot round those yet. The
+strip tabs, the closer and the gear also keep a 2px focus ring whatever `focus-ring.*` says.
 
 Done when the file is JSON with every value hex, a palette name, or a token's own type, and
 every shape and size inside its bounds.

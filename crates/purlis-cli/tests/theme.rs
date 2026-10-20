@@ -2266,6 +2266,37 @@ fn the_theme_skill_s_corners_and_heights_are_the_engine_s_bounds_and_values() {
     )
     .expect("the themes docs");
     assert!(docs.contains("\n## Geometry\n"), "the docs have it");
+    // The two rules it keeps inline: each line the check fits, and the tokens Classic's
+    // compact moves.
+    for fit in purlis_core::theme::FITS {
+        let named = format!(
+            "`{}` × `{}` within `{}`",
+            fit.size, fit.line_height, fit.height
+        );
+        assert!(skill.contains(&named), "the skill says {named}");
+    }
+    let moved: Vec<&str> = steps
+        .iter()
+        .filter(|one| one.compact != one.classic)
+        .map(|one| one.token)
+        .collect();
+    let spaces: Vec<&&str> = moved.iter().filter(|t| t.starts_with("space.")).collect();
+    let mut parts = vec![format!(
+        "`{}` to `{}`",
+        spaces.first().expect("a spacing step"),
+        spaces.last().expect("a spacing step")
+    )];
+    parts.extend(
+        moved
+            .iter()
+            .filter(|t| !t.starts_with("space."))
+            .map(|t| format!("`{t}`")),
+    );
+    let named = parts.join(", ");
+    assert!(
+        skill.contains(&named),
+        "the skill's compact rule names {named}"
+    );
 }
 
 #[test]
