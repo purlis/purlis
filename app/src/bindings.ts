@@ -2386,6 +2386,25 @@ export const commands = {
 	 *  default. It applies at the next browser call; a browser running past a lowered limit runs on.
 	 */
 	setBrowserLimit: (limit: BrowserLimit, to: number | null) => typedError<null, string>(__TAURI_INVOKE("set_browser_limit", { limit, to })),
+	/**  **The Docker pools on this machine**, and a new pool's default limits. */
+	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
+	/**
+	 *  **Adds a Docker pool on this machine**: its runner is made from the image, confined and held
+	 *  to the pool's limits, paired with this desktop and kept. What fails is taken back.
+	 */
+	addDockerPool: (adding: PoolAdding) => typedError<PoolRow, string>(__TAURI_INVOKE("add_docker_pool", { adding })),
+	/**
+	 *  **Removes the pool `name`**: this desktop is taken out of its runner's peers over a link of
+	 *  its own while the runner answers, then its container and home volume are removed, and the
+	 *  pool with them. What could not be removed is answered, with how to remove it; nothing when
+	 *  all of it is gone.
+	 */
+	removeDockerPool: (name: string) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name })),
+	/**
+	 *  **Whether the pool `name`'s runner answers with the key pinned for it**: one link, made and
+	 *  let go of.
+	 */
+	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	/**
@@ -8463,6 +8482,50 @@ export type PlaneUpdated = {
 	 *  `personas/steward/persona.md`, …
 	 */
 	files: string[],
+};
+
+/**  A pool as the person typed it: each limit left empty takes the default. */
+export type PoolAdding = {
+	name: string,
+	image: string,
+	cpus: string | null,
+	memory_mib: number | null,
+	processes: number | null,
+	tmp_mib: number | null,
+};
+
+/**
+ *  A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
+ *  MiB.
+ */
+export type PoolLimitsShown = {
+	cpus: string,
+	memory_mib: number,
+	processes: number,
+	tmp_mib: number,
+};
+
+/**  Where a pool's runner stands, as one link to it says. */
+export type PoolLink = 
+/**  It answered with the key pinned at its pairing. */
+{ state: "linked" } | 
+/**  It answered with another key: it is refused, and the window offers to remove it. */
+{ state: "key_changed" } | 
+/**  It did not answer, and why. */
+{ state: "down"; why: string };
+
+/**  One pool, as its row draws it. */
+export type PoolRow = {
+	name: string,
+	image: string,
+	/**  What its runner is held to: what the person set, and the defaults for the rest. */
+	limits: PoolLimitsShown,
+};
+
+/**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
+export type PoolsShown = {
+	pools: PoolRow[],
+	defaults: PoolLimitsShown,
 };
 
 /**

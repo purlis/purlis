@@ -53,6 +53,9 @@ import { Extensions } from "../Extensions";
 import { ForgeDeviceSignIn } from "../ForgeDeviceSignIn";
 import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
+import { AddDockerPoolHost } from "../AddDockerPool";
+import { startAddingAPool } from "../pools";
+import { RemovePool } from "../settings/pools";
 import { RemoveProfile } from "../settings/profiles";
 import { SpecimenDialog } from "../specimen/Specimen";
 import { LinkWorkItem } from "../LinkWorkItem";
@@ -777,6 +780,20 @@ const DIALOGS: Opened[] = [
     open: async () => {
       render(<ForgeGitLabSignIn onSignedIn={nothing} onCancel={nothing} />);
       await screen.findByText(/Waiting for your browser/);
+    },
+  },
+  {
+    name: "removing a Docker pool",
+    file: "settings/pools.tsx",
+    open: async () => render(<RemovePool name="builds" onRemove={nothing} onCancel={nothing} />),
+  },
+  {
+    name: "adding a Docker pool",
+    file: "AddDockerPool.tsx",
+    open: async () => {
+      startAddingAPool();
+      render(<AddDockerPoolHost />);
+      await screen.findByRole("dialog", { name: "Add a Docker pool" });
     },
   },
   {
