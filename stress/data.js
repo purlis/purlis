@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792536811446,
+  "lastUpdate": 1792539418121,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4382,6 +4382,42 @@ window.BENCHMARK_DATA = {
             "value": 354,
             "unit": "MB",
             "extra": "median of 6 samples: 347, 350.4, 361.6, 357.5, 358.5, 252.6 MB; window 169.5 MB, session host 184.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2a9161f4bae3155c7a598898a003747b9a44c3a1",
+          "message": "ADR 0102: a skill router decides what a chat sees (SK-15) (#2851)\n\n* ADR 0102: a skill router decides what a chat sees\n\nA router takes the candidate set, the budget, the pins and the prompt and\nreturns what is visible and why the rest is hidden. The built-in router\nshows everything below the budget and an index skill above it. Pins\ncount first and are never hidden, a persona or workspace chooses its\nrouter, a router has 100 ms with a fallback to the index, and trigger\ntests grade routers. Because harnesses fix their listing at chat start,\na router picks the listing at start and adds per-prompt pointers to\nskill_load rather than changing the listing mid-chat.\n\nRefs #2762\nRefs #2778\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* ADR 0102: every hiding router shows the index; name the records that carry a fallback\n\nAny router that hides a skill shows the index skill, so the timeout\nfallback always has one. The fallback is marked on the prompt's routing\nrecord and on the skill runs of that turn. The harness measurements are\nsummarised in the record itself, and CONTEXT.md gains skill budget and\nindex skill.\n\nRefs #2762\nRefs #2778\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* ADR 0102: link ADR 0099\n\nRefs #2762\nRefs #2778\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T02:33:49+04:00",
+          "tree_id": "afc617044670a503f797d9134066c0c3454d5293",
+          "url": "https://github.com/purlis/purlis/commit/2a9161f4bae3155c7a598898a003747b9a44c3a1"
+        },
+        "date": 1792539415997,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 889,
+            "unit": "MB",
+            "extra": "median of 3 samples: 770, 889, 977 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 350,
+            "unit": "MB",
+            "extra": "median of 6 samples: 403.9, 345.1, 349.9, 350.1, 350.9, 244.8 MB; window 159.5 MB, session host 190.6 MB"
           }
         ]
       }
