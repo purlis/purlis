@@ -922,8 +922,8 @@ fn a_theme_charter_would_not_read_is_refused_in_either_file() {
                      purlis-light, system, a theme folder's name or <extension>/<theme>"
                 ),
                 format!(
-                    "theme.font in {file} is not read — [theme] holds use, appearance and icons \
-                     and nothing else"
+                    "theme.font in {file} is not read — [theme] holds use, appearance, options \
+                     and icons and nothing else"
                 ),
             ],
             "{which:?}"
