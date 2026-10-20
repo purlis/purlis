@@ -18,6 +18,7 @@ import {
 import { putBack, showing } from "../theme/hoverPreview";
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, property } from "../theme/theme";
 import type { LiveSetting } from "./groups";
+import { ReadOnlySaid } from "../ReadOnlyLine";
 import { THEME_CHAT, type ThemeChatAsk } from "./links";
 import { forgetGalleries, themeRows } from "./themeGallery";
 import { BUSY_WAIT_MS, forgetSpecimens } from "./themeSpecimens";
@@ -417,6 +418,23 @@ describe("under the chosen card (#2331)", () => {
       expect(asked("theme_chat")).toEqual([]);
     } finally {
       window.removeEventListener(THEME_CHAT, hear);
+    }
+  });
+
+  it("opens no theme chat in a read-only project, and says why", async () => {
+    core(shown({ yours: mine("team", null, "project"), drawn: "project:team" }));
+    render(
+      <ReadOnlySaid.Provider value="This project is read-only.">
+        <Group at={{ plane: PLANE, workspace: null }} />
+      </ReadOnlySaid.Provider>,
+    );
+    await cards();
+    for (const name of ["Edit with a chat", "New theme"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveProperty("disabled", true);
+      expect(button.getAttribute("title")).toBe(
+        "This project is read-only. A theme made here could not be kept.",
+      );
     }
   });
 

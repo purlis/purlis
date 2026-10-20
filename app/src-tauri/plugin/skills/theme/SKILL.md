@@ -14,7 +14,8 @@ while the person watches. The person decides what to keep, with **Keep**, **Reve
 **Where the theme goes is where this chat works.** Started in a workspace, the draft is that
 workspace's, and Keep puts it in the workspace's theme folder of that name, else the project's.
 Started at the plane root, it is the project's. The person chooses the level by where they open
-the chat.
+the chat. A read-only project keeps no theme: a draft there can be drawn, checked and exported,
+and Keep is refused. When the project is read-only, tell the person that before you start.
 
 **What you write is the working copy.** `purlis theme draft` makes it in your temporary folder
 and hands it to the app, and the app writes the draft. Write only there and in folders of your
@@ -48,12 +49,12 @@ printed that path.
 
 ## 2. Write the theme
 
-Work in the working copy's `theme.json`. Every token there is, with Purlis Classic's value, is
-in Purlis Classic's own file, which you can read from a copy:
+Work in the working copy's `theme.json`. Purlis Classic's own file lists every token with its
+value; read it from a copy:
 
 ```bash
 purlis theme export purlis-classic --to "$TMPDIR/purlis-classic.zip"
-unzip -o "$TMPDIR/purlis-classic.zip" -d "$TMPDIR"
+unzip -o "$TMPDIR/purlis-classic.zip" -d "$TMPDIR/purlis-classic"
 ```
 
 The format and the check are documented in full: `purlis docs show themes`. Keep it small:
@@ -86,6 +87,13 @@ Start from what the person gave you:
 - **Another theme**: a workspace's or the project's theme folder is extended by its folder's
   name. For one of another level, read the `theme.json` at the `path` `purlis theme list --json`
   gives it and copy what you need into the working copy.
+
+Editing a theme of the machine's level, a built-in or an extension's makes a new theme of this
+workspace or project, and the original stays as it is: say so to the person.
+
+A draft brings no font. A face is drawn only when the project approved that file in the theme's
+folder, and the window shows the person a Notice for a face it refuses. Tell the person about
+each font you named that their folder does not already have.
 
 Done when the file is JSON with every value hex, a palette name, or a token's own type.
 

@@ -13,5 +13,9 @@ level the gallery is at (a workspace, or the project at the plane root), with th
 **Edit with a chat** opens it with one more thing named: the chosen card's theme, by the id
 `purlis theme list` gives it (`purlis_core::themechat`). The card is one the gallery shows at
 that level; an id with anything but the letters, digits and marks an id is spelled with opens
-nothing. Both are the window's alone (`theme_chat`), typed and never sent, by every rule of this
-record.
+nothing. That grammar holds an id's characters, not its words: an extension theme's id carries
+the theme's name, so plain words of the extension's can reach the typed line. That is accepted
+because the line is typed and never sent, and the person reads it before pressing Enter. Both
+are the window's alone (`theme_chat`), typed and never sent, by every rule of this record. In a
+read-only project the gallery offers neither, and says why: a draft made there could not be
+kept.

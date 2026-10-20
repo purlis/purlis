@@ -307,7 +307,8 @@ project's. Start one:
 - from Settings › Theme at the Project or Workspace level: **New theme**, or **Edit with a chat**
   on the chosen theme, which names that theme by its id from `purlis theme list`.
 
-Each opens a chat with its prompt typed and never sent: read it and press Enter.
+Each opens a chat with its prompt typed and never sent: read it and press Enter. A read-only
+project keeps no theme, so Settings › Theme offers neither button there and says why.
 
 ## The schema a theme names
 

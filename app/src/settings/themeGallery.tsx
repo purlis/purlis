@@ -27,6 +27,7 @@ import {
 } from "../theme/theme";
 import { Choice, SettingActions, type Badge, type RowIds } from "./components";
 import { askThemeChat } from "./links";
+import { useReadOnlySaid } from "../ReadOnlyLine";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { OptionsList } from "./themeOptions";
 import { useSpecimen } from "./themeSpecimens";
@@ -832,6 +833,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
       const card = gallery === undefined ? undefined : chosenCard(gallery);
       const [said, setSaid] = useState<string>();
       const [error, setError] = useState<readonly string[]>();
+      const readOnly = useReadOnlySaid();
       const duplicate = () => {
         if (card === undefined) return;
         void commands.themeDuplicate(at, card.id, card.level).then((made) => {
@@ -863,8 +865,16 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
       const workspace = at?.workspace ?? null;
       // New theme and Edit with a chat (#2333): the project's window opens the chat here, its
       // prompt typed and never sent.
+      // Why no theme chat opens here: no project at the machine's level, and a read-only one
+      // could not keep the draft.
+      const noChat =
+        at === null
+          ? NO_CHAT_HERE
+          : readOnly === undefined
+            ? undefined
+            : `${readOnly} A theme made here could not be kept.`;
       const chat = (edited: GalleryCard | undefined) => {
-        if (at === null) return;
+        if (at === null || noChat !== undefined) return;
         askThemeChat({
           plane: at.plane,
           workspace,
@@ -930,8 +940,8 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
                 className="ui-button"
                 // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
                 tabIndex={0}
-                disabled={card === undefined || at === null}
-                title={at === null ? NO_CHAT_HERE : undefined}
+                disabled={card === undefined || noChat !== undefined}
+                title={noChat}
                 onClick={() => chat(card)}
               >
                 Edit with a chat
@@ -942,8 +952,8 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
                 // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
                 tabIndex={0}
                 // Once the core has answered for this level, as every button here waits.
-                disabled={gallery === undefined || at === null}
-                title={at === null ? NO_CHAT_HERE : undefined}
+                disabled={gallery === undefined || noChat !== undefined}
+                title={noChat}
                 onClick={() => chat(undefined)}
               >
                 New theme

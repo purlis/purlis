@@ -2035,7 +2035,11 @@ fn every_theme_command_the_theme_skill_names_is_one_purlis_has_with_its_flags_an
         "the skill's create, edit, check and share paths each name their command: {named:?}"
     );
     let rig = Rig::new();
-    let this = include_str!("theme.rs");
+    // The tests above this section: its own literals prove nothing.
+    let whole = include_str!("theme.rs");
+    let this = &whole[..whole
+        .find("// ---- the theme skill")
+        .expect("the section's marker")];
     for (command, flags) in &named {
         let help = rig.run(&[command, "--help"]);
         assert_eq!(help.code, 0, "purlis theme {command}: {}", help.err);
