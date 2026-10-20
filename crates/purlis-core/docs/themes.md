@@ -205,16 +205,20 @@ refused it (`said`, and `token` when it was about one); `name` and `appearances`
 `notes` is what was left out of a theme that is drawn. A warning's `appearance` is the id of the
 appearance it was found in, and its `options` the value of each option it was drawn with (`{}`
 for a theme with none), in the theme's order of its options. Its `kind` is `contrast` (a `pair`,
-its `ratio`, and `under` when the back is a wash laid over another token), `ansi` (a terminal
+its `ratio`, and `under` when the back is a wash laid over another token, and `beneath` when
+that token is a wash laid over another in turn), `ansi` (a terminal
 colour too close to the terminal's background: `token`, `ratio`, `floor`) or
 `selected-not-apart` (the selected row drawn exactly as `other`), `selection-text-alone` (a
-colour for selected text on a selection left to the platform) or `line-does-not-fit` (a line of
+colour for selected text on a selection left to the platform), `line-does-not-fit` (a line of
 words taller than the box it is drawn in: its `density`, the `fit` it breaks, a `size`, a
 `line_height` and a `height` token, and the `line` and the `room` it has, in px at the default
-text size). A field (`.ui-input`, `size.control` tall) holds the window's words
+text size), or `style-without-a-face` (a style the theme draws in a font it brings with no face
+for it, so the browser makes it from another face: the font's `slot`, `ui`, `mono` or
+`terminal`, the `weight` and the `style`, `normal` or `italic`). A field (`.ui-input`, `size.control` tall) holds the window's words
 (`font-size.base`) and a strip a tab's title (`font-size.md`), each on the body line
 (`line-height.body`), in both densities. A button's label sits on a line of 1, so it fits
-wherever a field's text does. `tint` is the workspace colour it was found in, or `null` for the theme as it is and for a line. `held` has one entry for each combination
+wherever a field's text does. `tint` is the workspace colour it was found in, or `null` for the theme as it is, for a line
+and for a style; a line and a style are found once for each combination, never for a tint. `held` has one entry for each combination
 in which the window holds a consent floor: its `appearance` and `options` as a warning's, the
 `floors` (`ask`, `allow-apart`, `danger`, `danger-apart`, `state-marks`) and the `tokens` drawn
 as purlis's own. `hard_floors` has one entry for each hard floor a combination breaks: its

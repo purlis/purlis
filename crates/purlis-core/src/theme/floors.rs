@@ -10,7 +10,7 @@
 //!
 //! - **an ask contrasts with its surface** ([`Floor::Ask`]): an ask's words on the dialog it is
 //!   asked in, selected or not, its answers' words on their buttons, what it says on the danger
-//!   wash, and the needs-you count's number on its chip;
+//!   wash, selected or not, and the needs-you count's number on its chip;
 //! - **Allow is distinguishable from Keep blocked** ([`Floor::AllowApart`]): the two carry equal
 //!   weight on the control's own ground, and Allow is edged in `accent.base` where Keep blocked
 //!   is edged in `border.strong`. The two edges are at least [`ALLOW_APART`] apart as OKLab draws
@@ -105,10 +105,12 @@ const ALLOW: [(&str, &str); 2] = [
 
 /// Selected text a theme colours, on its selection over a consent surface, by the ground and the
 /// floor it is held to (#2706): every selected word is drawn in `selection.text`, so a trouble
-/// Notice's danger words are on `danger.surface` and a dialog's ask is on `surface.overlay`.
-const SELECTED: [(&str, Floor); 2] = [
+/// Notice's danger words are on `danger.surface`, a dialog's ask is on `surface.overlay`, and the
+/// command a profile will run as you is on the danger wash over the dialog (#2724).
+const SELECTED: [(&str, Floor); 3] = [
     ("danger.surface", Floor::Danger),
     ("surface.overlay", Floor::Ask),
+    ("danger.wash", Floor::Ask),
 ];
 
 /// Whether `token` is a consent surface's or a state mark's: what purlis draws its own value of
@@ -247,10 +249,7 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
             .then(|| Failure {
                 floor,
                 tinted,
-                tokens: [Some(pair.front), Some(pair.back), pair.under]
-                    .into_iter()
-                    .flatten()
-                    .collect(),
+                tokens: pair.tokens().collect(),
             })
     };
     let tints = theme
@@ -281,11 +280,7 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
         .collect();
     if !moving.is_empty() && !theme.tint.tabs().is_empty() {
         // Only the tokens of those pairs are turned: each is drawn as the whole tint draws it.
-        let only: Vec<&'static str> = moving
-            .iter()
-            .flat_map(|(_, pair)| [Some(pair.front), Some(pair.back), pair.under])
-            .flatten()
-            .collect();
+        let only: Vec<&'static str> = moving.iter().flat_map(|(_, pair)| pair.tokens()).collect();
         for (degree, most) in (0_u32..).zip(chromas.of(theme).to_vec()) {
             let drawn = tint::turned_at(theme, f64::from(degree), most, &only);
             found.extend(moving.iter().filter_map(|one| failing(&drawn, true, *one)));
@@ -300,13 +295,11 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
 /// middle and no farther from it, so rounding the shade away from the middle brings it nearer.
 pub(super) fn moves_with_hue(theme: &ResolvedTheme, pair: &Pair) -> bool {
     let turned = |token: &str| theme.tint.tabs().contains(&token);
-    let tokens = [Some(pair.front), Some(pair.back), pair.under];
-    if !tokens.into_iter().flatten().any(turned) {
+    if !pair.tokens().any(turned) {
         return false;
     }
     let see_through = |token: &str| matches!(theme.value(token).len(), 5 | 9);
-    if pair.under.is_some() || pair.fade.is_some() || tokens.into_iter().flatten().any(see_through)
-    {
+    if pair.under.is_some() || pair.fade.is_some() || pair.tokens().any(see_through) {
         return true;
     }
     // The two as the screen draws them, any alpha laid over what it is drawn on.

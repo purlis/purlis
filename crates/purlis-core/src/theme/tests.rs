@@ -1007,10 +1007,7 @@ fn the_check_measures_a_see_through_colour_over_what_it_is_drawn_on() {
 #[test]
 fn every_pair_names_tokens_that_exist() {
     for pair in PAIRS {
-        for token in [Some(pair.front), Some(pair.back), pair.under]
-            .into_iter()
-            .flatten()
-        {
+        for token in pair.tokens() {
             assert!(TOKENS.contains(&token), "{token}");
         }
     }

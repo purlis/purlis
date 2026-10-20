@@ -345,7 +345,9 @@ fn tints_found(report: &Report) -> Vec<Option<&'static str>> {
             | Finding::Ansi { tint, .. }
             | Finding::SelectedNotApart { tint, .. } => *tint,
             // Said of the theme as written, never of a tint.
-            Finding::SelectionTextAlone | Finding::LineDoesNotFit { .. } => None,
+            Finding::SelectionTextAlone
+            | Finding::LineDoesNotFit { .. }
+            | Finding::StyleWithoutAFace { .. } => None,
         })
         .collect();
     found.dedup();

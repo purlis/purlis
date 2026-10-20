@@ -1,14 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The theme check's pairs and fits of #2522 and #2706, at the engine's interface: a theme in,
-//! the report out.
+//! The theme check's pairs and fits of #2522 and #2706, its pairs laid over two layers (#2724)
+//! and its styles drawn without a face (#2736), at the engine's interface: a theme in, the
+//! report out.
 
 use serde_json::{Value, json};
 
 use super::super::{
-    Density, FITS, Finding, Floor, PAIRS, Report, ResolvedTheme, built_in, built_ins, check,
-    check_every, draw, load, warnings_said,
+    Checked, Density, FITS, Finding, Floor, PAIRS, Report, ResolvedTheme, Style, built_in,
+    built_ins, check, check_every, classic, draw, load, purlis, warnings_said,
 };
 
 /// The syntax roles the editor draws.
@@ -537,4 +538,211 @@ fn a_line_that_exactly_fills_its_box_fits() {
         Finding::LineDoesNotFit { density: Density::Compact, line, room, .. }
             if *line == 19.5 && *room == 18.0
     )));
+}
+
+// ---------------------------------------------------------------------------------------
+// A pair laid over two layers (#2724)
+// ---------------------------------------------------------------------------------------
+
+/// The ratio the check found selected text at on the selection over the danger wash over the
+/// dialog, as the theme is.
+fn found_on_the_wash(report: &Report) -> Option<f64> {
+    report.findings.iter().find_map(|one| match one {
+        Finding::Contrast {
+            tint: None,
+            pair,
+            ratio,
+        } if pair.front == "selection.text"
+            && pair.under == Some("danger.wash")
+            && pair.beneath == Some("surface.overlay") =>
+        {
+            Some(*ratio)
+        }
+        _ => None,
+    })
+}
+
+/// A dark theme with a clear selection, a half red danger wash and selected text in `text`.
+fn washed_selection(text: &str) -> ResolvedTheme {
+    dark(
+        json!({
+            "selection.background": "#00000000",
+            "selection.text": text,
+            "danger.wash": "#ff000080",
+        }),
+        json!({}),
+    )
+}
+
+#[test]
+fn the_command_on_the_danger_wash_is_held_on_a_selection_over_the_wash_over_the_dialog() {
+    let pair = PAIRS
+        .iter()
+        .find(|pair| pair.under == Some("danger.wash") && pair.back == "selection.background")
+        .expect("the selection on the danger wash is held");
+    assert_eq!(
+        (pair.front, pair.beneath, pair.floor),
+        ("selection.text", Some("surface.overlay"), 4.5)
+    );
+    assert!(!pair.selected, "every selected word is drawn in its colour");
+}
+
+#[test]
+fn a_pair_over_two_layers_lays_both_from_the_bottom_up() {
+    // Half of #ff0000 laid over Classic's dialog (#1f1f1c) is #8f0f0e, and a clear selection
+    // over that leaves it as it is: selected text of that colour vanishes into it.
+    assert_eq!(
+        found_on_the_wash(&check(&washed_selection("#8f0f0e"))),
+        Some(1.0)
+    );
+    // The wash's own colour, which it would be read as if the dialog under it were left out,
+    // is apart from what is drawn.
+    assert_eq!(
+        found_on_the_wash(&check(&washed_selection("#ff0000"))),
+        Some(2.34)
+    );
+}
+
+#[test]
+fn a_pair_over_two_layers_is_said_with_both() {
+    let theme = load(&json!({
+        "name": "Probe",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
+            "selection.background": "#00000000",
+            "selection.text": "#8f0f0e",
+            "danger.wash": "#ff000080",
+        } }]
+    }))
+    .theme;
+    let said = warnings_said(&theme, &check_every(&theme));
+    assert!(
+        said.iter().any(|line| line.starts_with(
+            "selection.text on selection.background over danger.wash over surface.overlay: \
+             1.00, under 4.5"
+        )),
+        "{said:#?}"
+    );
+    let finding = check(theme.first())
+        .findings
+        .into_iter()
+        .find(|one| matches!(one, Finding::Contrast { pair, .. } if pair.beneath.is_some()))
+        .expect("the pair over two layers");
+    let json = serde_json::to_value(finding).expect("JSON");
+    assert_eq!(json["pair"]["under"], "danger.wash");
+    assert_eq!(json["pair"]["beneath"], "surface.overlay");
+}
+
+#[test]
+fn selected_text_that_vanishes_into_the_danger_wash_is_held_by_the_ask_floor() {
+    // Grey selected text reads on every ground but the red wash over the dialog: the Ask floor
+    // holds it, and purlis draws its own selection, the platform's, so the wash stays the
+    // theme's.
+    let theme = washed_selection("#999999");
+    let report = check(&theme);
+    assert_eq!(found_on_the_wash(&report), Some(3.29));
+    assert_eq!(
+        found_over(&report, "selection.text", "surface.overlay"),
+        None
+    );
+    let drawn = draw(&theme);
+    let held = drawn.held.expect("the floor was held");
+    assert_eq!(held.floors, [Floor::Ask]);
+    assert_eq!(held.tokens, ["selection.background", "selection.text"]);
+    let drawn = drawn.theme.expect("a theme is always drawn");
+    for token in ["selection.background", "selection.text"] {
+        assert_eq!(drawn.value(token), classic_dark().value(token), "{token}");
+    }
+    assert_eq!(drawn.value("danger.wash"), "#ff000080");
+}
+
+#[test]
+fn purlis_s_see_through_selection_reads_on_the_danger_wash_in_every_appearance() {
+    for one in &purlis().appearances {
+        assert_eq!(found_on_the_wash(&check(one)), None, "{}", one.id);
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// A style drawn without a face (#2736)
+// ---------------------------------------------------------------------------------------
+
+fn faceless(report: &Report) -> Vec<&Finding> {
+    report
+        .findings
+        .iter()
+        .filter(|one| matches!(one, Finding::StyleWithoutAFace { .. }))
+        .collect()
+}
+
+/// Purlis's dark appearance with its code font left only its upright regular.
+fn thin_mono() -> ResolvedTheme {
+    let mut thin = purlis().first().clone();
+    thin.fonts
+        .mono
+        .faces
+        .retain(|one| one.weight == 400 && one.style == Style::Normal);
+    thin
+}
+
+#[test]
+fn each_style_drawn_without_a_face_is_a_finding_once_naming_its_slot_and_style() {
+    // Purlis is tinted by every workspace colour; the faces are found once, not in each tint.
+    let report = check(&thin_mono());
+    assert_eq!(
+        faceless(&report),
+        [
+            &Finding::StyleWithoutAFace {
+                slot: "mono",
+                weight: 400,
+                style: Style::Italic,
+            },
+            &Finding::StyleWithoutAFace {
+                slot: "mono",
+                weight: 700,
+                style: Style::Normal,
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_style_drawn_without_a_face_is_said_by_its_slot_and_style() {
+    let thin = thin_mono();
+    let checked = [Checked {
+        appearance: thin.id.clone(),
+        options: Default::default(),
+        report: check(&thin),
+        held: None,
+        hard: Vec::new(),
+    }];
+    let said = warnings_said(purlis(), &checked);
+    assert_eq!(
+        said,
+        [
+            "mono draws italic text at weight 400 with no face of its own, so the browser makes \
+             it from another face",
+            "mono draws upright text at weight 700 with no face of its own, so the browser makes \
+             it from another face",
+        ]
+    );
+    let json = serde_json::to_value(faceless(&checked[0].report)[0]).expect("JSON");
+    assert_eq!(
+        json,
+        json!({ "kind": "style-without-a-face", "slot": "mono", "weight": 400, "style": "italic" })
+    );
+}
+
+#[test]
+fn purlis_and_purlis_classic_draw_every_style_in_a_face_of_its_own() {
+    for theme in [classic(), purlis()] {
+        for one in check_every(theme) {
+            assert_eq!(
+                faceless(&one.report),
+                Vec::<&Finding>::new(),
+                "{} {}",
+                theme.name,
+                one.appearance
+            );
+        }
+    }
 }
