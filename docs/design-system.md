@@ -622,6 +622,11 @@ left out of it, each appearance's contrast findings with the pair and ratio as w
 consent floors the window holds in each combination with the tokens it draws as purlis's own,
 and the hard floors, as text or as `--json` for a chat. It
 exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such theme.
+**A chat's theme draft** (#2332) is a theme folder in the plane's local folder, read by the same
+engine (`theme::drafts`) and drawn only in its chat's workspace while it holds every hard floor
+(primary text, the focus ring and the terminal's words at 3:1, as drawn, in every tint); the
+window's draft strip (`ThemeDraftStrip.tsx`) has Keep, Revert and Compare, and the revert key
+is ⌘⇧⌫ (Ctrl+Shift+Backspace elsewhere).
 `purlis docs show themes` has the JSON's shape. **`purlis theme import <file>`** (#2334)
 makes a theme folder from a VS Code colour theme, a base16 or base24 scheme, an iTerm2 colour
 preset, a Ghostty theme or a theme folder's zip: the engine's `import` maps each kind through a

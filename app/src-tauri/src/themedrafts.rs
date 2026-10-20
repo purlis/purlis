@@ -1,0 +1,582 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **Theme drafts in the window** (#2332, spec #2313): which chat's draft a workspace draws, the
+//! strip that names it, and the person's Keep, Revert and the moves up a level.
+//!
+//! The theme engine decides everything about a draft ([`purlis_core::theme::drafts`]): where it
+//! is, how it is read, whether it holds the hard floors, what Keep and Revert leave on disk. This
+//! is the app's half: **which chats work where**, from this app's own record of its open chats
+//! ([`crate::chats::Chats::drafting`]), never from a path a chat wrote; and the last good version
+//! of each draft, held in memory, which stays drawn while a save breaks a hard floor.
+//!
+//! Keep, Revert, Revert all (the revert key) and the moves up a level are the person's presses in
+//! the window: each is on the window-only list (`purlis_session_protocol::ui::WINDOW_ONLY`).
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex, PoisonError};
+
+use purlis_core::theme::{self, drafts};
+
+use crate::chats::Drafting;
+
+/// One theme draft, as the strip and the close of its chat name it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct WindowDraft {
+    /// The theme folder's name.
+    pub folder: String,
+    /// The chat that writes it: its number here, and what the person calls it.
+    pub session: u32,
+    pub chat: String,
+    /// The workspace the chat works in, `None` at the plane root: where the draft is drawn.
+    pub workspace: Option<String>,
+    /// Where Keep puts it: `workspace` (the chat's workspace's `themes/`) or `project`.
+    pub kept_to: String,
+    /// Whether Keep replaces a theme folder that is there: the window asks the person first.
+    pub replaces: bool,
+    /// Whether the window draws it now: the draft, or its last good version.
+    pub drawn: bool,
+    /// The hard floors the draft as saved breaks, in the engine's words: why it is not drawn.
+    pub broken: Vec<String>,
+    /// Why the engine refused the draft as saved, when it did.
+    pub refused: Vec<String>,
+    /// What the refused draft's Notice may offer (#2647): `fonts` where every font file it waits
+    /// on is one the project brings in the folder the draft is kept to, with those bytes, and
+    /// the project asks again about font files alone, so its trust ask lifts the refusal; the
+    /// rules of a refused theme otherwise. `None` for a draft not refused for a font.
+    pub review: Option<crate::extensions::ThemeReview>,
+}
+
+/// The chats of the plane `held` that work at `workspace` (`None`: the plane root).
+pub(crate) fn chats_at(held: &crate::planes::Held, workspace: Option<&str>) -> Vec<Drafting> {
+    held.chats()
+        .drafting()
+        .into_iter()
+        .filter(|one| one.workspace.as_deref() == workspace)
+        .collect()
+}
+
+/// Each draft's last good version, by its plane, its chat and its folder.
+type GoodVersions = HashMap<(PathBuf, String, String), theme::Theme>;
+
+/// The last good version of each draft, by plane, chat and folder: what stays drawn while a
+/// save of it breaks a hard floor. In memory only; a draft's first draw after a launch has none.
+fn last_good() -> std::sync::MutexGuard<'static, GoodVersions> {
+    static GOOD: LazyLock<Mutex<GoodVersions>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+    GOOD.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The drafts of `chats` at the plane `plane`, in `workspace`, with each chat's record.
+fn drafts_of<'a>(
+    config: &Path,
+    plane: &Path,
+    workspace: Option<&str>,
+    chats: &'a [Drafting],
+) -> Vec<(drafts::Draft, &'a Drafting)> {
+    let ids: Vec<&str> = chats.iter().map(|one| one.id.as_str()).collect();
+    let place = drafts::Place { plane, workspace };
+    drafts::at(Some(config), place, &ids)
+        .into_iter()
+        .filter_map(|draft| {
+            let chat = chats.iter().find(|one| one.id == draft.chat)?;
+            Some((draft, chat))
+        })
+        .collect()
+}
+
+fn kept_to_word(kept_to: &drafts::KeptTo) -> String {
+    match kept_to {
+        drafts::KeptTo::Workspace(_) => "workspace",
+        drafts::KeptTo::Project => "project",
+    }
+    .to_owned()
+}
+
+/// **What the window draws for the drafts where it is**: the first draft of the chats working
+/// there, drawn by the engine with the hard floors and the consent floors held, or its last good
+/// version; `None` when no chat there has a draft. The `Drawn` is `None` when neither the draft
+/// nor a good version of it can be drawn, and the levels' theme is.
+pub(crate) fn drafted_here(
+    config: &Path,
+    plane: &Path,
+    workspace: Option<&str>,
+    chats: &[Drafting],
+    levels: &theme::Levels,
+    light: bool,
+    contrast: theme::Contrast,
+) -> Option<(Option<theme::Drawn>, WindowDraft)> {
+    if chats.is_empty() {
+        return None;
+    }
+    let (draft, chat) = drafts_of(config, plane, workspace, chats)
+        .into_iter()
+        .next()?;
+    let place = drafts::Place { plane, workspace };
+    let read = drafts::read(Some(config), place, &draft, false);
+    // The draft is drawn in the appearance the levels chose for its folder, else following the
+    // system.
+    let appearance = levels
+        .each()
+        .find(|(_, choice)| choice.theme == draft.folder)
+        .map_or(Some("system".to_owned()), |(_, choice)| {
+            choice.appearance.clone()
+        });
+    let key = (
+        plane.to_path_buf(),
+        draft.chat.clone(),
+        draft.folder.clone(),
+    );
+    let good = last_good().get(&key).cloned();
+    let drafted = drafts::drafted(
+        read,
+        good.as_ref(),
+        appearance.as_deref(),
+        if light {
+            theme::Appearance::Light
+        } else {
+            theme::Appearance::Dark
+        },
+        contrast,
+    );
+    if let Some(theme) = &drafted.good {
+        last_good().insert(key, theme.clone());
+    }
+    let window = WindowDraft {
+        folder: draft.folder.clone(),
+        session: chat.session,
+        chat: chat.name.clone(),
+        workspace: chat.workspace.clone(),
+        kept_to: kept_to_word(&draft.kept_to),
+        replaces: drafts::replaces(plane, &draft),
+        drawn: drafted.drawn.is_some(),
+        broken: drafted.broken.iter().map(drafts::BrokenIn::said).collect(),
+        refused: drafted.refused.iter().map(|one| one.said.clone()).collect(),
+        review: draft_review(config, plane, &drafted.refused),
+    };
+    Some((drafted.drawn, window))
+}
+
+/// **What a refused draft's Notice may offer** (#2647): the faces its refusal waits on, each
+/// `<path in the project> <sha-256>` of the folder the draft is kept to. Only where the project
+/// itself brings every one of them, with those bytes, can its trust ask lift the refusal; then
+/// the rules of any refused theme hold (`planes::theme_review`: font files alone, an approved
+/// project). A draft's font the project does not bring is no project's to allow, so nothing is
+/// offered for it.
+fn draft_review(
+    config: &Path,
+    plane: &Path,
+    refused: &[theme::Complaint],
+) -> Option<crate::extensions::ThemeReview> {
+    let mut faces: Vec<&str> = refused
+        .iter()
+        .filter_map(|one| one.awaits_approval.as_deref())
+        .collect();
+    if faces.is_empty() {
+        return None;
+    }
+    faces.sort_unstable();
+    faces.dedup();
+    let brings = purlis_core::machine::Contribution::read(plane)
+        .contributes
+        .fonts;
+    let all_brought = faces.iter().all(|face| {
+        face.rsplit_once(' ').is_some_and(|(path, digest)| {
+            brings
+                .get(path)
+                .is_some_and(|listed| listed.split(' ').next() == Some(digest))
+        })
+    });
+    if !all_brought {
+        return None;
+    }
+    crate::extensions::review_kept(plane, &faces, || crate::planes::theme_review(config, plane))
+}
+
+/// The theme drafts of the chat `session`, as the window asks before it closes that chat: each
+/// draft, where Keep puts it. Empty for a chat with none.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_drafts_of_chat(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+) -> Result<Vec<WindowDraft>, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let chats: Vec<Drafting> = held
+        .chats()
+        .drafting()
+        .into_iter()
+        .filter(|one| one.session == session)
+        .collect();
+    let config = crate::extensions::config_root()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(chat) = chats.first() else {
+            return Vec::new();
+        };
+        drafts_of(&config, &root, chat.workspace.as_deref(), &chats)
+            .into_iter()
+            .map(|(draft, chat)| WindowDraft {
+                replaces: drafts::replaces(&root, &draft),
+                folder: draft.folder,
+                session: chat.session,
+                chat: chat.name.clone(),
+                workspace: chat.workspace.clone(),
+                kept_to: kept_to_word(&draft.kept_to),
+                drawn: false,
+                broken: Vec::new(),
+                refused: Vec::new(),
+                review: None,
+            })
+            .collect()
+    })
+    .await
+    .map_err(|err| format!("reading the chat's theme drafts did not finish: {err}"))
+}
+
+/// The draft `folder` of the chat `session` of the plane `held`, with the chat's workspace.
+fn draft_of(
+    held: &crate::planes::Held,
+    session: u32,
+    folder: &str,
+) -> Result<(drafts::Draft, Option<String>), String> {
+    let chat = held
+        .chats()
+        .drafting()
+        .into_iter()
+        .find(|one| one.session == session)
+        .ok_or_else(|| "that chat is not open here, so its theme draft is not either".to_owned())?;
+    let config = crate::extensions::config_root()?;
+    let folders = theme::Folders::of(Some(&config), Some(held.root()), chat.workspace.as_deref());
+    Ok((
+        drafts::Draft {
+            kept_to: drafts::kept_to(&folders, chat.workspace.as_deref(), folder),
+            chat: chat.id,
+            folder: folder.to_owned(),
+        },
+        chat.workspace,
+    ))
+}
+
+/// **Keep** pressed: the engine copies the draft of the chat `session` into the real folder it is
+/// a draft of and deletes the draft. Answers what it did, in a sentence. Only a draft the window
+/// draws is kept, and only as the person was shown it: `kept_to` (`workspace` or `project`, as
+/// `WindowDraft::kept_to` says) and `replaces`, which the window sends once the person agreed to
+/// replace the folder there. When either has changed since, nothing is kept.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_draft_keep(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+    folder: String,
+    kept_to: String,
+    replaces: bool,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let (draft, workspace) = draft_of(&held, session, &folder)?;
+    let config = crate::extensions::config_root()?;
+    // What the person was shown: Keep does that, or nothing.
+    let seen = drafts::Seen {
+        kept_to: match (kept_to.as_str(), workspace.as_deref()) {
+            ("project", _) => drafts::KeptTo::Project,
+            ("workspace", Some(name)) => drafts::KeptTo::Workspace(name.to_owned()),
+            _ => return Err(format!("{kept_to} is not where Keep puts a theme draft")),
+        },
+        replaces,
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let place = drafts::Place {
+            plane: &root,
+            workspace: workspace.as_deref(),
+        };
+        let kept = drafts::keep(Some(&config), place, &draft, &seen)?;
+        forget(&root, &draft);
+        Ok(match kept.kept_to {
+            drafts::KeptTo::Workspace(name) => {
+                format!("The theme {folder} is kept in the workspace {name}'s themes.")
+            }
+            drafts::KeptTo::Project => {
+                format!("The theme {folder} is kept in the project's themes, for every workspace.")
+            }
+        })
+    })
+    .await
+    .map_err(|err| format!("keeping the theme draft did not finish: {err}"))?
+}
+
+/// **Revert** pressed: the engine deletes the draft of the chat `session`.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_draft_revert(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+    folder: String,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let (draft, _) = draft_of(&held, session, &folder)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        drafts::revert(&root, &draft)?;
+        forget(&root, &draft);
+        Ok(())
+    })
+    .await
+    .map_err(|err| format!("reverting the theme draft did not finish: {err}"))?
+}
+
+/// **The revert key**: every draft of the chats working at `workspace` (the plane root for
+/// `None`) is deleted at once, so the window draws its kept theme again whatever the drafts
+/// said. Answers how many were reverted.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_drafts_revert_here(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+) -> Result<u32, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let chats = chats_at(&held, workspace.as_deref());
+    let config = crate::extensions::config_root()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut reverted = 0;
+        for (draft, _) in drafts_of(&config, &root, workspace.as_deref(), &chats) {
+            drafts::revert(&root, &draft)?;
+            forget(&root, &draft);
+            reverted += 1;
+        }
+        Ok(reverted)
+    })
+    .await
+    .map_err(|err| format!("reverting the theme drafts did not finish: {err}"))?
+}
+
+/// **A chat's `purlis theme draft`** ([`purlis_core::hookwire::Ask::ThemeDraft`], #2332): the
+/// draft is started, or its theme files saved, **in the drafts folder of the chat whose token
+/// the line carries**, by this app's record of that chat and where it works; the line names no
+/// chat. Answers what the window draws of it, as lines the command prints.
+pub(crate) fn asked(
+    held: &crate::planes::Held,
+    ask: &purlis_core::hookwire::ThemeDraftAsk,
+) -> purlis_core::hookwire::Answer {
+    use purlis_core::hookwire::Answer;
+    use purlis_core::repocmd::Say;
+    let Some(chat) = held
+        .chats()
+        .drafting()
+        .into_iter()
+        .find(|one| one.session == ask.chat)
+    else {
+        return Answer::No {
+            why: "this app has no record of this chat, so it keeps no theme draft for it"
+                .to_owned(),
+        };
+    };
+    // This machine's store as the app resolved it at startup: whose fonts the project approved.
+    let config = held.config().map(Path::to_path_buf);
+    let place = drafts::Place {
+        plane: held.root(),
+        workspace: chat.workspace.as_deref(),
+    };
+    let here = chat.workspace.as_deref().map_or_else(
+        || "at the plane root".to_owned(),
+        |name| format!("in the workspace {name}"),
+    );
+    let kept_to = |kept_to: &drafts::KeptTo| match kept_to {
+        drafts::KeptTo::Workspace(name) => format!("the workspace {name}'s themes"),
+        drafts::KeptTo::Project => "the project's themes, for every workspace".to_owned(),
+    };
+    let folder = &ask.folder;
+    let Some(files) = &ask.files else {
+        return match drafts::start(config.as_deref(), place, &chat.id, folder) {
+            // A draft made now is said as done, one that was there as information: the command
+            // refreshes its working copy from a draft made now.
+            Ok(started) => {
+                let said = format!(
+                    "The theme draft {folder} is {}, drawn only {here}; Keep puts it in {}.",
+                    if started.made { "started" } else { "there" },
+                    kept_to(&started.kept_to)
+                );
+                Answer::Said {
+                    lines: vec![if started.made {
+                        Say::Done(said)
+                    } else {
+                        Say::Info(said)
+                    }],
+                    code: 0,
+                }
+            }
+            Err(why) => Answer::No { why },
+        };
+    };
+    match drafts::save(config.as_deref(), place, &chat.id, folder, files) {
+        Ok(saved) if !saved.broken.is_empty() => {
+            let mut lines: Vec<Say> = saved
+                .broken
+                .iter()
+                .take(8)
+                .map(|one| Say::Warn(one.said()))
+                .collect();
+            lines.push(Say::Fail(format!(
+                "The theme draft {folder} is saved, and not drawn: it breaks a hard floor, so the \
+                 window keeps its last good version. Fix it and save again."
+            )));
+            Answer::Said { lines, code: 1 }
+        }
+        Ok(saved) if !saved.refused.is_empty() => {
+            let mut lines: Vec<Say> = saved
+                .refused
+                .iter()
+                .take(8)
+                .map(|one| Say::Warn(one.said.clone()))
+                .collect();
+            lines.push(Say::Fail(format!(
+                "The theme draft {folder} is saved, and not drawn: it is refused. Fix it and save \
+                 again."
+            )));
+            Answer::Said { lines, code: 1 }
+        }
+        Ok(saved) => Answer::Said {
+            lines: vec![Say::Done(format!(
+                "The theme draft {folder} is saved and drawn {here}; Keep puts it in {}.",
+                kept_to(&saved.kept_to)
+            ))],
+            code: 0,
+        },
+        Err(why) => Answer::No { why },
+    }
+}
+
+/// The last good version of `draft` is gone with it.
+fn forget(plane: &Path, draft: &drafts::Draft) {
+    last_good().remove(&(
+        plane.to_path_buf(),
+        draft.chat.clone(),
+        draft.folder.clone(),
+    ));
+}
+
+/// **Use in the whole project** pressed: the engine moves the workspace's theme folder `folder`
+/// to the project's `themes/`, never over one there. Answers what it did.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_move_to_project(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: String,
+    folder: String,
+) -> Result<String, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        drafts::move_to_project(&root, &workspace, &folder).map(|_| {
+            format!(
+                "The theme {folder} is the project's now, in every workspace. Its font files are \
+                 asked about again with the project."
+            )
+        })
+    })
+    .await
+    .map_err(|err| format!("moving the theme did not finish: {err}"))?
+}
+
+/// **Copy to my machine** pressed: the engine copies the project's or a workspace's theme folder
+/// `folder` to the person's own themes, never over one there, with only the font files approved
+/// with the project. Answers what it did.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_copy_to_machine(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+    folder: String,
+) -> Result<String, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    let config = crate::extensions::config_root()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        drafts::copy_to_machine(&config, &root, workspace.as_deref(), &folder).map(|copied| {
+            let mut said = format!("The theme {folder} is one of your own themes now.");
+            for one in copied.left_out {
+                said.push(' ');
+                said.push_str(&one);
+                said.push('.');
+            }
+            said
+        })
+    })
+    .await
+    .map_err(|err| format!("copying the theme did not finish: {err}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chat(session: u32, workspace: Option<&str>) -> Drafting {
+        Drafting {
+            session,
+            id: purlis_core::reopen::mint(),
+            name: format!("chat {session}"),
+            workspace: workspace.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_chat_s_draft_is_drawn_where_it_works_and_its_last_good_version_stays() {
+        let home = tempfile::tempdir().unwrap();
+        let config = home.path().join("config");
+        let plane = home.path().join("plane");
+        std::fs::create_dir_all(plane.join(".purlis")).unwrap();
+        std::fs::create_dir_all(plane.join("workspaces/alpha")).unwrap();
+        std::fs::create_dir_all(&config).unwrap();
+        let one = chat(3, Some("alpha"));
+        let place = drafts::Place {
+            plane: &plane,
+            workspace: Some("alpha"),
+        };
+        let path = drafts::start(Some(&config), place, &one.id, "dusk")
+            .unwrap()
+            .path;
+        let write = |tokens: serde_json::Value| {
+            let theme = serde_json::json!({
+                "name": "Dusk",
+                "appearances": [{ "id": "dark", "appearance": "dark", "tokens": tokens }]
+            });
+            std::fs::write(path.join("theme.json"), theme.to_string()).unwrap();
+        };
+        let levels = theme::Levels::default();
+        let chats = vec![one.clone()];
+        let ask = |workspace: Option<&str>| {
+            drafted_here(
+                &config,
+                &plane,
+                workspace,
+                &chats,
+                &levels,
+                false,
+                theme::Contrast::Standard,
+            )
+        };
+        write(serde_json::json!({ "accent.base": "#4477dd" }));
+        let (drawn, draft) = ask(Some("alpha")).expect("a draft");
+        assert!(draft.drawn && draft.broken.is_empty());
+        assert_eq!((draft.session, draft.chat.as_str()), (3, "chat 3"));
+        let accent = |drawn: Option<theme::Drawn>| {
+            drawn
+                .and_then(|one| one.theme)
+                .map(|one| one.value("accent.base").to_owned())
+        };
+        assert_eq!(accent(drawn).as_deref(), Some("#4477dd"));
+        write(serde_json::json!({ "accent.base": "#dd7744", "surface.sunken": "#f2f2f2" }));
+        let (drawn, draft) = ask(Some("alpha")).expect("a draft");
+        assert!(!draft.broken.is_empty());
+        assert_eq!(
+            accent(drawn).as_deref(),
+            Some("#4477dd"),
+            "the last good one"
+        );
+    }
+}

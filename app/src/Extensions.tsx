@@ -11,6 +11,7 @@ import {
   type InstalledExtensions,
   type ThemeReview,
   type ThemeTrouble,
+  type WindowDraft,
   type WindowOption,
   type PlaneId,
 } from "./bindings";
@@ -46,6 +47,7 @@ import { drawNatively, forgetNativeWindow } from "./theme/native";
 import { AnswerBar } from "./AnswerBar";
 import { EmptyState } from "./EmptyState";
 import { yourEditor } from "./yourEditor";
+import { setDraftHere } from "./themeDrafts";
 
 /**
  * What has contributed what to this window, and the question charter asks before anything new
@@ -469,6 +471,7 @@ export async function themeOptionsInForce(): Promise<readonly WindowOption[]> {
       systemAsksMoreContrast(),
       false,
       where,
+      null,
     );
     if (answered.status !== "ok") return [];
     const given = answered.data as typeof answered.data | null;
@@ -686,6 +689,10 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
       theirs: theirs.path || undefined,
     });
     draw(handed);
+    // A chat's theme draft where the window is draws in place of the pick (#2332): only the
+    // core knows of one, so it is asked after this frame, and draws only when there is one.
+    if (where !== null) void drawADraftOver(mine);
+    else sayTheDraft(null);
     return;
   }
   const again = surveyAgain;
@@ -699,6 +706,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
       systemAsksMoreContrast(),
       again,
       where,
+      null,
     );
   } catch {
     return;
@@ -708,6 +716,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   if (given === null || typeof given !== "object") return;
   if (again) surveyAgain = false;
   if (mine !== drawing) return;
+  sayTheDraft(given.draft);
   following = given.follows_system === true;
   if (following) followSystem();
   sayTheRefused(given.refused, given.review ?? null);
@@ -720,4 +729,96 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
     sayTheFloors(typeof given.floors === "string" ? given.floors : null, { theirs });
     draw(theme);
   }
+}
+
+/** What the core said of the theme draft where the window is (#2332), for its strip. */
+function sayTheDraft(draft: WindowDraft | null | undefined) {
+  const here = where !== null && draft != null && typeof draft === "object" ? draft : null;
+  setDraftHere(here === null || where === null ? null : { plane: where.plane, workspace: where.workspace, draft: here });
+  sayTheDraftRefused(here);
+}
+
+/**
+ * **A draft the engine refuses is said as a refused theme is** (#2332, #2647): in a Notice, with
+ * Review and allow only by the rules of any refused theme. The core says `fonts` only where every
+ * font file the draft waits on is one the project brings where the draft is kept to, and the
+ * project asks again about font files alone: its trust ask is then what lifts the refusal.
+ */
+function sayTheDraftRefused(draft: WindowDraft | null) {
+  if (draft === null || !Array.isArray(draft.refused) || draft.refused.length === 0) {
+    sayAboutThisMachine("theme draft refused", undefined);
+    return;
+  }
+  const plane = draft.review === "fonts" ? where?.plane : undefined;
+  sayAboutThisMachine("theme draft refused", {
+    severity: "warn",
+    detail: `Theme draft “${plainLine(draft.folder)}” is not drawn: ${complaintsSaid(draft.refused)}.`,
+    remedy:
+      plane !== undefined
+        ? "review the font files that changed and allow them, and the draft is drawn with them; or fix the draft and save it again"
+        : "fix the draft and save it again; a font file of the project's is drawn once you approve the project again",
+    ...(plane === undefined ? {} : { review: plane }),
+  });
+}
+
+/**
+ * **A draft over a pick the window drew at once** (#2332): the core is asked as it is for every
+ * other theme, and only an answer that names a draft it draws is drawn. Anything else keeps the
+ * pick, which is what the core would have answered.
+ */
+async function drawADraftOver(mine: number): Promise<void> {
+  const on = allowed === "every" ? null : [...allowed];
+  let answered: Awaited<ReturnType<typeof commands.themeInForce>>;
+  try {
+    answered = await commands.themeInForce(
+      picked,
+      on,
+      systemIsLight(),
+      systemAsksMoreContrast(),
+      false,
+      where,
+      null,
+    );
+  } catch {
+    return;
+  }
+  const given = answered.status === "ok" ? (answered.data as typeof answered.data | null) : null;
+  if (mine !== drawing) return;
+  if (given === null || typeof given !== "object") return;
+  sayTheDraft(given.draft);
+  if (given.draft?.drawn !== true || !given.theme) return;
+  following = given.follows_system === true;
+  if (following) followSystem();
+  sayTheFloors(typeof given.floors === "string" ? given.floors : null, {});
+  draw(given.theme as unknown as Theme);
+}
+
+/**
+ * **Compare** (#2332): while it is held the window draws the theme as kept, without the draft;
+ * let go, and it draws what is in force again. Asked of the core the one way a theme is asked.
+ */
+export async function compareWithKept(held: boolean): Promise<void> {
+  if (!held) {
+    await drawWhatIsInForce();
+    return;
+  }
+  const mine = ++drawing;
+  const on = allowed === "every" ? null : [...allowed];
+  let answered: Awaited<ReturnType<typeof commands.themeInForce>>;
+  try {
+    answered = await commands.themeInForce(
+      picked,
+      on,
+      systemIsLight(),
+      systemAsksMoreContrast(),
+      false,
+      where,
+      true,
+    );
+  } catch {
+    return;
+  }
+  const given = answered.status === "ok" ? (answered.data as typeof answered.data | null) : null;
+  if (mine !== drawing || given === null || typeof given !== "object" || !given.theme) return;
+  draw(given.theme as unknown as Theme);
 }

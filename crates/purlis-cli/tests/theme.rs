@@ -112,15 +112,42 @@ impl Rig {
     }
 
     fn run(&self, args: &[&str]) -> Ran {
-        let out = support::purlis()
+        self.run_in(args, None)
+    }
+
+    /// `purlis theme <args>` as the chat `chat` purlis started in the workspace `alpha` runs it
+    /// (#2332), or as no chat with `None`.
+    fn run_in(&self, args: &[&str], chat: Option<&str>) -> Ran {
+        let mut command = support::purlis();
+        command
             .arg("theme")
             .args(args)
             .current_dir(self.plane())
             .env("PURLIS_ROOT", self.plane())
             .env("PURLIS_CONFIG_HOME", self.config())
-            .env("PURLIS_DATA_HOME", self.dir.path().join("data"))
-            .output()
-            .expect("the binary runs");
+            .env("PURLIS_DATA_HOME", self.dir.path().join("data"));
+        // Whichever chat runs these tests is not the one a test speaks as.
+        for name in [
+            "PURLIS_CHAT_ULID",
+            "CHARTER_CHAT_ULID",
+            "PURLIS_CHAT_DIR",
+            "CHARTER_CHAT_DIR",
+            // Nor is its connection to the app this one's: a test hands nothing to a real app.
+            "PURLIS_CHAT",
+            "CHARTER_CHAT",
+            "PURLIS_HOOK_SOCKET",
+            "CHARTER_HOOK_SOCKET",
+            "PURLIS_CHAT_TOKEN",
+            "CHARTER_CHAT_TOKEN",
+        ] {
+            command.env_remove(name);
+        }
+        if let Some(chat) = chat {
+            command
+                .env("PURLIS_CHAT_ULID", chat)
+                .env("PURLIS_CHAT_DIR", self.plane().join("workspaces/alpha"));
+        }
+        let out = command.output().expect("the binary runs");
         Ran {
             code: out.status.code().unwrap_or(-1),
             out: String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -288,7 +315,7 @@ fn purlis_classic_checks_clean_in_both_appearances_and_exits_zero() {
          left out: nothing\n\
          warnings: none\n\
          consent floors: none held in 2 combinations\n\
-         hard floors: not checked by this purlis yet\n"
+         hard floors: none broken in 2 combinations\n"
     );
 }
 
@@ -319,7 +346,7 @@ fn purlis_checks_clean_in_every_appearance_and_exits_zero() {
          left out: nothing\n\
          warnings: none\n\
          consent floors: none held in 3 combinations\n\
-         hard floors: not checked by this purlis yet\n"
+         hard floors: none broken in 3 combinations\n"
     );
 }
 
@@ -538,8 +565,8 @@ fn the_check_as_json_has_errors_notes_warnings_and_hard_floors_for_a_chat() {
     );
     assert_eq!(
         said["hard_floors"],
-        serde_json::Value::Null,
-        "not checked is not a pass"
+        serde_json::json!([]),
+        "muted words are no hard floor's"
     );
     assert_eq!(said["clean"], false);
 }
@@ -1071,7 +1098,7 @@ fn the_check_says_the_consent_floors_held_in_each_option_combination_that_breaks
          draws its own danger.surface, danger.text\n  \
          light, ember on: the danger colours contrast with what they are drawn on — purlis \
          draws its own danger.surface, danger.text\n\
-         hard floors: not checked by this purlis yet\n"
+         hard floors: none broken in 4 combinations\n"
     );
 
     let json = rig.run(&["check", "project:ember", "--json"]).json();
@@ -1606,4 +1633,153 @@ fn a_terminal_import_s_ansi_warning_names_the_palette_entry_to_change() {
     let written = themes.join("moss");
     let checked = rig.run(&["check", written.to_str().expect("a path")]);
     assert!(!checked.out.contains("palette-0"), "{}", checked.out);
+}
+
+/// A one-appearance dark theme folder's `theme.json` that sets `tokens`.
+fn dark_folder(name: &str, tokens: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "name": name,
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": tokens }]
+    })
+}
+
+#[test]
+fn the_check_reports_each_hard_floor_a_combination_breaks() {
+    let rig = Rig::new();
+    // A light sunken ground under Classic's light words.
+    rig.folder(
+        &rig.project_themes(),
+        "glare",
+        &dark_folder("Glare", &serde_json::json!({ "surface.sunken": "#f2f2f2" })),
+    );
+
+    let ran = rig.run(&["check", "project:glare"]);
+
+    assert_eq!(ran.code, 0, "a kept theme is drawn: {}{}", ran.out, ran.err);
+    let (_, hard) = ran
+        .out
+        .split_once("hard floors: broken:\n")
+        .unwrap_or_else(|| panic!("{}", ran.out));
+    assert!(
+        hard.starts_with(
+            "  primary text is readable on every surface: text.primary on surface.sunken is "
+        ),
+        "{hard}"
+    );
+
+    let json = rig.run(&["check", "project:glare", "--json"]).json();
+    let first = &json["hard_floors"][0];
+    assert_eq!(first["floor"], "primary-text");
+    assert_eq!(first["front"], "text.primary");
+    assert_eq!(first["back"], "surface.sunken");
+    assert_eq!(first["appearance"], "dark");
+    assert_eq!(first["options"], serde_json::json!({}));
+    assert_eq!(first["tint"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_theme_draft_is_written_by_the_app_and_never_by_the_command_whatever_id_it_is_given() {
+    let rig = Rig::new();
+    // An id in the environment is no chat's say-so: with no app to hand it to, nothing is written.
+    let chat = purlis_core::reopen::mint();
+    for args in [&["draft", "dusk"][..], &["draft", "dusk", "--save"][..]] {
+        let ran = rig.run_in(args, Some(&chat));
+        assert_eq!(ran.code, 1, "{}{}", ran.out, ran.err);
+    }
+    let started = rig.run_in(&["draft", "dusk"], Some(&chat));
+    assert!(
+        started
+            .err
+            .contains("written by the app that started this chat"),
+        "{}",
+        started.err
+    );
+    let drafts =
+        purlis_core::plane::state_dir(&rig.plane()).join(purlis_core::theme::drafts::DRAFTS);
+    assert!(
+        !drafts.exists(),
+        "nothing is written in {}",
+        drafts.display()
+    );
+}
+
+#[test]
+fn a_chat_s_theme_draft_is_checked_as_the_window_draws_it() {
+    let rig = Rig::new();
+    let chat = purlis_core::reopen::mint();
+    // As the app writes it, for this chat.
+    let path = purlis_core::theme::drafts::folder_of(&rig.plane(), &chat)
+        .expect("a chat's")
+        .join("dusk");
+    std::fs::create_dir_all(&path).expect("the draft's folder");
+    std::fs::write(
+        path.join("theme.json"),
+        dark_folder("Dusk", &serde_json::json!({})).to_string(),
+    )
+    .expect("the draft is written");
+
+    let checked = rig.run_in(&["check", "draft:dusk"], Some(&chat));
+    assert_eq!(checked.code, 0, "{}{}", checked.out, checked.err);
+    assert!(
+        checked.out.contains("hard floors: none broken"),
+        "{}",
+        checked.out
+    );
+
+    std::fs::write(
+        path.join("theme.json"),
+        dark_folder("Dusk", &serde_json::json!({ "surface.sunken": "#f2f2f2" })).to_string(),
+    )
+    .expect("the draft is written");
+    let broken = rig.run_in(&["check", "draft:dusk"], Some(&chat));
+    assert_eq!(broken.code, 1, "not drawn: {}{}", broken.out, broken.err);
+    assert!(
+        broken.out.contains("hard floors: broken:"),
+        "{}",
+        broken.out
+    );
+    assert!(broken.out.contains("not drawn"), "{}", broken.out);
+
+    // Another chat has no such draft.
+    let other = rig.run_in(&["check", "draft:dusk"], Some(&purlis_core::reopen::mint()));
+    assert_eq!(other.code, 2, "{}{}", other.out, other.err);
+}
+
+#[test]
+fn a_save_too_large_for_one_ask_is_refused_before_it_is_sent() {
+    let rig = Rig::new();
+    let chat = purlis_core::reopen::mint();
+    let working = rig.dir.path().join("working");
+    std::fs::create_dir_all(&working).expect("a working copy");
+    let most = purlis_core::theme::drafts::MOST_SAVED_JSON_BYTES;
+    // A theme.json whose save, as JSON writes it, is `bytes` long.
+    let write = |bytes: usize| {
+        let theme = |name: &str| {
+            serde_json::json!({ "name": name, "appearances": [{ "id": "dark", "appearance": "dark" }] })
+                .to_string()
+        };
+        let files = |text: String| {
+            serde_json::to_string(&std::collections::BTreeMap::from([(
+                "theme.json".to_owned(),
+                text,
+            )]))
+            .expect("json")
+            .len()
+        };
+        let name = "a".repeat(bytes - files(theme("")));
+        assert_eq!(files(theme(&name)), bytes);
+        std::fs::write(working.join("theme.json"), theme(&name)).expect("written");
+    };
+    let from = working.to_str().expect("a path");
+
+    write(most + 1);
+    let over = rig.run_in(&["draft", "dusk", "--save", "--from", from], Some(&chat));
+    assert_eq!(over.code, 1, "{}{}", over.out, over.err);
+    assert!(over.err.contains("a save carries at most"), "{}", over.err);
+
+    // At the most, it is handed over: here no app takes it, and that is what is said.
+    write(most);
+    let at = rig.run_in(&["draft", "dusk", "--save", "--from", from], Some(&chat));
+    assert_eq!(at.code, 1, "{}{}", at.out, at.err);
+    assert!(at.err.contains("no app took this"), "{}", at.err);
 }

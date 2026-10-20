@@ -209,6 +209,9 @@ pub const PAIRS: &[Pair] = &[
     // A read-only project's line (#826) on the project strip: its sentence in secondary text,
     // and its lock a mark in the waiting colour.
     p("text.secondary", "layer.project", 4.5),
+    // The theme draft strip (#2332) is primary text on the project strip's shade, under the
+    // workspaces: what a draft is and why it is not drawn are always read (a hard floor).
+    p("text.primary", "layer.project", 4.5),
     p("state.waiting", "layer.project", 3.0),
     p("text.muted", "layer.workspace", 4.5),
     p("text.muted", "layer.chat", 4.5),
