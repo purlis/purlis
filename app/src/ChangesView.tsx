@@ -598,7 +598,7 @@ function RepoRows({
               <span className="upstream">on pool {one.pool}</span>
               {one.ahead > 0 && (
                 <span className="gap">
-                  {one.ahead} {one.ahead === 1 ? "commit" : "commits"} not here yet
+                  {one.ahead} {one.ahead === 1 ? "commit" : "commits"} not on this machine
                 </span>
               )}
             </CloneRow>

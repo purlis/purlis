@@ -1282,7 +1282,31 @@ pub(crate) fn persona_view(
 /// The panel that needs git. Call it off the thread that draws, for one project's workspace.
 pub(crate) fn repo_states(root: &Path, workspace: &str) -> Result<RepoStates, String> {
     let binary = crate::charter_binary();
-    states_of(root, workspace, binary.as_deref())
+    // The pool this workspace's chats run on, where it runs them on one this machine keeps
+    // (#2046): read here, so a test of what the panel draws reads no machine store.
+    let pool = purlis_core::machine::config_root()
+        .and_then(|config| purlis_core::pools::runs_on(&config, root, Some(workspace)).ok())
+        .flatten();
+    let mut states = states_of(root, workspace, binary.as_deref())?;
+    if let Some(pool) = pool {
+        on_its_runner(&mut states, root, workspace, &pool);
+    }
+    Ok(states)
+}
+
+/// What the runner of `pool` has of each clone of `workspace` in `states`, as fetched (#2046).
+fn on_its_runner(states: &mut RepoStates, root: &Path, workspace: &str, pool: &str) {
+    for row in &mut states.repos {
+        let clone = root.join("workspaces").join(workspace).join(&row.name);
+        row.on_a_runner = purlis_core::codelink::on_a_runner(&clone, pool)
+            .into_iter()
+            .map(|branch| RunnerBranch {
+                pool: pool.to_owned(),
+                branch: branch.branch,
+                ahead: branch.ahead,
+            })
+            .collect();
+    }
 }
 
 /// [`repo_states`] with the `charter` binary said out loud rather than discovered.
@@ -1302,29 +1326,12 @@ fn states_of(root: &Path, workspace: &str, binary: Option<&Path>) -> Result<Repo
     // and the refresh is for the next one. Python's render path does the two in this order for
     // the same reason (`glstate.read_for`, then `glstate.maybe_spawn`).
     refresh_if_it_is_due(root, workspace, binary);
-    // The pool this workspace's chats run on, where it runs them on one this machine keeps.
-    let pool = purlis_core::machine::config_root()
-        .and_then(|config| purlis_core::pools::runs_on(&config, root, Some(workspace)).ok())
-        .flatten();
     Ok(RepoStates {
         workspace: workspace.to_string(),
         repos: found
             .repos
             .iter()
-            .map(|repo| {
-                let mut row = one(repo, cache.as_ref());
-                if let Some(pool) = &pool {
-                    row.on_a_runner = purlis_core::codelink::on_a_runner(&repo.path, pool)
-                        .into_iter()
-                        .map(|branch| RunnerBranch {
-                            pool: pool.clone(),
-                            branch: branch.branch,
-                            ahead: branch.ahead,
-                        })
-                        .collect();
-                }
-                row
-            })
+            .map(|repo| one(repo, cache.as_ref()))
             .collect(),
         cache_refused,
     })

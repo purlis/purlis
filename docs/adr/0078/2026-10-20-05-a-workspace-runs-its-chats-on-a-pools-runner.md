@@ -24,7 +24,7 @@ implementation, to be confirmed* (D-2046-10 to D-2046-15).
    its branch with its uncommitted work (the amendment of this day on code moving as git
    bundles). The runner's branches come back into each clone's `refs/remotes/<pool>/*` as a
    runner chat ends, and when the window comes back into focus, at most once a minute. Changes
-   draws each one with the commits it has that are not here yet. *(D-2046-10, D-2046-11)*
+   draws each one with the commits it has that this machine does not. *(D-2046-10, D-2046-11)*
 6. **The setting is shown once a pool is kept.** The workspace's settings gain a *Runs on* group
    once this machine keeps a pool. It sets `chatsRunOn` for this machine alone, and only to a pool
    this machine keeps with its runner. A chat running when it changes stays where it runs.

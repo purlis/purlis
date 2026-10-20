@@ -998,7 +998,7 @@ pub struct OnARunner {
 }
 
 /// **The branches of `pool`'s runner the desktop's `repo` keeps** (#2046): every
-/// `refs/remotes/<pool>/<branch>` there, with what each has that is not here yet. Nothing for a
+/// `refs/remotes/<pool>/<branch>` there, with what each has that this machine does not. Nothing for a
 /// pool's name refs cannot be kept under, or a folder that is not a repository.
 pub fn on_a_runner(repo: &Path, pool: &str) -> Vec<OnARunner> {
     if !pool_ok(pool) || !a_repository(repo) {

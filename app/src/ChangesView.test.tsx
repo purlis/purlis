@@ -138,8 +138,10 @@ describe("the Changes view", () => {
     const there = screen.getByTestId("runner-svc-builds-fix-login");
     expect(there).toHaveTextContent("fix-login");
     expect(there).toHaveTextContent("on pool builds");
-    expect(there).toHaveTextContent("2 commits not here yet");
-    expect(screen.getByTestId("runner-svc-builds-main")).not.toHaveTextContent("not here yet");
+    expect(there).toHaveTextContent("2 commits not on this machine");
+    expect(screen.getByTestId("runner-svc-builds-main")).not.toHaveTextContent(
+      "not on this machine",
+    );
     expect(screen.queryByTestId(/^runner-tool-/)).toBeNull();
     // A row of the tree like every other: the keys reach it.
     expect(there).toHaveAttribute("role", "treeitem");

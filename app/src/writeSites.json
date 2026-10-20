@@ -188,6 +188,11 @@
       "by": ["pinProject", "pinWorkspace", "arrangeWorkspacePins", "pinOnThisMachine"]
     },
     {
+      "at": "dockerpools.rs set_chats_run_on_at",
+      "writes": "this machine's store: the pins",
+      "by": ["setChatsRunOn"]
+    },
+    {
       "at": "planes.rs forget",
       "writes": "this machine's store: the pins",
       "by": ["forgetProject"]
