@@ -701,8 +701,8 @@ describe("a card's pictures when the painter is busy (#2331 review)", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(BUSY_FOR_MS);
     });
-    // The ask already waiting is made once more, and told busy, it stops.
-    expect(asked("theme_specimen").length).toBeLessThanOrEqual(2);
+    // Its card is gone: the painter is not asked again.
+    expect(asked("theme_specimen")).toHaveLength(1);
   });
 
   it("asks again for a picture that could not be drawn the next time its card is shown", async () => {

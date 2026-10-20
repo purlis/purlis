@@ -215,3 +215,29 @@ fn what_the_gallery_is_owed_lapses_when_it_does_not_come_for_it() {
         "a lapsed debt is not paid later"
     );
 }
+
+#[test]
+fn a_chat_whose_wait_timed_out_leaves_no_debt_for_a_later_chat_s_turn() {
+    let turns = Turns::new();
+    let gallery = turns.gallery().expect("free");
+    // The picture does not give way in time: the chat is answered busy, and the picture drawn.
+    assert!(turns.chat(Duration::from_millis(10)).is_none());
+    drop(gallery);
+    // A later chat's turn, the gallery asking nothing during it, owes the gallery nothing.
+    drop(turns.chat(Duration::ZERO).expect("free"));
+    assert!(
+        turns.chat(Duration::ZERO).is_some(),
+        "other chats are not held back"
+    );
+}
+
+#[test]
+fn a_gallery_ask_answered_busy_by_its_own_picture_leaves_no_debt_once_it_draws() {
+    let turns = Turns::new();
+    let gallery = turns.gallery().expect("free");
+    assert!(turns.gallery().is_none(), "a second window's ask");
+    drop(gallery);
+    drop(turns.gallery().expect("drawn"));
+    drop(turns.chat(Duration::ZERO).expect("free"));
+    assert!(turns.chat(Duration::ZERO).is_some(), "nothing is owed");
+}

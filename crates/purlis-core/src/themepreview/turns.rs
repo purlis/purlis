@@ -107,6 +107,8 @@ impl Turns {
             .owed_until
             .take()
             .is_some_and(|until| Instant::now() < until);
+        // The gallery has the painter: what it asked for before is being drawn.
+        state.gallery_asked = false;
         state.held = Some(Who::Gallery);
         state.held_owed = owed;
         Some(Turn {
@@ -132,7 +134,9 @@ impl Turns {
             state.owed_until = None;
         }
         if state.held.is_some() {
-            // A picture that gives way is one the gallery asked for and is not drawn.
+            // A picture that gives way is one the gallery asked for and is not drawn; one that
+            // does not give way in time is drawn, and this call unmarks what it marked.
+            let marked = !state.held_owed && !state.gallery_asked;
             if !state.held_owed {
                 state.gallery_asked = true;
             }
@@ -144,6 +148,9 @@ impl Turns {
             state = waited;
             state.chats_waiting -= 1;
             if state.held.is_some() {
+                if marked {
+                    state.gallery_asked = false;
+                }
                 return None;
             }
         }

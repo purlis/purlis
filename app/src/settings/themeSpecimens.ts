@@ -141,17 +141,14 @@ async function asked(
   appearance: string,
 ): Promise<Picture> {
   for (let tries = 1; ; tries++) {
+    // One whose card left the screen while it waited gives its turn to the cards on it, and is
+    // asked again when its card comes back.
+    if (tries > 1 && !onScreen.has(key)) return { state: "none", why: SPECIMEN_BUSY };
     try {
       const answer = await commands.themeSpecimen(theme, appearance, at, from);
       if (answer.status === "ok")
         return { state: "drawn", src: `data:image/png;base64,${answer.data.png}` };
-      // One whose card left the screen gives its turn to the cards on it; it is asked again
-      // when its card comes back.
-      if (
-        answer.error !== SPECIMEN_BUSY ||
-        tries * BUSY_WAIT_MS >= BUSY_FOR_MS ||
-        !onScreen.has(key)
-      )
+      if (answer.error !== SPECIMEN_BUSY || tries * BUSY_WAIT_MS >= BUSY_FOR_MS)
         return { state: "none", why: answer.error };
     } catch (why) {
       return { state: "none", why: String(why) };
