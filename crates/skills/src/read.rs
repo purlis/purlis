@@ -165,5 +165,4 @@ pub fn listed_from(env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "read_tests.rs"]
 mod tests;

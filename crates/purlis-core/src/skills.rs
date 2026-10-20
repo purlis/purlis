@@ -60,5 +60,4 @@ pub fn studio_shown(
 }
 
 #[cfg(test)]
-#[path = "skills_tests.rs"]
 mod tests;
