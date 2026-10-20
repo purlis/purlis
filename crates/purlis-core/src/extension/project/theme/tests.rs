@@ -471,8 +471,8 @@ fn only_a_workspace_has_a_colour() {
     assert_eq!(
         refusals("[theme]\ncolour = \"teal\"\n", "charter.toml"),
         [
-            "theme.colour in charter.toml is not read — [theme] holds use, appearance and \
-          icons and nothing else; a colour is a workspace's"
+            "theme.colour in charter.toml is not read — [theme] holds use, appearance, options \
+          and icons and nothing else; a colour is a workspace's"
         ]
     );
 }
@@ -489,7 +489,7 @@ fn a_workspaces_theme_table_is_refused_in_the_readers_words() {
             "settings.theme.colour in workspaces/alpha/workspace.json is \"mauve\", which is not \
              red, orange, yellow, green, teal, blue, purple, pink or #rrggbb",
             "settings.theme.font in workspaces/alpha/workspace.json is not read — a workspace's \
-             theme holds use, appearance, icons and colour and nothing else",
+             theme holds use, appearance, options, icons and colour and nothing else",
         ]
     );
     let ok: toml::Table =

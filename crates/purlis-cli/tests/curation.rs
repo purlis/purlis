@@ -128,6 +128,7 @@ fn an_action_added_is_listed_offered_and_removed() {
         vec![
             "charter/safe-remove  Safe remove",
             "charter/compact  Compact & improve",
+            "charter/create-theme  Create a theme",
             "devops/review  Review it",
         ]
     );
@@ -199,7 +200,8 @@ fn a_file_that_takes_a_builtins_label_is_left_out_with_a_warning_and_fails_lint(
         heads(&out(&shown)),
         vec![
             "charter/safe-remove  Safe remove",
-            "charter/compact  Compact & improve"
+            "charter/compact  Compact & improve",
+            "charter/create-theme  Create a theme"
         ]
     );
     assert!(

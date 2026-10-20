@@ -7,7 +7,11 @@
 //! confinements of the chats the window started there over the links before, whether the window
 //! made the confinement or the runner composed it for the window's start. It names it no
 //! confinement the runner's own window made, and none made or composed for another window's
-//! link. Here the runner's host is spoken to directly, each link of the desktop's admitted as
+//! link. A sandbox the window made on a link a renewal is replacing, before its chat started, is
+//! the window's on its new link too, and passes to it as the old link ends (#2624). A port the
+//! runner withdrew as the window's last link ended is given back as the window takes the chat
+//! back, and one the person withdrew stays withdrawn (#2625). Here the
+//! runner's host is spoken to directly, each link of the desktop's admitted as
 //! `remote-link`, so the links' ends are the test's to choose; the confinements and programs are
 //! stand-ins, so none of this needs a terminal.
 
@@ -502,5 +506,200 @@ async fn the_window_takes_nothing_back_by_a_relaying_hosts_word() {
     assert_eq!(
         refused.refusal().map(|r| r.code.as_str()),
         Some(session::NOT_ALLOWED)
+    );
+}
+
+/// A sandbox the window made on a link a renewal is replacing, before its chat started there:
+/// the window starts its chat on the new link (#2624). Another window's link cannot.
+#[tokio::test]
+async fn a_sandbox_made_on_a_link_a_renewal_replaces_starts_on_the_new_link() {
+    let runner = a_runner();
+    let (old, _old_events, _) = runner.relayed_for(WINDOW).await;
+    old.call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the link being renewed");
+    // The renewal: a new link for the same window, while the old one still answers.
+    let (new, _new_events, _) = runner.relayed_for(WINDOW).await;
+    let (another, _another_events, _) = runner.relayed_for(ANOTHER_WINDOW).await;
+
+    assert!(
+        another.start_program(running_in(MADE)).await.is_err(),
+        "another window's link starts nothing in it"
+    );
+    new.start_program(running_in(MADE))
+        .await
+        .expect("the window's chat starts in it on the new link");
+    drop(old);
+    assert_eq!(reach_of(&new, MADE).await, Ok(()));
+}
+
+/// A sandbox the window made on a link a renewal replaced, which ended before the chat started:
+/// it is carried over to the window's new link, not ended with the old one (#2624).
+#[tokio::test]
+async fn a_sandbox_made_on_a_link_a_renewal_replaced_is_carried_over_as_the_old_link_ends() {
+    let runner = a_runner();
+    let (old, old_events, _) = runner.relayed_for(WINDOW).await;
+    old.call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the link being renewed");
+    let (new, _new_events, _) = runner.relayed_for(WINDOW).await;
+
+    drop((old, old_events));
+    // However long the runner takes over the old link's end, the sandbox stays.
+    let _ = timeout(Duration::from_millis(300), async {
+        while !runner.confines.ended(MADE) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(!runner.confines.ended(MADE), "it ended with the old link");
+    assert_eq!(reach_of(&new, MADE).await, Ok(()));
+    new.start_program(running_in(MADE))
+        .await
+        .expect("the window's chat starts in it on the new link");
+}
+
+/// A sandbox a link made that names no window, or whose window has no other link, still ends
+/// with that link, as one nothing runs in yet does (#1999).
+#[tokio::test]
+async fn a_sandbox_whose_window_has_no_other_link_ends_with_its_link() {
+    let runner = a_runner();
+    let (only, only_events, _) = runner.relayed_for(WINDOW).await;
+    only.call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined");
+    let (another, _another_events, _) = runner.relayed_for(ANOTHER_WINDOW).await;
+
+    drop((only, only_events));
+    timeout(PATIENCE, async {
+        while !runner.confines.ended(MADE) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("it ends with its link");
+    assert!(another.start_program(running_in(MADE)).await.is_err());
+}
+
+/// Whether the runner gives `id` back port 5432 within `within`.
+async fn given_back(runner: &Runner, id: &str, within: Duration) -> bool {
+    timeout(within, async {
+        while !runner
+            .confines
+            .seen()
+            .iter()
+            .any(|one| one.confine.confinement == id && one.given_back == [5432])
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .is_ok()
+}
+
+/// A chat the window started, with port 5432 of the runner given: the runner withdraws the port
+/// when the window's last link ends, and gives it back once the window takes the chat back
+/// (#2625), for each kind of the window's runner chats.
+#[tokio::test]
+async fn after_a_re_link_a_runner_chats_withdrawn_port_is_given_again_as_the_person_gave_it() {
+    let runner = a_runner();
+    let (first, first_events, _) = runner.relayed_for(WINDOW).await;
+    first
+        .start_program(composed(COMPOSED))
+        .await
+        .expect("composed on the runner");
+    first
+        .call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the runner");
+    first
+        .start_program(running_in(MADE))
+        .await
+        .expect("runs in the window's confinement");
+
+    drop((first, first_events));
+    runner.unheld(COMPOSED).await;
+    runner.unheld(MADE).await;
+    // Another window's link gives nothing back.
+    let (_another, _another_events, _) = runner.relayed_for(ANOTHER_WINDOW).await;
+    assert!(!given_back(&runner, MADE, Duration::from_millis(200)).await);
+
+    let (_again, _events, _) = runner.relayed_for(WINDOW).await;
+    for id in [COMPOSED, MADE] {
+        assert!(given_back(&runner, id, PATIENCE).await, "{id}: given back");
+    }
+}
+
+/// A port the person withdrew from the chat, before its window's last link ended, stays
+/// withdrawn after the window takes the chat back (#2625).
+#[tokio::test]
+async fn a_port_the_person_withdrew_stays_withdrawn_after_a_re_link() {
+    let runner = a_runner();
+    let (first, first_events, _) = runner.relayed_for(WINDOW).await;
+    first
+        .call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the runner");
+    first
+        .start_program(running_in(MADE))
+        .await
+        .expect("runs in the window's confinement");
+    changed(&first, MADE, ReachChange::WithdrawPort { port: 5432 })
+        .await
+        .expect("the person withdraws the port");
+
+    drop((first, first_events));
+    let (_again, _events, taken) = runner.relayed_for(WINDOW).await;
+    assert_eq!(taken, [MADE]);
+    assert!(
+        !given_back(&runner, MADE, Duration::from_millis(300)).await,
+        "a port the person withdrew was given back"
+    );
+}
+
+/// The person withdraws a port while the runner is giving it back after a re-link: the port
+/// ends withdrawn, whichever lands first (#2625).
+#[tokio::test]
+async fn a_port_the_person_withdraws_while_it_is_given_back_ends_withdrawn() {
+    let runner = a_runner();
+    let (first, first_events, _) = runner.relayed_for(WINDOW).await;
+    first
+        .call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the runner");
+    first
+        .start_program(running_in(MADE))
+        .await
+        .expect("runs in the window's confinement");
+    drop((first, first_events));
+    runner.unheld(MADE).await;
+    // Each give-back now waits a while for the person's withdrawal to land first.
+    runner
+        .confines
+        .give_backs_wait_for_a_withdrawal(Duration::from_millis(500));
+
+    let (again, _events, _) = runner.relayed_for(WINDOW).await;
+    changed(&again, MADE, ReachChange::WithdrawPort { port: 5432 })
+        .await
+        .expect("the person withdraws the port");
+    tokio::time::sleep(Duration::from_millis(800)).await;
+
+    let seen = runner.confines.seen();
+    let made = seen
+        .iter()
+        .find(|one| one.confine.confinement == MADE)
+        .unwrap();
+    let last_withdrawal = made
+        .changes
+        .iter()
+        .rposition(|change| *change == ReachChange::WithdrawPort { port: 5432 })
+        .unwrap();
+    assert!(
+        made.given_back_after
+            .last()
+            .is_none_or(|given_after| last_withdrawal >= *given_after),
+        "given back after the person withdrew it: {:?}, {:?}",
+        made.changes,
+        made.given_back_after
     );
 }

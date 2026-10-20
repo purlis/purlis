@@ -58,6 +58,9 @@ pub(crate) struct Target {
     pub config: PathBuf,
     pub plane: Option<PathBuf>,
     pub workspace: Option<String>,
+    /// The ids of the chats this app has open there, whose theme drafts it draws (#2332): the
+    /// only drafts watched.
+    pub drafts: Vec<String>,
 }
 
 impl Target {
@@ -92,7 +95,17 @@ impl Target {
             self.workspace.as_deref(),
         );
         let extensions = ThemesOnly::installed(&self.config, &crate::extensions::built_in());
-        Watched::of(&folders, &extensions)
+        // The theme drafts of the chats open there (#2332), and the drafts folder itself, so the
+        // first draft of a chat started after this was asked redraws, and the window asks again.
+        let drafts = self
+            .plane
+            .as_deref()
+            .map(|plane| {
+                let chats: Vec<&str> = self.drafts.iter().map(String::as_str).collect();
+                purlis_core::theme::drafts::watched(plane, &chats)
+            })
+            .unwrap_or_default();
+        Watched::of(&folders, &extensions).with_drafts(&drafts)
     }
 }
 
@@ -417,6 +430,31 @@ pub(crate) fn forget(label: &str) {
     }
 }
 
+/// The window `label` draws its theme from `target`, on the app's one watch, for a test: what
+/// [`follow`] does for a window, with nobody told.
+#[cfg(test)]
+pub(crate) fn follow_as(label: &str, target: Target) {
+    WATCH
+        .get_or_init(|| ThemeWatch::start(Arc::new(|_: &str, _| {})))
+        .set(label, target);
+}
+
+/// What each window on the app's one watch draws its theme from, for a test.
+#[cfg(test)]
+pub(crate) fn following() -> std::collections::BTreeMap<String, Target> {
+    WATCH
+        .get()
+        .map(|watch| {
+            watch
+                .lock()
+                .windows
+                .iter()
+                .map(|(label, (target, _))| (label.clone(), target.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Every folder watched now, for a test.
 #[cfg(test)]
 fn watching<W: notify::Watcher + Send + 'static>(
@@ -478,6 +516,7 @@ mod tests {
                 config,
                 plane: Some(plane),
                 workspace: None,
+                drafts: Vec::new(),
             },
         )
     }
@@ -594,6 +633,7 @@ mod tests {
                 config,
                 plane: None,
                 workspace: None,
+                drafts: Vec::new(),
             },
         );
         let folder = machine.join("themes/live");
@@ -651,6 +691,7 @@ mod tests {
             false,
             theme::Contrast::Standard,
             || Arc::from(Vec::new()),
+            |_| None,
         );
         drawn
             .theme
@@ -689,6 +730,7 @@ mod tests {
                 config: config.clone(),
                 plane: None,
                 workspace: None,
+                drafts: Vec::new(),
             },
         );
         assert!(watching(&watch).contains(&folder), "{:?}", watching(&watch));

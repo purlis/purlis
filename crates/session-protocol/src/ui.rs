@@ -204,6 +204,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // theme folders, which the window loads its faces from. Held to the window, failing closed:
     // a link draws with the platform's fonts.
     "theme_font",
+    // The theme in force for the window that asks, which also points that window's theme watch
+    // at the project it answers for (#2324). A link has no window here to watch for: it is
+    // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
+    "theme_in_force",
     // The theme specimen (#2330): a hidden window this app opens on this machine, photographed
     // and closed. Drawn for the window and for the chats this app started, on their hook
     // socket; a link has no window of its own here to draw it for.
@@ -423,6 +427,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "approve_extension",
     "forget_extension",
     "approve_plane",
+    // The trust ask about a project already open (#2647): only the person's press reviews it.
+    "review_plane",
     "approve_profile",
     "revoke_approval",
     "answer_sandbox_offer",
@@ -605,6 +611,17 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The value of a theme option at a level (#2527): it writes how the person's window looks
     // on this machine, so only their press in Settings › Theme makes it.
     "theme_choose_option",
+    // Settings › Theme's New theme and Edit with a chat (#2333): a chat started with a prompt
+    // typed into it, as `curate` starts one, by the person's press in the window.
+    "theme_chat",
+    // A chat's theme draft (#2332): Keep writes it into a theme folder, Revert and the revert key
+    // delete drafts, and the moves up a level write the project's or the person's themes. Each
+    // is the person's command, never a chat's.
+    "theme_draft_keep",
+    "theme_draft_revert",
+    "theme_drafts_revert_here",
+    "theme_move_to_project",
+    "theme_copy_to_machine",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
@@ -921,8 +938,12 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // What Settings › Theme's gallery reads (#2331): its cards, and what a card draws while the
     // pointer is on it. Nothing is written.
     "theme_card_drawn",
+    // The theme drafts of a chat, asked before it closes (#2332). Nothing is written.
+    "theme_drafts_of_chat",
     "theme_gallery",
-    "theme_in_force",
+    // The theme in force at a project and workspace, with no window and nothing watched
+    // (#2697): what a link is served in place of `theme_in_force`.
+    "theme_in_force_at",
     // The person's density and font override, read by the engine (#2326): no file, no state.
     "theme_person",
     "theme_levels_adopt",

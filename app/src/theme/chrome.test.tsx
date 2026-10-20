@@ -82,6 +82,7 @@ import { PinItem, UpdateItem } from "../Updates";
 import { VaultTab } from "../VaultTab";
 import { OpenVault } from "../Vaults";
 import { AddToAChat } from "../AddToAChat";
+import { KeepAsk } from "../ThemeDraftStrip";
 import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn, drawTint, inForce, tinted } from "./theme";
@@ -694,6 +695,20 @@ const DIALOGS: Opened[] = [
     },
   },
   {
+    name: "who draws a theme draft once it is kept",
+    file: "ThemeDraftStrip.tsx",
+    open: async () =>
+      render(
+        <KeepAsk
+          plane={"/home/dev/plane" as PlaneId}
+          folder="dusk"
+          workspace="alpha"
+          keptTo="project"
+          onDone={nothing}
+        />,
+      ),
+  },
+  {
     name: "the question before a chat ends",
     file: "EndingChat.tsx",
     open: async () =>
@@ -712,6 +727,7 @@ const DIALOGS: Opened[] = [
           closing={["steward 2"]}
           back={["web 5"]}
           ownTabs={1}
+          drafts={[{ folder: "dusk", kept_to: "project", workspace: "alpha", replaces: true }]}
           onEnd={nothing}
           onSmartClose={nothing}
           onCancel={nothing}

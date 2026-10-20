@@ -7,7 +7,8 @@
 //! projects again, subscribes again from the window's cursor and attaches the window's views again,
 //! each with a snapshot, under the numbers the window already knows them by, and hands no event
 //! twice. A project is held where the window holds it now, and a hold host B refuses is not carried
-//! (#2535). A command in flight as its link is renewed is answered on it. The window is told once
+//! (#2535), and the window is told so, in host B's words, as the carry-over ends; that is host A's
+//! word, never host B's (#2645). A command in flight as its link is renewed is answered on it. The window is told once
 //! that the link is down and once that it is back, and a renewal is neither (#2496). While no link
 //! is up, every command is refused in words and none is sent on later; a host at the far end whose
 //! key is not the one pinned is never linked; and over each new link the window takes back the
@@ -711,6 +712,199 @@ async fn a_window_never_sends_a_take_back_through_the_relay() {
     );
 }
 
+/// The name a window keeps for a link across its restarts (#2623).
+const NAME: &str = "0123456789abcdef0123456789abcdef";
+
+/// `client` names its window `name` to host A, as its link's first command.
+async fn named(client: &Client, name: &str) -> Result<Answer, session::CallError> {
+    client
+        .call(Command::NameWindow {
+            name: purlis_session_protocol::browsing::Secret::new(name.into()),
+        })
+        .await
+}
+
+/// A host B, `inner`, that keeps the word of every command it is sent and the window each
+/// `take_back` names.
+#[derive(Clone)]
+struct Hears<B> {
+    inner: B,
+    words: Arc<Mutex<Vec<&'static str>>>,
+    windows: Arc<Mutex<Vec<String>>>,
+    ended: Arc<Mutex<usize>>,
+}
+
+impl<B> Hears<B> {
+    fn new(inner: B) -> Self {
+        Hears {
+            inner,
+            words: Arc::default(),
+            windows: Arc::default(),
+            ended: Arc::default(),
+        }
+    }
+}
+
+impl<B: session::Host + Clone + Send + Sync + 'static> session::Host for Hears<B> {
+    async fn call(
+        &self,
+        command: Command,
+        peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        self.words.lock().unwrap().push(command.word());
+        if let Command::TakeBack { window } = &command {
+            self.windows.lock().unwrap().push(window.clone());
+        }
+        self.inner.call(command, peer).await
+    }
+
+    async fn link_ended(&self, peer: &session::Peer) {
+        self.inner.link_ended(peer).await;
+        *self.ended.lock().unwrap() += 1;
+    }
+
+    async fn subscribe(
+        &self,
+        since: session::Since,
+        peer: &session::Peer,
+    ) -> Result<mpsc::Receiver<Pushed>, session::Refusal> {
+        self.inner.subscribe(since, peer).await
+    }
+}
+
+/// Until host B has seen `links` of its links end.
+async fn ended<B>(b: &Hears<B>, links: usize) {
+    timeout(PATIENCE, async {
+        while *b.ended.lock().unwrap() < links {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("host A lets go of the link of the window that went");
+}
+
+/// A window that names itself runs a chat in a confinement it made on host B, and restarts: its
+/// link to host A ends, and the window that comes back names itself the same way on a new link.
+/// It acts on its runner chat's confinement again. A window link that names itself otherwise,
+/// or not at all, gets none of it.
+#[tokio::test]
+async fn a_window_that_comes_back_takes_back_its_runner_chats_and_another_window_does_not() {
+    let runs = StandIns::default();
+    let b = Hears::new(Hosting::confining(
+        Echo,
+        StandInConfines::default(),
+        runs.clone(),
+    ));
+    let mut window = a_window_on(b.clone(), runs, never_renewed()).await;
+    named(&window.client, NAME)
+        .await
+        .expect("host A takes the name");
+    confined_chat(&window.client, window._project.path(), CONFINEMENT).await;
+
+    // The window restarts.
+    let (client, views, events) = a_window_link(&window.relay).await;
+    drop(std::mem::replace(&mut window.client, client));
+    window.views = views;
+    window.events = events;
+    ended(&b, 1).await;
+
+    // Another window names itself otherwise, and another not at all: neither has the chat.
+    let (another, _views, _events) = a_window_link(&window.relay).await;
+    named(&another, "fedcba9876543210fedcba9876543210")
+        .await
+        .unwrap();
+    another
+        .hold_project(PROJECT, window._project.path().to_str().unwrap())
+        .await
+        .unwrap();
+    let (unnamed, _views, _events) = a_window_link(&window.relay).await;
+    unnamed
+        .hold_project(PROJECT, window._project.path().to_str().unwrap())
+        .await
+        .unwrap();
+    for other in [&another, &unnamed] {
+        let refused = other.call(reach(CONFINEMENT)).await.unwrap_err();
+        assert_eq!(
+            refused.refusal().map(|refusal| refusal.code.as_str()),
+            Some(session::NO_SUCH_CHAT),
+            "{refused}"
+        );
+    }
+
+    // The window that came back names itself as before, and takes its chat back.
+    named(&window.client, NAME)
+        .await
+        .expect("host A takes the name again");
+    window
+        .client
+        .hold_project(PROJECT, window._project.path().to_str().unwrap())
+        .await
+        .unwrap();
+    window
+        .client
+        .call(reach(CONFINEMENT))
+        .await
+        .expect("the window acts on its runner chat again");
+}
+
+/// While one window link holds a name, no other link takes it; and a name comes first on a
+/// link, before anything is sent on it.
+#[tokio::test]
+async fn a_name_a_live_window_link_holds_is_refused_and_so_is_a_name_sent_late() {
+    let window = a_window(never_renewed()).await;
+    named(&window.client, NAME).await.unwrap();
+    window.client.list().await.unwrap();
+
+    let (another, _views, _events) = a_window_link(&window.relay).await;
+    let refused = named(&another, NAME).await.unwrap_err();
+    assert_eq!(
+        refused.refusal().map(|refusal| refusal.code.as_str()),
+        Some(session::NOT_ALLOWED),
+        "{refused}"
+    );
+
+    let (late, _views, _events) = a_window_link(&window.relay).await;
+    late.list().await.unwrap();
+    let refused = named(&late, "fedcba9876543210fedcba9876543210")
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused.refusal().map(|refusal| refusal.code.as_str()),
+        Some(session::MALFORMED),
+        "{refused}"
+    );
+}
+
+/// Host B never hears the name: not `name_window`, and only a digest of the name in the
+/// `take_back` host A says. And no `Debug` of the command shows it.
+#[tokio::test]
+async fn host_b_never_hears_the_name_a_window_keeps() {
+    let runs = StandIns::default();
+    let b = Hears::new(Hosting::running_with(Echo, runs.clone()));
+    let window = a_window_on(b.clone(), runs, never_renewed()).await;
+    named(&window.client, NAME).await.unwrap();
+    window.client.list().await.unwrap();
+
+    let words = b.words.lock().unwrap().clone();
+    assert!(!words.contains(&"name_window"), "{words:?}");
+    let windows = b.windows.lock().unwrap().clone();
+    // One name, said in each pass of the carry-over, and never the window's own.
+    assert!(!windows.is_empty(), "{windows:?}");
+    assert!(
+        windows
+            .iter()
+            .all(|window| *window == windows[0] && !window.contains(NAME)),
+        "{windows:?}"
+    );
+    let shown = format!(
+        "{:?}",
+        Command::NameWindow {
+            name: purlis_session_protocol::browsing::Secret::new(NAME.into()),
+        }
+    );
+    assert!(!shown.contains(NAME), "{shown}");
+}
+
 /// A host B that pushes the same events again to every link that subscribes, one more each
 /// time, whatever cursor it is given: what a renewed link's first events can overlap with the
 /// last of the link before it.
@@ -821,6 +1015,59 @@ impl session::Host for SaysItsLink {
         tokio::spawn(async move { tell.closed().await });
         Ok(told)
     }
+}
+
+/// A host B that says a project is not held, as host A says it to its client.
+#[derive(Clone)]
+struct SaysNotHeld;
+
+impl session::Host for SaysNotHeld {
+    async fn call(
+        &self,
+        _command: Command,
+        _peer: &session::Peer,
+    ) -> Result<Answer, session::Refusal> {
+        Ok(Answer::Done)
+    }
+
+    async fn subscribe(
+        &self,
+        _since: session::Since,
+        _peer: &session::Peer,
+    ) -> Result<mpsc::Receiver<Pushed>, session::Refusal> {
+        let (tell, told) = mpsc::channel(16);
+        for pushed in [
+            Pushed::NotHeld {
+                project: PROJECT.into(),
+                why: "host B's own word".into(),
+            },
+            Pushed::Event(event(1)),
+        ] {
+            tell.send(pushed).await.unwrap();
+        }
+        tokio::spawn(async move { tell.closed().await });
+        Ok(told)
+    }
+}
+
+#[tokio::test]
+async fn that_a_project_is_not_held_is_host_as_word_and_never_host_bs() {
+    let mut window = a_window_on(SaysNotHeld, StandIns::default(), never_renewed()).await;
+    let path = window._project.path().to_str().unwrap().to_owned();
+    window.client.hold_project(PROJECT, &path).await.unwrap();
+    window
+        .client
+        .subscribe(session::Since::new())
+        .await
+        .unwrap();
+
+    assert_eq!(window.pushed().await, Pushed::Event(event(1)));
+    assert!(
+        timeout(Duration::from_millis(300), window.events.recv())
+            .await
+            .is_err(),
+        "host B's word that a project is not held was handed to the window"
+    );
 }
 
 #[tokio::test]
@@ -1181,7 +1428,7 @@ async fn a_hold_host_b_refuses_through_a_carry_over_is_no_longer_carried_for_the
     let b = Gated::new();
     let path = tempfile::tempdir().unwrap();
     let path = path.path().to_str().unwrap().to_owned();
-    let window = watching_through(&b, &path).await;
+    let mut window = watching_through(&b, &path).await;
     b.refusing.lock().unwrap().insert(path.clone());
     carrying_over(&b).await;
     b.open.send_replace(true);
@@ -1194,6 +1441,14 @@ async fn a_hold_host_b_refuses_through_a_carry_over_is_no_longer_carried_for_the
     .await
     .expect("the carry-over's last pass tries the hold again");
     assert_eq!(b.held_on(1).get(PROJECT), None);
+    // The window is told, in host B's words, as the carry-over ends (#2645).
+    assert_eq!(
+        window.pushed().await,
+        Pushed::NotHeld {
+            project: PROJECT.into(),
+            why: "that folder is not there".into(),
+        }
+    );
 
     // Host B would take the hold now, and the next link is not sent it: the relay no longer
     // keeps the project for the window. A hold the window sends again is answered.

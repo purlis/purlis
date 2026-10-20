@@ -146,8 +146,8 @@ enum Command {
     Harness(HarnessCommand),
 
     /// Themes: every theme available here and where it comes from, the theme check of any one
-    /// of them — its errors, its contrast warnings and its hard floors — and a theme folder
-    /// imported from another program's theme or exported as a zip.
+    /// of them — its errors, its contrast warnings and its hard floors — a chat's theme draft,
+    /// and a theme folder imported from another program's theme or exported as a zip.
     #[command(subcommand)]
     Theme(theme::ThemeCommand),
 
@@ -969,6 +969,10 @@ impl purlis_host::Confining for HeldByServe {
 
     fn now(&self) -> purlis_host::protocol::session::ReachNow {
         self.0.now()
+    }
+
+    fn give_back(&self, port: u16) -> Result<(), String> {
+        self.0.give_back_port(port)
     }
 }
 

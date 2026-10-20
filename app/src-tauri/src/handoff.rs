@@ -301,6 +301,10 @@ pub fn answer(
             crate::specimen::painter().as_deref(),
             &asks,
         ),
+        // A theme draft (#2332): no ticket, for the record's reason. The line names a theme
+        // folder; whose draft it is, and where that chat works, are this app's record of the
+        // chat whose token it carries.
+        Ask::ThemeDraft(draft) => crate::themedrafts::asked(held, &draft),
     }
 }
 
@@ -2538,7 +2542,7 @@ fn dispatch_noting(
     let unsandboxed_to_another = crossing_stands_aside(
         pair.to.as_deref(),
         asking_as.persona.as_deref(),
-        held.chats().confines_of(from).is_some(),
+        held.chats().runs_sandboxed(from),
     );
     if let (Attendance::Unattended, By::Chat, Some(name)) = (attended, wanted.by, crosses_into)
         && workspace.as_deref() != Some(name)

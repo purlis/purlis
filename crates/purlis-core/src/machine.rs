@@ -512,6 +512,14 @@ impl Contribution {
         Self::read(plane).contributes
     }
 
+    /// [`Self::of`], keeping in `measured` what listing the plane's font files hashed, for the
+    /// theme read made with it (#2696, [`crate::theme::Folders::of_measured`]): a window's
+    /// creation checks the project it opens on is trusted and draws its theme with one hashing
+    /// of its fonts.
+    pub fn of_measured(plane: &Path, measured: &crate::theme::Measured) -> Self {
+        Self::read_measured(plane, measured).contributes
+    }
+
     /// What opening `plane` would do, right now, **and the record that says so**.
     ///
     /// Both halves fail **closed and quiet**: settings charter cannot read contribute nothing,
@@ -532,6 +540,11 @@ impl Contribution {
     /// between a human clicking a button and the app reading a file. Nothing here guards an
     /// approved plane, and nothing here holds the file.
     pub fn read(plane: &Path) -> Reading {
+        Self::read_measured(plane, &crate::theme::Measured::default())
+    }
+
+    /// [`Self::read`], keeping what the font files' listing hashed in `measured`.
+    fn read_measured(plane: &Path, measured: &crate::theme::Measured) -> Reading {
         let mut out = Self::default();
         if let Some(settings) = crate::layer::plane_settings(plane, crate::layer::SETTINGS) {
             out.plugins = settings
@@ -551,7 +564,7 @@ impl Contribution {
                     .insert(persona, crate::personagrant::grant_text(&grant));
             }
         }
-        out.fonts = crate::theme::levels::plane_fonts(plane);
+        out.fonts = crate::theme::levels::plane_fonts(plane, measured);
         let record = out.with_record(plane);
         Reading {
             contributes: out,
@@ -768,6 +781,14 @@ pub enum Change {
 }
 
 impl Change {
+    /// Whether this change is about a font file a theme folder of the plane brings.
+    pub fn is_a_font(&self) -> bool {
+        matches!(
+            self,
+            Self::FontAdded(_) | Self::FontChanged(_) | Self::FontRemoved(_)
+        )
+    }
+
     /// Whether this change can make something run that the approval did not cover.
     ///
     /// An addition or a changed value can; a removal cannot. That asymmetry is the same one
@@ -908,6 +929,15 @@ impl Consent {
     /// vouch`] is the answer, and the wiring contract is written there.
     pub fn must_ask(&self) -> bool {
         matches!(self, Self::New | Self::Grew(_))
+    }
+
+    /// **Whether it asks again about font files and nothing else** (#2647): it was approved,
+    /// and every way it differs now is a font file of its theme folders. Only such an ask may
+    /// be offered from a refused theme's Notice. A chat that can write the project can change
+    /// a face whenever it likes, so a question it can raise on demand is kept to the faces;
+    /// anything more is asked where the project is opened.
+    pub fn grew_in_fonts_alone(&self) -> bool {
+        matches!(self, Self::Grew(changes) if changes.iter().all(Change::is_a_font))
     }
 
     /// What changed, for a caller that wants to say so. Empty unless something did.
@@ -1424,7 +1454,9 @@ impl Store {
                 (when, name)
             })
             .collect();
-        ranked.sort_by(|one, other| other.0.total_cmp(&one.0));
+        // Newest first, and a tie by name: the strip draws the pins in this order, so it
+        // must not hang on which of two equally active workspaces the disk listed first.
+        ranked.sort_by(|one, other| other.0.total_cmp(&one.0).then_with(|| one.1.cmp(&other.1)));
         for (_, name) in ranked.into_iter().take(FIRST_OPEN_PINS) {
             if entry.pinned_workspaces.len() >= MOST_PINNED_WORKSPACES {
                 break;

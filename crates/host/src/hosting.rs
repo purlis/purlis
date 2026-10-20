@@ -483,6 +483,10 @@ struct Inner {
     state: Mutex<State>,
     /// Held while a saver is started, so two windows asking at once start one.
     starting_a_saver: Mutex<()>,
+    /// Held while a confinement's ports are withdrawn as its last link ends, or given back as its
+    /// window takes it back (#2625): each acts only on the ports still [`Confinement::unheld`],
+    /// so whichever runs first, a port is carried after a take-back.
+    porting: Mutex<()>,
     switch: Switch,
     /// What reads a stop written elsewhere (#2190): the binary's, or nothing.
     elsewhere: OnceLock<Box<dyn StopsElsewhere>>,
@@ -569,9 +573,15 @@ struct Confinement {
     /// it (#2511): what takes it back after a re-link. None for any other: the host's own
     /// window's, or one made or composed for a link that named no window.
     window: Option<String>,
+    /// The ports of the machine its plan gave that the host withdrew because no link was left
+    /// to withdraw one (#2407), and gives back as its window takes it back (#2625). Never one a
+    /// window withdrew, which stays withdrawn.
+    unheld: Vec<u16>,
 }
 
 /// Whose a confinement is: the link that made it, until a start names it, then that program's.
+/// One a relayed window's link made is that window's on each of its links while nothing runs in
+/// it, and passes to another of them as the link that made it ends (#2624).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Owner {
     Link(u64),
@@ -585,7 +595,7 @@ enum Owner {
 fn may_act_on(state: &State, held: &Confinement, link: u64) -> bool {
     held.named_to.contains(&link)
         && match &held.owner {
-            Owner::Link(made_by) => *made_by == link,
+            Owner::Link(made_by) => of_one_window(state, *made_by, link),
             Owner::Program(program) => state.programs.get(program).is_some_and(|hosted| {
                 held_by(state, &held.project, link).is_some_and(|at| *at == hosted.at)
             }),
@@ -622,6 +632,40 @@ fn links_of_window(state: &State, window: Option<&str>) -> Vec<u64> {
         .filter(|(_, named)| named.as_str() == window)
         .map(|(link, _)| *link)
         .collect()
+}
+
+/// **Whether links `one` and `other` are the same, or links between hosts that named one
+/// window** (#2624): a renewal's two links, while both last.
+fn of_one_window(state: &State, one: u64, other: u64) -> bool {
+    one == other
+        || state
+            .relayed_for
+            .get(&one)
+            .is_some_and(|window| state.relayed_for.get(&other) == Some(window))
+}
+
+/// **Each confinement `link` made that nothing runs in yet passes to another link of its
+/// window** (#2624), as `link` ends: a renewal's new link starts its chat in it. One whose
+/// window has no other link, or that names no window, stays `link`'s, to end with it.
+fn hand_on(state: &mut State, link: u64) {
+    let mut handed: Vec<(String, u64)> = Vec::new();
+    for (id, held) in &state.confinements {
+        if held.owner != Owner::Link(link) {
+            continue;
+        }
+        let other = links_of_window(state, held.window.as_deref())
+            .into_iter()
+            .find(|other| *other != link);
+        if let Some(other) = other {
+            handed.push((id.clone(), other));
+        }
+    }
+    for (id, other) in handed {
+        if let Some(held) = state.confinements.get_mut(&id) {
+            held.owner = Owner::Link(other);
+            held.named_to.insert(other);
+        }
+    }
 }
 
 /// A place: a project, by its stable id, at the folder it is held at on this machine, by the
@@ -819,6 +863,7 @@ impl Hosting {
                 host_record,
                 state: Mutex::default(),
                 starting_a_saver: Mutex::new(()),
+                porting: Mutex::new(()),
                 switch,
                 elsewhere: OnceLock::new(),
                 seen_elsewhere: Mutex::new(None),
@@ -1353,10 +1398,13 @@ impl Hosting {
             // yet.
             if let Some(confinement) = start.launch.as_ref().and_then(|l| l.confinement.as_ref()) {
                 let links = links_of_window(&state, relayed_for(&state, peer).as_deref());
+                let link = link_of(peer);
                 match state.confinements.get_mut(confinement) {
+                    // Made by this link, or by another link of its window (#2624).
                     Some(held)
                         if held.project == start.project
-                            && held.owner == Owner::Link(link_of(peer)) =>
+                            && matches!(held.owner, Owner::Link(made_by)
+                                if made_by == link || links.contains(&made_by)) =>
                     {
                         held.owner = Owner::Program(program.clone());
                         // A chat is its window's on each of that window's links (#2511).
@@ -1529,7 +1577,7 @@ impl Hosting {
                 process,
                 process_started: running.process_started(),
                 boot: crate::hostrecord::this_boot(),
-                sandbox: Some(sandbox),
+                sandbox: Some(sandbox.clone()),
             });
         }
         // A stop thrown while this one was being started: it is listed by now, so either the
@@ -1596,11 +1644,14 @@ impl Hosting {
                     ..held.confining.confined()
                 })
         });
+        // How it runs sandboxed, as recorded above: what a window that started it by its names
+        // judges it by (1.29, #2692).
         Ok(Answer::ProgramStarted {
             program,
             number: Some(number),
             process,
             confined,
+            sandbox: Some(sandbox),
         })
     }
 
@@ -1706,6 +1757,7 @@ impl Hosting {
             number: None,
             process,
             confined: None,
+            sandbox: Some(session::RunSandbox::Off),
         })
     }
 
@@ -1859,9 +1911,9 @@ impl Hosting {
     /// **`peer`'s link is `window`'s** (#2511, ruled 2026-10-17): the relaying host names the
     /// window on each link it makes for it, and the host names this link each confinement of a
     /// chat that window started here over the links before, made or composed for them, and
-    /// answers with their ids. It names no other: not one the host's own window made, nor one
-    /// made or composed for another window's link, nor one nothing runs in yet, which goes
-    /// with the link that made it. A link that named another window is refused.
+    /// answers with their ids, and one a link of that window made that nothing runs in yet, while
+    /// that link lasts (#2624). It names no other: not one the host's own window made, nor one
+    /// made or composed for another window's link. A link that named another window is refused.
     fn take_back(&self, window: String, peer: &Peer) -> Result<Answer, Refusal> {
         let link = link_of(peer);
         let mut state = self.state();
@@ -1878,15 +1930,43 @@ impl Hosting {
             }
         }
         let mut taken: Vec<String> = Vec::new();
+        let relayed_for = state.relayed_for.clone();
         for (id, held) in &mut state.confinements {
-            if held.window.as_deref() == Some(window.as_str())
-                && matches!(held.owner, Owner::Program(_))
-            {
+            if held.window.as_deref() != Some(window.as_str()) {
+                continue;
+            }
+            // A chat's, or one a link of this window made that nothing runs in yet (#2624).
+            let its_windows = match &held.owner {
+                Owner::Program(_) => true,
+                Owner::Link(made_by) => relayed_for.get(made_by) == Some(&window),
+            };
+            if its_windows {
                 held.named_to.insert(link);
                 taken.push(id.clone());
             }
         }
         taken.sort();
+        // Each port withdrawn as its last link ended is given back, as the person gave it
+        // (#2625).
+        let giving: Vec<String> = taken
+            .iter()
+            .filter(|id| {
+                state
+                    .confinements
+                    .get(*id)
+                    .is_some_and(|held| !held.unheld.is_empty())
+            })
+            .cloned()
+            .collect();
+        drop(state);
+        if !giving.is_empty() {
+            let weak = Arc::downgrade(&self.inner);
+            off_the_runtime(move || {
+                for id in giving {
+                    give_back(&weak, &id);
+                }
+            });
+        }
         Ok(Answer::TakenBack {
             confinements: taken,
         })
@@ -2078,15 +2158,19 @@ impl Hosting {
                 return Err(already_confined(&id));
             }
             let window = relayed_for(&state, peer);
+            // A window's on each of that window's links (#2624), as a chat is (#2511).
+            let mut named_to: HashSet<u64> = std::iter::once(link_of(peer)).collect();
+            named_to.extend(links_of_window(&state, window.as_deref()));
             state.confinements.insert(
                 id.clone(),
                 Confinement {
                     project,
                     owner: Owner::Link(link_of(peer)),
-                    named_to: std::iter::once(link_of(peer)).collect(),
+                    named_to,
                     confining,
                     plan,
                     window,
+                    unheld: Vec::new(),
                 },
             );
         }
@@ -2307,6 +2391,7 @@ impl Beside for ForTheProgram {
                     confining,
                     plan: plan.clone(),
                     window,
+                    unheld: Vec::new(),
                 },
             );
         }
@@ -2329,7 +2414,8 @@ struct Unheld {
 /// **Takes the name of `peer`'s link off each confinement `whose` picks** (#2444), once that
 /// link has ended. A chat's confinement left named to no link, by a link that cannot take its
 /// chat back, is to carry none of the machine's ports it was given from now on: nobody is left
-/// to withdraw one (#2407). Those are answered, and kept as withdrawn in its plan.
+/// to withdraw one (#2407). Those are answered, and kept as withdrawn in its plan until its
+/// window takes it back, which gives them back (#2625).
 fn unname(state: &mut State, peer: &Peer, whose: impl Fn(&Owner) -> bool) -> Vec<Unheld> {
     let link = link_of(peer);
     let comes_back = peer.scope().may(Power::Reattach);
@@ -2350,6 +2436,7 @@ fn unname(state: &mut State, peer: &Peer, whose: impl Fn(&Owner) -> bool) -> Vec
             .collect();
         if !ports.is_empty() {
             held.plan.withdrawn.extend(&ports);
+            held.unheld.extend(&ports);
             unheld.push(Unheld {
                 id: id.clone(),
                 confining: Arc::clone(&held.confining),
@@ -2364,12 +2451,27 @@ fn unname(state: &mut State, peer: &Peer, whose: impl Fn(&Owner) -> bool) -> Vec
 /// (#2407). One whose port cannot be withdrawn is ended: it carries no port nobody is left to
 /// withdraw. Blocking: a proxy's end waits on its listeners.
 fn withdraw(hosting: &Weak<Inner>, unheld: Vec<Unheld>) {
+    let Some(inner) = hosting.upgrade() else {
+        return;
+    };
+    let _porting = lock_porting(&inner);
     for Unheld {
         id,
         confining,
         ports,
     } in unheld
     {
+        // A port given back meanwhile, its window having taken the chat back, stays carried.
+        let still = hosting_of(&inner)
+            .state()
+            .confinements
+            .get(&id)
+            .map(|held| held.unheld.clone())
+            .unwrap_or_default();
+        let ports: Vec<u16> = ports
+            .into_iter()
+            .filter(|port| still.contains(port))
+            .collect();
         let withdrawn = ports.into_iter().all(|port| {
             confining
                 .change(&session::ReachChange::WithdrawPort { port })
@@ -2385,6 +2487,59 @@ fn withdraw(hosting: &Weak<Inner>, unheld: Vec<Unheld>) {
             });
             drop((confining, ending));
         }
+    }
+}
+
+fn hosting_of(inner: &Arc<Inner>) -> Hosting {
+    Hosting {
+        inner: Arc::clone(inner),
+    }
+}
+
+fn lock_porting(inner: &Inner) -> std::sync::MutexGuard<'_, ()> {
+    inner
+        .porting
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// **Gives back each port the host withdrew from confinement `id` because no link was left**
+/// (#2625), now its window has taken the chat back: as the plan gave it. Only a port still
+/// [`Confinement::unheld`], so not one the window withdrew since. Each port is checked, given
+/// back and marked so under the host's state lock, which a window's withdrawal marks its port
+/// under before its proxy hears it: whichever comes first, a port the window withdrew ends
+/// withdrawn. A port the proxy cannot give back stays withdrawn. Blocking, on the porting lane.
+fn give_back(hosting: &Weak<Inner>, id: &str) {
+    let Some(inner) = hosting.upgrade() else {
+        return;
+    };
+    let _porting = lock_porting(&inner);
+    let hosting = hosting_of(&inner);
+    let ports = hosting
+        .state()
+        .confinements
+        .get(id)
+        .map(|held| held.unheld.clone())
+        .unwrap_or_default();
+    for port in ports {
+        let mut state = hosting.state();
+        let Some(held) = state.confinements.get_mut(id) else {
+            return;
+        };
+        if !held.unheld.contains(&port) {
+            continue;
+        }
+        // A set removal in the proxy: cheap enough to make under the lock.
+        if let Err(why) = held.confining.give_back(port) {
+            drop(state);
+            crate::say(&format!(
+                "port {port} stays withdrawn from confinement {id}, which could not carry it \
+                 again: {why}"
+            ));
+            continue;
+        }
+        held.unheld.retain(|unheld| *unheld != port);
+        held.plan.withdrawn.retain(|withdrawn| *withdrawn != port);
     }
 }
 
@@ -2604,10 +2759,19 @@ impl session::Host for Hosting {
                 change,
             } => {
                 let confining = self.confinement(&confinement, peer)?;
-                confining
-                    .change(&change)
-                    .map(|retry| Answer::ReachChanged { retry })
-                    .map_err(not_started)
+                // A port the window withdraws stays withdrawn: never one to give back (#2625).
+                // Marked so before the proxy hears it, under the lock a give-back checks each
+                // port under, so a give-back either ran before it or never gives this port back.
+                if let session::ReachChange::WithdrawPort { port } = change
+                    && let Some(held) = self.state().confinements.get_mut(&confinement)
+                {
+                    held.unheld.retain(|unheld| *unheld != port);
+                    if !held.plan.withdrawn.contains(&port) {
+                        held.plan.withdrawn.push(port);
+                    }
+                }
+                let retry = confining.change(&change).map_err(not_started)?;
+                Ok(Answer::ReachChanged { retry })
             }
             Command::ReachOf { confinement } => {
                 Ok(Answer::Reach(self.confinement(&confinement, peer)?.now()))
@@ -2671,6 +2835,9 @@ impl session::Host for Hosting {
                 .await
             }
             Command::TakeBack { window } => self.take_back(window, peer),
+            // The window takes its own chats back with `programs_of`: a host that relays
+            // nothing has nothing to do with its name (#2623).
+            Command::NameWindow { .. } => Ok(Answer::Done),
             Command::Answer { chat, .. } => Err(Refusal {
                 code: session::NO_SUCH_CHAT.into(),
                 why: format!("program {chat} has no ask this host holds"),
@@ -2711,6 +2878,8 @@ impl session::Host for Hosting {
         let (ending, unheld) = {
             let mut state = self.state();
             let unheld = unname(&mut state, peer, |_| true);
+            // What it made for a relayed window passes to that window's other link (#2624).
+            hand_on(&mut state, link);
             let ending = take_confinements(&mut state, |owner| *owner == Owner::Link(link));
             state.relayed_for.remove(&link);
             (ending, unheld)

@@ -73,12 +73,14 @@ use serde_json::Value;
 mod archive;
 mod check;
 pub mod choices;
+pub mod drafts;
 mod floors;
 mod folders;
 mod fonts;
 mod format;
 pub mod gallery;
 pub mod geometry;
+mod hard;
 mod icons;
 mod import;
 pub mod levels;
@@ -103,11 +105,13 @@ pub use archive::{
 pub use check::{FITS, Finding, Fit, PAIRS, Pair, Report};
 pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
 pub use fonts::{
-    CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES, MOST_FONT_BYTES,
-    Style, served,
+    BOLD, CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES,
+    MOST_FONT_BYTES, Measured, NORMAL, SETTLED, Style, StyleDrawn, served, styles_drawn,
+    without_a_face,
 };
 pub use format::{Library, MOST_APPEARANCES, Named, THEME_JSON};
 pub use geometry::Geometry;
+pub use hard::{Broken, HardFloor, LEAST as HARD_LEAST};
 pub use icons::{Icons, MOST_PATH, MOST_PATHS, Symbol, is_path};
 pub use import::{
     Files, Imported, LeftOut, MOST_SOURCE_BYTES, Recipe, SCOPES, SourceKind, TOWARD_STEPS, detect,
@@ -137,6 +141,10 @@ pub use warnings::{
 #[cfg(test)]
 mod choice_tests;
 #[cfg(test)]
+mod default_values_tests;
+#[cfg(test)]
+mod drafts_tests;
+#[cfg(test)]
 mod floors_tests;
 #[cfg(test)]
 mod folders_tests;
@@ -154,6 +162,8 @@ mod icons_tests;
 mod import_tests;
 #[cfg(test)]
 mod levels_tests;
+#[cfg(test)]
+mod measured_tests;
 #[cfg(test)]
 mod native_tests;
 #[cfg(test)]
@@ -387,6 +397,12 @@ pub struct Complaint {
     /// The token it was about, when it was about one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    /// When it is a font file of the project's or a workspace's theme folder that this
+    /// machine's approval of the project does not hold (#2647), that face: its path in the
+    /// project and the sha-256 of the bytes read, as `<path> <sha-256>`. The project's trust
+    /// ask lists it, so a yes there lets it be drawn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub awaits_approval: Option<String>,
 }
 
 impl Complaint {
@@ -394,6 +410,7 @@ impl Complaint {
         Self {
             said: said.into(),
             token: None,
+            awaits_approval: None,
         }
     }
 
@@ -401,6 +418,16 @@ impl Complaint {
         Self {
             said: said.into(),
             token: Some(token.to_owned()),
+            awaits_approval: None,
+        }
+    }
+
+    /// [`Self::said`] of a project's font file the approval does not hold: `face` is its path
+    /// in the project and its digest.
+    fn awaiting_approval(said: impl Into<String>, face: String) -> Self {
+        Self {
+            awaits_approval: Some(face),
+            ..Self::said(said)
         }
     }
 }
@@ -554,24 +581,45 @@ mod purlis_folder {
     pub(super) const THEME: &str = include_str!("theme/built-in/purlis/theme.json");
     pub(super) const ICONS: &str = include_str!("theme/built-in/purlis/icons/icons.json");
     pub(super) const LICENSE: &str = include_str!("theme/built-in/purlis/LICENSE");
-    /// The faces its `fonts` names, by their names in its `fonts/`: IBM Plex Sans and JetBrains
-    /// Mono, as their projects publish them, under the SIL Open Font License (its `LICENSE`).
+    /// The faces its `fonts` names, by their names in its `fonts/`: IBM Plex Sans upright and
+    /// italic at each weight the theme draws, and JetBrains Mono regular, italic and bold (#2709),
+    /// as their projects publish them, under the SIL Open Font License (its `LICENSE`).
     pub(super) const FONTS: &[(&str, &[u8])] = &[
         (
             "IBMPlexSans-Regular.woff2",
             include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-Regular.woff2"),
         ),
         (
+            "IBMPlexSans-Italic.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-Italic.woff2"),
+        ),
+        (
             "IBMPlexSans-Medium.woff2",
             include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-Medium.woff2"),
+        ),
+        (
+            "IBMPlexSans-MediumItalic.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-MediumItalic.woff2"),
         ),
         (
             "IBMPlexSans-SemiBold.woff2",
             include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-SemiBold.woff2"),
         ),
         (
+            "IBMPlexSans-SemiBoldItalic.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/IBMPlexSans-SemiBoldItalic.woff2"),
+        ),
+        (
             "JetBrainsMono-Regular.woff2",
             include_bytes!("theme/built-in/purlis/fonts/JetBrainsMono-Regular.woff2"),
+        ),
+        (
+            "JetBrainsMono-Italic.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/JetBrainsMono-Italic.woff2"),
+        ),
+        (
+            "JetBrainsMono-Bold.woff2",
+            include_bytes!("theme/built-in/purlis/fonts/JetBrainsMono-Bold.woff2"),
         ),
     ];
 }
@@ -1139,6 +1187,8 @@ pub struct Checked {
     /// The consent floors the window holds when it draws this combination, and the tokens it
     /// draws as purlis's own for them ([`draw`]); `None` when it clears them.
     pub held: Option<Held>,
+    /// The hard floors it breaks as the window draws it (#2332): empty when it holds them.
+    pub hard: Vec<Broken>,
 }
 
 /// **Checks every combination of a theme's appearances and option values** (#2325): [`check`]
@@ -1159,11 +1209,13 @@ pub fn check_every(theme: &Theme) -> Vec<Checked> {
     for at in 0..theme.bases.len() {
         for (values, drawn) in &drawn {
             let one = &drawn.appearances[at];
+            let (shown, held) = floors::hold(one);
             out.push(Checked {
                 appearance: one.id.clone(),
                 options: values.clone(),
                 report: check::check(one),
-                held: floors::hold(one).1,
+                held,
+                hard: hard::broken(&shown),
             });
         }
     }

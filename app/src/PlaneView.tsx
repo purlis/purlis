@@ -47,6 +47,7 @@ import {
   type Sidebar as SidebarModel,
   type StartOptions,
   type ViewTab,
+  type WindowDraft,
 } from "./bindings";
 import {
   catalogue,
@@ -161,7 +162,8 @@ import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./Rea
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
-import { useAboutThisMachine } from "./windowprefs";
+import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
+import { drawWhatIsInForce } from "./Extensions";
 import { useProfileNames } from "./profileNames";
 import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
@@ -339,6 +341,7 @@ import { useHeldAmong } from "./dispatchesHeld";
 import { useRefusedAmong } from "./vaultRefusals";
 import { type Asking } from "./NeedsYou";
 import { EndingChat, type SmartAsk } from "./EndingChat";
+import { KeepAsk, ThemeDraftStrip } from "./ThemeDraftStrip";
 import { ChatAsk, focusAfterNoticeGone } from "./ChatAsk";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
 import { DID_NOT_START, saidWhenItEnds, stoppedWhy, useSmartClosing } from "./smartClose";
@@ -439,10 +442,12 @@ import {
   PROFILE_SIGN_IN,
   SETTINGS_ACTION,
   SETTINGS_LINK,
+  THEME_CHAT,
   type ProfileSignInAsk,
   type SettingsActionAsk,
   type SettingsLink,
   type SettingsLinkAsk,
+  type ThemeChatAsk,
 } from "./settings/links";
 import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
@@ -4970,6 +4975,40 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
+   * **Settings › Theme's New theme and Edit with a chat** (#2333): the core opens the chat at the
+   * gallery's level with its prompt typed and never sent, as a curation chat is opened, and its
+   * tab goes on the strip it is filed under, in front. A refusal is the core's sentence.
+   */
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<ThemeChatAsk>).detail;
+      if (wanted.plane !== plane) return;
+      void commands
+        .themeChat(
+          { plane, workspace: wanted.workspace },
+          wanted.theme,
+          wanted.from,
+          STARTING_SIZE.columns,
+          STARTING_SIZE.rows,
+        )
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+        .then((started) => {
+          if (started.status === "error") {
+            setReport({ from: "theme-chat", refused: true, words: started.error });
+            return;
+          }
+          const chat = started.data;
+          setStartedIn((was) => ({ ...was, [chat.session]: chat.workspace ?? OUTSIDE }));
+          change((tabs) =>
+            openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label),
+          );
+        });
+    };
+    window.addEventListener(THEME_CHAT, asked);
+    return () => window.removeEventListener(THEME_CHAT, asked);
+  }, [change, plane]);
+
+  /**
    * **"Start a chat here"** on a file or folder row (FM-9): a chat the core starts on the
    * project's default profile in the branch's folder, with a reference to the row typed as its
    * first prompt once its harness has started, and never sent. Its tab goes on the strip it is
@@ -7111,6 +7150,14 @@ export const PlaneView = memo(function PlaneView({
     shows?: { task: string; session: string };
     /** How many tasks below the closing session have a tab of their own (#1489). */
     ownTabs?: number;
+    /** The closing chat's theme drafts (#2332), which the close asks Keep or Revert about. */
+    drafts?: readonly WindowDraft[];
+  }>();
+  /** A theme kept as its chat closed (#2332): Keep then asks who draws it. */
+  const [keptOnClose, setKeptOnClose] = useState<{
+    folder: string;
+    workspace: string | null;
+    keptTo: string;
   }>();
 
   /**
@@ -7159,6 +7206,27 @@ export const PlaneView = memo(function PlaneView({
               : [],
           };
         };
+        // **The theme drafts of every chat the close ends** (#2332), which it asks Keep or Revert
+        // about. Where purlis cannot tell, the close does not go on unasked: it is refused, and
+        // says why.
+        const draftsAsked = await Promise.all(
+          ending.map((session) =>
+            commands
+              .themeDraftsOfChat(plane, session)
+              .catch((err: unknown) => ({ status: "error" as const, error: String(err) })),
+          ),
+        );
+        const drafts: WindowDraft[] = [];
+        for (const one of draftsAsked) {
+          // An answer the core refused, or a call that failed, holds the close. An answer that
+          // is no list is a core with no drafts to ask about (an older one, a test's).
+          if (one.status === "error")
+            return {
+              ok: false,
+              refused: `purlis could not tell whether this chat has a theme draft, so it is not closed: ${one.error}`,
+            };
+          if (Array.isArray(one.data)) drafts.push(...one.data);
+        }
         if (ending.length !== 1) {
           // A close of several chats at once asks nothing about what each started: those
           // keep running, and the dialog says so where any is.
@@ -7171,6 +7239,7 @@ export const PlaneView = memo(function PlaneView({
                 : undefined,
             keeps: theirs.some((one) => one.running.length > 0),
             back,
+            drafts,
           });
           return { ok: true };
         }
@@ -7203,12 +7272,48 @@ export const PlaneView = memo(function PlaneView({
         const ownTabs = tasksPlacedBelow(now.current, session, askedByNow).filter(
           (one) => one.placed === "tab",
         ).length;
-        setEndingChat({ offer, session, smart, running, closing, shows, back, ownTabs });
+        setEndingChat({ offer, session, smart, running, closing, shows, back, ownTabs, drafts });
         return { ok: true };
       }
       return carryOut(offer);
     },
     [askedByNow, carryOut, plane, setEndingChat],
+  );
+
+  /**
+   * **Keeps or reverts a closing chat's theme drafts** (#2332), as its close was answered, while
+   * the chat is still open: the core finds a draft by its chat. Answers whether the close goes
+   * on; a draft the core would not keep (it breaks a hard floor) holds the close, and says why.
+   */
+  const settleDrafts = useCallback(
+    async (drafts: readonly WindowDraft[] | undefined, keep: boolean | undefined) => {
+      if (drafts === undefined || drafts.length === 0 || keep === undefined) return true;
+      for (const one of drafts) {
+        const done = keep
+          ? // The close row said what Keep puts where, and what it replaces: the answer is
+            // the person's yes to it.
+            await commands.themeDraftKeep(plane, one.session, one.folder, one.kept_to, one.replaces)
+          : await commands.themeDraftRevert(plane, one.session, one.folder);
+        if (done.status === "error") {
+          sayAboutThisMachine("theme draft", {
+            severity: "warn",
+            detail: done.error,
+            remedy: "the chat is still open: fix its draft, or close it and answer Revert",
+          });
+          return false;
+        }
+      }
+      sayAboutThisMachine("theme draft", undefined);
+      void drawWhatIsInForce();
+      if (keep)
+        setKeptOnClose({
+          folder: drafts[0].folder,
+          workspace: drafts[0].workspace,
+          keptTo: drafts[0].kept_to,
+        });
+      return true;
+    },
+    [plane],
   );
 
   /**
@@ -8333,6 +8438,9 @@ export const PlaneView = memo(function PlaneView({
             waitingIn={waitingIn}
           />
         )}
+        {/* **A chat's theme draft is named on the workspace it is drawn in** (#2332): the
+          strip under the workspaces, with Keep, Revert and Compare, and the revert key. */}
+        <ThemeDraftStrip plane={plane} workspace={ofWorkspace ?? null} />
 
         {/* **The regions** (ADR 0038): by default the navigation region on the left, the
           panes in the middle, and what is asking for you on the right. What the repos are
@@ -9199,24 +9307,40 @@ export const PlaneView = memo(function PlaneView({
               shows={endingChat.shows}
               back={endingChat.back}
               ownTabs={endingChat.ownTabs}
-              onEnd={(stop) => {
-                const { offer: ending, session } = endingChat;
+              drafts={endingChat.drafts}
+              onEnd={(stop, keepDrafts) => {
+                const { offer: ending, session, drafts } = endingChat;
                 setEndingChat(undefined);
-                // Stop them: the core closes the chat too, in the one step. Keep them: the
-                // ordinary close.
-                if (stop && session !== undefined) void closeStopping(session, "close");
-                else void carryOut(ending);
+                void (async () => {
+                  // The drafts first: they are the chat's, and go with it.
+                  if (!(await settleDrafts(drafts, keepDrafts))) return;
+                  // Stop them: the core closes the chat too, in the one step. Keep them: the
+                  // ordinary close.
+                  if (stop && session !== undefined) void closeStopping(session, "close");
+                  else void carryOut(ending);
+                })();
               }}
-              onSmartClose={(stop) => {
-                const session = endingChat.session;
+              onSmartClose={(stop, keepDrafts) => {
+                const { session, drafts } = endingChat;
                 setEndingChat(undefined);
                 if (session === undefined) return;
                 void (async () => {
+                  if (!(await settleDrafts(drafts, keepDrafts))) return;
                   if (stop && !(await closeStopping(session, "smart_close"))) return;
                   await beginSmartClose(session);
                 })();
               }}
               onCancel={() => setEndingChat(undefined)}
+            />
+          )}
+
+          {keptOnClose && (
+            <KeepAsk
+              plane={plane}
+              folder={keptOnClose.folder}
+              workspace={keptOnClose.workspace}
+              keptTo={keptOnClose.keptTo}
+              onDone={() => setKeptOnClose(undefined)}
             />
           )}
 

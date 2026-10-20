@@ -51,7 +51,9 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
         cwd: open.cwd,
         persona: open.persona,
         harnessed: open.harness.is_some(),
-        unsandboxed: held.chats().unsandboxed(chat),
+        // Started without the sandbox by the record of how its run started (#2692): a run with
+        // no record is held as sandboxed here, where a chat with no sandbox is let reach more.
+        unsandboxed: held.chats().started_unsandboxed(chat),
         config: held.config().map(std::path::Path::to_path_buf),
     })
 }
@@ -134,3 +136,6 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
     }
     answer
 }
+
+#[cfg(test)]
+mod tests;

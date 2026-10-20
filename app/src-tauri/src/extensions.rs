@@ -207,6 +207,15 @@ pub struct ExtensionTheme {
 /// **And the theme folders it is read from are watched for this window** (#2324,
 /// [`crate::themewatch`]): from the config home and the plane root held here, never from a path
 /// the window or a chat names. A save in one tells the window to ask again.
+///
+/// **A theme draft of a chat working where the window is draws in place of every level**
+/// (#2332, [`crate::themedrafts`]): the chats are this app's own record of where each works, and
+/// the draft is drawn only while it holds every hard floor; its last good version stays
+/// otherwise. `kept` asks for the theme as kept, without any draft: what Compare shows while
+/// it is held. The drafts are watched with the folders.
+///
+/// The window's alone (#2697): a link is served [`theme_in_force_at`], the same answer read the
+/// same way, which watches nothing for anyone.
 #[tauri::command]
 #[specta::specta]
 // The window and the state are Tauri's to hand in; the rest is the window's question.
@@ -220,49 +229,176 @@ pub async fn theme_in_force(
     more_contrast: bool,
     reread: bool,
     at: Option<ThemeAt>,
+    kept: Option<bool>,
 ) -> Result<ThemeInForce, String> {
-    let root = config_root()?;
-    let (at, workspace) = match at {
-        Some(ThemeAt { plane, workspace }) => {
-            (Some(planes.held(&plane)?.root().to_path_buf()), workspace)
-        }
-        None => (None, None),
-    };
+    let asked = ThemeAsked::of(&planes, pick, on, light, more_contrast, reread, at, true)?;
     tauri::async_runtime::spawn_blocking(move || {
-        crate::themewatch::follow(
-            &window,
-            crate::themewatch::Target {
-                config: root.clone(),
-                plane: at.clone(),
-                workspace: workspace.clone(),
-            },
-        );
-        if reread {
+        crate::themewatch::follow(&window, asked.target());
+        asked.read(kept)
+    })
+    .await
+    .map_err(|err| format!("reading the theme in force did not finish: {err}"))
+}
+
+/// **The theme in force at a project and workspace, with no window** (#2697): what
+/// [`theme_in_force`] answers for the same question, read the same way, and served on a link.
+/// It takes no window and points no theme watch anywhere, so a link's call never changes what
+/// any window watches.
+///
+/// **It draws the theme as kept, never a chat's draft** (#2332): a draft is drawn in the
+/// person's own window, for the chats this app records working where it is, and is watched with
+/// that window's folders. A link is answered the theme the levels choose.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_in_force_at(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    pick: Option<String>,
+    on: Option<Vec<String>>,
+    light: bool,
+    more_contrast: bool,
+    reread: bool,
+    at: Option<ThemeAt>,
+) -> Result<ThemeInForce, String> {
+    let asked = ThemeAsked::of(&planes, pick, on, light, more_contrast, reread, at, false)?;
+    tauri::async_runtime::spawn_blocking(move || asked.for_a_link())
+        .await
+        .map_err(|err| format!("reading the theme in force did not finish: {err}"))
+}
+
+/// **One ask of the theme in force**, from the roots purlis holds: the config home, and the plane
+/// root `Planes` holds the project at, never a path the asker names.
+struct ThemeAsked {
+    config: std::path::PathBuf,
+    plane: Option<std::path::PathBuf>,
+    workspace: Option<String>,
+    /// The chats drafting where the window is, from this app's own record (#2332): none for a
+    /// link's ask.
+    chats: Vec<crate::chats::Drafting>,
+    pick: Option<String>,
+    on: Option<Vec<String>>,
+    light: bool,
+    more_contrast: bool,
+    reread: bool,
+}
+
+impl ThemeAsked {
+    /// The ask, its project found among the ones held; with `drafts`, the chats drafting there.
+    // The window's question, as it asks it.
+    #[allow(clippy::too_many_arguments)]
+    fn of(
+        planes: &crate::planes::Planes,
+        pick: Option<String>,
+        on: Option<Vec<String>>,
+        light: bool,
+        more_contrast: bool,
+        reread: bool,
+        at: Option<ThemeAt>,
+        drafts: bool,
+    ) -> Result<Self, String> {
+        let config = config_root()?;
+        let (plane, workspace, chats) = match at {
+            Some(ThemeAt { plane, workspace }) => {
+                let held = planes.held(&plane)?;
+                let chats = if drafts {
+                    crate::themedrafts::chats_at(&held, workspace.as_deref())
+                } else {
+                    Vec::new()
+                };
+                (Some(held.root().to_path_buf()), workspace, chats)
+            }
+            None => (None, None, Vec::new()),
+        };
+        Ok(Self {
+            config,
+            plane,
+            workspace,
+            chats,
+            pick,
+            on,
+            light,
+            more_contrast,
+            reread,
+        })
+    }
+
+    /// Where the theme is read from: what the window that asks watches.
+    fn target(&self) -> crate::themewatch::Target {
+        crate::themewatch::Target {
+            config: self.config.clone(),
+            plane: self.plane.clone(),
+            workspace: self.workspace.clone(),
+            drafts: self.chats.iter().map(|one| one.id.clone()).collect(),
+        }
+    }
+
+    /// **The answer a link is given** (D-2697-3): the theme as kept, with no chat's draft and no
+    /// chat's record read, whatever the ask holds.
+    fn for_a_link(self) -> ThemeInForce {
+        Self {
+            chats: Vec::new(),
+            ..self
+        }
+        .read(Some(true))
+    }
+
+    /// **The answer**, read and resolved by the core's engine; `kept` asks for the theme as
+    /// kept, without any draft. Nothing here watches.
+    fn read(self, kept: Option<bool>) -> ThemeInForce {
+        let root = self.config;
+        if self.reread {
             *offered_kept() = None;
         }
-        let workspace = workspace.as_deref();
-        let mut levels = purlis_core::theme::Levels::read(Some(&root), at.as_deref(), workspace);
+        let at = self.plane.as_deref();
+        let workspace = self.workspace.as_deref();
+        let mut levels = purlis_core::theme::Levels::read(Some(&root), at, workspace);
         if at.is_none() {
-            levels.project_default = pick
+            levels.project_default = self
+                .pick
                 .as_deref()
                 .and_then(|pick| purlis_core::theme::Choice::new(pick, None));
         }
-        theme_in_force_of(
+        let drafted = match (at, kept) {
+            (Some(plane), None | Some(false)) => crate::themedrafts::drafted_here(
+                &root,
+                plane,
+                workspace,
+                &self.chats,
+                &levels,
+                self.light,
+                contrast_of(self.more_contrast),
+            ),
+            _ => None,
+        };
+        if let Some((Some(drawn), draft)) = drafted.clone() {
+            return ThemeInForce {
+                draft: Some(draft),
+                // A draft drawn is not refused: there is nothing to review.
+                ..answer_of(drawn, &levels, |_| None)
+            };
+        }
+        let answer = theme_in_force_of(
             &levels,
-            &purlis_core::theme::Folders::of(Some(&root), at.as_deref(), workspace),
-            on.as_deref(),
+            &purlis_core::theme::Folders::of(Some(&root), at, workspace),
+            self.on.as_deref(),
             crate::windowprefs::THEIRS.get(Some(&root)).theme.as_ref(),
-            light,
-            contrast_of(more_contrast),
+            self.light,
+            contrast_of(self.more_contrast),
             || {
                 offered_kept()
                     .get_or_insert_with(|| offered_of(&extension::survey(&root, &built_in())))
                     .clone()
             },
-        )
-    })
-    .await
-    .map_err(|err| format!("reading the theme in force did not finish: {err}"))
+            |faces| {
+                at.and_then(|plane| {
+                    review_kept(plane, faces, || crate::planes::theme_review(&root, plane))
+                })
+            },
+        );
+        ThemeInForce {
+            draft: drafted.map(|(_, draft)| draft),
+            ..answer
+        }
+    }
 }
 
 /// **Maps today's in-plane theme picks into the person's choices, once** (#2323,
@@ -454,7 +590,10 @@ pub(crate) fn contrast_of(more: bool) -> purlis_core::theme::Contrast {
     }
 }
 
-/// [`theme_in_force`] without a runtime.
+/// [`theme_in_force`] without a runtime. `review` is asked only for a theme refused for a
+/// project font file its approval does not hold (#2647): what its Notice may offer.
+// The command's own inputs, and two reads taken only when the answer needs them.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn theme_in_force_of(
     levels: &purlis_core::theme::Levels,
     folders: &purlis_core::theme::Folders,
@@ -463,6 +602,7 @@ pub(crate) fn theme_in_force_of(
     light: bool,
     contrast: purlis_core::theme::Contrast,
     offered: impl FnOnce() -> Arc<[purlis_core::theme::Offered]>,
+    review: impl FnOnce(&[&str]) -> Option<ThemeReview>,
 ) -> ThemeInForce {
     use purlis_core::theme;
     let drawn = theme::resolve_levels(
@@ -480,6 +620,24 @@ pub(crate) fn theme_in_force_of(
         },
         offered,
     );
+    answer_of(drawn, levels, review)
+}
+
+/// What the window is told of `drawn`, the theme the levels (or a draft) chose. `review` is
+/// asked only for a theme refused for a project font file its approval does not hold (#2647).
+pub(crate) fn answer_of(
+    drawn: purlis_core::theme::Drawn,
+    levels: &purlis_core::theme::Levels,
+    review: impl FnOnce(&[&str]) -> Option<ThemeReview>,
+) -> ThemeInForce {
+    let review = {
+        let faces = drawn.awaiting_faces();
+        if faces.is_empty() {
+            None
+        } else {
+            review(&faces)
+        }
+    };
     let refused = drawn.refused.then(|| ThemeTrouble {
         name: drawn
             .level
@@ -505,10 +663,12 @@ pub(crate) fn theme_in_force_of(
             })
             .unwrap_or_default(),
         refused,
+        review,
         theme: drawn.theme.as_ref().map(WindowTheme::from),
         complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
         follows_system: drawn.follows_system,
         floors: drawn.held.map(|held| held.said()),
+        draft: None,
     }
 }
 
@@ -603,6 +763,71 @@ pub struct ThemeInForce {
     /// (#2324): what the window says in a Notice, so a save that is not a theme, or a project's
     /// font file changed since it was approved, is never a silent fallback.
     pub refused: Option<ThemeTrouble>,
+    /// Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+    /// of the project's or a workspace's theme folder that this machine's approval does not
+    /// hold. `fonts`: the project asks about font files alone, and the refused Notice offers
+    /// Review and allow (`review_plane`). `more`: it asks for more than font files, and the
+    /// Notice offers no button. `unapproved`: this machine never approved the project, and the
+    /// Notice offers no button. `null` otherwise.
+    pub review: Option<ThemeReview>,
+    /// The theme draft of a chat working where the window is (#2332): drawn in place of what
+    /// the levels choose while it holds every hard floor, and named on the draft strip either
+    /// way. `None` when no chat there has one, or the theme as kept was asked for.
+    pub draft: Option<crate::themedrafts::WindowDraft>,
+}
+
+/// What a refused theme's Notice may offer (#2647, [`ThemeInForce::review`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeReview {
+    /// The project asks again about font files alone: Review and allow.
+    Fonts,
+    /// It asks for more than font files: no button, and where it is reviewed instead.
+    More,
+    /// This machine never approved it: no button, and where it is reviewed instead.
+    Unapproved,
+}
+
+/// The review state last found for each project, with the faces its refused theme waited on.
+type ReviewsKept =
+    std::collections::BTreeMap<std::path::PathBuf, (Vec<String>, Option<ThemeReview>)>;
+
+/// At most this many projects' review states are kept; past it, all are found again.
+const MOST_REVIEWS_KEPT: usize = 32;
+
+fn reviews_kept() -> std::sync::MutexGuard<'static, ReviewsKept> {
+    static KEPT: Mutex<ReviewsKept> = Mutex::new(std::collections::BTreeMap::new());
+    KEPT.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// **What a refused theme's Notice may offer for the project at `root`, found once per set of
+/// faces it waits on** (#2647): `find` reads and hashes what the project contributes, so it is
+/// asked again only when `faces` (each `<path> <sha-256>`, [`purlis_core::theme::Drawn::awaiting_faces`])
+/// differ from the last asked for that project. A redraw under live reload that changed no face
+/// reads nothing. What it answers is only which Notice to say: a press asks `review_plane`,
+/// which reads the project again and refuses an ask about more than font files.
+pub(crate) fn review_kept(
+    root: &std::path::Path,
+    faces: &[&str],
+    find: impl FnOnce() -> Option<ThemeReview>,
+) -> Option<ThemeReview> {
+    if let Some((kept, review)) = reviews_kept().get(root)
+        && kept.iter().map(String::as_str).eq(faces.iter().copied())
+    {
+        return *review;
+    }
+    // Found with the lock let go: it reads the project's files.
+    let review = find();
+    let mut kept = reviews_kept();
+    if kept.len() >= MOST_REVIEWS_KEPT && !kept.contains_key(root) {
+        kept.clear();
+    }
+    kept.insert(
+        root.to_path_buf(),
+        (faces.iter().map(|one| (*one).to_owned()).collect(), review),
+    );
+    review
 }
 
 /// A resolved theme as the window applies it: the window's `Theme`, every token and every
@@ -1563,7 +1788,7 @@ fn facts_in(
 /// One theme a project may pick, as the Theme select lists it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ThemeOption {
-    /// What the file holds: `purlis-dark`, `purlis-light`, `system`, or `<extension>/<theme>`.
+    /// What the file holds: a built-in theme's id, `system`, or `<extension>/<theme>`.
     pub value: String,
     /// What the select shows.
     pub label: String,
@@ -1780,11 +2005,18 @@ fn project_theme_of(
         })
         .collect();
     let icons_why = theme::resolve_icons(&on, Some(&icons), said).why;
-    let mut options: Vec<ThemeOption> = extension::BUILT_IN_THEMES
-        .iter()
+    // The built-in themes whole, each drawing its first appearance (#2709), then Purlis
+    // Classic's two appearances by their own ids.
+    let mut options: Vec<ThemeOption> = [purlis_core::theme::CLASSIC, purlis_core::theme::PURLIS]
+        .into_iter()
+        .chain(extension::BUILT_IN_THEMES)
         .map(|name| ThemeOption {
-            value: (*name).to_owned(),
-            label: format!("{name} (built in)"),
+            value: name.to_owned(),
+            label: if purlis_core::theme::is_preview(name) {
+                format!("{name} (built in, preview)")
+            } else {
+                format!("{name} (built in)")
+            },
         })
         .collect();
     options.push(ThemeOption {
@@ -2358,6 +2590,7 @@ mod tests {
             false,
             Contrast::Standard,
             || unreachable!(),
+            |_| None,
         );
         let theme = drawn.theme.expect("the person's theme");
         assert_eq!(
@@ -2385,6 +2618,7 @@ mod tests {
                 false,
                 contrast_of(more),
                 || unreachable!(),
+                |_| None,
             )
             .theme
             .expect("drawn")
@@ -2410,6 +2644,7 @@ mod tests {
             false,
             Contrast::Standard,
             || unreachable!(),
+            |_| None,
         );
         assert_eq!(
             drawn.options,
@@ -2445,6 +2680,7 @@ mod tests {
             false,
             Contrast::Standard,
             || unreachable!(),
+            |_| None,
         );
         assert!(classic.options.is_empty());
     }
@@ -2497,6 +2733,7 @@ mod tests {
             false,
             Contrast::Standard,
             offered,
+            |_| None,
         );
         let theme = drawn.theme.expect("a theme");
         assert_eq!(theme.name, "Solarized Dark");
@@ -2518,6 +2755,7 @@ mod tests {
             false,
             Contrast::Standard,
             offered,
+            |_| None,
         );
         assert_eq!(off.theme.map(|it| it.name).as_deref(), Some("purlis-dark"));
         let system = theme_in_force_of(
@@ -2528,6 +2766,7 @@ mod tests {
             true,
             Contrast::Standard,
             || unreachable!(),
+            |_| None,
         );
         assert_eq!(
             system.theme.map(|it| it.name).as_deref(),
@@ -2698,6 +2937,27 @@ mod tests {
     }
 
     #[test]
+    fn a_project_file_may_pick_purlis_or_purlis_classic_whole() {
+        // #2709: the select offers both built-in themes, and a file that picks one draws it.
+        let dir = tempfile::tempdir().expect("a directory");
+        let config = dir.path().join("config");
+        let seen = extension::survey(&config, &extension::BuiltIn::none());
+        for pick in [purlis_core::theme::PURLIS, purlis_core::theme::CLASSIC] {
+            let shared = format!("[theme]\nuse = \"{pick}\"\n");
+            let choices = extension::project::Choices::from_text(Some(&shared), None);
+            let said = extension::project::theme::Said::from_text(Some(&shared), None);
+            let theme = project_theme_of(&seen, &choices, &said);
+            assert!(
+                theme.options.iter().any(|one| one.value == pick),
+                "{pick} is offered"
+            );
+            assert_eq!(theme.picked.as_deref(), Some(pick));
+            assert_eq!(theme.draws.as_deref(), Some(pick));
+            assert_eq!(theme.why, None);
+        }
+    }
+
+    #[test]
     fn a_projects_theme_offers_every_approved_theme_and_says_why_one_turned_off_is_not_drawn() {
         // charter-app#273.
         let (_dir, at, config) = made();
@@ -2721,6 +2981,8 @@ mod tests {
                 .map(|one| (one.value.as_str(), one.label.as_str()))
                 .collect::<Vec<_>>(),
             vec![
+                ("purlis-classic", "purlis-classic (built in)"),
+                ("purlis", "purlis (built in, preview)"),
                 ("purlis-dark", "purlis-dark (built in)"),
                 ("purlis-light", "purlis-light (built in)"),
                 ("system", "Follow the system"),
@@ -2955,5 +3217,120 @@ mod tests {
             .expect("the window's client has the command");
         let signature = &bound[at..at + bound[at..].find(')').expect("its parameters end")];
         assert_eq!(signature, "openExtensionRecord: (editor: YourEditor");
+    }
+
+    /// A config home, and two projects whose committed default is a theme folder of their own.
+    fn two_projects() -> (
+        tempfile::TempDir,
+        std::path::PathBuf,
+        [std::path::PathBuf; 2],
+    ) {
+        let home = tempfile::tempdir().expect("a directory");
+        let config = home.path().join("config");
+        std::fs::create_dir_all(purlis_core::machine::dir(&config)).expect("the config home");
+        let planes = ["one", "two"].map(|name| {
+            let plane = home.path().join(name);
+            let folder = plane.join("themes").join(name);
+            std::fs::create_dir_all(&folder).expect("a theme folder");
+            std::fs::write(
+                folder.join(purlis_core::theme::THEME_JSON),
+                format!(r#"{{"name":"{name}"}}"#),
+            )
+            .expect("a theme");
+            std::fs::write(
+                purlis_core::names::manifest(&plane),
+                format!("[theme]\nuse = \"{name}\"\n"),
+            )
+            .expect("a manifest");
+            plane
+        });
+        (home, config, planes)
+    }
+
+    #[test]
+    fn a_link_s_ask_of_the_theme_in_force_moves_no_window_s_watch() {
+        // #2697: the window's form points its watch at what it answers for; the link's form,
+        // asked for another project, answers it and leaves every window's watch where it was.
+        let (_home, config, [one, two]) = two_projects();
+        let watching = crate::themewatch::Target {
+            config: config.clone(),
+            plane: Some(one),
+            workspace: None,
+            drafts: Vec::new(),
+        };
+        crate::themewatch::follow_as("main", watching.clone());
+        let before = crate::themewatch::following();
+        assert_eq!(before.get("main"), Some(&watching));
+        let asked = ThemeAsked {
+            config,
+            plane: Some(two),
+            workspace: None,
+            chats: Vec::new(),
+            pick: None,
+            on: None,
+            light: false,
+            more_contrast: false,
+            reread: false,
+        };
+        let answered = asked.for_a_link();
+        assert_eq!(
+            answered.theme.map(|theme| theme.name).as_deref(),
+            Some("two")
+        );
+        assert_eq!(crate::themewatch::following(), before);
+    }
+
+    #[test]
+    fn a_link_is_served_the_theme_in_force_only_in_the_form_that_watches_nothing() {
+        use purlis_session_protocol::ui;
+        assert!(ui::window_only("theme_in_force"));
+        assert!(!ui::served_on_a_link("theme_in_force"));
+        assert!(ui::served_on_a_link("theme_in_force_at"));
+    }
+
+    #[test]
+    fn a_link_is_answered_the_theme_as_kept_and_never_a_chat_s_draft() {
+        // D-2697-3: the window draws a draft of a chat working where it is; a link's ask, even
+        // one that names that chat, is answered the theme the levels choose.
+        let (_home, config, [one, _]) = two_projects();
+        std::fs::create_dir_all(one.join(".purlis")).expect("the project's own folder");
+        let chat = crate::chats::Drafting {
+            session: 3,
+            id: purlis_core::reopen::mint(),
+            name: "chat 3".to_owned(),
+            workspace: None,
+        };
+        let place = purlis_core::theme::drafts::Place {
+            plane: &one,
+            workspace: None,
+        };
+        let path = purlis_core::theme::drafts::start(Some(&config), place, &chat.id, "dusk")
+            .expect("a draft")
+            .path;
+        std::fs::write(
+            path.join(purlis_core::theme::THEME_JSON),
+            r#"{"name":"Dusk","appearances":[{"id":"dark","appearance":"dark"}]}"#,
+        )
+        .expect("a draft's theme");
+        let asked = || ThemeAsked {
+            config: config.clone(),
+            plane: Some(one.clone()),
+            workspace: None,
+            chats: vec![chat.clone()],
+            pick: None,
+            on: None,
+            light: false,
+            more_contrast: false,
+            reread: false,
+        };
+        let window = asked().read(None);
+        assert_eq!(
+            window.theme.map(|theme| theme.name).as_deref(),
+            Some("Dusk")
+        );
+        assert!(window.draft.is_some());
+        let link = asked().for_a_link();
+        assert_eq!(link.theme.map(|theme| theme.name).as_deref(), Some("one"));
+        assert_eq!(link.draft, None);
     }
 }

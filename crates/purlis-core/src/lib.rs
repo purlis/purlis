@@ -234,6 +234,7 @@ mod testmulticall;
 #[doc(hidden)]
 pub mod testrun;
 pub mod theme;
+pub mod themechat;
 pub mod themepreview;
 pub mod toolgate;
 pub mod toolhooks;
@@ -243,6 +244,8 @@ pub mod tui;
 pub mod updates;
 pub mod usage;
 pub mod version;
+#[cfg(unix)]
+pub mod windownames;
 pub mod windowprefs;
 pub mod wiring;
 pub mod work;

@@ -18,8 +18,10 @@ import {
 import { putBack, showing } from "../theme/hoverPreview";
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, property } from "../theme/theme";
 import type { LiveSetting } from "./groups";
+import { ReadOnlySaid } from "../ReadOnlyLine";
+import { THEME_CHAT, type ThemeChatAsk } from "./links";
 import { forgetGalleries, themeRows } from "./themeGallery";
-import { BUSY_WAIT_MS, forgetSpecimens } from "./themeSpecimens";
+import { BUSY_WAIT_MS, forgetSpecimens, keptSpecimens, MOST_KEPT } from "./themeSpecimens";
 
 /**
  * **Settings › Theme's gallery** (#2331): a card per theme the core lists, the theme drawn live
@@ -84,6 +86,7 @@ const GALLERY: ThemeGallery = {
   from: "nothing chose one",
   chosen: "purlis-classic",
   options: [],
+  theirs: null,
 };
 
 /** The person's own choice of `theme`, of the folder level `from`. */
@@ -111,15 +114,19 @@ function core(
   {
     held = false,
     painter = () => undefined as string | undefined,
+    pictures,
   }: {
     /** Each card's answer waits for `release`. */
     held?: boolean;
     /** The painter's refusal of the `n`th specimen asked, or none. */
     painter?: (n: number) => string | undefined;
+    /** Each picture waits for `paint`. */
+    pictures?: "held";
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const waiting: (() => void)[] = [];
+  const easels: (() => void)[] = [];
   let painting = 0;
   let most = 0;
   let painted = 0;
@@ -128,7 +135,8 @@ function core(
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       switch (cmd) {
         case "theme_gallery":
-          return gallery;
+          // A new answer each time, as the app's is.
+          return { ...gallery };
         case "theme_card_drawn":
           if (held) await new Promise<void>((done) => waiting.push(done));
           return { theme: LIGHT, complaints: [], follows_system: false, floors: null, options: [] };
@@ -137,7 +145,9 @@ function core(
           if (refused !== undefined) throw refused;
           painting++;
           most = Math.max(most, painting);
-          await new Promise((done) => setTimeout(done, 1));
+          await new Promise<void>((done) =>
+            pictures === "held" ? easels.push(done) : setTimeout(done, 1),
+          );
           painting--;
           return { png: "AA==", width: 1280, height: 800, millis: 1, appearance: "dark" };
         }
@@ -162,6 +172,8 @@ function core(
     most: () => most,
     /** Answers every card asked for so far. */
     release: () => waiting.splice(0).forEach((done) => done()),
+    /** Finishes every picture being painted. */
+    paint: () => easels.splice(0).forEach((done) => done()),
   };
 }
 
@@ -221,6 +233,7 @@ afterEach(() => {
   forgetGalleries();
   forgetSpecimens();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   drawIn(DEFAULT_THEME);
 });
 
@@ -342,6 +355,21 @@ describe("Settings › Theme's cards (#2331)", () => {
     expect(asked("theme_choose_machine")).toEqual([]);
   });
 
+  // Before the pictures test on purpose (#2698): nothing this one starts may reach that one.
+  it("is read again when a theme folder changes on disk (#2324)", async () => {
+    const mock = core();
+    render(<Group at={{ plane: PLANE, workspace: "alpha" }} />);
+    await cards();
+    const before = mock.asked("theme_gallery").length;
+    await act(async () => {
+      await emit(THEME_FOLDERS_CHANGED, { survey: false });
+    });
+    await waitFor(() => expect(mock.asked("theme_gallery").length).toBe(before + 1));
+    expect(mock.asked("theme_gallery").at(-1)).toEqual({
+      at: { plane: PLANE, workspace: "alpha" },
+    });
+  });
+
   it("asks for each card's pictures one at a time", async () => {
     const { asked, most } = core();
     render(<Group at={null} />);
@@ -396,6 +424,55 @@ describe("under the chosen card (#2331)", () => {
     await waitFor(() =>
       expect(asked("theme_open_folder")).toEqual([{ at: null, theme: "dusk", from: "machine" }]),
     );
+  });
+
+  it("asks the project's window for a theme chat: New theme here, Edit with a chat on the chosen card (#2333)", async () => {
+    const { asked } = core(shown({ yours: mine("team", null, "project"), drawn: "project:team" }));
+    const heard: ThemeChatAsk[] = [];
+    const hear = (event: Event) => heard.push((event as CustomEvent<ThemeChatAsk>).detail);
+    window.addEventListener(THEME_CHAT, hear);
+    try {
+      render(<Group at={{ plane: PLANE, workspace: "alpha" }} />);
+      await cards();
+      fireEvent.click(screen.getByRole("button", { name: "Edit with a chat" }));
+      fireEvent.click(screen.getByRole("button", { name: "New theme" }));
+      expect(heard).toEqual([
+        { plane: PLANE, workspace: "alpha", theme: "team", from: "project" },
+        { plane: PLANE, workspace: "alpha", theme: null, from: null },
+      ]);
+      // The window asks; the project's window opens the chat. Nothing is written from here.
+      expect(asked("theme_chat")).toEqual([]);
+    } finally {
+      window.removeEventListener(THEME_CHAT, hear);
+    }
+  });
+
+  it("opens no theme chat in a read-only project, and says why", async () => {
+    core(shown({ yours: mine("team", null, "project"), drawn: "project:team" }));
+    render(
+      <ReadOnlySaid.Provider value="This project is read-only.">
+        <Group at={{ plane: PLANE, workspace: null }} />
+      </ReadOnlySaid.Provider>,
+    );
+    await cards();
+    for (const name of ["Edit with a chat", "New theme"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveProperty("disabled", true);
+      expect(button.getAttribute("title")).toBe(
+        "This project is read-only. A theme made here could not be kept.",
+      );
+    }
+  });
+
+  it("opens no theme chat at the machine's level, where no project is, and says why", async () => {
+    core(shown({ yours: mine("dusk", null), drawn: "machine:dusk" }));
+    render(<Group at={null} />);
+    await cards();
+    for (const name of ["Edit with a chat", "New theme"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveProperty("disabled", true);
+      expect(button.getAttribute("title")).toContain("at the Project or Workspace level");
+    }
   });
 
   it("offers neither on a theme a folder of your own cannot extend, nor a folder it has not", async () => {
@@ -614,22 +691,6 @@ describe("a choice of a theme the level no longer has (#2331 review)", () => {
   });
 });
 
-describe("a theme folder saved (#2324)", () => {
-  it("is read again when a theme folder changes on disk (#2324)", async () => {
-    const mock = core();
-    render(<Group at={{ plane: PLANE, workspace: "alpha" }} />);
-    await cards();
-    const before = mock.asked("theme_gallery").length;
-    await act(async () => {
-      await emit(THEME_FOLDERS_CHANGED, { survey: false });
-    });
-    await waitFor(() => expect(mock.asked("theme_gallery").length).toBe(before + 1));
-    expect(mock.asked("theme_gallery").at(-1)).toEqual({
-      at: { plane: PLANE, workspace: "alpha" },
-    });
-  });
-});
-
 describe("two folders of one name (#2516)", () => {
   const THEIRS = card({ id: "brand", name: "Brand, the team's", from: "project" });
   const OURS = card({ id: "brand", name: "Brand, mine", from: "machine" });
@@ -766,5 +827,228 @@ describe("the chosen theme's options (#2527)", () => {
     render(<Group at={null} />);
     const options = await screen.findByRole("region", { name: "Options" });
     await waitFor(() => expect(options).toHaveTextContent("The chosen theme has no options."));
+  });
+});
+
+describe("only the cards on screen are pictured (#2614)", () => {
+  /** The screen, as `IntersectionObserver` tells it: `show(card, on)` brings a card's pictures
+   *  on screen or takes them off it. */
+  function screenOf() {
+    const told: ((entries: { target: Element; isIntersecting: boolean }[]) => void)[] = [];
+    const watched = new Set<Element>();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: (entries: { target: Element; isIntersecting: boolean }[]) => void) {
+          told.push(callback);
+        }
+        observe(target: Element) {
+          watched.add(target);
+        }
+        unobserve(target: Element) {
+          watched.delete(target);
+        }
+        disconnect() {
+          watched.clear();
+        }
+      },
+    );
+    return {
+      show: (name: string, on = true) => {
+        const pictures = named(name).firstElementChild;
+        if (pictures === null || !watched.has(pictures)) throw new Error(`${name} is not watched`);
+        act(() => told.forEach((tell) => tell([{ target: pictures, isIntersecting: on }])));
+      },
+    };
+  }
+
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => card({ id: `theme-${i}`, name: `Theme ${i}` }));
+
+  it("asks for no picture of a card off screen, and for each as it scrolls in", async () => {
+    const shown = screenOf();
+    const { asked } = core({ ...GALLERY, cards: many(6) });
+    render(<Group at={null} />);
+    await cards();
+    shown.show("Theme 0");
+    shown.show("Theme 1");
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(2));
+    await new Promise((done) => setTimeout(done, 10));
+    expect(asked("theme_specimen").map((one) => one.theme)).toEqual(["theme-0", "theme-1"]);
+    shown.show("Theme 4");
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(3));
+    expect(asked("theme_specimen")[2]).toMatchObject({ theme: "theme-4" });
+  });
+
+  it("does not ask for a picture still waiting its turn once its card leaves the screen", async () => {
+    const shown = screenOf();
+    const { asked, paint } = core({ ...GALLERY, cards: many(3) }, { pictures: "held" });
+    render(<Group at={null} />);
+    await cards();
+    shown.show("Theme 0");
+    shown.show("Theme 1");
+    shown.show("Theme 2");
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(1));
+    // Scrolled past before its turn.
+    shown.show("Theme 1", false);
+    await act(async () => paint());
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(2));
+    await act(async () => paint());
+    await new Promise((done) => setTimeout(done, 10));
+    expect(asked("theme_specimen").map((one) => one.theme)).toEqual(["theme-0", "theme-2"]);
+  });
+
+  it(`keeps at most ${MOST_KEPT} pictures in all, and asks again for one let go`, async () => {
+    const shown = screenOf();
+    const { asked } = core({ ...GALLERY, cards: many(MOST_KEPT + 4) });
+    render(<Group at={null} />);
+    await cards();
+    // Scrolled through every card, one at a time, each pictured before it leaves.
+    for (let i = 0; i < MOST_KEPT + 4; i++) {
+      shown.show(`Theme ${i}`);
+      await waitFor(() => expect(asked("theme_specimen")).toHaveLength(i + 1));
+      await waitFor(() => expect(named(`Theme ${i}`).querySelector("img")).not.toBeNull());
+      expect(keptSpecimens()).toBeLessThanOrEqual(MOST_KEPT);
+      shown.show(`Theme ${i}`, false);
+    }
+    expect(keptSpecimens()).toBe(MOST_KEPT);
+    // The first, shown least recently, was let go: back on screen, it is asked for again.
+    shown.show("Theme 0");
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(MOST_KEPT + 5));
+    expect(asked("theme_specimen").at(-1)).toMatchObject({ theme: "theme-0" });
+    // The last, shown most recently, is kept.
+    shown.show(`Theme ${MOST_KEPT + 3}`);
+    await new Promise((done) => setTimeout(done, 10));
+    expect(asked("theme_specimen")).toHaveLength(MOST_KEPT + 5);
+  });
+
+  it("watches a refused card's pictures once it becomes a theme while the tab is open", async () => {
+    const shown = screenOf();
+    const fixed = card({ id: "broken", name: "Broken" });
+    const gallery: ThemeGallery = {
+      ...GALLERY,
+      cards: [{ ...fixed, refused: true, said: ["surface.base is not a colour"], appearances: [] }],
+    };
+    const { asked } = core(gallery);
+    render(<Group at={{ plane: PLANE, workspace: null }} />);
+    await cards();
+    expect(named("Broken")).toHaveAttribute("aria-disabled", "true");
+    // Its folder is put right on disk: the same card, now a theme, with a new stamp.
+    gallery.cards = [{ ...fixed, stamp: "1" }];
+    await act(async () => {
+      await emit(THEME_FOLDERS_CHANGED, { survey: false });
+    });
+    await waitFor(() => expect(named("Broken")).not.toHaveAttribute("aria-disabled"));
+    shown.show("Broken");
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(1));
+    expect(asked("theme_specimen")[0]).toMatchObject({ theme: "broken" });
+  });
+
+  it("never lets go of a picture a card on screen shows", async () => {
+    const shown = screenOf();
+    const { asked } = core({ ...GALLERY, cards: many(MOST_KEPT + 2) });
+    render(<Group at={null} />);
+    await cards();
+    for (let i = 0; i < MOST_KEPT + 2; i++) shown.show(`Theme ${i}`);
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(MOST_KEPT + 2));
+    await waitFor(() => expect(document.querySelectorAll("img")).toHaveLength(MOST_KEPT + 2));
+    expect(keptSpecimens()).toBe(MOST_KEPT + 2);
+    // Off screen, the ones past the bound are let go.
+    for (let i = 0; i < MOST_KEPT + 2; i++) shown.show(`Theme ${i}`, false);
+    expect(keptSpecimens()).toBe(MOST_KEPT);
+  });
+});
+
+describe("nothing a gallery test starts outlives it (#2698)", () => {
+  it("drops a picture asked before the pictures were forgotten, and starts nothing with it", async () => {
+    const before = core({ ...GALLERY, cards: [DUSK] }, { pictures: "held" });
+    render(<Group at={null} />);
+    await cards();
+    await waitFor(() => expect(before.asked("theme_specimen")).toHaveLength(1));
+    // What the end of a test does, with the picture still being painted.
+    cleanup();
+    forgetGalleries();
+    forgetSpecimens();
+    const after = core(GALLERY, { pictures: "held" });
+    render(<Group at={null} />);
+    await cards();
+    await waitFor(() => expect(after.asked("theme_specimen")).toHaveLength(1));
+    // The first test's picture is done: it starts no second one beside the one painting.
+    await act(async () => before.paint());
+    await new Promise((done) => setTimeout(done, 10));
+    expect(after.asked("theme_specimen")).toHaveLength(1);
+    await act(async () => after.paint());
+    await waitFor(() => expect(after.asked("theme_specimen")).toHaveLength(2));
+    expect(after.most()).toBe(1);
+  });
+
+  it("ends the wait for a busy painter when the pictures are forgotten", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { asked } = core({ ...GALLERY, cards: [DUSK] }, { painter: () => SPECIMEN_BUSY });
+    render(<Group at={null} />);
+    await cards();
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(1));
+    await waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0));
+    cleanup();
+    forgetSpecimens();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("your own theme.json, drawn (#2615)", () => {
+  /** What the levels draw when it is the person's own `theme.json`: no card is drawn. */
+  const theirs = (over: Partial<ThemeGallery>) =>
+    shown({ drawn: null, chosen: null, level: "machine-default", ...over });
+
+  it("says it is drawn and follows the system, and marks no card", async () => {
+    core(
+      theirs({
+        from: "your own theme.json on this machine",
+        theirs: { follows_system: true, note: null },
+      }),
+    );
+    render(<Group at={null} />);
+    await cards();
+    expect(
+      screen.getByText(/^Drawn here: your own theme.json, following the system/),
+    ).toHaveTextContent("This machine");
+    for (const one of screen.getAllByRole("option"))
+      expect(one).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByRole("region", { name: "Appearance" })).toHaveTextContent(
+      "Your own theme.json is drawn here, and it is no card",
+    );
+    expect(screen.getByRole("region", { name: "Theme check" })).not.toHaveTextContent(
+      "Reading the themes",
+    );
+  });
+
+  it("says a theme.json of one appearance stays in it when the old system id is chosen", async () => {
+    core(
+      theirs({
+        yours: mine("system", null),
+        level: "machine-default",
+        theirs: {
+          follows_system: false,
+          note: "Mine has only a dark appearance, so following the system stays dark",
+        },
+      }),
+    );
+    render(<Group at={null} />);
+    await cards();
+    expect(
+      screen.getByText(
+        /^Chosen here: your own theme.json \(Mine has only a dark appearance, so following the system stays dark\)/,
+      ),
+    ).toBeTruthy();
+    // The old id names the person's own theme, not Purlis Classic.
+    expect(named("Purlis Classic")).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("marks Purlis Classic for the old system id with no theme of your own, following the system", async () => {
+    core(shown({ yours: mine("system", null), chosen: "purlis-classic" }));
+    render(<Group at={null} />);
+    await cards();
+    expect(named("Purlis Classic")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText(/^Chosen here: Purlis Classic/)).toBeTruthy();
   });
 });

@@ -6,6 +6,8 @@ import * as Alert from "./overlays/alert-dialog";
 import { ENDS_IT, type Offer } from "./actions";
 import { AnswerBar } from "./AnswerBar";
 import { Choice, SettingRow } from "./settings/components";
+import type { WindowDraft } from "./bindings";
+import { keepSays } from "./themeDrafts";
 
 /** The two answers about the chats at work below a closing chat. */
 const KEEP = "keep";
@@ -86,6 +88,7 @@ export function EndingChat({
   shows,
   back = [],
   ownTabs = 0,
+  drafts = [],
   onEnd,
   onSmartClose,
   onCancel,
@@ -116,13 +119,21 @@ export function EndingChat({
   /** How many tasks below the closing session have a tab of their own (#1489): the dialog
    *  says so, since those tabs go with the answer about the tasks. */
   ownTabs?: number;
-  /** `stop` is the answer about the running persona chats: stop them, or keep them running. */
-  onEnd: (stop: boolean) => void;
-  onSmartClose: (stop: boolean) => void;
+  /** The chat's theme drafts, by theme folder (#2332): the dialog asks Keep or Revert, and
+   *  neither close is offered until it is answered, so nothing is kept or dropped silently. */
+  drafts?: readonly DraftClosing[];
+  /** `stop` is the answer about the running persona chats: stop them, or keep them running.
+   *  `keepDrafts` is the answer about its theme drafts, where it has any. */
+  onEnd: (stop: boolean, keepDrafts?: boolean) => void;
+  onSmartClose: (stop: boolean, keepDrafts?: boolean) => void;
   onCancel: () => void;
 }) {
   // Keep is where it starts: the answer that ends nothing more than was asked for.
   const [stop, setStop] = useState(false);
+  // No answer about the drafts until the person gives one.
+  const [drafted, setDrafted] = useState<"" | typeof KEEP_DRAFTS | typeof REVERT_DRAFTS>("");
+  const unanswered = drafts.length > 0 && drafted === "";
+  const keepDrafts = drafts.length > 0 ? drafted === KEEP_DRAFTS : undefined;
   // Focused by the dialog itself rather than by `autoFocus`: see `StartChat` for why.
   const cancel = useRef<HTMLButtonElement>(null);
   const close = useRef<HTMLButtonElement>(null);
@@ -207,6 +218,28 @@ export function EndingChat({
               )}
             />
           )}
+          {/* **Its theme drafts are asked about here** (#2332): Keep puts each in the folder it
+              is a draft of, Revert deletes it. */}
+          {drafts.length > 0 && (
+            <SettingRow
+              label={DRAFTS_SAY(drafts.map((one) => one.folder))}
+              grouped
+              control={(ids) => (
+                <Choice
+                  ids={ids}
+                  kind="radio"
+                  options={[
+                    { value: KEEP_DRAFTS, label: "Keep", says: KEEP_DRAFTS_SAY(drafts) },
+                    { value: REVERT_DRAFTS, label: "Revert", says: REVERT_DRAFTS_SAYS },
+                  ]}
+                  value={drafted === "" ? undefined : drafted}
+                  onValueChange={(to) =>
+                    setDrafted(to === KEEP_DRAFTS ? KEEP_DRAFTS : REVERT_DRAFTS)
+                  }
+                />
+              )}
+            />
+          )}
           {/* `tabIndex={0}` on each, per `docs/ui-primitives.md` (charter-app#186). Cancel
               first and Smart close last, at the edge where a primary answer sits. */}
           <AnswerBar>
@@ -221,7 +254,9 @@ export function EndingChat({
                 ref={close}
                 className="ui-button ui-button-danger ends-it"
                 tabIndex={0}
-                onClick={() => onEnd(stop)}
+                disabled={unanswered}
+                title={unanswered ? CHOOSE_DRAFTS : undefined}
+                onClick={() => (keepDrafts === undefined ? onEnd(stop) : onEnd(stop, keepDrafts))}
               >
                 Close
               </button>
@@ -232,9 +267,12 @@ export function EndingChat({
                 ref={smartClose}
                 className="ui-button ui-button-primary smart-close"
                 tabIndex={0}
-                disabled={!smart?.available}
+                disabled={!smart?.available || unanswered}
+                title={unanswered ? CHOOSE_DRAFTS : undefined}
                 aria-describedby={smart?.why ? "smart-close-why" : undefined}
-                onClick={() => onSmartClose(stop)}
+                onClick={() =>
+                  keepDrafts === undefined ? onSmartClose(stop) : onSmartClose(stop, keepDrafts)
+                }
               >
                 Smart close
               </button>
@@ -251,6 +289,32 @@ export function EndingChat({
  * #1489): the tasks among what is being closed, by name, and how many of the closing
  * session's tasks have a tab of their own. Neither is ended by a close.
  */
+/** The two answers about a closing chat's theme drafts (#2332). */
+const KEEP_DRAFTS = "keep-drafts";
+const REVERT_DRAFTS = "revert-drafts";
+
+export function DRAFTS_SAY(drafts: readonly string[]): string {
+  return drafts.length === 1
+    ? `This chat has a theme draft, ${drafts[0]}.`
+    : `This chat has theme drafts: ${drafts.join(", ")}.`;
+}
+
+/** A closing chat's theme draft, as the close question says what Keep does with it. */
+export type DraftClosing = Pick<WindowDraft, "folder" | "kept_to" | "workspace" | "replaces">;
+
+/** What Keep does with each draft: where it puts it, and what it replaces there; then the one
+ *  question who draws it. */
+export function KEEP_DRAFTS_SAY(drafts: readonly DraftClosing[]): string {
+  const each = drafts.map((one) =>
+    drafts.length === 1 ? keepSays(one) : `${one.folder}: ${keepSays(one)}`,
+  );
+  return `${each.join(" ")} Then you are asked who draws it.`;
+}
+
+export const REVERT_DRAFTS_SAYS = "Each is deleted, and the theme as it was kept is drawn.";
+
+export const CHOOSE_DRAFTS = "Choose Keep or Revert for the theme drafts first.";
+
 export function TASK_TABS_SAY(back: readonly string[], ownTabs: number): string {
   return [back.length > 0 ? BACK_SAYS(back) : "", ownTabs > 0 ? OWN_TABS_SAYS(ownTabs) : ""]
     .filter((said) => said !== "")

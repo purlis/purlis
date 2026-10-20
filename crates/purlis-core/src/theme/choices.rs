@@ -194,18 +194,36 @@ fn choice_of(entry: &Value) -> Option<Choice> {
     })
 }
 
-/// The option values an entry's `options` holds: each whose option and value are ids, at most
-/// as many as a theme has options; anything else is left out.
+/// The option values an entry's `options` holds: [`values_from`] its pairs.
 fn values_of(options: Option<&Value>) -> Values {
-    options
-        .and_then(Value::as_object)
+    values_from(
+        options
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+            .map(|(id, value)| (id.as_str(), value.as_str())),
+    )
+}
+
+/// The most option values a choice holds: as many as a theme may have options.
+pub const MOST_VALUES: usize = MOST_OPTIONS;
+
+/// Whether `text` names an option or one of its values: an id, as a theme's are.
+pub fn is_id(text: &str) -> bool {
+    is_name(text)
+}
+
+/// **Option values as a file holds them** (#2527, #2707), the choices file or a committed
+/// default: each pair whose option and value (`None`: not text) are ids, at most
+/// [`MOST_VALUES`]; anything else is left out.
+pub fn values_from<'a>(pairs: impl IntoIterator<Item = (&'a str, Option<&'a str>)>) -> Values {
+    pairs
         .into_iter()
-        .flatten()
         .filter_map(|(id, value)| {
-            let value = value.as_str()?;
-            (is_name(id) && is_name(value)).then(|| (id.clone(), value.to_owned()))
+            let value = value?;
+            (is_id(id) && is_id(value)).then(|| (id.to_owned(), value.to_owned()))
         })
-        .take(MOST_OPTIONS)
+        .take(MOST_VALUES)
         .collect()
 }
 

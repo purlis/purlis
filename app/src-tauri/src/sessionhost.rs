@@ -297,6 +297,10 @@ impl SessionHost {
             self.connection.gone(why);
             return;
         };
+        // Each project's link names the window by the name it keeps for it (#2623).
+        if let Some(config) = purlis_core::machine::config_root() {
+            self.connection.naming_in(config);
+        }
         self.start_at(place, || {
             std::env::current_exe()
                 .map(|binary| command(&binary))
@@ -816,7 +820,11 @@ fn end_the_one_serving(place: &purlis_host::Place) -> Result<(), String> {
         .map_err(|why| format!("its credential could not be read: {why}"))?;
     // Bounded: a host that takes the connection and never answers is not waited on for good.
     let link = tauri::async_runtime::block_on(async {
-        tokio::time::timeout(QUITS_WITHIN, open_link(&place.socket, &credential, || {})).await
+        tokio::time::timeout(
+            QUITS_WITHIN,
+            open_link(&place.socket, &credential, || {}, None),
+        )
+        .await
     })
     .map_err(|_| "it did not answer".to_owned())??;
     tracing::info!(
@@ -871,7 +879,7 @@ fn connect(
             }
         };
         let runtime = tokio::runtime::Handle::current();
-        match open_link(&socket, &credential, ended).await {
+        match open_link(&socket, &credential, ended, None).await {
             Ok(link) => {
                 let dial = dialing(socket, credential, runtime);
                 connection.ready(Arc::new(link), dial);
@@ -886,6 +894,7 @@ async fn open_link(
     socket: &Path,
     credential: &Credential,
     ended: impl FnOnce() + Send + 'static,
+    naming: Option<purlis_session_protocol::browsing::Secret>,
 ) -> Result<HostLink, String> {
     let stream = tokio::net::UnixStream::connect(socket)
         .await
@@ -893,7 +902,7 @@ async fn open_link(
     let link = link::connect(stream, session::speaks(), Scope::LocalUi, credential)
         .await
         .map_err(|why| format!("it refused the window: {why}"))?;
-    HostLink::over(link, tokio::runtime::Handle::current(), ended).await
+    HostLink::over_named(link, tokio::runtime::Handle::current(), ended, naming).await
 }
 
 /// Opens one more link to the host, from any thread but the runtime's own: what
@@ -904,12 +913,17 @@ fn dialing(
     credential: Credential,
     runtime: tokio::runtime::Handle,
 ) -> crate::hostedsessions::Dial {
-    Arc::new(move |within| {
+    Arc::new(move |within, naming| {
         let (socket, credential) = (socket.clone(), credential.clone());
         crate::hostedsessions::open_within(&runtime, within, async move {
-            open_link(&socket, &credential, || {
-                tracing::info!("purlis: a project's link to the session host ended");
-            })
+            open_link(
+                &socket,
+                &credential,
+                || {
+                    tracing::info!("purlis: a project's link to the session host ended");
+                },
+                naming,
+            )
             .await
         })
     })

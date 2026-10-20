@@ -59,6 +59,7 @@ impl Host for Board {
                 number: None,
                 process: None,
                 confined: None,
+                sandbox: None,
             },
             Command::AttachView { kind, .. } => Answer::Attached(session::Attached {
                 view: 1,
@@ -349,6 +350,13 @@ fn every_command() -> Vec<Command> {
         Command::TakeBack {
             window: "01JA0WNDW0000000000000000".into(),
         },
+        // The window naming itself on a link to its own host (1.31, #2623): the window's alone,
+        // never a link between hosts.
+        Command::NameWindow {
+            name: purlis_session_protocol::browsing::Secret::new(
+                "0123456789abcdef0123456789abcdef".into(),
+            ),
+        },
     ]
 }
 
@@ -404,6 +412,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "hand_back",
             "log_in",
             "start_program", // a browser opened from kept logins
+            "name_window",
         ],
         Scope::Terminal => &[
             "list",

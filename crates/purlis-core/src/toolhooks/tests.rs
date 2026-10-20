@@ -928,3 +928,115 @@ fn an_edit_whose_text_is_not_in_the_file_is_refused_in_fixed_words() {
     };
     assert_eq!(verdict.denial, crate::proposed::UNPREPARED);
 }
+
+// ---- posttooluse: a theme draft (#2332) ---------------------------------------------------
+
+/// A plane with nothing but its manifest and its state folder: a chat's theme draft `folder`
+/// in it holding `document`, and what the post hook says of a write of it.
+fn draft_written(folder: &str, document: &Value) -> Answer {
+    draft_written_by(folder, document, true)
+}
+
+/// [`draft_written`], by the chat whose draft it is (`own`) or by another.
+fn draft_written_by(folder: &str, document: &Value, own: bool) -> Answer {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join(".purlis")).unwrap();
+    let config = root.join("config-home");
+    std::fs::create_dir_all(&config).unwrap();
+    let chat = crate::reopen::mint();
+    let draft = crate::theme::drafts::folder_of(&root, &chat)
+        .unwrap()
+        .join(folder);
+    std::fs::create_dir_all(&draft).unwrap();
+    let file = draft.join("theme.json");
+    std::fs::write(&file, document.to_string()).unwrap();
+    let writer = if own {
+        chat.clone()
+    } else {
+        crate::reopen::mint()
+    };
+    let env: HashMap<String, String> = [
+        (
+            crate::machine::HOME_VAR.to_string(),
+            config.to_string_lossy().into_owned(),
+        ),
+        (crate::hookwire::CHAT_ID_ENV.to_string(), writer),
+    ]
+    .into();
+    let lookup = move |name: &str| env.get(name).cloned();
+    let payload = edit_of(&file.to_string_lossy(), "{}");
+    let hook = Hook {
+        root: &root,
+        in_plane: true,
+        payload: &payload,
+        env: &lookup,
+        cwd: &root,
+        now: now(),
+        host: "box",
+    };
+    posttooluse(&hook)
+}
+
+#[test]
+fn a_theme_draft_that_breaks_a_hard_floor_tells_the_chat_which() {
+    let glare = serde_json::json!({
+        "name": "Glare",
+        "appearances": [{ "id": "dark", "appearance": "dark",
+                          "tokens": { "surface.sunken": "#f2f2f2" } }]
+    });
+    let answer = draft_written("glare", &glare);
+    let ctx = said(&answer)["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        ctx.starts_with("purlis does not draw the theme draft glare: it breaks a hard floor"),
+        "{ctx}"
+    );
+    assert!(
+        ctx.contains("primary text is readable on every surface"),
+        "{ctx}"
+    );
+}
+
+#[test]
+fn a_theme_draft_that_is_not_a_theme_tells_the_chat_why() {
+    let answer = draft_written("broken", &serde_json::json!({ "name": 7 }));
+    let ctx = said(&answer)["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        ctx.starts_with("purlis does not draw the theme draft broken: "),
+        "{ctx}"
+    );
+}
+
+#[test]
+fn a_theme_draft_the_window_draws_says_nothing_of_itself() {
+    let fine = serde_json::json!({
+        "name": "Fine",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {} }]
+    });
+    let told = match draft_written("fine", &fine) {
+        Answer::Say(json) => json.contains("theme draft"),
+        _ => false,
+    };
+    assert!(!told);
+}
+
+#[test]
+fn another_chat_s_theme_draft_is_never_spoken_of() {
+    let glare = serde_json::json!({
+        "name": "Glare",
+        "appearances": [{ "id": "dark", "appearance": "dark",
+                          "tokens": { "surface.sunken": "#f2f2f2" } }]
+    });
+    let told = match draft_written_by("glare", &glare, false) {
+        Answer::Say(json) => json.contains("theme draft"),
+        _ => false,
+    };
+    assert!(!told);
+}

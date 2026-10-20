@@ -1,9 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis theme list`, `check`, `import` and `export` (spec #2313, #2321, #2334): every theme
-//! available on this machine and where it comes from, the theme check of any one of them, a
-//! theme folder made from a theme of another program, and a theme folder as a zip.
+//! `purlis theme list`, `check`, `draft`, `import` and `export` (spec #2313, #2321, #2332,
+//! #2334): every theme available on this machine and where it comes from, the theme check of any
+//! one of them, a chat's theme draft, a theme folder made from a theme of another program, and a
+//! theme folder as a zip.
 //!
 //! **Nothing here judges a theme.** The theme engine (`purlis_core::theme`) reads it, refuses it or
 //! says what it left out, and checks each appearance; this module finds the themes there are, asks
@@ -36,9 +37,21 @@
 //! **The check is of what the window draws**: each combination says the consent floors the
 //! window holds when it draws it, and the tokens it draws as purlis's own for them.
 //!
+//! **A chat's theme draft** (#2332): `draft <folder>` makes this chat's draft in purlis's local
+//! folder (`theme::drafts`), and `check draft:<folder>` checks it as the window draws it: with
+//! its hard floors, which keep a draft that breaks one from being drawn.
+//!
+//! **Each level's choice** (#2707): `list` shows, after the themes, what every level chose,
+//! nearest first: the person's choice and the committed default of each workspace, of the
+//! project and the person's machine default, each with the level of the theme folder it reads
+//! (`from`), its appearance and its option values. `check` names the levels that chose the theme
+//! it checks. The levels are read by the engine ([`theme::Levels::read`]) exactly as the window
+//! reads them; whether a choice is drawn where it is made is the window's to resolve, since it
+//! hangs on the extensions in force and the system's appearance there.
+//!
 //! **The exit is a linter's.** `check` exits 0 when the theme is drawn, notes and warnings or
-//! not (a contrast finding is the author's call, ADR 0097 §2); 1 when it is refused; 2 when
-//! there is no such theme here.
+//! not (a contrast finding is the author's call, ADR 0097 §2); 1 when it is refused, or is a
+//! draft that breaks a hard floor; 2 when there is no such theme here.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -68,6 +81,9 @@ pub const PROJECT: &str = "project";
 /// How a theme folder's id names a workspace's level: `workspace:<workspace>:<folder>`.
 pub const WORKSPACE: &str = "workspace";
 
+/// How an id names this chat's theme draft (#2332): `draft:<folder>`.
+pub const DRAFT: &str = "draft";
+
 /// `purlis theme …`.
 #[derive(Subcommand)]
 pub enum ThemeCommand {
@@ -94,9 +110,29 @@ pub enum ThemeCommand {
         theme: String,
         /// Answer as JSON, for a chat or a script. Its `clean` is true with no error, no note,
         /// no warning and no floor held; it does not cover hard floors, which `hard_floors`
-        /// reports on its own (`null` until purlis checks them).
+        /// reports on its own: each one broken, in each combination. `draft:<folder>` checks
+        /// this chat's theme draft, which exits 1 when it breaks a hard floor, since the
+        /// window does not draw it.
         #[arg(long)]
         json: bool,
+    },
+    /// This chat's theme draft of a theme folder (#2332), which the app that started the chat
+    /// writes in purlis's local folder, never committed: a copy of the workspace's or the
+    /// project's folder of that name, or a new theme that extends Purlis Classic. It also makes a
+    /// working copy for you to edit; `--save` hands that to the app. The draft is drawn only in
+    /// this chat's workspace, and the person keeps or reverts it in the window. Run it in a chat
+    /// purlis started. Exits 0 when the draft is drawn, 1 when it is not or nothing was written.
+    Draft {
+        /// The theme folder's name: lower-case letters, digits and dashes.
+        folder: String,
+        /// Hand the working copy's theme.json (and its icon sets) to the app as the draft, and
+        /// say what the window draws of it. Exits 1 when it is not drawn.
+        #[arg(long)]
+        save: bool,
+        /// The working copy: a folder of yours holding theme.json. `$TMPDIR/purlis-theme-drafts/
+        /// <folder>` when not given.
+        #[arg(long)]
+        from: Option<String>,
     },
     /// Make a theme folder from a theme you already have: a VS Code colour theme (JSON with
     /// comments), a base16 or base24 scheme (YAML or JSON), an iTerm2 colour preset
@@ -161,6 +197,8 @@ enum From {
         folder: String,
         path: String,
     },
+    /// This chat's theme draft (#2332): its folder's name and its path.
+    Draft { folder: String, path: String },
 }
 
 /// The level of a theme folder in a level's `themes/`.
@@ -253,6 +291,7 @@ impl From {
             Self::Level { level, path, .. } => {
                 format!("{} {}", level.word(), shown::short(path))
             }
+            Self::Draft { path, .. } => format!("{DRAFT} {}", shown::short(path)),
         }
     }
 
@@ -264,6 +303,7 @@ impl From {
             Self::Mine(_) => Some(MACHINE),
             Self::Extension(_) => Some("extension"),
             Self::Level { level, .. } => Some(level.word()),
+            Self::Draft { .. } => Some(DRAFT),
             Self::File(_) | Self::Folder(_) => None,
         }
     }
@@ -285,6 +325,9 @@ impl From {
                 folder,
                 path,
             } => json!({ "kind": level.word(), "folder": folder, "path": path }),
+            Self::Draft { folder, path } => {
+                json!({ "kind": DRAFT, "folder": folder, "path": path })
+            }
         }
     }
 }
@@ -419,18 +462,21 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
     match command {
         ThemeCommand::List { json } => {
             let found = available(here);
+            let chosen = every_choice(here);
             if *json {
                 let themes: Vec<Value> = found.iter().map(Found::summary_json).collect();
+                let choices: Vec<Value> = chosen.iter().map(Chose::json).collect();
                 println!(
                     "{}",
                     json!({
                         "schema": SCHEMA,
                         "theme_schema": theme::SCHEMA_URL,
-                        "themes": themes
+                        "themes": themes,
+                        "choices": choices,
                     })
                 );
             } else {
-                print!("{}", table(&found));
+                print!("{}{}", table(&found), choices_table(&chosen));
             }
             ExitCode::SUCCESS
         }
@@ -452,13 +498,23 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
                 }
             };
             let checked = checks(&found);
+            let chosen: Vec<Chose> = every_choice(here)
+                .into_iter()
+                .filter(|one| one.id.as_deref() == Some(found.id.as_str()))
+                .collect();
             if *json {
-                println!("{}", checked_json(&found, &checked));
+                let mut said = checked_json(&found, &checked);
+                said["chosen"] = chosen.iter().map(Chose::json).collect();
+                println!("{said}");
             } else {
-                print!("{}", checked_text(&found, &checked, &|_, _| None));
+                print!("{}", checked_text(&found, &checked, &chosen, &|_, _| None));
             }
-            ExitCode::from(u8::from(found.refused.is_some()))
+            // A draft that breaks a hard floor is not drawn: the linter's 1, as a refusal is.
+            let undrawn = matches!(found.from, From::Draft { .. })
+                && checked.iter().any(|one| !one.hard.is_empty());
+            ExitCode::from(u8::from(found.refused.is_some() || undrawn))
         }
+        ThemeCommand::Draft { folder, save, from } => draft(here, folder, *save, from.as_deref()),
         ThemeCommand::Import {
             source,
             kind,
@@ -639,7 +695,7 @@ fn imported_text(
             .then(|| imported.palette_entry(appearance, token))
             .flatten()
     };
-    out.push_str(&checked_text(found, checked, &entry));
+    out.push_str(&checked_text(found, checked, &[], &entry));
     if let Some(path) = written {
         let path = shown::readable(&path.display().to_string(), PATH_LIMIT);
         out.push_str(&format!(
@@ -859,6 +915,201 @@ fn available(here: Here<'_>) -> Vec<Found> {
     found
 }
 
+/// **One level's choice** (#2707): the level of the precedence that made it, the workspace it
+/// is made for (levels 1 and 2), the choice as the engine read it, placed at the level of the
+/// folder it reads, and the id `list` names the theme it picks by.
+struct Chose {
+    level: theme::Level,
+    workspace: Option<String>,
+    choice: theme::Choice,
+    /// `None` for a choice of a theme folder no level within its reach has.
+    id: Option<String>,
+}
+
+impl Chose {
+    /// Who chose, as the CHOSEN BY column and the check's `chosen by:` line say it.
+    fn by(&self) -> String {
+        let place = match &self.workspace {
+            Some(name) => format!("{WORKSPACE} {}", shown::short(name)),
+            None => match self.level {
+                theme::Level::MachineDefault | theme::Level::Purlis => MACHINE.to_owned(),
+                _ => PROJECT.to_owned(),
+            },
+        };
+        let whose = match self.level {
+            theme::Level::WorkspaceDefault | theme::Level::ProjectDefault => "committed",
+            _ => "yours",
+        };
+        format!("{place}, {whose}")
+    }
+
+    /// Its option values as `<option>=<value>`, by the option's id; `None` with none.
+    fn values_said(&self) -> Option<String> {
+        (!self.choice.options.is_empty()).then(|| {
+            self.choice
+                .options
+                .iter()
+                .map(|(option, value)| format!("{option}={value}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+    }
+
+    /// As `list --json` (`choices`) and `check --json` (`chosen`) answer it.
+    fn json(&self) -> Value {
+        json!({
+            "level": self.level,
+            "workspace": self.workspace,
+            "theme": self.choice.theme,
+            "id": self.id,
+            "from": self.choice.from.map(Reach::word),
+            "appearance": self.choice.appearance,
+            "options": self.choice.options,
+        })
+    }
+}
+
+/// **What every level chose here**, nearest first, as the engine reads the levels: each
+/// workspace's (by name) person's choice and committed default, then the project's, then the
+/// person's machine default. Outside a plane, the machine default alone.
+fn every_choice(here: Here<'_>) -> Vec<Chose> {
+    let mut chosen = Vec::new();
+    let mut take = |levels: theme::Levels, workspace: Option<&str>, wanted: &[theme::Level]| {
+        let at = match workspace {
+            Some(name) => Level::Workspace(name.to_owned()),
+            None => Level::Project,
+        };
+        let folders = folders(here, &at);
+        for (level, choice) in levels.each() {
+            if !wanted.contains(&level) {
+                continue;
+            }
+            let choice = choice.clone().placed(&folders, level.reach());
+            let id = id_of(here, &choice, level.reach(), workspace);
+            chosen.push(Chose {
+                level,
+                workspace: workspace.map(str::to_owned),
+                choice,
+                id,
+            });
+        }
+    };
+    let Some(plane) = here.plane else {
+        take(
+            theme::Levels::read(here.config, None, None),
+            None,
+            &[theme::Level::MachineDefault],
+        );
+        return chosen;
+    };
+    let workspaces = purlis_core::workspaces::Plane::open(plane)
+        .workspaces()
+        .unwrap_or_default();
+    for name in &workspaces {
+        take(
+            theme::Levels::read(here.config, Some(plane), Some(name)),
+            Some(name),
+            &[
+                theme::Level::WorkspaceChoice,
+                theme::Level::WorkspaceDefault,
+            ],
+        );
+    }
+    take(
+        theme::Levels::read(here.config, Some(plane), None),
+        None,
+        &[
+            theme::Level::ProjectChoice,
+            theme::Level::ProjectDefault,
+            theme::Level::MachineDefault,
+        ],
+    );
+    chosen
+}
+
+/// The id `list` names the theme `choice` picks by, made at a level that reaches `reach` (in
+/// `workspace`, for a workspace's): Purlis or Purlis Classic, an extension's
+/// `<extension>/<theme>`, a theme folder's `<level>:<folder>` at the level it names, or the
+/// person's own (`mine`) for the old `system` id when that has a dark and a light appearance.
+/// `None` for a folder no level within reach has, or a level nearer than the choice reaches.
+fn id_of(
+    here: Here<'_>,
+    choice: &theme::Choice,
+    reach: Reach,
+    workspace: Option<&str>,
+) -> Option<String> {
+    use extension::project::theme::Pick;
+    Some(match Pick::parse(&choice.theme)? {
+        Pick::BuiltIn(id) if id == theme::PURLIS => theme::PURLIS.to_owned(),
+        Pick::BuiltIn(_) => theme::CLASSIC.to_owned(),
+        Pick::Extension { id, name } => format!("{id}/{name}"),
+        Pick::System => {
+            let theirs = theme::read_theirs(here.config).theme;
+            let both = theirs.as_ref().is_some_and(|one| {
+                one.of(theme::Appearance::Dark).is_some()
+                    && one.of(theme::Appearance::Light).is_some()
+            });
+            if both { MINE } else { theme::CLASSIC }.to_owned()
+        }
+        Pick::Folder(name) => {
+            let from = choice.from.filter(|level| *level >= reach)?;
+            let level = match from {
+                Reach::Machine => Level::Machine,
+                Reach::Project => Level::Project,
+                Reach::Workspace => Level::Workspace(workspace?.to_owned()),
+            };
+            level.id(&name)
+        }
+    })
+}
+
+/// What every level chose, as a person reads it, after the themes: one row each, nearest
+/// first, with the level of the folder it reads, its appearance and its option values (`-` for
+/// none). Nothing when no level chose.
+fn choices_table(chosen: &[Chose]) -> String {
+    if chosen.is_empty() {
+        return String::new();
+    }
+    let header = ["CHOSEN BY", "THEME", "FROM", "APPEARANCE", "OPTIONS"];
+    let none = || "-".to_owned();
+    let rows: Vec<[String; 5]> = chosen
+        .iter()
+        .map(|one| {
+            [
+                one.by(),
+                shown::short(&one.choice.theme),
+                one.choice.from.map_or_else(none, |it| it.word().to_owned()),
+                one.choice
+                    .appearance
+                    .as_deref()
+                    .map_or_else(none, shown::short),
+                one.values_said()
+                    .map_or_else(none, |it| shown::readable(&it, 240)),
+            ]
+        })
+        .collect();
+    let mut widths = header.map(str::len);
+    for row in &rows {
+        for (width, cell) in widths.iter_mut().zip(row) {
+            *width = (*width).max(cell.len());
+        }
+    }
+    let line = |cells: [&str; 5]| {
+        let padded: Vec<String> = cells
+            .iter()
+            .zip(widths)
+            .map(|(cell, width)| format!("{cell:width$}"))
+            .collect();
+        format!("  {}\n", padded.join("  ").trim_end())
+    };
+    let mut out = "chosen, nearest first:\n".to_owned();
+    out.push_str(&line(header));
+    for row in &rows {
+        out.push_str(&line([&row[0], &row[1], &row[2], &row[3], &row[4]]));
+    }
+    out
+}
+
 /// The levels' theme folders as the window reads them in front of `level`: the machine's alone,
 /// the project's and the machine's, or a workspace's, the project's and the machine's.
 fn folders(here: Here<'_>, level: &Level) -> Folders {
@@ -938,6 +1189,7 @@ fn mine(config: &Path) -> Option<Found> {
                 vec![Complaint {
                     said: why.clone(),
                     token: None,
+                    awaits_approval: None,
                 }]
             } else {
                 theirs.complaints
@@ -992,6 +1244,9 @@ fn find(here: Here<'_>, asked: &str) -> Result<Found, Vec<Complaint>> {
     if let Some((level, folder)) = Level::of_id(asked) {
         return one_at_level(here, &level, folder);
     }
+    if let Some(folder) = asked.strip_prefix(&format!("{DRAFT}:")) {
+        return this_chats_draft(here, folder);
+    }
     if let Some(config) = here.config {
         if asked == MINE {
             return mine(config).ok_or_else(Vec::new);
@@ -1016,6 +1271,234 @@ fn find(here: Here<'_>, asked: &str) -> Result<Found, Vec<Complaint>> {
         .ok_or_else(Vec::new)
 }
 
+/// **Who and where this chat is**, for its theme drafts (#2332): its id, which only a chat purlis
+/// started has ([`purlis_core::hookwire::CHAT_ID_ENV`]), and the workspace of the folder purlis
+/// started it in ([`purlis_core::sandboxblock::CHAT_DIR_ENV`]), else of this command's folder;
+/// `None` at the plane root.
+fn this_chat(plane: &Path) -> Result<(String, Option<String>), String> {
+    let chat = purlis_core::envvar::var(purlis_core::hookwire::CHAT_ID_ENV)
+        .filter(|id| theme::drafts::is_chat_id(id))
+        .ok_or_else(|| {
+            "a theme draft belongs to a chat purlis started, and this is not one: run it in \
+             that chat"
+                .to_owned()
+        })?;
+    let folder = purlis_core::envvar::var_os(purlis_core::sandboxblock::CHAT_DIR_ENV)
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_dir().ok());
+    let workspace =
+        folder.and_then(|folder| purlis_core::active::workspace_of_tree(plane, &folder));
+    Ok((chat, workspace))
+}
+
+/// Where this chat edits its theme draft `folder`: a working copy of its own, in the temporary
+/// folder its sandbox lets it write (`$TMPDIR`), under this chat's id so no other chat's copy is
+/// taken for it; or the folder `from` names.
+fn working_copy(folder: &str, from: Option<&str>) -> std::path::PathBuf {
+    from.map_or_else(
+        || {
+            let chat = purlis_core::envvar::var(purlis_core::hookwire::CHAT_ID_ENV)
+                .filter(|id| theme::drafts::is_chat_id(id))
+                .unwrap_or_else(|| "this-chat".to_owned());
+            std::env::temp_dir()
+                .join("purlis-theme-drafts")
+                .join(chat)
+                .join(folder)
+        },
+        std::path::PathBuf::from,
+    )
+}
+
+/// The most a draft's working copy hands over: what a save takes.
+const MOST_SAVED: usize = theme::drafts::MOST_SAVED_FILES;
+
+/// The theme files of the working copy at `dir`, by their path in the folder: its `theme.json`
+/// and each icon set under `icons/`, every one a plain file read refusing a link, under the cap
+/// of a theme file. What a save hands over, and nothing else.
+fn working_files(dir: &Path) -> Result<std::collections::BTreeMap<String, String>, String> {
+    let most = purlis_core::windowprefs::MAX_BYTES;
+    let read = |path: &Path| -> Result<String, String> {
+        use std::io::Read;
+        let failed = |why: std::io::Error| format!("{} could not be read: {why}", path.display());
+        let mut open = purlis_core::contain::open_no_link(dir, path).map_err(failed)?;
+        if !open.metadata().map_err(failed)?.file_type().is_file() {
+            return Err(format!("{} is not a plain file", path.display()));
+        }
+        let mut text = String::new();
+        (&mut open)
+            .take(most + 1)
+            .read_to_string(&mut text)
+            .map_err(failed)?;
+        if text.len() as u64 > most {
+            return Err(format!(
+                "{} is larger than {most} bytes, the most a theme file is",
+                path.display()
+            ));
+        }
+        Ok(text)
+    };
+    let mut files = std::collections::BTreeMap::new();
+    files.insert(
+        theme::THEME_JSON.to_owned(),
+        read(&dir.join(theme::THEME_JSON))?,
+    );
+    let icons = dir.join("icons");
+    if let Ok(listed) = std::fs::read_dir(&icons) {
+        let mut names: Vec<String> = listed
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+            .filter(|name| name.ends_with(".json") && !name.starts_with('.'))
+            .collect();
+        names.sort();
+        for name in names.into_iter().take(MOST_SAVED - 1) {
+            files.insert(format!("icons/{name}"), read(&icons.join(&name))?);
+        }
+    }
+    Ok(files)
+}
+
+/// `purlis theme draft <folder>`: **the app writes this chat's draft**, in the drafts folder of
+/// the chat whose token asks, and says what the window draws of it. Without `--save` it starts
+/// the draft and makes a working copy of it here; with `--save` it hands the working copy's theme
+/// files over. No chat writes the drafts folder, and this command never does: outside a chat the
+/// app started, with its connection, there is no draft to write.
+fn draft(here: Here<'_>, folder: &str, save: bool, from: Option<&str>) -> ExitCode {
+    let refused = |why: &str| {
+        eprintln!("purlis: {}", shown::readable(why, 480));
+        ExitCode::from(1)
+    };
+    let Some(plane) = here.plane else {
+        return refused("a theme draft is a project's: run it inside one");
+    };
+    let working = working_copy(folder, from);
+    let files = if save {
+        match working_files(&working) {
+            // Checked before it is sent: what one ask carries is bounded.
+            Ok(files) => match theme::drafts::too_large(&files) {
+                Some(why) => return refused(&format!("{why}. Nothing was handed over")),
+                None => Some(files),
+            },
+            Err(why) => return refused(&why),
+        }
+    } else {
+        None
+    };
+    let answer = crate::brokered::asked(
+        |chat| {
+            purlis_core::hookwire::Ask::ThemeDraft(Box::new(purlis_core::hookwire::ThemeDraftAsk {
+                chat,
+                folder: folder.to_owned(),
+                files,
+            }))
+        },
+        std::time::Duration::from_secs(30),
+    );
+    let (code, newly) = match answer {
+        Ok(Ok(purlis_core::hookwire::Answer::Said { lines, code })) => {
+            // A draft made now is said as done: its working copy is made again from it.
+            let newly = lines
+                .iter()
+                .any(|line| matches!(line, purlis_core::repocmd::Say::Done(_)));
+            for line in lines {
+                crate::speak(line);
+            }
+            (code, newly)
+        }
+        // The app's own refusal, as it said it.
+        Ok(Ok(purlis_core::hookwire::Answer::No { why }))
+            if why != purlis_core::hookwire::NOTHING_ANSWERS =>
+        {
+            return refused(&why);
+        }
+        Ok(Err(e)) if !crate::brokered::not_taken(&e) => {
+            return refused(&format!(
+                "the app took this and did not answer ({e}), so the draft may have been \
+                 written: `purlis theme check {DRAFT}:{folder}` says what is there"
+            ));
+        }
+        _ => {
+            return refused(
+                "a theme draft is written by the app that started this chat, and no app took \
+                 this, so nothing was written: run it in a chat purlis started",
+            );
+        }
+    };
+    if !save && code == 0 {
+        // The working copy, made from the draft as the app wrote it: when there is none, and
+        // whenever the draft was made now, so the edits of a draft kept or reverted never come
+        // back with the next save.
+        if newly && from.is_none() && std::fs::symlink_metadata(&working).is_ok() {
+            let _ = std::fs::remove_dir_all(&working);
+        }
+        if std::fs::symlink_metadata(&working).is_err() {
+            let made = this_chat(plane)
+                .ok()
+                .and_then(|(chat, _)| theme::drafts::folder_of(plane, &chat))
+                .map(|drafts| drafts.join(folder))
+                .ok_or_else(|| "this chat's draft could not be found".to_owned())
+                .and_then(|draft| working_files(&draft))
+                .and_then(|files| {
+                    for (path, text) in &files {
+                        let at = working.join(path);
+                        if let Some(parent) = at.parent() {
+                            std::fs::create_dir_all(parent).map_err(|why| why.to_string())?;
+                        }
+                        std::fs::write(&at, text).map_err(|why| why.to_string())?;
+                    }
+                    Ok(())
+                });
+            if let Err(why) = made {
+                return refused(&format!(
+                    "the draft is started, and its working copy was not made: {why}"
+                ));
+            }
+        }
+        println!(
+            "Edit {} there, then `purlis theme draft {folder} --save` hands it to the app. \
+             `purlis theme check {DRAFT}:{folder}` checks the draft as the window draws it.",
+            working.join(theme::THEME_JSON).display()
+        );
+    }
+    ExitCode::from(code)
+}
+
+/// This chat's theme draft `folder`, read only to check, exactly as the window draws it.
+fn this_chats_draft(here: Here<'_>, folder: &str) -> Result<Found, Vec<Complaint>> {
+    let said = |why: String| {
+        vec![Complaint {
+            said: why,
+            token: None,
+            awaits_approval: None,
+        }]
+    };
+    let plane = here
+        .plane
+        .ok_or_else(|| said("a theme draft is a project's: run it inside one".to_owned()))?;
+    let (chat, workspace) = this_chat(plane).map_err(said)?;
+    let place = theme::drafts::Place {
+        plane,
+        workspace: workspace.as_deref(),
+    };
+    let folders = Folders::of(here.config, Some(plane), workspace.as_deref());
+    let draft = theme::drafts::Draft {
+        chat: chat.clone(),
+        folder: folder.to_owned(),
+        kept_to: theme::drafts::kept_to(&folders, workspace.as_deref(), folder),
+    };
+    let resolved = theme::drafts::read(here.config, place, &draft, true)?;
+    let path = theme::drafts::folder_of(plane, &chat)
+        .map(|it| it.join(folder).display().to_string())
+        .unwrap_or_default();
+    Ok(Found::of(
+        format!("{DRAFT}:{folder}"),
+        From::Draft {
+            folder: folder.to_owned(),
+            path,
+        },
+        resolved,
+    ))
+}
+
 /// The engine's refusal of a theme for `why`, Purlis in its place.
 fn refusal(why: String) -> Resolved {
     Resolved {
@@ -1023,6 +1506,7 @@ fn refusal(why: String) -> Resolved {
         complaints: vec![Complaint {
             said: why,
             token: None,
+            awaits_approval: None,
         }],
         refused: true,
     }
@@ -1147,9 +1631,6 @@ fn appearance(appearance: theme::Appearance) -> &'static str {
     }
 }
 
-/// What the check says about hard floors until the engine keeps them (#2332): not a pass.
-const FLOORS_NOT_CHECKED: &str = "not checked by this purlis yet";
-
 /// The check of every combination of appearance and option values, in the engine's order. A
 /// refused theme has none.
 fn checks(found: &Found) -> Vec<theme::Checked> {
@@ -1206,6 +1687,7 @@ fn options_line(theme: &Theme) -> Option<String> {
 fn checked_text(
     found: &Found,
     checked: &[theme::Checked],
+    chosen: &[Chose],
     entry: &dyn Fn(&str, &str) -> Option<String>,
 ) -> String {
     let mut out = String::new();
@@ -1235,6 +1717,19 @@ fn checked_text(
     ));
     if let Some(line) = options_line(theme) {
         out.push_str(&line);
+    }
+    if !chosen.is_empty() {
+        let each: Vec<String> = chosen
+            .iter()
+            .map(|one| match one.values_said() {
+                Some(values) => format!("{} ({values})", one.by()),
+                None => one.by(),
+            })
+            .collect();
+        out.push_str(&format!(
+            "chosen by: {}\n",
+            shown::readable(&each.join("; "), 480)
+        ));
     }
     if found.notes.is_empty() {
         out.push_str("left out: nothing\n");
@@ -1294,7 +1789,46 @@ fn checked_text(
     for line in held {
         out.push_str(&format!("  {line}\n"));
     }
-    out.push_str(&format!("hard floors: {FLOORS_NOT_CHECKED}\n"));
+    out.push_str(&hard_floors_text(theme, checked, &combinations, named));
+    if matches!(found.from, From::Draft { .. }) && checked.iter().any(|one| !one.hard.is_empty()) {
+        out.push_str(
+            "not drawn: the window keeps this draft's last good version until it holds every \
+             hard floor\n",
+        );
+    }
+    out
+}
+
+/// The check's `hard floors:` lines (#2332): every hard floor each combination breaks as the
+/// window draws it, in the engine's words, or that none is broken.
+fn hard_floors_text(
+    theme: &Theme,
+    checked: &[theme::Checked],
+    combinations: &str,
+    named: bool,
+) -> String {
+    let lines: Vec<String> = checked
+        .iter()
+        .flat_map(|one| {
+            one.hard.iter().map(move |broken| {
+                if named {
+                    format!("{}: {}", theme::combination_said(theme, one), broken.said())
+                } else {
+                    broken.said()
+                }
+            })
+        })
+        .collect();
+    let breaking = checked.iter().filter(|one| !one.hard.is_empty()).count();
+    let mut out = match (lines.is_empty(), named) {
+        (true, true) => format!("hard floors: none broken in {combinations}\n"),
+        (true, false) => "hard floors: none broken\n".to_owned(),
+        (false, true) => format!("hard floors: broken in {breaking} of {combinations}:\n"),
+        (false, false) => "hard floors: broken:\n".to_owned(),
+    };
+    for line in lines {
+        out.push_str(&format!("  {line}\n"));
+    }
     out
 }
 
@@ -1302,7 +1836,7 @@ fn checked_text(
 /// `null`), what refused it (`errors`), what was left out of it (`notes`), each combination's
 /// warnings as the engine reports them with the appearance's id and the option values added, the
 /// consent floors the window holds in each combination that breaks one (`held`), its hard
-/// floors (`null` until the engine keeps them), and whether it is clean: no error, no note, no
+/// floors (each one broken in each combination), and whether it is clean: no error, no note, no
 /// warning and no floor held. `clean` does not cover hard floors, which are reported on their
 /// own.
 fn checked_json(found: &Found, checked: &[theme::Checked]) -> Value {
@@ -1347,6 +1881,20 @@ fn checked_json(found: &Found, checked: &[theme::Checked]) -> Value {
             }))
         })
         .collect();
+    let hard_floors: Vec<Value> = checked
+        .iter()
+        .flat_map(|one| {
+            let options = options_of(one);
+            one.hard.iter().map(move |broken| {
+                let mut said = serde_json::to_value(broken).unwrap_or_default();
+                if let Some(fields) = said.as_object_mut() {
+                    fields.insert("appearance".to_owned(), Value::from(one.appearance.clone()));
+                    fields.insert("options".to_owned(), Value::Object(options.clone()));
+                }
+                said
+            })
+        })
+        .collect();
     let clean =
         found.refused.is_none() && found.notes.is_empty() && warnings.is_empty() && held.is_empty();
     json!({
@@ -1366,7 +1914,7 @@ fn checked_json(found: &Found, checked: &[theme::Checked]) -> Value {
         "notes": notes,
         "warnings": warnings,
         "held": held,
-        "hard_floors": Value::Null,
+        "hard_floors": hard_floors,
         "clean": clean,
     })
 }

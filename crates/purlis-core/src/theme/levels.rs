@@ -310,12 +310,14 @@ pub struct Project<'a> {
     pub workspace: Option<(&'a str, bool)>,
 }
 
-/// The choice the layer `source` of `said` makes: a theme it picks, in the appearance it says.
-/// An appearance with no theme chooses nothing.
+/// The choice the layer `source` of `said` makes: a theme it picks, in the appearance it says,
+/// with the option values it names (#2707). An appearance or option values with no theme choose
+/// nothing.
 fn said_choice(said: &Said, source: Source) -> Option<Choice> {
     let (theme, appearance) = said.picked_in(source);
     let theme = theme?;
     Choice::new(theme, appearance.filter(|it| is_appearance(it)))
+        .map(|choice| choice.with_options(said.options_in(source)))
 }
 
 /// **The key the person's choices for the project at `root` are kept under**: its stable id
@@ -381,6 +383,7 @@ pub fn resolve_levels(inputs: &LevelInputs<'_>, offered: impl FnOnce() -> Arc<[O
     let drawn = if let Some(theirs) = inputs.theirs {
         Drawn {
             level: Some(Level::MachineDefault),
+            theirs: true,
             ..Drawn::of(theirs.first_for(inputs.contrast))
         }
     } else {
@@ -425,7 +428,7 @@ fn drawn_for(
     let appearance = choice.appearance.as_deref();
     // `theme` in the choice's appearance, drawn with its option values, after what reading it
     // said (`before`).
-    let valued = |theme: &Theme, before: Vec<Complaint>| {
+    let valued_in = |theme: &Theme, appearance: Option<&str>, before: Vec<Complaint>| {
         let (theme, left_out) = theme.with(&choice.options);
         let drawn = appear(&theme, appearance, inputs.system, inputs.contrast);
         Drawn {
@@ -433,21 +436,19 @@ fn drawn_for(
             ..drawn
         }
     };
+    let valued = |theme: &Theme, before: Vec<Complaint>| valued_in(theme, appearance, before);
     Ok(match Pick::parse(&choice.theme) {
-        // The old id: the person's own theme following the system when it has both
-        // appearances, else Purlis Classic (#2322, D-2322-19).
-        Some(Pick::System) => {
-            let two = |theme: &&Theme| {
-                theme.of(Appearance::Dark).is_some() && theme.of(Appearance::Light).is_some()
-            };
-            let theme = inputs.theirs.filter(two).unwrap_or_else(|| classic());
-            let (theme, left_out) = theme.with(&choice.options);
-            let drawn = follow(&theme, inputs.system, inputs.contrast);
-            Drawn {
-                complaints: [left_out, drawn.complaints.clone()].concat(),
-                ..drawn
-            }
-        }
+        // The old id names a theme as any id does (#2615): the person's own theme, else Purlis
+        // Classic, following the system unless the choice names an appearance. A theme of theirs
+        // with one appearance stays in it, and Settings › Theme says so.
+        Some(Pick::System) => Drawn {
+            theirs: inputs.theirs.is_some(),
+            ..valued_in(
+                inputs.theirs.unwrap_or_else(|| classic()),
+                appearance.or(Some(SYSTEM)),
+                Vec::new(),
+            )
+        },
         // Purlis Classic by an id one of its appearances has had draws that appearance; Purlis,
         // and either by an appearance chosen, are drawn as any theme is.
         Some(Pick::BuiltIn(id)) => match appearance {

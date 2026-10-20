@@ -370,3 +370,37 @@ fn a_local_use_nat64_address_carrying_a_refused_ipv4_one_at_any_length_is_refuse
         &[]
     ));
 }
+
+/// A Teredo address carries its server's IPv4 address and its client's, the client's with every
+/// bit flipped, and an ISATAP address carries one in its interface identifier (#2678): one that
+/// carries a refused IPv4 address is refused, as a host and as a name's resolved address.
+#[test]
+fn a_teredo_or_isatap_address_carrying_a_refused_ipv4_one_is_refused() {
+    use super::refused_address;
+    for typed in [
+        // Teredo, server 127.0.0.1.
+        "2001:0:7f00:1::39cc:9bf6",
+        // Teredo, client 169.254.169.254 (5601:5601 flipped).
+        "2001:0:cb00:7107::5601:5601",
+        // ISATAP, 127.0.0.1, in both interface identifiers.
+        "2606:4700:1::5efe:7f00:1",
+        "2606:4700:1:0:200:5efe:a9fe:a9fe",
+        "2606:4700:1:0:100:5efe:7f00:1",
+        "2606:4700:1:0:300:5efe:a9fe:a9fe",
+    ] {
+        assert!(refused_address(typed.parse().unwrap(), &[]), "{typed}");
+        let why = refused(&format!("[{typed}]"));
+        assert!(why.contains("carries the IPv4 address"), "{typed}: {why}");
+    }
+    // Server 203.0.113.7 and client 198.51.100.9; ISATAP 1.1.1.1.
+    for typed in ["2001:0:cb00:7107::39cc:9bf6", "2606:4700:1::5efe:101:101"] {
+        assert!(!refused_address(typed.parse().unwrap(), &[]), "{typed}");
+        ok(&format!("[{typed}]:443"));
+    }
+    // One whose carried address is this machine's.
+    let own: std::net::IpAddr = "198.51.100.9".parse().unwrap();
+    assert!(refused_address(
+        "2001:0:cb00:7107::39cc:9bf6".parse().unwrap(),
+        &[own]
+    ));
+}

@@ -8,9 +8,9 @@
 //! else this machine has, draw:
 //!
 //! 1. **What the project picked**: an appearance of Purlis Classic by the id a pick names it by;
-//!    `system`, the person's own theme in the appearance the operating system has when it has a
-//!    dark and a light one, else Purlis Classic's; or the extension theme it names, which is drawn only while the project has that
-//!    extension on and this machine approved it. A pick that cannot be drawn draws the default.
+//!    `system`, the person's own theme, else Purlis Classic, following the operating system; or
+//!    the extension theme it names, which is drawn only while the project has that extension on
+//!    and this machine approved it. A pick that cannot be drawn draws the default.
 //! 2. With no pick, **the person's own theme file**, the one theme they wrote for this machine.
 //!    A project's pick is more specific than a machine's file, which is why it comes first.
 //! 3. With neither, the first theme from an extension the project has on, or the default.
@@ -18,9 +18,10 @@
 //! **Following the system works with any theme that has a dark and a light appearance**: the
 //! window is told it follows, and asks again when the system turns. [`follow`] of a theme with
 //! only one appearance draws that one, and [`Drawn::note`] says that following the system stays
-//! there, which Settings › Theme says on a theme's card (#2331). The old `system` id with a
-//! person's `theme.json` of one appearance follows with Purlis Classic, as it did before format
-//! 2: that file is no card, so nothing would say why it stopped following. With no
+//! there, which Settings › Theme says on a theme's card (#2331). **The old `system` id is no
+//! special case** (#2615): it names the person's own theme, else Purlis Classic, followed as any
+//! theme is, so a `theme.json` of one appearance stays in it; [`Drawn::theirs`] says the person's
+//! own theme is drawn, and Settings › Theme says so with what following does with it. With no
 //! `system` pick a theme draws its first appearance, as Purlis Classic draws its dark. With no
 //! pick, the first extension theme in force that is not refused is drawn.
 //!
@@ -133,9 +134,40 @@ pub struct Drawn {
     /// Whether the theme chosen was refused, so Purlis is drawn in its place and
     /// [`Self::complaints`] say why (#2324): what a reload says in a Notice.
     pub refused: bool,
+    /// Whether what is drawn is the person's own theme file (`theme.json` in purlis's config
+    /// folder), which is no card of a gallery: what Settings › Theme says is drawn (#2615).
+    #[serde(skip)]
+    pub theirs: bool,
 }
 
 impl Drawn {
+    /// **Whether the project's trust ask can let the theme chosen be drawn** (#2647): it was
+    /// refused, and among why is a font file of the project's or a workspace's theme folder
+    /// that this machine's approval of the project does not hold. The refused Notice offers
+    /// Review and allow for it; a yes records the approval, and the next draw reads the face.
+    #[must_use]
+    pub fn awaits_approval(&self) -> bool {
+        !self.awaiting_faces().is_empty()
+    }
+
+    /// **The faces a refused theme waits on the project's approval for** (#2647), each as
+    /// `<path in the project> <sha-256 of the bytes read>`, sorted, once each; empty when it
+    /// waits on none. What a caller keys the review by: the set changes only when a face does.
+    #[must_use]
+    pub fn awaiting_faces(&self) -> Vec<&str> {
+        if !self.refused {
+            return Vec::new();
+        }
+        let mut faces: Vec<&str> = self
+            .complaints
+            .iter()
+            .filter_map(|one| one.awaits_approval.as_deref())
+            .collect();
+        faces.sort_unstable();
+        faces.dedup();
+        faces
+    }
+
     /// `theme` as it is drawn: with the consent floors held ([`super::floors`]).
     pub(super) fn of(theme: &ResolvedTheme) -> Self {
         let (theme, held) = super::floors::hold(theme);
@@ -147,6 +179,7 @@ impl Drawn {
             held,
             level: None,
             refused: false,
+            theirs: false,
         }
     }
 
@@ -200,13 +233,13 @@ pub fn follow(theme: &Theme, system: Appearance, contrast: Contrast) -> Drawn {
 pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) -> Drawn {
     match inputs.pick {
         // `system` is the spec's old id for "the picked theme, following the OS": the person's
-        // own theme, the machine's level, else Purlis Classic.
+        // own theme, the machine's level, else Purlis Classic, followed as any theme is (#2615).
         Some(Pick::System) => {
-            let two = |theme: &&Theme| {
-                theme.of(Appearance::Dark).is_some() && theme.of(Appearance::Light).is_some()
+            let theme = inputs.theirs.unwrap_or_else(|| classic());
+            return Drawn {
+                theirs: inputs.theirs.is_some(),
+                ..Drawn::following(theme, inputs.system, inputs.contrast)
             };
-            let theme = inputs.theirs.filter(two).unwrap_or_else(|| classic());
-            return Drawn::following(theme, inputs.system, inputs.contrast);
         }
         Some(Pick::BuiltIn(id)) => {
             // Purlis draws its high-contrast appearance when more contrast is asked for.
@@ -228,7 +261,10 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
         }
         None => {
             if let Some(theirs) = inputs.theirs {
-                return Drawn::of(theirs.first_for(inputs.contrast));
+                return Drawn {
+                    theirs: true,
+                    ..Drawn::of(theirs.first_for(inputs.contrast))
+                };
             }
         }
     }

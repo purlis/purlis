@@ -90,8 +90,14 @@ selection, caret, placeholder and scrollbars, and each terminal cell's own colou
 The window writes no rule for one left to the platform (`data-theme-draws`), and the contrast
 check does not measure what the platform draws. A colour is drawn as given, so a transparent
 thumb hides the scrollbars. Selected text is coloured only on a selection the theme colours too,
-and the check says so when a theme colours one without the other. No palette may name a colour
-`platform`. The window's rules stop at the light editor, which draws its own selection and caret.
+and the check says so when a theme colours one without the other. A see-through selection is
+measured laid over each ground it is drawn on: the window, a field, a pane, a Notice, a dialog
+and a trouble Notice. While selected text keeps its own colour, the window's words, a markdown
+render's and the danger words are held on the selection at the floor for words, the danger words
+as a consent floor. Selected text a theme colours is held as a consent floor on a trouble Notice
+and a dialog; a theme that breaks it is drawn with the platform's selection. No palette may name
+a colour `platform`. The window's rules stop at the light editor, which draws its own selection
+and caret.
 Purlis Classic leaves all six to the platform.
 Purlis Classic gives every other new token the colour the window drew before it: a syntax role
 the ANSI colour the editor borrowed for it (but light's `property` and `attribute`, `#1283ff`
@@ -108,9 +114,14 @@ created in both for the theme its first frame draws, so nothing of another colou
 it. That theme is the one the levels choose for the project and the workspace the window opens
 on, resolved once as the window is created (#2602): the creation script, the native window and
 the page's first frame take that one answer, and the window's later ask of what is in force
-answers it again, so nothing is repainted. The system's contrast is read natively at creation
-where purlis can (#2582): Increase contrast on macOS, the desktop portal's `contrast` on Linux.
-Where nothing is read, the
+answers it again, so nothing is repainted. A project's font files are hashed once as the
+window is created (#2696): the check that the remembered project is still trusted hands its
+digests to the read of its theme folders, and each frame takes the faces the one before it read;
+with a project at the font budget (64 files, 32 MiB), the core's part of creating the main window
+measured 24 ms, against ADR 0026's 2 s start. The system's contrast is read natively at creation
+where purlis can (#2582): Increase contrast on macOS, and on Linux the desktop portal's
+`contrast`, which purlis hears again each time it changes, so a window created after a change
+starts in the new setting. Where nothing is read, the
 page picks with `prefers-contrast` among the frames it is handed for both. The page
 hands both over again whenever it draws another theme
 (`app/src/theme/native.ts`, `app/src-tauri/src/nativewindow.rs`). A theme that follows the
@@ -380,13 +391,21 @@ it so (`purlis_tests.rs`). Where its values come from:
   grey, and the accent to the record's lighter lavender `#c3baf5`.
 
 **The fonts are bundled as their projects publish them**, unmodified: IBM Plex Sans 3.005
-Regular, Medium and SemiBold (IBM's complete woff2, which covers Latin, Greek and Cyrillic), and
-JetBrains Mono 2.304 Regular. Both are under the SIL Open Font License 1.1, whose text is in the
-folder's `LICENSE` beside Lucide's ISC licence. Only the weights the foundation draws are
-shipped, 289 KB in all. They are not cut down further: IBM Plex reserves its name, so a cut-down
-copy could not be called Plex, and the terminal needs JetBrains Mono's box-drawing and arrows.
-The window is served each face from the bytes compiled in, by its digest, as it is any theme
-folder's.
+Regular, Medium and SemiBold, each upright and italic (IBM's complete woff2, which covers Latin,
+Greek and Cyrillic), and JetBrains Mono 2.304 Regular, Italic and Bold. Both are under the SIL
+Open Font License 1.1, whose text is in the folder's `LICENSE` beside Lucide's ISC licence. Only
+the weights and styles the theme draws are shipped, 689 KB in all. They are not cut down
+further: IBM Plex reserves its name, so a cut-down copy could not be called Plex, and the
+terminal needs JetBrains Mono's box-drawing and arrows. The window is served each face from the
+bytes compiled in, by its digest, as it is any theme folder's.
+
+**Each style Purlis draws has a face of its own** (#2709), so the window never slants or
+thickens a face to make one. `theme::styles_drawn` names every style a resolved theme draws:
+the interface at each of its three weights, upright and italic for emphasis; code upright, and
+each syntax role at its italic and bold (comments italic, tags and headings bold, at
+`theme::BOLD`, 700); the terminal upright, bold and italic. `theme::without_a_face` names those
+its fonts have no face for, and a test holds it empty for every appearance of Purlis. A font
+with no face is the platform's own, as Purlis Classic's are, and brings its own styles.
 
 ## What a theme looks like
 
@@ -421,9 +440,8 @@ folder's.
   that one and keeps its tag; a new one starts from Purlis Classic's appearance of its tag. The
   first appearance is what a theme draws when nothing chose another; following the system works
   with any theme that has a dark and a light one, and following a theme of one appearance stays
-  in it, which Settings › Theme says on its Follow the system (#2331). The old `system` id, with
-  the person's own `theme.json` of one appearance, follows with Purlis Classic, as it did before
-  format 2. **When the system asks for more contrast** (`prefers-contrast: more`: Increase
+  in it, which Settings › Theme says on its Follow the system (#2331). The old `system` id names
+  the person's own `theme.json`, else Purlis Classic, followed as any theme is (#2615). **When the system asks for more contrast** (`prefers-contrast: more`: Increase
   contrast on macOS, a high-contrast theme elsewhere), whatever draws an appearance of a tag
   draws the theme's appearance of that tag tagged `high-contrast` instead, when it has one, and
   the window draws again when the setting changes (#2328). A built-in pick names its appearance.
@@ -616,6 +634,11 @@ left out of it, each appearance's contrast findings with the pair and ratio as w
 consent floors the window holds in each combination with the tokens it draws as purlis's own,
 and the hard floors, as text or as `--json` for a chat. It
 exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such theme.
+**A chat's theme draft** (#2332) is a theme folder in the plane's local folder, read by the same
+engine (`theme::drafts`) and drawn only in its chat's workspace while it holds every hard floor
+(primary text, the focus ring and the terminal's words at 3:1, as drawn, in every tint); the
+window's draft strip (`ThemeDraftStrip.tsx`) has Keep, Revert and Compare, and the revert key
+is ⌘⇧⌫ (Ctrl+Shift+Backspace elsewhere).
 `purlis docs show themes` has the JSON's shape. **`purlis theme import <file>`** (#2334)
 makes a theme folder from a VS Code colour theme, a base16 or base24 scheme, an iTerm2 colour
 preset, a Ghostty theme or a theme folder's zip: the engine's `import` maps each kind through a
@@ -656,10 +679,11 @@ reader each refuse such a name in one sentence (`crates/purlis-core/src/theme/po
 default (`purlis_core::theme::resolve_levels`):
 
 1. the person's choice for this workspace on this machine;
-2. the workspace's committed default (LIVE workspaces only): `settings.theme.use` and
-   `settings.theme.appearance` in its `workspace.json`;
+2. the workspace's committed default (LIVE workspaces only): `settings.theme.use`,
+   `settings.theme.appearance` and `settings.theme.options` in its `workspace.json`;
 3. the person's choice for the project;
-4. the project's committed default: `[theme] use` and `[theme] appearance` in its manifest;
+4. the project's committed default: `[theme] use`, `[theme] appearance` and `[theme] options`
+   in its manifest;
 5. the person's machine default, else their own `theme.json`;
 6. Purlis (Purlis Classic until the switch-over), or the first theme in force from an extension
    the project has on.
@@ -710,6 +734,27 @@ has. Both choices are compared as written, so a choice with no `from` is the fol
 A `from` that names no level leaves the choice out, and
 a value that is not an id is left out of it.
 
+**A committed default carries option values too** (#2707): `options` names a value of each
+of the picked theme's options by the option's id, as a choice's does, and is drawn the same
+way, onto the theme before it is drawn, so the consent floors hold over every value. The
+person's choice beats it, nearest level first, and a choice's values are its own: a person's
+choice of the same theme with no values draws the theme's defaults, not the team's. Options with
+no `use` choose nothing; an option or a value that is not an id is left out when read and
+refused when saved. In Settings › Theme a committed default's value is badged Team, and setting
+an option where it is drawn makes it the person's choice, starting from the team's values: those
+values are copied into the person's choice, so later changes the team commits no longer reach
+them there while that choice stands.
+
+```toml
+[theme]
+use = "brand"
+options = { accent = "teal" }
+```
+
+`purlis theme list` shows each level's choice after the themes, nearest first, with the level
+of the folder it reads, its appearance and its option values, and `purlis theme check` names the
+levels that chose the theme it checks (`purlis docs show themes`).
+
 A project's `charter.local.toml` `[theme]` pick, and a LOCAL workspace's `settings.theme`, are
 the person's choice where that file holds none, and are copied into it once, with a Notice. A
 LIVE workspace's pick is its committed default; where it now comes before the person's choice
@@ -727,6 +772,16 @@ are at least 400 ms apart, so the window is drawn again within a second of the l
 the platform will not watch a folder, the core looks at it every two seconds instead. A theme
 the engine refuses on a reload draws Purlis, with a Notice saying why; a project's font file
 that changed since the project was approved is refused until the project is approved again.
+That Notice offers **Review and allow** (#2647) when the engine says the approval is all that
+stands in the way (`Drawn::awaits_approval`): it shows the project's trust ask in place, what
+changed first and then its font files by theme folder, and a yes approves exactly what the ask
+showed and draws the theme again. A file changed after the ask was drawn approves nothing; a
+no leaves the theme refused. The press is the person's alone. It is offered only when what the
+project asks for again is font files alone; when it asks for more, or was never approved on
+this machine, the Notice has no button and says to close the project and open it again, where
+its whole trust ask is shown. The ask names the themes and workspaces the font files belong
+to, and says that the system's font engine reads them. Whether to offer it is found once for
+each set of faces a refusal waits on, so a redraw that changed no face reads nothing again.
 
 **A workspace switch repaints with a short crossfade**: colours ease across `duration.enter`
 with `easing.standard`, from a rule in the base layer at no specificity, so a surface with a
@@ -745,16 +800,23 @@ person's press in the window makes it.
 two cards a choice tells apart, #2516), and the themes of the extensions in force there. You is the machine's level (its
 choice is the machine default), Project the project's and Workspace the workspace's. The
 person's own single-file `theme.json` is no card, since no choice names it; when it is what is
-drawn, the gallery says so.
+drawn, the gallery says so, with what following the system does with it: "Drawn here: your own
+theme.json, following the system", or that it stays in its one appearance (#2615).
 
 - **Each card shows the theme specimen in each of its appearances** (up to three, then a
   count): the specimen #2330 draws for a chat's `theme_preview`, asked by the window with
-  `theme_specimen` and the level, one at a time, and kept for the window's life by the card's
-  `stamp`, which changes whenever anything the theme draws does. A card of the theme chosen at
-  the level is pictured, as it is drawn when pointed at, with the option values chosen there. While a chat's
-  `theme_preview` holds the painter, the app answers `SPECIMEN_BUSY`, and the window asks again
-  after a wait longer than one specimen's budget, a few times; a picture that could not be
-  drawn is never kept.
+  `theme_specimen` and the level, one at a time, and kept by the card's `stamp`, which changes
+  whenever anything the theme draws does. A card of the theme chosen at the level is pictured,
+  as it is drawn when pointed at, with the option values chosen there. **Only the cards on
+  screen are pictured** (#2614): a card's pictures are asked for once it scrolls into view, and
+  one still waiting its turn when its card scrolls away is not asked for. **At most 48 pictures
+  are kept in all** (`MOST_KEPT`); past that, the one shown least recently is let go and asked
+  for again if its card comes back, and one a card on screen shows is never let go.
+- **A chat's `theme_preview` goes first** (#2614, `themepreview::turns`): one specimen is drawn
+  at a time. A chat asked while a card's picture is drawn waits for it, and that picture gives
+  way, so the chat is drawn next. While a chat holds or waits for the painter, the app answers
+  the window `SPECIMEN_BUSY`, and the window asks again after a wait longer than one specimen's
+  budget, a few times; a picture that could not be drawn is never kept.
 - **Pointing at a card, or moving to it with the arrow keys, draws its theme in the window**,
   and leaving puts the person's theme back (`theme/hoverPreview.ts`). The engine resolves the
   card in the appearance a choice of it would draw (`theme_card_drawn`), with the consent floors
@@ -790,7 +852,8 @@ drawn, the gallery says so.
   the stop at rest (`roving.ts`); selection does not follow the focus, so moving through the
   cards writes nothing. Nothing in the group takes the focus by itself.
 - The machine default, an option's value, a duplicate and Open folder are the window's alone
-  (`WINDOW_ONLY`); the gallery's reads are served as `theme_in_force` is.
+  (`WINDOW_ONLY`); the gallery's reads are served on a link, as `theme_in_force_at` is: the
+  theme in force with no window, which moves no window's theme watch (#2697).
 
 ### Where a user's theme lives
 

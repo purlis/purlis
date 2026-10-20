@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! An act inside a cross-site frame the page turns, scales or zooms lands where the element is
-//! drawn on the page (#2557).
+//! drawn on the page (#2557). Where the element is not shown on the first read, each frame
+//! element is scrolled into view, outermost first, and read again; and an act lands only where
+//! the page's own window shows (#2690).
 
 use serde_json::{Value, json};
 
+use super::super::DRAWN_TWICE;
 use super::{browser, id, mouse, ref_of, snapshot};
 use crate::drive::{Call, DragTo, Refusal};
 
@@ -298,4 +301,125 @@ fn a_click_in_a_frame_that_does_not_come_to_rest_after_its_scroll_is_answered_no
         })
     });
     refused_with_nothing_sent(&browser, &engine);
+}
+
+#[test]
+fn an_element_not_shown_on_the_first_read_is_aimed_at_once_its_frames_are_scrolled_to_it() {
+    let (browser, engine) = browser();
+    // The button lies below what the frame shows of its document until the frame element is
+    // scrolled into view plainly, as a frame nested below another frame's fold does.
+    let mut plain = false;
+    engine.on(move |sent, _| {
+        if sent.method == "DOM.scrollIntoViewIfNeeded"
+            && sent.params["backendNodeId"] == 50
+            && sent.params["rect"].is_null()
+        {
+            plain = true;
+        }
+        (sent.method == "DOM.getContentQuads" && sent.params["backendNodeId"] == 7).then(|| {
+            let top = if plain { 10.0 } else { 100.0 };
+            Ok(json!({"quads": [[10.0, top, 30.0, top, 30.0, top + 10.0, 10.0, top + 10.0]]}))
+        })
+    });
+    let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
+
+    browser.call(&id(2), Call::Click { target: pay }).unwrap();
+
+    let owner_scrolls: Vec<_> = engine
+        .sent("DOM.scrollIntoViewIfNeeded")
+        .into_iter()
+        .filter(|s| s.params["backendNodeId"] == 50)
+        .map(|s| s.params["rect"].clone())
+        .collect();
+    assert_eq!(
+        owner_scrolls,
+        vec![
+            Value::Null,
+            json!({"x": 19.0, "y": 14.0, "width": 2.0, "height": 2.0})
+        ]
+    );
+    assert_eq!(
+        presses_and_releases(&engine),
+        vec![
+            ("mousePressed".into(), 120.0, 215.0),
+            ("mouseReleased".into(), 120.0, 215.0),
+        ]
+    );
+}
+
+#[test]
+fn an_element_still_not_shown_once_its_frames_are_scrolled_is_answered_not_shown() {
+    let (browser, engine) = browser();
+    the_button_at(
+        &engine,
+        vec![10.0, 100.0, 30.0, 100.0, 30.0, 110.0, 10.0, 110.0],
+    );
+    refused_with_nothing_sent(&browser, &engine);
+    assert!(
+        engine
+            .sent("DOM.scrollIntoViewIfNeeded")
+            .iter()
+            .any(|s| s.params["backendNodeId"] == 50 && s.params["rect"].is_null()),
+        "the frame element was scrolled before the answer"
+    );
+}
+
+#[test]
+fn a_click_in_a_frame_below_the_pages_window_is_answered_not_shown() {
+    let (browser, engine) = browser();
+    // The frame stays below the page's 800 by 600 window, though its button is inside it.
+    let q = json!([100, 700, 300, 700, 300, 760, 100, 760]);
+    frame_drawn_as(&engine, q.clone(), q, 200.0, 60.0);
+    refused_with_nothing_sent(&browser, &engine);
+}
+
+#[test]
+fn a_click_on_an_element_of_the_page_left_of_its_window_is_answered_not_shown() {
+    let (browser, engine) = browser();
+    super::super::lock(&engine.model)
+        .quads
+        .insert(12, vec![-60.0, 40.0, -40.0, 40.0, -40.0, 50.0, -60.0, 50.0]);
+    let more = ref_of(&snapshot(&browser, 1), "- link \"Read more\"");
+
+    let answer = browser.call(
+        &id(2),
+        Call::Click {
+            target: more.clone(),
+        },
+    );
+
+    assert_eq!(answer, Err(Refusal::NotShown(more)));
+    assert!(mouse(&engine).is_empty(), "nothing reaches the page");
+}
+
+#[test]
+fn each_document_draws_its_scroll_before_an_act_in_a_frame_is_aimed() {
+    let (browser, engine) = browser();
+    let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
+
+    browser.call(&id(2), Call::Click { target: pay }).unwrap();
+
+    let sent = engine.all_sent();
+    let last_scroll = sent
+        .iter()
+        .rposition(|s| s.method == "DOM.scrollIntoViewIfNeeded")
+        .unwrap();
+    let press = sent
+        .iter()
+        .position(|s| s.method == "Input.dispatchMouseEvent" && s.params["type"] == "mousePressed")
+        .unwrap();
+    for session in ["S-PAGE-1", "S-PAYMENT"] {
+        let drawn = sent
+            .iter()
+            .enumerate()
+            .find(|(_, s)| {
+                s.method == "Runtime.evaluate"
+                    && s.params["expression"] == DRAWN_TWICE
+                    && s.session.as_deref() == Some(session)
+            })
+            .map(|(n, s)| (n, s.params["uniqueContextId"].clone()))
+            .unwrap_or_else(|| panic!("{session} never drew its scroll"));
+        assert!(last_scroll < drawn.0 && drawn.0 < press, "{session}");
+        assert!(drawn.1.is_string(), "in purlis's own world");
+    }
 }

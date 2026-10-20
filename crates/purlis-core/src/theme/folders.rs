@@ -100,9 +100,21 @@ pub(crate) enum FontGate {
     /// The person's own folders: every face.
     Own,
     /// A project's or a workspace's: a face whose file this machine's approval of the project
-    /// holds with that digest, keyed by its path in the project. Empty when the project is not
-    /// approved here.
-    Approved(std::sync::Arc<BTreeMap<String, String>>),
+    /// holds with that digest (`files`, keyed by its path in the project; empty when the project
+    /// is not approved here). `measured` is what the read has hashed already (#2696).
+    Approved {
+        files: std::sync::Arc<BTreeMap<String, String>>,
+        measured: super::fonts::Measured,
+    },
+    /// One chat's theme drafts (`super::drafts`): a face is read only when the project's
+    /// approval holds it, with that digest, where the draft is kept to: `kept_at` names, for
+    /// each draft's folder name, the `themes/` folder in the project it is kept in. `measured`
+    /// is what the read has hashed already: a draft's face is its own file, hashed once a read.
+    Draft {
+        files: std::sync::Arc<BTreeMap<String, String>>,
+        kept_at: std::sync::Arc<BTreeMap<String, PathBuf>>,
+        measured: super::fonts::Measured,
+    },
 }
 
 impl ThemesFolder {
@@ -123,6 +135,24 @@ pub struct Folders {
     pub machine: Option<ThemesFolder>,
 }
 
+/// **The font files this machine's approval of the project at `plane` holds**, by their path in
+/// the project, read from `config_root`'s store: empty when it is not approved here.
+pub(crate) fn approved_fonts(
+    config_root: Option<&Path>,
+    plane: Option<&Path>,
+) -> BTreeMap<String, String> {
+    config_root
+        .zip(plane)
+        .and_then(|(config, plane)| {
+            crate::machine::read(config)
+                .store
+                .recent(plane)
+                .and_then(|entry| entry.trust.as_ref())
+                .map(|trust| trust.contributed.fonts.clone())
+        })
+        .unwrap_or_default()
+}
+
 /// What [`Folders::find`] found.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Found {
@@ -138,18 +168,25 @@ impl Folders {
     /// out. The project's and the workspace's faces are read only as this machine's approval
     /// of the project, read here from `config_root`'s store, holds them.
     pub fn of(config_root: Option<&Path>, plane: Option<&Path>, workspace: Option<&str>) -> Self {
-        let approved = std::sync::Arc::new(
-            config_root
-                .zip(plane)
-                .and_then(|(config, plane)| {
-                    crate::machine::read(config)
-                        .store
-                        .recent(plane)
-                        .and_then(|entry| entry.trust.as_ref())
-                        .map(|trust| trust.contributed.fonts.clone())
-                })
-                .unwrap_or_default(),
-        );
+        Self::of_measured(
+            config_root,
+            plane,
+            workspace,
+            super::fonts::Measured::default(),
+        )
+    }
+
+    /// [`Self::of`], for a read that has hashed the project's font files already (#2696): the
+    /// trust check's listing (`crate::machine::Contribution::of_measured`) made with
+    /// `measured`. A face of the project's that is the file measured, unchanged, is not hashed
+    /// again; it is still drawn only when its digest is the one the approval holds.
+    pub fn of_measured(
+        config_root: Option<&Path>,
+        plane: Option<&Path>,
+        workspace: Option<&str>,
+        measured: super::fonts::Measured,
+    ) -> Self {
+        let approved = std::sync::Arc::new(approved_fonts(config_root, plane));
         let machine = config_root.map(|root| {
             let dir = crate::machine::dir(root);
             ThemesFolder {
@@ -165,20 +202,40 @@ impl Folders {
         let project = plane.map(|root| ThemesFolder {
             root: root.to_path_buf(),
             below: PathBuf::from(THEMES),
-            fonts: FontGate::Approved(approved.clone()),
+            fonts: FontGate::Approved {
+                files: approved.clone(),
+                measured: measured.clone(),
+            },
         });
         let workspace = plane
             .zip(workspace.filter(|name| crate::contain::workspace_name_ok(name)))
             .map(|(root, name)| ThemesFolder {
                 root: root.to_path_buf(),
                 below: Path::new("workspaces").join(name).join(THEMES),
-                fonts: FontGate::Approved(approved),
+                fonts: FontGate::Approved {
+                    files: approved,
+                    measured,
+                },
             });
         Self {
             workspace,
             project,
             machine,
         }
+    }
+
+    /// **What this read has hashed already** (#2696): the project's levels' memo, which a
+    /// chat's drafts read with these folders shares (`super::drafts::level`); a fresh one with
+    /// no project.
+    pub(crate) fn measured(&self) -> super::fonts::Measured {
+        [&self.workspace, &self.project]
+            .into_iter()
+            .flatten()
+            .find_map(|folder| match &folder.fonts {
+                FontGate::Approved { measured, .. } => Some(measured.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
     }
 
     /// The levels `reach` reaches, nearest first.
@@ -270,6 +327,36 @@ impl Folders {
             .keys()
             .map(|name| (name.clone(), load(&library, name, said.clone())))
             .collect()
+    }
+
+    /// **The theme draft `name` among `drafts`** (one chat's drafts, `super::drafts`), read as
+    /// the nearest level of all, with a library of the drafts and every level a workspace's
+    /// choice reaches: what it may extend. `checking` reads it only to check
+    /// ([`Library::checking`]), so none of its faces is registered to be served. `Missing` when
+    /// the chat has no draft of that name.
+    pub fn find_draft(&self, drafts: &ThemesFolder, name: &str, checking: bool) -> Found {
+        let mut said = Vec::new();
+        let draft = read_level(drafts, &mut said);
+        if !draft.contains_key(name) {
+            return Found::Missing(said);
+        }
+        let (mut levels, more) = self.read_within(Reach::Workspace);
+        said.extend(more);
+        levels.insert(0, draft);
+        let library = library_of(&levels);
+        let library = if checking {
+            library.checking()
+        } else {
+            library
+        };
+        Found::Read(load(&library, name, said))
+    }
+
+    /// **The library of every level `reach` reaches**, nearest first: what a theme folder read at
+    /// that reach may extend.
+    pub(crate) fn library_within(&self, reach: Reach) -> Library {
+        let (levels, _) = self.read_within(reach);
+        library_of(&levels)
     }
 
     /// The `themes/` folder of the level `at`, when there is one.
@@ -452,8 +539,13 @@ const MOST_FILES_EXAMINED: usize = 256;
 /// [`MOST_WORKSPACES_WALKED`] workspaces, [`MOST_FOLDERS_WALKED`] theme folders and
 /// [`MOST_FILES_EXAMINED`] files opened, the project's own folders first and then each
 /// workspace's by name. A file not listed is never approved, so it is never drawn.
-pub(crate) fn plane_fonts(plane: &Path) -> BTreeMap<String, String> {
-    read::plane_fonts(plane)
+///
+/// What it hashes is kept in `measured`, for a theme read made with it (#2696).
+pub(crate) fn plane_fonts(
+    plane: &Path,
+    measured: &super::fonts::Measured,
+) -> BTreeMap<String, String> {
+    read::plane_fonts(plane, measured)
 }
 
 #[cfg(unix)]
@@ -510,9 +602,24 @@ mod read {
                             let held = ThemeDir::held(path, dir);
                             let held = match &folder.fonts {
                                 FontGate::Own => held,
-                                FontGate::Approved(files) => held.approved_only(
+                                FontGate::Approved { files, measured } => held.approved_only(
                                     files.clone(),
                                     in_project(&folder.below.join(name)),
+                                    measured.clone(),
+                                ),
+                                // A draft is kept to nowhere else: a face is read as approved
+                                // there, never at the draft's own path.
+                                FontGate::Draft {
+                                    files,
+                                    kept_at,
+                                    measured,
+                                } => held.approved_only(
+                                    files.clone(),
+                                    kept_at
+                                        .get(name)
+                                        .map(|below| in_project(&below.join(name)))
+                                        .unwrap_or_default(),
+                                    measured.clone(),
                                 ),
                             };
                             (document, icons, held)
@@ -565,7 +672,10 @@ mod read {
         }
     }
 
-    pub(super) fn plane_fonts(plane: &Path) -> BTreeMap<String, String> {
+    pub(super) fn plane_fonts(
+        plane: &Path,
+        measured: &fonts::Measured,
+    ) -> BTreeMap<String, String> {
         let mut out = BTreeMap::new();
         let Ok(root) = rustix::fs::open(
             plane,
@@ -617,13 +727,13 @@ mod read {
                     left.examined -= 1;
                     // A file past what is left of the bytes is not listed, so it is never
                     // approved and never drawn.
-                    if let Some((digest, bytes)) = fonts::measured(&faces, &file, left.bytes) {
+                    let named = format!("{below}/{name}/fonts/{file}");
+                    if let Some((digest, bytes)) =
+                        fonts::measured(&faces, &file, left.bytes, (measured, named.clone()))
+                    {
                         left.files -= 1;
                         left.bytes -= bytes;
-                        out.insert(
-                            format!("{below}/{name}/fonts/{file}"),
-                            fonts::listed_as(&digest, bytes),
-                        );
+                        out.insert(named, fonts::listed_as(&digest, bytes));
                     }
                 }
             }
@@ -675,7 +785,10 @@ mod read {
     use super::{Held, ThemesFolder};
 
     /// No font file is read off unix, so none is contributed.
-    pub(super) fn plane_fonts(_plane: &Path) -> BTreeMap<String, String> {
+    pub(super) fn plane_fonts(
+        _plane: &Path,
+        _measured: &crate::theme::fonts::Measured,
+    ) -> BTreeMap<String, String> {
         BTreeMap::new()
     }
 

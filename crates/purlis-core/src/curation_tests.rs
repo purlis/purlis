@@ -371,7 +371,12 @@ fn a_persona_named_charter_has_its_actions_dropped_with_a_warning_that_names_the
     let got = resolve(root, &ws("web")).unwrap();
     assert_eq!(
         ids(&got),
-        vec!["charter/safe-remove", "charter/compact", "ops/review"]
+        vec![
+            "charter/safe-remove",
+            "charter/compact",
+            "charter/create-theme",
+            "ops/review"
+        ]
     );
     assert_eq!(
         got.warnings,
@@ -460,6 +465,7 @@ fn charters_own_come_first_then_each_personas_by_persona_then_id() {
         vec![
             "charter/safe-remove",
             "charter/compact",
+            "charter/create-theme",
             "ada/beta",
             "ops/alpha",
             "ops/zeta"
@@ -469,7 +475,8 @@ fn charters_own_come_first_then_each_personas_by_persona_then_id() {
     assert_eq!(got.actions[0].label, "Safe remove");
     assert_eq!(got.actions[1].label, "Compact & improve");
     assert_eq!(got.actions[0].source, Source::Charter);
-    assert_eq!(got.actions[2].source, Source::Persona("ada".into()));
+    assert_eq!(got.actions[2].label, "Create a theme");
+    assert_eq!(got.actions[3].source, Source::Persona("ada".into()));
 }
 
 #[test]
@@ -480,7 +487,11 @@ fn only_actions_offered_on_the_subjects_kind_are_listed() {
     declare(root, "ops", "pl", "---\nlabel: Pl\non: plane\n---\n\nPl.\n");
     assert_eq!(
         ids(&resolve(root, &ws("web")).unwrap()),
-        vec!["charter/safe-remove", "charter/compact"]
+        vec![
+            "charter/safe-remove",
+            "charter/compact",
+            "charter/create-theme"
+        ]
     );
     assert_eq!(
         ids(&resolve(root, &persona("ops")).unwrap()),
@@ -495,7 +506,10 @@ fn only_actions_offered_on_the_subjects_kind_are_listed() {
         kind: Kind::Plane,
         name: None,
     };
-    assert_eq!(ids(&resolve(root, &on_plane).unwrap()), vec!["ops/pl"]);
+    assert_eq!(
+        ids(&resolve(root, &on_plane).unwrap()),
+        vec!["charter/create-theme", "ops/pl"]
+    );
 }
 
 #[test]
@@ -504,7 +518,14 @@ fn a_clashing_file_is_dropped_with_a_warning_that_names_it() {
     let root = dir.path();
     declare(root, "ops", "safe-remove", REVIEW);
     let got = resolve(root, &ws("web")).unwrap();
-    assert_eq!(ids(&got), vec!["charter/safe-remove", "charter/compact"]);
+    assert_eq!(
+        ids(&got),
+        vec![
+            "charter/safe-remove",
+            "charter/compact",
+            "charter/create-theme"
+        ]
+    );
     assert_eq!(
         got.warnings,
         vec![
@@ -657,6 +678,44 @@ fn safe_remove_runs_at_the_plane_root_because_its_subject_is_going_away() {
 }
 
 #[test]
+fn create_a_theme_runs_where_its_theme_is_made_in_the_workspace_or_at_the_plane_root() {
+    let dir = plane(&["ops"], &["web"], None);
+    let root = dir.path();
+    let got = resolve(root, &ws("web")).unwrap();
+    assert_eq!(
+        cwd_of(&got, "charter/create-theme"),
+        root.join("workspaces/web")
+    );
+    let on_plane = Subject {
+        kind: Kind::Plane,
+        name: None,
+    };
+    let got = resolve(root, &on_plane).unwrap();
+    assert_eq!(cwd_of(&got, "charter/create-theme"), root.to_path_buf());
+    let action = got
+        .actions
+        .iter()
+        .find(|a| a.id == "charter/create-theme")
+        .unwrap();
+    assert_eq!(action.label, "Create a theme");
+    assert!(
+        action
+            .prompt
+            .starts_with("Use purlis's theme skill to create a theme for the plane "),
+        "{}",
+        action.prompt
+    );
+    assert!(
+        resolve(root, &persona("ops"))
+            .unwrap()
+            .actions
+            .iter()
+            .all(|a| a.id != "charter/create-theme"),
+        "a persona has no theme of its own"
+    );
+}
+
+#[test]
 fn the_prompt_is_rendered_for_the_subject() {
     let dir = plane(&["ops"], &["web"], None);
     let root = dir.path();
@@ -741,12 +800,18 @@ fn each_builtin_prompt_reads_whole_in_every_harness_it_can_be_typed_into() {
     // Rendered for a subject with a long name, on every kind it is offered on.
     let dir = plane(&[LONG_SUBJECT_NAME], &[LONG_SUBJECT_NAME], None);
     let root = dir.path();
+    let long_root = root.join(LONG_SUBJECT_NAME);
+    std::fs::create_dir_all(&long_root).unwrap();
+    std::fs::write(long_root.join("charter.toml"), "").unwrap();
     for builtin in BUILTINS {
         for kind in builtin.on {
-            let subject = Subject {
-                kind: *kind,
-                name: Some(LONG_SUBJECT_NAME.to_owned()),
+            // The plane is named by its folder, which is the long name here too.
+            let (root, name) = if *kind == Kind::Plane {
+                (long_root.as_path(), None)
+            } else {
+                (root, Some(LONG_SUBJECT_NAME.to_owned()))
             };
+            let subject = Subject { kind: *kind, name };
             let got = resolve(root, &subject).unwrap();
             let action = got
                 .actions

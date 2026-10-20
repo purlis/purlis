@@ -220,11 +220,21 @@ pub struct Connection {
     /// Held while a root's link is being opened, by the root: one root never gets two links,
     /// and nothing waits for another root's.
     opening: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
+    /// The config home whose session host's folder keeps the name the window gives each root's
+    /// link (`purlis_core::windownames`, #2623), where the window names its links.
+    names_in: Mutex<Option<PathBuf>>,
 }
 
 /// Opens another `local-ui` link to the window's host, waiting at most the time it is given: one
 /// for each project root the window holds there (#2178).
-pub type Dial = Arc<dyn Fn(Duration) -> Result<HostLink, String> + Send + Sync>;
+///
+/// It is given the name the window keeps for the project root the link is for (#2623), where
+/// it names its links: the link's first command says it ([`HostLink::over_named`]).
+pub type Dial = Arc<
+    dyn Fn(Duration, Option<purlis_session_protocol::browsing::Secret>) -> Result<HostLink, String>
+        + Send
+        + Sync,
+>;
 
 #[derive(Default)]
 enum Linked {
@@ -248,6 +258,13 @@ impl Connection {
         *state = Linked::Ready(link);
         drop(state);
         self.changed.notify_all();
+    }
+
+    /// Name the window on each project root's link by the name it keeps for that root in
+    /// `config`'s session host folder (#2623), so a host that relays the link to a runner names
+    /// the window the same way after it restarts, and the window takes back its runner chats.
+    pub fn naming_in(&self, config: PathBuf) {
+        *lock(&self.names_in) = Some(config);
     }
 
     /// The host ended unexpectedly and is being started again (#2007): a start waits for the
@@ -285,9 +302,39 @@ impl Connection {
         let dial = lock(&self.dial)
             .clone()
             .ok_or_else(|| no_host("there is no way to open another link to it"))?;
-        let link = Arc::new(dial(within).map_err(|why| no_host(&why))?);
+        // Named on the link as its first command, before it subscribes (#2623).
+        let naming = self.name_for(root);
+        let link = Arc::new(dial(within, naming).map_err(|why| no_host(&why))?);
+        if let Some(why) = &link.unnamed {
+            tracing::warn!(
+                "purlis: the session host did not take the window's name for the link of {}: \
+                 {why}",
+                root.display()
+            );
+        }
         lock(&self.projects).insert(root.to_path_buf(), Arc::clone(&link));
         Ok(link)
+    }
+
+    /// **The name the window keeps for `root`'s link** (`purlis_core::windownames`, #2623),
+    /// where the window names its links: never evicted while a link of this window holds a root.
+    /// A name that cannot be kept leaves the link unnamed, one the window takes nothing back on
+    /// after a restart. The name is never said.
+    fn name_for(&self, root: &Path) -> Option<purlis_session_protocol::browsing::Secret> {
+        let config = lock(&self.names_in).clone()?;
+        let open: Vec<PathBuf> = lock(&self.projects).keys().cloned().collect();
+        match purlis_core::windownames::name_for(&config, root, &open) {
+            Ok(name) => Some(purlis_session_protocol::browsing::Secret::new(
+                name.expose().to_owned(),
+            )),
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: the window keeps no name for the link of {}: {why}",
+                    root.display()
+                );
+                None
+            }
+        }
     }
 
     /// There is no link, for `why`: every chat start says so from now on.
@@ -406,6 +453,9 @@ pub struct HostLink {
     shared: Arc<Shared>,
     /// What hears the host on it, which keeps it open: the link closes once this ends.
     hearing: tokio::task::AbortHandle,
+    /// Why the host did not take the window's name on it, where it was named and did not
+    /// (#2623): said by whoever opened it, never with the name.
+    unnamed: Option<String>,
 }
 
 /// A link nobody holds any more is closed: one that opened after nobody waited for it, among
@@ -444,6 +494,9 @@ struct Shared {
     turns: Mutex<HashMap<String, Turns>>,
     /// Who is told what this link hears of the runner its host relays it to (#2496).
     reconnects: Mutex<Vec<Reconnects>>,
+    /// Who holds each project again once the host says the runner it relays this link to no
+    /// longer holds it, by the project's id (#2645).
+    not_held: Mutex<HashMap<String, NotHeld>>,
 }
 
 /// What a link hears of the runner its host relays it to (#2496).
@@ -461,6 +514,10 @@ pub(crate) enum Reconnect {
 
 /// Told what a link hears of the runner its host relays it to.
 pub(crate) type Reconnects = Arc<dyn Fn(Reconnect) + Send + Sync>;
+
+/// Told, in the runner's words, that the runner a link's host relays it to no longer holds a
+/// project (#2645). Called off the runtime: it holds the project again over the link.
+type NotHeld = Arc<dyn Fn(String) + Send + Sync>;
 
 /// The most a reply to a hook line may be on the link, its frame's envelope aside: a larger
 /// answer is refused with a sentence rather than sent.
@@ -491,14 +548,37 @@ impl HostLink {
 
     /// Speak the session protocol on `link`, which the host admitted as `local-ui`: subscribe
     /// to word of programs ending, and take every view the host opens. Run on `runtime`;
-    /// `ended` is called once the link ends.
-    pub async fn over(
+    /// `ended` is called once the link ends. The tests' link, named nowhere: the window's own
+    /// opens each with [`Self::over_named`].
+    #[cfg(test)]
+    pub(crate) async fn over(
         link: Link,
         runtime: tokio::runtime::Handle,
         ended: impl FnOnce() + Send + 'static,
     ) -> Result<HostLink, String> {
+        Self::over_named(link, runtime, ended, None).await
+    }
+
+    /// [`Self::over`], the window naming itself first by `naming`, the name it keeps for the
+    /// project root this link is for (`name_window`, #2623): before it subscribes, so a host
+    /// that relays the link names the window by it to the runner. Only to a host that knows the
+    /// word. A refusal leaves the link unnamed, and is said without the name.
+    pub async fn over_named(
+        link: Link,
+        runtime: tokio::runtime::Handle,
+        ended: impl FnOnce() + Send + 'static,
+        naming: Option<purlis_session_protocol::browsing::Secret>,
+    ) -> Result<HostLink, String> {
         let (client, views, events) = Client::new(link);
         let client = Arc::new(client);
+        let unnamed = match naming.filter(|_| client.version() >= NAMES_ITSELF) {
+            Some(name) => client
+                .call(Command::NameWindow { name })
+                .await
+                .err()
+                .map(|why| why.to_string()),
+            None => None,
+        };
         client
             .subscribe(session::Since::new())
             .await
@@ -535,6 +615,7 @@ impl HostLink {
             runtime,
             shared,
             hearing,
+            unnamed,
         })
     }
 
@@ -722,7 +803,17 @@ impl HostLink {
     /// Tell `tell` what this link hears of the runner its host relays it to, from now on: a
     /// project's chats (#2496) and the window's browser views (#2542) each follow their link.
     pub(crate) fn when_reconnecting(&self, tell: Reconnects) {
-        lock(&self.shared.reconnects).push(tell);
+        let mut reconnects = lock(&self.shared.reconnects);
+        // A project held again on the same link is told once (#2645).
+        if !reconnects.iter().any(|told| Arc::ptr_eq(told, &tell)) {
+            reconnects.push(tell);
+        }
+    }
+
+    /// Hold `project` again with `hold` once the host says the runner it relays this link to no
+    /// longer holds it (#2645), from now on.
+    fn when_not_held(&self, project: &str, hold: NotHeld) {
+        lock(&self.shared.not_held).insert(project.to_owned(), hold);
     }
 }
 
@@ -1051,6 +1142,13 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
             }
             Told::Pushed(Pushed::LinkDown { .. }) => reconnect(&shared, Reconnect::Started),
             Told::Pushed(Pushed::LinkBack {}) => reconnect(&shared, Reconnect::Over),
+            // The hold goes over the link and waits for its answer: off the runtime.
+            Told::Pushed(Pushed::NotHeld { project, why }) => {
+                let hold = lock(&shared.not_held).get(&project).cloned();
+                if let Some(hold) = hold {
+                    tokio::task::spawn_blocking(move || hold(why));
+                }
+            }
             Told::Pushed(Pushed::ViewEnded { view, .. }) => {
                 let drained = lock(&shared.views)
                     .drawing
@@ -1114,6 +1212,9 @@ pub struct HostedSessions {
     /// Which chats are reconnecting, while the link to the runner they run on is down, and who
     /// is told (#2496).
     reconnecting: Arc<Mutex<Dimmed>>,
+    /// What tells whoever asked which of the chats are reconnecting: one for the project, so a
+    /// link that holds it again tells it once ([`reconnects_of`]).
+    reconnects: Reconnects,
     /// Whether the host runs this project's chats on a runner, through the link its host relays
     /// the window's link over (#2446): it composes each harness chat, and its proxies listen on
     /// the runner's ports.
@@ -1138,19 +1239,21 @@ struct Held {
 impl HostedSessions {
     /// The chats of the project at `root`, run in the host `connection` reaches.
     pub fn new(connection: Arc<Connection>, root: &Path) -> Self {
+        let (running, reconnecting) = (Arc::default(), Arc::default());
         HostedSessions {
             connection,
             root: root.to_path_buf(),
             held: Arc::default(),
             relayed: Arc::default(),
-            running: Arc::default(),
+            reconnects: reconnects_of(&running, &reconnecting),
+            running,
             opened: Arc::default(),
             ended: Mutex::new(None),
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
             lost: Arc::default(),
             left: Arc::default(),
             untaken: Arc::default(),
-            reconnecting: Arc::default(),
+            reconnecting,
             on_a_runner: false,
         }
     }
@@ -1212,44 +1315,8 @@ impl HostedSessions {
             left: Arc::clone(&self.left),
             untaken: Arc::clone(&self.untaken),
             root: self.root.clone(),
-            reconnects: self.reconnects(),
+            reconnects: Arc::clone(&self.reconnects),
         }
-    }
-
-    /// What tells whoever asked which of this project's chats are reconnecting (#2496). While
-    /// the link the host relays the project's link over is down every chat is, because they
-    /// all run where that link goes; each chat dimmed is reconnected once the link is back or
-    /// the window cannot tell, or alone once a view of it draws a snapshot.
-    fn reconnects(&self) -> Reconnects {
-        let (running, dimmed) = (Arc::clone(&self.running), Arc::clone(&self.reconnecting));
-        Arc::new(move |heard| {
-            let (chats, reconnection) = match heard {
-                Reconnect::Started => {
-                    let chats: Vec<u32> = lock(&running).keys().copied().collect();
-                    lock(&dimmed).chats.extend(chats.iter().copied());
-                    (chats, Reconnection::Reconnecting)
-                }
-                Reconnect::Over => {
-                    let chats = std::mem::take(&mut lock(&dimmed).chats);
-                    (chats.into_iter().collect(), Reconnection::Reconnected)
-                }
-                Reconnect::Drawn(view) => {
-                    let chat = lock(&running)
-                        .iter()
-                        .find_map(|(id, program)| program.views.contains(&view).then_some(*id));
-                    let Some(chat) = chat.filter(|chat| lock(&dimmed).chats.remove(chat)) else {
-                        return;
-                    };
-                    (vec![chat], Reconnection::Reconnected)
-                }
-            };
-            let mut chats = chats;
-            chats.sort_unstable();
-            let tell = lock(&dimmed).tell.clone();
-            if let (false, Some(tell)) = (chats.is_empty(), tell) {
-                tell(chats, reconnection);
-            }
-        })
     }
 
     /// Holds the project in the session host now, and takes the board the host keeps for it
@@ -1330,6 +1397,45 @@ impl HostedSessions {
     }
 }
 
+/// What tells whoever asked which of this project's chats are reconnecting (#2496). While
+/// the link the host relays the project's link over is down every chat is, because they
+/// all run where that link goes; each chat dimmed is reconnected once the link is back or
+/// the window cannot tell, or alone once a view of it draws a snapshot.
+fn reconnects_of(
+    running: &Arc<Mutex<HashMap<u32, Program>>>,
+    dimmed: &Arc<Mutex<Dimmed>>,
+) -> Reconnects {
+    let (running, dimmed) = (Arc::clone(running), Arc::clone(dimmed));
+    Arc::new(move |heard| {
+        let (chats, reconnection) = match heard {
+            Reconnect::Started => {
+                let chats: Vec<u32> = lock(&running).keys().copied().collect();
+                lock(&dimmed).chats.extend(chats.iter().copied());
+                (chats, Reconnection::Reconnecting)
+            }
+            Reconnect::Over => {
+                let chats = std::mem::take(&mut lock(&dimmed).chats);
+                (chats.into_iter().collect(), Reconnection::Reconnected)
+            }
+            Reconnect::Drawn(view) => {
+                let chat = lock(&running)
+                    .iter()
+                    .find_map(|(id, program)| program.views.contains(&view).then_some(*id));
+                let Some(chat) = chat.filter(|chat| lock(&dimmed).chats.remove(chat)) else {
+                    return;
+                };
+                (vec![chat], Reconnection::Reconnected)
+            }
+        };
+        let mut chats = chats;
+        chats.sort_unstable();
+        let tell = lock(&dimmed).tell.clone();
+        if let (false, Some(tell)) = (chats.is_empty(), tell) {
+            tell(chats, reconnection);
+        }
+    })
+}
+
 /// The project at `root`'s own link to the host `connection` reaches, with the project held on
 /// it (#2178): `held` keeps its id
 /// once it is. Before the hold the host's lines for the project are heard through `relayed`,
@@ -1364,7 +1470,9 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     link.call(Command::HoldProject {
         project: project.clone(),
         project_path: root.display().to_string(),
-    })?;
+    })
+    .map_err(|why| format!("{NOT_HELD} {why}"))?;
+    link.when_not_held(&project, holds_again(holding, link.id, &project));
     // The numbers that went out before the host held the project are never dealt again.
     let dealt = opened.load(Ordering::Relaxed);
     if dealt > 0 {
@@ -1426,6 +1534,74 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     });
     Ok((link, project))
 }
+
+/// What the window says of a project its host could not hold, before the host's words (#2645).
+pub(crate) const NOT_HELD: &str = "The host this project's chats run on does not hold it, so \
+     nothing was sent. purlis asks it again the next time you start or use a chat here. The host \
+     said:";
+
+/// **What holds the project again once the runner no longer holds it** (#2645): the host that
+/// relays the project's link `on` to a runner says, in the runner's words, that the runner's link
+/// could not hold it after a re-link. The window stops counting it as held there, and holds it
+/// again over the link, so its chats and their hooks carry on. Where the runner refuses
+/// again, the project stays not held, and every command that needs the hold tries again and is
+/// refused in the runner's words ([`NOT_HELD`]). A project held again since on another link is
+/// left as it is.
+fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
+    let holding = holding.clone();
+    // The connection holds the link that holds this: it is not kept alive by it.
+    let connection = Arc::downgrade(&holding.connection);
+    let Holding {
+        held,
+        relayed,
+        opened,
+        left,
+        untaken,
+        root,
+        reconnects,
+        ..
+    } = holding;
+    let project = project.to_owned();
+    Arc::new(move |why: String| {
+        {
+            let mut held = lock(&held);
+            if !held
+                .as_ref()
+                .is_some_and(|held| held.on == on && held.project == project)
+            {
+                return;
+            }
+            *held = None;
+        }
+        tracing::warn!(
+            "purlis: the runner no longer holds project {project} after a re-link ({why}); \
+             holding it again"
+        );
+        let Some(connection) = connection.upgrade() else {
+            return;
+        };
+        let holding = Holding {
+            connection,
+            held: Arc::clone(&held),
+            relayed: Arc::clone(&relayed),
+            opened: Arc::clone(&opened),
+            left: Arc::clone(&left),
+            untaken: Arc::clone(&untaken),
+            root: root.clone(),
+            reconnects: Arc::clone(&reconnects),
+        };
+        if let Err(again) = held_on(&holding) {
+            tracing::warn!("purlis: project {project} is not held where its chats run: {again}");
+        }
+    })
+}
+
+/// The session protocol version whose host takes the window's name for a link (#2623).
+const NAMES_ITSELF: purlis_session_protocol::version::Version =
+    purlis_session_protocol::version::Version {
+        major: 1,
+        minor: 31,
+    };
 
 /// The session protocol version whose host says what a window that comes back reattaches
 /// (#2006).
@@ -1716,7 +1892,7 @@ impl HostedSessions {
         start: StartProgram,
         operator_shell: bool,
         announce: &dyn Fn(u32),
-    ) -> Result<(u32, Option<session::Confined>), String> {
+    ) -> Result<Begun, String> {
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
         let started = match link.call(Command::StartProgram(Box::new(start))) {
@@ -1736,22 +1912,31 @@ impl HostedSessions {
                 program,
                 process,
                 confined,
+                sandbox,
                 ..
-            }) => (program, process, confined),
+            }) => (program, process, confined, sandbox),
             Ok(other) => {
                 return Err(format!("the session host answered a start with {other:?}"));
             }
             Err(why) => return Err(why),
         };
-        let (program, pid, confined) = started;
+        let (program, pid, confined, ran) = started;
         self.runs(link, id, &program, pid);
         lock(&self.lost).remove(&id);
         // A stop that landed while this program was being started is carried out now.
         if !operator_shell && self.kill_switch.is_stopped() {
             link.send(Command::Stop { chat: program });
         }
-        Ok((id, confined))
+        Ok(Begun { id, confined, ran })
     }
+}
+
+/// What [`HostedSessions::started`] heard of a start: its number, the confinement the host named
+/// to this link where it named one, and how the host applied the sandbox to its run (1.29).
+struct Begun {
+    id: u32,
+    confined: Option<session::Confined>,
+    ran: Option<session::RunSandbox>,
 }
 
 /// Each call is documented once, on [`SessionHost`].
@@ -1789,7 +1974,7 @@ impl SessionHost for HostedSessions {
             ..StartProgram::of(project, kind_of(opening))
         };
         self.started(&link, id, start, opening.operator_shell, announce)
-            .map(|(id, _)| id)
+            .map(|begun| begun.id)
     }
 
     fn open_named(
@@ -1798,7 +1983,7 @@ impl SessionHost for HostedSessions {
         named: &Named,
         hearing: purlis_core::sandbox::plan::Hearing,
         announce: &dyn Fn(u32),
-    ) -> Result<(u32, Option<purlis_core::sandbox::Confinement>), String> {
+    ) -> Result<crate::host::Composed, String> {
         use crate::hostedconfinement::{Hears, HeldInTheHost, placed};
         if self.kill_switch.is_stopped() {
             return Err(STOPPED.to_owned());
@@ -1842,7 +2027,8 @@ impl SessionHost for HostedSessions {
                 link.unhear(confinement);
             }
         };
-        let (id, confined) = self
+        // How the host applied the sandbox to the run it composed, by its own record (#2692).
+        let Begun { id, confined, ran } = self
             .started(&link, id, start, false, announce)
             .inspect_err(|_| unheard(&confinement))?;
         // Held from here, where the host named it to this window: dropping it, on any path, lets
@@ -1851,7 +2037,11 @@ impl SessionHost for HostedSessions {
             confined.filter(|confined| confinement.as_ref() == Some(&confined.confinement));
         let (Some(confinement), Some(confined)) = (confinement.clone(), named_here) else {
             unheard(&confinement);
-            return Ok((id, None));
+            return Ok(crate::host::Composed {
+                number: id,
+                confinement: None,
+                ran,
+            });
         };
         let held = HeldInTheHost::new(confinement, Arc::clone(&link), true);
         // One the window cannot hold is let go of, and the chat that runs in it is closed with
@@ -1866,7 +2056,11 @@ impl SessionHost for HostedSessions {
                 ));
             }
         };
-        Ok((id, Some(confinement)))
+        Ok(crate::host::Composed {
+            number: id,
+            confinement: Some(confinement),
+            ran,
+        })
     }
 
     fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {

@@ -95,6 +95,7 @@ impl Host for Waiting {
                     number: None,
                     process: None,
                     confined: None,
+                    sandbox: None,
                 })
             }
             Command::Write { chat, bytes } => {

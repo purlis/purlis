@@ -33,6 +33,7 @@ use purlis_core::theme::levels::Reach;
 use purlis_core::theme::{
     self, Choice, Folders, Level, LevelInputs, Levels, Offered, On, Values, choices,
 };
+use purlis_core::themechat;
 
 use crate::extensions::{
     ThemeAt, ThemeInForce, WindowOption, WindowOptionValue, WindowTheme, YourTheme, built_in,
@@ -61,6 +62,20 @@ pub struct ThemeGallery {
     /// The chosen card's options, each with the value it is drawn with here and the level whose
     /// choice made it (#2527).
     pub options: Vec<WindowOption>,
+    /// **The person's own `theme.json`, when it is what is drawn here** (#2615): it is no card,
+    /// so this says that it is drawn and what following the system does with it; `null` when
+    /// what is drawn is a card.
+    pub theirs: Option<TheirsDrawn>,
+}
+
+/// **The person's own `theme.json`, drawn** (#2615).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct TheirsDrawn {
+    /// Whether it follows the operating system's appearance here: it has a dark and a light one,
+    /// and the choice drawn follows the system.
+    pub follows_system: bool,
+    /// What following the system does with it when it has one appearance: that it stays there.
+    pub note: Option<String>,
 }
 
 /// **One card of a gallery**: what the theme engine read of one theme.
@@ -298,12 +313,27 @@ impl Place {
 
     /// **The card a choice made at a level that reaches `reach` names**, by its key: Purlis
     /// Classic by any id one of its appearances has had; a theme folder at the level it names, or
-    /// the nearest within reach that has it. `None` when it is no card of `cards`.
-    fn card_of(&self, choice: &Choice, reach: Reach, cards: &[GalleryCard]) -> Option<String> {
-        // Purlis by its own id is its own card (#2336); Purlis Classic by any id it has had.
+    /// the nearest within reach that has it; and the old `system` id, the person's own theme
+    /// when there is one (`theirs`), which is no card, else Purlis Classic. `None` when it is no
+    /// card of `cards`.
+    fn card_of(
+        &self,
+        choice: &Choice,
+        reach: Reach,
+        cards: &[GalleryCard],
+        theirs: bool,
+    ) -> Option<String> {
+        if choice.theme == extension::project::theme::SYSTEM && theirs {
+            return None;
+        }
+        // Purlis by its own id is its own card (#2336); Purlis Classic by any id it has had, and
+        // by the old id with no theme of the person's.
         let key = if choice.theme == theme::PURLIS {
             theme::PURLIS.to_owned()
-        } else if choice.theme == theme::CLASSIC || theme::built_in(&choice.theme).is_some() {
+        } else if choice.theme == theme::CLASSIC
+            || choice.theme == extension::project::theme::SYSTEM
+            || theme::built_in(&choice.theme).is_some()
+        {
             theme::CLASSIC.to_owned()
         } else {
             let placed = choice.clone().placed(&self.folders, reach);
@@ -397,12 +427,12 @@ fn gallery_of(place: &Place, theirs: Option<&theme::Theme>) -> ThemeGallery {
     let drawn_key = match chose {
         None if level == Level::Purlis => Some(theme::CLASSIC.to_owned()),
         None => None,
-        Some(choice) => place.card_of(choice, level.reach(), &cards),
+        Some(choice) => place.card_of(choice, level.reach(), &cards, theirs.is_some()),
     };
     let yours = place.yours();
     let yours_key = yours
         .as_ref()
-        .and_then(|choice| place.card_of(choice, place.reach, &cards));
+        .and_then(|choice| place.card_of(choice, place.reach, &cards, theirs.is_some()));
     // The chosen card, and the choice its values come from, at the level that made it.
     let (chosen, valued) = match (&yours_key, yours.as_ref()) {
         (Some(key), Some(choice)) => (Some(key.clone()), Some((choice, own_level(place)))),
@@ -450,6 +480,10 @@ fn gallery_of(place: &Place, theirs: Option<&theme::Theme>) -> ThemeGallery {
         from: from_said(level, place.workspace.as_deref(), theirs.is_some()),
         chosen,
         options,
+        theirs: drawn.theirs.then(|| TheirsDrawn {
+            follows_system: drawn.follows_system,
+            note: drawn.note.clone(),
+        }),
     }
 }
 
@@ -544,6 +578,8 @@ fn card_drawn_of(
         crate::extensions::contrast_of(more_contrast),
     )?;
     Some(ThemeInForce {
+        // The gallery's card says it is refused; only the window's theme offers the review.
+        review: None,
         refused: drawn.refused.then(|| crate::extensions::ThemeTrouble {
             name: id.to_owned(),
             complaints: drawn
@@ -562,6 +598,7 @@ fn card_drawn_of(
         complaints: drawn.complaints.into_iter().map(|one| one.said).collect(),
         follows_system: drawn.follows_system,
         floors: drawn.held.map(|held| held.said()),
+        draft: None,
     })
 }
 
@@ -761,6 +798,59 @@ pub async fn theme_open_folder(
     app.opener()
         .open_path(folder.display().to_string(), None::<&str>)
         .map_err(|e| format!("the system did not open {theme}'s folder: {e}"))
+}
+
+/// **New theme** and **Edit with a chat** (#2333): a chat at the level `at` names, with a prompt
+/// that names purlis's theme skill typed into it and never sent (ADR 0061), as the Curate menu's
+/// Create a theme opens one. With `theme`, the prompt names that card's theme, of the level
+/// `from`; the card is one this level's gallery shows, never a name the window made up. The
+/// machine's level has no project for a chat to work in, so it is never asked.
+#[tauri::command]
+#[specta::specta]
+pub async fn theme_chat(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    at: ThemeAt,
+    theme: Option<String>,
+    from: Option<String>,
+    columns: u16,
+    rows: u16,
+) -> Result<crate::curation::Curating, String> {
+    let level = level_of(from.as_deref())?;
+    let held = planes.held(&at.plane)?;
+    let config = config_root()?;
+    crate::off_the_window("starting the theme chat", move || {
+        let root = held.root().to_path_buf();
+        let workspace = at.workspace;
+        let chosen = match theme {
+            None => themechat::chat(&root, workspace.as_deref(), themechat::Asked::New)?,
+            Some(theme) => {
+                let place = Place::read(config, Some(root.clone()), workspace.clone());
+                let card = gallery::cards(&place.shelf())
+                    .into_iter()
+                    .find(|card| card.is(&theme, level))
+                    .ok_or_else(|| {
+                        format!(
+                            "{} is not a theme here any more, so no chat was opened",
+                            purlis_core::shown::short(&theme)
+                        )
+                    })?;
+                themechat::chat(&root, workspace.as_deref(), themechat::Asked::Edit(&card))?
+            }
+        };
+        let shown = workspace.clone().unwrap_or_else(|| {
+            root.file_name().map_or_else(
+                || root.display().to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            )
+        });
+        crate::curation::open_chosen(
+            &held,
+            chosen,
+            &shown,
+            purlis_core::engine::Size { columns, rows },
+        )
+    })
+    .await
 }
 
 #[cfg(test)]

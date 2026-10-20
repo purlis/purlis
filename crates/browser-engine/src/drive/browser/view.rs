@@ -19,6 +19,11 @@ use super::{Browser, NodeKey, Placings, Rect, lock};
 /// is never read whole for a mark.
 pub(super) const MOST_NODES_READ: u64 = 50_000;
 
+/// The most bytes the answer of that read may take (#2694): a node count does not bound the
+/// inline script and attribute text the answer carries, so past this the read fails alone and
+/// nothing is marked cut off.
+pub(super) const MOST_LAYOUT_BYTES: usize = 16 << 20;
+
 impl Browser {
     /// Which of `keys` `target`'s page does not show: laid out wholly outside what its
     /// viewport shows, or cut off by a box or a frame they are in. An element the engine cannot
@@ -87,7 +92,7 @@ impl Browser {
         for (session, keys) in by_session {
             // Read once for each session the shown elements are in, and only where the page is
             // small enough to read: an answer the engine cannot count, or past the bound, marks
-            // nothing.
+            // nothing, and so does a read whose answer is past [`MOST_LAYOUT_BYTES`].
             let nodes = self
                 .devtools()
                 .call("Memory.getDOMCounters", json!({}), Some(&session))
@@ -96,7 +101,7 @@ impl Browser {
             if nodes.is_none_or(|nodes| nodes > MOST_NODES_READ) {
                 continue;
             }
-            let Ok(answer) = self.devtools().call(
+            let Ok(answer) = self.devtools().call_within_bounded(
                 "DOMSnapshot.captureSnapshot",
                 json!({
                     "computedStyles": STYLES,
@@ -106,6 +111,8 @@ impl Browser {
                     "includeTextColorOpacities": false,
                 }),
                 Some(&session),
+                crate::cdp::CALL_TIMEOUT,
+                MOST_LAYOUT_BYTES,
             ) else {
                 continue;
             };
@@ -131,7 +138,7 @@ impl Browser {
     /// What the viewport of `session`'s document shows, in CSS pixels: the page's visual
     /// viewport where elements are drawn on the screen, or, `in_document`, the document's own
     /// layout viewport where its elements are laid out (a frame read in a session of its own).
-    fn viewport_of(&self, session: &str, in_document: bool) -> Option<Rect> {
+    pub(super) fn viewport_of(&self, session: &str, in_document: bool) -> Option<Rect> {
         self.devtools()
             .call("Page.getLayoutMetrics", json!({}), Some(session))
             .ok()

@@ -503,3 +503,47 @@ fn an_unattended_chat_s_ask_raises_no_notice_and_its_sandbox_is_the_app_s_own_re
         ))
     );
 }
+
+/// #2692: an unattended chat dispatches to another persona only where the record of how its run
+/// started says it is sandboxed and the app holds what that sandbox compiled to. A compile held
+/// with no record of the run counts as no sandbox, so it fails closed.
+#[test]
+fn an_unattended_chat_with_no_record_of_how_its_run_started_dispatches_to_no_other_persona() {
+    use purlis_session_protocol::session::RunSandbox;
+    let (_dir, held, session) = a_held_chat("steward");
+    std::fs::write(
+        purlis_core::names::manifest(held.root()),
+        "schema = 1\n[dispatch.grants]\nsteward = [\"devops\"]\n",
+    )
+    .expect("the project grants it");
+    let ask = || {
+        request_dispatch(
+            &held,
+            session,
+            Attendance::Unattended,
+            "devops",
+            "Check it.",
+            None,
+        )
+    };
+    let compiled = Some(purlis_core::sandbox::Confines::default());
+
+    held.chats()
+        .runs_as_recorded(session, compiled.clone(), None);
+    assert_eq!(
+        ask(),
+        Requested::Refused(NO_SANDBOX.to_owned()),
+        "no record"
+    );
+
+    held.chats().runs_as_recorded(
+        session,
+        compiled,
+        Some(RunSandbox::By("seatbelt".to_owned())),
+    );
+    assert_ne!(
+        ask(),
+        Requested::Refused(NO_SANDBOX.to_owned()),
+        "recorded in its sandbox"
+    );
+}

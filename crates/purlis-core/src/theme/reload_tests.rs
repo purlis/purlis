@@ -482,6 +482,8 @@ fn a_save_that_is_not_a_theme_draws_purlis_and_says_why() {
     let drawn = drawn_with(&places, "team");
     assert!(drawn.refused);
     assert!(!drawn.complaints.is_empty());
+    // Nothing an approval holds would draw it: the project's trust ask is not offered (#2647).
+    assert!(!drawn.awaits_approval());
     assert_eq!(drawn.theme.unwrap().name, default_theme().name);
 }
 
@@ -547,6 +549,150 @@ fn a_project_font_changed_after_the_approval_stays_refused_and_says_so() {
             .complaints
             .iter()
             .any(|one| one.said.contains("is not a font file you approved")),
+        "{:?}",
+        drawn.complaints
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// Review and allow (#2647): a refused font, allowed through the project's trust ask
+// ---------------------------------------------------------------------------------------
+
+/// `places`' project with the theme folder `typed`, whose UI font is `fonts/ui.woff2` of `fill`,
+/// approved on this machine; and the face's path.
+fn approved_with_a_face(places: &Places, fill: u8) -> PathBuf {
+    let with_font = json!({
+        "name": "Typed",
+        "fonts": { "ui": { "family": "Typed", "faces": [{ "file": "fonts/ui.woff2" }] } },
+        "appearances": [{ "id": "dark", "appearance": "dark" }]
+    });
+    put(&places.workspace(), "typed", &with_font);
+    let face = places.workspace().join("typed/fonts/ui.woff2");
+    std::fs::create_dir_all(face.parent().unwrap()).unwrap();
+    std::fs::write(&face, woff2(fill)).unwrap();
+    approve(places);
+    assert!(!drawn_with(places, "typed").refused);
+    face
+}
+
+/// What the project's trust ask shows: what the project contributes as it is read now.
+fn shown(places: &Places) -> crate::machine::Contribution {
+    crate::machine::Contribution::read(&places.plane).contributes
+}
+
+/// The person's yes to `shown`, recorded as the ask's yes records it.
+fn yes_to(places: &Places, shown: crate::machine::Contribution) {
+    crate::machine::update(&places.config, |store| {
+        store.approve(&places.plane, 2, shown);
+    })
+    .unwrap();
+}
+
+#[test]
+fn a_face_changed_while_the_project_is_open_awaits_its_approval_and_a_yes_draws_it() {
+    let places = Places::new();
+    let face = approved_with_a_face(&places, 1);
+    std::fs::write(&face, woff2(2)).unwrap();
+    let refused = drawn_with(&places, "typed");
+    assert!(refused.refused);
+    assert!(refused.awaits_approval(), "{:?}", refused.complaints);
+    // The project's trust ask names the change, and lists the face with its new digest.
+    let asked = crate::machine::read(&places.config)
+        .store
+        .consent(&places.plane, &shown(&places));
+    assert!(asked.must_ask());
+    let changes: Vec<String> = asked.changes().iter().map(ToString::to_string).collect();
+    assert!(
+        changes
+            .iter()
+            .any(|one| one.contains("workspaces/alpha/themes/typed/fonts/ui.woff2")),
+        "{changes:?}"
+    );
+
+    yes_to(&places, shown(&places));
+
+    let drawn = drawn_with(&places, "typed");
+    assert!(!drawn.refused, "{:?}", drawn.complaints);
+    assert!(!drawn.awaits_approval());
+    assert_eq!(drawn.theme.unwrap().name, "Typed");
+}
+
+#[test]
+fn the_faces_a_refused_theme_awaits_are_named_by_path_and_digest_and_change_only_with_a_face() {
+    // What the app keys the review by, so nothing is read again on a redraw that changed no face.
+    let places = Places::new();
+    let face = approved_with_a_face(&places, 1);
+    std::fs::write(&face, woff2(2)).unwrap();
+    let first = drawn_with(&places, "typed");
+    let faces = first.awaiting_faces();
+    assert_eq!(faces.len(), 1, "{:?}", first.complaints);
+    let (path, digest) = faces[0].split_once(' ').unwrap();
+    assert_eq!(path, "workspaces/alpha/themes/typed/fonts/ui.woff2");
+    assert_eq!(digest.len(), 64);
+    // A redraw of the same bytes waits on the same face.
+    assert_eq!(drawn_with(&places, "typed").awaiting_faces(), faces);
+    // The face saved again: another key.
+    std::fs::write(&face, woff2(3)).unwrap();
+    let again = drawn_with(&places, "typed");
+    assert_ne!(again.awaiting_faces(), faces);
+    // A theme that draws waits on nothing.
+    yes_to(&places, shown(&places));
+    assert!(drawn_with(&places, "typed").awaiting_faces().is_empty());
+}
+
+#[test]
+fn a_face_added_while_the_project_is_open_awaits_its_approval_too() {
+    let places = Places::new();
+    let face = approved_with_a_face(&places, 1);
+    std::fs::write(face.with_file_name("mono.woff2"), woff2(3)).unwrap();
+    put(
+        &places.workspace(),
+        "typed",
+        &json!({
+            "name": "Typed",
+            "fonts": { "mono": { "family": "Mono", "faces": [{ "file": "fonts/mono.woff2" }] } },
+            "appearances": [{ "id": "dark", "appearance": "dark" }]
+        }),
+    );
+    assert!(drawn_with(&places, "typed").awaits_approval());
+    yes_to(&places, shown(&places));
+    assert!(!drawn_with(&places, "typed").refused);
+}
+
+#[test]
+fn with_no_yes_the_theme_stays_refused() {
+    let places = Places::new();
+    let face = approved_with_a_face(&places, 1);
+    std::fs::write(&face, woff2(2)).unwrap();
+    // The ask was shown and answered no: nothing is recorded, and every draw refuses it again.
+    let _ = shown(&places);
+    for _ in 0..2 {
+        let drawn = drawn_with(&places, "typed");
+        assert!(drawn.refused);
+        assert!(drawn.awaits_approval());
+        assert_eq!(drawn.theme.unwrap().name, default_theme().name);
+    }
+}
+
+#[test]
+fn a_face_changed_after_the_ask_was_shown_is_not_drawn_by_the_yes() {
+    let places = Places::new();
+    let face = approved_with_a_face(&places, 1);
+    std::fs::write(&face, woff2(2)).unwrap();
+    let asked = shown(&places);
+    // Between the ask and the press, the face is written again.
+    std::fs::write(&face, woff2(3)).unwrap();
+    // The approval holds what the ask showed, never what is on disk at the press.
+    assert_ne!(asked, shown(&places));
+    yes_to(&places, asked);
+    let drawn = drawn_with(&places, "typed");
+    assert!(drawn.refused);
+    assert!(drawn.awaits_approval());
+    assert!(
+        drawn
+            .complaints
+            .iter()
+            .any(|one| one.said.contains("has changed since you approved")),
         "{:?}",
         drawn.complaints
     );

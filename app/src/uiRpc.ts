@@ -121,6 +121,7 @@ export const commands = {
 	openPlane: (path: string) => typedError<Opened, string>(__TAURI_INVOKE("open_plane", { path })),
 	folderIsAProject: __WINDOW_ONLY_RESULT,
 	approvePlane: __WINDOW_ONLY_RESULT,
+	reviewPlane: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The projects a cold launch has to put back, and every one it would not take back.
 	 * 
@@ -1256,31 +1257,21 @@ export const commands = {
 	forgetExtension: __WINDOW_ONLY_RESULT,
 	setExtensionOn: __WINDOW_ONLY_RESULT,
 	openExtensionRecord: __WINDOW_ONLY_RESULT,
+	themeInForce: __WINDOW_ONLY_RESULT,
 	/**
-	 *  **The theme the window draws** (spec #2313): the core's theme engine resolves it from the six
-	 *  theme levels ([`purlis_core::theme::resolve_levels`], #2323) and the window only applies what
-	 *  comes back.
+	 *  **The theme in force at a project and workspace, with no window** (#2697): what
+	 *  [`theme_in_force`] answers for the same question, read the same way, and served on a link.
+	 *  It takes no window and points no theme watch anywhere, so a link's call never changes what
+	 *  any window watches.
 	 * 
-	 *  `at` is the project and workspace in front ([`ThemeAt`]); the engine reads their levels and
-	 *  theme folders itself. With no project in front, `pick` is what the window was told to draw,
-	 *  and the person's machine default is beneath it. `on` is the extensions the project has on
-	 *  (`extensions_on`), `None` with no project in front, when every approved extension's theme may
-	 *  be drawn. `light` is the operating system's appearance, which `system` follows; the window
-	 *  asks again when it changes.
-	 * 
-	 *  The themes approved extensions contribute come from a survey, which reads and fingerprints
-	 *  every extension's files, so it is taken only when the answer needs one and kept until
-	 *  `reread` (an approval or a removal changes them). An extension that is new, changed or
-	 *  unreadable contributes nothing: [`extension::Surveyed::themes_in_force`] is what answers.
-	 * 
-	 *  **And the theme folders it is read from are watched for this window** (#2324,
-	 *  [`crate::themewatch`]): from the config home and the plane root held here, never from a path
-	 *  the window or a chat names. A save in one tells the window to ask again.
+	 *  **It draws the theme as kept, never a chat's draft** (#2332): a draft is drawn in the
+	 *  person's own window, for the chats this app records working where it is, and is watched with
+	 *  that window's folders. A link is answered the theme the levels choose.
 	 */
-	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
+	themeInForceAt: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at })),
+} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at })),
 	themeFont: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The person's density and font override, read by the core's theme engine** (#2326): what
@@ -1343,11 +1334,37 @@ export const commands = {
 	 *  font file changed since it was approved, is never a silent fallback.
 	 */
 	refused: ThemeTrouble | null,
+	/**
+	 *  Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+	 *  of the project's or a workspace's theme folder that this machine's approval does not
+	 *  hold. `fonts`: the project asks about font files alone, and the refused Notice offers
+	 *  Review and allow (`review_plane`). `more`: it asks for more than font files, and the
+	 *  Notice offers no button. `unapproved`: this machine never approved the project, and the
+	 *  Notice offers no button. `null` otherwise.
+	 */
+	review: ThemeReview | null,
+	/**
+	 *  The theme draft of a chat working where the window is (#2332): drawn in place of what
+	 *  the levels choose while it holds every hard floor, and named on the draft strip either
+	 *  way. `None` when no chat there has one, or the theme as kept was asked for.
+	 */
+	draft: WindowDraft | null,
 } | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
 	themeChooseMachine: __WINDOW_ONLY_RESULT,
 	themeChooseOption: __WINDOW_ONLY_RESULT,
 	themeDuplicate: __WINDOW_ONLY_RESULT,
 	themeOpenFolder: __WINDOW_ONLY_RESULT,
+	themeChat: __WINDOW_ONLY_RESULT,
+	/**
+	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
+	 *  draft, where Keep puts it. Empty for a chat with none.
+	 */
+	themeDraftsOfChat: (plane: PlaneId, session: number) => typedError<WindowDraft[], string>(__TAURI_INVOKE("theme_drafts_of_chat", { plane, session })),
+	themeDraftKeep: __WINDOW_ONLY_RESULT,
+	themeDraftRevert: __WINDOW_ONLY_RESULT,
+	themeDraftsRevertHere: __WINDOW_ONLY_RESULT,
+	themeMoveToProject: __WINDOW_ONLY_RESULT,
+	themeCopyToMachine: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Every icon theme in force (FM-3, #1106): the ones approved extensions contribute, on
 	 *  the colour themes' terms and in [`ExtensionTheme`]'s shape. The text is parsed by `theme/icons.ts`
@@ -4474,6 +4491,24 @@ export type FolderListing_Serialize = {
 	entries: FolderEntry_Serialize[],
 	/**  How many entries past those are not listed. */
 	more: number,
+};
+
+/**
+ *  **The trust ask a refused theme's Review and allow draws** (#2647): the project's [`Ask`],
+ *  about font files alone, and the theme folders those files belong to, which the dialog names.
+ */
+export type FontReview = {
+	ask: Ask,
+	/**  Each theme folder whose font files changed, in the order the changes name them. */
+	themes: FontTheme[],
+};
+
+/**  One theme folder whose font files a [`FontReview`] is about. */
+export type FontTheme = {
+	/**  The theme folder's name. */
+	theme: string,
+	/**  The workspace it is in; `null` for the project's own `themes/`. */
+	workspace: string | null,
 };
 
 /**  One forge account, as Settings lists it. */
@@ -8779,6 +8814,17 @@ export type TheirAgentsMd = {
 	piece: string | null,
 };
 
+/**  **The person's own `theme.json`, drawn** (#2615). */
+export type TheirsDrawn = {
+	/**
+	 *  Whether it follows the operating system's appearance here: it has a dark and a light one,
+	 *  and the choice drawn follows the system.
+	 */
+	follows_system: boolean,
+	/**  What following the system does with it when it has one appearance: that it stays there. */
+	note: string | null,
+};
+
 /**
  *  **Where the window is**, for [`theme_in_force`] (#2323): the project in front and the
  *  workspace it is on, `None` at its plane root, which resolves from the project's levels down.
@@ -8819,6 +8865,12 @@ export type ThemeGallery = {
 	 *  choice made it (#2527).
 	 */
 	options: WindowOption[],
+	/**
+	 *  **The person's own `theme.json`, when it is what is drawn here** (#2615): it is no card,
+	 *  so this says that it is drawn and what following the system does with it; `null` when
+	 *  what is drawn is a card.
+	 */
+	theirs: TheirsDrawn | null,
 };
 
 /**  What [`theme_in_force`] answers. */
@@ -8848,15 +8900,39 @@ export type ThemeInForce = {
 	 *  font file changed since it was approved, is never a silent fallback.
 	 */
 	refused: ThemeTrouble | null,
+	/**
+	 *  Whether the project's trust ask can let the refused theme be drawn (#2647): a font file
+	 *  of the project's or a workspace's theme folder that this machine's approval does not
+	 *  hold. `fonts`: the project asks about font files alone, and the refused Notice offers
+	 *  Review and allow (`review_plane`). `more`: it asks for more than font files, and the
+	 *  Notice offers no button. `unapproved`: this machine never approved the project, and the
+	 *  Notice offers no button. `null` otherwise.
+	 */
+	review: ThemeReview | null,
+	/**
+	 *  The theme draft of a chat working where the window is (#2332): drawn in place of what
+	 *  the levels choose while it holds every hard floor, and named on the draft strip either
+	 *  way. `None` when no chat there has one, or the theme as kept was asked for.
+	 */
+	draft: WindowDraft | null,
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */
 export type ThemeOption = {
-	/**  What the file holds: `purlis-dark`, `purlis-light`, `system`, or `<extension>/<theme>`. */
+	/**  What the file holds: a built-in theme's id, `system`, or `<extension>/<theme>`. */
 	value: string,
 	/**  What the select shows. */
 	label: string,
 };
+
+/**  What a refused theme's Notice may offer (#2647, [`ThemeInForce::review`]). */
+export type ThemeReview = 
+/**  The project asks again about font files alone: Review and allow. */
+"fonts" | 
+/**  It asks for more than font files: no button, and where it is reviewed instead. */
+"more" | 
+/**  This machine never approved it: no button, and where it is reviewed instead. */
+"unapproved";
 
 /**
  *  What is wrong with one colour theme an extension is contributing (#2321), in the theme
@@ -9353,6 +9429,34 @@ export type WindowApart = {
 	token: string,
 	from: string,
 	distance: number | null,
+};
+
+/**  One theme draft, as the strip and the close of its chat name it. */
+export type WindowDraft = {
+	/**  The theme folder's name. */
+	folder: string,
+	/**  The chat that writes it: its number here, and what the person calls it. */
+	session: number,
+	chat: string,
+	/**  The workspace the chat works in, `None` at the plane root: where the draft is drawn. */
+	workspace: string | null,
+	/**  Where Keep puts it: `workspace` (the chat's workspace's `themes/`) or `project`. */
+	kept_to: string,
+	/**  Whether Keep replaces a theme folder that is there: the window asks the person first. */
+	replaces: boolean,
+	/**  Whether the window draws it now: the draft, or its last good version. */
+	drawn: boolean,
+	/**  The hard floors the draft as saved breaks, in the engine's words: why it is not drawn. */
+	broken: string[],
+	/**  Why the engine refused the draft as saved, when it did. */
+	refused: string[],
+	/**
+	 *  What the refused draft's Notice may offer (#2647): `fonts` where every font file it waits
+	 *  on is one the project brings in the folder the draft is kept to, with those bytes, and
+	 *  the project asks again about font files alone, so its trust ask lifts the refusal; the
+	 *  rules of a refused theme otherwise. `None` for a draft not refused for a font.
+	 */
+	review: ThemeReview | null,
 };
 
 /**  One face of a font. */

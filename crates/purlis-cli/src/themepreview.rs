@@ -14,9 +14,10 @@ use purlis_core::themepreview;
 
 use crate::brokered::NotTaken;
 
-/// How long the tool waits on the app: each specimen's budget, and a little for the reply.
+/// How long the tool waits on the app: one budget for a gallery picture to give way to the chat
+/// ([`themepreview::turns`], #2614), each specimen's budget, and a little for the reply.
 const ASKED_WITHIN: Duration =
-    Duration::from_secs(themepreview::BUDGET.as_secs() * themepreview::AT_MOST as u64 + 5);
+    Duration::from_secs(themepreview::BUDGET.as_secs() * (themepreview::AT_MOST as u64 + 1) + 5);
 
 /// The tool called with `args`: what to tell the model, and the pictures the app attached.
 pub fn tool(
@@ -82,6 +83,8 @@ mod tests {
                 painted: vec![Painted {
                     theme: "purlis-classic".into(),
                     appearance: Appearance::Light,
+                    high_contrast: false,
+                    preview: false,
                     width: 2560,
                     height: 1600,
                     millis: 700,

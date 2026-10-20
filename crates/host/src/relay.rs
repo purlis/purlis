@@ -22,15 +22,16 @@
 //! client's views again, each with a snapshot, under the numbers the client knows them by and at
 //! their next epoch, so the client draws each again as a view that came back. A hold is carried
 //! once the other host takes it (#2535): a project it will not hold on the new link is no longer
-//! kept for the client, and the other host refuses the client's next command for it. A link renewed
+//! kept for the client, and the client is pushed `not_held` for it, in the other host's words, as
+//! the carry-over ends, so it holds the project again itself (#2645). A link renewed
 //! ahead of its limit carries the client's commands until the new one carries all of that, and only
 //! then ends; after a drop, the client's commands wait while it is carried over. **No command the
 //! client sent is sent again**: one the link ended under is refused as unanswered, and while no
 //! link is up every command is refused in words saying so, and is not kept. **The client is told
 //! the link is down**, pushed `link_down` once each time no link is up, and `link_back` once one is
 //! up again and carries what its link stands on (#2496): a link renewed ahead of its limit is
-//! neither, and a relay made with [`Relay::new`] tells its client both as a kept one does. Both are
-//! this host's own words: the other host's are never handed on, and neither holds up linking again
+//! neither, and a relay made with [`Relay::new`] tells its client both as a kept one does. These,
+//! and `not_held`, are this host's own words: the other host's are never handed on, and neither holds up linking again
 //! for a client that has stopped reading. A view the other host will not attach again has ended for
 //! good, and the client is told so.
 //!
@@ -41,6 +42,15 @@
 //! made or composed for them, and no other. So after a re-link the window answers its runner
 //! chats' asks and changes their reach again, Forgets included. The name is the relay's own
 //! word: a client's `take_back` is refused.
+//!
+//! **A window that comes back takes back its runner chats too** (#2623). The window may name
+//! itself on a link, as the link's first command (`name_window`), by the name it keeps for that
+//! link across its restarts. The relay then names that client link to the other host by a digest
+//! of that name ([`taken_back_as`]), the same after the window restarts, so the runner names the
+//! window that comes back its chats again; a link that names itself otherwise, or not at all, is
+//! given a name of its own and gets none of them. The name is never sent on, and never said: the
+//! other host hears only the digest. While a client link holds a name no other link takes it,
+//! and a link names itself before anything is sent on it, or not at all.
 //!
 //! **A login's values are never relayed** (#2016): `log_in` is refused at the relay for every
 //! client, so a vault's value never reaches another host this way; nor is a browser's start
@@ -70,6 +80,7 @@ use std::time::Duration;
 
 use futures::future::BoxFuture;
 use purlis_session_protocol::auth::Scope;
+use purlis_session_protocol::browsing::Secret;
 use purlis_session_protocol::grants::Power;
 use purlis_session_protocol::hostlink::{Linked, Links};
 use purlis_session_protocol::link::{Acceptor, Link, Opener, Stream};
@@ -140,12 +151,17 @@ const PARKED_FOR: Duration = Duration::from_secs(30);
 /// What a relay keeps for each client link, by the client link's number.
 type ByLink = Arc<Mutex<HashMap<u64, Arc<Relayed>>>>;
 
+/// What each client link that named itself is named to the other host, by the client link's
+/// number, until its first command after the name makes what the relay keeps for it (#2623).
+type Named = Arc<Mutex<HashMap<u64, String>>>;
+
 /// Relays every client link's commands to the other host its links reach. A clone is the same
 /// relay.
 #[derive(Clone)]
 pub struct Relay {
     source: Source,
     links: ByLink,
+    named: Named,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -181,6 +197,7 @@ impl Relay {
         Relay {
             source,
             links: Arc::default(),
+            named: Arc::default(),
         }
     }
 
@@ -196,6 +213,7 @@ impl Relay {
                 Arc::clone(&self.source),
                 peer.opener().clone(),
                 peer.scope(),
+                lock(&self.named).remove(&peer.link()),
             ))
         }));
         // The link ended while this one was made: what it made goes with it.
@@ -205,6 +223,55 @@ impl Relay {
         }
         Ok(relayed)
     }
+}
+
+impl Relay {
+    /// **`peer`'s link is the window that keeps `name` for it** (#2623): every link to the other
+    /// host made for it names the window there by [`taken_back_as`] `name`. Refused on a link
+    /// that sent anything before, and while another client link holds the name.
+    fn name(&self, name: &Secret, peer: &Peer) -> Result<Answer, Refusal> {
+        if peer.has_ended() {
+            return Err(ended());
+        }
+        let window = taken_back_as(name);
+        let links = lock(&self.links);
+        let mut named = lock(&self.named);
+        if links.contains_key(&peer.link()) || named.contains_key(&peer.link()) {
+            return Err(Refusal {
+                code: session::MALFORMED.into(),
+                why: "a window names itself as its link's first command, and this link has \
+                      sent one before"
+                    .into(),
+            });
+        }
+        let held = links
+            .values()
+            .any(|relayed| relayed.client.window == window)
+            || named.values().any(|other| *other == window);
+        if held {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "another window's link holds this name now".into(),
+            });
+        }
+        named.insert(peer.link(), window);
+        Ok(Answer::Done)
+    }
+}
+
+/// **The name the relay gives the window that keeps `name`, on every link to the other host it
+/// makes for it** (#2623): a digest of it, so the other host never learns the name itself, and
+/// the same after the window restarts.
+fn taken_back_as(name: &Secret) -> String {
+    use sha2::Digest;
+    let mut digest = sha2::Sha256::new();
+    digest.update(b"purlis window, as a relay names it\0");
+    digest.update(name.expose().as_bytes());
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn ended() -> Refusal {
@@ -245,10 +312,12 @@ impl Drop for Relayed {
 }
 
 impl Relayed {
-    fn start(source: Source, opener: Opener, scope: Scope) -> Relayed {
+    /// What the relay keeps for a client link, named to the other host as `window`, where it
+    /// named itself, and else by a name of its own.
+    fn start(source: Source, opener: Opener, scope: Scope, window: Option<String>) -> Relayed {
         let client = Arc::new(ClientLink {
             scope,
-            window: ulid::Ulid::generate().to_string(),
+            window: window.unwrap_or_else(|| ulid::Ulid::generate().to_string()),
             opener,
             kept: Mutex::default(),
             handing: tokio::sync::Mutex::new(()),
@@ -436,7 +505,8 @@ impl LinkTold {
 struct ClientLink {
     scope: Scope,
     /// The relay's name for this client link, which every link to the other host made for it
-    /// says ([`Command::TakeBack`], #2511): a name no other client link is given.
+    /// says ([`Command::TakeBack`], #2511): a name no other live client link is given, the
+    /// digest of the window's own where it named itself ([`taken_back_as`], #2623).
     window: String,
     opener: Opener,
     kept: Mutex<Kept>,
@@ -724,19 +794,33 @@ async fn carry_over(
 
 /// The projects the new link's last pass could not hold are no longer kept for the client: no
 /// later link holds them in its name, and the other host refuses the client's next command for
-/// one as a project it does not hold. The client is not told of it here, and goes on counting
-/// the project as held (#2645).
-fn not_held_on(client: &ClientLink, refused: Refused) {
-    let mut kept = client.kept();
-    for (project, (path, why)) in refused {
-        if kept.held.get(&project) == Some(&path) {
-            kept.held.remove(&project);
-            crate::say(&format!(
-                "project {project} is not held at {path} on the new link to the other host, \
-                 which refused it: {why}"
-            ));
+/// one as a project it does not hold. The client is told of each, in the other host's words
+/// (`not_held`, #2645), so it holds the project again itself: one word for each, in order, on a
+/// task of its own that waits for room, so it never holds up the link.
+fn not_held_on(client: &Arc<ClientLink>, refused: Refused) {
+    let mut told = Vec::new();
+    {
+        let mut kept = client.kept();
+        for (project, (path, why)) in refused {
+            if kept.held.get(&project) == Some(&path) {
+                kept.held.remove(&project);
+                crate::say(&format!(
+                    "project {project} is not held at {path} on the new link to the other host, \
+                     which refused it: {why}"
+                ));
+                told.push(Pushed::NotHeld { project, why });
+            }
         }
     }
+    if told.is_empty() {
+        return;
+    }
+    let client = Arc::clone(client);
+    tokio::spawn(async move {
+        for pushed in told {
+            client.tell(pushed).await;
+        }
+    });
 }
 
 /// The holds a pass of a carry-over sent that the other host refused: by project, where the
@@ -826,7 +910,7 @@ async fn carry(
                 Err(CallError::Closed(_)) => return Err(LinkEnded),
                 // Still held where it was carried, so it is not held at the new path.
                 Err(why) => {
-                    refused.insert(project, (path, why.to_string()));
+                    refused.insert(project, (path, words(&why)));
                     continue;
                 }
             }
@@ -837,7 +921,7 @@ async fn carry(
             }
             Err(CallError::Closed(_)) => return Err(LinkEnded),
             Err(why) => {
-                refused.insert(project, (path, why.to_string()));
+                refused.insert(project, (path, words(&why)));
             }
         }
     }
@@ -878,6 +962,12 @@ async fn carry(
         }
     }
     Ok(refused)
+}
+
+/// The other host's words for why it refused, or what else went wrong.
+fn words(why: &CallError) -> String {
+    why.refusal()
+        .map_or_else(|| why.to_string(), |refusal| refusal.why.clone())
 }
 
 /// Joins each view's stream the other host opens on one link to a new stream on the client's
@@ -959,9 +1049,9 @@ async fn push_on(
                 };
                 client.view_ended(ours, why).await;
             }
-            // Whether the link to the other host is up is this host's to say, never the other
-            // host's (#2496).
-            Pushed::LinkDown { .. } | Pushed::LinkBack {} => {}
+            // Whether the link to the other host is up, and which projects it holds for the
+            // client, is this host's to say, never the other host's (#2496, #2645).
+            Pushed::LinkDown { .. } | Pushed::LinkBack {} | Pushed::NotHeld { .. } => {}
             pushed => client.tell(pushed).await,
         }
     }
@@ -1054,6 +1144,9 @@ impl session::Host for Relay {
                     peer.scope()
                 ),
             });
+        }
+        if let Command::NameWindow { name } = &command {
+            return self.name(name, peer);
         }
         if let Command::TakeBack { .. } = command {
             return Err(Refusal {
@@ -1150,6 +1243,7 @@ impl session::Host for Relay {
 
     async fn link_ended(&self, peer: &Peer) {
         lock(&self.links).remove(&peer.link());
+        lock(&self.named).remove(&peer.link());
     }
 
     async fn subscribe(
@@ -1177,74 +1271,4 @@ impl session::Host for Relay {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use purlis_session_protocol::session::{Event, Exit, SandboxTold, ViewEnd};
-
-    /// One of each thing a host pushes.
-    fn every_push() -> Vec<Pushed> {
-        vec![
-            Pushed::Event(Event {
-                v: 1,
-                device_id: "01J9ZZDEVICE0000000000000".into(),
-                seq: 1,
-                ulid: "01J9ZZEVENT00000000000000".into(),
-                chat: None,
-                run: None,
-                parent_run: None,
-                kind: "hook.stop".into(),
-                body: serde_json::Value::Null,
-            }),
-            Pushed::Missed {
-                device: "01J9ZZDEVICE0000000000000".into(),
-                after: 1,
-                resumes_at: 2,
-            },
-            Pushed::Ended {
-                program: "01J9ZZPRGRM00000000000000".into(),
-                run: None,
-                exit: Exit::Code(0),
-            },
-            Pushed::ViewEnded {
-                view: 1,
-                why: ViewEnd::Closed,
-            },
-            Pushed::Heard {
-                project: "01J9PRJCT00000000000000000".into(),
-                heard: 1,
-                line: serde_json::Value::Null,
-            },
-            Pushed::Sandbox {
-                confinement: "01J9CNFNMNT0000000000000000".into(),
-                told: SandboxTold::RefusedMore { count: 1 },
-            },
-            Pushed::Saving {
-                project: "01J9PRJCT00000000000000000".into(),
-                saved: true,
-                moved_tree: false,
-            },
-            Pushed::WhoIsMidTurn {
-                question: 1,
-                project: "01J9PRJCT00000000000000000".into(),
-                workspace: "alpha".into(),
-            },
-        ]
-    }
-
-    /// FD-27's table, as the relay meets it: a push reaches a client of the relay that is not
-    /// the window exactly when some scope that is neither the window's nor a link between hosts
-    /// may hear it on a host of its own.
-    #[test]
-    fn what_the_relay_keeps_from_a_client_that_is_not_the_window_is_what_the_table_grants_the_window_alone()
-     {
-        for pushed in every_push() {
-            let anyones = pushed.heard_with().is_none_or(|power| {
-                Scope::ALL
-                    .into_iter()
-                    .filter(|scope| !matches!(scope, Scope::LocalUi | Scope::RemoteLink))
-                    .any(|scope| scope.may(power))
-            });
-            assert_eq!(!heard_by_the_window_alone(&pushed), anyones, "{pushed:?}");
-        }
-    }
-}
+mod tests;
