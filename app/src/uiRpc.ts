@@ -1236,6 +1236,10 @@ export const commands = {
 	setUpdateChannel: __WINDOW_ONLY_RESULT,
 	browserLimits: __WINDOW_ONLY_RESULT,
 	setBrowserLimit: __WINDOW_ONLY_RESULT,
+	dockerPools: __WINDOW_ONLY_RESULT,
+	addDockerPool: __WINDOW_ONLY_RESULT,
+	removeDockerPool: __WINDOW_ONLY_RESULT,
+	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	installUpdate: __WINDOW_ONLY,
@@ -6799,6 +6803,50 @@ export type PlaneUpdated = {
 	 *  `personas/steward/persona.md`, …
 	 */
 	files: string[],
+};
+
+/**  A pool as the person typed it: each limit left empty takes the default. */
+export type PoolAdding = {
+	name: string,
+	image: string,
+	cpus: string | null,
+	memory_mib: number | null,
+	processes: number | null,
+	tmp_mib: number | null,
+};
+
+/**
+ *  A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
+ *  MiB.
+ */
+export type PoolLimitsShown = {
+	cpus: string,
+	memory_mib: number,
+	processes: number,
+	tmp_mib: number,
+};
+
+/**  Where a pool's runner stands, as one link to it says. */
+export type PoolLink = 
+/**  It answered with the key pinned at its pairing. */
+{ state: "linked" } | 
+/**  It answered with another key: it is refused, and the window offers to remove it. */
+{ state: "key_changed" } | 
+/**  It did not answer, and why. */
+{ state: "down"; why: string };
+
+/**  One pool, as its row draws it. */
+export type PoolRow = {
+	name: string,
+	image: string,
+	/**  What its runner is held to: what the person set, and the defaults for the rest. */
+	limits: PoolLimitsShown,
+};
+
+/**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
+export type PoolsShown = {
+	pools: PoolRow[],
+	defaults: PoolLimitsShown,
 };
 
 /**
