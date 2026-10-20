@@ -194,10 +194,12 @@ impl Internal {
     /// **Whether the listing covers `ip` on `port`, asked for by `name`** (#2530). An address
     /// under this machine's own NAT64 prefix is judged as each IPv4 address it carries, and
     /// every one of them must be covered. A Teredo or ISATAP address is judged as each internal
-    /// IPv4 address it carries, and as itself where it is internal as itself (#2678). An address of this machine's own, or one where its
-    /// addresses could not be read, is covered only by an entry naming that address and that
-    /// port exactly, never by a range, a name or an address without a port. Any other address
-    /// is covered by an entry that covers it, or the name asked for.
+    /// IPv4 address it carries, and as itself where it is internal as itself (#2678); under this
+    /// machine's own NAT64 prefix, as each internal one it carries too. An address of this
+    /// machine's own, or one where its addresses could not be read, is covered only by an entry
+    /// naming that address and that port exactly, never by a range, a name or an address
+    /// without a port. Any other address is covered by an entry that covers it, or the name
+    /// asked for.
     fn covers(
         &self,
         name: Option<&Host>,
@@ -212,7 +214,17 @@ impl Internal {
         let readings = self.through_nat64(ip);
         let tunnelled = tunnelled(ip);
         let judged = if !readings.is_empty() {
+            // Each IPv4 address this machine's NAT64 carries in it, and each internal one it
+            // carries as a Teredo or ISATAP address (#2678).
             readings
+                .into_iter()
+                .chain(
+                    tunnelled
+                        .iter()
+                        .map(|one| IpAddr::V4(*one))
+                        .filter(|one| held(*one, own)),
+                )
+                .collect()
         } else if !tunnelled.is_empty() {
             // A Teredo or ISATAP address: itself where it is internal as itself, and each
             // internal IPv4 address it carries, as that address (#2678).

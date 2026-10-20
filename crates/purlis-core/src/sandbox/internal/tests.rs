@@ -405,6 +405,9 @@ fn an_isatap_address_carrying_an_internal_ipv4_one_is_held() {
         "[2001:db8:1:2::5efe:a00:5]:443",
         "[2001:db8:1:2:200:5efe:a00:5]:443",
         "[2001:db8:1:2:200:5efe:c0a8:101]:443",
+        // The group bit set, alone and with the universal bit.
+        "[2001:db8:1:2:100:5efe:a00:5]:443",
+        "[2001:db8:1:2:300:5efe:a00:5]:443",
     ] {
         assert!(private_address(at(typed).ip()), "{typed}");
         assert!(
@@ -412,11 +415,18 @@ fn an_isatap_address_carrying_an_internal_ipv4_one_is_held() {
             "{typed}"
         );
     }
-    assert!(listing(&[]).carries(
-        "api.example",
-        at("[2001:db8:1:2::5efe:cb00:7107]:443"),
-        Some(&[])
-    ));
+    for public in [
+        "[2001:db8:1:2::5efe:cb00:7107]:443",
+        "[2001:db8:1:2:100:5efe:cb00:7107]:443",
+        "[2001:db8:1:2:300:5efe:cb00:7107]:443",
+        // Any other byte where an ISATAP identifier's flags go is no ISATAP address.
+        "[2001:db8:1:2:400:5efe:a00:5]:443",
+    ] {
+        assert!(
+            listing(&[]).carries("api.example", at(public), Some(&[])),
+            "{public}"
+        );
+    }
     // On a unique local prefix it is held as itself whatever IPv4 address it carries.
     assert!(!listing(&[]).carries("db.example", at("[fd00:1::5efe:cb00:7107]:443"), Some(&[])));
 }

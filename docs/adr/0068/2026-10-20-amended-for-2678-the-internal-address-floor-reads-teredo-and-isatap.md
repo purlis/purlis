@@ -17,7 +17,9 @@ This note adds to the amendment for #2530 and changes none of its rulings. Each 
    carries, and against the IPv6 address where it is internal as itself.** Each of them has to
    be covered: an IPv4 entry or range covers the IPv4 address, and the name asked for covers
    what it resolves to, as for NAT64. An IPv6 range around a Teredo or ISATAP address covers
-   none of the IPv4 addresses it carries. *D-2678-2.*
+   none of the IPv4 addresses it carries. Under the runner's own NAT64 prefix, it is judged as
+   each IPv4 address the prefix carries in it and each internal one it carries this way.
+   *D-2678-2.*
 3. **A range that takes in Teredo addresses is refused; a range is not refused for taking in
    ISATAP ones.** Every IPv6 network of `/64` or wider takes in every ISATAP interface
    identifier, so refusing those would refuse every useful IPv6 range. Item 2 is what holds

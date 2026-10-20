@@ -385,6 +385,8 @@ fn a_teredo_or_isatap_address_carrying_a_refused_ipv4_one_is_refused() {
         // ISATAP, 127.0.0.1, in both interface identifiers.
         "2606:4700:1::5efe:7f00:1",
         "2606:4700:1:0:200:5efe:a9fe:a9fe",
+        "2606:4700:1:0:100:5efe:7f00:1",
+        "2606:4700:1:0:300:5efe:a9fe:a9fe",
     ] {
         assert!(refused_address(typed.parse().unwrap(), &[]), "{typed}");
         let why = refused(&format!("[{typed}]"));
