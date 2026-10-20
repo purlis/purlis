@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792507355364,
+  "lastUpdate": 1792508857077,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19320,6 +19320,48 @@ window.BENCHMARK_DATA = {
             "value": 101.529248,
             "unit": "ms",
             "extra": "median of 5 runs: 101.058, 101.500, 101.529, 102.108, 102.811 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "560f1ac156daab4bcd3e8422c056f3a429e230a9",
+          "message": "Runners: add a Docker pool from the window (#2679, 3/3) (#2750)\n\n* Runners: add a Docker pool from the window (#2679)\n\n- Add a Docker pool… in the palette opens a dialog: the pool's name, its\n  runner image by digest, and its limits, each empty for the default. The\n  pool's runner is made, checked, paired and kept at once.\n- Settings › This machine › Pools lists the pools, each with Remove, and is\n  offered only while this machine keeps one. Remove unpairs the runner over\n  a link of its own while it answers, then removes its container, home and\n  the pool, and sets the workspaces that ran on it back to this machine.\n- A runner that answers with another key than the one it was paired with is\n  said in a Notice with Remove.\n- A workspace whose chats this machine's store sends to a pool starts none,\n  and says why: a pool's runner does not hold the project yet.\n\nRefs #2679\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A pool's image this machine does not hold is pulled by its digest; refusals read as one sentence\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A chat's start reads where its workspace runs from the config home the window gives it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Pools: every Remove asks first; copy reads plainer\n\n- Remove pool {name}? says what goes and that there is no undo, with Cancel and Remove pool, for the row's Remove and the key-changed Notice's.\n- A pool's limits read \"MiB of memory\"; the key-changed Notice says purlis no longer links to the runner; Remove is named Removing while it runs.\n- Adding a pool makes this desktop's link key; nothing else does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T18:43:28+04:00",
+          "tree_id": "1dded72ce8c0bd4695c5d3d2a45808823386f322",
+          "url": "https://github.com/purlis/purlis/commit/560f1ac156daab4bcd3e8422c056f3a429e230a9"
+        },
+        "date": 1792508854864,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.540869,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.515, 0.519, 0.541, 0.542, 0.559 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.345952,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.275, 16.324, 16.346, 16.366, 16.392 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.732246,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.808, 101.697, 101.732, 102.747, 103.690 ms"
           }
         ]
       }
