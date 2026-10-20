@@ -2863,7 +2863,7 @@ impl PlaceInTheBudget {
                     code: session::DEVICE_FULL.into(),
                     // Whole on its own: a window before 1.32 shows it as it is.
                     why: format!(
-                        "this device runs at most {most} {} at once, and that many run now: \
+                        "This device runs at most {most} {} at once, and that many run now: \
                          close one first, or raise the budget in Settings › This machine › \
                          Browsers",
                         if most == 1 { "browser" } else { "browsers" }
