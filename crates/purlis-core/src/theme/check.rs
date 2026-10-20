@@ -48,6 +48,18 @@ const STANDS_IN: &[(&str, &str)] = &[
     ("terminal.selection-foreground", "terminal.foreground"),
 ];
 
+/// A pair as the check names it, the way its warnings and its hard floors say it: `front` on
+/// `back`, then each layer under `back` from the top down (`… over danger.wash over
+/// surface.overlay`).
+pub(super) fn laid(front: &str, back: &str, layers: [Option<&str>; 2]) -> String {
+    let over: String = layers
+        .into_iter()
+        .flatten()
+        .map(|layer| format!(" over {layer}"))
+        .collect();
+    format!("{front} on {back}{over}")
+}
+
 /// One pair: `front` drawn on `back`, held to `floor`. `under` is what `back` is laid over, for
 /// a `back` that is a wash with alpha, and `beneath` what `under` is laid over in turn, for an
 /// `under` that is a wash too (#2724): the layers are laid from the bottom up. A `front` with

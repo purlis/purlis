@@ -46,6 +46,7 @@ mod dispatches;
 mod dispatchgrants;
 mod dispatchlimits;
 mod dispatchunattended;
+mod dockerpools;
 mod doctor;
 mod doing;
 #[cfg(feature = "e2e")]
@@ -3735,6 +3736,8 @@ pub fn run() {
                 // This machine's network record (#1662): every block and Allow, for the
                 // Network page, a chat's Network view and the doctor.
                 .recording_network(purlis_core::sandboxblock::record::Record::here())
+                // Where each workspace runs its chats on this machine (#2679).
+                .keeping_pools_in(purlis_core::machine::config_root())
                 // A chat a handoff opened goes to the window, which files it on its workspace's
                 // strip without taking the front (`handoff::Arrived`).
                 .telling_arrivals({

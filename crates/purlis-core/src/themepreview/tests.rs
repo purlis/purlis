@@ -1137,3 +1137,27 @@ fn the_tool_waits_for_the_whole_turn_the_lookup_included() {
     assert_eq!(TURN, LOOKUP + BUDGET * AT_MOST as u32);
     assert!(ASKED_WITHIN > BUDGET + TURN);
 }
+
+#[test]
+fn a_path_outside_the_project_and_the_config_folder_is_not_said_spaces_and_all() {
+    let said = unpathed(
+        "purlis could not open /Volumes/Client Work/themes/secret client/fonts/Plex Mono.woff2 \
+         to read its fonts; nor /Users/someone/My Themes: no such file; nor \
+         (/opt/odd place/theme.json) and \"/srv/a b c\" either; /etc/z.",
+    );
+    assert_eq!(
+        said,
+        "purlis could not open a path to read its fonts; nor a path: no such file; nor (a path) \
+         and \"a path\" either; a path."
+    );
+    for word in [
+        "Client", "Work", "secret", "Plex", "Mono", "Themes", "odd", "place", " b c",
+    ] {
+        assert!(!said.contains(word), "{word}: {said}");
+    }
+    // Words that are no path's are said as they are.
+    assert_eq!(
+        unpathed("a theme has a name: 3 is not one"),
+        "a theme has a name: 3 is not one"
+    );
+}

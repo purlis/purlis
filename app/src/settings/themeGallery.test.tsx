@@ -21,7 +21,13 @@ import type { LiveSetting } from "./groups";
 import { ReadOnlySaid } from "../ReadOnlyLine";
 import { THEME_CHAT, type ThemeChatAsk } from "./links";
 import { forgetGalleries, themeRows } from "./themeGallery";
-import { BUSY_WAIT_MS, forgetSpecimens, keptSpecimens, MOST_KEPT } from "./themeSpecimens";
+import {
+  BUSY_FOR_MS,
+  BUSY_WAIT_MS,
+  forgetSpecimens,
+  keptSpecimens,
+  MOST_KEPT,
+} from "./themeSpecimens";
 
 /**
  * **Settings › Theme's gallery** (#2331): a card per theme the core lists, the theme drawn live
@@ -663,6 +669,40 @@ describe("a card's pictures when the painter is busy (#2331 review)", () => {
     });
     await waitFor(() => expect(asked("theme_specimen")).toHaveLength(2));
     await waitFor(() => expect(document.querySelector("img")).not.toBeNull());
+  });
+
+  it("asks a busy painter again every second, past a chat's whole turn, until it draws (#2751)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Busy for as long as a chat's lookup and two pictures take, then drawn.
+    const { asked } = core(
+      { ...GALLERY, cards: [DUSK] },
+      { painter: (n) => (n <= 16 ? SPECIMEN_BUSY : undefined) },
+    );
+    render(<Group at={null} />);
+    await cards();
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(1));
+    expect(BUSY_WAIT_MS).toBeLessThanOrEqual(1_000);
+    for (let n = 2; n <= 17; n++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(BUSY_WAIT_MS);
+      });
+      await waitFor(() => expect(asked("theme_specimen")).toHaveLength(n));
+    }
+    await waitFor(() => expect(document.querySelector("img")).not.toBeNull());
+  });
+
+  it("stops asking a busy painter for a card that left the screen", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { asked } = core({ ...GALLERY, cards: [DUSK] }, { painter: () => SPECIMEN_BUSY });
+    const shown = render(<Group at={null} />);
+    await cards();
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(1));
+    shown.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(BUSY_FOR_MS);
+    });
+    // Its card is gone: the painter is not asked again.
+    expect(asked("theme_specimen")).toHaveLength(1);
   });
 
   it("asks again for a picture that could not be drawn the next time its card is shown", async () => {
