@@ -35,7 +35,9 @@
 //! **A chat goes first** (#2614): whose turn the painter is, is [`themepreview::turns`]'s. A
 //! chat's `theme_preview` asked while one of Settings › Theme's pictures is drawn waits for it,
 //! and that picture gives way and is answered [`BUSY`], so the chat is drawn next; the window
-//! asks for the picture again later.
+//! asks for the picture again within a second. After a chat's turn the window asked during, the
+//! gallery is owed one picture, drawn whole before any chat goes again (#2751), so chats asking
+//! again and again still leave the cards on screen their pictures.
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, mpsc};
@@ -169,19 +171,20 @@ pub fn answered(
     if let Err(left) = painter.map_or(Ok(()), |one| one.spacing().may(&key, Instant::now())) {
         return no(Spacing::said(left));
     }
-    let answer = painted(
+    let drawing = drawn(
         painter,
         config.map(|config| (config, at)),
         &asks.specimens,
         Who::Chat,
     );
-    // A turn taken is spaced from its end, whatever it drew; an ask answered busy took none.
+    // A turn is spaced from its end once it began a picture (#2751): an ask answered busy, or a
+    // theme refused by its id, drew nothing, and the chat may ask again at once.
     if let Some(one) = painter
-        && answer.as_ref().err().is_none_or(|why| why != BUSY)
+        && drawing.began
     {
         one.spacing().ended(&key, Instant::now());
     }
-    match answer {
+    match drawing.answer {
         Ok(painted) => Answer::Previewed { painted },
         Err(why) => no(why),
     }
@@ -198,30 +201,51 @@ pub fn painted(
     specimens: &[Specimen],
     who: Who,
 ) -> Result<Vec<Painted>, String> {
+    drawn(painter, at, specimens, who).answer
+}
+
+/// What one ask's turn came to: the answer, and whether a picture was begun on it.
+struct Drawing {
+    answer: Result<Vec<Painted>, String>,
+    began: bool,
+}
+
+impl Drawing {
+    fn no(why: String) -> Self {
+        Self {
+            answer: Err(why),
+            began: false,
+        }
+    }
+}
+
+/// [`painted`], saying whether a picture was begun.
+fn drawn(
+    painter: Option<&dyn Painter>,
+    at: Option<(PathBuf, ChatAt)>,
+    specimens: &[Specimen],
+    who: Who,
+) -> Drawing {
     if specimens.is_empty() || specimens.len() > themepreview::AT_MOST {
-        return Err(format!(
+        return Drawing::no(format!(
             "ask for one theme specimen, or {} side by side",
             themepreview::AT_MOST
         ));
     }
     let Some(painter) = painter else {
-        return Err(NO_PAINTER.to_owned());
+        return Drawing::no(NO_PAINTER.to_owned());
     };
-    let turn = turn_of(painter, who)?;
-    let until = Instant::now() + themepreview::TURN;
-    let tint = at.as_ref().and_then(|(_, chat)| colour_of(chat));
-    let place = at.map(|(config, chat)| {
-        let place = crate::themegallery::Place::read(
-            config.clone(),
-            Some(chat.plane.clone()),
-            chat.workspace.clone(),
-        );
-        (config, chat, place)
-    });
-    specimens
-        .iter()
-        .map(|specimen| {
-            let started = Instant::now();
+    on_turn(painter, specimens, who, themepreview::TURN, move || {
+        let tint = at.as_ref().and_then(|(_, chat)| colour_of(chat));
+        let place = at.map(|(config, chat)| {
+            let place = crate::themegallery::Place::read(
+                config.clone(),
+                Some(chat.plane.clone()),
+                chat.workspace.clone(),
+            );
+            (config, chat, place)
+        });
+        move |specimen: &Specimen| {
             // Drawn as the window draws it there: the consent floors held (ADR 0097 §6).
             let drawn = match &place {
                 None => themepreview::resolved(&Reached::nowhere(), specimen)?,
@@ -237,28 +261,70 @@ pub fn painted(
                 )?,
             };
             let theme = drawn.theme.ok_or_else(|| NO_THEME.to_owned())?;
-            let handed = Handed {
-                tint: tint.clone(),
-                ..Handed::of(WindowTheme::from(&theme))?
-            };
+            Ok(Looked {
+                handed: Handed {
+                    tint: tint.clone(),
+                    ..Handed::of(WindowTheme::from(&theme))?
+                },
+                appearance: theme.appearance,
+                high_contrast: theme.high_contrast,
+            })
+        }
+    })
+}
+
+/// One specimen, looked up: what its page is handed, and the appearance it is drawn in.
+struct Looked {
+    handed: Handed,
+    appearance: purlis_core::theme::Appearance,
+    high_contrast: bool,
+}
+
+/// **`specimens` drawn on one turn of `who`'s, `turn` long**: the turn taken first, then the
+/// lookup `looking` makes (read once the turn is held), then each specimen looked up and drawn,
+/// none begun that could end past the turn.
+fn on_turn<L>(
+    painter: &dyn Painter,
+    specimens: &[Specimen],
+    who: Who,
+    turn: std::time::Duration,
+    looking: impl FnOnce() -> L,
+) -> Drawing
+where
+    L: Fn(&Specimen) -> Result<Looked, String>,
+{
+    let held = match turn_of(painter, who) {
+        Ok(held) => held,
+        Err(why) => return Drawing::no(why),
+    };
+    let until = Instant::now() + turn;
+    let look = looking();
+    let mut began = false;
+    let answer = specimens
+        .iter()
+        .map(|specimen| {
+            let started = Instant::now();
+            let looked = look(specimen)?;
             // No picture is begun that could end past the turn's time: the caller has stopped
             // waiting by then.
             if Instant::now() + themepreview::BUDGET > until {
                 return Err(over_budget());
             }
-            let picture = painter.paint(&handed, &turn)?;
+            began = true;
+            let picture = painter.paint(&looked.handed, &held)?;
             Ok(Painted {
                 preview: purlis_core::theme::is_preview(&specimen.theme),
                 theme: specimen.theme.clone(),
-                appearance: theme.appearance,
-                high_contrast: theme.high_contrast,
+                appearance: looked.appearance,
+                high_contrast: looked.high_contrast,
                 width: picture.width,
                 height: picture.height,
                 millis: u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX),
                 png: picture.png,
             })
         })
-        .collect()
+        .collect();
+    Drawing { answer, began }
 }
 
 /// **The colour the window is tinted with where `chat` works**: its workspace's, as its

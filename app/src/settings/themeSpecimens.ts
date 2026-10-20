@@ -19,9 +19,12 @@ import { commands, SPECIMEN_BUSY, type ThemeAt } from "../bindings";
  * answers a second ask that finds one being drawn with a refusal, so the window queues its own
  * and never sends two at once. A chat's `theme_preview` goes first: the app has the picture
  * being drawn here give way to it, and answers this window's asks busy while a chat waits. One
- * refused because the painter was busy is asked again after a wait longer than a specimen's
- * budget, a few times. A specimen the app could not draw is said on the card in the app's words,
- * and is never kept: the card asks again the next time it is shown.
+ * refused because the painter was busy is asked again every {@link BUSY_WAIT_MS}, for as long as
+ * a chat's whole ask takes ({@link BUSY_FOR_MS}) and while its card is on screen: after a chat's
+ * turn this window asked during, the app holds the painter for it a specimen's budget, so it
+ * draws its picture whole before any chat goes again (#2751). A specimen the app could not draw
+ * is said on the card in the app's words, and is never kept: the card asks again the next time it
+ * is shown.
  *
  * **At most {@link MOST_KEPT} pictures are kept in all**: past that, the one shown least recently
  * is let go, and asked for again if its card comes back. One a card on screen shows, or one being
@@ -45,12 +48,14 @@ let drawing = false;
 /** Which life of the pictures this is: an answer to an ask of an earlier one is dropped. */
 let life = 0;
 
-/** How long a busy painter is waited for before asking again: longer than one specimen's
- *  budget (`themepreview::BUDGET`, 5 s), which is the most a chat's ask holds it. */
-export const BUSY_WAIT_MS = 6_000;
+/** **How long a busy painter is waited for before asking again** (#2751): a second, well within
+ *  the specimen's budget (`themepreview::BUDGET`, 5 s) the app holds the painter for this window
+ *  after a chat's turn it asked during. */
+export const BUSY_WAIT_MS = 1_000;
 
-/** How many times a busy painter is asked in all. */
-export const BUSY_TRIES = 3;
+/** **How long a busy painter is asked again for, in all**: longer than a chat's whole ask holds
+ *  it (`themepreview::ASKED_WITHIN`, 25 s). */
+export const BUSY_FOR_MS = 30_000;
 
 /** **How many pictures are kept in all** (#2614): two screens of cards with their pictures. A
  *  picture is a full specimen, a PNG of a few hundred kilobytes. */
@@ -125,9 +130,11 @@ function waited(ms: number): Promise<void> {
   });
 }
 
-/** Asks the app for the specimen of `theme` (of the folder level `from`) in `appearance`, again
- *  after a wait while the painter is busy, {@link BUSY_TRIES} times at most. */
+/** Asks the app for the specimen of `theme` (of the folder level `from`) in `appearance` for the
+ *  picture `key`, again every {@link BUSY_WAIT_MS} while the painter is busy, for
+ *  {@link BUSY_FOR_MS} at most and only while a card on screen shows it. */
 async function asked(
+  key: string,
   at: ThemeAt | null,
   theme: string,
   from: string | null,
@@ -138,7 +145,13 @@ async function asked(
       const answer = await commands.themeSpecimen(theme, appearance, at, from);
       if (answer.status === "ok")
         return { state: "drawn", src: `data:image/png;base64,${answer.data.png}` };
-      if (answer.error !== SPECIMEN_BUSY || tries >= BUSY_TRIES)
+      // One whose card left the screen gives its turn to the cards on it; it is asked again
+      // when its card comes back.
+      if (
+        answer.error !== SPECIMEN_BUSY ||
+        tries * BUSY_WAIT_MS >= BUSY_FOR_MS ||
+        !onScreen.has(key)
+      )
         return { state: "none", why: answer.error };
     } catch (why) {
       return { state: "none", why: String(why) };
@@ -197,7 +210,7 @@ export function useSpecimen(
     const kept = pictures.get(key);
     if (kept === undefined || kept.state === "none") {
       keep(key, DRAWING);
-      queue.push({ key, ask: () => asked(at, theme, from, appearance) });
+      queue.push({ key, ask: () => asked(key, at, theme, from, appearance) });
       told();
       next();
     }
