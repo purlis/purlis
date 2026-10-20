@@ -133,7 +133,8 @@ function core(
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       switch (cmd) {
         case "theme_gallery":
-          return gallery;
+          // A new answer each time, as the app's is.
+          return { ...gallery };
         case "theme_card_drawn":
           if (held) await new Promise<void>((done) => waiting.push(done));
           return { theme: LIGHT, complaints: [], follows_system: false, floors: null, options: [] };
@@ -846,7 +847,7 @@ describe("only the cards on screen are pictured (#2614)", () => {
     expect(asked("theme_specimen").map((one) => one.theme)).toEqual(["theme-0", "theme-2"]);
   });
 
-  it(`keeps at most ${MOST_KEPT} pictures beside those on screen, and asks again for one let go`, async () => {
+  it(`keeps at most ${MOST_KEPT} pictures in all, and asks again for one let go`, async () => {
     const shown = screenOf();
     const { asked } = core({ ...GALLERY, cards: many(MOST_KEPT + 4) });
     render(<Group at={null} />);
@@ -868,6 +869,28 @@ describe("only the cards on screen are pictured (#2614)", () => {
     shown.show(`Theme ${MOST_KEPT + 3}`);
     await new Promise((done) => setTimeout(done, 10));
     expect(asked("theme_specimen")).toHaveLength(MOST_KEPT + 5);
+  });
+
+  it("watches a refused card's pictures once it becomes a theme while the tab is open", async () => {
+    const shown = screenOf();
+    const fixed = card({ id: "broken", name: "Broken" });
+    const gallery: ThemeGallery = {
+      ...GALLERY,
+      cards: [{ ...fixed, refused: true, said: ["surface.base is not a colour"], appearances: [] }],
+    };
+    const { asked } = core(gallery);
+    render(<Group at={{ plane: PLANE, workspace: null }} />);
+    await cards();
+    expect(named("Broken")).toHaveAttribute("aria-disabled", "true");
+    // Its folder is put right on disk: the same card, now a theme, with a new stamp.
+    gallery.cards = [{ ...fixed, stamp: "1" }];
+    await act(async () => {
+      await emit(THEME_FOLDERS_CHANGED, { survey: false });
+    });
+    await waitFor(() => expect(named("Broken")).not.toHaveAttribute("aria-disabled"));
+    shown.show("Broken");
+    await waitFor(() => expect(asked("theme_specimen")).toHaveLength(1));
+    expect(asked("theme_specimen")[0]).toMatchObject({ theme: "broken" });
   });
 
   it("never lets go of a picture a card on screen shows", async () => {

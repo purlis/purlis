@@ -601,8 +601,7 @@ function Pictures({
   refusedId: string;
 }) {
   // Only a card on screen is pictured (#2614): the rest are asked for as they scroll in.
-  const box = useRef<HTMLDivElement>(null);
-  const seen = useOnScreen(box);
+  const [box, seen] = useOnScreen();
   if (card.refused)
     return (
       <p id={refusedId} className="text-sm text-text-secondary">

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState, useSyncExternalStore, type RefObject } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { commands, SPECIMEN_BUSY, type ThemeAt } from "../bindings";
 
 /**
@@ -23,9 +23,9 @@ import { commands, SPECIMEN_BUSY, type ThemeAt } from "../bindings";
  * budget, a few times. A specimen the app could not draw is said on the card in the app's words,
  * and is never kept: the card asks again the next time it is shown.
  *
- * **At most {@link MOST_KEPT} pictures are kept** beside the ones on screen: past that, the one
- * shown least recently that no card on screen shows is let go, and asked for again if its card
- * comes back.
+ * **At most {@link MOST_KEPT} pictures are kept in all**: past that, the one shown least recently
+ * is let go, and asked for again if its card comes back. One a card on screen shows, or one being
+ * drawn, is never let go.
  */
 
 /** A card's picture: a data URL, being drawn, or why there is none. */
@@ -52,8 +52,8 @@ export const BUSY_WAIT_MS = 6_000;
 /** How many times a busy painter is asked in all. */
 export const BUSY_TRIES = 3;
 
-/** **How many pictures are kept beside the ones on screen** (#2614): two screens of cards with
- *  their pictures. A picture is a full specimen, a PNG of a few hundred kilobytes. */
+/** **How many pictures are kept in all** (#2614): two screens of cards with their pictures. A
+ *  picture is a full specimen, a PNG of a few hundred kilobytes. */
 export const MOST_KEPT = 48;
 
 /** How far past the screen a card counts as on it, so a picture is ready as it scrolls in. */
@@ -233,23 +233,24 @@ function watcherOf(): IntersectionObserver | null {
   return watcher;
 }
 
-/** **Whether `element` is on screen**, or near enough to it to be pictured ahead: as
- *  `IntersectionObserver` tells it, nothing until it has; a webview without one shows every
- *  card as on screen. */
-export function useOnScreen(element: RefObject<Element | null>): boolean {
+/** **Whether the element given the ref is on screen**, or near enough to it to be pictured
+ *  ahead: as `IntersectionObserver` tells it, nothing until it has; a webview without one shows
+ *  every card as on screen. The ref is a callback, so an element rendered later (a refused card
+ *  that becomes a theme while the tab is open) is watched once it is there. */
+export function useOnScreen(): [(element: Element | null) => void, boolean] {
+  const [element, setElement] = useState<Element | null>(null);
   const [on, setOn] = useState(() => typeof IntersectionObserver !== "function");
   useEffect(() => {
-    const target = element.current;
     const watching = watcherOf();
-    if (target === null || watching === null) return;
-    watched.set(target, setOn);
-    watching.observe(target);
+    if (element === null || watching === null) return;
+    watched.set(element, setOn);
+    watching.observe(element);
     return () => {
-      watched.delete(target);
-      watching.unobserve(target);
+      watched.delete(element);
+      watching.unobserve(element);
     };
   }, [element]);
-  return on;
+  return [setElement, on];
 }
 
 /** For tests: how many pictures are kept, drawn or not. */

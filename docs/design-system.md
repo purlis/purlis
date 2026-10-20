@@ -788,8 +788,8 @@ theme.json, following the system", or that it stays in its one appearance (#2615
   as it is drawn when pointed at, with the option values chosen there. **Only the cards on
   screen are pictured** (#2614): a card's pictures are asked for once it scrolls into view, and
   one still waiting its turn when its card scrolls away is not asked for. **At most 48 pictures
-  are kept** beside the ones on screen (`MOST_KEPT`); past that, the one shown least recently
-  is let go and asked for again if its card comes back.
+  are kept in all** (`MOST_KEPT`); past that, the one shown least recently is let go and asked
+  for again if its card comes back, and one a card on screen shows is never let go.
 - **A chat's `theme_preview` goes first** (#2614, `themepreview::turns`): one specimen is drawn
   at a time. A chat asked while a card's picture is drawn waits for it, and that picture gives
   way, so the chat is drawn next. While a chat holds or waits for the painter, the app answers

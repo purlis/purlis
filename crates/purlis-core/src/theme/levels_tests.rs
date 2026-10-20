@@ -1652,9 +1652,17 @@ fn the_old_system_id_with_one_appearance_of_the_person_s_stays_in_it_and_says_so
 #[test]
 fn the_old_system_id_with_an_appearance_named_draws_that_one_as_any_theme_does() {
     let mine = load(&two("Mine")).theme;
+    // Only an old or hand-edited choices file holds one: the gallery writes a card's id (D-2615-2).
     let drawn = system_picked(Some(&mine), Appearance::Dark, Some("day"));
+    assert!(drawn.theirs);
     assert_eq!(drawn.theme.map(|it| it.id), Some("day".to_owned()));
     assert!(!drawn.follows_system);
+    // With no theme of the person's, Purlis Classic's appearance of that id, whatever the system.
+    for system in [Appearance::Light, Appearance::Dark] {
+        let classic = system_picked(None, system, Some("light"));
+        assert_eq!(classic.theme.as_ref(), built_in("purlis-light"));
+        assert!(!classic.follows_system && !classic.theirs);
+    }
 }
 
 #[test]
