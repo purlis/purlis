@@ -23,8 +23,9 @@ import { $$, browser, expect } from "@wdio/globals";
  */
 
 type Found = {
-  known: boolean;
-  active: boolean;
+  /** Each forced-colours query in the window's sheets, as the engine parsed it: its text, whether
+   *  the engine knows it, and whether it matches now. */
+  queries: { text: string; known: boolean; active: boolean }[];
   rules: { selector: string; style: Record<string, string> }[];
 };
 
@@ -49,10 +50,17 @@ describe("forced colours", () => {
     await untilTheStripIsRead();
     const found: Found = await browser.execute(() => {
       const rules: { selector: string; style: Record<string, string> }[] = [];
+      const queries: { text: string; known: boolean; active: boolean }[] = [];
       const read = (list: CSSRuleList, forced: boolean) => {
         for (const rule of [...list]) {
           if (rule instanceof CSSMediaRule) {
-            read(rule.cssRules, forced || /forced-colors:\s*active/.test(rule.media.mediaText));
+            const text = rule.media.mediaText;
+            const mine = /forced-colors/.test(text);
+            if (mine) {
+              const query = matchMedia(text);
+              queries.push({ text, known: query.media !== "not all", active: query.matches });
+            }
+            read(rule.cssRules, forced || mine);
           } else if ("cssRules" in rule && !(rule instanceof CSSStyleRule)) {
             read((rule as CSSGroupingRule).cssRules, forced);
           } else if (forced && rule instanceof CSSStyleRule) {
@@ -69,11 +77,15 @@ describe("forced colours", () => {
           // A sheet of another origin cannot be read, and none of the window's own is one.
         }
       }
-      const query = matchMedia("(forced-colors: active)");
-      return { known: query.media !== "not all", active: query.matches, rules };
+      return { queries, rules };
     });
 
-    expect(found.known).toBe(true);
+    // The sheet's own query, exactly as written, and one the engine knows: a query that never
+    // matches would leave the test below placing rules no forced-colours platform draws. The
+    // runner draws no contrast theme, so it does not match now.
+    expect(found.queries.length).toBeGreaterThan(0);
+    for (const query of found.queries)
+      expect(query).toEqual({ text: "(forced-colors: active)", known: true, active: false });
     const lower = (value: string | undefined) => (value ?? "").toLowerCase();
     const focus = found.rules.find((rule) => rule.selector.includes(":focus-visible"));
     expect(lower(focus?.style["outline-color"])).toBe("highlight");
@@ -83,8 +95,6 @@ describe("forced colours", () => {
     expect(lower(tab?.style["background-color"])).toBe("selecteditem");
     const mark = found.rules.find((rule) => rule.selector.includes(".state-running"));
     expect(lower(mark?.style["background-color"])).toBe("canvastext");
-    // The runner draws no contrast theme, so none of it is drawn now.
-    expect(found.active).toBe(false);
   });
 
   it("draw focus, selection, what needs you, danger, state marks, switches and dialogs in the system's colours when active", async () => {
