@@ -745,3 +745,34 @@ async fn a_port_the_runners_policy_no_longer_gives_is_not_given_back_after_a_re_
     let (_back, _events, _) = runner.relayed_for(WINDOW).await;
     assert!(given_back(&runner, MADE, PATIENCE).await, "given back");
 }
+
+/// The proxy refuses the person's withdrawal of a port it carries: the plan is brought back to
+/// what the proxy carries, so the port still counts as given (#2744). The runner then withdraws
+/// it as the window's last link ends, as it does every given port, and gives it back after a
+/// re-link: it is never left carried with nobody to withdraw it.
+#[tokio::test]
+async fn a_withdrawal_the_proxy_refuses_leaves_the_plan_and_the_proxy_agreeing() {
+    let runner = a_runner();
+    let (first, first_events, _) = runner.relayed_for(WINDOW).await;
+    first
+        .call(Command::Confine(Box::new(planned(MADE))))
+        .await
+        .expect("confined on the runner");
+    first
+        .start_program(running_in(MADE))
+        .await
+        .expect("runs in the window's confinement");
+    runner.confines.refuse_changes("the proxy did not take it");
+    assert!(
+        changed(&first, MADE, ReachChange::WithdrawPort { port: 5432 })
+            .await
+            .is_err(),
+        "the refusal is the window's to hear"
+    );
+    runner.confines.take_changes();
+
+    drop((first, first_events));
+    runner.unheld(MADE).await;
+    let (_again, _events, _) = runner.relayed_for(WINDOW).await;
+    assert!(given_back(&runner, MADE, PATIENCE).await, "given back");
+}

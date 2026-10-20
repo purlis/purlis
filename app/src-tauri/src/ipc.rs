@@ -31,9 +31,20 @@ mod tests {
         app_commands!(command_names)
     }
 
+    /// What only a scenario test asks: `ipc_commands.rs`'s `e2e_only`.
+    fn e2e_only() -> &'static [&'static str] {
+        app_commands!(e2e_command_names)
+    }
+
+    /// Every command this build registers and allows: the `e2e` build has `e2e_only` too.
     fn every_listed() -> BTreeSet<&'static str> {
         let (free, values) = listed();
-        free.iter().chain(values).copied().collect()
+        let e2e: &[&str] = if cfg!(feature = "e2e") {
+            e2e_only()
+        } else {
+            &[]
+        };
+        free.iter().chain(values).chain(e2e).copied().collect()
     }
 
     /// The names `tauri-specta` registers in the invoke handler, read from what it hands an
@@ -206,6 +217,45 @@ mod tests {
             refused.is_empty(),
             "listed but not granted to the main window: {refused:?}"
         );
+    }
+
+    #[test]
+    fn the_window_s_native_read_back_is_a_scenario_test_s_and_on_no_class_of_the_window_s() {
+        // #2836: nothing in the UI asks it, so it is in the `e2e` build only.
+        assert_eq!(e2e_only(), ["native_window_drawn"]);
+        let (free, values) = listed();
+        for command in e2e_only() {
+            assert!(!free.contains(command) && !values.contains(command));
+            // Served to the `e2e` build's window alone, as the rest of its native chrome is.
+            assert!(purlis_session_protocol::ui::window_only(command));
+        }
+    }
+
+    /// The permission sets `build.rs` wrote for this build.
+    #[cfg(not(feature = "e2e"))]
+    const SETS: &str = include_str!(concat!(env!("OUT_DIR"), "/app-permissions/sets.toml"));
+
+    #[cfg(not(feature = "e2e"))]
+    #[test]
+    fn a_build_without_the_e2e_feature_carries_no_scenario_test_command() {
+        // #2836: what a release build is, as far as its commands go. No build anyone is given
+        // turns the feature on (`tools/release-features.mjs`), so none carries these: not in
+        // the invoke handler, not as a permission any capability could grant, not in the
+        // TypeScript, and refused by the real ACL before any handler sees it.
+        let registered = registered();
+        let app = app();
+        let main = window(&app, WINDOW);
+        let bindings = std::fs::read_to_string(crate::BINDINGS).expect("the bindings");
+        for command in e2e_only() {
+            assert!(!registered.contains(*command), "{command} is registered");
+            let permission = format!("\"allow-{}\"", command.replace('_', "-"));
+            assert!(!SETS.contains(&permission), "{command} has a permission");
+            assert!(
+                !bindings.contains(&format!("(\"{command}\"")),
+                "{command} is in the bindings"
+            );
+            assert!(invoke(&main, command).is_err(), "{command} is granted");
+        }
     }
 
     #[test]

@@ -423,6 +423,11 @@ impl StandInConfines {
         self.2.held.lock().unwrap().refusing_changes = Some(why.to_owned());
     }
 
+    /// It takes the window's changes again, from now on.
+    pub fn take_changes(&self) {
+        self.2.held.lock().unwrap().refusing_changes = None;
+    }
+
     /// Its policy no longer gives a chat the service on `port` (#2738).
     pub fn no_longer_gives(&self, port: u16) {
         self.2.held.lock().unwrap().not_given.push(port);

@@ -6,7 +6,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
-import type { PoolLink, PoolRow, PoolsShown } from "../bindings";
+import type { PoolLink, PoolRow, PoolVersion, PoolsShown } from "../bindings";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 
@@ -14,7 +14,8 @@ import { GLOBAL } from "../windowprefs";
  * **Settings › You › This machine › Pools** (#2679), in the whole window: nothing about pools
  * shows until one is added; Add a Docker pool… in the palette adds the first, with the limits
  * typed and the defaults for the rest; and a pool whose runner answered with another key has a
- * Notice whose Remove removes it.
+ * Notice whose Remove removes it. A runner of another version than this machine's says so, and
+ * what follows (#2749).
  */
 
 vi.mock("../SessionPane", () => ({
@@ -30,6 +31,7 @@ const a_pool = (name: string): PoolRow => ({ name, image: IMAGE, limits: { ...DE
 
 let pools: PoolRow[];
 let link: PoolLink;
+let version: PoolVersion;
 let added: unknown[];
 let removed: unknown[];
 
@@ -41,6 +43,7 @@ beforeEach(() => {
   };
   pools = [];
   link = { state: "linked" };
+  version = { runner: "0.4.2", why: null, desktop: "0.4.2", follows: true, draining: 0 };
   added = [];
   removed = [];
   mockIPC(
@@ -54,6 +57,7 @@ beforeEach(() => {
       if (cmd === "docker_pools")
         return { pools: structuredClone(pools), defaults: { ...DEFAULTS } } satisfies PoolsShown;
       if (cmd === "docker_pool_link") return link;
+      if (cmd === "docker_pool_version") return version;
       if (cmd === "add_docker_pool") {
         added.push(a.adding);
         const row = a_pool((a.adding as { name: string }).name);
@@ -168,5 +172,49 @@ describe("You › This machine › Pools", () => {
     await waitFor(() => expect(removed).toEqual(["builds"]));
     // With none left, nothing about pools shows.
     await waitFor(() => expect(within(nav).queryByRole("button", { name: "Pools" })).toBeNull());
+  });
+
+  it("says nothing of a runner of this machine's version", async () => {
+    pools = [a_pool("builds")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText("linked");
+    expect(group).not.toHaveTextContent(/runs purlis/);
+  });
+
+  it("says a runner of purlis's own image is behind, and that its older runner drains", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      runner: "0.4.2-dev.16",
+      why: null,
+      desktop: "0.4.2-dev.17",
+      follows: true,
+      draining: 1,
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        /Its runner runs purlis 0\.4\.2-dev\.16, and this machine runs 0\.4\.2-dev\.17\. New chats start on a runner of 0\.4\.2-dev\.17 once that version's runner image is published\./,
+      ),
+    ).toHaveTextContent(/1 older runner keeps its chats until they end, then purlis removes it\./);
+  });
+
+  it("tells you to build your own image again when its runner is behind", async () => {
+    pools = [a_pool("builds")];
+    version = { runner: "0.4.1", why: null, desktop: "0.4.2", follows: false, draining: 0 };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        /Build your image from purlis 0\.4\.2, then add the pool again\./,
+      ),
+    ).toBeInTheDocument();
   });
 });

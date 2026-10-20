@@ -135,7 +135,8 @@ describe("every launcher starts the app inside a plane the run made", () => {
     // `tauri build`. Dropped from here, every assertion above still passes and the scenario
     // suite silently goes back to being able to write the operator's plane.
     const manifest = readFileSync(join(here, "..", "src-tauri", "Cargo.toml"), "utf8");
-    const feature = /^e2e = \[(.*)\]$/m.exec(manifest);
+    // The array may run over several lines.
+    const feature = /^e2e = \[([^\]]*)\]/m.exec(manifest);
 
     expect(feature, "the app has no e2e feature any more").not.toBeNull();
     expect(feature?.[1]).toContain("purlis-core/fenced");

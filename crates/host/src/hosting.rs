@@ -497,6 +497,9 @@ struct Inner {
     /// What links a window's link to a runner this machine keeps, by the runner's name (#2679):
     /// the binary's, or nothing, and every `relay_to` is refused.
     relays: OnceLock<crate::routing::RelaysTo>,
+    /// The window each link this host relays is named, across every relay its links make
+    /// (#2744): one link holds a name at a time.
+    claimed: crate::relay::Claimed,
     /// Set once the window has quit (#2006): whoever serves this host stops.
     quit: tokio::sync::watch::Sender<bool>,
     /// Told whenever a window links or goes, or a project is held or let go of: what the host's
@@ -873,6 +876,7 @@ impl Hosting {
                 switch,
                 elsewhere: OnceLock::new(),
                 relays: OnceLock::new(),
+                claimed: Arc::default(),
                 seen_elsewhere: Mutex::new(None),
                 quit: tokio::sync::watch::Sender::new(false),
                 changed: tokio::sync::Notify::new(),
@@ -962,6 +966,11 @@ impl Hosting {
     /// What links a window's link to a runner, where this host relays one.
     pub(crate) fn relays(&self) -> Option<crate::routing::RelaysTo> {
         self.inner.relays.get().cloned()
+    }
+
+    /// The names this host's relayed links hold (#2744), which every relay it makes shares.
+    pub(crate) fn claimed(&self) -> crate::relay::Claimed {
+        Arc::clone(&self.inner.claimed)
     }
 
     /// What writes this host's event log: the binary's, or nothing.
@@ -2801,15 +2810,30 @@ impl session::Host for Hosting {
                 // A port the window withdraws stays withdrawn: never one to give back (#2625).
                 // Marked so before the proxy hears it, under the lock a give-back checks each
                 // port under, so a give-back either ran before it or never gives this port back.
+                let mut carried = None;
                 if let session::ReachChange::WithdrawPort { port } = change
                     && let Some(held) = self.state().confinements.get_mut(&confinement)
                 {
+                    let was_unheld = held.unheld.contains(&port);
                     held.unheld.retain(|unheld| *unheld != port);
                     if !held.plan.withdrawn.contains(&port) {
                         held.plan.withdrawn.push(port);
+                        // Its proxy carries it now, unless the host withdrew it for want of a
+                        // window, which it stays.
+                        carried = (!was_unheld).then_some(port);
                     }
                 }
-                let retry = confining.change(&change).map_err(not_started)?;
+                let retry = confining.change(&change).map_err(|why| {
+                    // A withdrawal the proxy refused leaves the port as it carries it (#2744):
+                    // given in the plan, so it is withdrawn as the last link ends, as every
+                    // given port is, and never left carried with nobody to withdraw it.
+                    if let Some(port) = carried
+                        && let Some(held) = self.state().confinements.get_mut(&confinement)
+                    {
+                        held.plan.withdrawn.retain(|withdrawn| *withdrawn != port);
+                    }
+                    not_started(why)
+                })?;
                 Ok(Answer::ReachChanged { retry })
             }
             Command::ReachOf { confinement } => {

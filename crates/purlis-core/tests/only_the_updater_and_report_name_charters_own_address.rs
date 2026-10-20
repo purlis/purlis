@@ -44,6 +44,12 @@ const ALLOWED: &[(&str, Option<&str>, &str)] = &[
         "the signed updater: its manifest read and its bundle",
     ),
     (
+        "app/src-tauri/src/poolfollow.rs",
+        Some("let endpoint = crate::updates::channel_now().endpoint();"),
+        "the updater's own manifest, read for this version's runner image (#2749): the same \
+         read the updater makes, through it, listed in the network log",
+    ),
+    (
         "crates/purlis-core/src/adopt.rs",
         None,
         "`purlis update --channel` says which manifest the app will read; it reads nothing",

@@ -1213,6 +1213,98 @@ fn a_drag_cut_by_the_person_taking_over_is_cancelled_let_go_and_handed_back() {
 }
 
 #[test]
+fn a_drag_cut_before_the_engine_tells_of_its_own_drag_cancels_that_drag_once_it_does() {
+    // In this order: every move made with the button held, the person takes over, the drag
+    // stops waiting for the engine's word and ends, and only then does the engine say its own
+    // drag started (#2839).
+    let (browser, engine) = browser_with(Limits {
+        drag_starts_within: Duration::from_millis(50),
+        ..limits()
+    });
+    {
+        let mut model = super::lock(&engine.model);
+        model.native_drag = true;
+        model.drag_told_when_asked = true;
+    }
+    let browser = Arc::new(browser);
+    let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
+    let dragging = Arc::clone(&browser);
+    let call = std::thread::spawn(move || {
+        dragging.call(
+            &id(2),
+            Call::Drag {
+                from: volume,
+                to: DragTo::Offset { x: 40.0, y: -5.0 },
+            },
+        )
+    });
+    let held_moves = || {
+        engine
+            .sent("Input.dispatchMouseEvent")
+            .iter()
+            .filter(|s| s.params["type"] == "mouseMoved" && s.params["buttons"] == 1)
+            .count()
+    };
+    let started = std::time::Instant::now();
+    while held_moves() < super::DRAG_STEPS {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the drag never made its moves"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    browser.take_over();
+    assert!(call.join().unwrap().is_err());
+    assert!(
+        drag_kinds(&engine).is_empty(),
+        "no word yet, nothing to cancel"
+    );
+    assert!(drags_handed_back(&engine));
+    engine.tell_of_the_held_drag();
+    let told = std::time::Instant::now();
+    while drag_kinds(&engine).is_empty() {
+        assert!(
+            told.elapsed() < Duration::from_secs(5),
+            "the engine's late drag was never cancelled"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(drag_kinds(&engine), ["dragCancel"]);
+    let cancel = engine.sent("Input.dispatchDragEvent");
+    assert_eq!(cancel[0].params["data"]["items"][0]["data"], "card");
+    assert_eq!(cancel[0].session.as_deref(), Some("S-PAGE-1"));
+}
+
+#[test]
+fn a_drag_s_mark_goes_with_its_session() {
+    let (browser, engine) = browser();
+    super::lock(&browser.inner.state).cancels_late = Some(("S-PAYMENT".to_owned(), (1.0, 2.0)));
+    engine.emit(
+        "Target.detachedFromTarget",
+        json!({"sessionId":"S-PAYMENT","targetId":"PAYMENT-FRAME"}),
+        None,
+    );
+    let start = std::time::Instant::now();
+    while super::lock(&browser.inner.state).cancels_late.is_some() {
+        assert!(start.elapsed() < Duration::from_secs(5), "the mark stayed");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[test]
+fn a_word_of_the_engine_s_drag_while_no_drag_was_asked_for_is_not_acted_on() {
+    let (browser, engine) = browser();
+    engine.emit(
+        "Input.dragIntercepted",
+        json!({"data":{"items":[],"dragOperationsMask":1}}),
+        Some("S-PAGE-1"),
+    );
+    std::thread::sleep(Duration::from_millis(60));
+    snapshot(&browser, 1);
+    assert!(drag_kinds(&engine).is_empty());
+}
+
+#[test]
 fn a_drag_whose_browser_ends_on_the_way_is_handed_back() {
     let (browser, engine) = browser();
     super::lock(&engine.model).native_drag = true;
@@ -1591,6 +1683,60 @@ fn a_page_whose_title_cannot_be_read_keeps_the_title_the_engine_told_of() {
         panic!("{listed:?}")
     };
     assert_eq!(pages[0].title, "Frames and fields");
+}
+
+#[test]
+fn a_page_settles_once_a_frame_with_a_request_open_detaches() {
+    let (browser, engine) = browser();
+    // A frame inside the page asks for data, and goes before the engine says it ended.
+    engine.emit(
+        "Page.frameAttached",
+        json!({"frameId":"ADS-FRAME","parentFrameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    engine.emit(
+        "Network.requestWillBeSent",
+        json!({"requestId":"9.1","loaderId":"L9","frameId":"ADS-FRAME","request":{"url":"http://fixture.test/ads-data"},"type":"Fetch"}),
+        Some("S-PAGE-1"),
+    );
+    // What the page waits for, as its settling reads it now.
+    let waits = || {
+        super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .unwrap()
+            .settle
+            .waiting_for(std::time::Instant::now(), limits().quiet)
+    };
+    let until = |done: &dyn Fn(&[String]) -> bool, what: &str| {
+        let start = std::time::Instant::now();
+        while !done(&waits()) {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "{what}: {:?}",
+                waits()
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    };
+    until(
+        &|w| w.iter().any(|w| w.contains("ads-data")) && w.len() == 1,
+        "the request never counted alone",
+    );
+    let before = browser.call(&id(1), Call::Pages).unwrap();
+    assert!(
+        matches!(&before.settled, Settled::No(why) if why.iter().any(|w| w.contains("ads-data"))),
+        "{:?}",
+        before.settled
+    );
+    engine.emit(
+        "Page.frameDetached",
+        json!({"frameId":"ADS-FRAME","reason":"remove"}),
+        Some("S-PAGE-1"),
+    );
+    // The page settles a quiet while after the detach.
+    until(&|w| w.is_empty(), "the page never settled");
+    let after = browser.call(&id(2), Call::Pages).unwrap();
+    assert_eq!(after.settled, Settled::Yes);
 }
 
 #[test]

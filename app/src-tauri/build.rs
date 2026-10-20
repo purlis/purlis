@@ -12,6 +12,17 @@ include!("src/ipc_commands.rs");
 fn main() {
     println!("cargo:rerun-if-changed=src/ipc_commands.rs");
     let (value_free, vault_values) = app_commands!(command_names);
+    // What only a scenario test asks (`e2e_only`), allowed in the `e2e` build alone, as
+    // value-free: in every other build no permission names it, so no capability can grant it.
+    let value_free: &'static [&'static str] = if std::env::var_os("CARGO_FEATURE_E2E").is_some() {
+        Box::leak(
+            [value_free, app_commands!(e2e_command_names)]
+                .concat()
+                .into_boxed_slice(),
+        )
+    } else {
+        value_free
+    };
     let every: &'static [&'static str] =
         Box::leak([value_free, vault_values].concat().into_boxed_slice());
 
