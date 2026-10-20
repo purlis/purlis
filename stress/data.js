@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792474240282,
+  "lastUpdate": 1792474257864,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7148,6 +7148,42 @@ window.BENCHMARK_DATA = {
             "value": 642.2,
             "unit": "MB",
             "extra": "median of 6 samples: 605.3, 634.8, 641, 643.4, 643.8, 720.7 MB; window 401 MB, session host 241.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3dad258536573afed8c6f3da1f589ffd7d96d4ec",
+          "message": "Theme check: selection over every ground, and danger words on a selection (#2719)\n\n* Theme check: selection over every ground, and danger words on a selection (#2706)\n\nThe selection pairs are measured laid over each ground a selection is\ndrawn on: the window, a field, a pane and a Notice, a dialog and a\ntrouble Notice. danger.text and danger.base are held on a theme's\nselection at the floor for words, under the danger consent floor. The\nFITS docs name the field (.ui-input) as the fixed-height box on the\nbody line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme check: selected text a theme colours is held by the consent floors (#2706)\n\nselection.text on selection.background over danger.surface is a Danger\nfloor pair and over surface.overlay an Ask floor pair. The floors put a\nselection pair right by drawing purlis's selection first, so the\ntheme's consent ground stays. Words selected in their own colour are\nalso measured over surface.sunken, and a markdown render's words are\nmeasured on the selection over each ground.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T08:36:02+04:00",
+          "tree_id": "7f12e4706b2672301e014ee5ec9b8d84fa471196",
+          "url": "https://github.com/purlis/purlis/commit/3dad258536573afed8c6f3da1f589ffd7d96d4ec"
+        },
+        "date": 1792474255858,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1546.4,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1382.6, 1546.4, 1626.7 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 654.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 612.9, 640.9, 653.3, 655, 655.7, 755.4 MB; window 409.1 MB, session host 245 MB"
           }
         ]
       }
