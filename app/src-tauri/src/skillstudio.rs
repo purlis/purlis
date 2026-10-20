@@ -86,6 +86,20 @@ pub(crate) async fn skill_studio_on() -> Result<bool, String> {
     .await
 }
 
+/// **Turns the Skill studio on or off on this machine** (Settings › You › Previews), then says
+/// whether it is on, which `PURLIS_SKILL_STUDIO` still decides where it is set.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn set_skill_studio_on(on: bool) -> Result<bool, String> {
+    crate::off_the_window("turning the Skill studio preview on or off", move || {
+        let root = purlis_core::machine::config_root()
+            .ok_or_else(|| "There is no config home on this machine to keep it in.".to_owned())?;
+        purlis_core::skills::set_studio_on(&root, on)?;
+        Ok(purlis_core::skills::studio_on_here())
+    })
+    .await
+}
+
 /// The Skill studio of the project: every built-in and project skill, with its level, and why
 /// each left out is left out. On a blocking thread, as it reads the project's skill folders.
 #[tauri::command]

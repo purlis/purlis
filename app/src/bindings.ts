@@ -1728,6 +1728,11 @@ export const commands = {
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	/**
+	 *  **Turns the Skill studio on or off on this machine** (Settings › You › Previews), then says
+	 *  whether it is on, which `PURLIS_SKILL_STUDIO` still decides where it is set.
+	 */
+	setSkillStudioOn: (on: boolean) => typedError<boolean, string>(__TAURI_INVOKE("set_skill_studio_on", { on })),
+	/**
 	 *  What discarding the folder of dispatch `id`'s own branch would take with it (#1453): every
 	 *  uncommitted file, every ignored one, and how many commits its branch holds that exist
 	 *  nowhere else, for the question the window asks before it discards. Refused while a chat is

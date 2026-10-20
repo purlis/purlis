@@ -590,6 +590,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // This machine's browser limits (#2023): the person's to read and set, in their window.
     "browser_limits",
     "set_browser_limit",
+    // This machine's Skill studio preview (#2765): the person's to turn on, in their window.
+    "set_skill_studio_on",
     // This machine's Docker pools (#2679): adding one runs a container on the person's machine
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.

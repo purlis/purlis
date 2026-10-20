@@ -272,6 +272,15 @@ pub fn built_in_here() -> Option<PathBuf> {
     crate::plugin_install::bundle_beside(&exe).and_then(|plugin| in_bundle(&plugin))
 }
 
+/// **Turns the Skill studio's flag on or off on this machine** (`flags.skill-studio` in
+/// `machine.json`), as Settings › You › Previews does. [`STUDIO_ENV`] still decides over it
+/// where it is set.
+pub fn set_studio_on(config_root: &Path, on: bool) -> Result<(), String> {
+    crate::machine::update(config_root, |store| store.flags.skill_studio = on)
+        .map(|_| ())
+        .map_err(|why| format!("purlis could not keep it, so nothing was changed: {why}"))
+}
+
 /// [`studio_on`] for this process: this machine's store, and this process's environment. Asked
 /// at every chat's start, so it never holds the fence: a fenced test build reads a store outside
 /// its fence as holding no flag, as [`crate::profilestore::listed_here`] does.

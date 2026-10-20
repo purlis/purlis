@@ -272,6 +272,7 @@ macro_rules! app_commands {
                 dispatches::dispatches,
                 skillstudio::skill_studio,
                 skillstudio::skill_studio_on,
+                skillstudio::set_skill_studio_on,
                 dispatches::dispatch_worktree_loss,
                 dispatches::dispatch_worktree_discard,
                 taskchanges::task_changes,

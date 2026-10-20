@@ -16,6 +16,16 @@ fn the_skill_studio_flag_is_off_until_this_machine_turns_it_on() {
 }
 
 #[test]
+fn turning_the_skill_studio_on_is_kept_in_this_machines_store_and_off_again() {
+    let config = tempfile::tempdir().unwrap();
+
+    set_studio_on(config.path(), true).unwrap();
+    assert!(crate::machine::read(config.path()).store.flags.skill_studio);
+    set_studio_on(config.path(), false).unwrap();
+    assert!(!crate::machine::read(config.path()).store.flags.skill_studio);
+}
+
+#[test]
 fn the_variable_turns_the_skill_studio_flag_on_or_off_over_what_the_machine_says() {
     let set =
         |value: &'static str| move |name: &str| (name == STUDIO_ENV).then(|| value.to_owned());

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { commands } from "./bindings";
 import type { ViewRef } from "./tabs";
 
@@ -23,26 +23,50 @@ export function isSkillStudio(view: ViewRef): boolean {
   return view.from === null && view.view === SKILL_STUDIO_VIEW.view;
 }
 
-/** What this machine said of the flag, once asked: it changes only with a restart. */
+/** What this machine said of the flag, once asked, and who is drawn from it. */
 let said: boolean | undefined;
+let asking = false;
+const listeners = new Set<() => void>();
+
+function told() {
+  for (const one of listeners) one();
+}
+
+function ask() {
+  if (asking) return;
+  asking = true;
+  void commands
+    .skillStudioOn()
+    .then((answer) => {
+      if (answer.status === "ok") said = answer.data;
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      asking = false;
+      told();
+    });
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  if (said === undefined) ask();
+  return () => {
+    listeners.delete(listener);
+  };
+}
 
 /** Whether the Skill studio is on in this window: `false` until the core has said. */
 export function useSkillStudioOn(): boolean {
-  const [on, setOn] = useState(said ?? false);
-  useEffect(() => {
-    if (said !== undefined) return;
-    let live = true;
-    void commands
-      .skillStudioOn()
-      .then((answer) => {
-        if (answer.status !== "ok") return;
-        said = answer.data;
-        if (live) setOn(answer.data);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, []);
-  return on;
+  return useSyncExternalStore(subscribe, () => said ?? false);
+}
+
+/** **Turns the Skill studio's preview on or off on this machine** (Settings › You ›
+ *  Previews), then draws what the core says is now in force, or the core's refusal. */
+export async function setSkillStudioOn(on: boolean): Promise<string | undefined> {
+  const answer = await commands
+    .setSkillStudioOn(on)
+    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+  if (answer.status === "ok") said = answer.data;
+  told();
+  return answer.status === "error" ? answer.error : undefined;
 }

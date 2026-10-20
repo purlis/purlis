@@ -887,6 +887,7 @@ export const commands = {
 	skillStudio: (plane: PlaneId) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
+	setSkillStudioOn: __WINDOW_ONLY_RESULT,
 	/**
 	 *  What discarding the folder of dispatch `id`'s own branch would take with it (#1453): every
 	 *  uncommitted file, every ignored one, and how many commits its branch holds that exist
