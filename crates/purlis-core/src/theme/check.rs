@@ -362,7 +362,9 @@ pub const PAIRS: &[Pair] = &[
     // - The window's own text selection, on each ground it is drawn on (#2706): the window, a
     //   field, a pane and a Notice, a dialog, and a trouble Notice. A see-through selection is
     //   measured laid over each. A token left to the platform is not measured (`PLATFORM_DRAWN`);
-    //   selected text left to it keeps its own colour, measured as the window's words.
+    //   selected text left to it keeps its own colour, measured as the window's words. Selected
+    //   text a theme colours is what a trouble Notice's danger words and a dialog's ask are drawn
+    //   in, so the consent floors hold it on those two grounds (`floors::SELECTED`).
     p("selection.text", "selection.background", TEXT).over("surface.base"),
     p("selection.text", "selection.background", TEXT).over("surface.sunken"),
     p("selection.text", "selection.background", TEXT).over("surface.raised"),
@@ -370,10 +372,13 @@ pub const PAIRS: &[Pair] = &[
     p("selection.text", "selection.background", TEXT).over("danger.surface"),
     // - Words selected in their own colour (#2522): while selected text is the platform's, the
     //   window's secondary, muted, accent and state words keep their colours on a theme's
-    //   selection, beside its primary words above, over the window, a pane and a Notice, and a
-    //   dialog.
+    //   selection, beside its primary words above, over the window, a sunken box (a release's
+    //   notes, a finished report), a pane and a Notice, and a dialog.
     p("text.secondary", "selection.background", TEXT)
         .over("surface.base")
+        .selected(),
+    p("text.secondary", "selection.background", TEXT)
+        .over("surface.sunken")
         .selected(),
     p("text.secondary", "selection.background", TEXT)
         .over("surface.raised")
@@ -385,6 +390,9 @@ pub const PAIRS: &[Pair] = &[
         .over("surface.base")
         .selected(),
     p("text.muted", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("text.muted", "selection.background", TEXT)
         .over("surface.raised")
         .selected(),
     p("text.muted", "selection.background", TEXT)
@@ -394,6 +402,9 @@ pub const PAIRS: &[Pair] = &[
         .over("surface.base")
         .selected(),
     p("accent.base", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("accent.base", "selection.background", TEXT)
         .over("surface.raised")
         .selected(),
     p("accent.base", "selection.background", TEXT)
@@ -403,6 +414,9 @@ pub const PAIRS: &[Pair] = &[
         .over("surface.base")
         .selected(),
     p("state.running", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("state.running", "selection.background", TEXT)
         .over("surface.raised")
         .selected(),
     p("state.running", "selection.background", TEXT)
@@ -412,6 +426,9 @@ pub const PAIRS: &[Pair] = &[
         .over("surface.base")
         .selected(),
     p("state.waiting", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("state.waiting", "selection.background", TEXT)
         .over("surface.raised")
         .selected(),
     p("state.waiting", "selection.background", TEXT)
@@ -421,6 +438,9 @@ pub const PAIRS: &[Pair] = &[
         .over("surface.base")
         .selected(),
     p("state.failed", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("state.failed", "selection.background", TEXT)
         .over("surface.raised")
         .selected(),
     p("state.failed", "selection.background", TEXT)
@@ -430,6 +450,9 @@ pub const PAIRS: &[Pair] = &[
         .over("surface.base")
         .selected(),
     p("state.success", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("state.success", "selection.background", TEXT)
         .over("surface.raised")
         .selected(),
     p("state.success", "selection.background", TEXT)
@@ -439,9 +462,73 @@ pub const PAIRS: &[Pair] = &[
         .over("surface.base")
         .selected(),
     p("state.unreadable", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("state.unreadable", "selection.background", TEXT)
         .over("surface.raised")
         .selected(),
     p("state.unreadable", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
+    // - A markdown render's words, selected in their own colour, over each ground it is drawn on.
+    p("markdown.link", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("markdown.link", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("markdown.link", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("markdown.link", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
+    p("markdown.code", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("markdown.code", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("markdown.code", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("markdown.code", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
+    p("markdown.code-block", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("markdown.code-block", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("markdown.code-block", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("markdown.code-block", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
+    p("markdown.quote", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("markdown.quote", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("markdown.quote", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("markdown.quote", "selection.background", TEXT)
+        .over("surface.overlay")
+        .selected(),
+    p("markdown.heading", "selection.background", TEXT)
+        .over("surface.base")
+        .selected(),
+    p("markdown.heading", "selection.background", TEXT)
+        .over("surface.sunken")
+        .selected(),
+    p("markdown.heading", "selection.background", TEXT)
+        .over("surface.raised")
+        .selected(),
+    p("markdown.heading", "selection.background", TEXT)
         .over("surface.overlay")
         .selected(),
     // - Danger words selected in their own colour (#2706): a Notice's trouble and an answer

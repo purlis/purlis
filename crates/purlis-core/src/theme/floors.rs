@@ -9,8 +9,8 @@
 //! hold for them:
 //!
 //! - **an ask contrasts with its surface** ([`Floor::Ask`]): an ask's words on the dialog it is
-//!   asked in, its answers' words on their buttons, what it says on the danger wash, and the
-//!   needs-you count's number on its chip;
+//!   asked in, selected or not, its answers' words on their buttons, what it says on the danger
+//!   wash, and the needs-you count's number on its chip;
 //! - **Allow is distinguishable from Keep blocked** ([`Floor::AllowApart`]): the two carry equal
 //!   weight on the control's own ground, and Allow is edged in `accent.base` where Keep blocked
 //!   is edged in `border.strong`. The two edges are at least [`ALLOW_APART`] apart as OKLab draws
@@ -18,7 +18,8 @@
 //!   contrasts with its ground, at rest and under the pointer;
 //! - **the danger colours contrast with what they are drawn on** ([`Floor::Danger`]): the
 //!   trouble Notice's words on the danger surface, and the danger colour on each ground the
-//!   window draws it on, a theme's selection included;
+//!   window draws it on, a theme's selection included, and selected text a theme colours on
+//!   its selection over the danger surface;
 //! - **danger is distinguishable from primary** ([`Floor::DangerApart`]): the danger colour is
 //!   at least [`DANGER_APART`] apart as OKLab draws colour from the accent and from each
 //!   accent-hued token drawn beside it ([`tint::ACCENT_KIN`]), as the theme writes them and under
@@ -31,7 +32,9 @@
 //! colour a workspace can name, by the theme's own tint recipe, as [`super::check`] measures.
 //!
 //! **A theme that breaks one is drawn with purlis's own values for those tokens**: Purlis
-//! Classic's of the same appearance, for the consent and state tokens of each pair that fails.
+//! Classic's of the same appearance, for the selection's tokens of a pair drawn on a selection
+//! (the platform's, so the pair is no longer drawn), else for the consent and state tokens of
+//! each pair that fails.
 //! When Classic's colour still fails on the ground the theme draws it on, the ground is drawn as
 //! Classic's too, and a token whose workspace tint still breaks the floor is drawn untinted
 //! ([`super::Tint`]). The rest of the theme draws as written, and [`Held`] says which floors and
@@ -100,6 +103,14 @@ const ALLOW: [(&str, &str); 2] = [
     ("accent.base", "control.hover"),
 ];
 
+/// Selected text a theme colours, on its selection over a consent surface, by the ground and the
+/// floor it is held to (#2706): every selected word is drawn in `selection.text`, so a trouble
+/// Notice's danger words are on `danger.surface` and a dialog's ask is on `surface.overlay`.
+const SELECTED: [(&str, Floor); 2] = [
+    ("danger.surface", Floor::Danger),
+    ("surface.overlay", Floor::Ask),
+];
+
 /// Whether `token` is a consent surface's or a state mark's: what purlis draws its own value of
 /// first when a floor fails.
 fn is_consent(token: &str) -> bool {
@@ -110,7 +121,12 @@ fn is_consent(token: &str) -> bool {
 
 /// The floor a pair of [`PAIRS`] is held to as a consent floor, if it is one.
 fn floor_of(pair: &Pair) -> Option<Floor> {
-    if ASK.contains(&(pair.front, pair.back)) {
+    if (pair.front, pair.back) == ("selection.text", "selection.background") {
+        SELECTED
+            .iter()
+            .find(|(ground, _)| pair.under == Some(*ground))
+            .map(|(_, floor)| *floor)
+    } else if ASK.contains(&(pair.front, pair.back)) {
         Some(Floor::Ask)
     } else if ALLOW.contains(&(pair.front, pair.back)) {
         Some(Floor::AllowApart)
@@ -389,8 +405,22 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
                 .copied()
                 .filter(|token| is_consent(token))
                 .collect();
-            // Purlis's own consent colour first; the ground too only once that is not enough.
-            take.extend(if consent.is_empty() { open } else { consent });
+            // A selection that hides what it is laid on is put right first: purlis's own
+            // selection is the platform's, so the pair is no longer drawn and its consent colour
+            // and its ground stay as the theme wrote them. Otherwise purlis's own consent colour
+            // first, and the ground too only once that is not enough.
+            let selection: Vec<&'static str> = open
+                .iter()
+                .copied()
+                .filter(|token| token.starts_with("selection."))
+                .collect();
+            take.extend(if !selection.is_empty() {
+                selection
+            } else if consent.is_empty() {
+                open
+            } else {
+                consent
+            });
         }
         // Every token a failing floor names is purlis's already, and a workspace's tint still
         // breaks it: the tint leaves those tokens as they are drawn.

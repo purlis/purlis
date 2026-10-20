@@ -52,9 +52,23 @@ const GROUNDS: [&str; 5] = [
     "danger.surface",
 ];
 
-/// The grounds the window's words are selected on in their own colour: the window, a pane and a
-/// Notice, and a dialog.
-const WORD_GROUNDS: [&str; 3] = ["surface.base", "surface.raised", "surface.overlay"];
+/// The grounds the window's words are selected on in their own colour: the window, a sunken box
+/// (a release's notes, a finished report), a pane and a Notice, and a dialog.
+const WORD_GROUNDS: [&str; 4] = [
+    "surface.base",
+    "surface.sunken",
+    "surface.raised",
+    "surface.overlay",
+];
+
+/// A markdown render's words.
+const MARKDOWN_WORDS: [&str; 5] = [
+    "markdown.link",
+    "markdown.code",
+    "markdown.code-block",
+    "markdown.quote",
+    "markdown.heading",
+];
 
 /// The danger words, and the grounds they are selected on: those, and a trouble Notice's.
 const DANGER_WORDS: [&str; 2] = ["danger.text", "danger.base"];
@@ -273,6 +287,20 @@ fn words_selected_in_their_own_colour_are_measured_over_every_ground() {
     }
 }
 
+#[test]
+fn a_markdown_render_s_words_are_measured_on_the_selection_over_every_ground() {
+    for word in MARKDOWN_WORDS {
+        for ground in WORD_GROUNDS {
+            let report = check(&clear_selection_with(word, ground));
+            assert_eq!(
+                found_over(&report, word, ground),
+                Some(1.0),
+                "{word} over {ground}"
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------------------
 // Danger words on a theme's selection
 // ---------------------------------------------------------------------------------------
@@ -339,6 +367,39 @@ fn a_selection_danger_words_vanish_into_is_drawn_as_purlis_s_own() {
     for word in DANGER_WORDS {
         assert_eq!(found(&check(&theme), word, "selection.background"), None);
     }
+}
+
+#[test]
+fn selected_text_a_theme_colours_is_held_on_a_trouble_notice_and_a_dialog() {
+    // Selected text barely apart from its selection: a trouble Notice's danger words and a
+    // dialog's ask vanish while selected. The floors draw purlis's own selection, the
+    // platform's, so the pair is not drawn, and the theme's own danger surface stays.
+    let mine = load(&json!({
+        "name": "Haze",
+        "appearance": "dark",
+        "tokens": {
+            "selection.background": "#3a3a3a",
+            "selection.text": "#404040",
+            "danger.surface": "#241414",
+        }
+    }))
+    .theme;
+    let report = check(mine.first());
+    for ground in ["danger.surface", "surface.overlay"] {
+        assert!(
+            found_over(&report, "selection.text", ground).is_some(),
+            "{ground}"
+        );
+    }
+    let drawn = draw(mine.first());
+    let held = drawn.held.expect("the floors were held");
+    assert_eq!(held.floors, [Floor::Ask, Floor::Danger]);
+    assert_eq!(held.tokens, ["selection.background", "selection.text"]);
+    let theme = drawn.theme.expect("a theme is always drawn");
+    for token in ["selection.background", "selection.text"] {
+        assert_eq!(theme.value(token), classic_dark().value(token), "{token}");
+    }
+    assert_eq!(theme.value("danger.surface"), "#241414");
 }
 
 #[test]
