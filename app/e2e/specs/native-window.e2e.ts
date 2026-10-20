@@ -16,6 +16,10 @@ import { $$, browser, expect } from "@wdio/globals";
 
 type Answer<T> = { value?: T; trouble?: string };
 
+/** What `native_window_drawn` answers: the platform's appearance and colour for the window,
+ *  the colour `null` where the platform gives none. */
+type NativeDrawn = { appearance: string; background: string | null };
+
 /** Asks the core `command` from the window, and insists it answered. */
 async function ask<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const answer: Answer<T> = await browser.executeAsync(
@@ -59,7 +63,7 @@ describe("the native window", () => {
     const page = await drawn();
     expect(["dark", "light"]).toContain(page.appearance);
     await browser.waitUntil(
-      async () => (await ask<string>("native_window_drawn")) === page.appearance,
+      async () => (await ask<NativeDrawn>("native_window_drawn")).appearance === page.appearance,
       {
         timeout: 10_000,
         interval: 250,
@@ -81,7 +85,7 @@ describe("the native window", () => {
           followsSystem: false,
         });
         await browser.waitUntil(
-          async () => (await ask<string>("native_window_drawn")) === appearance,
+          async () => (await ask<NativeDrawn>("native_window_drawn")).appearance === appearance,
           {
             timeout: 10_000,
             interval: 250,

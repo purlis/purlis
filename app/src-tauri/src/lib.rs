@@ -3450,7 +3450,17 @@ pub fn run() {
                                     chatbrowsers::engine_ended(&planes.every_held(), &program);
                                 }
                             });
-                        })),
+                        }))
+                        // Who drives each browser, and that someone typed, in the event log
+                        // (#2293): told off the window, on the thread of the person's command.
+                        .saying({
+                            let window = app.handle().clone();
+                            std::sync::Arc::new(move |root, said| {
+                                if let Some(planes) = window.try_state::<planes::Planes>() {
+                                    chatbrowsers::say(&planes.every_held(), root, said);
+                                }
+                            })
+                        }),
                 ));
                 app.manage(host);
             }
