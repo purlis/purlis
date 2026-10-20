@@ -1709,7 +1709,11 @@ impl Hosting {
         .and_then(|started| started.map_err(not_started));
         let (screen, data) = started?;
         let (columns, rows) = screen.size();
-        let running: Arc<dyn Running> = Arc::new(Browser::new(screen));
+        // The host's own act that ends it, for the line its end leaves in the host's log
+        // (#2745); a browser's end leaves nothing in the event log.
+        let stopping: Arc<Mutex<Option<Stopped>>> = Arc::default();
+        let running: Arc<dyn Running> =
+            Arc::new(Browser::new(screen, program.clone(), Arc::clone(&stopping)));
         let process = running.process();
         let mut state = self.state();
         // From here it counts as running: its place is given back in the same step.
@@ -1728,8 +1732,7 @@ impl Hosting {
                 cwd: None,
                 ended: false,
                 exit: None,
-                // A browser's end leaves nothing in the event log.
-                stopping: Arc::default(),
+                stopping,
                 // An engine the host starts outside every chat's sandbox, its reach its own
                 // proxy's: no chat's run.
                 sandbox: session::RunSandbox::Off,

@@ -603,7 +603,7 @@ pub struct Shown {
     /// What it answers its next acts with, in order; once none is left, a settled page.
     answers: std::collections::VecDeque<Result<purlis_session_protocol::browsing::Browsed, String>>,
     sink: Option<crate::browsers::FrameSink>,
-    ends: Option<Box<dyn FnOnce(Exit) + Send>>,
+    ends: Option<Box<dyn FnOnce(crate::browsers::ScreenEnded) + Send>>,
 }
 
 impl StandInScreen {
@@ -645,7 +645,10 @@ impl StandInScreen {
             shown.ends.take()
         };
         if let Some(tell) = tell {
-            tell(exit);
+            tell(crate::browsers::ScreenEnded {
+                exit,
+                why: "the stand-in's engine ended".into(),
+            });
         }
     }
 }
@@ -696,7 +699,7 @@ impl crate::browsers::Screen for StandInScreen {
         self.ends(Exit::Code(0));
     }
 
-    fn when_it_ends(&self, tell: Box<dyn FnOnce(Exit) + Send>) {
+    fn when_it_ends(&self, tell: Box<dyn FnOnce(crate::browsers::ScreenEnded) + Send>) {
         self.shown().ends = Some(tell);
     }
 

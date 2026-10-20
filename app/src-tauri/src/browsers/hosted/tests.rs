@@ -814,3 +814,18 @@ fn a_browser_that_has_ended_says_so() {
 
     assert!(gone.contains("has ended"), "{gone}");
 }
+
+#[test]
+fn a_browsers_end_is_logged_with_how_the_host_said_it_ended() {
+    use crate::hostedsessions::Ending;
+    use purlis_session_protocol::session::Exit;
+    assert_eq!(
+        super::ended_said("01K2", &Ending::Exited(Exit::Signal("SIGKILL".into()))),
+        "purlis: browser 01K2 ended, its engine's signal SIGKILL"
+    );
+    assert_eq!(
+        super::ended_said("01K2", &Ending::Exited(Exit::Code(0))),
+        "purlis: browser 01K2 ended, its engine's exit code 0"
+    );
+    assert!(super::ended_said("01K2", &Ending::WithTheHost).contains("session host"));
+}

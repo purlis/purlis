@@ -245,6 +245,19 @@ mod hosted {
     use crate::hostedsessions::{Connection, FrameSink, HostLink, Reconnect};
     use crate::reconnecting::Reconnection;
 
+    /// **The window's line for the end of browser `program`** (#2745): how the session host said
+    /// it ended. The host's own line, in the same log, says who ended it and why.
+    pub(crate) fn ended_said(program: &str, ending: &crate::hostedsessions::Ending) -> String {
+        use crate::hostedsessions::Ending;
+        use purlis_session_protocol::session::Exit;
+        let how = match ending {
+            Ending::Exited(Exit::Code(code)) => format!("its engine's exit code {code}"),
+            Ending::Exited(Exit::Signal(signal)) => format!("its engine's signal {signal}"),
+            Ending::WithTheHost => "with its session host, whose link ended".to_owned(),
+        };
+        format!("purlis: browser {program} ended, {how}")
+    }
+
     /// What the person is told of a browser that has gone when they send it an address.
     const GONE: &str = "This browser has ended: open a new one from the palette.";
 
@@ -534,7 +547,14 @@ mod hosted {
                 Answer::ProgramStarted { program, .. } => {
                     let ended = Arc::clone(&self.ended);
                     let named = program.clone();
-                    link.when_it_ends(&program, Box::new(move |_| ended(named)));
+                    link.when_it_ends(
+                        &program,
+                        Box::new(move |ending| {
+                            // Who ended it and why is in the session host's own line (#2745).
+                            tracing::info!("{}", ended_said(&named, &ending));
+                            ended(named);
+                        }),
+                    );
                     if let Some(held) = self.projects().get_mut(root) {
                         held.browsers.push(program.clone());
                     }
