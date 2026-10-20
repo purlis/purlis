@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792486288590,
+  "lastUpdate": 1792487713852,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18858,6 +18858,48 @@ window.BENCHMARK_DATA = {
             "value": 101.796488,
             "unit": "ms",
             "extra": "median of 5 runs: 101.690, 101.715, 101.796, 102.033, 102.664 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0d325dfaaef63beb0e8a6ec1d875e4729cf0f24a",
+          "message": "The theme skill, and where it starts (#2739)\n\n* The theme skill, and where it starts (#2333)\n\nA bundled `theme` skill guides a chat through creating a theme from a\nbrand colour, an image, a Figma frame, an import or another theme, and\nthrough editing, checking and sharing one. It loops draft, specimen,\ncheck and fix until the check is clean, and names any warning it leaves.\n\n\"Create a theme\" is purlis's fourth built-in curation action, on\nworkspaces and the plane. Settings > Theme's New theme and Edit with a\nchat open the same chat at the gallery's level with the prompt typed and\nnever sent (`theme_chat`, window-only); Edit names the card's theme by\nthe id `purlis theme list` gives it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* New theme waits for the gallery's answer, as every button in its row does (#2333)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The theme skill after review: fonts, others' themes, read-only projects (#2333)\n\n- The skill says a draft brings no font and a refused face is the\n  person's Notice, that editing a machine, built-in or extension theme\n  makes a new one here, and that a read-only project keeps no theme.\n- Settings › Theme offers no theme chat in a read-only project, and\n  says why.\n- The CLI test looks for a command's test above its own section only.\n- ADR 0061's amendment says what the id grammar holds and what it does\n  not.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Keep #2725's last theme test whole beside the skill's section (#2333)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T13:08:12+04:00",
+          "tree_id": "31f0f0b8826e05e7bd01c4ea4d3c2f77122a8e5e",
+          "url": "https://github.com/purlis/purlis/commit/0d325dfaaef63beb0e8a6ec1d875e4729cf0f24a"
+        },
+        "date": 1792487712208,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.411658,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.394, 0.411, 0.412, 0.422, 0.431 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1989475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.122, 16.159, 16.199, 16.500, 16.710 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7744395,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.262, 101.369, 101.774, 101.973, 102.467 ms"
           }
         ]
       }
