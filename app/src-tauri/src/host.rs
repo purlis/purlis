@@ -130,6 +130,17 @@ pub struct Named {
     pub size: Size,
 }
 
+/// **A chat its host composed by its names, as the host answered its start** (#2692): its
+/// number, the confinement the host named to this window where it named one (#2407), and how
+/// the host applied the sandbox to its run, by the host's own record (1.29). `ran` is `None`
+/// from a host that keeps no such record, which the window takes as sandboxed.
+#[derive(Debug)]
+pub struct Composed {
+    pub number: u32,
+    pub confinement: Option<purlis_core::sandbox::Confinement>,
+    pub ran: Option<purlis_session_protocol::session::RunSandbox>,
+}
+
 /// Why a chat by what it is named alone is not started in the window's own process.
 pub const NOT_COMPOSED_HERE: &str =
     "a chat in the window is started from what the window composed, never by its names alone";
@@ -205,13 +216,14 @@ pub trait SessionHost: Send + Sync {
     /// told what its proxy does, and its asks are answered from here, as a chat's the window
     /// planned. The answer holds it beside the chat's id: dropping it lets the host end it, as
     /// for one the window planned. None where the host composed none, or named it to no link.
+    /// And how the host says it applied the sandbox to the run it started ([`Composed::ran`]).
     fn open_named(
         &self,
         _wanted: Option<u32>,
         _named: &Named,
         _hearing: purlis_core::sandbox::plan::Hearing,
         _announce: &dyn Fn(u32),
-    ) -> Result<(u32, Option<purlis_core::sandbox::Confinement>), String> {
+    ) -> Result<Composed, String> {
         Err(NOT_COMPOSED_HERE.to_owned())
     }
 
@@ -571,12 +583,24 @@ pub(crate) mod pretend {
         on_a_runner: std::sync::atomic::AtomicBool,
         /// Each chat started by its names, its number, and whether its hearing asks.
         named: Mutex<Vec<(u32, Named, bool)>>,
+        /// How it records the run of each chat it composes from now on, where a test said
+        /// ([`Pretend::records_composed_runs_as`], #2692): in `seatbelt` otherwise.
+        composed_ran: Mutex<Option<Option<purlis_session_protocol::session::RunSandbox>>>,
     }
 
     impl Pretend {
         /// Runs its chats on a runner from now on, which composes each harness chat (#2446).
         pub fn on_a_runner(&self) {
             self.seen.on_a_runner.store(true, Ordering::SeqCst);
+        }
+
+        /// Records the run of each chat it composes from now on as `ran`, as a host answers its
+        /// start: `None` for a host that keeps no such record (#2692).
+        pub fn records_composed_runs_as(
+            &self,
+            ran: Option<purlis_session_protocol::session::RunSandbox>,
+        ) {
+            *lock(&self.seen.composed_ran) = Some(ran);
         }
 
         /// Each chat started by its names, in order: its number, what it was named, and whether
@@ -781,7 +805,7 @@ pub(crate) mod pretend {
             named: &Named,
             hearing: purlis_core::sandbox::plan::Hearing,
             announce: &dyn Fn(u32),
-        ) -> Result<(u32, Option<purlis_core::sandbox::Confinement>), String> {
+        ) -> Result<super::Composed, String> {
             if !self.composes_its_harness_chats() {
                 return Err(NOT_COMPOSED_HERE.to_owned());
             }
@@ -793,7 +817,15 @@ pub(crate) mod pretend {
             announce(id);
             lock(&self.seen.named).push((id, named.clone(), hearing.asks.is_some()));
             lock(&self.seen.running).push(id);
-            Ok((id, None))
+            Ok(super::Composed {
+                number: id,
+                confinement: None,
+                ran: lock(&self.seen.composed_ran).clone().unwrap_or_else(|| {
+                    Some(purlis_session_protocol::session::RunSandbox::By(
+                        "seatbelt".to_owned(),
+                    ))
+                }),
+            })
         }
         fn composes_its_harness_chats(&self) -> bool {
             self.seen.on_a_runner.load(Ordering::SeqCst)

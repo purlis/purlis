@@ -696,7 +696,7 @@ pub fn refused(
         asking,
         crate::dispatchunattended::Runs {
             holds_anothers: asking.held,
-            sandboxed: held.chats().confines_of(asking.session).is_some(),
+            sandboxed: held.chats().runs_sandboxed(asking.session),
         },
         target,
         workspace,
@@ -726,7 +726,7 @@ pub fn refused_crossing(
     let (Some(persona), Some(target)) = (asking.persona.as_deref(), target) else {
         return said;
     };
-    if asking.held || held.chats().confines_of(asking.session).is_none() {
+    if asking.held || !held.chats().runs_sandboxed(asking.session) {
         return said;
     }
     match away::keep_crossing(held.root(), persona, target, workspace, road, now_secs()) {
