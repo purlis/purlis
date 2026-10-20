@@ -106,12 +106,50 @@ pub fn chats_in_the_host(
         move |entry| record_in_the_host(&connection, &entry)
     });
     let connection = Arc::clone(connection);
+    // Where each workspace's chats run, read from this machine's store as each starts (#2046).
+    let pools_in = planes.pools_in();
     planes
         .recording_events(Some(events))
         .running_sessions_on(Arc::new(move |_reporting, root: &Path| {
-            Box::new(HostedSessions::new(Arc::clone(&connection), root)) as Box<dyn SessionHost>
+            let here = Box::new(HostedSessions::new(Arc::clone(&connection), root))
+                as Box<dyn SessionHost>;
+            match &pools_in {
+                Some(config) => Box::new(routed(here, &connection, config, root)),
+                None => here,
+            }
         }))
         .hearing_hooks_through_the_host()
+}
+
+/// **The project at `root`'s chats, each on the host its workspace runs them on** (#2046):
+/// `here`, or the runner of the pool `config`'s store names for its workspace, reached through
+/// a link the window's host relays to it.
+fn routed(
+    here: Box<dyn SessionHost>,
+    connection: &Arc<Connection>,
+    config: &Path,
+    root: &Path,
+) -> crate::routedsessions::RoutedSessions {
+    let (config, plane) = (config.to_path_buf(), root.to_path_buf());
+    let runs_on: crate::routedsessions::RunsOn = {
+        let (config, plane) = (config.clone(), plane.clone());
+        Arc::new(move |workspace| purlis_core::pools::runs_on(&config, &plane, Some(workspace)))
+    };
+    let on_pools: crate::routedsessions::OnPools = {
+        let (config, plane) = (config.clone(), plane.clone());
+        Arc::new(move || purlis_core::pools::workspaces_on_pools(&config, &plane))
+    };
+    let to_a_pool: crate::routedsessions::ToAPool = {
+        let (connection, plane) = (Arc::clone(connection), plane.clone());
+        Arc::new(move |pool| {
+            purlis_core::runners::runner_for(&config, pool).map_err(|why| format!("{why}."))?;
+            Ok(Box::new(HostedSessions::on_a_pools_runner(
+                connection.relaying_to(pool),
+                &plane,
+            )) as Box<dyn SessionHost>)
+        })
+    };
+    crate::routedsessions::RoutedSessions::new(root, here, runs_on, on_pools, to_a_pool)
 }
 
 /// Why a chat whose profile hands it credentials is not started in the session host (#2036).
@@ -223,13 +261,34 @@ pub struct Connection {
     /// The config home whose session host's folder keeps the name the window gives each root's
     /// link (`purlis_core::windownames`, #2623), where the window names its links.
     names_in: Mutex<Option<PathBuf>>,
+    /// Opens another link to the same host that its host relays to a pool's runner (`relay_to`,
+    /// 1.33), once the window's is ready (#2046).
+    relayed: Mutex<Option<RelayedDial>>,
+    /// The window's own connection and the pool, for a connection whose every project link its
+    /// host relays to that pool's runner (#2046): it waits on, and dials through, that one.
+    to_a_pool: Option<(Arc<Connection>, String)>,
+    /// The window's own link that this connection's project links were opened beside: one to a
+    /// host started again after it ended holds every root on a link of its own anew (#2007).
+    window_was: Mutex<Option<u64>>,
 }
+
+/// [`Dial`], for a link the window's host relays to the runner of the pool it names (#2046):
+/// the link's first commands are the window's name, then `relay_to`.
+pub type RelayedDial = Arc<
+    dyn Fn(
+            Duration,
+            Option<purlis_session_protocol::browsing::Secret>,
+            &str,
+        ) -> Result<HostLink, String>
+        + Send
+        + Sync,
+>;
 
 /// Opens another `local-ui` link to the window's host, waiting at most the time it is given: one
 /// for each project root the window holds there (#2178).
 ///
 /// It is given the name the window keeps for the project root the link is for (#2623), where
-/// it names its links: the link's first command says it ([`HostLink::over_named`]).
+/// it names its links: the link's first command says it ([`HostLink::over_relayed`]).
 pub type Dial = Arc<
     dyn Fn(Duration, Option<purlis_session_protocol::browsing::Secret>) -> Result<HostLink, String>
         + Send
@@ -260,6 +319,24 @@ impl Connection {
         self.changed.notify_all();
     }
 
+    /// [`Self::ready`], with `relayed` opening the links the window's host relays to a pool's
+    /// runner (#2046).
+    pub fn ready_relaying(&self, link: Arc<HostLink>, dial: Dial, relayed: RelayedDial) {
+        *lock(&self.relayed) = Some(relayed);
+        self.ready(link, dial);
+    }
+
+    /// **The window's connection to the runner of `pool`** (#2046): each project root is held
+    /// on a link of its own that the window's host relays to that pool's runner, named apart
+    /// from its link to this machine's host. It waits on the window's own link, and is dialled
+    /// as that one is; the kill switch and the event log stay on the window's own link.
+    pub fn relaying_to(self: &Arc<Self>, pool: &str) -> Arc<Connection> {
+        Arc::new(Connection {
+            to_a_pool: Some((Arc::clone(self), pool.to_owned())),
+            ..Connection::default()
+        })
+    }
+
     /// Name the window on each project root's link by the name it keeps for that root in
     /// `config`'s session host folder (#2623), so a host that relays the link to a runner names
     /// the window the same way after it restarts, and the window takes back its runner chats.
@@ -283,7 +360,14 @@ impl Connection {
         root: &Path,
         within: Duration,
     ) -> Result<Arc<HostLink>, String> {
-        self.wait(within)?;
+        let window = self.wait(within)?;
+        if self.to_a_pool.is_some() {
+            let mut was = lock(&self.window_was);
+            if *was != Some(window.id) {
+                lock(&self.projects).clear();
+                *was = Some(window.id);
+            }
+        }
         if let Some(link) = lock(&self.projects).get(root) {
             return Ok(Arc::clone(link));
         }
@@ -299,12 +383,27 @@ impl Connection {
         if let Some(link) = lock(&self.projects).get(root) {
             return Ok(Arc::clone(link));
         }
-        let dial = lock(&self.dial)
-            .clone()
-            .ok_or_else(|| no_host("there is no way to open another link to it"))?;
         // Named on the link as its first command, before it subscribes (#2623).
         let naming = self.name_for(root);
-        let link = Arc::new(dial(within, naming).map_err(|why| no_host(&why))?);
+        let link = Arc::new(match &self.to_a_pool {
+            Some((window, pool)) => {
+                let relayed = lock(&window.relayed).clone().ok_or_else(|| {
+                    no_host("there is no way to reach a pool's runner through it")
+                })?;
+                relayed(within, naming, pool).map_err(|why| {
+                    format!(
+                        "This workspace's chats run on pool {pool}, and its runner was not \
+                         reached, so nothing was sent: {why}"
+                    )
+                })?
+            }
+            None => {
+                let dial = lock(&self.dial)
+                    .clone()
+                    .ok_or_else(|| no_host("there is no way to open another link to it"))?;
+                dial(within, naming).map_err(|why| no_host(&why))?
+            }
+        });
         if let Some(why) = &link.unnamed {
             tracing::warn!(
                 "purlis: the session host did not take the window's name for the link of {}: \
@@ -321,9 +420,23 @@ impl Connection {
     /// A name that cannot be kept leaves the link unnamed, one the window takes nothing back on
     /// after a restart. The name is never said.
     fn name_for(&self, root: &Path) -> Option<purlis_session_protocol::browsing::Secret> {
-        let config = lock(&self.names_in).clone()?;
-        let open: Vec<PathBuf> = lock(&self.projects).keys().cloned().collect();
-        match purlis_core::windownames::name_for(&config, root, &open) {
+        // A link to a pool's runner is named apart from the root's link to this machine's host,
+        // and the same each time: one name is never two links' (#2046).
+        let (config, keyed) = match &self.to_a_pool {
+            Some((window, pool)) => (
+                lock(&window.names_in).clone()?,
+                root.join(RELAYED_NAMES).join(pool),
+            ),
+            None => (lock(&self.names_in).clone()?, root.to_path_buf()),
+        };
+        let mut open: Vec<PathBuf> = lock(&self.projects).keys().cloned().collect();
+        if let Some(pool) = self.to_a_pool.as_ref().map(|(_, pool)| pool) {
+            open = open
+                .into_iter()
+                .map(|root| root.join(RELAYED_NAMES).join(pool))
+                .collect();
+        }
+        match purlis_core::windownames::name_for(&config, &keyed, &open) {
             Ok(name) => Some(purlis_session_protocol::browsing::Secret::new(
                 name.expose().to_owned(),
             )),
@@ -339,12 +452,16 @@ impl Connection {
 
     /// There is no link, for `why`: every chat start says so from now on.
     pub fn gone(&self, why: impl Into<String>) {
+        debug_assert!(self.to_a_pool.is_none(), "only the window's own link goes");
         *lock(&self.state) = Linked::Gone(why.into());
         self.changed.notify_all();
     }
 
     /// The link, once it is ready, waiting at most `within`; or why there is none.
     pub(crate) fn wait(&self, within: Duration) -> Result<Arc<HostLink>, String> {
+        if let Some((window, _)) = &self.to_a_pool {
+            return window.wait(within);
+        }
         let deadline = Instant::now() + within;
         let mut state = lock(&self.state);
         loop {
@@ -435,6 +552,10 @@ fn moves_no_code() -> String {
         MOVES_CODE.major, MOVES_CODE.minor
     )
 }
+
+/// What a link to a pool's runner is named by in the window's names (#2046), beside its root:
+/// never a folder on the disk, only a key no root's own link has.
+const RELAYED_NAMES: &str = ".purlis-pool";
 
 /// What a chat start says when there is no host to run it (ADR 0068, Ruled 3).
 fn no_host(why: &str) -> String {
@@ -602,6 +723,7 @@ impl HostLink {
     /// project root this link is for (`name_window`, #2623): before it subscribes, so a host
     /// that relays the link names the window by it to the runner. Only to a host that knows the
     /// word. A refusal leaves the link unnamed, and is said without the name.
+    #[cfg(test)]
     pub async fn over_named(
         link: Link,
         runtime: tokio::runtime::Handle,
@@ -1497,13 +1619,6 @@ impl HostedSessions {
 
     /// [`Self::new`], for a host that runs the project's chats on a runner (#2446): each harness
     /// chat is started there by its names, and each confinement is held as the runner's.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the window links to its first runner with a pool (#2044) or a move (#2048)"
-        )
-    )]
     pub fn on_a_runner(connection: Arc<Connection>, root: &Path) -> Self {
         HostedSessions {
             on_a_runner: true,
@@ -1514,40 +1629,10 @@ impl HostedSessions {
     /// [`Self::on_a_runner`], for a pool's runner (#2046): the runner holds the project where it
     /// keeps its projects, `<data>/projects/<project id>`, and the window sends it the project's
     /// code as it holds it there and each workspace's clones before a chat starts in it.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the window runs a workspace's chats on a pool's runner (#2046, 3/4)"
-        )
-    )]
     pub fn on_a_pools_runner(connection: Arc<Connection>, root: &Path) -> Self {
         HostedSessions {
             kept_on_the_runner: true,
             ..Self::on_a_runner(connection, root)
-        }
-    }
-
-    /// **Fetches the branches of `workspace`'s clones back from the runner** this project is held
-    /// on (#2046), into each clone's `refs/remotes/<pool>/*`: what Changes shows of the runner's
-    /// chats' commits. Answers what could not be fetched, in sentences. Nothing where the project
-    /// is not held on a runner.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the window fetches a pool's branches once its chats run there (#2046, 3/4)"
-        )
-    )]
-    pub(crate) fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
-        if !self.kept_on_the_runner {
-            return Vec::new();
-        }
-        match self.link() {
-            Ok((link, project)) => {
-                crate::runnercode::fetch_workspace(&link, &project, &self.root, workspace, pool)
-            }
-            Err(why) => vec![why],
         }
     }
 
@@ -1781,8 +1866,9 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
     }
     // The board the host keeps, taken whole, and each move the window makes from now on told
     // to it (#2194). A board the host does not answer is none: the window's own goes on, and is
-    // told from now on.
-    if let Some(relayed) = lock(relayed).clone() {
+    // told from now on. A pool's runner keeps none: this machine's host keeps the board of every
+    // chat of the project, those on runners included (#2046).
+    if let (false, Some(relayed)) = (*kept_on_the_runner, lock(relayed).clone()) {
         let kept = match link.call(Command::Board {
             project: project.clone(),
         }) {
@@ -2568,6 +2654,27 @@ impl SessionHost for HostedSessions {
 
     fn hear_through(&self, relayed: Arc<Relayed>) {
         *lock(&self.relayed) = Some(relayed);
+    }
+
+    fn hold_here(&self) {
+        if let Err(why) = self.link() {
+            tracing::warn!("purlis: the session host does not hold the project yet: {why}");
+        }
+    }
+
+    /// Fetched over this project's own link to the runner, into each clone of `workspace`
+    /// (#2046). Nothing where the runner shares this machine's disk, or the project is not
+    /// held on a pool's runner.
+    fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
+        if !self.kept_on_the_runner {
+            return Vec::new();
+        }
+        match self.link() {
+            Ok((link, project)) => {
+                crate::runnercode::fetch_workspace(&link, &project, &self.root, workspace, pool)
+            }
+            Err(why) => vec![why],
+        }
     }
 
     /// Saved in the session host, where this project's chats run: the window starts no worker

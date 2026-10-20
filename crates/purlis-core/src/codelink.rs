@@ -985,6 +985,60 @@ pub fn fetch_back(
     kept
 }
 
+/// One branch a pool's runner has, as the desktop last fetched it ([`fetch_back`]): its name on
+/// the runner, its commit, and how many commits it has that the desktop's branch of that name,
+/// or what the desktop has checked out where it has none, does not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OnARunner {
+    pub branch: String,
+    pub oid: String,
+    pub ahead: u32,
+}
+
+/// **The branches of `pool`'s runner the desktop's `repo` keeps** (#2046): every
+/// `refs/remotes/<pool>/<branch>` there, with what each has that is not here yet. Nothing for a
+/// pool's name refs cannot be kept under, or a folder that is not a repository.
+pub fn on_a_runner(repo: &Path, pool: &str) -> Vec<OnARunner> {
+    if !pool_ok(pool) || !a_repository(repo) {
+        return Vec::new();
+    }
+    let prefix = format!("refs/remotes/{pool}/");
+    let Ok(kept) = refs_under(repo, &[prefix.as_str()]) else {
+        return Vec::new();
+    };
+    kept.into_iter()
+        .filter_map(|one| {
+            let branch = one.name.strip_prefix(&prefix)?.to_owned();
+            let here = format!("{HEADS}{branch}");
+            let base = if holds_ref(repo, &here) {
+                here
+            } else {
+                "HEAD".to_owned()
+            };
+            let counted = run(
+                repo,
+                &[
+                    "rev-list",
+                    "--count",
+                    &format!("{base}..{}", one.name),
+                    "--",
+                ],
+            )
+            .ok()?;
+            let ahead = counted.line().parse().unwrap_or_default();
+            Some(OnARunner {
+                branch,
+                oid: one.oid,
+                ahead,
+            })
+        })
+        .collect()
+}
+
+fn holds_ref(repo: &Path, name: &str) -> bool {
+    run(repo, &["rev-parse", "--verify", "--quiet", name]).is_ok_and(|ran| ran.ok())
+}
+
 /// **How a runner's session host moves code in the projects it keeps for its desktop** (#2046):
 /// this module's [`receive`] and [`give`], in the repository's folder of the project the host
 /// holds, which is never anywhere but the project's own folder or a workspace's repository in it

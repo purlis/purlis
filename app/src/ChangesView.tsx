@@ -16,10 +16,11 @@ import {
   Hand,
   LoaderCircle,
   Puzzle,
+  Server,
   SkipForward,
   TriangleAlert,
 } from "lucide-react";
-import type { FactCell, FactColumn, Piece, RepoState } from "./bindings";
+import type { FactCell, FactColumn, Piece, RepoState, RunnerBranch } from "./bindings";
 import { EmptyState } from "./EmptyState";
 import { treeKey, type Row } from "./Explorer";
 import { Menued } from "./Menus";
@@ -127,7 +128,10 @@ export function ChangesView({
   const { panels, repos, pieces, piecesRefused, reading, trouble } = state;
   const names = panels?.repos ?? [];
   const absent = panels?.absent ?? [];
-  const rows = workspace === undefined ? [] : treeRows(names, absent, pieces, columns);
+  const onRunners = Object.fromEntries(
+    (repos?.repos ?? []).map((repo) => [repo.name, repo.on_a_runner ?? []]),
+  );
+  const rows = workspace === undefined ? [] : treeRows(names, absent, pieces, columns, onRunners);
   const stop = useTabStop(
     undefined,
     rows.map((one) => one.id),
@@ -303,6 +307,8 @@ const changesRow = (repo: string) => `changes:${repo}`;
 const branchesRow = (repo: string) => `branches:${repo}`;
 const pieceRow = (repo: string, piece: string) => `piece:${repo}/${piece}`;
 const ciRow = (repo: string) => `ci:${repo}`;
+const runnerRow = (repo: string, pool: string, branch: string) =>
+  `runner:${repo}:${pool}:${branch}`;
 const factRow = (repo: string, column: FactColumn) =>
   `fact:${repo}/${column.extension}/${column.id}`;
 
@@ -316,6 +322,7 @@ export function treeRows(
   absent: readonly string[],
   pieces: Record<string, Piece[]>,
   columns: readonly FactColumn[],
+  onRunners: Record<string, readonly RunnerBranch[]> = {},
 ): Row[] {
   const rows: Row[] = [];
   const tops = names.length + absent.length;
@@ -323,7 +330,8 @@ export function treeRows(
   names.forEach((repo, n) => {
     const facts = columns.filter((column) => column.cells.some((cell) => cell.repo === repo));
     const cut = pieces[repo] ?? [];
-    const size = 3 + facts.length;
+    const there = onRunners[repo] ?? [];
+    const size = 3 + there.length + facts.length;
     add({
       id: repoRow(repo),
       name: repo,
@@ -348,8 +356,12 @@ export function treeRows(
         parents: false,
       }),
     );
-    under(ciRow(repo), "pipeline", 3);
-    facts.forEach((column, m) => under(factRow(repo, column), column.title, 4 + m));
+    // The branches of the pool's runner the workspace's chats run on, as fetched (#2046).
+    there.forEach((one, m) =>
+      under(runnerRow(repo, one.pool, one.branch), `${one.branch} on ${one.pool}`, 3 + m),
+    );
+    under(ciRow(repo), "pipeline", 3 + there.length);
+    facts.forEach((column, m) => under(factRow(repo, column), column.title, 4 + there.length + m));
   });
   absent.forEach((repo, n) =>
     add({
@@ -571,6 +583,26 @@ function RepoRows({
               ))}
             </div>
           )}
+          {(state?.on_a_runner ?? []).map((one) => (
+            // A runner chat's branch, as this machine last fetched it (#2046): a name, so one
+            // line, and how much of it is new here.
+            <CloneRow
+              key={`${one.pool}/${one.branch}`}
+              id={runnerRow(name, one.pool, one.branch)}
+              at={at}
+              className="runner-branch"
+              testId={`runner-${name}-${one.pool}-${one.branch}`}
+            >
+              <Server className="node-icon" />
+              <code className="branch">{one.branch}</code>
+              <span className="upstream">on pool {one.pool}</span>
+              {one.ahead > 0 && (
+                <span className="gap">
+                  {one.ahead} {one.ahead === 1 ? "commit" : "commits"} not here yet
+                </span>
+              )}
+            </CloneRow>
+          ))}
           <CloneRow id={ciRow(name)} at={at} className="ci" testId={`ci-${name}`}>
             {state === undefined ? (
               <span className="pending">{unread}</span>

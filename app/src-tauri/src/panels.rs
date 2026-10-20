@@ -413,6 +413,22 @@ pub(crate) struct RepoState {
     /// Why there is nothing from the forge to show. Absent when something was fetched, even
     /// when what was fetched named no pipeline.
     not_fetched: Option<String>,
+    /// The branches of the pool's runner this workspace's chats run on, as this machine last
+    /// fetched them (#2046): each ready to push or open as a pull request here. Left out where
+    /// there is none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[specta(optional)]
+    on_a_runner: Vec<RunnerBranch>,
+}
+
+/// One branch of a pool's runner, as this machine last fetched it (#2046).
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub(crate) struct RunnerBranch {
+    pool: String,
+    branch: String,
+    /// The commits it has that this machine's branch of that name does not, or what this
+    /// checkout is on where there is none.
+    ahead: u32,
 }
 
 /// Every clone of one workspace, as the panels draw them.
@@ -1286,12 +1302,29 @@ fn states_of(root: &Path, workspace: &str, binary: Option<&Path>) -> Result<Repo
     // and the refresh is for the next one. Python's render path does the two in this order for
     // the same reason (`glstate.read_for`, then `glstate.maybe_spawn`).
     refresh_if_it_is_due(root, workspace, binary);
+    // The pool this workspace's chats run on, where it runs them on one this machine keeps.
+    let pool = purlis_core::machine::config_root()
+        .and_then(|config| purlis_core::pools::runs_on(&config, root, Some(workspace)).ok())
+        .flatten();
     Ok(RepoStates {
         workspace: workspace.to_string(),
         repos: found
             .repos
             .iter()
-            .map(|repo| one(repo, cache.as_ref()))
+            .map(|repo| {
+                let mut row = one(repo, cache.as_ref());
+                if let Some(pool) = &pool {
+                    row.on_a_runner = purlis_core::codelink::on_a_runner(&repo.path, pool)
+                        .into_iter()
+                        .map(|branch| RunnerBranch {
+                            pool: pool.clone(),
+                            branch: branch.branch,
+                            ahead: branch.ahead,
+                        })
+                        .collect();
+                }
+                row
+            })
             .collect(),
         cache_refused,
     })

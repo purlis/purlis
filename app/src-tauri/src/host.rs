@@ -235,6 +235,29 @@ pub trait SessionHost: Send + Sync {
         false
     }
 
+    /// **Whether a harness chat started in `workspace` is composed by the host it runs on**
+    /// (#2046): where the window routes each workspace's chats to the host that runs them, a
+    /// workspace whose chats run on a pool's runner is started by its names there. Every other
+    /// host answers as [`Self::composes_its_harness_chats`] does.
+    fn composes_its_harness_chats_in(&self, workspace: Option<&str>) -> bool {
+        let _ = workspace;
+        self.composes_its_harness_chats()
+    }
+
+    /// **Holds the project in this host now** (#2046), as a window that is about to start a
+    /// chat on a runner beside it does: this machine's host keeps the project's board for
+    /// every chat, those on runners included. Nothing, where the window's own process runs the
+    /// chats.
+    fn hold_here(&self) {}
+
+    /// **Fetches the branches of `workspace`'s clones back from the runner of `pool`** (#2046),
+    /// where this host runs the project's chats there: each clone's `refs/remotes/<pool>/*`.
+    /// Answers what could not be fetched, in sentences. Nothing, where chats run elsewhere.
+    fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
+        let _ = (workspace, pool);
+        Vec::new()
+    }
+
     /// Sends what a pane typed to the program: bytes, written to its pty as they are. Text is
     /// its UTF-8; a mouse report in the default encoding is bytes that are not text at all
     /// (charter#493).

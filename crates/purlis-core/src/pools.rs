@@ -140,31 +140,46 @@ pub fn remove(
 /// Where the person removes a pool, as Settings names it.
 pub const SETTING: &str = "Settings › This machine › Pools";
 
-/// **Whether a chat may start in `workspace` of the plane at `plane` on this machine**
-/// (#2679): `Ok` where the workspace runs its chats here, and refused, in words, where this
-/// machine's store says they run on a pool. A pool's runner does not hold a workspace's project
-/// yet (#2046), so a chat set to run on one starts nowhere, and is never started here in its
-/// place.
-pub fn starts_here(
+/// **Which pool `workspace` of the plane at `plane` runs its chats on, on this machine**
+/// (#2679, #2046): `None` for this machine, the pool where this machine's store names one it
+/// keeps with its runner, and refused, in words, where it names one this machine does not keep:
+/// such a chat starts nowhere, and is never started here in its place.
+pub fn runs_on(
     config_root: &Path,
     plane: &Path,
     workspace: Option<&str>,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let Some(workspace) = workspace else {
-        return Ok(());
+        return Ok(None);
     };
     let loaded = crate::machine::read(config_root);
     let Some(pool) = loaded.store.chats_run_on(plane, workspace) else {
-        return Ok(());
+        return Ok(None);
     };
     if let Err(missing) = runners::runner_for(config_root, pool) {
-        return Err(format!("{missing}."));
+        return Err(format!(
+            "Workspace {workspace} runs its chats on pool {pool}: {missing}. Choose where its \
+             chats run in its settings, or add the pool again in {SETTING}."
+        ));
     }
-    Err(format!(
-        "Workspace {workspace} runs its chats on pool {pool}, which cannot hold this project's \
-         code yet, so nothing was started. Remove pool {pool} in {SETTING} to run them on this \
-         machine again."
-    ))
+    Ok(Some(pool.to_owned()))
+}
+
+/// **Every pool a workspace of the plane at `plane` runs its chats on**, with those
+/// workspaces, as this machine's store names them (#2046). Whether each pool is kept is asked
+/// as each is reached ([`runs_on`]).
+pub fn workspaces_on_pools(
+    config_root: &Path,
+    plane: &Path,
+) -> std::collections::BTreeMap<String, Vec<String>> {
+    let loaded = crate::machine::read(config_root);
+    let mut on: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for (workspace, pool) in loaded.store.every_chats_run_on(plane) {
+        on.entry(pool.to_owned())
+            .or_default()
+            .push(workspace.to_owned());
+    }
+    on
 }
 
 /// **Moves the pool `name` to `image`, the runner image of the desktop's version** (#2749): a
