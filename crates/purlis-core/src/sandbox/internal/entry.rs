@@ -185,7 +185,7 @@ impl Range {
         };
         let v4 = |a, b, c, d| IpAddr::V4(Ipv4Addr::new(a, b, c, d));
         let v6 = |segments: [u16; 8]| IpAddr::V6(Ipv6Addr::from(segments));
-        let never: [(IpAddr, u8, &str); 16] = [
+        let never: [(IpAddr, u8, &str); 17] = [
             (v4(0, 0, 0, 0), 8, "this machine"),
             (v4(127, 0, 0, 0), 8, "this machine"),
             (v4(169, 254, 0, 0), 16, "link-local addresses"),
@@ -223,6 +223,11 @@ impl Range {
                 v6([0x2002, 0, 0, 0, 0, 0, 0, 0]),
                 16,
                 "6to4 addresses, which carry IPv4 ones",
+            ),
+            (
+                v6([0x2001, 0, 0, 0, 0, 0, 0, 0]),
+                32,
+                "Teredo addresses, which carry IPv4 ones",
             ),
             (
                 v6([0xfe80, 0, 0, 0, 0, 0, 0, 0]),
