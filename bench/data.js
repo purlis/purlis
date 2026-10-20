@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792475594825,
+  "lastUpdate": 1792477260398,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18564,6 +18564,48 @@ window.BENCHMARK_DATA = {
             "value": 101.94235499999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.100, 101.545, 101.942, 102.087, 102.126 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e417ebec74c23f8f2ef3dfb7dde16cde8ebc16a7",
+          "message": "Browsers: an engine answer too large fails only its own call (#2694) (#2723)\n\n* An engine answer too large fails only its own call (#2694)\n\nA message from the engine past its bound is read past to its NUL and never\nkept. An answer fails only the call that asked for it, with a sentence; an\nevent is dropped and counted. A call may name a smaller bound, and the\nDOMSnapshot layout read that marks what a box does not show is held to\n16 MiB, past which it marks nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* An event past its bound is dropped only where nobody reads it (#2694)\n\nAn over-bound event of a kind the driver reads (a frame's navigation, a\ntarget's change) ends the connection as before, so the driver's view of the\npage's frames is never left stale. Console and exception events past the\nbound are dropped. The read-past buffer lets go of what it held.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T10:07:42+04:00",
+          "tree_id": "fa672fc1a3fd6474e15a4d244869921f970d2be6",
+          "url": "https://github.com/purlis/purlis/commit/e417ebec74c23f8f2ef3dfb7dde16cde8ebc16a7"
+        },
+        "date": 1792477258842,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.532164,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.505, 0.506, 0.532, 0.538, 0.556 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7333145,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.262, 16.405, 16.733, 17.006, 17.074 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.3214755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.322, 102.415, 103.321, 103.860, 106.234 ms"
           }
         ]
       }
