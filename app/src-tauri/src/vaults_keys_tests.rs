@@ -39,7 +39,7 @@ fn a_chats_key_listing_raises_the_vault_notice_until_allowed_and_then_names_the_
     let told = std::sync::Mutex::new(Vec::new());
     let tell = |one: crate::vaultroute::VaultRefused| told.lock().unwrap().push(one.vault);
 
-    let refused = keys_answered(&plane, &refusals, &asker, "logs", &tell);
+    let refused = keys_answered(&plane, &refusals, (&asker, false), "logs", &tell);
     let purlis_core::hookwire::Answer::No { why } = refused else {
         panic!("refused: {refused:?}");
     };
@@ -48,7 +48,7 @@ fn a_chats_key_listing_raises_the_vault_notice_until_allowed_and_then_names_the_
     assert_eq!(refusals.of(22).len(), 1);
 
     purlis_core::sandbox::local::grant_vault(root, "logs", "steward").unwrap();
-    let listed = keys_answered(&plane, &refusals, &asker, "logs", &tell);
+    let listed = keys_answered(&plane, &refusals, (&asker, false), "logs", &tell);
     assert_eq!(
         listed,
         purlis_core::hookwire::Answer::Keys {

@@ -752,7 +752,7 @@ fn a_chat_named_alone_is_composed_by_the_host_as_its_profile_says(target: &Targe
             &|_| {},
         )
         .expect("it starts")
-        .0;
+        .number;
     Pane::on(target, id).shows("COMPOSED as steward:");
     Pane::on(target, id).shows("carry on with the plan :END");
     target.sessions.close(id).expect("it closes");
@@ -796,7 +796,7 @@ fn an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts(t
             &|_| {},
         )
         .expect("it starts")
-        .0;
+        .number;
 
     Pane::on(target, id).shows("without the sandbox :END");
     let events = purlis_core::eventlog::read(&target.log).expect("the log reads");

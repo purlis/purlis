@@ -190,9 +190,13 @@ use crate::view::{Limits, Views};
 /// 1.28 added how a hosted program's run is sandboxed (#2636): each program `programs` answers
 /// says how its host applied the sandbox to its run (`sandbox`), read by the host from what it
 /// started, never from the start.
+///
+/// 1.29 added that record to a program's start (#2692): `program_started` says how its host
+/// applied the sandbox to the run it started (`sandbox`), so a window hears it of a chat its
+/// host composed by its names as it starts.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 28,
+    minor: 29,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -886,6 +890,10 @@ pub enum Answer {
         /// on, where the start asked for it by [`StartProgram::confinement`] (1.16).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         confined: Option<Confined>,
+        /// How its run is sandboxed, as the host applied it (1.29): the same record `programs`
+        /// answers. Absent from a host before 1.29, whose window takes the run as sandboxed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sandbox: Option<RunSandbox>,
     },
     /// Whether a program is ready to be typed at: [`Command::Readiness`] (1.2).
     Readiness(Readiness),
@@ -974,6 +982,8 @@ pub struct ProgramStarted {
     /// Where the confinement the host composed for it is, where the start named one to this
     /// link (1.16).
     pub confined: Option<Confined>,
+    /// How its run is sandboxed, as the host applied it, where the host says (1.29).
+    pub sandbox: Option<RunSandbox>,
 }
 
 /// One chat, as [`Command::List`] lists it.
@@ -2181,11 +2191,13 @@ impl Client {
                 number,
                 process,
                 confined,
+                sandbox,
             } => Ok(ProgramStarted {
                 program,
                 number,
                 process,
                 confined,
+                sandbox,
             }),
             other => Err(unexpected(&other)),
         }

@@ -59,6 +59,7 @@ impl Host for Board {
                 number: None,
                 process: None,
                 confined: None,
+                sandbox: None,
             },
             Command::AttachView { kind, .. } => Answer::Attached(session::Attached {
                 view: 1,

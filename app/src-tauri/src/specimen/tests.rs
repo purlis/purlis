@@ -14,10 +14,15 @@ use super::*;
 struct Recording {
     handed: Mutex<Vec<WindowTheme>>,
     refuses: Option<String>,
+    turns: Turns,
 }
 
 impl Painter for Recording {
-    fn paint(&self, theme: &WindowTheme) -> Result<Picture, String> {
+    fn turns(&self) -> &Turns {
+        &self.turns
+    }
+
+    fn paint(&self, theme: &WindowTheme, _: &Turn<'_>) -> Result<Picture, String> {
         if let Some(why) = &self.refuses {
             return Err(why.clone());
         }
@@ -201,4 +206,51 @@ fn a_specimen_window_is_none_of_purlis_s_own_windows() {
             label(n)
         );
     }
+}
+
+#[test]
+fn a_gallery_picture_asked_while_a_chat_is_drawn_is_answered_busy_and_draws_nothing() {
+    let painter = Recording::default();
+    let chat = painter
+        .turns()
+        .chat(std::time::Duration::ZERO)
+        .expect("free");
+    let asked = painted(
+        Some(&painter),
+        &[specimen("purlis-classic", None)],
+        Who::Gallery,
+    );
+    assert_eq!(asked, Err(BUSY.to_owned()));
+    assert!(painter.handed.lock().unwrap().is_empty());
+    drop(chat);
+    assert!(
+        painted(
+            Some(&painter),
+            &[specimen("purlis-classic", None)],
+            Who::Gallery
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_chat_asked_while_a_gallery_picture_is_drawn_is_drawn_once_it_gives_way() {
+    let painter = Recording::default();
+    std::thread::scope(|scope| {
+        let gallery = painter.turns().gallery().expect("free");
+        // The gallery's page, still drawing: it gives way as soon as the chat waits.
+        let painting = scope.spawn(move || {
+            let (_page, drawn) = mpsc::channel::<()>();
+            let waited = gallery.wait(&drawn, Instant::now() + std::time::Duration::from_secs(30));
+            drop(gallery);
+            waited
+        });
+        let answer = answered(
+            OPEN,
+            Some(&painter),
+            &ask(7, vec![specimen("purlis-classic", None)]),
+        );
+        assert!(matches!(answer, Answer::Previewed { .. }), "{answer:?}");
+        assert_eq!(painting.join().unwrap(), Err(Waited::GaveWay));
+    });
 }

@@ -2570,6 +2570,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             confinement: None,
             confines: Some(applied.confines().clone()),
             started_with: StartedWith::default(),
+            composed_by_its_host: false,
             ran: Some(purlis_session_protocol::session::RunSandbox::By(
                 "seatbelt".to_owned(),
             )),
@@ -2643,6 +2644,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 ran: Some(purlis_session_protocol::session::RunSandbox::By(
                     "seatbelt".to_owned(),
                 )),
+                composed_by_its_host: false,
             },
         );
     };
@@ -2727,7 +2729,7 @@ fn a_chat_that_ran_without_the_sandbox_restarts_in_it_and_its_tab_says_so() {
             Some(&opt_out),
         )
         .expect("starts");
-    assert!(chats.unsandboxed(session));
+    assert!(chats.started_unsandboxed(session));
     assert_eq!(chats.confines_of(session), None);
     // By the person's choice, so no setting leaves it "on an older sandbox".
     the_sandbox_becomes(plane.path(), "hosts = [\"a.example\"]\n");
@@ -2736,7 +2738,10 @@ fn a_chat_that_ran_without_the_sandbox_restarts_in_it_and_its_tab_says_so() {
     chats.ask_restart(session).expect("asked");
     let started = chats.restart(session, SIZE).expect("restarts");
 
-    assert!(!chats.unsandboxed(started), "the opt-out was not inherited");
+    assert!(
+        !chats.started_unsandboxed(started),
+        "the opt-out was not inherited"
+    );
     assert!(chats.confines_of(started).is_some());
     assert_eq!(chats.start_notes(started), [SANDBOXED_AGAIN]);
     assert!(
@@ -3074,6 +3079,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 ran: Some(purlis_session_protocol::session::RunSandbox::By(
                     "seatbelt".to_owned(),
                 )),
+                composed_by_its_host: false,
             },
         );
     };
@@ -7136,12 +7142,13 @@ fn a_harness_chat_on_a_runner_is_started_by_its_names_and_a_shell_by_the_window_
     assert_eq!(host.named().len(), 1);
 }
 
-/// #2636: a harness chat on a runner that the person started without the sandbox, which the
-/// runner composed with no confinement, is judged unconfined, so its browser logins are its
-/// persona's as an unsandboxed local chat's are; one started in the runner's sandbox is judged
-/// sandboxed.
+/// #2692: a harness chat a runner composes by its names is judged by the runner host's record of
+/// how it applied the sandbox, as the start answered it: one recorded off has its persona's
+/// browser logins, as an unsandboxed local chat does; one recorded in the runner's sandbox, or
+/// with no record, is held by the runner's sandbox, which this window keeps no compile of.
 #[test]
-fn a_runner_chat_started_without_the_sandbox_is_judged_unconfined_and_one_in_it_is_not() {
+fn a_composed_runner_chat_is_judged_by_the_runner_host_s_record_of_its_run() {
+    use purlis_session_protocol::session::RunSandbox;
     let host = Pretend::default();
     host.on_a_runner();
     let project = tempfile::tempdir().expect("a project");
@@ -7150,36 +7157,135 @@ fn a_runner_chat_started_without_the_sandbox_is_judged_unconfined_and_one_in_it_
         Box::new(host.clone()),
         project.path().to_path_buf(),
     );
-    let unsandboxed = chats
-        .start_ready(
-            &on_the_profile_work(),
-            &purlis_core::start::Ready {
-                unsandboxed: Some(a_person_lifted_it()),
-                ..a_harness_ready(None)
-            },
-            SIZE,
-        )
-        .expect("it starts on the runner");
-    let sandboxed = chats
-        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
-        .expect("it starts on the runner");
-    assert!(host.named()[0].1.without_sandbox);
+    let start_recorded_as = |ran: Option<RunSandbox>| {
+        host.records_composed_runs_as(ran);
+        chats
+            .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+            .expect("it starts on the runner")
+    };
+    let off = start_recorded_as(Some(RunSandbox::Off));
+    let sandboxed = start_recorded_as(Some(RunSandbox::By("seatbelt".to_owned())));
+    let unread = start_recorded_as(None);
 
     let unconfined = |session| {
         chats
             .login_asker(project.path(), session)
             .map(|(_, free)| free)
     };
-    assert_eq!(
-        unconfined(unsandboxed),
-        Some(true),
-        "started without the sandbox"
-    );
+    assert_eq!(unconfined(off), Some(true), "the runner recorded it off");
+    assert!(chats.started_unsandboxed(off));
+    assert!(!chats.sandboxed_by_its_host(off));
+
     assert_eq!(
         unconfined(sandboxed),
         Some(false),
-        "the runner's to record: sandboxed"
+        "in the runner's sandbox"
     );
+    assert!(chats.sandboxed_by_its_host(sandboxed));
+    assert!(!chats.started_unsandboxed(sandboxed));
+
+    assert_eq!(unconfined(unread), Some(false), "no record: sandboxed");
+    assert!(chats.sandboxed_by_its_host(unread));
+
+    // No compile of the runner's sandbox is held here, so no path that lets a sandboxed chat
+    // reach more takes any of them as sandboxed.
+    for session in [off, sandboxed, unread] {
+        assert!(!chats.runs_sandboxed(session), "chat {session}");
+    }
+}
+
+/// #2692: a runner's word that a run is off is taken only where this window's own reading of
+/// the chat's start is off too. For a start this window compiled a sandbox for, it is no record:
+/// the chat is held by the runner's sandbox, and nothing that lets a chat with no sandbox reach
+/// more takes it as one.
+#[test]
+fn a_runners_off_for_a_start_this_window_compiled_a_sandbox_for_is_no_record() {
+    use purlis_session_protocol::session::RunSandbox;
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    host.on_a_runner();
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        plane.path().to_path_buf(),
+    );
+    host.records_composed_runs_as(Some(RunSandbox::Off));
+    let session = chats
+        .start_ready(
+            &on_the_profile_work(),
+            &purlis_core::start::Ready {
+                sandbox: Some(a_claude_sandbox(plane.path())),
+                ..a_harness_ready(None)
+            },
+            SIZE,
+        )
+        .expect("it starts on the runner");
+
+    assert!(!chats.started_unsandboxed(session));
+    assert!(chats.sandboxed_by_its_host(session));
+    assert_eq!(
+        chats
+            .login_asker(plane.path(), session)
+            .map(|(_, free)| free),
+        Some(false)
+    );
+}
+
+/// #2692: each path reads the record of how a run started in the direction that fails closed
+/// for it. Where a sandboxed chat is allowed more (dispatching to another persona, a handoff's
+/// crossing, a dispatch while you are away, the network record), only a run recorded in a
+/// sandbox whose compile this window holds counts as sandboxed. Where a chat with no sandbox is
+/// allowed more (a browser login, a browser's listing, a git action's reach, the vault Notice's
+/// silence), only a run recorded off counts as unsandboxed.
+#[test]
+fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
+    use purlis_session_protocol::session::RunSandbox;
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let compiled = Some(purlis_core::sandbox::Confines::default());
+    let by = || Some(RunSandbox::By("seatbelt".to_owned()));
+    let cases = [
+        // (compiled, ran, runs sandboxed, started unsandboxed)
+        (compiled.clone(), by(), true, false),
+        (compiled.clone(), None, false, false),
+        (compiled.clone(), Some(RunSandbox::Off), false, true),
+        // Reattached under a sandbox that changed while no window was there (D-2006-11).
+        (None, by(), false, false),
+        (None, None, false, false),
+        (None, Some(RunSandbox::Off), false, true),
+    ];
+    for (session, (confines, ran, sandboxed, unsandboxed)) in (1u32..).zip(cases) {
+        lock(&chats.open).insert(
+            session,
+            Running {
+                chat: a_resumable_chat_in(plane.path()),
+                how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+                harness: Some(Harness::ClaudeCode),
+                declared: None,
+                workspace: None,
+                confinement: None,
+                confines: confines.clone(),
+                started_with: StartedWith::default(),
+                ran: ran.clone(),
+                composed_by_its_host: false,
+            },
+        );
+        let case = format!("compiled {}, recorded {ran:?}", confines.is_some());
+        assert_eq!(chats.runs_sandboxed(session), sandboxed, "{case}");
+        assert_eq!(chats.started_unsandboxed(session), unsandboxed, "{case}");
+        assert_eq!(
+            chats
+                .login_asker(plane.path(), session)
+                .map(|(_, free)| free),
+            Some(unsandboxed),
+            "{case}"
+        );
+    }
+    assert!(
+        !chats.runs_sandboxed(99),
+        "a chat this app does not have open"
+    );
+    assert!(!chats.started_unsandboxed(99));
 }
 
 /// A chat on a runner put back on its conversation carries that conversation on there, and
@@ -7599,6 +7705,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 }),
                 confines,
                 started_with: StartedWith::default(),
+                composed_by_its_host: false,
             },
         );
     };
@@ -7647,6 +7754,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 confinement: None,
                 confines: None,
                 started_with: StartedWith::default(),
+                composed_by_its_host: false,
                 ran: Some(purlis_session_protocol::session::RunSandbox::Off),
             },
         );
@@ -7753,6 +7861,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 confinement: Some(confinement),
                 confines: None,
                 started_with: StartedWith::default(),
+                composed_by_its_host: false,
                 ran: Some(purlis_session_protocol::session::RunSandbox::By(
                     "seatbelt".to_owned(),
                 )),

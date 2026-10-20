@@ -8814,6 +8814,17 @@ export type TheirAgentsMd = {
 	piece: string | null,
 };
 
+/**  **The person's own `theme.json`, drawn** (#2615). */
+export type TheirsDrawn = {
+	/**
+	 *  Whether it follows the operating system's appearance here: it has a dark and a light one,
+	 *  and the choice drawn follows the system.
+	 */
+	follows_system: boolean,
+	/**  What following the system does with it when it has one appearance: that it stays there. */
+	note: string | null,
+};
+
 /**
  *  **Where the window is**, for [`theme_in_force`] (#2323): the project in front and the
  *  workspace it is on, `None` at its plane root, which resolves from the project's levels down.
@@ -8854,6 +8865,12 @@ export type ThemeGallery = {
 	 *  choice made it (#2527).
 	 */
 	options: WindowOption[],
+	/**
+	 *  **The person's own `theme.json`, when it is what is drawn here** (#2615): it is no card,
+	 *  so this says that it is drawn and what following the system does with it; `null` when
+	 *  what is drawn is a card.
+	 */
+	theirs: TheirsDrawn | null,
 };
 
 /**  What [`theme_in_force`] answers. */

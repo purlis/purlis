@@ -62,6 +62,20 @@ pub struct ThemeGallery {
     /// The chosen card's options, each with the value it is drawn with here and the level whose
     /// choice made it (#2527).
     pub options: Vec<WindowOption>,
+    /// **The person's own `theme.json`, when it is what is drawn here** (#2615): it is no card,
+    /// so this says that it is drawn and what following the system does with it; `null` when
+    /// what is drawn is a card.
+    pub theirs: Option<TheirsDrawn>,
+}
+
+/// **The person's own `theme.json`, drawn** (#2615).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct TheirsDrawn {
+    /// Whether it follows the operating system's appearance here: it has a dark and a light one,
+    /// and the choice drawn follows the system.
+    pub follows_system: bool,
+    /// What following the system does with it when it has one appearance: that it stays there.
+    pub note: Option<String>,
 }
 
 /// **One card of a gallery**: what the theme engine read of one theme.
@@ -299,12 +313,27 @@ impl Place {
 
     /// **The card a choice made at a level that reaches `reach` names**, by its key: Purlis
     /// Classic by any id one of its appearances has had; a theme folder at the level it names, or
-    /// the nearest within reach that has it. `None` when it is no card of `cards`.
-    fn card_of(&self, choice: &Choice, reach: Reach, cards: &[GalleryCard]) -> Option<String> {
-        // Purlis by its own id is its own card (#2336); Purlis Classic by any id it has had.
+    /// the nearest within reach that has it; and the old `system` id, the person's own theme
+    /// when there is one (`theirs`), which is no card, else Purlis Classic. `None` when it is no
+    /// card of `cards`.
+    fn card_of(
+        &self,
+        choice: &Choice,
+        reach: Reach,
+        cards: &[GalleryCard],
+        theirs: bool,
+    ) -> Option<String> {
+        if choice.theme == extension::project::theme::SYSTEM && theirs {
+            return None;
+        }
+        // Purlis by its own id is its own card (#2336); Purlis Classic by any id it has had, and
+        // by the old id with no theme of the person's.
         let key = if choice.theme == theme::PURLIS {
             theme::PURLIS.to_owned()
-        } else if choice.theme == theme::CLASSIC || theme::built_in(&choice.theme).is_some() {
+        } else if choice.theme == theme::CLASSIC
+            || choice.theme == extension::project::theme::SYSTEM
+            || theme::built_in(&choice.theme).is_some()
+        {
             theme::CLASSIC.to_owned()
         } else {
             let placed = choice.clone().placed(&self.folders, reach);
@@ -398,12 +427,12 @@ fn gallery_of(place: &Place, theirs: Option<&theme::Theme>) -> ThemeGallery {
     let drawn_key = match chose {
         None if level == Level::Purlis => Some(theme::CLASSIC.to_owned()),
         None => None,
-        Some(choice) => place.card_of(choice, level.reach(), &cards),
+        Some(choice) => place.card_of(choice, level.reach(), &cards, theirs.is_some()),
     };
     let yours = place.yours();
     let yours_key = yours
         .as_ref()
-        .and_then(|choice| place.card_of(choice, place.reach, &cards));
+        .and_then(|choice| place.card_of(choice, place.reach, &cards, theirs.is_some()));
     // The chosen card, and the choice its values come from, at the level that made it.
     let (chosen, valued) = match (&yours_key, yours.as_ref()) {
         (Some(key), Some(choice)) => (Some(key.clone()), Some((choice, own_level(place)))),
@@ -451,6 +480,10 @@ fn gallery_of(place: &Place, theirs: Option<&theme::Theme>) -> ThemeGallery {
         from: from_said(level, place.workspace.as_deref(), theirs.is_some()),
         chosen,
         options,
+        theirs: drawn.theirs.then(|| TheirsDrawn {
+            follows_system: drawn.follows_system,
+            note: drawn.note.clone(),
+        }),
     }
 }
 
