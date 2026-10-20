@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792476624390,
+  "lastUpdate": 1792476642081,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7220,6 +7220,42 @@ window.BENCHMARK_DATA = {
             "value": 654.1,
             "unit": "MB",
             "extra": "median of 6 samples: 612.9, 640.9, 653.3, 655, 655.7, 755.4 MB; window 409.1 MB, session host 245 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "41cd2d82247f437182cec3188c76811dd9a560ae",
+          "message": "fix: a fixture copy no longer decides the workspace strip's order (#2737)\n\nA plane's first open pins its most recently active workspaces, newest\nfirst, and the strip draws them in that order. Recency is read off file\nmodification times, and a scenario run's fixture copy carried the times\nthe copy was written at, in the order the filesystem listed the tree.\nOn a runner that copied beta after alpha, the strip drew beta, alpha.\n\ncopyFixturePlane now gives the whole copy one modification time, so no\nworkspace in it reads as more recently active than another, and the\ncore orders equally active workspaces by name explicitly rather than by\nthe listing it was handed.\n\nCloses #2715\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T09:29:05+04:00",
+          "tree_id": "382874ba78639a0c0641077ec020282509968452",
+          "url": "https://github.com/purlis/purlis/commit/41cd2d82247f437182cec3188c76811dd9a560ae"
+        },
+        "date": 1792476640310,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1494.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1333.2, 1494.7, 1656.3 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 637,
+            "unit": "MB",
+            "extra": "median of 6 samples: 599.1, 626.8, 635.6, 638.4, 638.7, 727.8 MB; window 385.7 MB, session host 251.3 MB"
           }
         ]
       }
