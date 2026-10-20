@@ -79,5 +79,4 @@ fn answer(
 }
 
 #[cfg(test)]
-#[path = "brokered_tests.rs"]
 mod tests;
