@@ -170,6 +170,9 @@ jobs:
       # `purlis-session-protocol/bench` so the latency bench, which only that feature builds, is
       # linted too (SC-16).
       - run: cargo clippy --workspace --all-targets --locked --features purlis-session-protocol/bench -- -D warnings
+      # The app's `e2e` feature, so what only the scenario build compiles (`ipc_commands.rs`'s
+      # `e2e_only` and what it calls, #2836) is linted too.
+      - run: cargo clippy -p purlis-app --lib --features e2e --locked -- -D warnings
   # The required check `rust (fmt, clippy, test)`: green only when the lint and both parts of
   # `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.

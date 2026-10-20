@@ -728,7 +728,8 @@ fn every_command_that_changes_a_standing_dispatch_grant_is_the_window_s_alone() 
     macro_rules! command_paths {
         (
             value_free: [$($($free:ident)::+),* $(,)?],
-            vault_values: [$($($value:ident)::+),* $(,)?] $(,)?
+            vault_values: [$($($value:ident)::+),* $(,)?],
+            e2e_only: [$($($e2e:ident)::+),* $(,)?] $(,)?
         ) => {
             (
                 &[$(concat!($(stringify!($free), "::"),+)),*] as &[&str],
