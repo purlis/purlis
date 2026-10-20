@@ -1,0 +1,186 @@
+<title>Tab Strip Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* PROTOTYPE (wayfinder #2800, M66). Throwaway: one tab strip drawn by ONE component, styled only by
+   component-part keys (`tabs.<part>[.<state>].<property>` plus the family's layout options). Each variant is
+   a theme: the component code never changes, only the part values printed beside it. Layout concept: the
+   mock window on the left, the theme's part keys on the right, the switcher at the bottom. */
+:root {
+  --behind: #f1efea; --page: #fcfbf8; --text: #1d1c22; --muted: #5c5a66; --quiet: #6b6976; --line: #d9d5cd; --code-bg: #f4f2ee;
+  --switch-bg: #1d1c22; --switch-fg: #fcfbf8;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --behind: #121215; --page: #17171b; --text: #e6e4ec; --muted: #a09eab; --quiet: #8a8896; --line: #2f2f37; --code-bg: #1d1d22;
+  --switch-bg: #e6e4ec; --switch-fg: #17171b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --behind: #121215; --page: #17171b; --text: #e6e4ec; --muted: #a09eab; --quiet: #8a8896; --line: #2f2f37; --code-bg: #1d1d22;
+  --switch-bg: #e6e4ec; --switch-fg: #17171b; color-scheme: dark }
+html, body { height: 100%; }
+body { margin: 0; background: var(--behind); color: var(--text); font: 13px/1.45 var(--font-ui);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 76px; box-sizing: border-box; }
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid #a99cf0; outline-offset: 2px; }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; height: 100%; min-height: 520px; }
+@media (max-width: 900px) { .stage { grid-template-columns: 1fr; height: auto; } }
+.keys { background: var(--page); border-radius: 12px; padding: 16px; overflow: auto; min-width: 0; }
+.keys h2 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.keys p { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.keys pre { margin: 0; background: var(--code-bg); border-radius: 8px; padding: 12px; font: 11.5px/1.6 var(--font-mono); overflow-x: auto; color: var(--text); }
+.keys .note { margin-top: 12px; color: var(--quiet); font-size: 12px; }
+
+/* ---- The component. Every value below comes from a part property set as a custom property by the theme. ---- */
+.win { --g: 8px; background: var(--w-behind); border-radius: var(--w-radius); padding: var(--w-inset); display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: var(--w-gap); overflow: hidden; min-width: 0; color: var(--t-text); font-family: var(--font-ui); }
+.strip { display: flex; align-items: stretch; gap: var(--strip-gap); padding: var(--strip-pad); background: var(--strip-fill); border-radius: var(--strip-radius); box-shadow: inset 0 calc(-1 * var(--strip-border-w)) 0 var(--strip-border); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tab { display: flex; align-items: center; gap: 8px; height: var(--tab-h); padding: 0 var(--tab-pad-x); border: 0; background: var(--tab-fill); color: var(--tab-text);
+  border-radius: var(--tab-radius); cursor: pointer; font-size: var(--tab-fs); font-weight: var(--tab-fw); white-space: nowrap; position: relative; min-width: 0;
+  box-shadow: inset calc(-1 * var(--tab-divider-w)) 0 0 var(--tab-divider); }
+.strip.equal .tab { flex: 1 1 0; max-width: var(--tab-max); }
+.strip.content .tab { flex: 0 0 auto; }
+.tab:hover { background: var(--tab-hover-fill); color: var(--tab-hover-text); }
+.tab[aria-selected="true"] { background: var(--tab-sel-fill); color: var(--tab-sel-text); font-weight: var(--tab-sel-fw); }
+.tab .label { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; text-align: left; }
+.tab .ind { position: absolute; left: var(--ind-inset); right: var(--ind-inset); height: var(--ind-h); background: var(--ind-fill); border-radius: var(--ind-radius); opacity: 0; }
+.tab .ind.bottom { bottom: var(--ind-offset); } .tab .ind.top { top: var(--ind-offset); }
+.tab[aria-selected="true"] .ind { opacity: 1; }
+.tab .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dot); flex: none; }
+.tab .count { font-size: 11px; padding: 1px 7px; border-radius: var(--count-radius); background: var(--count-fill); color: var(--count-text); }
+.tab .closer { width: 18px; height: 18px; border: 0; border-radius: var(--closer-radius); background: transparent; color: var(--closer-text); display: grid; place-items: center; font-size: 12px; cursor: pointer; flex: none; }
+.tab .closer:hover { background: var(--closer-hover-fill); color: var(--tab-sel-text); }
+.add { flex: none; width: var(--tab-h); height: var(--tab-h); border: 0; border-radius: var(--add-radius); background: transparent; color: var(--closer-text); cursor: pointer; font-size: 16px; }
+.add:hover { background: var(--tab-hover-fill); }
+.panel { background: var(--p-fill); border-radius: var(--p-radius); display: grid; grid-template-rows: auto auto minmax(0,1fr); overflow: hidden; min-height: 0; box-shadow: inset 0 0 0 var(--p-border-w) var(--p-border); }
+.files { display: flex; gap: var(--ftab-gap); padding: var(--ftab-strip-pad); min-width: 0; overflow-x: auto; scrollbar-width: none; box-shadow: inset 0 calc(-1 * var(--strip-border-w)) 0 var(--strip-border); }
+.files .tab { height: var(--ftab-h); border-radius: var(--ftab-radius); font-size: var(--ftab-fs); }
+.files .tab[aria-selected="true"] { background: var(--toolbar-fill); }
+.toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--toolbar-fill); color: var(--t-muted); font-size: 12px; }
+.toolbar b { color: var(--t-text); font-weight: 600; font-size: 13px; }
+.toolbar code { font-family: var(--font-mono); color: var(--t-quiet); }
+.code { background: var(--toolbar-fill); padding: 6px 14px 14px; font: 12.5px/21px var(--font-mono); color: var(--t-muted); overflow: auto; white-space: pre; }
+.code .k { color: var(--syn-key); } .code .s { color: var(--syn-str); } .code .n { color: var(--syn-num); }
+
+.switcher { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 4px; background: var(--switch-bg); color: var(--switch-fg); border-radius: 999px; padding: 4px; box-shadow: 0 6px 24px rgba(0,0,0,.35); font: 500 12px var(--font-ui); z-index: 50; max-width: calc(100% - 32px); }
+.switcher button { border: 0; background: transparent; color: inherit; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 15px; }
+.switcher span { padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="stage">
+  <div class="win" id="win">
+    <div class="strip" id="ws" role="tablist" aria-label="Workspaces"></div>
+    <div class="strip" id="chats" role="tablist" aria-label="Chats"></div>
+    <div class="panel">
+      <div class="files" id="files" role="tablist" aria-label="Files"></div>
+      <div class="toolbar"><b>charter.toml</b><code>~/IdeaProjects/charter/charter.toml</code></div>
+      <div class="code" id="code"></div>
+    </div>
+  </div>
+  <aside class="keys"><h2 id="kname"></h2><p id="kblurb"></p><pre id="kjson"></pre><p class="note">The component reads only these keys. Everything not named falls back to the family default, which reads the global tokens.</p></aside>
+</div>
+<div class="switcher" role="toolbar" aria-label="Prototype themes">
+  <button id="prev" aria-label="Previous theme">‹</button><span id="vlabel"></span><button id="next" aria-label="Next theme">›</button>
+</div>
+
+<script>
+// Three themes, each only a set of part values (plus a few window values the floating-panel decision owns).
+const THEMES = [
+  { key: "A", name: "Purlis (the Figma design)", blurb: "Chip workspace tabs, content-sized file tabs rounded on top that join the toolbar, no hairlines, floating rounded panels.",
+    window: { behind: "#121215", inset: "8px", gap: "6px", radius: "12px" },
+    tokens: { text: "#e6e4ec", muted: "#a09eab", quiet: "#8a8896", panel: "#1d1d22", toolbar: "#202026", key: "#c3baf5", str: "#9fcfa8", num: "#e5c08a" },
+    parts: {
+      "tabs.layout.sizing": "content", "tabs.layout.dividers": "off", "tabs.strip.gap": 4, "tabs.strip.padding": "0 8 0 8", "tabs.strip.fill": "transparent", "tabs.strip.border-width": 0,
+      "tabs.tab.height": 29, "tabs.tab.padding-inline": 12, "tabs.tab.corner-radius": 8, "tabs.tab.font-size": 13, "tabs.tab.font-weight": 400,
+      "tabs.tab.fill": "transparent", "tabs.tab.text": "text.quiet", "tabs.tab.hover.fill": "surface.hover", "tabs.tab.hover.text": "text.primary",
+      "tabs.tab.selected.fill": "surface.card", "tabs.tab.selected.text": "text.primary", "tabs.tab.selected.font-weight": 500,
+      "tabs.indicator.height": 0, "tabs.count.corner-radius": "full", "tabs.count.fill": "surface.hover", "tabs.closer.corner-radius": 6,
+      "tabs.file.height": 31, "tabs.file.corner-radius": "8 8 0 0", "tabs.file.font-size": 12.5, "tabs.file.gap": 2,
+      "panel.corner-radius": 12, "panel.border-width": 0,
+    },
+    css: { "--tab-fill": "transparent", "--tab-text": "#8a8896", "--tab-hover-fill": "#2a2a31", "--tab-hover-text": "#e6e4ec", "--tab-sel-fill": "#24242a", "--tab-sel-text": "#e6e4ec",
+      "--tab-h": "29px", "--tab-pad-x": "12px", "--tab-radius": "8px", "--tab-fs": "13px", "--tab-fw": "400", "--tab-sel-fw": "500", "--tab-divider-w": "0px", "--tab-divider": "transparent", "--tab-max": "none",
+      "--strip-gap": "4px", "--strip-pad": "0 8px", "--strip-fill": "transparent", "--strip-radius": "0", "--strip-border-w": "0px", "--strip-border": "transparent",
+      "--ind-h": "0px", "--ind-fill": "transparent", "--ind-inset": "0", "--ind-offset": "0", "--ind-radius": "0",
+      "--count-radius": "999px", "--count-fill": "#2a2a31", "--count-text": "#8a8896", "--closer-radius": "6px", "--closer-text": "#6f6d7a", "--closer-hover-fill": "#2a2a31", "--add-radius": "8px", "--dot": "#a99cf0",
+      "--ftab-h": "31px", "--ftab-radius": "8px 8px 0 0", "--ftab-fs": "12.5px", "--ftab-gap": "2px", "--ftab-strip-pad": "6px 6px 0",
+      "--p-fill": "#1d1d22", "--p-radius": "12px", "--p-border-w": "0px", "--p-border": "transparent" },
+    sizing: "content" },
+  { key: "B", name: "Purlis Classic (today's look)", blurb: "Equal-share square cells split by hairlines, the selected cell filled edge to edge, flush panes.",
+    window: { behind: "#141417", inset: "0px", gap: "0px", radius: "0px" },
+    tokens: { text: "#e6e4ec", muted: "#a09eab", quiet: "#8a8896", panel: "#1d1d22", toolbar: "#1d1d22", key: "#c3baf5", str: "#9fcfa8", num: "#e5c08a" },
+    parts: {
+      "tabs.layout.sizing": "equal", "tabs.layout.dividers": "on", "tabs.strip.gap": 0, "tabs.strip.border-width": 1, "tabs.strip.border": "border.subtle",
+      "tabs.tab.height": 28, "tabs.tab.corner-radius": 0, "tabs.tab.max-width": 240, "tabs.tab.text": "text.muted",
+      "tabs.tab.selected.fill": "layer.selected", "tabs.tab.selected.text": "text.primary", "tabs.indicator.height": 0,
+      "tabs.file.corner-radius": 0, "panel.corner-radius": 0, "panel.border-width": 1,
+    },
+    css: { "--tab-fill": "transparent", "--tab-text": "#a09eab", "--tab-hover-fill": "#2a2a31", "--tab-hover-text": "#e6e4ec", "--tab-sel-fill": "#24242a", "--tab-sel-text": "#e6e4ec",
+      "--tab-h": "28px", "--tab-pad-x": "12px", "--tab-radius": "0", "--tab-fs": "13px", "--tab-fw": "400", "--tab-sel-fw": "400", "--tab-divider-w": "1px", "--tab-divider": "#2f2f37", "--tab-max": "240px",
+      "--strip-gap": "0px", "--strip-pad": "0", "--strip-fill": "#141417", "--strip-radius": "0", "--strip-border-w": "1px", "--strip-border": "#2f2f37",
+      "--ind-h": "0px", "--ind-fill": "transparent", "--ind-inset": "0", "--ind-offset": "0", "--ind-radius": "0",
+      "--count-radius": "999px", "--count-fill": "#2a2a31", "--count-text": "#c9c7d2", "--closer-radius": "0", "--closer-text": "#a09eab", "--closer-hover-fill": "#3a2326", "--add-radius": "0", "--dot": "#a99cf0",
+      "--ftab-h": "28px", "--ftab-radius": "0", "--ftab-fs": "13px", "--ftab-gap": "0px", "--ftab-strip-pad": "0",
+      "--p-fill": "#1d1d22", "--p-radius": "0", "--p-border-w": "1px", "--p-border": "#2f2f37" },
+    sizing: "equal" },
+  { key: "C", name: "Underline (a third-party theme)", blurb: "Text-only tabs with an accent underline indicator, pill counts, wide gaps, a light appearance.",
+    window: { behind: "#f3f1ec", inset: "0px", gap: "0px", radius: "0px" },
+    tokens: { text: "#1d1c22", muted: "#5c5a66", quiet: "#6b6976", panel: "#fcfbf8", toolbar: "#fcfbf8", key: "#4a3cae", str: "#2f6b3a", num: "#8a5a12" },
+    parts: {
+      "tabs.layout.sizing": "content", "tabs.layout.dividers": "off", "tabs.strip.gap": 18, "tabs.strip.padding": "0 16", "tabs.strip.border-width": 1, "tabs.strip.border": "border.subtle",
+      "tabs.tab.height": 36, "tabs.tab.padding-inline": 2, "tabs.tab.corner-radius": 0, "tabs.tab.fill": "transparent", "tabs.tab.text": "text.muted",
+      "tabs.tab.hover.fill": "transparent", "tabs.tab.selected.fill": "transparent", "tabs.tab.selected.text": "text.primary", "tabs.tab.selected.font-weight": 600,
+      "tabs.indicator.position": "bottom", "tabs.indicator.height": 2, "tabs.indicator.fill": "accent.base", "tabs.indicator.corner-radius": "full",
+      "tabs.count.corner-radius": "full", "tabs.count.fill": "accent.wash", "tabs.closer.corner-radius": "full",
+      "panel.corner-radius": 0, "panel.border-width": 0,
+    },
+    css: { "--tab-fill": "transparent", "--tab-text": "#5c5a66", "--tab-hover-fill": "transparent", "--tab-hover-text": "#1d1c22", "--tab-sel-fill": "transparent", "--tab-sel-text": "#1d1c22",
+      "--tab-h": "36px", "--tab-pad-x": "2px", "--tab-radius": "0", "--tab-fs": "13px", "--tab-fw": "400", "--tab-sel-fw": "600", "--tab-divider-w": "0px", "--tab-divider": "transparent", "--tab-max": "none",
+      "--strip-gap": "18px", "--strip-pad": "0 16px", "--strip-fill": "#fcfbf8", "--strip-radius": "0", "--strip-border-w": "1px", "--strip-border": "#e3e0d9",
+      "--ind-h": "2px", "--ind-fill": "#5b4bc4", "--ind-inset": "0", "--ind-offset": "0", "--ind-radius": "999px",
+      "--count-radius": "999px", "--count-fill": "rgba(91,75,196,.12)", "--count-text": "#4a3cae", "--closer-radius": "999px", "--closer-text": "#6b6976", "--closer-hover-fill": "#ebe8e2", "--add-radius": "999px", "--dot": "#5b4bc4",
+      "--ftab-h": "34px", "--ftab-radius": "0", "--ftab-fs": "12.5px", "--ftab-gap": "18px", "--ftab-strip-pad": "0 16px",
+      "--p-fill": "#fcfbf8", "--p-radius": "0", "--p-border-w": "0px", "--p-border": "transparent" },
+    sizing: "content" },
+];
+const WS = [{ name: "smart-ide", count: 3 }, { name: "charter", count: 0 }, { name: "easydmarc-umbrella", count: 1 }];
+const CHATS = ["build the browser program's ready tickets", "steward 9", "issues", "skills", "themes"];
+const FILES = ["charter.toml", "workspace.md", "persona.md", "theme.json"];
+const st = { t: 0, ws: 0, chat: 1, file: 0 };
+try { const v = localStorage.getItem("proto-tabs-theme"); if (v !== null) st.t = Math.max(0, Math.min(2, +v)); } catch (e) {}
+const $ = s => document.querySelector(s);
+
+function tab(label, sel, attrs, extra = "") {
+  return `<div class="tab" role="tab" tabindex="${sel ? 0 : -1}" aria-selected="${sel}" ${attrs}><span class="ind ${THEMES[st.t].parts["tabs.indicator.position"] === "top" ? "top" : "bottom"}"></span>${extra}<span class="label">${label}</span><button class="closer" aria-label="Close ${label}">×</button></div>`;
+}
+function render() {
+  const T = THEMES[st.t], w = $("#win");
+  Object.entries(T.css).forEach(([k, v]) => w.style.setProperty(k, v));
+  w.style.setProperty("--w-behind", T.window.behind); w.style.setProperty("--w-inset", T.window.inset); w.style.setProperty("--w-gap", T.window.gap); w.style.setProperty("--w-radius", T.window.radius);
+  w.style.setProperty("--t-text", T.tokens.text); w.style.setProperty("--t-muted", T.tokens.muted); w.style.setProperty("--t-quiet", T.tokens.quiet);
+  w.style.setProperty("--toolbar-fill", T.tokens.toolbar); w.style.setProperty("--syn-key", T.tokens.key); w.style.setProperty("--syn-str", T.tokens.str); w.style.setProperty("--syn-num", T.tokens.num);
+  ["#ws", "#chats", "#files"].forEach(s => { $(s).classList.toggle("equal", T.sizing === "equal"); $(s).classList.toggle("content", T.sizing !== "equal"); });
+  $("#ws").innerHTML = WS.map((x, i) => tab(x.name, i === st.ws, `data-ws="${i}"`, (i === st.ws ? '<span class="dot"></span>' : "")) .replace('<button class="closer"', x.count ? `<span class="count">${x.count}</span><button class="closer"` : '<button class="closer"')).join("") + '<button class="add" aria-label="New workspace">+</button>';
+  $("#chats").innerHTML = CHATS.map((c, i) => tab(c, i === st.chat, `data-chat="${i}"`)).join("") + '<button class="add" aria-label="New chat">+</button>';
+  $("#files").innerHTML = FILES.map((f, i) => tab(f, i === st.file, `data-file="${i}"`)).join("") + '<button class="add" aria-label="Open a file">+</button>';
+  $("#code").innerHTML = `<span class="k">[plane]</span>\n<span class="k">mode</span> = <span class="s">"pr-merge"</span>\n<span class="k">auto-save</span> = <span class="n">true</span>\n\n<span class="k">[theme]</span>\n<span class="k">use</span> = <span class="s">"purlis"</span>`;
+  $("#kname").textContent = T.name; $("#kblurb").textContent = T.blurb;
+  $("#kjson").textContent = JSON.stringify({ parts: T.parts }, null, 2);
+  $("#vlabel").textContent = `${T.key} · ${T.name}`;
+}
+function go(i) { st.t = (i + 3) % 3; try { localStorage.setItem("proto-tabs-theme", st.t); } catch (e) {} render(); }
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-ws],[data-chat],[data-file],#prev,#next"); if (!b) return;
+  if (e.target.closest(".closer")) return;
+  if (b.id === "prev") return go(st.t - 1); if (b.id === "next") return go(st.t + 1);
+  if (b.dataset.ws) st.ws = +b.dataset.ws; if (b.dataset.chat) st.chat = +b.dataset.chat; if (b.dataset.file) st.file = +b.dataset.file;
+  render();
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft" && !e.target.closest('[role="tab"]')) go(st.t - 1);
+  if (e.key === "ArrowRight" && !e.target.closest('[role="tab"]')) go(st.t + 1);
+});
+render();
+</script>
