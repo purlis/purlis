@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792506250661,
+  "lastUpdate": 1792506270996,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8152,6 +8152,42 @@ window.BENCHMARK_DATA = {
             "value": 640.5,
             "unit": "MB",
             "extra": "median of 6 samples: 617, 634.3, 635.8, 645.1, 645.6, 724.2 MB; window 388.2 MB, session host 253.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fc41eaad8325cabc189a7e8d88d5cd897b067a22",
+          "message": "Runners: the window's host relays its link to a pool's runner (#2679, 2/3) (#2746)\n\n* Runners: the window's host relays its link to a pool's runner (#2679)\n\n- Session protocol 1.33: `relay_to {runner}`, the window's alone, as a\n  link's first command; `link_down` gains `key_changed`, and a relayed\n  command to a runner whose key changed is refused `key_changed`.\n- The host serves each link it admits through `Routed`: a link whose first\n  command is `relay_to` is relayed to the runner this machine keeps under\n  that name; any other is the host's own, and refuses a later `relay_to`.\n- The window's session host relays through the pool's runner as\n  runners.json keeps it: docker exec into the container it pinned, checked\n  before every connection, linked with this desktop's key against the key\n  pinned at its pairing.\n- Docker's command is found on PATH or where its installers put it.\n\nRefs #2679\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Format the runner links' tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Docker is looked for where its installers put it first; a refusal reads as one sentence\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The pool end-to-end pairs with this desktop's pin, as keep now takes it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a link reads this desktop's key and never makes one; long lines wrapped\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A window that names itself first (1.31) is still relayed, and its name goes to the relay first\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A window names its link once; a name the relay refused is kept for the next relay_to; a subscribe hands it on\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T17:31:10+04:00",
+          "tree_id": "f578b1dcb61d24d47d88e4961b1e13f4ade2f397",
+          "url": "https://github.com/purlis/purlis/commit/fc41eaad8325cabc189a7e8d88d5cd897b067a22"
+        },
+        "date": 1792506267308,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1579.9,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1383.5, 1587.5, 1579.9 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 668.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 617.7, 658.4, 667.5, 669.6, 670, 766 MB; window 402.5 MB, session host 266 MB"
           }
         ]
       }
