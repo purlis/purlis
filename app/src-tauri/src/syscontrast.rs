@@ -77,9 +77,11 @@ fn read() -> Option<bool> {
 static HEARD: Heard = Heard::new();
 
 /// The changes the portal's `contrast` setting is heard by: its `SettingChanged` signal for the
-/// appearance settings.
+/// appearance settings, sent by the portal itself. The bus delivers only a signal from the
+/// connection that owns the portal's name, so no other client on the session bus sets it.
 #[cfg(target_os = "linux")]
-const CHANGED: &str = "type='signal',interface='org.freedesktop.portal.Settings',\
+const CHANGED: &str = "type='signal',sender='org.freedesktop.portal.Desktop',\
+     interface='org.freedesktop.portal.Settings',\
      member='SettingChanged',path='/org/freedesktop/portal/desktop',\
      arg0='org.freedesktop.appearance'";
 

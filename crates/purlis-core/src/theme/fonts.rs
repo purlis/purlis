@@ -497,8 +497,10 @@ pub struct Measured {
 /// as it was opened.
 type Digests = HashMap<(String, Stamp), (String, u64)>;
 
-/// How long before a file is read its change time is, at least, for its digest to be kept.
-pub const SETTLED: std::time::Duration = std::time::Duration::from_secs(1);
+/// How long before a file is read its change time is, at least, for its digest to be kept: two
+/// seconds, the coarsest timestamp a file system purlis reads keeps (FAT's), so a later write
+/// always has a later change time than the one kept.
+pub const SETTLED: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// The most files one [`Measured`] keeps: every file a project's contribution lists, and the
 /// faces of the themes read with it.
