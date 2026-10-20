@@ -743,6 +743,20 @@ fn a_sweep_adopts_no_folder_whose_owner_record_is_a_link() {
 }
 
 #[test]
+fn a_chat_has_drafts_only_while_its_folder_holds_a_theme_folder() {
+    let places = Places::new();
+    let (drafting, none) = (chat(), chat());
+    assert!(!drafts::has_drafts(&places.plane, &drafting));
+    places.start(Some("alpha"), &drafting, "dusk");
+    assert!(drafts::has_drafts(&places.plane, &drafting));
+    assert!(!drafts::has_drafts(&places.plane, &none));
+    assert!(!drafts::has_drafts(&places.plane, "not-a-chat"));
+    let draft = places.drafts(Some("alpha"), &[&drafting]).remove(0);
+    drafts::revert(&places.plane, &draft).unwrap();
+    assert!(!drafts::has_drafts(&places.plane, &drafting));
+}
+
+#[test]
 fn a_start_record_that_is_not_a_plain_file_counts_as_changed() {
     let places = Places::new();
     let id = chat();

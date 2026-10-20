@@ -7184,7 +7184,7 @@ export const PlaneView = memo(function PlaneView({
    * was refused and nothing has happened yet. The palette reads this answer to say what a row
    * did, and "nothing to say" is the right thing to say about a question still on screen.
    */
-  const askToEnd = useCallback(
+  const askToEndNow = useCallback(
     async (offer: Offer, fromALink: boolean): Promise<Ran> => {
       if (offer.available && endsAChat(offer.does)) {
         const ending = chatsEndedBy(offer.does, now.current, askedByNow);
@@ -7286,6 +7286,26 @@ export const PlaneView = memo(function PlaneView({
     },
     [askedByNow, carryOut, plane, setEndingChat],
   );
+  /** How many closes are being asked about and have no question drawn yet (#2761). */
+  const [closesLoading, setClosesLoading] = useState(0);
+  /**
+   * **A close counts as a question up from its first step** (#2761): the window is told at once,
+   * before the core is asked what the close would end, so a link's close that comes meanwhile is
+   * not asked over it.
+   */
+  const askToEnd = useCallback(
+    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
+      if (!offer.available || !endsAChat(offer.does)) return askToEndNow(offer, fromALink);
+      onAsking?.(plane, true);
+      setClosesLoading((was) => was + 1);
+      try {
+        return await askToEndNow(offer, fromALink);
+      } finally {
+        setClosesLoading((was) => was - 1);
+      }
+    },
+    [askToEndNow, onAsking, plane],
+  );
   const run = useCallback((offer: Offer) => askToEnd(offer, false), [askToEnd]);
 
   /**
@@ -7295,7 +7315,7 @@ export const PlaneView = memo(function PlaneView({
    * (`closeHanded.ts`), so a link never changes what the person is answering; nor for chats no
    * tab here holds alone, which the person closes here themselves. Either is said here.
    */
-  const questionUp = endingChat !== undefined || keptOnClose.length > 0;
+  const questionUp = endingChat !== undefined || keptOnClose.length > 0 || closesLoading > 0;
   useEffect(() => {
     if (onAsking === undefined) return;
     onAsking(plane, questionUp);

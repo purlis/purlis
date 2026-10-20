@@ -56,8 +56,9 @@ export function useCloseHanded(
 
 /**
  * **Whether a question is on screen anywhere in this window**: a close or a "Who draws it?" that
- * a project's view holds (`held`, every project's), or any other alert dialog drawn.
+ * a project's view holds or is asking about (`held`, every project's), or any other dialog drawn:
+ * an alert dialog, or any dialog, such as an answer, an approval, a start or the palette.
  */
 export function aQuestionIsUp(held: ReadonlySet<PlaneId>): boolean {
-  return held.size > 0 || document.querySelector('[role="alertdialog"]') !== null;
+  return held.size > 0 || document.querySelector('[role="alertdialog"], [role="dialog"]') !== null;
 }

@@ -749,6 +749,28 @@ pub fn changed(plane: &Path, draft: &Draft) -> bool {
     real_now(plane, &draft.kept_to, &draft.folder).is_none_or(|now| now != recorded)
 }
 
+/// **Whether `chat` has a theme draft** in the plane at `plane` (#2761): its drafts folder holds a
+/// folder named as a theme folder is. Only that is looked at, never what the draft says, so the
+/// answer costs the same whatever the draft holds. A link on the way, or at the chat's folder,
+/// counts as none.
+pub fn has_drafts(plane: &Path, chat: &str) -> bool {
+    let Some(folder) = folder_of(plane, chat) else {
+        return false;
+    };
+    let (root, _) = root_of(plane);
+    if crate::contain::no_link_on_the_way(&root, &folder).is_err()
+        || !std::fs::symlink_metadata(&folder).is_ok_and(|meta| meta.is_dir())
+    {
+        return false;
+    }
+    std::fs::read_dir(&folder).is_ok_and(|listed| {
+        listed.filter_map(Result::ok).take(MOST_CHATS).any(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_dir())
+                && entry.file_name().to_str().is_some_and(super::is_folder_id)
+        })
+    })
+}
+
 /// The most chats' drafts folders one [`sweep`] looks at.
 pub const MOST_SWEPT: usize = 256;
 

@@ -259,19 +259,12 @@ pub struct CloseHanded {
     pub sessions: Vec<u32>,
 }
 
-/// The chats among `chats` that have a theme draft, by session: each read where it works.
-fn drafted_among(config: &Path, plane: &Path, chats: &[Drafting]) -> Vec<u32> {
+/// The chats among `chats` that have a theme draft, by session: only whether one is there, never
+/// what it says ([`drafts::has_drafts`]).
+fn drafted_among(plane: &Path, chats: &[Drafting]) -> Vec<u32> {
     chats
         .iter()
-        .filter(|chat| {
-            !drafts_of(
-                config,
-                plane,
-                chat.workspace.as_deref(),
-                std::slice::from_ref(*chat),
-            )
-            .is_empty()
-        })
+        .filter(|chat| drafts::has_drafts(plane, &chat.id))
         .map(|chat| chat.session)
         .collect()
 }
@@ -307,13 +300,9 @@ pub async fn hand_drafts_close_to_the_window(
         .filter(|one| asked.contains(&one.session))
         .collect();
     let handed: Vec<u32> = ending.iter().map(|one| one.session).collect();
-    let Ok(config) = crate::extensions::config_root() else {
-        return Ok(());
-    };
-    let drafted =
-        tauri::async_runtime::spawn_blocking(move || drafted_among(&config, &root, &ending))
-            .await
-            .unwrap_or_default();
+    let drafted = tauri::async_runtime::spawn_blocking(move || drafted_among(&root, &ending))
+        .await
+        .unwrap_or_default();
     if drafted.is_empty() {
         return Ok(());
     }
@@ -725,10 +714,10 @@ mod tests {
             drafts::start(Some(&config), place, &one.id, "dusk").unwrap();
         }
         assert_eq!(
-            drafted_among(&config, &plane, &[drafting, root, none.clone()]),
+            drafted_among(&plane, &[drafting, root, none.clone()]),
             [3, 4]
         );
-        assert_eq!(drafted_among(&config, &plane, &[none]), Vec::<u32>::new());
+        assert_eq!(drafted_among(&plane, &[none]), Vec::<u32>::new());
     }
 
     #[test]

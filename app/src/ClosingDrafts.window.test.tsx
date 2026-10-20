@@ -87,6 +87,8 @@ const OTHER = "/home/dev/other";
 function core(
   folders: readonly string[],
   both = false,
+  /** Held until it settles: what the core answers about the drafts waits on it. */
+  drafts?: Promise<void>,
 ): { asked: { cmd: string; args: unknown }[] } {
   const asked: { cmd: string; args: unknown }[] = [];
   let opened = 0;
@@ -109,10 +111,13 @@ function core(
       if (cmd === "start_chat") return { session: ++opened };
       if (cmd === "smart_close_offer") return { available: false, why: null, close_first: true };
       if (cmd === "smart_closing") return [];
-      if (cmd === "theme_drafts_of_chat")
-        return (args as { session: number }).session === 1
-          ? folders.map((folder) => draft(folder, 1))
-          : [];
+      if (cmd === "theme_drafts_of_chat") {
+        const these =
+          (args as { session: number }).session === 1
+            ? folders.map((folder) => draft(folder, 1))
+            : [];
+        return drafts === undefined ? these : drafts.then(() => these);
+      }
       if (cmd === "theme_draft_keep") return `${(args as { folder: string }).folder} is kept`;
       return null;
     },
@@ -207,6 +212,54 @@ describe("a link's close of a chat with theme drafts", () => {
     const asking = await screen.findByRole("alertdialog");
     const raised = asked(log, "show_window_holding").length;
     await act(() => emit(CLOSE_HANDED, { plane: OTHER, sessions: [1] }));
+    await act(async () => {});
+    expect(screen.getAllByRole("alertdialog")).toEqual([asking]);
+    expect(asking.textContent).not.toContain(FROM_A_LINK_SAYS);
+    expect(asked(log, "show_window_holding")).toHaveLength(raised);
+  });
+
+  it("never opens over a dialog up in another project, nor brings its own forward", async () => {
+    const { asked: log } = core(["dusk"], true);
+    render(<App />);
+    await openAChat();
+    // The start of a new chat: a dialog, not an alert dialog.
+    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+    const starting = await screen.findByRole("dialog");
+    const raised = asked(log, "show_window_holding").length;
+    await act(() => emit(CLOSE_HANDED, { plane: OTHER, sessions: [1] }));
+    await act(async () => {});
+    expect(screen.getByRole("dialog")).toBe(starting);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(asked(log, "show_window_holding")).toHaveLength(raised);
+  });
+
+  it("never opens over a dialog up in the same project", async () => {
+    const { asked: log } = core(["dusk"]);
+    render(<App />);
+    await openAChat();
+    await userEvent.click(screen.getByRole("button", { name: "New tab" }));
+    const starting = await screen.findByRole("dialog");
+    const raised = asked(log, "show_window_holding").length;
+    await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1] }));
+    await act(async () => {});
+    expect(screen.getByRole("dialog")).toBe(starting);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(asked(log, "show_window_holding")).toHaveLength(raised);
+  });
+
+  it("is not asked while the person's own close is still being asked about", async () => {
+    let answer = () => {};
+    const held = new Promise<void>((resolve) => (answer = resolve));
+    const { asked: log } = core(["dusk"], false, held);
+    render(<App />);
+    await openAChat();
+    await userEvent.click(screen.getByRole("button", { name: "End chat steward 1" }));
+    // The person's close is asking the core what it ends: no question is drawn yet.
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    const raised = asked(log, "show_window_holding").length;
+    await act(() => emit(CLOSE_HANDED, { plane: PLANE, sessions: [1] }));
+    await act(async () => answer());
+    const asking = await screen.findByRole("alertdialog", { name: "End chat steward 1?" });
     await act(async () => {});
     expect(screen.getAllByRole("alertdialog")).toEqual([asking]);
     expect(asking.textContent).not.toContain(FROM_A_LINK_SAYS);
