@@ -1026,6 +1026,10 @@ fn docker_looks_for_a_credential_helper_where_docker_itself_is_found() {
     );
     stand_in::program(linked.path(), "docker", "#!/bin/sh\n");
     std::os::unix::fs::symlink(linked.path().join("docker"), found.path().join("docker")).unwrap();
+    // Each installer's folder is there as itself: its `bin` is looked in.
+    for holder in [".docker", ".orbstack", ".rd"] {
+        std::fs::create_dir_all(home.path().join(holder)).unwrap();
+    }
     let docker = Docker(found.path().join("docker"));
     let searched =
         docker.helpers_searched(Some("relative:/usr/bin:/opt/tools/bin"), Some(home.path()));
@@ -1088,4 +1092,58 @@ fn an_image_this_machine_does_not_hold_is_pulled_by_its_digest_before_it_is_read
     );
     assert!(fake.docker().declared(&image()).is_ok());
     assert!(!fake.file("log").contains("pull"), "{}", fake.file("log"));
+}
+
+/// A `docker`, or a helper's folder, in the home is taken only where the installer's folder
+/// that holds it is there as itself (#2752): not a link to somewhere else, and not another
+/// spelling of its name, which a chat could have made before its sandbox held the name.
+#[test]
+fn a_home_candidate_is_taken_only_from_the_installers_own_folder() {
+    // As on a machine where no installer put one in its own place.
+    let installed: Option<std::path::PathBuf> = None;
+    let found = |home: &std::path::Path| {
+        Docker::found_in(&[], Some("relative:"), Some(home))
+            .ok()
+            .map(|docker| docker.0)
+    };
+    // The installer's own folder, as itself: taken.
+    let own = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(own.path().join(".orbstack/bin")).unwrap();
+    stand_in::program(&own.path().join(".orbstack/bin"), "docker", "#!/bin/sh\n");
+    assert!(its_own_in(own.path(), ".orbstack/bin/docker"));
+    assert_eq!(
+        found(own.path()),
+        Some(
+            installed
+                .clone()
+                .unwrap_or_else(|| own.path().join(".orbstack/bin/docker"))
+        )
+    );
+    // A link in its place, to a folder holding a `docker`: passed over.
+    let (linked, elsewhere) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::create_dir_all(elsewhere.path().join("bin")).unwrap();
+    stand_in::program(&elsewhere.path().join("bin"), "docker", "#!/bin/sh\n");
+    std::os::unix::fs::symlink(elsewhere.path(), linked.path().join(".orbstack")).unwrap();
+    // Another spelling of its name, which a disk that folds case opens as the same folder.
+    let spelled = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(spelled.path().join(".ORBSTACK/bin")).unwrap();
+    stand_in::program(
+        &spelled.path().join(".ORBSTACK/bin"),
+        "docker",
+        "#!/bin/sh\n",
+    );
+    for home in [linked.path(), spelled.path()] {
+        assert!(
+            !its_own_in(home, ".orbstack/bin/docker"),
+            "{}",
+            home.display()
+        );
+        assert_eq!(found(home), installed, "{}", home.display());
+        let searched = Docker("/nonexistent/docker".into()).helpers_searched(None, Some(home));
+        assert!(
+            !searched.contains(&home.join(".orbstack/bin")),
+            "{}: {searched:?}",
+            home.display()
+        );
+    }
 }

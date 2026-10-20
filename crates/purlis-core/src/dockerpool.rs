@@ -724,6 +724,20 @@ const DOCKER_INSTALLED: &[&str] = &[
 /// and its credential helpers: never a chat's to write (#2752, [`crate::sandbox`]).
 pub const DOCKER_HOME_FOLDERS: [&str; 3] = [".docker/bin", ".orbstack/bin", ".rd/bin"];
 
+/// **Whether `at`, a path in `home`, is in the installer's own folder** (#2752): the folder that
+/// holds it (`.docker`, `.orbstack`, `.rd`) is there under exactly that name, itself, and not
+/// a link to somewhere else or another spelling of its name, which a chat could have made or
+/// moved into its place before the sandbox held it. Anything else is passed over.
+pub fn its_own_in(home: &std::path::Path, at: &str) -> bool {
+    let Some(holder) = std::path::Path::new(at).components().next() else {
+        return false;
+    };
+    let (Ok(real_home), Ok(found)) = (home.canonicalize(), home.join(holder).canonicalize()) else {
+        return false;
+    };
+    found.as_os_str() == real_home.join(holder).as_os_str()
+}
+
 /// Where Docker Desktop, OrbStack and Rancher Desktop link it in the home folder.
 const DOCKER_IN_HOME: &[&str] = &[
     ".docker/bin/docker",
@@ -740,10 +754,22 @@ impl Docker {
         path: Option<&str>,
         home: Option<&std::path::Path>,
     ) -> Result<Docker, Refused> {
-        let installed = DOCKER_INSTALLED.iter().map(std::path::PathBuf::from);
-        let in_home = home
-            .into_iter()
-            .flat_map(|home| DOCKER_IN_HOME.iter().map(move |at| home.join(at)));
+        Docker::found_in(DOCKER_INSTALLED, path, home)
+    }
+
+    /// [`Docker::on_this_machine`], with `installed` the places installers put it.
+    fn found_in(
+        installed: &[&str],
+        path: Option<&str>,
+        home: Option<&std::path::Path>,
+    ) -> Result<Docker, Refused> {
+        let installed = installed.iter().map(std::path::PathBuf::from);
+        let in_home = home.into_iter().flat_map(|home| {
+            DOCKER_IN_HOME
+                .iter()
+                .filter(move |at| its_own_in(home, at))
+                .map(move |at| home.join(at))
+        });
         let on_path = path
             .into_iter()
             .flat_map(|path| path.split(':'))
@@ -787,6 +813,7 @@ impl Docker {
         let in_home = home.into_iter().flat_map(|home| {
             DOCKER_IN_HOME
                 .iter()
+                .filter(move |at| its_own_in(home, at))
                 .filter_map(move |at| folder_of(&home.join(at)))
         });
         let on_path = path

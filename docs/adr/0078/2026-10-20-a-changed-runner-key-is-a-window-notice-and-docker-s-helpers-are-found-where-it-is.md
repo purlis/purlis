@@ -2,7 +2,7 @@
 
 This note adds to *The desktop's host relays a window to a pool's runner* (#2679) and changes
 none of its rulings. Each item is **decided in implementation, to be confirmed** (D-2752-1 to
-D-2752-3).
+D-2752-3, D-2752-9).
 
 1. **A relayed link's `key_changed` is said once for the project, in the window** (#2752). The
    window's link hears `link_down` with `key_changed` and tells the window the project's chats
@@ -23,3 +23,8 @@ D-2752-3).
    in, so no folder a chat could write comes before Docker's own. *Rejected:* reading the
    helper's name from Docker's settings and looking it up purlis's own way, which would read
    Docker's configuration where the rest of purlis leaves it to `docker`. *D-2752-3.*
+4. **A place in the home is taken only from the installer's own folder.** A `docker`, or a
+   helpers' folder, under `~/.docker`, `~/.orbstack` or `~/.rd` is taken only where that folder
+   is there as itself: its real path is the home's real path and that very name, byte for byte.
+   A link in its place, or another spelling of its name on a disk that folds case, is passed
+   over, whichever harness's sandbox held it. *D-2752-9.*
