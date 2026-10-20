@@ -1010,3 +1010,61 @@ fn docker_is_found_where_its_installers_put_it_before_the_path() {
         installed.unwrap_or_else(|| home.path().join(".orbstack/bin/docker"))
     );
 }
+
+/// Docker runs a registry's credential helper (`docker-credential-desktop`, `-osxkeychain`) by
+/// its name on its own `PATH`, and a window opened from the Finder has a `PATH` that names none
+/// of the folders Docker's installers put one in (#2752). So `docker` is run with the helpers
+/// looked for where `docker` itself is: the folder it was found in and the one its link leads
+/// to, then each place Docker's installers put it, then the window's `PATH`, of its absolute
+/// folders alone.
+#[test]
+fn docker_looks_for_a_credential_helper_where_docker_itself_is_found() {
+    let (found, linked, home) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    stand_in::program(linked.path(), "docker", "#!/bin/sh\n");
+    std::os::unix::fs::symlink(linked.path().join("docker"), found.path().join("docker")).unwrap();
+    let docker = Docker(found.path().join("docker"));
+    let searched =
+        docker.helpers_searched(Some("relative:/usr/bin:/opt/tools/bin"), Some(home.path()));
+    let real = |path: &std::path::Path| path.canonicalize().unwrap();
+    let mut expected = vec![found.path().to_path_buf(), real(linked.path())];
+    expected.extend(
+        DOCKER_INSTALLED
+            .iter()
+            .map(|at| std::path::Path::new(at).parent().unwrap().to_path_buf()),
+    );
+    expected.extend(
+        DOCKER_IN_HOME
+            .iter()
+            .map(|at| home.path().join(at).parent().unwrap().to_path_buf()),
+    );
+    // `/usr/bin` once, where an installer puts `docker`; the relative folder not at all.
+    expected.push("/opt/tools/bin".into());
+    assert_eq!(searched, expected);
+}
+
+/// A helper beside `docker` answers, whatever `PATH` the window was opened with (#2752).
+#[test]
+fn a_credential_helper_beside_docker_is_run_from_a_window_opened_from_the_finder() {
+    let dir = tempfile::tempdir().unwrap();
+    stand_in::program(
+        dir.path(),
+        "docker-credential-stand-in",
+        "#!/bin/sh\necho '[{\"Config\":{\"User\":\"10001:10001\",\"Env\":[\"HOME=/home/purlis\"]}}]'\n",
+    );
+    // As Docker does, by its name alone.
+    stand_in::program(
+        dir.path(),
+        "docker",
+        "#!/bin/sh\nexec docker-credential-stand-in\n",
+    );
+    assert_eq!(
+        Docker(dir.path().join("docker"))
+            .declared(&image())
+            .unwrap(),
+        (User::new(10001, 10001).unwrap(), "/home/purlis".to_owned())
+    );
+}

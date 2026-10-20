@@ -29,6 +29,10 @@ pub enum Reconnection {
     /// The link is back, or its view drew again, or the window cannot tell any more: it is
     /// drawn as it comes.
     Reconnected,
+    /// The runner answered with another key than the one pinned at its pairing (#2752): its
+    /// host sends it nothing and does not link to it again until it is removed and added anew,
+    /// so its chats stay dimmed and the window says why in a Notice of its own.
+    KeyChanged,
 }
 
 /// A plane's chats that are reconnecting, or reconnected, as their panes show it.

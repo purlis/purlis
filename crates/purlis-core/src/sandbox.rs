@@ -1257,6 +1257,20 @@ impl Denied {
             access: Access::Write,
             named: None,
         });
+        // …and where Docker Desktop, OrbStack and Rancher Desktop link `docker` and its
+        // credential helpers in the home folder (#2752), which purlis runs outside any sandbox
+        // for a Docker pool ([`crate::dockerpool::Docker::on_this_machine`]). Those three
+        // folders of the home alone: a project's own `.docker` stays the chat's.
+        if let Some(home) = &machine.home {
+            for folder in crate::dockerpool::DOCKER_HOME_FOLDERS {
+                paths.push(Denial {
+                    class: Class::LaterCode,
+                    path: home.join(folder),
+                    access: Access::Write,
+                    named: None,
+                });
+            }
+        }
         // …and what a protected config points at elsewhere, resolved now (V73d).
         let xdg_config = machine
             .env

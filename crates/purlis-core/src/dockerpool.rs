@@ -720,6 +720,10 @@ const DOCKER_INSTALLED: &[&str] = &[
     "/usr/bin/docker",
 ];
 
+/// The folders of the home where Docker Desktop, OrbStack and Rancher Desktop link `docker`
+/// and its credential helpers: never a chat's to write (#2752, [`crate::sandbox`]).
+pub const DOCKER_HOME_FOLDERS: [&str; 3] = [".docker/bin", ".orbstack/bin", ".rd/bin"];
+
 /// Where Docker Desktop, OrbStack and Rancher Desktop link it in the home folder.
 const DOCKER_IN_HOME: &[&str] = &[
     ".docker/bin/docker",
@@ -760,12 +764,64 @@ impl Docker {
             })
     }
 
+    /// **The folders `docker` looks for a registry's credential helper in** (#2752), in order:
+    /// Docker runs one (`docker-credential-desktop`, `-osxkeychain`) by its name on its own
+    /// `PATH`, and a window started from the Finder has a `PATH` that names none of the places
+    /// Docker's installers put one. So it is looked for where `docker` itself is found
+    /// ([`Docker::on_this_machine`]): the folder this `docker` is in and the one its link leads
+    /// to, where each installer puts its helpers beside it; then each place Docker's installers
+    /// put `docker` (`DOCKER_INSTALLED`, then under `home`); then `path`, of its absolute folders
+    /// alone. Each folder once, where it first comes.
+    pub fn helpers_searched(
+        &self,
+        path: Option<&str>,
+        home: Option<&std::path::Path>,
+    ) -> Vec<std::path::PathBuf> {
+        use std::path::{Path, PathBuf};
+        let folder_of = |file: &Path| file.parent().map(Path::to_path_buf);
+        let own = folder_of(&self.0);
+        let linked = self.0.canonicalize().ok().as_deref().and_then(folder_of);
+        let installed = DOCKER_INSTALLED
+            .iter()
+            .filter_map(|at| folder_of(Path::new(at)));
+        let in_home = home.into_iter().flat_map(|home| {
+            DOCKER_IN_HOME
+                .iter()
+                .filter_map(move |at| folder_of(&home.join(at)))
+        });
+        let on_path = path
+            .into_iter()
+            .flat_map(|path| path.split(':'))
+            .filter(|dir| dir.starts_with('/'))
+            .map(PathBuf::from);
+        let mut searched: Vec<PathBuf> = Vec::new();
+        for folder in own
+            .into_iter()
+            .chain(linked)
+            .chain(installed)
+            .chain(in_home)
+            .chain(on_path)
+        {
+            if !searched.contains(&folder) {
+                searched.push(folder);
+            }
+        }
+        searched
+    }
+
     /// Runs `docker` with `args`, handing it `input`, and answers what it printed, read up to
     /// `most` bytes: one that prints more is ended and refused. What it says on standard error
     /// is kept only to be shown, up to [`MOST_SAID`], and never read to decide anything.
     fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
         use std::io::{Read, Write};
         let mut command = std::process::Command::new(&self.0);
+        // Its credential helpers are found where it is (#2752), whatever `PATH` the window has.
+        let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
+        let searched =
+            self.helpers_searched(crate::envvar::var("PATH").as_deref(), home.as_deref());
+        if let Ok(joined) = std::env::join_paths(searched) {
+            command.env("PATH", joined);
+        }
         command
             .args(args)
             .stdin(if input.is_some() {

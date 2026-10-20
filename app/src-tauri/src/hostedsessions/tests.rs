@@ -2145,6 +2145,39 @@ fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
     assert!(hosted.sessions.reconnecting().is_empty());
 }
 
+/// A runner that answered the relay with another key than the one pinned for it (#2752): its
+/// chats are dimmed as for any outage, and the window is told the key changed, so it says why.
+#[test]
+fn a_runner_whose_key_changed_leaves_its_chats_dimmed_and_says_so() {
+    let runs = StandIns::default();
+    let host = Between::new(
+        Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            runs.clone(),
+        ),
+        false,
+    );
+    let pushes = host.pushes.clone();
+    let hosted = hosted_in(host, runs);
+    let told = told_of_reconnecting(&hosted);
+    let (id, _seen) = a_drawn_chat(&hosted);
+
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "the runner answered with another key".into(),
+            key_changed: true,
+        })
+        .unwrap();
+    until("the window is told the runner's key changed", || {
+        *told.lock().unwrap()
+            == [
+                (vec![id], Reconnection::Reconnecting),
+                (vec![id], Reconnection::KeyChanged),
+            ]
+    });
+    assert_eq!(hosted.sessions.reconnecting(), [id]);
+}
+
 /// The window's link to its own host, which relays it to a runner whose host composes each
 /// harness chat in a confinement of its own (#2446): the window's sessions there, the runner's
 /// confinements, and what the runner ran.
