@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792471181754,
+  "lastUpdate": 1792474253961,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18480,6 +18480,48 @@ window.BENCHMARK_DATA = {
             "value": 105.403195,
             "unit": "ms",
             "extra": "median of 5 runs: 103.716, 104.783, 105.403, 105.985, 106.608 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "41cd2d82247f437182cec3188c76811dd9a560ae",
+          "message": "fix: a fixture copy no longer decides the workspace strip's order (#2737)\n\nA plane's first open pins its most recently active workspaces, newest\nfirst, and the strip draws them in that order. Recency is read off file\nmodification times, and a scenario run's fixture copy carried the times\nthe copy was written at, in the order the filesystem listed the tree.\nOn a runner that copied beta after alpha, the strip drew beta, alpha.\n\ncopyFixturePlane now gives the whole copy one modification time, so no\nworkspace in it reads as more recently active than another, and the\ncore orders equally active workspaces by name explicitly rather than by\nthe listing it was handed.\n\nCloses #2715\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T09:29:05+04:00",
+          "tree_id": "382874ba78639a0c0641077ec020282509968452",
+          "url": "https://github.com/purlis/purlis/commit/41cd2d82247f437182cec3188c76811dd9a560ae"
+        },
+        "date": 1792474252223,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.278926,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.274, 0.275, 0.279, 0.283, 0.284 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.578404,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.449, 16.516, 16.578, 16.596, 16.677 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.625804,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.213, 101.456, 101.626, 101.680, 101.976 ms"
           }
         ]
       }
