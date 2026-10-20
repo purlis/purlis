@@ -970,6 +970,10 @@ impl purlis_host::Confining for HeldByServe {
     fn now(&self) -> purlis_host::protocol::session::ReachNow {
         self.0.now()
     }
+
+    fn give_back(&self, port: u16) -> Result<(), String> {
+        self.0.give_back_port(port)
+    }
 }
 
 /// What a command may do on a project that is read-only to this purlis (FR-24).

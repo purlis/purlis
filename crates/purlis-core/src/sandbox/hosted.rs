@@ -338,6 +338,12 @@ impl Hosted {
         })
     }
 
+    /// **`port` of this machine, withdrawn because no window was left to withdraw it, is
+    /// carried again as the plan gave it** (#2625): its window took the chat back.
+    pub fn give_back_port(&self, port: u16) -> Result<(), String> {
+        self.confinement.give_back_port(port)
+    }
+
     /// What its board of live asks holds now.
     pub fn now(&self) -> ReachNow {
         self.board

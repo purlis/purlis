@@ -788,6 +788,12 @@ impl Proxy {
         self.allowed.reach.withdraw(port);
     }
 
+    /// **`port` of this machine, withdrawn, is carried again as it was given** (#2625,
+    /// [`Reach::give_back`]).
+    pub fn give_back_port(&self, port: u16) {
+        self.allowed.reach.give_back(port);
+    }
+
     /// The loopback port its HTTP proxy listens on.
     pub fn port(&self) -> u16 {
         self.http.port()

@@ -295,6 +295,8 @@ pub struct Confinement {
     /// What the window allowed the chat it was composed for alone, as the host said (#2590).
     pub alone: Vec<u16>,
     pub changes: Vec<ReachChange>,
+    /// Each port the host gave back to it, in order (#2625).
+    pub given_back: Vec<u16>,
     pub ended: bool,
     tell: Tell,
     askable: Askable,
@@ -450,6 +452,7 @@ impl crate::confining::Confine for StandInConfines {
             planned: confining.planned,
             alone: confining.alone.to_vec(),
             changes: Vec::new(),
+            given_back: Vec::new(),
             ended: false,
             tell,
             askable,
@@ -488,6 +491,14 @@ impl Confining for StandInConfining {
             ReachChange::Allow { host, .. } => vec![format!("{host}:443")],
             _ => Vec::new(),
         })
+    }
+
+    fn give_back(&self, port: u16) -> Result<(), String> {
+        if let Some(why) = self.all.2.held.lock().unwrap().refusing_changes.clone() {
+            return Err(why);
+        }
+        self.all.with(&self.id, |one| one.given_back.push(port));
+        Ok(())
     }
 
     fn now(&self) -> ReachNow {

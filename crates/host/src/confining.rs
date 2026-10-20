@@ -97,6 +97,10 @@ pub trait Confining: Send + Sync + 'static {
     fn change(&self, change: &ReachChange) -> Result<Vec<String>, String>;
     /// What its board of live asks holds now.
     fn now(&self) -> ReachNow;
+    /// `port` of the machine, which the host withdrew because no window was left to withdraw
+    /// it, is carried again as its plan gave it (#2625): its window took the chat back. Never a
+    /// port the window withdrew.
+    fn give_back(&self, port: u16) -> Result<(), String>;
 }
 
 /// A host whose binary starts no confinement: every one is refused with a sentence.
