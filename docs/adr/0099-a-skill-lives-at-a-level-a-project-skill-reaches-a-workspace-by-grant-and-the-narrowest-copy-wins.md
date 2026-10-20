@@ -127,7 +127,3 @@ purlis types it for the person, rather than restarting, is #2770's to decide.
   workspace folder may not take.
 - The mirror of the plane's `.claude/skills` into clones retires with the migration (#2784), which
   moves those skills to project skills granted `"all"`.
-
-The amendments to this decision are files of their own in [`0099/`](0099/), one per amendment,
-named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a section added to
-this record, so two pull requests that amend it do not touch the same lines (#1982).

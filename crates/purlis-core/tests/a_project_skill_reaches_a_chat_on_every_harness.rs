@@ -195,7 +195,7 @@ fn a_codex_chat_at_the_plane_root_is_briefed_on_the_project_skill_from_its_folde
 fn with_the_flag_off_every_harness_is_armed_as_before_with_the_built_in_skills_alone() {
     let here = here();
     let (claude, _) = armed(Harness::ClaudeCode, kit(&here, None), &here.plane);
-    assert_eq!(plugin_dirs(&claude), [here.plugin.clone()]);
+    assert_eq!(plugin_dirs(&claude), std::slice::from_ref(&here.plugin));
 
     let (_, opencode) = armed(Harness::Opencode, kit(&here, None), &here.plane);
     let config: serde_json::Value =
@@ -225,7 +225,7 @@ fn a_chat_in_a_workspace_the_skill_was_not_granted_to_gets_the_built_in_skills_a
     let cwd = here.plane.join("workspaces/smart-ide");
 
     let (claude, _) = armed(Harness::ClaudeCode, kit(&here, in_a_workspace), &cwd);
-    assert_eq!(plugin_dirs(&claude), [here.plugin.clone()]);
+    assert_eq!(plugin_dirs(&claude), std::slice::from_ref(&here.plugin));
     let (_, codex) = armed(Harness::Codex, kit(&here, in_a_workspace), &cwd);
     assert_eq!(var(&codex, PLANE_LISTED_ENV), None);
     assert!(!here.sets.exists(), "nothing laid out");

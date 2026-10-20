@@ -33,7 +33,6 @@ export function SkillStudioTab({ plane, changed }: { plane: string; changed: num
       <EmptyState
         headline="purlis could not read this project's skills"
         body={refused}
-        role="status"
         testid="skill-studio-refused"
       />
     );
