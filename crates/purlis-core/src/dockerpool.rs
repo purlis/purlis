@@ -825,12 +825,27 @@ impl Docker {
     }
 
     /// The user and home `image` declares, for the runner made from it: its `USER` must be a
-    /// user and a group by number, neither root, and its `HOME` an absolute plain path.
+    /// user and a group by number, neither root, and its `HOME` an absolute plain path. An image
+    /// this machine does not hold yet is pulled first, by its digest.
     pub fn declared(&self, image: &Image) -> Result<(User, String), Refused> {
-        let inspected = self.json(
-            &["image", "inspect", image.as_str()],
-            "docker image inspect",
-        )?;
+        let inspect = || {
+            self.json(
+                &["image", "inspect", image.as_str()],
+                "docker image inspect",
+            )
+        };
+        // An image this machine does not hold yet is pulled, by its digest, then read.
+        let inspected = match inspect() {
+            Ok(inspected) => inspected,
+            Err(_) => {
+                self.run(
+                    &["pull".into(), "--quiet".into(), image.as_str().into()],
+                    None,
+                    MOST_INSPECTED,
+                )?;
+                inspect()?
+            }
+        };
         let config = inspected
             .pointer("/0/Config")
             .ok_or_else(|| refused(format!("the runner image {} has no config", image.as_str())))?;

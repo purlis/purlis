@@ -152,7 +152,9 @@ pub fn starts_here(
         return Err(format!("{missing}."));
     }
     Err(format!(
-        "Workspace {workspace} runs its chats on pool {pool}, which cannot hold this project's          code yet, so nothing was started. Remove pool {pool} in {SETTING} to run them on this          machine again."
+        "Workspace {workspace} runs its chats on pool {pool}, which cannot hold this project's \
+         code yet, so nothing was started. Remove pool {pool} in {SETTING} to run them on this \
+         machine again."
     ))
 }
 
