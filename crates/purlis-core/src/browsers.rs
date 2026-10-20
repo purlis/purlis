@@ -765,6 +765,15 @@ impl Keeping {
     /// A login was tried in it, keeping `keep` (#2693), whatever came of it: it may have signed
     /// the browser in.
     fn tried(&mut self, keep: Option<&wire::KeptLogin>) {
+        // A store it holds is another login's: what it holds from now may be this one's session,
+        // so nothing of it is written back, and that store stays as last written.
+        if self
+            .writes
+            .as_ref()
+            .is_some_and(|(writes, _)| Some(writes) != keep)
+        {
+            self.writes = None;
+        }
         let keep = keep.cloned();
         if !self.tried.contains(&keep) {
             self.tried.push(keep);
@@ -1075,10 +1084,9 @@ impl Screen for EngineScreen {
 
     fn input(&self, input: &wire::Input) -> Result<(), NotTaken> {
         let browser = self.with(Arc::clone).ok_or(NotTaken::Ended)?;
-        browser
-            .person_input(&input_of(input))
-            .map_err(not_taken)
-            .inspect(|()| self.browsed())
+        // Before it is sent: an input refused may still have reached the page.
+        self.browsed();
+        browser.person_input(&input_of(input)).map_err(not_taken)
     }
 
     fn size_to(&self, width: u16, height: u16) -> Result<(), NotTaken> {

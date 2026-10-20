@@ -666,6 +666,51 @@ fn a_browser_in_which_another_login_was_tried_keeps_no_later_one() {
 }
 
 #[test]
+fn a_browser_holding_one_logins_store_writes_nothing_back_once_another_login_is_tried() {
+    // #2693: the other login's session would be sealed in as the first one's.
+    let base = tempfile::tempdir().unwrap();
+    let home = base.path().join("data");
+    let keyring = std::sync::Arc::new(crate::secrets::keyring::FileStore::at(
+        base.path().join("keyring.json"),
+    ));
+    let first = kept_login();
+    let other = wire::KeptLogin {
+        login: "mail-login".into(),
+        ..kept_login()
+    };
+    let store = super::store_of(&first).unwrap();
+    // The first login kept once, as last written.
+    let earlier = browsers_in(&home).join("earlier");
+    signed_in(&earlier);
+    let mut kept = keeping(&home, &earlier, &keyring);
+    kept.tried(Some(&first));
+    assert_eq!(kept.keep(&first), None);
+    kept.write_back();
+    drop(kept);
+    let sealed = std::fs::read(store.dir(&home).join(crate::browserlogins::FILE)).unwrap();
+    // A browser opened from it, in which another login is then tried.
+    let folder = browsers_in(&home).join("opened");
+    let mut it = keeping(&home, &folder, &keyring);
+    it.open(&first).unwrap();
+    it.tried(Some(&first));
+    assert_eq!(it.keep(&first), None);
+    std::fs::write(folder.join("Default/Cookies"), "session=the-other-login").unwrap();
+
+    it.tried(Some(&other));
+    let said = it.keep(&other).expect("it is told");
+    it.write_back();
+
+    assert!(said.contains("not kept"), "{said}");
+    assert!(it.writes.is_none(), "it holds the store no more");
+    assert_eq!(
+        std::fs::read(store.dir(&home).join(crate::browserlogins::FILE)).unwrap(),
+        sealed,
+        "the first login's store is as last written"
+    );
+    assert!(!super::store_of(&other).unwrap().exists(&home));
+}
+
+#[test]
 fn the_same_login_tried_again_is_still_kept() {
     let base = tempfile::tempdir().unwrap();
     let home = base.path().join("data");

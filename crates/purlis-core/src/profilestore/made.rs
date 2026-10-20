@@ -72,16 +72,21 @@ impl Homes {
     /// **Wipes profile `name`'s kept browser logins** (#2021): every browser folder of it a
     /// browser left behind, its stores, and the key once no store is left. A keyring that cannot
     /// be asked is warned of, and the stores are wiped all the same.
+    /// **Marks profile `name` removed for its kept browser logins** (#2693), under the keyring's
+    /// lock, before anything of it goes: a browser of it running now never makes a store again,
+    /// kept before or not, and one that took its hold before the mark is wiped or refused at its
+    /// write-back. A removal that cannot mark it removes nothing.
+    fn mark_kept_logins_removed(&self, name: &str) -> Result<(), String> {
+        crate::browserlogins::removed(&self.data, name).map_err(|why| {
+            format!("the profile '{name}' was not removed, so nothing of it went: {why}")
+        })
+    }
+
     fn wipe_kept_logins(&self, name: &str) -> Result<(), String> {
         let folders = crate::browsers::browsers_in(&self.data);
         crate::browserlogins::sweep(&folders, None, &|of, _| of == name);
-        // Marked removed under the keyring's lock before anything is decided (#2693): a browser
-        // of it running now never makes a store again, kept before or not, and one that took
-        // its hold before the mark is wiped below or refused at its write-back.
-        if let Err(why) = crate::browserlogins::removed(&self.data, name) {
-            tracing::warn!("purlis: profile {name} is removed all the same: {why}");
-        }
-        // Nothing to wipe asks no keyring for a device id or a key.
+        // Marked removed already ([`Homes::mark_kept_logins_removed`]). Nothing to wipe asks no
+        // keyring for a device id or a key.
         let dir = self.data.join(crate::browserlogins::DIR).join(name);
         if !dir.exists() {
             return Ok(());
@@ -475,6 +480,7 @@ pub fn remove(homes: &Homes, name: &str, shown: &Removal) -> Result<Removal, Str
                 now.says()
             ));
         }
+        homes.mark_kept_logins_removed(name)?;
         if now.adopted {
             store.forget(&now.folder);
         } else {

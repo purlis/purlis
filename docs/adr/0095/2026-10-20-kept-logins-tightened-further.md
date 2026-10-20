@@ -11,7 +11,8 @@ implementation, to be confirmed** (D-2693-1 to D-2693-6).
 2. **A removed profile is never made again by a browser that outlived it.** Removing a profile,
    whether it kept a login or not, writes `.removed-<profile>` beside the stores, holding the
    time of the removal from the same clock a browser's beginning is read by, replaced whole. The
-   removal writes it under the keyring's lock before it decides anything else. A store's hold is
+   removal writes it under the keyring's lock before anything of the profile goes, and a removal
+   that cannot write it removes nothing and says so. A store's hold is
    taken under that lock, and is refused, with nothing made, for a browser that began before
    that time, and a write-back checks it again under the lock, so a browser that took its hold
    just before the removal writes nothing either. A browser that begins after it, as a new
@@ -24,10 +25,12 @@ implementation, to be confirmed** (D-2693-1 to D-2693-6).
 5. **Only a fresh browser is kept.** A browser that acted, or that the person took over or typed
    into, before its first login is not kept as that login's store, and the chat is told to log
    in from a new browser to keep it. A browser opened from a login's own store keeps it however
-   it browsed since. Any act counts, a read included, so nothing a page did in between is kept;
-   a take-over or an input the browser refused does not. A browser keeps a login only where
-   every login tried in it was that one, so a session of another login, tried before and not
-   kept, is never sealed in under it; trying the same login again keeps it. *D-2693-5.*
+   it browsed since. Any act counts, a read included, and so does the person's input, counted
+   as it is sent, so nothing a page did in between is kept; a take-over the browser refused does
+   not. A browser keeps a login only where every login tried in it was that one, so a session of
+   another login is never sealed in under it: one tried before is never kept with it, and one
+   tried after makes the browser let go of the store it holds, which stays as last written.
+   Trying the same login again keeps it. *D-2693-5.*
 6. **Other sites' cookies are not filtered out: decided against.** Chrome keeps every site's
    cookies in one SQLite database (`Default/Network/Cookies` in current builds), and each
    origin's storage in shared LevelDB and IndexedDB folders, so keeping one site's would mean
