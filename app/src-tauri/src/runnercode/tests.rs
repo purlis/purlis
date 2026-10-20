@@ -46,7 +46,7 @@ fn committed(dir: &Path, file: &str, text: &str) -> String {
     }
     std::fs::write(dir.join(file), text).unwrap();
     git(dir, &["add", file]);
-    git(dir, &["commit", "-q", "-m", text]);
+    git(dir, &["commit", "-q", "-m", file]);
     git(dir, &["rev-parse", "HEAD"])
 }
 
