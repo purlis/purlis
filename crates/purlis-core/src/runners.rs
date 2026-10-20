@@ -1,10 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The runners this desktop pinned** (ADR 0078 §3 and §8, #2525): `<config>/runners.json`,
-//! ruled 2026-10-18, `{"version": 1, "runners": [{"name", "pool", "container", "image",
-//! "user", "home", "device", "key", "paired"}]}`.
+//! **The pools this desktop added, and the runners it pinned** (ADR 0078 §3 and §8, #2525,
+//! #2679): `<config>/runners.json`, ruled 2026-10-18 and 2026-10-20, `{"version": 1, "pools":
+//! [{"name", "kind", "image", "cpus", "memory", "processes", "tmp"}], "runners": [{"name",
+//! "pool", "container", "image", "user", "home", "device", "key", "paired"}]}`.
 //!
+//! - **A pool is named and defined only here** ([`Pool`]): a Docker pool's name, the runner
+//!   image by digest, and the limits the person set, each left out where purlis's default
+//!   holds ([`crate::dockerpool::Limits`]). A workspace names a pool (`machine.json`), and a name
+//!   that is not kept here, or whose runner is not, starts no chat ([`runner_for`]).
 //! - **A runner's device id and public link key are kept once** ([`keep`]): a later answer for
 //!   a runner already kept, with another device id or key, is refused and what was kept stays
 //!   ([`Refused::KeyChanged`]), as is a device id or key another kept runner holds, or the
@@ -20,7 +25,7 @@ use std::path::Path;
 
 use purlis_session_protocol::hostlink::Pinned;
 
-use crate::dockerpool::{ContainerId, Docker, Image, Made, Runner, User};
+use crate::dockerpool::{ContainerId, Docker, Image, Limits, Made, Runner, User};
 use crate::machine::{RUNNERS_FILE, RUNNERS_LOCK};
 
 /// Why a runner was not kept, or the runners could not be read.
@@ -48,6 +53,89 @@ impl std::fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
+/// The limits a person set on a pool, each `None` where purlis's default holds
+/// ([`Limits::default`]): its CPUs in thousandths, its memory and its `/tmp` in MiB, and its
+/// processes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Set {
+    pub millicpus: Option<u32>,
+    pub memory_mib: Option<u64>,
+    pub processes: Option<u32>,
+    pub tmp_mib: Option<u64>,
+}
+
+/// One Docker pool on this machine, as the person added it (#2679): its name, which its one
+/// runner is called by too, the runner image by digest, and the limits the person set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pool {
+    name: String,
+    image: Image,
+    set: Set,
+    limits: Limits,
+}
+
+impl Pool {
+    /// A pool called `name` (a runner's name: lower-case letters, digits and dashes, at most
+    /// 40), of `image`, held to `set` over purlis's defaults, which together are limits a
+    /// runner can start a chat within.
+    pub fn new(name: &str, image: Image, set: Set) -> Result<Pool, Refused> {
+        usable_pool_name(name).map_err(Refused::Other)?;
+        let default = Limits::default();
+        let limits = Limits::new(
+            set.millicpus.unwrap_or(default.millicpus()),
+            set.memory_mib.unwrap_or(default.memory_mib()),
+            set.processes.unwrap_or(default.pids()),
+            set.tmp_mib.unwrap_or(default.tmp_mib()),
+        )
+        .map_err(|why| Refused::Other(why.0))?;
+        Ok(Pool {
+            name: name.to_owned(),
+            image,
+            set,
+            limits,
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn image(&self) -> &Image {
+        &self.image
+    }
+
+    /// The limits the person set, each `None` where the default holds.
+    pub fn set(&self) -> Set {
+        self.set
+    }
+
+    /// The limits its runner is held to: what the person set, and the defaults for the rest.
+    pub fn limits(&self) -> Limits {
+        self.limits
+    }
+}
+
+/// Whether `name` can name a pool: as a runner is named, since a pool's runner takes its name.
+pub fn usable_pool_name(name: &str) -> Result<(), String> {
+    let plain = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
+    let named = !name.is_empty()
+        && name.len() <= MOST_NAME
+        && name.bytes().all(|b| plain(b) || b == b'-')
+        && name.bytes().next().is_some_and(plain)
+        && name.bytes().last().is_some_and(plain);
+    if named {
+        Ok(())
+    } else {
+        Err(format!(
+            "\"{name}\" cannot name a pool: use lower-case letters, digits and dashes, at most \
+             {MOST_NAME}, starting and ending with a letter or digit"
+        ))
+    }
+}
+
+/// The longest pool name: a runner's longest.
+const MOST_NAME: usize = 40;
+
 /// One runner this desktop pinned: where it is, and who it is on a link.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Kept {
@@ -65,13 +153,20 @@ impl Kept {
     }
 }
 
-/// The runners kept under `config_root`, in the order they were kept: none where there is no
-/// file; refused where it cannot be read safely or is not as [`keep`] writes it.
-pub fn read(config_root: &Path) -> Result<Vec<Kept>, Refused> {
+/// What the file holds: the pools, then the runners, each in the order they were kept.
+#[derive(Debug, Default)]
+struct Held {
+    pools: Vec<Pool>,
+    runners: Vec<Kept>,
+}
+
+/// The file under `config_root`, or none where there is no file; refused where it cannot be
+/// read safely or is not as this module writes it.
+fn load(config_root: &Path) -> Result<Held, Refused> {
     let path = crate::machine::dir(config_root).join(RUNNERS_FILE);
     let text = match purlis_same_user::read_private_file(&path) {
         Ok(text) => text,
-        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(Held::default()),
         Err(why) => {
             return Err(Refused::Other(format!(
                 "the runners this machine keeps could not be read safely ({}): {why}",
@@ -81,21 +176,53 @@ pub fn read(config_root: &Path) -> Result<Vec<Kept>, Refused> {
     };
     let unreadable = || {
         Refused::Other(format!(
-            "{} is not as purlis writes it, so no runner of it is used",
+            "{} is not as purlis writes it, so no pool or runner of it is used",
             path.display()
         ))
     };
     let value: serde_json::Value = serde_json::from_str(&text).map_err(|_| unreadable())?;
-    if value.get("version").and_then(serde_json::Value::as_u64) != Some(1) {
+    let fields = value.as_object().ok_or_else(unreadable)?;
+    if fields.get("version").and_then(serde_json::Value::as_u64) != Some(1)
+        || fields
+            .keys()
+            .any(|key| !matches!(key.as_str(), "version" | "pools" | "runners"))
+    {
         return Err(unreadable());
     }
-    let rows = value
-        .get("runners")
-        .and_then(serde_json::Value::as_array)
-        .ok_or_else(unreadable)?;
-    rows.iter()
+    let rows = |key: &str| -> Result<&[serde_json::Value], Refused> {
+        match fields.get(key) {
+            None if key == "pools" => Ok(&[]),
+            found => found
+                .and_then(serde_json::Value::as_array)
+                .map(Vec::as_slice)
+                .ok_or_else(unreadable),
+        }
+    };
+    let runners = rows("runners")?
+        .iter()
         .map(|row| from_row(row).ok_or_else(unreadable))
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    let pools = rows("pools")?
+        .iter()
+        .map(|row| pool_from_row(row).ok_or_else(unreadable))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut names: Vec<&str> = pools.iter().map(Pool::name).collect();
+    names.sort_unstable();
+    if names.windows(2).any(|two| two[0] == two[1]) {
+        return Err(unreadable());
+    }
+    Ok(Held { pools, runners })
+}
+
+/// The runners kept under `config_root`, in the order they were kept: none where there is no
+/// file; refused where it cannot be read safely or is not as [`keep`] writes it.
+pub fn read(config_root: &Path) -> Result<Vec<Kept>, Refused> {
+    Ok(load(config_root)?.runners)
+}
+
+/// The pools added under `config_root`, in the order they were added (#2679).
+pub fn pools(config_root: &Path) -> Result<Vec<Pool>, Refused> {
+    Ok(load(config_root)?.pools)
 }
 
 /// The runner kept as `name`, if one is.
@@ -105,6 +232,85 @@ pub fn named(config_root: &Path, name: &str) -> Result<Option<Kept>, Refused> {
         .find(|kept| kept.name() == name))
 }
 
+/// **The runner a workspace whose chats run on `pool` starts them on** (#2679): the pool's own
+/// runner, only where both the pool and a runner of its name are kept here, so no name a
+/// workspace holds reaches a runner this machine did not pair and keep.
+pub fn runner_for(config_root: &Path, pool: &str) -> Result<Kept, Refused> {
+    let held = load(config_root)?;
+    if !held.pools.iter().any(|kept| kept.name() == pool) {
+        return Err(Refused::Other(format!(
+            "this workspace's chats run on pool {pool}, which is not on this machine, so \
+             nothing was started"
+        )));
+    }
+    let image = held
+        .pools
+        .iter()
+        .find(|kept| kept.name() == pool)
+        .map(|kept| kept.image().clone());
+    held.runners
+        .into_iter()
+        .find(|kept| kept.name() == pool && Some(kept.made.runner.image()) == image.as_ref())
+        .ok_or_else(|| {
+            Refused::Other(format!(
+                "pool {pool} has no runner of its image, so nothing was started; remove the \
+                 pool and add it again"
+            ))
+        })
+}
+
+/// The lock every change of the file is made under, held for as long as this is: what
+/// [`crate::pools`] holds across adding or removing a pool, so another add or removal of it
+/// waits for this one.
+pub struct Locked(#[expect(dead_code, reason = "held for its drop")] crate::machine::Lock);
+
+/// Takes [`Locked`].
+pub fn lock(config_root: &Path) -> Locked {
+    Locked(crate::machine::Lock::named(config_root, RUNNERS_LOCK))
+}
+
+/// **Records `pool`, once** (#2679): refused where a pool or a runner of its name is kept
+/// already, and what is kept stays.
+pub fn record_pool(config_root: &Path, pool: &Pool) -> Result<(), Refused> {
+    record_pool_locked(config_root, pool, &lock(config_root))
+}
+
+/// [`record_pool`], under `_locked`.
+pub fn record_pool_locked(
+    config_root: &Path,
+    pool: &Pool,
+    _locked: &Locked,
+) -> Result<(), Refused> {
+    let mut held = load(config_root)?;
+    let name = pool.name();
+    if held.pools.iter().any(|kept| kept.name() == name)
+        || held.runners.iter().any(|kept| kept.name() == name)
+    {
+        return Err(Refused::Other(format!(
+            "a pool or a runner named {name} is on this machine already; name the pool \
+             otherwise"
+        )));
+    }
+    held.pools.push(pool.clone());
+    write(config_root, &held)
+}
+
+/// Forget the pool recorded as `name`; nothing where none is. Its runner is [`remove`]d first.
+pub fn forget_pool(config_root: &Path, name: &str) -> Result<(), Refused> {
+    forget_pool_locked(config_root, name, &lock(config_root))
+}
+
+/// [`forget_pool`], under `_locked`.
+pub fn forget_pool_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(), Refused> {
+    let mut held = load(config_root)?;
+    let before = held.pools.len();
+    held.pools.retain(|kept| kept.name() != name);
+    if held.pools.len() != before {
+        write(config_root, &held)?;
+    }
+    Ok(())
+}
+
 /// Keep `answered`, what `made`'s runner's pairing answered, for `made`, on the desktop that is
 /// `ours` on its links (its device id and the public half of its link key, as the pairing
 /// handed them to the runner): once.
@@ -112,16 +318,46 @@ pub fn named(config_root: &Path, name: &str) -> Result<Option<Kept>, Refused> {
 /// A runner of this name kept already with the same container, device id and key is kept as
 /// it was. One with another device id or key is [`Refused::KeyChanged`], and so is one of
 /// another container: what was kept stays. A device id or key another kept runner holds, or
-/// the desktop's own device id or link key, is refused.
+/// the desktop's own device id or link key, is refused, and so is a name a pool holds: a pool's
+/// runner is kept as the pool is added ([`keep_for_its_pool`]).
 pub fn keep(
     config_root: &Path,
     made: &Made,
     answered: &Pinned,
     ours: &Pinned,
 ) -> Result<Kept, Refused> {
-    let _held = crate::machine::Lock::named(config_root, RUNNERS_LOCK);
-    let mut kept = read(config_root)?;
+    keep_as(config_root, made, answered, ours, false, &lock(config_root))
+}
+
+/// [`keep`], for the runner of the pool of its name as the pool is added, under `locked`
+/// ([`crate::pools::add`]).
+pub fn keep_for_its_pool(
+    config_root: &Path,
+    made: &Made,
+    answered: &Pinned,
+    ours: &Pinned,
+    locked: &Locked,
+) -> Result<Kept, Refused> {
+    keep_as(config_root, made, answered, ours, true, locked)
+}
+
+fn keep_as(
+    config_root: &Path,
+    made: &Made,
+    answered: &Pinned,
+    ours: &Pinned,
+    for_its_pool: bool,
+    _locked: &Locked,
+) -> Result<Kept, Refused> {
+    let mut held = load(config_root)?;
     let name = made.runner.name();
+    if !for_its_pool && held.pools.iter().any(|pool| pool.name() == name) {
+        return Err(Refused::Other(format!(
+            "runner {name} is named as pool {name} is, so purlis did not keep it; a pool's \
+             runner is made as the pool is added"
+        )));
+    }
+    let kept = &mut held.runners;
     if let Some(there) = kept.iter().find(|kept| kept.name() == name) {
         return if &there.made == made && &there.pinned == answered {
             Ok(there.clone())
@@ -159,7 +395,7 @@ pub fn keep(
         paired: now(),
     };
     kept.push(new.clone());
-    write(config_root, &kept)?;
+    write(config_root, &held)?;
     Ok(new)
 }
 
@@ -210,13 +446,24 @@ pub fn remove(
     name: &str,
     unpair: Option<&Unpair<'_>>,
 ) -> Result<Removed, Refused> {
+    remove_locked(config_root, docker, name, unpair, &lock(config_root))
+}
+
+/// [`remove`], under `locked`.
+pub fn remove_locked(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    unpair: Option<&Unpair<'_>>,
+    locked: &Locked,
+) -> Result<Removed, Refused> {
     let kept = named(config_root, name)?
         .ok_or_else(|| Refused::Other(format!("no runner named {name} is kept on this machine")))?;
     let peer = unpair.map(|unpair| unpair(&kept));
     let (container, volume) = docker.remove_each(&kept.made);
     let forgotten = container.is_ok() && volume.is_ok();
     if forgotten {
-        forget(config_root, name)?;
+        forget_locked(config_root, name, locked)?;
     }
     Ok(Removed {
         peer,
@@ -228,19 +475,27 @@ pub fn remove(
 
 /// Forget the runner kept as `name`; nothing where none is.
 pub fn forget(config_root: &Path, name: &str) -> Result<(), Refused> {
-    let _held = crate::machine::Lock::named(config_root, RUNNERS_LOCK);
-    let mut kept = read(config_root)?;
-    let before = kept.len();
-    kept.retain(|kept| kept.name() != name);
-    if kept.len() != before {
-        write(config_root, &kept)?;
+    forget_locked(config_root, name, &lock(config_root))
+}
+
+fn forget_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(), Refused> {
+    let mut held = load(config_root)?;
+    let before = held.runners.len();
+    held.runners.retain(|kept| kept.name() != name);
+    if held.runners.len() != before {
+        write(config_root, &held)?;
     }
     Ok(())
 }
 
-fn write(config_root: &Path, kept: &[Kept]) -> Result<(), Refused> {
-    let rows: Vec<serde_json::Value> = kept.iter().map(to_row).collect();
-    let text = serde_json::json!({ "version": 1, "runners": rows });
+/// Writes `held` whole: `pools` left out while there is none, so a machine that added no pool
+/// keeps the file #2525 wrote.
+fn write(config_root: &Path, held: &Held) -> Result<(), Refused> {
+    let rows: Vec<serde_json::Value> = held.runners.iter().map(to_row).collect();
+    let mut text = serde_json::json!({ "version": 1, "runners": rows });
+    if !held.pools.is_empty() {
+        text["pools"] = held.pools.iter().map(pool_to_row).collect();
+    }
     purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config_root))
         .and_then(|folder| folder.replace_file(RUNNERS_FILE, format!("{text:#}\n").as_bytes()))
         .map_err(|why| {
@@ -297,6 +552,85 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
     })
 }
 
+fn pool_to_row(pool: &Pool) -> serde_json::Value {
+    let mut row = serde_json::json!({
+        "name": pool.name(),
+        "kind": "docker",
+        "image": pool.image().as_str(),
+    });
+    let set = pool.set();
+    if let Some(millicpus) = set.millicpus {
+        row["cpus"] = if millicpus % 1000 == 0 {
+            serde_json::json!(millicpus / 1000)
+        } else {
+            serde_json::json!(f64::from(millicpus) / 1000.0)
+        };
+    }
+    if let Some(memory) = set.memory_mib {
+        row["memory"] = memory.into();
+    }
+    if let Some(processes) = set.processes {
+        row["processes"] = processes.into();
+    }
+    if let Some(tmp) = set.tmp_mib {
+        row["tmp"] = tmp.into();
+    }
+    row
+}
+
+/// A pool's row: its name, kind `docker` and image, and each limit the person set, as
+/// [`pool_to_row`] writes them: `cpus` a number of CPUs to the thousandth, `memory` and `tmp`
+/// in MiB, `processes` a count. Any other key, or a value of another shape, is refused.
+fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
+    let fields = row.as_object()?;
+    let known = [
+        "name",
+        "kind",
+        "image",
+        "cpus",
+        "memory",
+        "processes",
+        "tmp",
+    ];
+    if fields.keys().any(|key| !known.contains(&key.as_str())) {
+        return None;
+    }
+    let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
+    if text("kind")? != "docker" {
+        return None;
+    }
+    // A key that is there must be a number of its kind; one left out is the default.
+    fn count<T: TryFrom<u64>>(value: Option<&serde_json::Value>) -> Option<Option<T>> {
+        match value {
+            None => Some(None),
+            Some(value) => Some(Some(T::try_from(value.as_u64()?).ok()?)),
+        }
+    }
+    let millicpus = match fields.get("cpus") {
+        None => None,
+        Some(cpus) => {
+            let thousandths = cpus.as_f64()? * 1000.0;
+            let whole = thousandths.round();
+            if (thousandths - whole).abs() > 1e-6 || !(0.0..=f64::from(u32::MAX)).contains(&whole) {
+                return None;
+            }
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a whole number in u32's range, checked above"
+            )]
+            Some(whole as u32)
+        }
+    };
+    let set = Set {
+        millicpus,
+        memory_mib: count(fields.get("memory"))?,
+        processes: count(fields.get("processes"))?,
+        tmp_mib: count(fields.get("tmp"))?,
+    };
+    Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
+}
+
 fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -305,4 +639,4 @@ fn now() -> u64 {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

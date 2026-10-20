@@ -60,6 +60,7 @@ fn an_old_local_project() -> Old {
             pinned: true,
             pinned_workspaces: vec!["shop".to_owned()],
             most_active_pinned: false,
+            chats_run_on: Default::default(),
         });
         store.windows.push(crate::machine::Window {
             planes: vec![old.clone()],

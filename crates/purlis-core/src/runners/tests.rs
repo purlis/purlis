@@ -285,3 +285,294 @@ fn removing_a_runner_that_is_not_kept_is_refused() {
     assert!(remove(config.path(), &fake.docker(), "first", None).is_err());
     assert_eq!(fake.file("log"), "");
 }
+
+const IMAGE: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+pub(crate) fn pool(name: &str, set: Set) -> Pool {
+    Pool::new(name, Image::pinned(IMAGE).unwrap(), set).unwrap()
+}
+
+fn the_file(config: &Path) -> serde_json::Value {
+    let path = crate::machine::dir(config).join(crate::machine::RUNNERS_FILE);
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+#[test]
+fn a_pool_is_kept_with_the_limits_the_person_set_and_purlis_defaults_for_the_rest() {
+    let config = tempfile::tempdir().unwrap();
+    let set = Set {
+        millicpus: Some(1500),
+        memory_mib: Some(2048),
+        ..Set::default()
+    };
+    record_pool(config.path(), &pool("builds", set)).unwrap();
+    let pools = pools(config.path()).unwrap();
+    assert_eq!(pools, vec![pool("builds", set)]);
+    let limits = pools[0].limits();
+    assert_eq!(
+        (
+            limits.millicpus(),
+            limits.memory_mib(),
+            limits.pids(),
+            limits.tmp_mib()
+        ),
+        (1500, 2048, 1024, 1024)
+    );
+}
+
+#[test]
+fn a_pool_is_written_with_the_ruled_keys_and_only_the_limits_the_person_set() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &pool(
+            "builds",
+            Set {
+                millicpus: Some(1500),
+                processes: Some(512),
+                ..Set::default()
+            },
+        ),
+    )
+    .unwrap();
+    record_pool(config.path(), &pool("plain", Set::default())).unwrap();
+    let file = the_file(config.path());
+    assert_eq!(file["version"], 1);
+    assert_eq!(file["runners"], serde_json::json!([]));
+    assert_eq!(
+        file["pools"],
+        serde_json::json!([
+            { "name": "builds", "kind": "docker", "image": IMAGE, "cpus": 1.5, "processes": 512 },
+            { "name": "plain", "kind": "docker", "image": IMAGE },
+        ])
+    );
+}
+
+#[test]
+fn a_file_with_no_pool_is_written_as_it_was_before_pools() {
+    let config = tempfile::tempdir().unwrap();
+    keep(
+        config.path(),
+        &made(),
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+    )
+    .unwrap();
+    let file = the_file(config.path());
+    let mut keys: Vec<&str> = file
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["runners", "version"]);
+    assert!(pools(config.path()).unwrap().is_empty());
+}
+
+#[test]
+fn a_pools_row_whole_cpus_and_set_limits_read_back_as_written() {
+    let config = tempfile::tempdir().unwrap();
+    let set = Set {
+        millicpus: Some(3000),
+        memory_mib: Some(8192),
+        processes: Some(2048),
+        tmp_mib: Some(512),
+    };
+    record_pool(config.path(), &pool("big", set)).unwrap();
+    assert_eq!(the_file(config.path())["pools"][0]["cpus"], 3);
+    assert_eq!(pools(config.path()).unwrap()[0].set(), set);
+}
+
+#[test]
+fn a_file_of_an_unknown_shape_is_refused_whole_and_never_replaced() {
+    let config = tempfile::tempdir().unwrap();
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let row = serde_json::json!({ "name": "builds", "kind": "docker", "image": IMAGE });
+    let with = |change: &dyn Fn(&mut serde_json::Value)| {
+        let mut row = row.clone();
+        change(&mut row);
+        serde_json::json!({ "version": 1, "runners": [], "pools": [row] }).to_string()
+    };
+    for text in [
+        serde_json::json!({ "version": 1, "runners": [], "extra": [] }).to_string(),
+        serde_json::json!({ "version": 1, "pools": [] }).to_string(),
+        serde_json::json!({ "version": 1, "runners": [], "pools": {} }).to_string(),
+        serde_json::json!({ "version": 1, "runners": [], "pools": [row, row] }).to_string(),
+        with(&|row| row["kind"] = "podman".into()),
+        with(&|row| row["owned"] = true.into()),
+        with(&|row| row["image"] = "ghcr.io/purlis/purlis-runner:latest".into()),
+        with(&|row| row["name"] = "Builds".into()),
+        with(&|row| row["cpus"] = "2".into()),
+        with(&|row| row["cpus"] = 1.0005.into()),
+        with(&|row| row["cpus"] = (-1).into()),
+        with(&|row| row["memory"] = 100.into()),
+        with(&|row| row["memory"] = 1.5.into()),
+        with(&|row| row["processes"] = 8.into()),
+        with(&|row| row["tmp"] = 999_999.into()),
+        with(&|row| {
+            row.as_object_mut().unwrap().remove("kind");
+        }),
+    ] {
+        folder
+            .replace_file(crate::machine::RUNNERS_FILE, text.as_bytes())
+            .unwrap();
+        assert!(pools(config.path()).is_err(), "{text} was read");
+        assert!(read(config.path()).is_err(), "{text} was read");
+        assert!(record_pool(config.path(), &pool("other", Set::default())).is_err());
+        let there =
+            std::fs::read_to_string(folder.path().join(crate::machine::RUNNERS_FILE)).unwrap();
+        assert_eq!(there, text, "the file was replaced");
+    }
+}
+
+#[test]
+fn a_pool_is_not_recorded_under_a_name_a_pool_or_a_runner_holds() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    keep(
+        config.path(),
+        &made(),
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+    )
+    .unwrap();
+    for taken in ["builds", "first"] {
+        assert!(
+            record_pool(config.path(), &pool(taken, Set::default())).is_err(),
+            "{taken}"
+        );
+    }
+    assert_eq!(pools(config.path()).unwrap().len(), 1);
+}
+
+#[test]
+fn a_pool_name_is_a_runner_name() {
+    for usable in ["builds", "a", "pool-2", &"a".repeat(40)] {
+        assert_eq!(usable_pool_name(usable), Ok(()), "{usable}");
+    }
+    for refused in [
+        "",
+        "-a",
+        "a-",
+        "Builds",
+        "a b",
+        "a_b",
+        "a/b",
+        &"a".repeat(41),
+    ] {
+        assert!(usable_pool_name(refused).is_err(), "{refused:?} was taken");
+        assert!(
+            Pool::new(refused, Image::pinned(IMAGE).unwrap(), Set::default()).is_err(),
+            "{refused:?} was taken"
+        );
+    }
+}
+
+#[test]
+fn a_pools_limits_are_held_to_what_a_runner_needs() {
+    let image = || Image::pinned(IMAGE).unwrap();
+    for set in [
+        Set {
+            memory_mib: Some(256),
+            ..Set::default()
+        },
+        Set {
+            processes: Some(10),
+            ..Set::default()
+        },
+        Set {
+            millicpus: Some(1),
+            ..Set::default()
+        },
+        // A /tmp larger than the default memory it counts against.
+        Set {
+            tmp_mib: Some(8192),
+            ..Set::default()
+        },
+    ] {
+        assert!(Pool::new("builds", image(), set).is_err(), "{set:?}");
+    }
+}
+
+#[test]
+fn a_workspace_reaches_only_a_runner_whose_pool_and_runner_are_both_kept() {
+    let config = tempfile::tempdir().unwrap();
+    // Nothing kept: no pool.
+    assert!(runner_for(config.path(), "first").is_err());
+    // A runner kept with no pool of its name is not a pool's runner.
+    let kept = keep(
+        config.path(),
+        &made(),
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+    )
+    .unwrap();
+    let refused = runner_for(config.path(), "first").unwrap_err();
+    assert!(
+        refused.to_string().contains("not on this machine"),
+        "{refused}"
+    );
+    // A pool whose runner is not kept starts nothing.
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    let refused = runner_for(config.path(), "builds").unwrap_err();
+    assert!(refused.to_string().contains("has no runner"), "{refused}");
+    // Both kept: its runner.
+    forget(config.path(), "first").unwrap();
+    forget_pool(config.path(), "builds").unwrap();
+    // The runner is gone, so its name is free for a pool, which reaches it once it is kept as
+    // the pool's runner.
+    record_pool(config.path(), &pool("first", Set::default())).unwrap();
+    let locked = lock(config.path());
+    keep_for_its_pool(config.path(), &made(), &kept.pinned, &OURS, &locked).unwrap();
+    drop(locked);
+    assert_eq!(
+        runner_for(config.path(), "first").unwrap().pinned,
+        kept.pinned
+    );
+}
+
+#[test]
+fn a_runner_is_not_kept_under_a_pools_name_but_as_the_pools_own() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("first", Set::default())).unwrap();
+    let refused = keep(
+        config.path(),
+        &made(),
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+    )
+    .unwrap_err();
+    assert!(
+        refused.to_string().contains("named as pool first"),
+        "{refused}"
+    );
+    assert!(read(config.path()).unwrap().is_empty());
+}
+
+#[test]
+fn a_pools_runner_of_another_image_is_not_its_runner() {
+    let config = tempfile::tempdir().unwrap();
+    let other = Image::pinned(&format!("ghcr.io/team/runner@sha256:{}", "1".repeat(64))).unwrap();
+    record_pool(
+        config.path(),
+        &Pool::new("first", other, Set::default()).unwrap(),
+    )
+    .unwrap();
+    let locked = lock(config.path());
+    keep_for_its_pool(
+        config.path(),
+        &made(),
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+        &locked,
+    )
+    .unwrap();
+    drop(locked);
+    let refused = runner_for(config.path(), "first").unwrap_err();
+    assert!(
+        refused.to_string().contains("no runner of its image"),
+        "{refused}"
+    );
+}
