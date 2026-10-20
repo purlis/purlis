@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792508857077,
+  "lastUpdate": 1792516168169,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19362,6 +19362,48 @@ window.BENCHMARK_DATA = {
             "value": 101.732246,
             "unit": "ms",
             "extra": "median of 5 runs: 100.808, 101.697, 101.732, 102.747, 103.690 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "de038fb9fd1e431cbb2dc1032f9e5169568581ab",
+          "message": "Runners: a forgotten project drops its window name, and a give-back re-checks the policy (#2809)\n\nForgetting a project on this machine removes the name its window link\nkept in window-names.json, and no other root's name. A file that holds\nno names is not written; a name that cannot be removed leaves the\nproject forgotten and is logged.\n\nBefore a runner gives back a port it withdrew for want of a window, it\nasks its own sandbox for the project whether that service is given now\n(Confine::gives_now, purlis_core::sandbox::hosted::gives_here). A port\nthe policy no longer gives stays withdrawn for want of a window, so a\nlater re-link gives it back once the policy gives it again.\n\nThe standing \"not held\" mark waits for the runner screen.\n\nADR 0078 amended 2026-10-20 for #2738.\n\nRefs #2738\n\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T21:08:02+04:00",
+          "tree_id": "508dd5e93f90a77dee79884bda90840037849f12",
+          "url": "https://github.com/purlis/purlis/commit/de038fb9fd1e431cbb2dc1032f9e5169568581ab"
+        },
+        "date": 1792516166037,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.517231,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.517, 0.517, 0.517, 0.521, 0.533 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.363948999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.173, 16.333, 16.364, 16.382, 16.532 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.48325600000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.210, 101.383, 101.483, 102.392, 102.892 ms"
           }
         ]
       }
