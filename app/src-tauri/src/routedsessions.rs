@@ -22,7 +22,8 @@
 //!
 //! **The runners' branches come back** into each clone's `refs/remotes/<pool>/*` as a runner
 //! chat ends, and when the window comes back into focus, as the project is fetched then
-//! (#2002), at most once a minute.
+//! (#2002), at most once a minute. One fetch runs at a time, and chats that end together are
+//! fetched for once.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -78,6 +79,11 @@ struct Shared {
     dealt: AtomicU32,
     /// When the runners' branches were last fetched for the window's focus.
     fetched: Mutex<Option<Instant>>,
+    /// Held while the runners' branches are fetched, so no two fetches run into one clone.
+    fetching: Mutex<()>,
+    /// The pools a fetch for a chat's end waits to run for: an end while one waits adds none,
+    /// since the one that waits fetches what that chat did too.
+    ending: Mutex<BTreeSet<String>>,
 }
 
 impl RoutedSessions {
@@ -139,7 +145,7 @@ fn pool_of(
         made.stopped_by(switch);
     }
     if let Some(relayed) = lock(&shared.relayed).clone() {
-        made.hear_through(relayed);
+        made.hear_through(relayed.for_a_pool(pool, routes_of(shared)));
     }
     if let Some(ends) = lock(&shared.ends).clone() {
         made.when_one_ends(ends);
@@ -155,6 +161,16 @@ fn pool_of(
     Ok(Arc::clone(
         lock(&shared.pools).entry(pool.to_owned()).or_insert(made),
     ))
+}
+
+/// Which pool each chat runs on, as the router has it now: `None` for this machine's.
+fn routes_of(shared: &Arc<Shared>) -> crate::hooks::Routes {
+    let shared = Arc::downgrade(shared);
+    Arc::new(move |chat| {
+        shared
+            .upgrade()
+            .and_then(|shared| lock(&shared.chats).get(&chat).cloned())
+    })
 }
 
 fn fetch_back_all(shared: &Arc<Shared>, on_pools: &OnPools, to_a_pool: &ToAPool) -> Vec<String> {
@@ -204,9 +220,24 @@ impl SessionHost for RoutedSessions {
             .filter(|wanted| *wanted > 0)
             .unwrap_or_else(|| self.here.deal());
         self.shared.dealt.fetch_max(number, Ordering::Relaxed);
-        let composed = host.open_named(Some(number), named, hearing, announce)?;
-        lock(&self.shared.chats).insert(composed.number, pool);
-        Ok(composed)
+        // Its pool is known before it starts, so its first hook line is heard from there alone.
+        lock(&self.shared.chats).insert(number, pool.clone());
+        match host.open_named(Some(number), named, hearing, announce) {
+            Ok(composed) if composed.number == number => Ok(composed),
+            Ok(composed) => {
+                lock(&self.shared.chats).remove(&number);
+                let _ = host.close(composed.number);
+                Err(format!(
+                    "the runner of pool {pool} started the chat as chat {}, not as chat \
+                     {number}, which this project dealt it, so it was closed",
+                    composed.number
+                ))
+            }
+            Err(why) => {
+                lock(&self.shared.chats).remove(&number);
+                Err(why)
+            }
+        }
     }
 
     fn composes_its_harness_chats(&self) -> bool {
@@ -302,20 +333,36 @@ impl SessionHost for RoutedSessions {
                 let Some(pool) = lock(&shared.chats).get(&id).cloned() else {
                     return;
                 };
+                // One fetch waits for each pool at most: chats that end together fetch once.
+                if !lock(&shared.ending).insert(pool.clone()) {
+                    return;
+                }
                 let (to_a_pool, on_pools, root) =
                     (Arc::clone(&to_a_pool), Arc::clone(&on_pools), root.clone());
                 // Off the thread that tells: a fetch crosses the link.
-                std::thread::spawn(move || {
-                    let workspaces = on_pools().remove(&pool).unwrap_or_default();
-                    let Ok(host) = pool_of(&shared, &to_a_pool, &pool) else {
-                        return;
-                    };
-                    for workspace in workspaces {
-                        for why in host.fetch_back(&workspace, &pool) {
-                            tracing::warn!("purlis: in {}: {why}", root.display());
+                let spawned = std::thread::Builder::new()
+                    .name("purlis-runner-end-fetch".into())
+                    .spawn({
+                        let shared = Arc::clone(&shared);
+                        let pool = pool.clone();
+                        move || {
+                            let _one_at_a_time = lock(&shared.fetching);
+                            lock(&shared.ending).remove(&pool);
+                            let workspaces = on_pools().remove(&pool).unwrap_or_default();
+                            let Ok(host) = pool_of(&shared, &to_a_pool, &pool) else {
+                                return;
+                            };
+                            for workspace in workspaces {
+                                for why in host.fetch_back(&workspace, &pool) {
+                                    tracing::warn!("purlis: in {}: {why}", root.display());
+                                }
+                            }
                         }
-                    }
-                });
+                    });
+                if let Err(why) = spawned {
+                    lock(&shared.ending).remove(&pool);
+                    tracing::warn!("purlis: the runner's branches were not fetched: {why}");
+                }
             })
         };
         *lock(&self.shared.ends) = Some(Arc::clone(&told));
@@ -416,10 +463,17 @@ impl SessionHost for RoutedSessions {
         ))
     }
 
+    /// Each host hears its own lines, and only for the chats that run on it: this machine's
+    /// host through `relayed`, each pool's runner through one made beside it.
     fn hear_through(&self, relayed: Arc<crate::hooks::Relayed>) {
+        relayed.routed(routes_of(&self.shared));
         *lock(&self.shared.relayed) = Some(Arc::clone(&relayed));
-        for pool in self.pools() {
-            pool.hear_through(Arc::clone(&relayed));
+        let pools: Vec<(String, Arc<dyn SessionHost>)> = lock(&self.shared.pools)
+            .iter()
+            .map(|(name, pool)| (name.clone(), Arc::clone(pool)))
+            .collect();
+        for (name, pool) in pools {
+            pool.hear_through(relayed.for_a_pool(&name, routes_of(&self.shared)));
         }
         self.here.hear_through(relayed);
     }
@@ -430,18 +484,27 @@ impl SessionHost for RoutedSessions {
 
     /// Asked of this machine's host, then of each pool a workspace of the project runs its
     /// chats on; one left running on a pool is kept as that pool's.
+    /// Asked of this machine's host alone: a chat whose workspace is not known runs here.
     fn left_running(&self, number: u32) -> bool {
+        self.here.left_running(number)
+    }
+
+    /// Asked of this machine's host, then of the one pool `workspace` runs its chats on: a
+    /// chat that pool says it runs is kept as that pool's. No other pool is asked, so no runner
+    /// takes a chat of a workspace that does not run on it.
+    fn left_running_in(&self, number: u32, workspace: Option<&str>) -> bool {
         if self.here.left_running(number) {
             return true;
         }
-        for pool in (self.on_pools)().into_keys() {
-            let Ok(host) = self.pool(&pool) else {
-                continue;
-            };
-            if host.left_running(number) {
-                lock(&self.shared.chats).insert(number, pool);
-                return true;
-            }
+        let Ok(Some(pool)) = self.route(workspace) else {
+            return false;
+        };
+        let Ok(host) = self.pool(&pool) else {
+            return false;
+        };
+        if host.left_running(number) {
+            lock(&self.shared.chats).insert(number, pool);
+            return true;
         }
         false
     }
@@ -525,6 +588,7 @@ impl FetchingBack {
                         }
                         *fetched = Some(Instant::now());
                     }
+                    let _one_at_a_time = lock(&shared.fetching);
                     for why in fetch_back_all(&shared, &on_pools, &to_a_pool) {
                         tracing::warn!("purlis: {why}");
                     }

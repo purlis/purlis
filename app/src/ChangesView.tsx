@@ -21,6 +21,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import type { FactCell, FactColumn, Piece, RepoState, RunnerBranch } from "./bindings";
+import { inertly } from "./sandboxBlocks";
 import { EmptyState } from "./EmptyState";
 import { treeKey, type Row } from "./Explorer";
 import { Menued } from "./Menus";
@@ -594,8 +595,10 @@ function RepoRows({
               testId={`runner-${name}-${one.pool}-${one.branch}`}
             >
               <Server className="node-icon" />
-              <code className="branch">{one.branch}</code>
-              <span className="upstream">on pool {one.pool}</span>
+              {/* A runner names its branches: each is drawn inertly, so none turns its line
+                  around or hides what follows. */}
+              <code className="branch">{inertly(one.branch)}</code>
+              <span className="upstream">on pool {inertly(one.pool)}</span>
               {one.ahead > 0 && (
                 <span className="gap">
                   {one.ahead} {one.ahead === 1 ? "commit" : "commits"} not on this machine

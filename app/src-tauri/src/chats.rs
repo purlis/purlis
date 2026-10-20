@@ -1623,12 +1623,17 @@ impl Chats {
     /// Whether `chat`, put back for `why`, is one the session host still runs from before this
     /// window, and so is reattached (#2006).
     fn reattaches(&self, chat: &Chat, why: Why) -> bool {
-        why == Why::Relaunch && chat.number.is_some_and(|number| self.left_running(number))
+        why == Why::Relaunch && self.left_running(chat)
     }
 
-    /// Whether chat `number` is still in the session host from before this window (#2006).
-    pub(crate) fn left_running(&self, number: u32) -> bool {
-        self.sessions.left_running(number)
+    /// Whether `chat` is still in the session host from before this window (#2006): asked of
+    /// the host its workspace runs its chats on (#2046).
+    pub(crate) fn left_running(&self, chat: &Chat) -> bool {
+        let Some(number) = chat.number else {
+            return false;
+        };
+        let workspace = workspace_at_start(Some(&self.project), chat.cwd.as_deref());
+        self.sessions.left_running_in(number, workspace.as_deref())
     }
 
     /// Reattaches `chat` as its record has it, where what a start reads of it now refuses

@@ -169,10 +169,27 @@ fn a_workspace_naming_a_pool_this_machine_does_not_keep_starts_nothing_anywhere(
 fn a_runner_chat_left_running_before_this_window_is_taken_back_from_its_pool() {
     let world = a_world();
     world.builds.leaves_running(7, None);
-    assert!(world.sessions.left_running(7));
+    assert!(world.sessions.left_running_in(7, Some("app")));
     assert_eq!(world.sessions.reattach(7, &|_| {}).unwrap(), 7);
     assert_eq!(world.builds.reattached(), vec![7]);
     assert!(world.here.reattached().is_empty());
+}
+
+#[test]
+fn a_pool_is_never_asked_for_a_chat_of_a_workspace_that_does_not_run_on_it() {
+    let world = a_world();
+    // The runner says it runs 7 and 8; neither worked in a workspace that runs on it.
+    world.builds.leaves_running(7, None);
+    world.builds.leaves_running(8, None);
+    assert!(!world.sessions.left_running_in(7, Some("fleet")));
+    assert!(!world.sessions.left_running_in(8, None));
+    assert!(!world.sessions.left_running(7));
+    assert!(world.made.lock().unwrap().is_empty(), "no runner was asked");
+    world.sessions.input(7, b"x").unwrap_or_default();
+    assert!(
+        world.builds.typed(7).is_empty(),
+        "7 is not routed to the pool"
+    );
 }
 
 #[test]
@@ -198,4 +215,69 @@ fn the_kill_switch_and_every_end_reach_every_host() {
     world.builds.program_ends(there, Exit::Code(0));
     world.here.program_ends(here, Exit::Code(0));
     assert_eq!(*ended.lock().unwrap(), vec![there, here]);
+}
+
+#[test]
+fn a_runner_chats_pool_is_known_before_it_starts_and_forgotten_where_its_start_fails() {
+    let world = a_world();
+    let routes = routes_of(&world.sessions.shared);
+    let seen: Mutex<Vec<Option<String>>> = Mutex::default();
+    let number = world
+        .sessions
+        .open_named(None, &named_in("app"), Default::default(), &|announced| {
+            seen.lock().unwrap().push(routes(announced));
+        })
+        .unwrap()
+        .number;
+    assert_eq!(*seen.lock().unwrap(), vec![Some("builds".to_owned())]);
+    assert_eq!(routes(number).as_deref(), Some("builds"));
+
+    world.builds.refuses(Some("the runner is full"));
+    let refused = world
+        .sessions
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .map(|composed| composed.number)
+        .expect_err("refused");
+    assert!(refused.contains("full"), "{refused}");
+    assert_eq!(
+        lock(&world.sessions.shared.chats).len(),
+        1,
+        "a start that failed runs nowhere"
+    );
+}
+
+#[test]
+fn runner_chats_that_end_together_fetch_their_branches_once_at_a_time() {
+    let world = a_world();
+    world.sessions.when_one_ends(Arc::new(|_, _| {}));
+    let numbers: Vec<u32> = (0..4)
+        .map(|_| {
+            world
+                .sessions
+                .open_named(None, &named_in("app"), Default::default(), &|_| {})
+                .unwrap()
+                .number
+        })
+        .collect();
+    for number in &numbers {
+        world.builds.program_ends(*number, Exit::Code(0));
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while world.builds.fetched().is_empty() || !lock(&world.sessions.shared.ending).is_empty() {
+        assert!(std::time::Instant::now() < deadline, "never fetched");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let fetched = world.builds.fetched();
+    assert!(
+        (1..=2).contains(&fetched.len()),
+        "four ends fetched {} times",
+        fetched.len()
+    );
+    assert!(
+        fetched
+            .iter()
+            .all(|one| *one == ("app".to_owned(), "builds".to_owned()))
+    );
+    assert_eq!(world.builds.most_fetching_at_once(), 1);
 }
