@@ -1,0 +1,20 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-skills"
+description = "What a chat's skill set is, and why: the skills model, the effective set each chat gets with the route and origin of every skill, and the reason each left-out skill is left out"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
