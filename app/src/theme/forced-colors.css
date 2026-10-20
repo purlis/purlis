@@ -116,7 +116,7 @@
   .repo-instruction-text .invisible-char {
     forced-color-adjust: none;
     color: MarkText;
-    background-color: Canvas;
+    background-color: Mark;
   }
 
   /* What ends or destroys, and a ground that says something is wrong: a dashed outline inside
