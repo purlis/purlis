@@ -66,8 +66,8 @@ use super::tint;
 use super::typed::Typed;
 use super::vocabulary::{PLATFORM, TOKENS, is_colour, is_platform};
 use super::{
-    Appearance, CLASSIC, Complaint, Resolved, ResolvedTheme, Theme, built_in_for, classic,
-    is_format_2, load_format_1, load_motion, stringify,
+    Appearance, CLASSIC, Complaint, PURLIS, Resolved, ResolvedTheme, Theme, built_in_for, classic,
+    is_format_2, load_format_1, load_motion, purlis, stringify,
 };
 
 /// The file a theme folder is read from.
@@ -276,6 +276,22 @@ impl Library {
         self.load_beside(None, document, &beside)
     }
 
+    /// **Reads a theme built into purlis** (#2336): its `theme.json`, the icon set it names
+    /// as compiled in beside it (`icons`, the set's text, when it names one), and its folder,
+    /// whose fonts are compiled in too ([`ThemeDir::built_in`]). Read as any theme folder is.
+    pub(crate) fn load_built_in(
+        &self,
+        id: &str,
+        document: &Value,
+        icons: Option<&str>,
+        folder: ThemeDir,
+    ) -> Resolved {
+        let icons = icons.map(|text| {
+            serde_json::from_str::<Value>(text).map_err(|why| format!("the icon set: {why}"))
+        });
+        self.load_beside(Some(id), document, &Beside::Folder { icons, folder })
+    }
+
     /// [`Self::load`] of a theme with what was read beside it.
     fn load_beside(&self, id: Option<&str>, document: &Value, beside: &Beside) -> Resolved {
         let Some(from) = document.as_object() else {
@@ -414,9 +430,7 @@ impl Library {
         );
         let mut tuned = parent_tuned;
         tuned.extend(compact_layer(from.get("compact"), &mut complaints));
-        let mut said = Vec::new();
-        let fonts = super::fonts::read(from.get("fonts"), &parent_fonts, folder, &mut said);
-        complaints.extend(said.into_iter().map(Complaint::said));
+        let fonts = super::fonts::read(from.get("fonts"), &parent_fonts, folder, &mut complaints);
         let inherited = appearances.len();
         // Every appearance of a theme carries its one set, so the parent's first has it.
         let parents_icons = appearances
@@ -519,6 +533,9 @@ impl Library {
         }
         if is_classic(parent) {
             return Ok((classic().clone(), Vec::new()));
+        }
+        if parent == PURLIS {
+            return Ok((purlis().clone(), Vec::new()));
         }
         let held = match self.folders.get(parent) {
             None => {

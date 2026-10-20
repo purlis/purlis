@@ -1900,6 +1900,29 @@ fn the_first_open_pins_the_three_most_recently_active_workspaces() {
 }
 
 #[test]
+fn workspaces_equally_recently_active_are_pinned_in_name_order() {
+    // The strip draws the pins in their order, so the order of a tie is the strip's order: by
+    // name, whatever order the filesystem happened to list or write the workspaces in.
+    let planes = tempfile::tempdir().unwrap();
+    let plane = a_plane_with_workspaces(
+        &planes.path().join("p"),
+        &[
+            ("gamma", 2_000),
+            ("beta", 2_000),
+            ("alpha", 2_000),
+            ("delta", 1_000),
+        ],
+    );
+    let mut store = Store::default();
+    store.remember(&plane, 1);
+
+    assert!(store.pin_the_most_active(&plane));
+
+    let (kept, _) = store.pinned_workspaces(&plane, &["alpha", "beta", "delta", "gamma"]);
+    assert_eq!(kept, ["alpha", "beta", "gamma"]);
+}
+
+#[test]
 fn the_most_active_are_pinned_once_and_never_again_after_everything_is_unpinned() {
     // An operator who unpinned everything said so. A strip that pinned again at the next
     // launch would be the one that pins on its own, which ADR 0054 refuses.
@@ -2388,4 +2411,34 @@ fn a_browser_limit_out_of_its_bounds_reads_as_not_set() {
     });
 
     assert_eq!(browsers_of(doc.get("browsers")), BrowserLimits::default());
+}
+
+#[test]
+fn only_an_ask_about_font_files_alone_grew_in_fonts_alone() {
+    // #2647: a refused theme's Notice may raise the project's trust ask only about its faces.
+    let font = || Change::FontChanged("themes/a/fonts/ui.woff2".to_owned());
+    assert!(Consent::Grew(vec![font()]).grew_in_fonts_alone());
+    assert!(
+        Consent::Grew(vec![
+            font(),
+            Change::FontAdded("themes/a/fonts/mono.woff2".to_owned())
+        ])
+        .grew_in_fonts_alone()
+    );
+    for more in [
+        Change::PluginAdded("x@market".to_owned()),
+        Change::EnvChanged("PATH".to_owned()),
+        Change::StartsAdded("chat-1".to_owned()),
+        Change::ProfileAdded("work".to_owned()),
+        Change::GrantAdded("ops".to_owned()),
+        Change::PluginRemoved("y@market".to_owned()),
+    ] {
+        assert!(
+            !Consent::Grew(vec![font(), more.clone()]).grew_in_fonts_alone(),
+            "{more:?}"
+        );
+    }
+    assert!(!Consent::New.grew_in_fonts_alone());
+    assert!(!Consent::Unchanged.grew_in_fonts_alone());
+    assert!(!Consent::Noted(vec![Change::FontRemoved("f".to_owned())]).grew_in_fonts_alone());
 }
