@@ -60,15 +60,19 @@ unzip -o "$TMPDIR/purlis-classic.zip" -d "$TMPDIR/purlis-classic"
 The format and the check are documented in full: `purlis docs show themes`. Keep it small:
 `"extends": "purlis-classic"` and only what differs. Put each colour in the `palette` once and
 name it from the tokens. Most of a look is `surface.*`, `text.*`, `border.*`, `accent.base`,
-`accent.surface`, `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` and the
-`terminal.*` colours. A theme with a `dark` and a `light` appearance follows the system.
+`accent.surface`, `focus.ring`, `layer.selected`, `list.selected`, `list.selected-edge`, the
+`terminal.*` colours and its shape (below). A theme with a `dark` and a `light` appearance
+follows the system.
+
+**The selected tab is `layer.selected`**, on all three strips; keep it apart from
+`list.selected`. `tab.active` is not a tab: it colours menu highlights and button hovers.
 
 Start from what the person gave you:
 
 - **A brand colour**: make it the palette's accent and draw `accent.base`, `focus.ring`,
-  `list.selected-edge`, `markdown.link` and `chart.1` from it; mix `accent.surface`, `tab.active`
-  and `list.selected` from it and the surface. Give the light appearance a darker step of the
-  same hue, so it reads on a light surface.
+  `list.selected-edge`, `markdown.link` and `chart.1` from it; mix `accent.surface`,
+  `list.selected` and `layer.selected` from it and the surface. Give the light appearance a
+  darker step of the same hue, so it reads on a light surface.
 - **An image or a screenshot**: read it, and take the background, the raised surfaces, the
   words, the rules and the accent from its own colours, as hex.
 - **A Figma frame**: read the frame's variables and colours with the Figma tools this chat has;
@@ -95,7 +99,45 @@ A draft brings no font. A face is drawn only when the project approved that file
 folder, and the window shows the person a Notice for a face it refuses. Tell the person about
 each font you named that their folder does not already have.
 
-Done when the file is JSON with every value hex, a palette name, or a token's own type.
+**Shape and size** are tokens beside the colours, set in each appearance (one that leaves them
+out keeps the theme it extends): a whole number (the line heights take decimals) inside its
+bounds, or the theme is refused. Offer them: the built-in Purlis theme sets `radius.md` 7,
+`radius.lg` 10, `radius.xl` 12, `size.control` 26, `size.chrome` 24 and `line-height.body` 1.55
+in all three of its appearances. The top-level `compact` holds what compact density draws. A
+token it leaves out keeps the appearance's own value, except the ones Classic's compact moves
+(`space.2` to `space.8`, `size.control`, `size.chrome`, `line-height.body`): those take the
+smaller of Classic's compact and the appearance's own.
+
+| Tokens | Bounds | Classic | Compact | What it reaches |
+|---|---|---|---|---|
+| `radius.sm` | 0–8 px | 3 | 3 | labels, chips, crumbs, badges, checkboxes, error and report boxes |
+| `radius.md` | 0–10 px | 4 | 4 | buttons, fields, selects, menu rows, Notices, the palette's rows, Inbox asks |
+| `radius.lg` | 0–14 px | 6 | 6 | dialogs, popovers, menus, tooltips, segmented controls |
+| `radius.xl` | 0–18 px | 8 | 8 | the Welcome page's doors, nothing else |
+| `radius.full` | 0–9999 px | 9999 | 9999 | pills: counts, toggle tracks |
+| `size.control` | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
+| `size.chrome` | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
+| `space.0` `space.1` `space.2` `space.3` `space.4` `space.5` `space.6` `space.7` `space.8` | 0–0, 0–4, 1–8, 2–10, 4–12, 6–16, 8–24, 12–32, 16–48 | 0, 2, 4, 6, 8, 12, 16, 24, 32 | 0, 2, 3, 4, 6, 8, 12, 16, 24 | padding, gaps, margins |
+| `font-size.2xs` `font-size.xs` `font-size.sm` `font-size.md` `font-size.base` `font-size.lg` `font-size.xl` | 8–12, 9–13, 10–14, 11–15, 12–18, 13–22, 16–28 | 10, 11, 12, 13, 14, 16, 20 | 10, 11, 12, 13, 14, 16, 20 | the type scale; `md` is a tab's title, `base` the window's words |
+| `font-weight.regular` `font-weight.medium` `font-weight.strong` | 300–500, 400–600, 500–800 | 400, 500, 600 | 400, 500, 600 | weights |
+| `line-height.tight` `line-height.body` | 1.0–1.4, 1.2–1.8 | 1.2, 1.4 | 1.2, 1.3 | line spacing |
+| `focus-ring.width` `focus-ring.offset` `focus-ring.inset` | 1–4 px, 0–4 px, −4–0 px | 2, 2, −2 | 2, 2, −2 | the focus ring |
+| `elevation.raised-y` `elevation.raised-blur` `elevation.overlay-y` `elevation.overlay-blur` | 0–8, 0–24, 0–16, 0–48 | 2, 8, 8, 24 | 2, 8, 8, 24 | shadows: raised surfaces, then overlays |
+
+Sizes are px at the default text size and grow with it; corners and the focus ring do not. The
+project strip sits in the title bar, whose height no token reaches yet.
+
+A line must fit its box, in both densities: `font-size.base` × `line-height.body` within
+`size.control`, and `font-size.md` × `line-height.body` within `size.chrome`. Compact is
+tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fails compact
+(14 × 1.3 = 18.2, over 18). The check reports each line that does not fit, with its density.
+
+**Still square, whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a
+tab's `×` closer, the settings gear on a strip, and every list and tree row but the palette's.
+Tell the person when they ask for rounder tabs or rows: the theme cannot round those yet.
+
+Done when the file is JSON with every value hex, a palette name, or a token's own type, and
+every shape and size inside its bounds.
 
 ## 3. Draw, look, check, fix
 

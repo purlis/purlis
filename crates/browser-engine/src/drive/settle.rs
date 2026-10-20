@@ -8,6 +8,13 @@
 //! `frameStoppedLoading`, `Network.requestWillBeSent`, `loadingFinished` and `loadingFailed`).
 //! A stream that is meant never to end (a WebSocket, an event source) does not count. A page
 //! that has not settled says what it still waits for, in words.
+//!
+//! **A frame's document may end in another session than it started in** (#2689). The document
+//! of a frame from another site is asked for in the session of the page around it, and answered
+//! in the frame's own, which the engine gives the frame as it moves it to a process of its own:
+//! it is told ended there, under the same id. A document's id is its load's own token, which no
+//! other process's requests share, so a document ended in any session of the page ends;
+//! another request's id is numbered per process, so it ends only in its own session.
 
 use std::collections::{BTreeMap, HashSet};
 use std::time::{Duration, Instant};
@@ -23,6 +30,8 @@ pub(crate) enum Activity {
     RequestStarted {
         id: String,
         url: String,
+        /// Whether it asks for a frame's document.
+        document: bool,
     },
     RequestEnded(String),
     /// Something that is not a load but resets the quiet while (a page opening, say).
@@ -55,6 +64,7 @@ pub(crate) fn activity(method: &str, params: &Value) -> Option<Activity> {
             text("requestId").map(|id| Activity::RequestStarted {
                 id,
                 url: url.to_owned(),
+                document: kind == "Document",
             })
         }
         "Network.loadingFinished" | "Network.loadingFailed" => {
@@ -71,8 +81,9 @@ pub(crate) fn activity(method: &str, params: &Value) -> Option<Activity> {
 #[derive(Debug, Clone)]
 pub(crate) struct Settle {
     loading: HashSet<String>,
-    /// Open requests by (session, request id), with their addresses.
-    requests: BTreeMap<(String, String), String>,
+    /// Open requests by (session, request id), with their addresses and whether each asks for
+    /// a frame's document.
+    requests: BTreeMap<(String, String), (String, bool)>,
     last_change: Instant,
 }
 
@@ -96,11 +107,20 @@ impl Settle {
             Activity::FrameStopped(frame) | Activity::FrameGone(frame) => {
                 self.loading.remove(&frame);
             }
-            Activity::RequestStarted { id, url } => {
-                self.requests.insert((session.to_owned(), id), url);
+            Activity::RequestStarted { id, url, document } => {
+                self.requests
+                    .insert((session.to_owned(), id), (url, document));
             }
             Activity::RequestEnded(id) => {
-                self.requests.remove(&(session.to_owned(), id));
+                if self
+                    .requests
+                    .remove(&(session.to_owned(), id.clone()))
+                    .is_none()
+                {
+                    // A frame's document, answered in the frame's own session.
+                    self.requests
+                        .retain(|(_, open), (_, document)| !(*document && *open == id));
+                }
             }
             Activity::Changed => {}
         }
@@ -128,7 +148,7 @@ impl Settle {
                 .requests
                 .values()
                 .take(NAMED)
-                .map(String::as_str)
+                .map(|(url, _)| url.as_str())
                 .collect();
             let more = if n > NAMED {
                 format!(" and {} more", n - NAMED)

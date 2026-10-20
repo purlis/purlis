@@ -63,7 +63,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::folders::{FontGate, Found, Reach, THEMES, ThemesFolder, approved_fonts, read_level};
-use super::{Appearance, Complaint, Contrast, Drawn, Folders, Resolved, Theme, Values, hard};
+use super::{
+    Appearance, Complaint, Contrast, Drawn, Folders, Placed, PlacedIn, Resolved, Theme, Values,
+    hard,
+};
 use crate::theme::levels::appear;
 
 /// The folder in the state folder that holds every chat's theme drafts.
@@ -173,6 +176,7 @@ pub fn level(
     let mut level = ThemesFolder {
         root,
         below: below.join(chat),
+        placed: Placed::level(PlacedIn::Draft),
         fonts: FontGate::Draft {
             files: Arc::new(BTreeMap::new()),
             kept_at: Arc::new(BTreeMap::new()),
@@ -207,6 +211,7 @@ pub fn watched(plane: &Path, chats: &[&str]) -> Vec<ThemesFolder> {
     let own = |below: PathBuf| ThemesFolder {
         root: root.clone(),
         below,
+        placed: Placed::level(PlacedIn::Draft),
         fonts: FontGate::Own,
     };
     std::iter::once(own(below.clone()))

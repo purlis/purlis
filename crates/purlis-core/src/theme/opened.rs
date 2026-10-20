@@ -94,6 +94,11 @@ mod unix {
     /// **`root`, opened as the caller trusts it**: a level's root, or the folder that holds a
     /// folder the person named. `Ok(None)` when it is not there.
     pub(crate) fn root(root: &Path) -> Result<Option<Held>, String> {
+        root_said(root, &root.display().to_string())
+    }
+
+    /// [`root`], `shown` naming it in a sentence.
+    fn root_said(root: &Path, shown: &str) -> Result<Option<Held>, String> {
         match rustix::fs::open(
             root,
             OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
@@ -101,13 +106,14 @@ mod unix {
         ) {
             Ok(fd) => Ok(Some(fd)),
             Err(Errno::NOENT) => Ok(None),
-            Err(why) => Err(format!("purlis could not open {}: {why}", root.display())),
+            Err(why) => Err(format!("purlis could not open {shown}: {why}")),
         }
     }
 
     /// **The folder `below` inside `from`**, `from` opened as the caller trusts it and every
-    /// step below opened from the last refusing a link; `shown` names it in a sentence.
-    /// `Ok(None)` when it is not there.
+    /// step below opened from the last refusing a link; `shown` names it in a sentence, and
+    /// every sentence of the walk names it so, `from` itself never. `Ok(None)` when it is not
+    /// there.
     pub(crate) fn walk(from: &Path, below: &Path, shown: &str) -> Result<Option<Held>, String> {
         if !below
             .components()
@@ -115,7 +121,7 @@ mod unix {
         {
             return Err(format!("{shown} is not a folder purlis reads themes from"));
         }
-        let Some(mut at) = root(from)? else {
+        let Some(mut at) = root_said(from, shown)? else {
             return Ok(None);
         };
         for step in below.components() {

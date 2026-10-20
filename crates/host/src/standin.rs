@@ -338,6 +338,10 @@ struct Held {
     )>,
     /// How long each takes to end, as a proxy waits on its listeners.
     ending_takes: std::time::Duration,
+    /// The services of this machine its policy no longer gives (#2738).
+    not_given: Vec<u16>,
+    /// Each service it was asked whether its policy gives now, with the project's path here.
+    asked_whether_given: Vec<(std::path::PathBuf, u16)>,
 }
 
 impl StandInConfines {
@@ -419,6 +423,26 @@ impl StandInConfines {
         self.2.held.lock().unwrap().refusing_changes = Some(why.to_owned());
     }
 
+    /// Its policy no longer gives a chat the service on `port` (#2738).
+    pub fn no_longer_gives(&self, port: u16) {
+        self.2.held.lock().unwrap().not_given.push(port);
+    }
+
+    /// Its policy gives a chat the service on `port` again.
+    pub fn gives_again(&self, port: u16) {
+        self.2
+            .held
+            .lock()
+            .unwrap()
+            .not_given
+            .retain(|one| *one != port);
+    }
+
+    /// Each service it was asked whether its policy gives now, with where its project is here.
+    pub fn asked_whether_given(&self) -> Vec<(std::path::PathBuf, u16)> {
+        self.2.held.lock().unwrap().asked_whether_given.clone()
+    }
+
     /// From now on each give-back waits, `long` at most, for its port to be withdrawn once more
     /// first (#2625).
     pub fn give_backs_wait_for_a_withdrawal(&self, long: std::time::Duration) {
@@ -439,6 +463,16 @@ impl crate::confining::Confine for StandInConfines {
             confining.confine.plan.clone(),
         ));
         held.not_fitting.clone().map_or(Ok(()), Err)
+    }
+
+    fn gives_now(&self, project_path: &std::path::Path, port: u16) -> Result<(), String> {
+        let mut held = self.2.held.lock().unwrap();
+        held.asked_whether_given
+            .push((project_path.to_path_buf(), port));
+        if held.not_given.contains(&port) {
+            return Err(format!("the stand-in's policy no longer gives port {port}"));
+        }
+        Ok(())
     }
 
     fn confine(

@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! What a box or a frame in view does not show (#2564), through a real engine: an item
-//! scrolled out of a list that scrolls, and an element scrolled out of a frame, are marked out
-//! of view; what the list or the frame shows is not, and an item
-//! scrolled to is not marked again.
+//! scrolled out of a list that scrolls, and an element scrolled out of a frame, on the page's
+//! own site or on another one read in a session of its own (#2689), are marked out of view;
+//! what the list or the frame shows is not, and an item scrolled to is not marked again. A box
+//! on the page that cuts off a frame from another site marks what it hides of the frame.
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
@@ -74,5 +75,40 @@ fn an_element_scrolled_out_inside_a_frame_in_view_is_marked_out_of_view() {
     let fars = lines_of(&far, "Far down in the frame");
     for line in fars {
         assert!(line.contains("(out of view)"), "{far}");
+    }
+}
+
+#[test]
+fn an_element_scrolled_out_inside_a_frame_from_another_site_is_marked_out_of_view() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let opened = open(&browser, "cross-site-boxes.html");
+    assert_eq!(opened.settled, Settled::Yes, "{opened:?}");
+    let top = find(&browser, "Top of the frame");
+    for line in lines_of(&top, "Top of the frame") {
+        assert!(!line.contains("(out of view)"), "{top}");
+    }
+    let far = find(&browser, "Far down in the frame");
+    for line in lines_of(&far, "Far down in the frame") {
+        assert!(line.contains("(out of view)"), "{far}");
+    }
+}
+
+#[test]
+fn a_box_on_the_page_that_cuts_off_a_frame_from_another_site_marks_what_it_hides() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let opened = open(&browser, "cross-site-boxes.html");
+    assert_eq!(opened.settled, Settled::Yes, "{opened:?}");
+    // The box shows the frame's top 60 of its 150: its top line, not its button at 100.
+    let top = find(&browser, "Top of the cut frame");
+    for line in lines_of(&top, "Top of the cut frame") {
+        assert!(!line.contains("(out of view)"), "{top}");
+    }
+    let low = find(&browser, "Low in the cut frame");
+    for line in lines_of(&low, "Low in the cut frame") {
+        assert!(line.contains("(out of view)"), "{low}");
     }
 }

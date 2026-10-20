@@ -79,6 +79,8 @@ fn only_a_public_unicast_address_is_public() {
         ("100::1", false),
         // Teredo hides the address it reaches, and NAT64's local-use prefix is a local network.
         ("2001::1", false),
+        // So does Teredo under the prefix used before RFC 4380 (#2741).
+        ("3ffe:831f:cb00:7107::39cc:9bf6", false),
         ("64:ff9b:1::a00:5", false),
         // A local address carried inside an IPv6 form is judged as the local one.
         ("::ffff:127.0.0.1", false),
