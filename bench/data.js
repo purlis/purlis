@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792478790509,
+  "lastUpdate": 1792480253295,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -18648,6 +18648,48 @@ window.BENCHMARK_DATA = {
             "value": 101.84142,
             "unit": "ms",
             "extra": "median of 5 runs: 101.466, 101.595, 101.841, 101.954, 102.167 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "eb9996557914c44e07d2571b93753dbdeac35201",
+          "message": "Theme: window creation stays inside the start budget with a project's fonts; Linux follows a contrast change (#2735)\n\n* Theme: one hashing of a project's fonts at creation, Linux hears a contrast change, and a link's theme in force watches nothing\n\n- A project's font files are hashed once for each read (`theme::Measured`): the trust check's\n  listing hands its digests to the theme folders' read made with it, and each frame a creation\n  resolves takes the faces the one before it read. A digest is reused only for the same file,\n  unchanged and settled, and a face is still drawn only when its digest is the approval's.\n- The main window's creation on a remembered project at the font budget (64 files, 32 MiB)\n  measures 24 ms in a release build (41 ms before), against ADR 0026's 2 s.\n- On Linux, the portal's contrast is heard again on each `SettingChanged`, so a window created\n  after a change starts in the new setting with no wait.\n\n- `theme_in_force` is the window's alone; a link is served `theme_in_force_at`, the same answer\n  with no window, which moves no window's theme watch.\n\nCloses #2696\nCloses #2697\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: a measured digest waits two seconds to settle, and the contrast is heard from the portal alone\n\n- `SETTLED` is two seconds, the coarsest timestamp a file system purlis reads keeps.\n- The Linux `SettingChanged` match names the portal as its sender.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: a link is answered the theme as kept, and a draft's faces share the read's hashing\n\n- `theme_in_force_at` draws the theme the levels choose and never a chat's draft (D-2697-3);\n  the window's `theme_in_force` keeps the drafts path and its watch of them.\n- A chat's draft is read with the project's memo, so each of its faces is hashed once a read.\n- Bindings regenerated over the theme drafts' commands.\n\nPart of #2313\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T11:02:21+04:00",
+          "tree_id": "69e8511c18e332dbf9c1943d74668afda0f7c395",
+          "url": "https://github.com/purlis/purlis/commit/eb9996557914c44e07d2571b93753dbdeac35201"
+        },
+        "date": 1792480252075,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6718055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.659, 0.669, 0.672, 0.675, 0.686 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.528536000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.369, 16.483, 16.529, 16.543, 16.571 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.54846749999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.177, 102.384, 102.548, 102.732, 103.864 ms"
           }
         ]
       }
