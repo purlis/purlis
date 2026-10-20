@@ -47,7 +47,7 @@ use super::egress::{
     LIMITS, Limits, PATIENCE, PLAIN_PORTS, Request, TUNNEL_PORTS, answer, read_head, same_host,
     splice,
 };
-use super::hosts::{carried_v4, ends_in_a_number, refused_address};
+use super::hosts::{carried_v4, ends_in_a_number, refused_address, tunnelled_v4};
 use super::localport::is_a_name_of_this_mac;
 use super::reach::{self, Decision, Reach};
 
@@ -871,12 +871,18 @@ fn this_machine(ip: IpAddr, own: &[IpAddr]) -> bool {
     }
     match ip {
         IpAddr::V4(ip) => ip.is_loopback() || ip.octets()[0] == 0,
-        IpAddr::V6(ip) => match carried_v4(ip).as_slice() {
-            [] => ip.is_loopback() || ip.is_unspecified(),
-            carried => carried
-                .iter()
-                .any(|one| this_machine(IpAddr::V4(*one), own)),
-        },
+        IpAddr::V6(ip) => {
+            let as_itself = match carried_v4(ip).as_slice() {
+                [] => ip.is_loopback() || ip.is_unspecified(),
+                carried => carried
+                    .iter()
+                    .any(|one| this_machine(IpAddr::V4(*one), own)),
+            };
+            as_itself
+                || tunnelled_v4(ip)
+                    .into_iter()
+                    .any(|one| this_machine(IpAddr::V4(one), own))
+        }
     }
 }
 
@@ -894,7 +900,11 @@ pub fn private_address(ip: IpAddr, own: &[IpAddr]) -> bool {
             let [a, b, ..] = ip.octets();
             ip.is_private() || (a == 100 && (64..128).contains(&b))
         }
-        IpAddr::V6(ip) => carried_v4(ip).is_empty() && ip.segments()[0] & 0xfe00 == 0xfc00,
+        IpAddr::V6(ip) => {
+            carried_v4(ip).is_empty()
+                && tunnelled_v4(ip).is_empty()
+                && ip.segments()[0] & 0xfe00 == 0xfc00
+        }
     }
 }
 
@@ -906,7 +916,8 @@ pub fn private_address(ip: IpAddr, own: &[IpAddr]) -> bool {
 /// documentation and benchmarking ranges. An IPv6 address that carries an IPv4 one (mapped,
 /// SIIT, NAT64, IPv4-compatible, 6to4) is judged as the IPv4 one; outside those, only global
 /// unicast (`2000::/3`) is public, less documentation and the IETF's own assignments
-/// (`2001::/23`, Teredo among them).
+/// (`2001::/23`, Teredo among them), and an ISATAP address only where the IPv4 address it
+/// carries is public too (#2678).
 pub fn public_address(ip: IpAddr, own: &[IpAddr]) -> bool {
     if refused_address(ip, own) {
         return false;
@@ -914,7 +925,12 @@ pub fn public_address(ip: IpAddr, own: &[IpAddr]) -> bool {
     match ip {
         IpAddr::V4(ip) => public_v4(ip),
         IpAddr::V6(ip) => match carried_v4(ip).as_slice() {
-            [] => public_v6(ip),
+            [] => {
+                public_v6(ip)
+                    && tunnelled_v4(ip)
+                        .into_iter()
+                        .all(|one| public_address(IpAddr::V4(one), own))
+            }
             carried => carried
                 .iter()
                 .all(|one| public_address(IpAddr::V4(*one), own)),
