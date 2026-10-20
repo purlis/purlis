@@ -59,8 +59,10 @@ describe("the engine's pair list", () => {
       "selection.text on selection.background over danger.wash over surface.overlay",
     );
     for (const pair of LAID) expect(pair.split(" over ").length, pair).toBeLessThanOrEqual(3);
-    // Every pair is read, none skipped by a form this does not know.
+    // Every pair is read, and every layer of each, none skipped by a form this does not know.
     expect(LAID).toHaveLength([...LIST.matchAll(/\bp\(/g)].length);
+    const layers = LAID.reduce((sum, pair) => sum + pair.split(" over ").length - 1, 0);
+    expect(layers).toBe([...LIST.matchAll(/\.over\(/g)].length);
   });
 });
 

@@ -832,10 +832,10 @@ fn fits(density: Density, geometry: &Geometry, findings: &mut Vec<Finding>) {
 
 /// **The contrast `pair` has in `theme`**, to two places, as it is drawn: `back` laid over
 /// `under` when it names one, itself laid over `beneath` when it names one, and a see-through
-/// `front` laid over that. `None` when the platform
-/// draws one of them ([`super::vocabulary::PLATFORM_DRAWN`]); a front left to the platform that
-/// keeps the words' own colour is measured as those words ([`STANDS_IN`]); a `selected` pair is
-/// not measured while the theme colours selected text.
+/// `front` laid over that. `None` when the platform draws one of them
+/// ([`super::vocabulary::PLATFORM_DRAWN`]); a front left to the platform that keeps the words'
+/// own colour is measured as those words ([`STANDS_IN`]); a `selected` pair is not measured
+/// while the theme colours selected text.
 pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> Option<f64> {
     let (front, back) = drawn(theme, pair)?;
     Some(two_places(contrast(&front, &back)))

@@ -452,3 +452,30 @@ fn a_see_through_ask_on_a_tinted_control_is_measured_at_every_hue() {
         .expect("an ask's words are held on its answers' buttons");
     assert!(floors::moves_with_hue(theme, pair));
 }
+
+#[test]
+fn a_selection_over_the_wash_moves_with_a_tint_that_turns_only_the_dialog_under_both() {
+    // A see-through selection over a see-through wash, over a dialog the recipe turns: the dialog
+    // is the bottom layer (#2724), so the pair's contrast moves with the hue though neither layer
+    // above it is turned, and the floors sweep it.
+    let resolved = load(&json!({
+        "name": "Deep",
+        "tint": { "tokens": ["surface.overlay"] },
+        "appearances": [{
+            "id": "dark", "appearance": "dark",
+            "tokens": {
+                "selection.background": "#a99cf055",
+                "selection.text": "#ffffff",
+                "danger.wash": "#f0a9a81f",
+            }
+        }]
+    }));
+    assert!(!resolved.refused, "{:?}", resolved.complaints);
+    let theme = resolved.theme.first();
+    assert_eq!(theme.tint.tabs(), ["surface.overlay"]);
+    let pair = check::PAIRS
+        .iter()
+        .find(|pair| pair.under == Some("danger.wash") && pair.beneath == Some("surface.overlay"))
+        .expect("the selection on the danger wash over the dialog is held");
+    assert!(floors::moves_with_hue(theme, pair));
+}
