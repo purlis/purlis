@@ -1,0 +1,96 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+use super::*;
+
+const IMAGE: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+fn adding(name: &str) -> PoolAdding {
+    PoolAdding {
+        name: name.into(),
+        image: IMAGE.into(),
+        cpus: None,
+        memory_mib: None,
+        processes: None,
+        tmp_mib: None,
+    }
+}
+
+#[test]
+fn cpus_are_typed_as_a_number_to_the_thousandth() {
+    for (typed, millicpus) in [
+        ("2", 2000),
+        ("0.5", 500),
+        ("1.25", 1250),
+        (" 3 ", 3000),
+        ("0.001", 1),
+    ] {
+        assert_eq!(millicpus_of(typed), Ok(millicpus), "{typed}");
+    }
+    for refused in ["", "two", "1.0005", "-1", "1,5", ".5", "1.", "99999999"] {
+        assert!(millicpus_of(refused).is_err(), "{refused:?} was taken");
+    }
+}
+
+#[test]
+fn a_pool_takes_the_limits_typed_and_the_defaults_for_the_rest() {
+    let pool = pool_of(&PoolAdding {
+        cpus: Some("1.5".into()),
+        memory_mib: Some(2048),
+        ..adding("builds")
+    })
+    .unwrap();
+    assert_eq!(
+        row(&pool).limits,
+        PoolLimitsShown {
+            cpus: "1.5".into(),
+            memory_mib: 2048,
+            processes: 1024,
+            tmp_mib: 1024,
+        }
+    );
+    // An empty CPUs field is the default.
+    let pool = pool_of(&PoolAdding {
+        cpus: Some(" ".into()),
+        ..adding("builds")
+    })
+    .unwrap();
+    assert_eq!(row(&pool).limits.cpus, "2");
+}
+
+#[test]
+fn a_pool_the_core_would_refuse_is_refused_in_its_words() {
+    for (adding, says) in [
+        (
+            PoolAdding {
+                image: "ghcr.io/purlis/purlis-runner:latest".into(),
+                ..adding("builds")
+            },
+            "digest",
+        ),
+        (adding("Builds"), "cannot name a pool"),
+        (
+            PoolAdding {
+                memory_mib: Some(100),
+                ..adding("builds")
+            },
+            "memory",
+        ),
+    ] {
+        let refused = pool_of(&adding).unwrap_err();
+        assert!(refused.contains(says), "{refused}");
+    }
+}
+
+#[test]
+fn the_pools_are_listed_with_a_new_pools_defaults() {
+    let config = tempfile::tempdir().unwrap();
+    assert_eq!(pools_on(config.path()).unwrap().pools, Vec::new());
+    purlis_core::runners::record_pool(config.path(), &pool_of(&adding("builds")).unwrap()).unwrap();
+    let shown = pools_on(config.path()).unwrap();
+    assert_eq!(shown.pools.len(), 1);
+    assert_eq!(shown.pools[0].name, "builds");
+    assert_eq!(shown.pools[0].image, IMAGE);
+    assert_eq!(shown.defaults.cpus, "2");
+    assert_eq!(shown.defaults.memory_mib, 4096);
+}

@@ -75,8 +75,12 @@ struct Model {
     dragging: bool,
     /// What the engine's own drag carries (#2136).
     drag_data: Value,
-    /// How long after the move that starts it the engine tells of its own drag.
-    drag_told_after: Duration,
+    /// Whether the engine holds its word that its own drag started until the test tells it to
+    /// say it ([`Engine::tell_of_the_held_drag`]), rather than saying it with the move that
+    /// starts it.
+    drag_told_when_asked: bool,
+    /// The word of the engine's own drag, held until the test asks for it.
+    held_drag: Option<Event>,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -123,6 +127,16 @@ impl Engine {
             params,
             session_id: session.map(str::to_owned),
         });
+    }
+
+    /// Says, now, that the engine's own drag started: the word it held back
+    /// (`drag_told_when_asked`). Fails the test when no drag has started.
+    fn tell_of_the_held_drag(&self) {
+        let told = super::lock(&self.model)
+            .held_drag
+            .take()
+            .expect("the engine's own drag started");
+        let _ = super::lock(&self.events).send(told);
     }
 
     fn sent(&self, method: &str) -> Vec<Sent> {
@@ -395,23 +409,17 @@ impl Engine {
                     starts
                 };
                 if starts {
-                    let (data, after) = {
-                        let model = super::lock(&self.model);
-                        (model.drag_data.clone(), model.drag_told_after)
+                    let mut model = super::lock(&self.model);
+                    let told = Event {
+                        method: "Input.dragIntercepted".into(),
+                        params: json!({ "data": model.drag_data }),
+                        session_id: on.map(str::to_owned),
                     };
-                    if after.is_zero() {
-                        self.emit("Input.dragIntercepted", json!({ "data": data }), on);
+                    if model.drag_told_when_asked {
+                        model.held_drag = Some(told);
                     } else {
-                        let events = super::lock(&self.events).clone();
-                        let session = on.map(str::to_owned);
-                        std::thread::spawn(move || {
-                            std::thread::sleep(after);
-                            let _ = events.send(Event {
-                                method: "Input.dragIntercepted".into(),
-                                params: json!({ "data": data }),
-                                session_id: session,
-                            });
-                        });
+                        drop(model);
+                        let _ = super::lock(&self.events).send(told);
                     }
                 }
                 Ok(json!({}))
@@ -545,7 +553,8 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             intercepting: false,
             dragging: false,
             drag_data: json!({"items":[{"mimeType":"text/plain","data":"card"}],"dragOperationsMask":1}),
-            drag_told_after: Duration::ZERO,
+            drag_told_when_asked: false,
+            held_drag: None,
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),
@@ -1126,12 +1135,17 @@ fn a_drag_that_fails_on_the_way_is_cancelled_let_go_and_handed_back() {
 
 #[test]
 fn a_drag_cut_by_the_person_taking_over_is_cancelled_let_go_and_handed_back() {
-    // The engine tells of its own drag only after the moves: the person takes over meanwhile.
-    let (browser, engine) = browser();
+    // In this order: every move is made with the button held, the person takes over, and only
+    // then does the engine say its own drag started. The driver waits for that word as long as
+    // the test needs, so no timing decides the order.
+    let (browser, engine) = browser_with(Limits {
+        drag_starts_within: Duration::from_secs(30),
+        ..limits()
+    });
     {
         let mut model = super::lock(&engine.model);
         model.native_drag = true;
-        model.drag_told_after = Duration::from_millis(80);
+        model.drag_told_when_asked = true;
     }
     let browser = Arc::new(browser);
     let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
@@ -1145,21 +1159,24 @@ fn a_drag_cut_by_the_person_taking_over_is_cancelled_let_go_and_handed_back() {
             },
         )
     });
+    let held_moves = || {
+        engine
+            .sent("Input.dispatchMouseEvent")
+            .iter()
+            .filter(|s| s.params["type"] == "mouseMoved" && s.params["buttons"] == 1)
+            .count()
+    };
     let started = std::time::Instant::now();
-    while engine
-        .sent("Input.dispatchMouseEvent")
-        .iter()
-        .filter(|s| s.params["type"] == "mouseMoved" && s.params["buttons"] == 1)
-        .count()
-        < 10
-    {
+    while held_moves() < super::DRAG_STEPS {
         assert!(
-            started.elapsed() < Duration::from_secs(5),
-            "the drag never moved"
+            started.elapsed() < Duration::from_secs(10),
+            "the drag never made its moves"
         );
         std::thread::sleep(Duration::from_millis(1));
     }
+    // Waits for the last move's answer: the lease is held while a call is in flight.
     browser.take_over();
+    engine.tell_of_the_held_drag();
     assert!(call.join().unwrap().is_err());
     let kinds = drag_kinds(&engine);
     assert_eq!(kinds, ["dragCancel"], "{kinds:?}");
