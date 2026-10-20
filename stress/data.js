@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792486365668,
+  "lastUpdate": 1792488578220,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -3734,6 +3734,42 @@ window.BENCHMARK_DATA = {
             "value": 334.2,
             "unit": "MB",
             "extra": "median of 6 samples: 264.7, 365, 351, 334, 334.3, 284.6 MB; window 161.3 MB, session host 175.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0e31c62c5d1fa8a53eafe0b5290cc256ceb839f9",
+          "message": "Sandbox: every path reads the record of how a chat's run started, a runner's included (#2726)\n\n* Move vaultroute's and vaults' tests into their own files\n\nA move alone: no test's name or body changed.\n\nPart of #2692\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A host says how it applied the sandbox to a run as it answers the start\n\nprogram_started carries sandbox, the same record programs answers, read\nby the host from what it started and never from the start (session\nprotocol 1.29). A link between hosts may not ask for programs, so the\nstart's answer is where a window hears it of a chat a runner composes by\nits names.\n\nPart of #2692\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Every path reads the record of how a chat's run started\n\nA chat a runner composes is judged by the runner host's record, as its\nstart answered it. Dispatching to another persona, a handoff's crossing,\na dispatch while you are away and the network record count a chat as\nsandboxed only where its run is recorded in a sandbox whose compile the\nwindow holds. A browser login, a browser's listing, a git action's reach\nand the vault Notice count it as unsandboxed only where its run is\nrecorded off. A login of a chat in its runner's sandbox is refused in\nwords rather than offered a restart. ADR 0068 amendment and a changelog\nfragment.\n\nCloses #2692\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A moved vault test prints only a key entry's count and time\n\nCode scanning reads the moved test anew: its failure messages now name\nwhat they print, an entry count and a time, never the entries.\n\nPart of #2692\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The moved vault test's failure names nothing it read\n\nPart of #2692\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* A runner's word that a run is off holds only where the window's own reading agrees\n\nFor a start the window compiled a sandbox for, a runner's record of the\nrun as off is kept as no record: the chat is held by the runner's\nsandbox, and no path that lets a chat with no sandbox reach more takes\nit as one.\n\nPart of #2692\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-20T12:29:19+04:00",
+          "tree_id": "0a43be3a861f328ecb15fe43c5e8dd1cfc0ee071",
+          "url": "https://github.com/purlis/purlis/commit/0e31c62c5d1fa8a53eafe0b5290cc256ceb839f9"
+        },
+        "date": 1792488576542,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1030,
+            "unit": "MB",
+            "extra": "median of 3 samples: 794, 1030, 1115 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 321.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 334.1, 322.7, 323.5, 319.3, 320.1, 265.8 MB; window 149.3 MB, session host 164.3 MB"
           }
         ]
       }
