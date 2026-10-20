@@ -1254,9 +1254,7 @@ fn findings_for(theme: &ResolvedTheme, token: &'static str) -> usize {
         let tinted_in = |it: &str| tabs.contains(&it);
         let touched = tinted_in(token)
             || (ansi && tinted_in("terminal.background"))
-            || pairs
-                .iter()
-                .any(|pair| tinted_in(pair.back) || pair.under.is_some_and(tinted_in));
+            || pairs.iter().any(|pair| pair.tokens().any(tinted_in));
         for one in &theme.tint.hues {
             // A tint that turns none of what is measured measures as the theme does.
             found += if touched {

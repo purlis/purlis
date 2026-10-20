@@ -21,25 +21,48 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { property, TOKENS, type Token } from "./theme";
 
-/** The engine's pair list, read out of its source: `front on back` for each `p("front", "back"`. */
+/**
+ * The engine's pair list, read out of its source: each `p("front", "back", floor)` with the
+ * layers its `.over("layer")` calls lay it over, the top one first (#2724), as
+ * `front on back over layer over layer`.
+ */
 const CHECK = join(process.cwd(), "..", "crates", "purlis-core", "src", "theme", "check.rs");
-const HELD: ReadonlySet<string> = (() => {
-  const source = readFileSync(CHECK, "utf8");
-  const list = /pub const PAIRS: &\[Pair\] = &\[([\s\S]*?)\n\];/.exec(source)?.[1] ?? "";
-  return new Set(
-    [...list.matchAll(/\bp\(\s*"([^"]+)",\s*"([^"]+)"/g)].map(
-      ([, front, back]) => `${front} on ${back}`,
-    ),
-  );
-})();
+const LIST =
+  /pub const PAIRS: &\[Pair\] = &\[([\s\S]*?)\n\];/.exec(readFileSync(CHECK, "utf8"))?.[1] ?? "";
+const LAID: readonly string[] = [
+  ...LIST.matchAll(
+    /\bp\(\s*"([^"]+)",\s*"([^"]+)",[^)]*\)((?:\s*\.(?:over|faded|selected)\([^)]*\))*)/g,
+  ),
+].map(([, front, back, calls]) =>
+  [
+    `${front} on ${back}`,
+    ...[...(calls ?? "").matchAll(/\.over\(\s*"([^"]+)"\s*\)/g)].map(([, layer]) => layer),
+  ].join(" over "),
+);
+/** `front on back` for each pair, whatever it is laid over. */
+const HELD: ReadonlySet<string> = new Set(LAID.map((pair) => pair.split(" over ")[0] ?? pair));
 
 describe("the engine's pair list", () => {
   it("is read out of the core", () => {
     expect(HELD.size).toBeGreaterThan(100);
     expect(HELD.has("text.primary on surface.base")).toBe(true);
     expect(HELD.has("text.primary on danger.wash")).toBe(true);
-    for (const pair of HELD)
-      for (const token of pair.split(" on ")) expect(TOKENS, pair).toContain(token as Token);
+    for (const pair of LAID)
+      for (const token of pair.split(/ on | over /)) expect(TOKENS, pair).toContain(token as Token);
+  });
+
+  it("reads each layer a pair is laid over, two at most", () => {
+    expect(LAID).toContain("text.primary on danger.wash over surface.overlay");
+    expect(LAID).toContain("text.primary on surface.overlay");
+    // The command a profile will run as you, selected on the danger wash in its dialog.
+    expect(LAID).toContain(
+      "selection.text on selection.background over danger.wash over surface.overlay",
+    );
+    for (const pair of LAID) expect(pair.split(" over ").length, pair).toBeLessThanOrEqual(3);
+    // Every pair is read, and every layer of each, none skipped by a form this does not know.
+    expect(LAID).toHaveLength([...LIST.matchAll(/\bp\(/g)].length);
+    const layers = LAID.reduce((sum, pair) => sum + pair.split(" over ").length - 1, 0);
+    expect(layers).toBe([...LIST.matchAll(/\.over\(/g)].length);
   });
 });
 

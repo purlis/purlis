@@ -8,6 +8,10 @@
 //! contrast ratio ([`PAIRS`]), the sixteen ANSI colours are held off the terminal's background,
 //! and the selected row is held apart from the pointer's and the tab's.
 //!
+//! **A theme's fonts bring every style it draws** (#2736): a style drawn in a font the theme
+//! brings with no face of its own ([`super::without_a_face`]) is made by the browser from
+//! another face, slanted or thickened, so the check names its slot and style.
+//!
 //! **Geometry is held across tokens too** ([`FITS`]): a line of the window's words, its size
 //! times its line height, fits inside the control or the strip it is drawn in, in both densities.
 //! A theme may set each of the numbers within its own bounds and still make a line taller than
@@ -27,6 +31,7 @@
 //! `app/src/theme/contrast.test.ts` reads [`PAIRS`] out of this file and fails when a stylesheet
 //! draws a pair of tokens that is not in it.
 
+use super::fonts::{Style, without_a_face};
 use super::geometry::Geometry;
 use super::vocabulary::{TOKENS, is_platform};
 use super::{Density, ResolvedTheme, tint};
@@ -44,7 +49,9 @@ const STANDS_IN: &[(&str, &str)] = &[
 ];
 
 /// One pair: `front` drawn on `back`, held to `floor`. `under` is what `back` is laid over, for
-/// a `back` that is a wash with alpha. A `front` with alpha is measured laid over the `back`.
+/// a `back` that is a wash with alpha, and `beneath` what `under` is laid over in turn, for an
+/// `under` that is a wash too (#2724): the layers are laid from the bottom up. A `front` with
+/// alpha is measured laid over the `back`.
 /// `fade` is the opacity a stylesheet draws `front` at, for words drawn faded: the front is
 /// measured laid over the `back` at that opacity. `selected` marks words drawn selected in their
 /// own colour: a theme that colours selected text draws them all in `selection.text`, which its
@@ -57,18 +64,36 @@ pub struct Pair {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub under: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub beneath: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fade: Option<f64>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub selected: bool,
 }
 
 impl Pair {
-    /// The same pair, with `back` laid over `under` first.
-    const fn over(self, under: &'static str) -> Self {
-        Self {
-            under: Some(under),
-            ..self
+    /// The same pair, with what it is drawn on laid over `layer` first: `back` over it, or, for a
+    /// pair already laid over one layer, that layer over it. A pair names two layers at most, and
+    /// [`PAIRS`] is built at compile time, so a third is a build error.
+    const fn over(self, layer: &'static str) -> Self {
+        match (self.under, self.beneath) {
+            (None, _) => Self {
+                under: Some(layer),
+                ..self
+            },
+            (Some(_), None) => Self {
+                beneath: Some(layer),
+                ..self
+            },
+            (Some(_), Some(_)) => panic!("a pair is laid over two layers at most"),
         }
+    }
+
+    /// Every token the pair names: its front, its back and each layer under them.
+    pub fn tokens(&self) -> impl Iterator<Item = &'static str> {
+        [Some(self.front), Some(self.back), self.under, self.beneath]
+            .into_iter()
+            .flatten()
     }
 
     /// The same pair, with `front` drawn at `opacity`.
@@ -94,6 +119,7 @@ const fn p(front: &'static str, back: &'static str, floor: f64) -> Pair {
         back,
         floor,
         under: None,
+        beneath: None,
         fade: None,
         selected: false,
     }
@@ -373,6 +399,12 @@ pub const PAIRS: &[Pair] = &[
     p("selection.text", "selection.background", TEXT).over("surface.raised"),
     p("selection.text", "selection.background", TEXT).over("surface.overlay"),
     p("selection.text", "selection.background", TEXT).over("danger.surface"),
+    // - The command a profile will run as you (`.honest.approve code`, #2724) is selectable on
+    //   the danger wash in its dialog: a see-through selection is laid over the wash, laid over
+    //   the dialog. It is what the ask says, so the Ask floor holds it (`floors::SELECTED`).
+    p("selection.text", "selection.background", TEXT)
+        .over("danger.wash")
+        .over("surface.overlay"),
     // - Words selected in their own colour (#2522): while selected text is the platform's, the
     //   window's secondary, muted, accent and state words keep their colours on a theme's
     //   selection, beside its primary words above, over the window, a sunken box (a release's
@@ -698,6 +730,13 @@ pub enum Finding {
         line: f64,
         room: f64,
     },
+    /// A style the theme draws in a font it brings that has no face for it (#2736): `slot` is
+    /// `ui`, `mono` or `terminal`, and the browser makes the style from another of its faces.
+    StyleWithoutAFace {
+        slot: &'static str,
+        weight: u16,
+        style: Style,
+    },
 }
 
 /// The check, as [`super::check`] describes it.
@@ -708,9 +747,18 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
     if platform("selection.background") && !platform("selection.text") {
         findings.push(Finding::SelectionTextAlone);
     }
-    // A tint turns colours only, so the geometry is checked once.
+    // A tint turns colours only, so the geometry and the faces are checked once.
     fits(Density::Comfortable, &theme.geometry, &mut findings);
     fits(Density::Compact, &theme.compact, &mut findings);
+    findings.extend(
+        without_a_face(theme)
+            .into_iter()
+            .map(|one| Finding::StyleWithoutAFace {
+                slot: one.slot,
+                weight: one.weight,
+                style: one.style,
+            }),
+    );
     // A theme a workspace's colour does not tint is only ever drawn as it is.
     if !theme.tint.tabs().is_empty() {
         for one in &theme.tint.hues {
@@ -783,10 +831,11 @@ fn fits(density: Density, geometry: &Geometry, findings: &mut Vec<Finding>) {
 }
 
 /// **The contrast `pair` has in `theme`**, to two places, as it is drawn: `back` laid over
-/// `under` when it names one, and a see-through `front` laid over that. `None` when the platform
-/// draws one of them ([`super::vocabulary::PLATFORM_DRAWN`]); a front left to the platform that
-/// keeps the words' own colour is measured as those words ([`STANDS_IN`]); a `selected` pair is
-/// not measured while the theme colours selected text.
+/// `under` when it names one, itself laid over `beneath` when it names one, and a see-through
+/// `front` laid over that. `None` when the platform draws one of them
+/// ([`super::vocabulary::PLATFORM_DRAWN`]); a front left to the platform that keeps the words'
+/// own colour is measured as those words ([`STANDS_IN`]); a `selected` pair is not measured
+/// while the theme colours selected text.
 pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> Option<f64> {
     let (front, back) = drawn(theme, pair)?;
     Some(two_places(contrast(&front, &back)))
@@ -797,9 +846,11 @@ pub(super) fn ratio(theme: &ResolvedTheme, pair: &Pair) -> Option<f64> {
 pub(super) fn drawn(theme: &ResolvedTheme, pair: &Pair) -> Option<(String, String)> {
     let (front, back) = measured(theme, pair)?;
     let back = theme.value(back);
-    let drawn = match pair.under {
-        Some(under) => onto(back, theme.value(under)),
-        None => back.to_owned(),
+    // From the bottom up: each layer laid over the one under it.
+    let drawn = match (pair.under, pair.beneath) {
+        (Some(under), Some(beneath)) => onto(back, &onto(theme.value(under), theme.value(beneath))),
+        (Some(under), None) => onto(back, theme.value(under)),
+        (None, _) => back.to_owned(),
     };
     let front = onto(theme.value(front), &drawn);
     let front = match pair.fade {

@@ -8,7 +8,7 @@
 //! words. A chat reads the findings as the engine reports them (`purlis theme check --json`).
 
 use super::check::Finding;
-use super::{Checked, Density, PALETTE, Theme};
+use super::{Checked, Density, PALETTE, Style, Theme};
 use crate::shown;
 
 /// **Every warning the check found in `checked`**, each a line: a combination is named at the
@@ -118,9 +118,11 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
     for finding in findings {
         let (subject, floor, tint, ratio) = match finding {
             Finding::Contrast { tint, pair, ratio } => {
-                let over = pair
-                    .under
-                    .map_or_else(String::new, |under| format!(" over {under}"));
+                let over: String = [pair.under, pair.beneath]
+                    .into_iter()
+                    .flatten()
+                    .map(|layer| format!(" over {layer}"))
+                    .collect();
                 (
                     format!("{} on {}{over}", pair.front, pair.back),
                     Some(pair.floor),
@@ -167,6 +169,23 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                     match density {
                         Density::Comfortable => "comfortable",
                         Density::Compact => "compact",
+                    }
+                ),
+                None,
+                None,
+                None,
+            ),
+            Finding::StyleWithoutAFace {
+                slot,
+                weight,
+                style,
+            } => (
+                format!(
+                    "{slot} draws {} text at weight {weight} with no face of its own, so the \
+                     browser makes it from another face",
+                    match style {
+                        Style::Normal => "upright",
+                        Style::Italic => "italic",
                     }
                 ),
                 None,

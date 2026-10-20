@@ -1678,6 +1678,68 @@ fn the_check_reports_each_hard_floor_a_combination_breaks() {
 }
 
 #[test]
+fn the_check_warns_once_for_each_style_drawn_without_a_face_naming_its_slot_and_style() {
+    let rig = Rig::new();
+    // Code in JetBrains Mono's upright regular and bold, with no italic, and its comments drawn
+    // italic.
+    let themes = rig.dir.path().join("themes");
+    let folder = themes.join("slant");
+    std::fs::create_dir_all(folder.join("fonts")).expect("a fonts folder");
+    let (regular, bold) = (
+        "fonts/JetBrainsMono-Regular.woff2",
+        "fonts/JetBrainsMono-Bold.woff2",
+    );
+    for face in [regular, bold] {
+        std::fs::write(folder.join(face), &purlis_core::theme::purlis_files()[face])
+            .expect("a face");
+    }
+    std::fs::write(
+        folder.join("theme.json"),
+        serde_json::json!({
+            "name": "Slant",
+            "fonts": { "mono": {
+                "family": "JetBrains Mono",
+                "faces": [
+                    { "file": regular, "weight": 400 },
+                    { "file": bold, "weight": 700 }
+                ]
+            } },
+            "appearances": [{ "id": "dark", "appearance": "dark",
+                "tokens": { "syntax.comment.italic": true } }]
+        })
+        .to_string(),
+    )
+    .expect("a theme.json");
+    let at = folder.display().to_string();
+
+    let ran = rig.run(&["check", &at]);
+
+    assert_eq!(
+        ran.code, 0,
+        "a warning is not a refusal: {}{}",
+        ran.out, ran.err
+    );
+    let said = "mono draws italic text at weight 400 with no face of its own, so the browser \
+                makes it from another face";
+    assert_eq!(ran.out.matches(said).count(), 1, "{}", ran.out);
+    assert!(ran.out.contains("warnings (1):\n"), "{}", ran.out);
+
+    let json = rig.run(&["check", &at, "--json"]).json();
+    assert_eq!(
+        json["warnings"],
+        serde_json::json!([{
+            "kind": "style-without-a-face",
+            "slot": "mono",
+            "weight": 400,
+            "style": "italic",
+            "appearance": "dark",
+            "options": {},
+        }])
+    );
+    assert_eq!(json["clean"], false);
+}
+
+#[test]
 fn a_theme_draft_is_written_by_the_app_and_never_by_the_command_whatever_id_it_is_given() {
     let rig = Rig::new();
     // An id in the environment is no chat's say-so: with no app to hand it to, nothing is written.

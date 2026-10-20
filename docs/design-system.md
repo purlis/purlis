@@ -92,10 +92,12 @@ check does not measure what the platform draws. A colour is drawn as given, so a
 thumb hides the scrollbars. Selected text is coloured only on a selection the theme colours too,
 and the check says so when a theme colours one without the other. A see-through selection is
 measured laid over each ground it is drawn on: the window, a field, a pane, a Notice, a dialog
-and a trouble Notice. While selected text keeps its own colour, the window's words, a markdown
+and a trouble Notice, and over the danger wash laid over a dialog, where the command a profile
+will run as you is selectable (#2724: a pair names up to two layers under it, laid from the
+bottom up). While selected text keeps its own colour, the window's words, a markdown
 render's and the danger words are held on the selection at the floor for words, the danger words
-as a consent floor. Selected text a theme colours is held as a consent floor on a trouble Notice
-and a dialog; a theme that breaks it is drawn with the platform's selection. No palette may name
+as a consent floor. Selected text a theme colours is held as a consent floor on a trouble Notice,
+a dialog and the danger wash in a dialog; a theme that breaks it is drawn with the platform's selection. No palette may name
 a colour `platform`. The window's rules stop at the light editor, which draws its own selection
 and caret.
 Purlis Classic leaves all six to the platform.
@@ -404,8 +406,9 @@ thickens a face to make one. `theme::styles_drawn` names every style a resolved 
 the interface at each of its three weights, upright and italic for emphasis; code upright, and
 each syntax role at its italic and bold (comments italic, tags and headings bold, at
 `theme::BOLD`, 700); the terminal upright, bold and italic. `theme::without_a_face` names those
-its fonts have no face for, and a test holds it empty for every appearance of Purlis. A font
-with no face is the platform's own, as Purlis Classic's are, and brings its own styles.
+its fonts have no face for, and a test holds it empty for every appearance of Purlis. The theme
+check warns once for each of them, naming the slot and the style (#2736). A font with no face is
+the platform's own, as Purlis Classic's are, and brings its own styles.
 
 ## What a theme looks like
 
