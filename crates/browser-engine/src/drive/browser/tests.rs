@@ -284,6 +284,26 @@ impl Engine {
                 Ok(json!({ "nodes": model.ax.get(frame).cloned().unwrap_or(json!([])) }))
             }
             "DOM.getFrameOwner" => Ok(json!({"backendNodeId": 50, "nodeId": 0})),
+            // The payment frame's element is drawn at (100, 200), 200 by 60, as its box model
+            // says; anywhere else is the page's own document (#2638).
+            "DOM.getNodeForLocation" => {
+                let (x, y) = (
+                    p["x"].as_f64().unwrap_or(-1.0),
+                    p["y"].as_f64().unwrap_or(-1.0),
+                );
+                Ok(
+                    if (100.0..300.0).contains(&x) && (200.0..260.0).contains(&y) {
+                        json!({"backendNodeId": 50, "frameId": "PAGE-1"})
+                    } else {
+                        json!({"backendNodeId": 3, "frameId": "PAGE-1"})
+                    },
+                )
+            }
+            "DOM.describeNode" if p["objectId"].is_null() => Ok(if p["backendNodeId"] == 50 {
+                json!({"node":{"nodeId":0,"backendNodeId":50,"nodeType":1,"nodeName":"IFRAME","localName":"iframe","nodeValue":"","frameId":"PAYMENT-FRAME"}})
+            } else {
+                json!({"node":{"nodeId":0,"backendNodeId":p["backendNodeId"],"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":""}})
+            }),
             "DOM.getBoxModel" => Ok(
                 json!({"model":{"content":[100,200,300,200,300,260,100,260],"padding":[100,200,300,200,300,260,100,260],"border":[100,200,300,200,300,260,100,260],"margin":[100,200,300,200,300,260,100,260],"width":200,"height":60}}),
             ),

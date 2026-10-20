@@ -750,6 +750,83 @@ fn a_key_after_the_focus_moved_reads_the_page_again() {
     assert!(tree_reads(&engine) > reads);
 }
 
+/// The payment frame inside the page loads another document, as a rotating advert does; the
+/// page's own document stays (#2638).
+fn the_payment_frame_moves_on(browser: &super::Browser, engine: &super::Engine, aim: &Aim) {
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","loaderId":"LOADER-8","url":"http://other.test/next.html","name":"payment"}}),
+        Some("S-PAYMENT"),
+    );
+    wait_for("the frame's new document is known", || {
+        aim_now(browser) != *aim
+    });
+}
+
+#[test]
+fn a_key_typed_into_the_page_while_another_frame_of_it_moves_on_reaches_the_field() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    the_payment_frame_moves_on(&browser, &engine, &aim);
+
+    browser.person_input(&key(&aim, "x", true)).unwrap();
+    browser.person_input(&key(&aim, "x", false)).unwrap();
+
+    let sent = engine.sent("Input.dispatchKeyEvent");
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[0].session.as_deref(), Some("S-PAGE-1"));
+}
+
+#[test]
+fn a_key_for_a_frame_with_the_focus_that_moved_on_is_dropped() {
+    let (browser, engine) = browser();
+    super::focus_on(&engine, &[("PAYMENT-FRAME", "3")]);
+    browser.take_over();
+    let aim = aim_now(&browser);
+    the_payment_frame_moves_on(&browser, &engine, &aim);
+
+    let late = browser.person_input(&key(&aim, "x", true));
+
+    assert_eq!(late, Err(Refusal::Missed));
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+}
+
+#[test]
+fn a_click_on_the_page_away_from_a_frame_that_moved_on_reaches_the_page() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    the_payment_frame_moves_on(&browser, &engine, &aim);
+
+    browser.person_input(&press(&aim, 42.0, 17.5)).unwrap();
+
+    let sent = engine.sent("Input.dispatchMouseEvent");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].params["type"], "mousePressed");
+}
+
+#[test]
+fn a_click_while_a_frame_of_the_page_went_is_dropped() {
+    // Where a frame went, the page around it may have moved: what is under the point now is
+    // not known to be what the person saw.
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    engine.emit(
+        "Page.frameDetached",
+        json!({"frameId":"PAYMENT-FRAME","reason":"remove"}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the frame is gone", || aim_now(&browser) != aim);
+
+    let late = browser.person_input(&press(&aim, 42.0, 17.5));
+    let typed = browser.person_input(&key(&aim, "x", true));
+
+    assert_eq!(late, Err(Refusal::Missed));
+    assert!(typed.is_ok(), "{typed:?}");
+}
+
 #[test]
 fn a_value_typed_key_by_key_leaves_no_part_of_it_in_any_later_answer() {
     let (browser, engine) = browser();
