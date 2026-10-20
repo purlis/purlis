@@ -14,7 +14,8 @@
 //! This module is the tool's half that needs no app: what it takes ([`asked`]), which resolved
 //! theme each specimen draws ([`chosen`], the theme engine's answer, drawn by [`drawn`] with the
 //! consent floors held as the window holds them), and what the model is told
-//! ([`said`]). The app draws; the MCP server carries the ask over the chat's hook socket
+//! ([`said`]), and whose turn the one painter is ([`turns`]: a chat's ask ahead of Settings ›
+//! Theme's pictures). The app draws; the MCP server carries the ask over the chat's hook socket
 //! ([`crate::hookwire::Ask::ThemePreview`]) and the pictures back as images on the framed
 //! stream.
 //!
@@ -30,6 +31,8 @@ use serde_json::{Map, Value, json};
 
 use crate::chattools::Tool;
 use crate::theme::{self, Appearance, ResolvedTheme};
+
+pub mod turns;
 
 /// The tool's name.
 pub const TOOL: &str = "theme_preview";

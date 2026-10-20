@@ -6,6 +6,7 @@ import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import {
   commands,
   type GalleryCard,
+  type TheirsDrawn,
   type ThemeAt,
   type ThemeGallery,
   type WindowOption,
@@ -210,7 +211,8 @@ function answered(read: Read): read is ThemeGallery {
 
 /** The card a choice names: a card by its id, of the level the choice names (the nearest of
  *  the name when it names none, as the cards are nearest first); Purlis Classic by any id one of
- *  its appearances has had. */
+ *  its appearances has had, and by the old `system` id while no theme of the person's own is
+ *  drawn (#2615). */
 function cardNamed(
   gallery: ThemeGallery,
   id: string | undefined | null,
@@ -222,8 +224,22 @@ function cardNamed(
   );
   if (found !== undefined) return found;
   const known = Object.prototype.hasOwnProperty.call(THEME_ALIASES, id) || id in BUILT_IN;
-  return known || id === SYSTEM ? gallery.cards.find((one) => one.id === CLASSIC) : undefined;
+  return known || (id === SYSTEM && gallery.theirs === null)
+    ? gallery.cards.find((one) => one.id === CLASSIC)
+    : undefined;
 }
+
+/** **The person's own `theme.json`, drawn**, as the gallery's line says it (#2615): with what
+ *  following the system does with it. */
+export function theirsSaid(theirs: TheirsDrawn): string {
+  if (theirs.follows_system) return "your own theme.json, following the system";
+  return theirs.note === null ? "your own theme.json" : `your own theme.json (${theirs.note})`;
+}
+
+/** What the rows under the cards say while the person's own `theme.json` is drawn: it is no
+ *  card, so there is nothing of a card's to show. */
+const THEIRS_NO_CARD =
+  "Your own theme.json is drawn here, and it is no card: choose a theme above to pick its appearance.";
 
 /** The card the person's own choice here names. */
 function yoursCard(gallery: ThemeGallery): GalleryCard | undefined {
@@ -490,7 +506,9 @@ function Cards({
     <div className="flex flex-col gap-2">
       <p className="ui-setting-help">
         {gallery.yours !== null ? "Chosen here" : "Drawn here"}:{" "}
-        {chosen?.name ?? "your own theme.json"} <SourceBadge badge={badge} />
+        {chosen?.name ??
+          (gallery.theirs !== null ? theirsSaid(gallery.theirs) : "your own theme.json")}{" "}
+        <SourceBadge badge={badge} />
       </p>
       <RovingFocusGroup.Root asChild loop {...stop}>
         <div
@@ -668,9 +686,11 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
         control: (ids) =>
           card === undefined || card.refused ? (
             <p id={ids.id} className="ui-setting-help">
-              {card === undefined
-                ? "Reading the themes…"
-                : "The chosen theme is refused, so purlis draws its own in its place."}
+              {card !== undefined
+                ? "The chosen theme is refused, so purlis draws its own in its place."
+                : gallery?.theirs != null
+                  ? THEIRS_NO_CARD
+                  : "Reading the themes…"}
             </p>
           ) : (
             <div className="flex flex-col gap-1">
@@ -808,7 +828,9 @@ function checkRow(group: string, at: ThemeAt | null): LiveSetting {
             aria-describedby={ids.describedBy}
           >
             {lines === undefined ? (
-              <p className="ui-setting-help">Reading the themes…</p>
+              <p className="ui-setting-help">
+                {gallery?.theirs != null ? THEIRS_NO_CARD : "Reading the themes…"}
+              </p>
             ) : lines.length === 0 ? (
               <p className="ui-setting-help">
                 No findings: {card?.name} can be read in every appearance.

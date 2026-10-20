@@ -84,6 +84,7 @@ const GALLERY: ThemeGallery = {
   from: "nothing chose one",
   chosen: "purlis-classic",
   options: [],
+  theirs: null,
 };
 
 /** The person's own choice of `theme`, of the folder level `from`. */
@@ -917,5 +918,63 @@ describe("nothing a gallery test starts outlives it (#2698)", () => {
     cleanup();
     forgetSpecimens();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("your own theme.json, drawn (#2615)", () => {
+  /** What the levels draw when it is the person's own `theme.json`: no card is drawn. */
+  const theirs = (over: Partial<ThemeGallery>) =>
+    shown({ drawn: null, chosen: null, level: "machine-default", ...over });
+
+  it("says it is drawn and follows the system, and marks no card", async () => {
+    core(
+      theirs({
+        from: "your own theme.json on this machine",
+        theirs: { follows_system: true, note: null },
+      }),
+    );
+    render(<Group at={null} />);
+    await cards();
+    expect(
+      screen.getByText(/^Drawn here: your own theme.json, following the system/),
+    ).toHaveTextContent("This machine");
+    for (const one of screen.getAllByRole("option"))
+      expect(one).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByRole("region", { name: "Appearance" })).toHaveTextContent(
+      "Your own theme.json is drawn here, and it is no card",
+    );
+    expect(screen.getByRole("region", { name: "Theme check" })).not.toHaveTextContent(
+      "Reading the themes",
+    );
+  });
+
+  it("says a theme.json of one appearance stays in it when the old system id is chosen", async () => {
+    core(
+      theirs({
+        yours: mine("system", null),
+        level: "machine-default",
+        theirs: {
+          follows_system: false,
+          note: "Mine has only a dark appearance, so following the system stays dark",
+        },
+      }),
+    );
+    render(<Group at={null} />);
+    await cards();
+    expect(
+      screen.getByText(
+        /^Chosen here: your own theme.json \(Mine has only a dark appearance, so following the system stays dark\)/,
+      ),
+    ).toBeTruthy();
+    // The old id names the person's own theme, not Purlis Classic.
+    expect(named("Purlis Classic")).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("marks Purlis Classic for the old system id with no theme of your own, following the system", async () => {
+    core(shown({ yours: mine("system", null), chosen: "purlis-classic" }));
+    render(<Group at={null} />);
+    await cards();
+    expect(named("Purlis Classic")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText(/^Chosen here: Purlis Classic/)).toBeTruthy();
   });
 });

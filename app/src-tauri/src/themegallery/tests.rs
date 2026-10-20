@@ -173,3 +173,44 @@ fn an_option_set_where_nothing_was_chosen_makes_the_drawn_choice_the_persons() {
     assert!(choose_option_of(&place, None, "accent", Some("teal")).is_err());
     assert_eq!(gallery_of(&place, None).yours, None);
 }
+
+/// The person's own `theme.json` of one dark appearance, called `Owl`.
+fn owl() -> theme::Theme {
+    theme::load(&serde_json::json!({
+        "name": "Owl",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {} }]
+    }))
+    .theme
+}
+
+#[test]
+fn the_persons_own_theme_json_drawn_is_said_with_what_following_does_with_it() {
+    let home = tempfile::tempdir().unwrap();
+    let place = machine(home.path());
+    let mine = owl();
+    // Drawn with no choice: theirs, in its one appearance, no card chosen.
+    let shown = gallery_of(&place, Some(&mine));
+    assert_eq!(shown.chosen, None);
+    assert_eq!(
+        shown.theirs,
+        Some(TheirsDrawn {
+            follows_system: false,
+            note: None
+        })
+    );
+    // The old `system` id chosen: theirs, followed, staying in its one appearance (#2615).
+    choose_machine_of(home.path(), Some("system"), None, None).unwrap();
+    let shown = gallery_of(&place, Some(&mine));
+    assert_eq!(shown.chosen, None);
+    assert_eq!(
+        shown.theirs,
+        Some(TheirsDrawn {
+            follows_system: false,
+            note: Some("Owl has only a dark appearance, so following the system stays dark".into()),
+        })
+    );
+    // With no theme of the person's, the old id draws Purlis Classic's card.
+    let shown = gallery_of(&place, None);
+    assert_eq!(shown.theirs, None);
+    assert_eq!(shown.chosen.as_deref(), Some("purlis-classic"));
+}

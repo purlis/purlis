@@ -440,9 +440,8 @@ with no face is the platform's own, as Purlis Classic's are, and brings its own 
   that one and keeps its tag; a new one starts from Purlis Classic's appearance of its tag. The
   first appearance is what a theme draws when nothing chose another; following the system works
   with any theme that has a dark and a light one, and following a theme of one appearance stays
-  in it, which Settings › Theme says on its Follow the system (#2331). The old `system` id, with
-  the person's own `theme.json` of one appearance, follows with Purlis Classic, as it did before
-  format 2. **When the system asks for more contrast** (`prefers-contrast: more`: Increase
+  in it, which Settings › Theme says on its Follow the system (#2331). The old `system` id names
+  the person's own `theme.json`, else Purlis Classic, followed as any theme is (#2615). **When the system asks for more contrast** (`prefers-contrast: more`: Increase
   contrast on macOS, a high-contrast theme elsewhere), whatever draws an appearance of a tag
   draws the theme's appearance of that tag tagged `high-contrast` instead, when it has one, and
   the window draws again when the setting changes (#2328). A built-in pick names its appearance.
@@ -779,16 +778,23 @@ person's press in the window makes it.
 two cards a choice tells apart, #2516), and the themes of the extensions in force there. You is the machine's level (its
 choice is the machine default), Project the project's and Workspace the workspace's. The
 person's own single-file `theme.json` is no card, since no choice names it; when it is what is
-drawn, the gallery says so.
+drawn, the gallery says so, with what following the system does with it: "Drawn here: your own
+theme.json, following the system", or that it stays in its one appearance (#2615).
 
 - **Each card shows the theme specimen in each of its appearances** (up to three, then a
   count): the specimen #2330 draws for a chat's `theme_preview`, asked by the window with
-  `theme_specimen` and the level, one at a time, and kept for the window's life by the card's
-  `stamp`, which changes whenever anything the theme draws does. A card of the theme chosen at
-  the level is pictured, as it is drawn when pointed at, with the option values chosen there. While a chat's
-  `theme_preview` holds the painter, the app answers `SPECIMEN_BUSY`, and the window asks again
-  after a wait longer than one specimen's budget, a few times; a picture that could not be
-  drawn is never kept.
+  `theme_specimen` and the level, one at a time, and kept by the card's `stamp`, which changes
+  whenever anything the theme draws does. A card of the theme chosen at the level is pictured,
+  as it is drawn when pointed at, with the option values chosen there. **Only the cards on
+  screen are pictured** (#2614): a card's pictures are asked for once it scrolls into view, and
+  one still waiting its turn when its card scrolls away is not asked for. **At most 48 pictures
+  are kept** beside the ones on screen (`MOST_KEPT`); past that, the one shown least recently
+  is let go and asked for again if its card comes back.
+- **A chat's `theme_preview` goes first** (#2614, `themepreview::turns`): one specimen is drawn
+  at a time. A chat asked while a card's picture is drawn waits for it, and that picture gives
+  way, so the chat is drawn next. While a chat holds or waits for the painter, the app answers
+  the window `SPECIMEN_BUSY`, and the window asks again after a wait longer than one specimen's
+  budget, a few times; a picture that could not be drawn is never kept.
 - **Pointing at a card, or moving to it with the arrow keys, draws its theme in the window**,
   and leaving puts the person's theme back (`theme/hoverPreview.ts`). The engine resolves the
   card in the appearance a choice of it would draw (`theme_card_drawn`), with the consent floors

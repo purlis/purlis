@@ -1584,3 +1584,98 @@ fn the_window_never_reads_a_named_folder_s_fonts() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// The old `system` id, a theme like any other (#2615)
+// ---------------------------------------------------------------------------------------
+
+/// What the levels draw for a project's `system` pick, the person's own theme `theirs` beside
+/// it, with the system's appearance `system`.
+fn system_picked(theirs: Option<&Theme>, system: Appearance, appearance: Option<&str>) -> Drawn {
+    resolve_levels(
+        &LevelInputs {
+            levels: &Levels {
+                project_default: Choice::new("system", appearance),
+                ..Levels::default()
+            },
+            folders: &Folders::default(),
+            theirs,
+            on: On::Every,
+            system,
+            contrast: Contrast::Standard,
+        },
+        no_survey,
+    )
+}
+
+#[test]
+fn the_old_system_id_draws_what_it_drew_before_with_none_or_two_appearances_of_the_person_s() {
+    let mine = load(&two("Mine")).theme;
+    for system in [Appearance::Light, Appearance::Dark] {
+        // No theme of the person's: Purlis Classic follows the system, as it always did.
+        let none = system_picked(None, system, None);
+        assert_eq!(
+            none,
+            Drawn {
+                level: Some(Level::ProjectDefault),
+                ..follow(classic(), system, Contrast::Standard)
+            }
+        );
+        assert!(none.follows_system && !none.theirs);
+        // Theirs with a dark and a light appearance follows the system with it, as it did.
+        let theirs = system_picked(Some(&mine), system, None);
+        assert_eq!(
+            theirs,
+            Drawn {
+                level: Some(Level::ProjectDefault),
+                theirs: true,
+                ..follow(&mine, system, Contrast::Standard)
+            }
+        );
+        assert!(theirs.follows_system);
+    }
+}
+
+#[test]
+fn the_old_system_id_with_one_appearance_of_the_person_s_stays_in_it_and_says_so() {
+    let mine = load(&named("Owl", "#101010")).theme;
+    let drawn = system_picked(Some(&mine), Appearance::Light, None);
+    assert!(drawn.theirs);
+    assert!(!drawn.follows_system);
+    assert_eq!(drawn.theme.as_ref().map(|it| it.name.as_str()), Some("Owl"));
+    assert_eq!(
+        drawn.note.as_deref(),
+        Some("Owl has only a dark appearance, so following the system stays dark")
+    );
+}
+
+#[test]
+fn the_old_system_id_with_an_appearance_named_draws_that_one_as_any_theme_does() {
+    let mine = load(&two("Mine")).theme;
+    let drawn = system_picked(Some(&mine), Appearance::Dark, Some("day"));
+    assert_eq!(drawn.theme.map(|it| it.id), Some("day".to_owned()));
+    assert!(!drawn.follows_system);
+}
+
+#[test]
+fn the_person_s_own_theme_drawn_with_no_choice_is_said_to_be_theirs() {
+    let mine = load(&two("Mine")).theme;
+    let drawn = drawn(&Levels::default(), &Folders::default(), Some(&mine));
+    assert!(drawn.theirs);
+    assert_eq!(drawn.level, Some(Level::MachineDefault));
+    let classic = drawn_of_classic();
+    assert!(!classic.theirs);
+}
+
+/// Purlis Classic chosen by its id, with a theme of the person's beside it.
+fn drawn_of_classic() -> Drawn {
+    let mine = load(&two("Mine")).theme;
+    drawn(
+        &Levels {
+            machine_default: Choice::new("purlis-classic", Some("system")),
+            ..Levels::default()
+        },
+        &Folders::default(),
+        Some(&mine),
+    )
+}

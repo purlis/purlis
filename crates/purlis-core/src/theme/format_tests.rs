@@ -834,13 +834,56 @@ fn a_light_only_theme_says_that_following_the_system_stays_light() {
 }
 
 #[test]
-fn a_system_pick_with_a_one_appearance_theme_of_the_person_s_follows_with_purlis_classic() {
-    // As before format 2, until Settings › Theme can say that following stays in one (#2331).
+fn a_system_pick_with_a_one_appearance_theme_of_the_person_s_stays_in_it_and_says_so() {
+    // The old id is no special case (#2615): it names the person's own theme, followed as any
+    // theme is, and Settings › Theme says that it is theirs and what following does with it.
     let mine = load(&dark_only("Night Owl", json!({}))).theme;
-    let drawn = follow(&mine, Appearance::Light);
-    assert_eq!(drawn.theme.as_ref(), Some(classic_light()));
-    assert!(drawn.follows_system);
-    assert_eq!(drawn.note, None);
+    for system in [Appearance::Light, Appearance::Dark] {
+        let drawn = follow(&mine, system);
+        assert_eq!(
+            drawn,
+            Drawn {
+                theirs: true,
+                ..super::follow(&mine, system, Contrast::Standard)
+            }
+        );
+        assert!(drawn.theirs);
+        assert!(!drawn.follows_system);
+        assert_eq!(
+            drawn.note.as_deref(),
+            Some("Night Owl has only a dark appearance, so following the system stays dark")
+        );
+    }
+}
+
+#[test]
+fn a_system_pick_draws_what_it_drew_before_with_two_appearances_or_none_of_the_person_s() {
+    // Every other setup with the old id draws unchanged (#2615): the person's own theme of two
+    // appearances follows the system with it, and with none Purlis Classic follows.
+    let mine = load(&both("Mine")).theme;
+    for system in [Appearance::Light, Appearance::Dark] {
+        let drawn = follow(&mine, system);
+        assert_eq!(
+            drawn,
+            Drawn {
+                theirs: true,
+                ..super::follow(&mine, system, Contrast::Standard)
+            }
+        );
+        assert!(drawn.follows_system && drawn.theirs);
+        let none = resolve(
+            &Inputs {
+                pick: Some(&Pick::System),
+                theirs: None,
+                on: On::Every,
+                system,
+                contrast: Contrast::Standard,
+            },
+            || unreachable!("no survey for following the system"),
+        );
+        assert_eq!(none, super::follow(classic(), system, Contrast::Standard));
+        assert!(none.follows_system && !none.theirs);
+    }
 }
 
 #[test]

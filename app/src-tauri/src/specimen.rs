@@ -23,11 +23,17 @@
 //! on Linux, each of which paints the page in the web process rather than reading the screen,
 //! so a hidden window is drawn whole) and the window destroyed. One specimen at a time, each
 //! within [`themepreview::BUDGET`]; past it the window is closed and the ask answered no.
+//!
+//! **A chat goes first** (#2614): whose turn the painter is, is [`themepreview::turns`]'s. A
+//! chat's `theme_preview` asked while one of Settings › Theme's pictures is drawn waits for it,
+//! and that picture gives way and is answered [`BUSY`], so the chat is drawn next; the window
+//! asks for the picture again later.
 
-use std::sync::{Arc, Mutex, OnceLock, mpsc};
+use std::sync::{Arc, OnceLock, mpsc};
 use std::time::Instant;
 
 use purlis_core::hookwire::{Answer, ThemePreviewAsk};
+use purlis_core::themepreview::turns::{Turn, Turns, Waited, Who};
 use purlis_core::themepreview::{self, Painted, Specimen};
 
 use crate::extensions::WindowTheme;
@@ -54,8 +60,12 @@ pub struct Picture {
 
 /// **What draws a specimen**: the app's hidden window ([`InTheApp`]), or a test's stand-in.
 pub trait Painter: Send + Sync {
-    /// Draws the specimen in `theme`, within the budget, or says why it could not.
-    fn paint(&self, theme: &WindowTheme) -> Result<Picture, String>;
+    /// Whose turn it is to be drawn: one at a time, a chat ahead of the gallery.
+    fn turns(&self) -> &Turns;
+
+    /// Draws the specimen in `theme` on `turn`, within the budget, or says why it could not:
+    /// [`BUSY`] when the turn gave way to a chat ([`Turn::wait`]).
+    fn paint(&self, theme: &WindowTheme, turn: &Turn<'_>) -> Result<Picture, String>;
 }
 
 /// The painter this app draws with, once its window machinery is up ([`install`]).
@@ -70,7 +80,7 @@ pub fn painter() -> Option<Arc<dyn Painter>> {
 pub fn install(app: &tauri::AppHandle) {
     let _ = PAINTER.set(Arc::new(InTheApp {
         app: app.clone(),
-        one_at_a_time: Mutex::new(()),
+        turns: Turns::new(),
     }));
 }
 
@@ -89,16 +99,18 @@ pub fn answered(
             asks.chat
         ));
     }
-    match painted(painter, &asks.specimens) {
+    match painted(painter, &asks.specimens, Who::Chat) {
         Ok(painted) => Answer::Previewed { painted },
         Err(why) => no(why),
     }
 }
 
-/// Each of `specimens` drawn by `painter`, or why not.
+/// Each of `specimens` drawn by `painter` on one turn of `who`'s, or why not: [`BUSY`] when it is
+/// not `who`'s turn ([`themepreview::turns`]).
 pub fn painted(
     painter: Option<&dyn Painter>,
     specimens: &[Specimen],
+    who: Who,
 ) -> Result<Vec<Painted>, String> {
     if specimens.is_empty() || specimens.len() > themepreview::AT_MOST {
         return Err(format!(
@@ -109,6 +121,7 @@ pub fn painted(
     let Some(painter) = painter else {
         return Err(NO_PAINTER.to_owned());
     };
+    let turn = turn_of(painter, who)?;
     specimens
         .iter()
         .map(|specimen| {
@@ -116,7 +129,7 @@ pub fn painted(
             let drawn = themepreview::drawn(specimen)?;
             let theme = drawn.theme.ok_or_else(|| NO_THEME.to_owned())?;
             let started = Instant::now();
-            let picture = painter.paint(&WindowTheme::from(&theme))?;
+            let picture = painter.paint(&WindowTheme::from(&theme), &turn)?;
             Ok(Painted {
                 preview: purlis_core::theme::is_preview(&specimen.theme),
                 theme: specimen.theme.clone(),
@@ -129,6 +142,16 @@ pub fn painted(
             })
         })
         .collect()
+}
+
+/// **`who`'s turn on `painter`**, or [`BUSY`]: a chat waits for a gallery picture to give way,
+/// one budget at most.
+fn turn_of(painter: &dyn Painter, who: Who) -> Result<Turn<'_>, String> {
+    match who {
+        Who::Chat => painter.turns().chat(themepreview::BUDGET),
+        Who::Gallery => painter.turns().gallery(),
+    }
+    .ok_or_else(|| BUSY.to_owned())
 }
 
 const NO_THEME: &str = "purlis has no theme to draw this specimen in";
@@ -219,11 +242,15 @@ pub async fn theme_specimen(
         }
     };
     let one = tauri::async_runtime::spawn_blocking(move || match specimen {
-        Ask::BuiltIn(specimen) => painted(painter().as_deref(), std::slice::from_ref(&specimen))
-            .map(|mut drawn| {
-                let one = drawn.remove(0);
-                (one.png, one.width, one.height, one.millis, one.appearance)
-            }),
+        Ask::BuiltIn(specimen) => painted(
+            painter().as_deref(),
+            std::slice::from_ref(&specimen),
+            Who::Gallery,
+        )
+        .map(|mut drawn| {
+            let one = drawn.remove(0);
+            (one.png, one.width, one.height, one.millis, one.appearance)
+        }),
         Ask::Card {
             place,
             theme,
@@ -237,8 +264,9 @@ pub async fn theme_specimen(
                 appearance.as_deref(),
             )?;
             let painter = painter().ok_or_else(|| NO_PAINTER.to_owned())?;
+            let turn = turn_of(painter.as_ref(), Who::Gallery)?;
             let started = Instant::now();
-            let picture = painter.paint(&theme)?;
+            let picture = painter.paint(&theme, &turn)?;
             let appearance = if theme.appearance == "light" {
                 purlis_core::theme::Appearance::Light
             } else {
@@ -293,28 +321,25 @@ pub struct SpecimenPicture {
     pub appearance: String,
 }
 
-/// **The app's own painter**: a hidden window per specimen, one at a time.
+/// **The app's own painter**: a hidden window per specimen, one turn at a time.
 struct InTheApp {
     app: tauri::AppHandle,
-    one_at_a_time: Mutex<()>,
+    turns: Turns,
 }
 
 /// How many specimen windows this app has made, for each one's label.
 static MADE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl Painter for InTheApp {
-    fn paint(&self, theme: &WindowTheme) -> Result<Picture, String> {
+    fn turns(&self) -> &Turns {
+        &self.turns
+    }
+
+    fn paint(&self, theme: &WindowTheme, turn: &Turn<'_>) -> Result<Picture, String> {
         use tauri::{WebviewUrl, WebviewWindowBuilder};
-        // One at a time, and no queue: an ask that finds a specimen being drawn is answered at
-        // once, so asks cannot pile up behind one another and none is drawn for a caller that
-        // has already stopped waiting.
-        let _one = match self.one_at_a_time.try_lock() {
-            Ok(one) => one,
-            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-            Err(std::sync::TryLockError::WouldBlock) => return Err(BUSY.to_owned()),
-        };
-        let started = Instant::now();
-        let left = || themepreview::BUDGET.saturating_sub(started.elapsed());
+        // One at a time, and no queue: `turn` is the painter's, and an ask that found it taken
+        // was answered at once ([`themepreview::turns`]).
+        let until = Instant::now() + themepreview::BUDGET;
         let n = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (drawn, is_drawn) = mpsc::channel::<Result<(), String>>();
         let window = WebviewWindowBuilder::new(&self.app, label(n), WebviewUrl::App(PAGE.into()))
@@ -341,19 +366,26 @@ impl Painter for InTheApp {
             .map_err(|e| format!("purlis could not open the theme specimen's window: {e}"))?;
         // Destroyed however this ends: an answer, a refusal, or a panic.
         let window = Hidden(window);
-        match is_drawn.recv_timeout(left()) {
+        match turn.wait(&is_drawn, until) {
             Ok(Ok(())) => {}
             Ok(Err(why)) => return Err(format!("the theme specimen could not draw: {why}")),
-            Err(_) => return Err(over_budget()),
+            Err(waited) => return Err(not_drawn(waited)),
         }
         let (pictured, picture) = mpsc::channel::<Result<Picture, String>>();
         window
             .0
             .with_webview(move |webview| photograph::take(webview, pictured))
             .map_err(|e| format!("purlis could not reach the specimen's webview: {e}"))?;
-        picture
-            .recv_timeout(left())
-            .unwrap_or_else(|_| Err(over_budget()))
+        turn.wait(&picture, until)
+            .unwrap_or_else(|waited| Err(not_drawn(waited)))
+    }
+}
+
+/// What a specimen not drawn on its turn is answered: busy when it gave way to a chat.
+fn not_drawn(waited: Waited) -> String {
+    match waited {
+        Waited::GaveWay => BUSY.to_owned(),
+        Waited::Over => over_budget(),
     }
 }
 
