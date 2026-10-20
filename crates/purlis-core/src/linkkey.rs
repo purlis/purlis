@@ -6,9 +6,9 @@
 //! `purlis/@link-key/<device>` ([`SERVICE`]), its private half as 64 lower-case hex.
 //!
 //! - **Made once, under a lock, and only as a pool is added** ([`desktop`]): the first add on a
-//!   device that keeps none makes the key from the operating system's generator and keeps it, under `link-key.lock` beside
-//!   the machine store, so a window and its session host asking at once make one key between
-//!   them. A link reads it and never makes one ([`kept`]).
+//!   device that keeps none makes the key from the operating system's generator and keeps it,
+//!   under `link-key.lock` beside the machine store, so a window and its session host asking at
+//!   once make one key between them. A link reads it and never makes one ([`kept`]).
 //! - **What every runner pins**: a pairing hands a runner this key's public half with the
 //!   device's id ([`Desktop::pinned`]), and the desktop's host presents the key on every link.
 //!   Losing it unpairs every runner, which is made and paired again (ADR 0066, amended).
@@ -96,6 +96,18 @@ pub fn kept(config_root: &Path, store: &dyn keyring::Store) -> Result<Desktop, S
             .to_owned()
     })?;
     Ok(Desktop(Identity { device, key }))
+}
+
+/// The keyring this build keeps the link key in: the operating system's, or, in a fenced
+/// build, a stub file in the machine store, so a test never reaches the person's keyring.
+pub fn this_builds_keyring(config_root: &Path) -> Box<dyn keyring::Store> {
+    if crate::fence::FENCED {
+        Box::new(keyring::FileStore::at(
+            crate::machine::dir(config_root).join(keyring::STUB_FILE),
+        ))
+    } else {
+        Box::new(keyring::OsStore)
+    }
 }
 
 /// The key in `service`, or `None` when the keyring provably holds none.

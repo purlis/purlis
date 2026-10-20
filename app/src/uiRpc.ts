@@ -1236,6 +1236,10 @@ export const commands = {
 	setUpdateChannel: __WINDOW_ONLY_RESULT,
 	browserLimits: __WINDOW_ONLY_RESULT,
 	setBrowserLimit: __WINDOW_ONLY_RESULT,
+	dockerPools: __WINDOW_ONLY_RESULT,
+	addDockerPool: __WINDOW_ONLY_RESULT,
+	removeDockerPool: __WINDOW_ONLY_RESULT,
+	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	installUpdate: __WINDOW_ONLY,
@@ -1355,11 +1359,7 @@ export const commands = {
 	themeDuplicate: __WINDOW_ONLY_RESULT,
 	themeOpenFolder: __WINDOW_ONLY_RESULT,
 	themeChat: __WINDOW_ONLY_RESULT,
-	/**
-	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
-	 *  draft, where Keep puts it. Empty for a chat with none.
-	 */
-	themeDraftsOfChat: (plane: PlaneId, session: number) => typedError<WindowDraft[], string>(__TAURI_INVOKE("theme_drafts_of_chat", { plane, session })),
+	themeDraftsOfChat: __WINDOW_ONLY_RESULT,
 	themeDraftKeep: __WINDOW_ONLY_RESULT,
 	themeDraftRevert: __WINDOW_ONLY_RESULT,
 	themeDraftsRevertHere: __WINDOW_ONLY_RESULT,
@@ -6805,6 +6805,50 @@ export type PlaneUpdated = {
 	files: string[],
 };
 
+/**  A pool as the person typed it: each limit left empty takes the default. */
+export type PoolAdding = {
+	name: string,
+	image: string,
+	cpus: string | null,
+	memory_mib: number | null,
+	processes: number | null,
+	tmp_mib: number | null,
+};
+
+/**
+ *  A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
+ *  MiB.
+ */
+export type PoolLimitsShown = {
+	cpus: string,
+	memory_mib: number,
+	processes: number,
+	tmp_mib: number,
+};
+
+/**  Where a pool's runner stands, as one link to it says. */
+export type PoolLink = 
+/**  It answered with the key pinned at its pairing. */
+{ state: "linked" } | 
+/**  It answered with another key: it is refused, and the window offers to remove it. */
+{ state: "key_changed" } | 
+/**  It did not answer, and why. */
+{ state: "down"; why: string };
+
+/**  One pool, as its row draws it. */
+export type PoolRow = {
+	name: string,
+	image: string,
+	/**  What its runner is held to: what the person set, and the defaults for the rest. */
+	limits: PoolLimitsShown,
+};
+
+/**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
+export type PoolsShown = {
+	pools: PoolRow[],
+	defaults: PoolLimitsShown,
+};
+
 /**
  *  The project's presets as they changed (`sandbox::local::PresetsChange`): each named as the
  *  window names it.
@@ -9444,6 +9488,11 @@ export type WindowDraft = {
 	kept_to: string,
 	/**  Whether Keep replaces a theme folder that is there: the window asks the person first. */
 	replaces: boolean,
+	/**
+	 *  Whether the theme folder Keep puts it in is not what the draft started from: made,
+	 *  changed or deleted since ([`drafts::changed`]). The window says so, and Keep asks first.
+	 */
+	changed: boolean,
 	/**  Whether the window draws it now: the draft, or its last good version. */
 	drawn: boolean,
 	/**  The hard floors the draft as saved breaks, in the engine's words: why it is not drawn. */
@@ -9457,6 +9506,11 @@ export type WindowDraft = {
 	 *  rules of a refused theme otherwise. `None` for a draft not refused for a font.
 	 */
 	review: ThemeReview | null,
+	/**
+	 *  Whether the theme as kept is refused while the draft is drawn: its Notice, and any
+	 *  Review and allow on it, waits until the draft is reverted, and the strip says so.
+	 */
+	kept_refused: boolean,
 };
 
 /**  One face of a font. */

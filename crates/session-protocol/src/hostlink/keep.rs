@@ -33,7 +33,34 @@ pub enum Linked {
     /// large, and a word of why is small.
     Up(Box<Link>),
     /// The link is down, or did not come up, and why: the host is linking again.
-    Down(String),
+    Down(Down),
+}
+
+/// Why a kept link is down.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Down {
+    /// In words a person reads.
+    pub why: String,
+    /// The host at the far end answered with another key than the one pinned at its pairing
+    /// (#2679): it is refused on every try, so it is not linked again until the person removes
+    /// it and adds it anew.
+    pub key_changed: bool,
+}
+
+impl Down {
+    /// Down for `why`, with the same key at the far end, as far as anyone knows.
+    pub fn because(why: impl Into<String>) -> Down {
+        Down {
+            why: why.into(),
+            key_changed: false,
+        }
+    }
+}
+
+impl std::fmt::Display for Down {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.why)
+    }
 }
 
 /// A kept link's [`Linked`]s. Dropping it lets the link go.
@@ -87,10 +114,13 @@ pub fn keep_linked<C: Connector>(
             let io = connector
                 .connect()
                 .await
-                .map_err(|why| format!("the connector did not connect: {why}"))?;
+                .map_err(|why| Down::because(format!("the connector did not connect: {why}")))?;
             connect_kept(io, handshake, &ours, &answering, liveness)
                 .await
-                .map_err(|why| why.to_string())
+                .map_err(|why| Down {
+                    key_changed: matches!(why, super::LinkRefused::NotThePinnedHost { .. }),
+                    why: why.to_string(),
+                })
         };
         let mut pause = FIRST_PAUSE;
         loop {
@@ -124,7 +154,7 @@ pub fn keep_linked<C: Connector>(
                 ends.retire.abort();
                 return;
             };
-            if tell.send(Linked::Down(why)).await.is_err() {
+            if tell.send(Linked::Down(Down::because(why))).await.is_err() {
                 return;
             }
         }
@@ -150,7 +180,7 @@ async fn hold<F, Fut>(
 ) -> Option<String>
 where
     F: Fn() -> Fut,
-    Fut: Future<Output = Result<(Link, Ends), String>>,
+    Fut: Future<Output = Result<(Link, Ends), Down>>,
 {
     let mut renew_at = liveness.renew_after.map(|after| Instant::now() + after);
     let mut pause = FIRST_PAUSE;

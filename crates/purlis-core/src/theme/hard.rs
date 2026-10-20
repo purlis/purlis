@@ -20,8 +20,12 @@
 //! and the chat that wrote it is told which floor. The theme check reports every theme's broken
 //! hard floors, in every combination, as findings of their own.
 
-use super::check::{PAIRS, Pair, ratio};
+use super::check::{PAIRS, Pair, laid, ratio};
 use super::{ResolvedTheme, tint};
+
+#[cfg(test)]
+#[path = "hard_tests.rs"]
+mod tests;
 
 /// The least contrast a hard floor holds: 3:1, WCAG's floor for large text and for a control's
 /// outline.
@@ -63,7 +67,12 @@ impl HardFloor {
 
     /// The pairs of [`PAIRS`] this floor holds.
     pub fn pairs(self) -> impl Iterator<Item = &'static Pair> {
-        PAIRS.iter().filter(move |pair| pair.front == self.front())
+        self.among(PAIRS)
+    }
+
+    /// The pairs of `pairs` this floor holds.
+    fn among(self, pairs: &'static [Pair]) -> impl Iterator<Item = &'static Pair> {
+        pairs.iter().filter(move |pair| pair.front == self.front())
     }
 }
 
@@ -78,6 +87,9 @@ pub struct Broken {
     /// What `back` is laid over, for a wash.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub under: Option<&'static str>,
+    /// What `under` is laid over in turn, for an `under` that is a wash too (#2724).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub beneath: Option<&'static str>,
     /// The contrast it has, to two places.
     pub ratio: f64,
     /// The workspace colour it was tinted by, `None` for the theme as it is.
@@ -85,17 +97,17 @@ pub struct Broken {
 }
 
 impl Broken {
-    /// The sentence that names it: the floor, the pair, its ratio and where.
+    /// The sentence that names it: the floor, the pair with each layer under it, its ratio and
+    /// where.
     pub fn said(&self) -> String {
         let tint = self
             .tint
             .map(|one| format!(" in the {one} tint"))
             .unwrap_or_default();
         format!(
-            "{}: {} on {} is {:.2}, under {LEAST}{tint}",
+            "{}: {} is {:.2}, under {LEAST}{tint}",
             self.floor.says(),
-            self.front,
-            self.back,
+            laid(self.front, self.back, [self.under, self.beneath]),
             self.ratio
         )
     }
@@ -106,6 +118,11 @@ impl Broken {
 /// recipe; one entry for each pair and tint that is under [`LEAST`]. Empty for a theme that
 /// holds them.
 pub fn broken(drawn: &ResolvedTheme) -> Vec<Broken> {
+    broken_among(drawn, PAIRS)
+}
+
+/// [`broken`], measuring the pairs of `pairs` each floor holds.
+fn broken_among(drawn: &ResolvedTheme, pairs: &'static [Pair]) -> Vec<Broken> {
     let mut found = Vec::new();
     let tints = if drawn.tint.tabs().is_empty() {
         Vec::new()
@@ -119,7 +136,7 @@ pub fn broken(drawn: &ResolvedTheme) -> Vec<Broken> {
     };
     for (tint, theme) in std::iter::once((None, drawn.clone())).chain(tints) {
         for floor in HardFloor::ALL {
-            for pair in floor.pairs() {
+            for pair in floor.among(pairs) {
                 let Some(ratio) = ratio(&theme, pair) else {
                     continue;
                 };
@@ -129,6 +146,7 @@ pub fn broken(drawn: &ResolvedTheme) -> Vec<Broken> {
                         front: pair.front,
                         back: pair.back,
                         under: pair.under,
+                        beneath: pair.beneath,
                         ratio,
                         tint,
                     });

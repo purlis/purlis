@@ -2273,8 +2273,9 @@ describe("the palette at fifty chats", () => {
       // One more under both since #1487: `Previous chat in this tab`, a row about the tab in
       // front, before the branch's two in the catalogue. One more under `r` since #1137:
       // `Search in files` (`search` has an `r`). One more under `r` since #2176: `New browser`.
+      // One more under `r` since #2679: `Add a Docker pool…` (`Docker` has an `r`).
       expect(at("re", loaded())).toBe(8);
-      expect(at("r", loaded())).toBe(16);
+      expect(at("r", loaded())).toBe(17);
       expect(at("rem", loaded())).toBe(1);
     });
 
@@ -2411,8 +2412,9 @@ describe("the palette at fifty chats", () => {
     // This window has no todos loaded, so no `todo.` rows.
     // 911 since #2326: Your settings: Density and fonts.
     // 914 since #2331: Settings › Theme at You, Project and Workspace. 915 since #2023: Your
-    // settings: Browsers. 916 since #2176: New browser.
-    expect(offers).toHaveLength(916);
+    // settings: Browsers. 916 since #2176: New browser. 917 since #2679: Add a Docker pool….
+    // Your settings: Pools is offered only once this machine keeps a pool.
+    expect(offers).toHaveLength(917);
   });
 
   /**

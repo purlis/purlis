@@ -494,6 +494,9 @@ struct Inner {
     /// written, so files the window has yet to clear after its re-arm stop nothing again, and
     /// a stop written after that, while the files still say stopped, is heard.
     seen_elsewhere: Mutex<Option<String>>,
+    /// What links a window's link to a runner this machine keeps, by the runner's name (#2679):
+    /// the binary's, or nothing, and every `relay_to` is refused.
+    relays: OnceLock<crate::routing::RelaysTo>,
     /// Set once the window has quit (#2006): whoever serves this host stops.
     quit: tokio::sync::watch::Sender<bool>,
     /// Told whenever a window links or goes, or a project is held or let go of: what the host's
@@ -866,6 +869,7 @@ impl Hosting {
                 porting: Mutex::new(()),
                 switch,
                 elsewhere: OnceLock::new(),
+                relays: OnceLock::new(),
                 seen_elsewhere: Mutex::new(None),
                 quit: tokio::sync::watch::Sender::new(false),
                 changed: tokio::sync::Notify::new(),
@@ -942,6 +946,19 @@ impl Hosting {
     pub fn recording_with(self, record: impl Record) -> Hosting {
         let _ = self.inner.record.set(Box::new(record));
         self
+    }
+
+    /// A host that relays a window's link to a runner this machine keeps, as `relays` links to
+    /// it (`relay_to`, 1.33, #2679). Set once, as the binary builds its host; a second is let go
+    /// of. A host given none relays no link.
+    pub fn relaying_with(self, relays: crate::routing::RelaysTo) -> Hosting {
+        let _ = self.inner.relays.set(relays);
+        self
+    }
+
+    /// What links a window's link to a runner, where this host relays one.
+    pub(crate) fn relays(&self) -> Option<crate::routing::RelaysTo> {
+        self.inner.relays.get().cloned()
     }
 
     /// What writes this host's event log: the binary's, or nothing.
@@ -2854,6 +2871,12 @@ impl session::Host for Hosting {
                 why: "this host is paired with no desktop over this link, so there is nothing to \
                       unpair"
                     .into(),
+            }),
+            // The desktop's host relays a window's link to a runner before this host hears of
+            // the link (`serving`, 1.33, #2679): a host that hears it relays to no runner.
+            Command::RelayTo { .. } => Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host relays to no runner, so the link was not relayed".into(),
             }),
             Command::Start(_)
             | Command::Attach { .. }

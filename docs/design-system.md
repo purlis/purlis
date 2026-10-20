@@ -646,7 +646,8 @@ exits 0 when the theme is drawn, 1 when it is refused, 2 when there is no such t
 engine (`theme::drafts`) and drawn only in its chat's workspace while it holds every hard floor
 (primary text, the focus ring and the terminal's words at 3:1, as drawn, in every tint); the
 window's draft strip (`ThemeDraftStrip.tsx`) has Keep, Revert and Compare, and the revert key
-is ⌘⇧⌫ (Ctrl+Shift+Backspace elsewhere).
+is ⌘⇧⌫ (Ctrl+Shift+Backspace elsewhere). The hard floors cover colour only; the revert key is
+the way out of a draft whose face, size or spacing makes the window hard to read.
 `purlis docs show themes` has the JSON's shape. **`purlis theme import <file>`** (#2334)
 makes a theme folder from a VS Code colour theme, a base16 or base24 scheme, an iTerm2 colour
 preset, a Ghostty theme or a theme folder's zip: the engine's `import` maps each kind through a
@@ -823,8 +824,12 @@ theme.json, following the system", or that it stays in its one appearance (#2615
 - **A chat's `theme_preview` goes first** (#2614, `themepreview::turns`): one specimen is drawn
   at a time. A chat asked while a card's picture is drawn waits for it, and that picture gives
   way, so the chat is drawn next. While a chat holds or waits for the painter, the app answers
-  the window `SPECIMEN_BUSY`, and the window asks again after a wait longer than one specimen's
-  budget, a few times; a picture that could not be drawn is never kept.
+  the window `SPECIMEN_BUSY`, and the window asks again every second (`BUSY_WAIT_MS`), for as
+  long as a chat's whole ask takes and while the card is on screen; a picture that could not be
+  drawn is never kept. **The gallery is owed a picture after a chat's turn** (#2751): when the
+  window asked during it, every chat is answered busy until the window has taken the painter
+  once, or a specimen's budget has passed, and that picture does not give way. So however many
+  chats loop `theme_preview`, the cards on screen get their pictures between their turns.
 - **Pointing at a card, or moving to it with the arrow keys, draws its theme in the window**,
   and leaving puts the person's theme back (`theme/hoverPreview.ts`). The engine resolves the
   card in the appearance a choice of it would draw (`theme_card_drawn`), with the consent floors

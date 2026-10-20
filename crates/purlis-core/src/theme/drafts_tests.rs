@@ -35,6 +35,7 @@ fn seen(places: &Places, draft: &Draft) -> drafts::Seen {
     drafts::Seen {
         kept_to: draft.kept_to.clone(),
         replaces: drafts::replaces(&places.plane, draft),
+        changed: drafts::changed(&places.plane, draft),
     }
 }
 
@@ -556,4 +557,183 @@ fn a_save_carries_what_one_line_of_the_hook_socket_holds_and_no_more() {
         let line = serde_json::to_string(&ask).unwrap().len() as u64;
         assert!(line + 1024 < crate::hookwire::A_LINE_IS_AT_MOST, "{line}");
     }
+}
+
+#[test]
+fn keep_asks_when_the_real_folder_changed_since_the_draft_started() {
+    let places = Places::new();
+    let id = chat();
+    let real = places.workspace_themes("alpha").join("dusk");
+    put(&real, &dark("Dusk", json!({})));
+    let path = places.start(Some("alpha"), &id, "dusk");
+    put(&path, &dark("Dusk", json!({ "accent.base": "#4477dd" })));
+    let draft = places.drafts(Some("alpha"), &[&id]).remove(0);
+    // As it started: nothing to ask about.
+    assert!(!drafts::changed(&places.plane, &draft));
+    // The person's own edit (or a pull, or another chat) changes the folder there.
+    put(&real, &dark("Dusk", json!({ "accent.base": "#dd7744" })));
+    assert!(drafts::changed(&places.plane, &draft));
+    // A Keep shown as over an unchanged folder is refused, and nothing is written.
+    let unchanged = drafts::Seen {
+        changed: false,
+        ..seen(&places, &draft)
+    };
+    let why = drafts::keep(
+        Some(&places.config),
+        places.at(Some("alpha")),
+        &draft,
+        &unchanged,
+    )
+    .unwrap_err();
+    assert!(why.contains("has changed since you were shown it"), "{why}");
+    let there = std::fs::read_to_string(real.join(THEME_JSON)).unwrap();
+    assert!(there.contains("#dd7744"), "{there}");
+    // Shown that it changed, the person's Keep replaces it.
+    drafts::keep(
+        Some(&places.config),
+        places.at(Some("alpha")),
+        &draft,
+        &seen(&places, &draft),
+    )
+    .unwrap();
+    let kept = std::fs::read_to_string(real.join(THEME_JSON)).unwrap();
+    assert!(kept.contains("#4477dd"), "{kept}");
+}
+
+#[test]
+fn a_new_theme_s_draft_is_changed_once_a_folder_of_its_name_is_made_there() {
+    let places = Places::new();
+    let id = chat();
+    places.start(Some("alpha"), &id, "dusk");
+    let draft = places.drafts(Some("alpha"), &[&id]).remove(0);
+    assert!(!drafts::changed(&places.plane, &draft));
+    put(
+        &places.workspace_themes("alpha").join("dusk"),
+        &dark("Dusk", json!({})),
+    );
+    assert!(drafts::changed(&places.plane, &draft));
+}
+
+#[test]
+fn a_draft_with_no_record_of_its_start_counts_as_changed() {
+    let places = Places::new();
+    let id = chat();
+    places.start(None, &id, "dusk");
+    let draft = places.drafts(None, &[&id]).remove(0);
+    let chat_folder = drafts::folder_of(&places.plane, &id).unwrap();
+    std::fs::remove_file(chat_folder.join(".dusk.started")).unwrap();
+    assert!(drafts::changed(&places.plane, &draft));
+}
+
+#[test]
+fn revert_deletes_the_record_of_the_start_with_the_draft() {
+    let places = Places::new();
+    let id = chat();
+    places.start(None, &id, "dusk");
+    let draft = places.drafts(None, &[&id]).remove(0);
+    drafts::revert(&places.plane, &draft).unwrap();
+    assert!(!drafts::folder_of(&places.plane, &id).unwrap().exists());
+}
+
+#[test]
+fn a_sweep_deletes_the_drafts_of_chats_that_are_not_open_and_no_other() {
+    let places = Places::new();
+    let (open, gone) = (chat(), chat());
+    places.start(Some("alpha"), &open, "dawn");
+    places.start(Some("alpha"), &gone, "dusk");
+    // A name that is not a chat's id is not purlis's to delete.
+    let stray = drafts::folder_of(&places.plane, &open)
+        .unwrap()
+        .with_file_name("not-a-chat");
+    std::fs::create_dir_all(&stray).unwrap();
+    assert_eq!(drafts::sweep(&places.plane, &[&open]), 1);
+    assert_eq!(places.drafts(Some("alpha"), &[&gone]), []);
+    assert_eq!(places.drafts(Some("alpha"), &[&open]).len(), 1);
+    assert!(stray.is_dir());
+    // Nothing more to sweep.
+    assert_eq!(drafts::sweep(&places.plane, &[&open]), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_sweep_never_deletes_through_a_link() {
+    let places = Places::new();
+    let elsewhere = places.plane.join("elsewhere");
+    put(&elsewhere.join("dusk"), &dark("Elsewhere", json!({})));
+    let linked = drafts::folder_of(&places.plane, &chat()).unwrap();
+    std::fs::create_dir_all(linked.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &linked).unwrap();
+    assert_eq!(drafts::sweep(&places.plane, &[]), 0);
+    assert!(elsewhere.join("dusk").join(THEME_JSON).is_file());
+}
+
+#[test]
+fn a_sweep_deletes_only_this_clone_s_drafts_in_a_drafts_folder_two_planes_share() {
+    // Two clones whose state folder is one (`$PURLIS_HOME`): each chat's drafts folder names
+    // the clone whose app made it, and a sweep deletes only its own clone's.
+    let (one, two) = (Places::new(), Places::new());
+    let (mine, theirs, nobody_s) = (chat(), chat(), chat());
+    one.start(None, &mine, "dawn");
+    two.start(None, &theirs, "dusk");
+    // The other clone's chat folder, where the shared state folder holds it: beside this one's.
+    let shared = drafts::folder_of(&one.plane, &mine)
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::fs::rename(
+        drafts::folder_of(&two.plane, &theirs).unwrap(),
+        shared.join(&theirs),
+    )
+    .unwrap();
+    // A chat folder that names no clone is not this one's either.
+    put(
+        &shared.join(&nobody_s).join("noon"),
+        &dark("Noon", json!({})),
+    );
+    assert_eq!(drafts::sweep(&one.plane, &[]), 1);
+    assert!(
+        !shared.join(&mine).exists(),
+        "this clone's gone chat's drafts are deleted"
+    );
+    assert!(
+        shared.join(&theirs).join("dusk").is_dir(),
+        "the other clone's stay"
+    );
+    assert!(
+        shared.join(&nobody_s).join("noon").is_dir(),
+        "an unowned folder stays"
+    );
+    // The other clone sweeps its own, where it now is.
+    assert_eq!(drafts::sweep(&two.plane, &[]), 0);
+}
+
+#[test]
+fn a_start_record_that_is_not_a_plain_file_counts_as_changed() {
+    let places = Places::new();
+    let id = chat();
+    places.start(None, &id, "dusk");
+    let draft = places.drafts(None, &[&id]).remove(0);
+    let record = drafts::folder_of(&places.plane, &id)
+        .unwrap()
+        .join(".dusk.started");
+    std::fs::remove_file(&record).unwrap();
+    std::fs::create_dir(&record).unwrap();
+    assert!(drafts::changed(&places.plane, &draft));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_start_record_that_is_a_link_is_not_read() {
+    let places = Places::new();
+    let id = chat();
+    places.start(None, &id, "dusk");
+    let draft = places.drafts(None, &[&id]).remove(0);
+    let record = drafts::folder_of(&places.plane, &id)
+        .unwrap()
+        .join(".dusk.started");
+    let elsewhere = places.plane.join("elsewhere.started");
+    std::fs::rename(&record, &elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &record).unwrap();
+    assert!(drafts::changed(&places.plane, &draft));
 }

@@ -37,7 +37,7 @@ async fn up(links: &mut Links) -> Link {
 
 async fn down(links: &mut Links) -> String {
     match links.next().await.expect("the link is kept") {
-        Linked::Down(why) => why,
+        Linked::Down(down) => down.why,
         Linked::Up(_) => panic!("a link came up while the last one was meant to be down"),
     }
 }

@@ -2386,6 +2386,25 @@ export const commands = {
 	 *  default. It applies at the next browser call; a browser running past a lowered limit runs on.
 	 */
 	setBrowserLimit: (limit: BrowserLimit, to: number | null) => typedError<null, string>(__TAURI_INVOKE("set_browser_limit", { limit, to })),
+	/**  **The Docker pools on this machine**, and a new pool's default limits. */
+	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
+	/**
+	 *  **Adds a Docker pool on this machine**: its runner is made from the image, confined and held
+	 *  to the pool's limits, paired with this desktop and kept. What fails is taken back.
+	 */
+	addDockerPool: (adding: PoolAdding) => typedError<PoolRow, string>(__TAURI_INVOKE("add_docker_pool", { adding })),
+	/**
+	 *  **Removes the pool `name`**: this desktop is taken out of its runner's peers over a link of
+	 *  its own while the runner answers, then its container and home volume are removed, and the
+	 *  pool with them. What could not be removed is answered, with how to remove it; nothing when
+	 *  all of it is gone.
+	 */
+	removeDockerPool: (name: string) => typedError<string | null, string>(__TAURI_INVOKE("remove_docker_pool", { name })),
+	/**
+	 *  **Whether the pool `name`'s runner answers with the key pinned for it**: one link, made and
+	 *  let go of.
+	 */
+	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	/**
@@ -2716,17 +2735,20 @@ export const commands = {
 	themeChat: (at: ThemeAt, theme: string | null, from: string | null, columns: number, rows: number) => typedError<Curating, string>(__TAURI_INVOKE("theme_chat", { at, theme, from, columns, rows })),
 	/**
 	 *  The theme drafts of the chat `session`, as the window asks before it closes that chat: each
-	 *  draft, where Keep puts it. Empty for a chat with none.
+	 *  draft, where Keep puts it. Empty for a chat with none. The window's alone: it names the chat
+	 *  and where it works, and what Keep would do, which only the window acts on, as only the
+	 *  window closes a chat.
 	 */
 	themeDraftsOfChat: (plane: PlaneId, session: number) => typedError<WindowDraft[], string>(__TAURI_INVOKE("theme_drafts_of_chat", { plane, session })),
 	/**
 	 *  **Keep** pressed: the engine copies the draft of the chat `session` into the real folder it is
 	 *  a draft of and deletes the draft. Answers what it did, in a sentence. Only a draft the window
 	 *  draws is kept, and only as the person was shown it: `kept_to` (`workspace` or `project`, as
-	 *  `WindowDraft::kept_to` says) and `replaces`, which the window sends once the person agreed to
-	 *  replace the folder there. When either has changed since, nothing is kept.
+	 *  `WindowDraft::kept_to` says), `replaces`, which the window sends once the person agreed to
+	 *  replace the folder there, and `changed`, once they agreed to replace a folder that is not what
+	 *  the draft started from. When any has changed since, nothing is kept.
 	 */
-	themeDraftKeep: (plane: PlaneId, session: number, folder: string, keptTo: string, replaces: boolean) => typedError<string, string>(__TAURI_INVOKE("theme_draft_keep", { plane, session, folder, keptTo, replaces })),
+	themeDraftKeep: (plane: PlaneId, session: number, folder: string, keptTo: string, replaces: boolean, changed: boolean) => typedError<string, string>(__TAURI_INVOKE("theme_draft_keep", { plane, session, folder, keptTo, replaces, changed })),
 	/**  **Revert** pressed: the engine deletes the draft of the chat `session`. */
 	themeDraftRevert: (plane: PlaneId, session: number, folder: string) => typedError<null, string>(__TAURI_INVOKE("theme_draft_revert", { plane, session, folder })),
 	/**
@@ -8462,6 +8484,50 @@ export type PlaneUpdated = {
 	files: string[],
 };
 
+/**  A pool as the person typed it: each limit left empty takes the default. */
+export type PoolAdding = {
+	name: string,
+	image: string,
+	cpus: string | null,
+	memory_mib: number | null,
+	processes: number | null,
+	tmp_mib: number | null,
+};
+
+/**
+ *  A pool's limits, as a row draws them: the CPUs as typed (`2`, `1.5`), memory and `/tmp` in
+ *  MiB.
+ */
+export type PoolLimitsShown = {
+	cpus: string,
+	memory_mib: number,
+	processes: number,
+	tmp_mib: number,
+};
+
+/**  Where a pool's runner stands, as one link to it says. */
+export type PoolLink = 
+/**  It answered with the key pinned at its pairing. */
+{ state: "linked" } | 
+/**  It answered with another key: it is refused, and the window offers to remove it. */
+{ state: "key_changed" } | 
+/**  It did not answer, and why. */
+{ state: "down"; why: string };
+
+/**  One pool, as its row draws it. */
+export type PoolRow = {
+	name: string,
+	image: string,
+	/**  What its runner is held to: what the person set, and the defaults for the rest. */
+	limits: PoolLimitsShown,
+};
+
+/**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
+export type PoolsShown = {
+	pools: PoolRow[],
+	defaults: PoolLimitsShown,
+};
+
 /**
  *  The project's presets as they changed (`sandbox::local::PresetsChange`): each named as the
  *  window names it.
@@ -11101,6 +11167,11 @@ export type WindowDraft = {
 	kept_to: string,
 	/**  Whether Keep replaces a theme folder that is there: the window asks the person first. */
 	replaces: boolean,
+	/**
+	 *  Whether the theme folder Keep puts it in is not what the draft started from: made,
+	 *  changed or deleted since ([`drafts::changed`]). The window says so, and Keep asks first.
+	 */
+	changed: boolean,
 	/**  Whether the window draws it now: the draft, or its last good version. */
 	drawn: boolean,
 	/**  The hard floors the draft as saved breaks, in the engine's words: why it is not drawn. */
@@ -11114,6 +11185,11 @@ export type WindowDraft = {
 	 *  rules of a refused theme otherwise. `None` for a draft not refused for a font.
 	 */
 	review: ThemeReview | null,
+	/**
+	 *  Whether the theme as kept is refused while the draft is drawn: its Notice, and any
+	 *  Review and allow on it, waits until the draft is reverted, and the strip says so.
+	 */
+	kept_refused: boolean,
 };
 
 /**  One face of a font. */

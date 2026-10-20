@@ -1675,6 +1675,9 @@ fn the_check_reports_each_hard_floor_a_combination_breaks() {
     assert_eq!(first["appearance"], "dark");
     assert_eq!(first["options"], serde_json::json!({}));
     assert_eq!(first["tint"], serde_json::Value::Null);
+    // A pair on a plain ground is laid over no layer. (Every hard-floor pair over a wash is a
+    // consent pair, which the window holds before the hard floors are measured.)
+    assert!(first.get("beneath").is_none(), "{first:#}");
 }
 
 #[test]

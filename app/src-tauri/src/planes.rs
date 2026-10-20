@@ -143,6 +143,8 @@ impl Records {
     /// Neither half is worth interrupting the operator over. A record that cannot be written
     /// means the next launch of this plane comes back empty; a vouch that cannot be taken
     /// means one spurious question at that launch. Both are said and neither refuses.
+    ///
+    /// And once it is written, the theme drafts of the chats it no longer holds are deleted.
     fn write(&self, record: &reopen::Record) {
         if !self.allowed.load(Ordering::SeqCst) {
             return;
@@ -161,6 +163,15 @@ impl Records {
             return;
         }
         self.vouch();
+        // **The theme drafts of a chat the record no longer holds go** (#2708): it holds every
+        // chat open, and every one a launch has still to start, so a draft deleted here is one
+        // no strip names and no close asks about again.
+        let open: Vec<&str> = record
+            .chats
+            .iter()
+            .filter_map(|one| one.identity.id.as_deref())
+            .collect();
+        crate::themedrafts::sweep(&self.root, &open);
     }
 
     /// Every project this machine remembers opening (the machine store's recents), which is
@@ -2052,6 +2063,9 @@ pub struct Planes {
     /// This machine's network record (#1662), shared by every project. None until the app
     /// opens it, and on a machine that has no data home: then nothing is recorded or listed.
     network: Option<purlis_core::sandboxblock::record::Record>,
+    /// This machine's config home, where its pools are kept (#2679): `None` in a test, where
+    /// no workspace runs on a pool.
+    pools_in: Option<PathBuf>,
     /// What putting back a project's chats waits on, if anything (#2004).
     gate: Option<Gate>,
 }
@@ -2293,6 +2307,7 @@ impl Planes {
             letting_go: Arc::default(),
             quit_waits: QUIT_WAITS_FOR_TURNS,
             network: None,
+            pools_in: None,
             gate: None,
         }
     }
@@ -2362,6 +2377,13 @@ impl Planes {
         network: Option<purlis_core::sandboxblock::record::Record>,
     ) -> Self {
         self.network = network;
+        self
+    }
+
+    /// Reads this machine's pools, and where each workspace runs its chats, from its config home
+    /// `config` (#2679).
+    pub fn keeping_pools_in(mut self, config: Option<PathBuf>) -> Self {
+        self.pools_in = config;
         self
     }
 
@@ -3741,6 +3763,7 @@ impl Planes {
         chats.arming_with(self.shipped.clone());
         chats.stopped_by(Arc::clone(&self.kill_switch));
         chats.on_device(device);
+        chats.keeping_pools_in(self.pools_in.clone());
         // Each run a start begins goes into the host's event log, before the chat's program
         // can send its first hook line (ADR 0066, #834): a chat put back after a relaunch
         // carries on under its id, and its first event is `run.started {cause: reopen}`.

@@ -547,6 +547,7 @@ fn a_browser_view_on_a_runner_is_reconnecting_while_its_link_is_down_and_reconne
     pushes
         .send(Pushed::LinkDown {
             why: "the link to it ended".into(),
+            key_changed: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
@@ -566,6 +567,7 @@ fn a_browser_view_that_draws_again_from_a_snapshot_is_reconnected() {
     pushes
         .send(Pushed::LinkDown {
             why: "the link to it ended".into(),
+            key_changed: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
@@ -605,6 +607,7 @@ fn a_browser_view_closed_while_its_link_is_down_is_told_nothing_more() {
     pushes
         .send(Pushed::LinkDown {
             why: "the link to it ended".into(),
+            key_changed: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {

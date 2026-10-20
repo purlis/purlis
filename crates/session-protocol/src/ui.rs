@@ -208,6 +208,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
     "theme_in_force",
+    // The theme drafts of a chat, asked before the window closes it (#2332): the chat, where it
+    // works, each draft and what Keep would do, for the person's Keep or Revert, which are the
+    // window's alone, as closing a chat is (#2708).
+    "theme_drafts_of_chat",
     // The theme specimen (#2330): a hidden window this app opens on this machine, photographed
     // and closed. Drawn for the window and for the chats this app started, on their hook
     // socket; a link has no window of its own here to draw it for.
@@ -586,6 +590,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     // This machine's browser limits (#2023): the person's to read and set, in their window.
     "browser_limits",
     "set_browser_limit",
+    // This machine's Docker pools (#2679): adding one runs a container on the person's machine
+    // and pairs it with this desktop's key, and removing one removes it, so only their own press
+    // in their window does either.
+    "docker_pools",
+    "add_docker_pool",
+    "remove_docker_pool",
+    "docker_pool_link",
     // Taking a browser over, driving it and handing it back (#2014): what the person types into
     // a page is theirs, and only the window, where they see it, sends it.
     "take_over_browser",
@@ -938,8 +949,6 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // What Settings › Theme's gallery reads (#2331): its cards, and what a card draws while the
     // pointer is on it. Nothing is written.
     "theme_card_drawn",
-    // The theme drafts of a chat, asked before it closes (#2332). Nothing is written.
-    "theme_drafts_of_chat",
     "theme_gallery",
     // The theme in force at a project and workspace, with no window and nothing watched
     // (#2697): what a link is served in place of `theme_in_force`.

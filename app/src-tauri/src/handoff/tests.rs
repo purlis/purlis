@@ -3108,6 +3108,47 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
 }
 
 #[test]
+fn a_theme_draft_ask_says_whether_it_made_the_draft() {
+    // #2708: whether the draft was made now is a field of the answer, never read from how its
+    // line is said.
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let ask = purlis_core::hookwire::ThemeDraftAsk {
+        chat: asking,
+        folder: "dusk".to_owned(),
+        files: None,
+    };
+    let first = crate::themedrafts::asked(&held, &ask);
+    assert!(
+        matches!(
+            first,
+            Answer::Drafted {
+                code: 0,
+                made: true,
+                ..
+            }
+        ),
+        "{first:?}"
+    );
+    let again = crate::themedrafts::asked(&held, &ask);
+    assert!(
+        matches!(
+            again,
+            Answer::Drafted {
+                code: 0,
+                made: false,
+                ..
+            }
+        ),
+        "{again:?}"
+    );
+}
+
+#[test]
 fn no_ask_on_the_socket_begins_a_stop_or_ends_a_chat() {
     // Only the person stops a chat. Every kind of ask a chat can send is sent here, from
     // the chat another chat started and from the chat that started it, each on a ticket
@@ -11361,4 +11402,30 @@ fn a_chat_started_in_the_host_is_listed_in_the_run_its_start_began() {
     assert_eq!(runs, [(Some(chat), Some(began))]);
     planes.close(&id).expect("it closes");
     drop(runtime);
+}
+
+#[test]
+fn a_chat_open_in_a_workspace_with_no_id_is_drawn_specimens_from_the_plane_root_alone() {
+    // #2751: where a chat's specimen is looked up is this app's record of it, and a chat whose
+    // record holds no id reaches no workspace's theme folders and no draft.
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, chat) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let at = chat_at(&held, chat).expect("open");
+    assert_eq!(
+        at.workspace.as_deref(),
+        Some("alpha"),
+        "with its id, its workspace"
+    );
+    assert!(at.id.is_some());
+    held.chats().forget_id_of(chat);
+    assert_eq!(
+        chat_at(&held, chat),
+        Some(crate::specimen::ChatAt {
+            plane: held.root().to_path_buf(),
+            workspace: None,
+            id: None,
+        })
+    );
 }

@@ -46,6 +46,7 @@ mod dispatches;
 mod dispatchgrants;
 mod dispatchlimits;
 mod dispatchunattended;
+mod dockerpools;
 mod doctor;
 mod doing;
 #[cfg(feature = "e2e")]
@@ -118,6 +119,8 @@ mod removalasks;
 mod repolist;
 mod restored;
 mod restoring;
+#[cfg(unix)]
+mod runnerlinks;
 mod sandboxchoose;
 mod sandboxing;
 mod savefix;
@@ -3068,7 +3071,10 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
         .saving_with(hostsaving::InTheHost);
         // `purlis stop --all` is heard with no window there (#2190).
         let hosting = match purlis_core::machine::config_root() {
-            Some(config) => hosting.heeding(purlis_core::halt::OnDisk(config)),
+            // A window's link is relayed to a pool's runner this machine keeps (#2679).
+            Some(config) => hosting
+                .heeding(purlis_core::halt::OnDisk(config.clone()))
+                .relaying_with(runnerlinks::relays_to(config)),
             None => hosting,
         };
         purlis_core::browsers::given_to(hosting)
@@ -3730,6 +3736,8 @@ pub fn run() {
                 // This machine's network record (#1662): every block and Allow, for the
                 // Network page, a chat's Network view and the doctor.
                 .recording_network(purlis_core::sandboxblock::record::Record::here())
+                // Where each workspace runs its chats on this machine (#2679).
+                .keeping_pools_in(purlis_core::machine::config_root())
                 // A chat a handoff opened goes to the window, which files it on its workspace's
                 // strip without taking the front (`handoff::Arrived`).
                 .telling_arrivals({
