@@ -1083,7 +1083,7 @@ fn reinit_on_a_bare_manifest_adds_everything_and_lists_nothing_as_present() {
 
     let mut added = "personas/, inventory/, workspaces/, .gitignore (/.charter/, /.purlis/), \
                      .gitignore (/charter.local.toml, /purlis.local.toml), \
-                     .gitignore (/sessions/), .gitattributes (merge rules), .claude/settings.json (env), \
+                     .gitignore (/sessions/), .gitignore (/skills.local/, /workspaces/*/skills.local/), .gitattributes (merge rules), .claude/settings.json (env), \
                      .claude/settings.json (ask: charter report --yes), opencode.json (ask: \
                      charter report --yes), .claude/settings.json (ask: charter ws todo \
                      promote), opencode.json (ask: charter ws todo promote), \
@@ -1138,8 +1138,8 @@ fn reinit_names_a_file_where_a_baseline_directory_goes_and_still_heals_the_rest(
 
     let mut created =
         "workspaces/, .gitignore (/.charter/, /.purlis/), .gitignore (/charter.local.toml, \
-         /purlis.local.toml), .gitignore (/sessions/), \
-         .gitattributes (merge rules), \
+         /purlis.local.toml), .gitignore (/sessions/), .gitignore \
+         (/skills.local/, /workspaces/*/skills.local/), .gitattributes (merge rules), \
          .claude/settings.json (env), .claude/settings.json (ask: charter report --yes), \
          opencode.json (ask: charter report --yes), .claude/settings.json (ask: charter ws \
          todo promote), opencode.json (ask: charter ws todo promote), \
