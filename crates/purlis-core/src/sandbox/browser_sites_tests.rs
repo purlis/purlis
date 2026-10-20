@@ -159,6 +159,12 @@ fn a_committed_site_counts_for_no_browser_in_a_project_without_the_sandbox_even_
         super::super::local::browser_sites_seen(project.path()),
         ["a.example:443"]
     );
+    // A Notice answered there anyway, a stale one, forgets nothing.
+    acknowledge(project.path(), &[]).expect("answered");
+    assert_eq!(
+        super::super::local::browser_sites_seen(project.path()),
+        ["a.example:443"]
+    );
 }
 
 #[test]

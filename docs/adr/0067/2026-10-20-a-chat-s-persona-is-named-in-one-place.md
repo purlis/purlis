@@ -17,8 +17,9 @@ stands. Both items are **decided in implementation, to be confirmed** (D-2691-1,
    app's record of the chat's run. It names two roles, never chosen apart by a path:
    - **the persona it was started as**, whose vaults it may use. A browser login's vault is
      judged by it, as `secret exec` judges it. A chat on no persona uses no persona's vault.
-   - **the persona whose grants it runs with**: the grants a handoff left it holding, else its
-     own, else the project's default persona. It is read at the chat's start, the persona its
+   - **the persona whose grants it runs with**: for a chat on a profile, the grants a handoff
+     left it holding, else its own, else the project's default persona; a chat on no profile
+     runs with no persona's grants. It is read at the chat's start, the persona its
      sandbox was compiled for, and is what its browser reaches and what its Asks are about. It
      is fixed at the start, as the sandbox is. An Allow of its own grants, or a new default,
      changes it at the next start.

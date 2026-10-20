@@ -378,9 +378,10 @@ struct Running {
     /// tools and line the runner compiled there, so this window holds no record of what its
     /// sandbox compiled to, and a restart would not give it one (#2692).
     composed_by_its_host: bool,
-    /// **Whose persona grants it runs with, as its start read them** (#2691): the grants a
-    /// handoff left it holding, else its own persona's, else the project's default persona at
-    /// its start (`purlis_core::start::runs_with`), the persona its sandbox was compiled for.
+    /// **Whose persona grants it runs with, as its start read them** (#2691): on a profile, the
+    /// grants a handoff left it holding, else its own persona's, else the project's default
+    /// persona at its start; on no profile, none ([`grants_persona_of`]). The persona its
+    /// sandbox was compiled for.
     /// Fixed at the start, as its sandbox is: an Allow of its own grants or a new default
     /// changes it at the next start.
     grants_as: Option<String>,
@@ -2583,14 +2584,13 @@ impl Chats {
         // compile per chat made the asks grow with the square of the chats open.
         let mut compiled: Vec<(StartKey, CompiledNow)> = Vec::new();
         for (session, chat, harness, started, with) in running {
-            // A chat on a profile takes a persona's grants (#1362); one on no profile, none.
-            let persona = chat.profile.as_ref().and_then(|_| {
-                let as_started = Chat {
+            let persona = grants_persona_of(
+                &Chat {
                     held: with.held.clone(),
                     ..chat.clone()
-                };
-                purlis_core::start::runs_with(&as_started, &self.project)
-            });
+                },
+                &self.project,
+            );
             // Everything the compile below reads of the chat, and nothing else.
             let key = StartKey {
                 harness,
@@ -3572,7 +3572,7 @@ impl Chats {
                 },
                 ran,
                 composed_by_its_host: on_the_runner,
-                grants_as: purlis_core::start::runs_with(chat, &self.project),
+                grants_as: grants_persona_of(chat, &self.project),
             },
         );
         lock(&self.sizes).insert(session, size);
@@ -5824,6 +5824,15 @@ fn what_its_hooks_read(
         env,
         &purlis_core::hoststart::Watched { cwd, sandboxed, id },
     );
+}
+
+/// **Whose persona grants `chat` runs with, as its sandbox is compiled for them** (#1362,
+/// #2691): on a profile, the grants a handoff left it holding, else its own persona's, else the
+/// project's default persona (`purlis_core::start::runs_with`); on no profile, none.
+fn grants_persona_of(chat: &Chat, project: &std::path::Path) -> Option<String> {
+    chat.profile
+        .as_ref()
+        .and_then(|_| purlis_core::start::runs_with(chat, project))
 }
 
 /// **How a run this window starts is sandboxed, by its own record** (#2636): in the sandbox

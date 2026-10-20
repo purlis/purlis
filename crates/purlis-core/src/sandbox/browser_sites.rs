@@ -113,9 +113,14 @@ pub fn changed(root: &Path, locks: &Locks) -> Option<Change> {
 
 /// **The person was shown `shown`**, sites the Notice named as added: each one the project
 /// still lists is in force here from now on, and each one shown before and no longer listed is
-/// forgotten.
+/// forgotten. Nothing is recorded where the project's sandbox is not in force, where no site
+/// is told and every one seen here stays seen (#2691).
 pub fn acknowledge(root: &Path, shown: &[String]) -> io::Result<()> {
-    let now: Vec<String> = committed(root, &Locks::of(root))
+    let locks = Locks::of(root);
+    if Plane::read(root).in_force(&locks).is_none() {
+        return Ok(());
+    }
+    let now: Vec<String> = committed(root, &locks)
         .iter()
         .map(ToString::to_string)
         .collect();

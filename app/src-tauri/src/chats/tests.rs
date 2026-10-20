@@ -7776,11 +7776,11 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
 }
 
 /// #2691: one function names a chat's persona for a browser login, its browser's reach and its
-/// Asks, read from the app's record of its start. After a handoff that left it holding another's
-/// grants, a login's vault is its own persona's, as `secret exec` judges it, and its browser is
-/// the held persona's, as its sandbox was compiled. A chat on no persona uses no persona's vault,
-/// and its browser is the project's default persona's at its start. Both are fixed at the start.
-/// Starts a chat's program, so it first runs on CI.
+/// Asks, read from the app's record of its start. After a handoff that left a chat on a profile
+/// holding another's grants, a login's vault is its own persona's, as `secret exec` judges it,
+/// and its browser is the held persona's, as its sandbox was compiled. A chat on a profile and
+/// no persona uses no persona's vault, and its browser is the project's default persona's at its
+/// start. A chat on no profile runs with no persona's grants. Each is fixed at the start.
 #[test]
 fn one_function_names_a_chats_persona_for_every_path_after_a_handoff_too() {
     let plane = tempfile::tempdir().expect("a project");
@@ -7802,27 +7802,26 @@ fn one_function_names_a_chats_persona_for_every_path_after_a_handoff_too() {
     };
     default_is("devops");
     let chats = restartable_chats_of(plane.path(), Pretend::default());
-    let handed = chats
-        .start(
-            &Chat {
-                persona: Some("qa".to_owned()),
-                held: Some(purlis_core::reopen::HeldGrants {
-                    persona: Some("devops".to_owned()),
-                }),
-                ..a_resumable_chat_in(plane.path())
-            },
-            SIZE,
-        )
-        .expect("it starts");
-    let on_none = chats
-        .start(
-            &Chat {
-                persona: None,
-                ..a_resumable_chat_in(plane.path())
-            },
-            SIZE,
-        )
-        .expect("it starts");
+    let start = |persona: Option<&str>, held: Option<&str>, profile: Option<&str>| {
+        chats
+            .start_ready(
+                &Chat {
+                    persona: persona.map(str::to_owned),
+                    held: held.map(|held| purlis_core::reopen::HeldGrants {
+                        persona: Some(held.to_owned()),
+                    }),
+                    profile: profile.map(str::to_owned),
+                    cwd: Some(plane.path().to_path_buf()),
+                    ..chat("claude", "a chat", None)
+                },
+                &a_harness_ready(None),
+                SIZE,
+            )
+            .expect("it starts")
+    };
+    let handed = start(Some("qa"), Some("devops"), Some("work"));
+    let on_none = start(None, None, Some("work"));
+    let no_profile = start(Some("qa"), Some("devops"), None);
     let named = |started_as: Option<&str>, grants: Option<&str>| {
         Some(ChatPersona {
             started_as: started_as.map(str::to_owned),
@@ -7831,6 +7830,11 @@ fn one_function_names_a_chats_persona_for_every_path_after_a_handoff_too() {
     };
     assert_eq!(chats.persona_of(handed), named(Some("qa"), Some("devops")));
     assert_eq!(chats.persona_of(on_none), named(None, Some("devops")));
+    assert_eq!(
+        chats.persona_of(no_profile),
+        named(Some("qa"), None),
+        "a chat on no profile is compiled with no persona's grants"
+    );
     // A login reads the same record for its vault: the persona it was started as.
     let login_as = |session| {
         chats
