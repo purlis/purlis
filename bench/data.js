@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792564376251,
+  "lastUpdate": 1792567268251,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20244,6 +20244,48 @@ window.BENCHMARK_DATA = {
             "value": 104.2995645,
             "unit": "ms",
             "extra": "median of 5 runs: 103.432, 103.580, 104.300, 105.051, 106.394 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3a9b426870223486f688f503cba33b1ba23b382a",
+          "message": "stories: fail on an obsolete baseline, and delete it by the label (#2943) (#2950)\n\nThe stories check reads Storybook's own index (`storybook index`) and refuses a\nbaseline whose story is gone from its file, or no longer runs as a test, naming\nthe story. The update-baselines job gathers only the baselines of live stories,\nand `take` deletes every other file in the pull request's `__screenshots__`\ndirectories in the same commit, through no link and with the app root itself\nno link. The job's comment lists the baselines drawn and those deleted.\n\nCloses #2943\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T11:09:49+04:00",
+          "tree_id": "e023fdcd7c1371350ad3d7093579e453440e2bf6",
+          "url": "https://github.com/purlis/purlis/commit/3a9b426870223486f688f503cba33b1ba23b382a"
+        },
+        "date": 1792567266499,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.511852,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.486, 0.505, 0.512, 0.533, 0.544 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.138683,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.736, 16.859, 17.139, 17.264, 17.304 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.454262,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.253, 103.280, 104.454, 106.321, 107.576 ms"
           }
         ]
       }
