@@ -1301,19 +1301,53 @@ impl Browser {
     }
 
     /// The element that has the focus of `marked`'s document, where that document says one other
-    /// than `marked` does, else `marked` (#2972).
+    /// than `marked` does and `marked` is not inside it, else `marked` (#2972). A field in a shadow
+    /// root (open or closed) is the one its keys go to while its document names the shadow's
+    /// host: `marked` inside what the document names, its shadow roots included, stays.
     fn document_s_own(&self, target: &str, marked: &NodeKey) -> NodeKey {
         let session = lock(&self.inner.state)
             .page(target)
             .and_then(|page| page.frames.get(&marked.frame))
             .map(|frame| frame.session.clone());
-        match session.and_then(|session| self.focused_in(&session, &marked.frame)) {
-            Some(backend) if backend != marked.backend => NodeKey {
-                frame: marked.frame.clone(),
-                backend,
-            },
+        let Some(session) = session else {
+            return marked.clone();
+        };
+        match self.focused_in(&session, &marked.frame) {
+            Some(backend)
+                if backend != marked.backend && !self.holds(&session, backend, marked.backend) =>
+            {
+                NodeKey {
+                    frame: marked.frame.clone(),
+                    backend,
+                }
+            }
             _ => marked.clone(),
         }
+    }
+
+    /// Whether the element `inside` is within the element `outer` of `session`'s document, its
+    /// shadow roots included and frames' documents not; where the engine cannot say, it is taken
+    /// to be, so the tree's own element stays.
+    fn holds(&self, session: &str, outer: i64, inside: i64) -> bool {
+        let Ok(described) = self.devtools().call(
+            "DOM.describeNode",
+            json!({ "backendNodeId": outer, "depth": -1, "pierce": true }),
+            Some(session),
+        ) else {
+            return true;
+        };
+        let mut stack = vec![&described["node"]];
+        while let Some(node) = stack.pop() {
+            if node["backendNodeId"] == inside {
+                return true;
+            }
+            for list in ["children", "shadowRoots"] {
+                if let Some(nodes) = node[list].as_array() {
+                    stack.extend(nodes);
+                }
+            }
+        }
+        false
     }
 
     /// Of `many`, the elements the tree marks focused on `target`'s page, the one its own
