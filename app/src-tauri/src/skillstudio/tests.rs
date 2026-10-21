@@ -25,7 +25,7 @@ fn the_studio_lists_built_in_and_project_skills_with_their_level_and_why_one_is_
     );
     skill(&root.join("skills"), "half", "---\nname: half\n---\n");
 
-    let studio = studio(&root, Some(&built_in), true, None);
+    let studio = studio(&root, Some(&built_in), true, None, None);
 
     assert!(studio.on);
     let rows: Vec<(&str, Level, bool, Option<&str>, &str)> = studio
@@ -67,13 +67,14 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
         "---\nname: deploy\ndescription: Deploys.\n---\n",
     );
 
-    let studio = studio(tmp.path(), None, false, None);
+    let studio = studio(tmp.path(), None, false, None, None);
 
     assert_eq!(
         studio,
         Studio {
             on: false,
             workspace: None,
+            persona: None,
             workspaces: Vec::new(),
             skills: Vec::new()
         }
@@ -106,7 +107,7 @@ fn the_studio_shows_a_workspaces_chat_with_its_own_skills_and_each_hidden_copy()
     );
     std::fs::create_dir_all(root.join("workspaces/beta")).unwrap();
 
-    let studio = studio(&root, None, true, Some("alpha"));
+    let studio = studio(&root, None, true, Some("alpha"), None);
 
     assert_eq!(studio.workspace.as_deref(), Some("alpha"));
     assert_eq!(studio.workspaces, ["alpha", "beta"]);
@@ -136,6 +137,45 @@ fn the_studio_shows_a_workspaces_chat_with_its_own_skills_and_each_hidden_copy()
                 false,
                 Some("hidden by the workspace skill of this name")
             ),
+        ]
+    );
+}
+
+#[test]
+fn the_studio_as_a_persona_lists_its_own_skills_and_one_it_names_whatever_was_granted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
+    std::fs::create_dir_all(root.join("personas/ops")).unwrap();
+    std::fs::write(
+        root.join("personas/ops/persona.md"),
+        "---\nskills: deploy\n---\n",
+    )
+    .unwrap();
+    skill(
+        &root.join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    );
+    skill(
+        &root.join("personas/ops/skills"),
+        "triage",
+        "---\nname: triage\ndescription: Triages.\n---\n",
+    );
+
+    let studio = studio(&root, None, true, Some("alpha"), Some("ops"));
+
+    assert_eq!(studio.persona.as_deref(), Some("ops"));
+    let rows: Vec<(&str, Level, bool, &str)> = studio
+        .skills
+        .iter()
+        .map(|s| (s.name.as_str(), s.level, s.on, s.label.as_str()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("deploy", Level::Project, true, "project"),
+            ("triage", Level::Persona, true, "persona"),
         ]
     );
 }

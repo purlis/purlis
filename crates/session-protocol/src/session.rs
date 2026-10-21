@@ -214,9 +214,17 @@ use crate::view::{Limits, Views};
 /// `relay_to`, the first command on a window's link after its `name_window`, has the desktop's
 /// host relay that link to the runner it keeps under the name, and `link_down` says when the
 /// runner answered with another key than the one pinned for it (`key_changed`).
+///
+/// 1.34 added code over the link (#2046, ADR 0078 §7): `take_code` has the host take a git
+/// bundle the client writes on a code stream into a repository of a project it holds, and
+/// `give_code` has it write one of that repository's branches back, each answered `code` with the
+/// refs the transfer left ([`crate::code`]); and a `hold_project` that names no `project_path`,
+/// which a host that keeps its own projects holds where it keeps them. Both code commands are the
+/// window's alone, relayed for it. A host before 1.34 refuses each `unknown_command`, and a hold
+/// with no path `malformed`.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 33,
+    minor: 34,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -374,9 +382,12 @@ pub enum Command {
     Unsubscribe,
     /// Hold a project on this host: the host may now start programs in it. A project is
     /// named by its stable id, and `project_path` says where it is on the host's machine
-    /// (1.2).
+    /// (1.2). Left out (1.34), the host holds it where it keeps its own projects, a runner's
+    /// `<data>/projects/<project id>`, made there if it is not; a host that keeps none refuses
+    /// it [`NO_SUCH_PROJECT`], and an id that is not a ULID [`NOT_ALLOWED`].
     HoldProject {
         project: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         project_path: String,
     },
     /// Let go of a project this link held (1.2). What runs in it runs on until it is closed.
@@ -551,6 +562,57 @@ pub enum Command {
     /// has sent anything else and [`NOT_STARTED`] for a runner this machine does not keep. The
     /// window's alone ([`crate::grants::Power::RelayTo`]).
     RelayTo { runner: String },
+    /// The client writes a git bundle into `repo` of a held project (1.34, #2046, ADR 0078 §7):
+    /// the host opens a code stream named `transfer` ([`crate::code::Header`]), reads the bundle
+    /// the client writes on it until the client shuts it, at most
+    /// [`crate::code::MOST_BUNDLE_BYTES`], and takes into the repository exactly the refs
+    /// `refs` names, each at the commit it names: from the bundle, or already in the repository
+    /// where the bundle is empty of it. A branch (`refs/heads/…`) or a snapshot of a branch's
+    /// uncommitted work (`refs/purlis/snapshots/…`), and nothing else. `repo` is the
+    /// repository's folder in the project, relative to it: empty for the project's own, or
+    /// `workspaces/<workspace>/<repo>`. Answered [`Answer::Code`] with every branch and
+    /// snapshot the repository holds after it; refused [`NOT_ALLOWED`] for a ref or a folder
+    /// that is not one of those, or a bundle that carries a ref it did not name, and
+    /// [`TOO_LARGE`] past the bound. The window's alone ([`crate::grants::Power::Code`]),
+    /// relayed for it.
+    ///
+    /// `checkout`, where it names a branch among `refs`, has a repository with nothing checked
+    /// out yet (one the host has just made) check its own work tree out on that branch, with the
+    /// branch's snapshot's uncommitted work in it where `refs` carries one: what the runner's
+    /// chats then work in. A repository with something checked out is left as it is, and a
+    /// branch one of its work trees has checked out is the runner's own and is never moved.
+    TakeCode {
+        project: String,
+        #[serde(default)]
+        repo: String,
+        transfer: u64,
+        refs: Vec<CodeRef>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        checkout: Option<String>,
+    },
+    /// The host writes a git bundle of `repo`'s branches back to the client (1.34, #2046): on a
+    /// code stream named `transfer`, leaving out every commit `have` reaches, and shuts it once
+    /// written, an empty stream where there is nothing the client lacks. Answered
+    /// [`Answer::Code`] with the branches the bundle is of. The window's alone
+    /// ([`crate::grants::Power::Code`]), relayed for it.
+    GiveCode {
+        project: String,
+        #[serde(default)]
+        repo: String,
+        transfer: u64,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        have: Vec<String>,
+    },
+}
+
+/// One ref of a repository and the commit it is at (1.34): what `take_code` names and `code`
+/// answers.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct CodeRef {
+    /// Its full name: `refs/heads/<branch>` or `refs/purlis/snapshots/<branch>`.
+    pub name: String,
+    /// The commit, as forty hexadecimal digits.
+    pub oid: String,
 }
 
 /// What a [`Command::Confine`] asks for (1.4).
@@ -965,6 +1027,9 @@ pub enum Answer {
     Driving { driver: crate::browsing::Driver },
     /// The confinements named to the link again, by id: [`Command::TakeBack`] (1.22).
     TakenBack { confinements: Vec<String> },
+    /// The refs a transfer of code left (1.34): [`Command::TakeCode`] and
+    /// [`Command::GiveCode`].
+    Code { heads: Vec<CodeRef> },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
@@ -1275,6 +1340,8 @@ wire_words!(Command {
     NameWindow => "name_window",
     Unpair => "unpair",
     RelayTo => "relay_to",
+    TakeCode => "take_code",
+    GiveCode => "give_code",
 });
 
 impl Command {
@@ -1322,6 +1389,7 @@ impl Command {
             Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
             Command::RelayTo { .. } => Power::RelayTo,
+            Command::TakeCode { .. } | Command::GiveCode { .. } => Power::Code,
         }
     }
 }
@@ -1362,6 +1430,7 @@ wire_words!(Answer {
     Browsed => "browsed",
     Driving => "driving",
     TakenBack => "taken_back",
+    Code => "code",
     Subscribed => "subscribed",
     Done => "done",
 });
@@ -1790,7 +1859,9 @@ impl Lane {
             | Command::TakeBack { .. }
             | Command::NameWindow { .. }
             | Command::Unpair
-            | Command::RelayTo { .. } => None,
+            | Command::RelayTo { .. }
+            | Command::TakeCode { .. }
+            | Command::GiveCode { .. } => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -2391,6 +2462,55 @@ impl Client {
             runner: runner.to_owned(),
         })
         .await
+    }
+
+    /// Have the host take into `repo` of `project` the refs `refs` names (1.34, #2046), from the
+    /// bundle this client writes on the code stream the host opens for `transfer`, which the
+    /// client takes from its streams ([`crate::view::Viewer::accept_any`]), checking out
+    /// `checkout` in a repository that has nothing checked out yet. Answers every branch and
+    /// snapshot the repository holds after it.
+    pub async fn take_code(
+        &self,
+        project: &str,
+        repo: &str,
+        transfer: u64,
+        refs: Vec<CodeRef>,
+        checkout: Option<String>,
+    ) -> Result<Vec<CodeRef>, CallError> {
+        self.code(Command::TakeCode {
+            project: project.to_owned(),
+            repo: repo.to_owned(),
+            transfer,
+            refs,
+            checkout,
+        })
+        .await
+    }
+
+    /// Have the host write a bundle of `repo`'s branches in `project` on the code stream it
+    /// opens for `transfer` (1.34, #2046), leaving out what `have` reaches. Answers the branches
+    /// the bundle is of.
+    pub async fn give_code(
+        &self,
+        project: &str,
+        repo: &str,
+        transfer: u64,
+        have: Vec<String>,
+    ) -> Result<Vec<CodeRef>, CallError> {
+        self.code(Command::GiveCode {
+            project: project.to_owned(),
+            repo: repo.to_owned(),
+            transfer,
+            have,
+        })
+        .await
+    }
+
+    async fn code(&self, command: Command) -> Result<Vec<CodeRef>, CallError> {
+        match self.call(command).await? {
+            Answer::Code { heads } => Ok(heads),
+            other => Err(unexpected(&other)),
+        }
     }
 
     /// Throw the kill switch: every program the host runs ends, and none starts until the

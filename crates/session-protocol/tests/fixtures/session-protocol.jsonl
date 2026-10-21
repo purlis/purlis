@@ -139,3 +139,9 @@
 {"call":{"id":133,"command":"relay_to","runner":"builds"}}
 {"pushed":{"link_down":{"why":"host 01JB0RUNNER0000000000000000 offered another link key than the one pinned when it was paired","key_changed":true}}}
 {"reply":{"re":134,"refused":{"code":"key_changed","why":"Runner refused (host 01JB0RUNNER0000000000000000 offered another link key than the one pinned when it was paired). purlis sent it nothing and does not link to it until it is removed and added again"}}}
+{"call":{"id":140,"command":"hold_project","project":"01J9PRJCT00000000000000000"}}
+{"call":{"id":141,"command":"take_code","project":"01J9PRJCT00000000000000000","repo":"workspaces/app/web","transfer":7,"refs":[{"name":"refs/heads/fix-login","oid":"4e90af629364f93a93f7ad38f3c4d02189bc5dcc"},{"name":"refs/purlis/snapshots/fix-login","oid":"d2e4009514e3c458b6b8b961a3b2a784fd86ba19"}],"checkout":"refs/heads/fix-login"}}
+{"reply":{"re":141,"ok":{"code":{"heads":[{"name":"refs/heads/fix-login","oid":"4e90af629364f93a93f7ad38f3c4d02189bc5dcc"},{"name":"refs/purlis/snapshots/fix-login","oid":"d2e4009514e3c458b6b8b961a3b2a784fd86ba19"}]}}}}
+{"call":{"id":142,"command":"give_code","project":"01J9PRJCT00000000000000000","repo":"workspaces/app/web","transfer":8,"have":["4e90af629364f93a93f7ad38f3c4d02189bc5dcc"]}}
+{"reply":{"re":142,"ok":{"code":{"heads":[{"name":"refs/heads/fix-login","oid":"02ce1eed0eedcb47f1d076f09c845201835ecd7e"}]}}}}
+{"reply":{"re":143,"refused":{"code":"too_large","why":"the bundle is larger than 1073741824 bytes, the most one transfer carries, so it was not taken"}}}

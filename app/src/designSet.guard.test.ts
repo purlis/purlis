@@ -71,6 +71,10 @@ const STANDS: Record<string, { count: number; why: string }> = {
   "Palette.tsx": { count: 1, why: "the palette's query, a combobox over its own list" },
   "PanelList.tsx": { count: 1, why: FILTER },
   "Panels.tsx": { count: 1, why: "a todo typed straight into its list, Enter adds it" },
+  "personaSkills.tsx": {
+    count: 1,
+    why: "a skill typed straight into a persona's Skills list, Add names it (#2768)",
+  },
   "PersonaMarkPicker.tsx": { count: 1, why: "the mark picker's own hex box beside its swatches" },
   "SearchTab.tsx": { count: 1, why: "the Search view's query, the view itself" },
   "TabRename.tsx": { count: 1, why: "a tab renamed in place, on the strip" },

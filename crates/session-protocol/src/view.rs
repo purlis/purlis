@@ -428,13 +428,26 @@ impl Reader {
 async fn accept(stream: Stream) -> Result<Reader, LinkError> {
     let (mut input, acks) = tokio::io::split(stream);
     let header = Header::read_from(&mut input).await?;
-    Ok(Reader {
+    Ok(reading(header, input, acks))
+}
+
+fn reading(header: Header, input: ReadHalf<Stream>, acks: WriteHalf<Stream>) -> Reader {
+    Reader {
         view: header.view,
         epoch: header.epoch,
         snapshot_left: header.snapshot as usize,
         input,
         acks,
-    })
+    }
+}
+
+/// A stream the host opened, as its first byte says it is (1.34): a view's, or one that carries
+/// a bundle of code ([`crate::code`]).
+pub enum Opened {
+    View(Reader),
+    /// A code stream, after its header: the bundle's bytes follow in the direction its command
+    /// says.
+    Code(crate::code::Header, Stream),
 }
 
 /// What a view's stream opens with ([`VIEW`], then the view's number, its epoch and its
@@ -468,17 +481,28 @@ impl Header {
     ) -> Result<Header, LinkError> {
         let kind = input.read_u8().await?;
         if kind != VIEW {
-            return Err(LinkError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("a stream that opens with {kind:#04x} is not a view"),
-            )));
+            return Err(not_a_view(kind));
         }
+        Header::read_after_kind(input).await
+    }
+
+    /// The rest of a view's header, once its first byte, [`VIEW`], has been read.
+    pub async fn read_after_kind<R: tokio::io::AsyncRead + Unpin>(
+        input: &mut R,
+    ) -> Result<Header, LinkError> {
         Ok(Header {
             view: ViewId(input.read_u32().await?),
             epoch: Epoch(input.read_u32().await?),
             snapshot: input.read_u32().await?,
         })
     }
+}
+
+fn not_a_view(kind: u8) -> LinkError {
+    LinkError::Io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!("a stream that opens with {kind:#04x} is not a view"),
+    ))
 }
 
 /// A view's number on a link: which terminal it shows. The layer above says which chat that is.
@@ -624,6 +648,29 @@ impl Viewer {
     /// Take a view the host opened.
     pub async fn accept(&mut self, stream: Stream) -> Result<Reader, LinkError> {
         let reader = accept(stream).await?;
+        self.seen_now(reader)
+    }
+
+    /// Take a stream the host opened, of whichever kind its first byte says (1.34): a view, held
+    /// to the epochs [`Viewer::accept`] holds it to, or a code stream ([`crate::code`]). Any other
+    /// kind is refused.
+    pub async fn accept_any(&mut self, stream: Stream) -> Result<Opened, LinkError> {
+        let (mut input, acks) = tokio::io::split(stream);
+        match input.read_u8().await? {
+            VIEW => {
+                let header = Header::read_after_kind(&mut input).await?;
+                self.seen_now(reading(header, input, acks))
+                    .map(Opened::View)
+            }
+            crate::code::CODE => {
+                let header = crate::code::Header::read_after_kind(&mut input).await?;
+                Ok(Opened::Code(header, input.unsplit(acks)))
+            }
+            kind => Err(not_a_view(kind)),
+        }
+    }
+
+    fn seen_now(&mut self, reader: Reader) -> Result<Reader, LinkError> {
         if let Some(last) = self.seen.get(&reader.view)
             && reader.epoch <= *last
         {
