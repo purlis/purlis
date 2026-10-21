@@ -159,9 +159,22 @@ pub fn relaying(
 /// `<pool>/<runner>`, which keeps its chats and starts no new one. Read from `config_root` as
 /// each `relay_to` is taken.
 pub fn drains_to(config_root: PathBuf) -> purlis_host::DrainsTo {
-    Arc::new(move |name: &str| {
-        purlis_core::runners::reachable(&config_root, name).is_ok_and(|(_, draining)| draining)
-    })
+    Arc::new(move |name: &str| drains(&config_root, name))
+}
+
+/// **Whether the runner `<pool>/<runner>` kept under `config_root` takes no new chat** (#2865):
+/// only a runner of that pool kept here and not draining takes one. A file that cannot be read,
+/// a runner not kept, a name of another shape and one that drains all refuse it.
+fn drains(config_root: &Path, name: &str) -> bool {
+    let Some((pool, runner)) = name.split_once('/') else {
+        return true;
+    };
+    match purlis_core::runners::read(config_root) {
+        Ok(kept) => !kept
+            .iter()
+            .any(|kept| kept.pool() == pool && kept.name() == runner && !kept.draining),
+        Err(_) => true,
+    }
 }
 
 /// **What this desktop's version is**, as its own `purlis --version` would say it: the
