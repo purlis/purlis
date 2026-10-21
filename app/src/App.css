@@ -1562,7 +1562,7 @@ button.show-more:focus-visible {
 }
 
 .use-skill-name {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .use-skill-level,

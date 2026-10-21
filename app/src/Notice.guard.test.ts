@@ -451,6 +451,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". Also its warning that installing ends every chat (WARNING's case), and the channel " +
       "it moved to: what the last press answered, not a standing line",
   },
+  "UseSkill.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ", in the picker and in the arguments form, one shown at a time (#2775). And the " +
+      "dialog's warning that the chat's set is past its skill budget, read as it opens: about " +
+      "the chat the dialog is for, gone with the dialog",
+  },
   "VaultSignIn.tsx": {
     count: 5,
     why:
