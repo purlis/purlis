@@ -2416,6 +2416,23 @@ export const commands = {
 	 *  default. It applies at the next browser call; a browser running past a lowered limit runs on.
 	 */
 	setBrowserLimit: (limit: BrowserLimit, to: number | null) => typedError<null, string>(__TAURI_INVOKE("set_browser_limit", { limit, to })),
+	/**  **The Notice, while a start was refused for the engine's sandbox** since this launch. */
+	engineSandbox: () => typedError<{
+	/**  The sentence. */
+	says: string,
+	/**
+	 *  The command that adds the profile, which the person runs themselves: none for a data
+	 *  folder whose path holds a control character.
+	 */
+	command: string | null,
+	/**  This machine's own Chrome, where one is installed. */
+	chrome: string | null,
+} | null, string>(__TAURI_INVOKE("engine_sandbox")),
+	/**
+	 *  **Every browser starts on this machine's own Chrome from now on** (ADR 0042's choice): the
+	 *  person's press on the Notice. The next browser call starts on it.
+	 */
+	useThisMachinesChrome: () => typedError<null, string>(__TAURI_INVOKE("use_this_machines_chrome")),
 	/**  **The Docker pools on this machine**, and a new pool's default limits. */
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
 	/**
@@ -2437,6 +2454,11 @@ export const commands = {
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
+	/**
+	 *  **The projects a runner would not hold again after a re-link**, each with the runner's words
+	 *  and the pools its chats run on.
+	 */
+	projectsNotHeld: () => typedError<ProjectNotHeld[], string>(__TAURI_INVOKE("projects_not_held")),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	/**
@@ -3580,6 +3602,8 @@ export const commands = {
 
 /* Constants */
 export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
+
+export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
@@ -5610,6 +5634,19 @@ export type Doing = {
 	 *  cargo"), until the next tool heard.
 	 */
 	over: boolean,
+};
+
+/**  What the Notice says and offers. */
+export type EngineSandboxShown = {
+	/**  The sentence. */
+	says: string,
+	/**
+	 *  The command that adds the profile, which the person runs themselves: none for a data
+	 *  folder whose path holds a control character.
+	 */
+	command: string | null,
+	/**  This machine's own Chrome, where one is installed. */
+	chrome: string | null,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */
@@ -8801,6 +8838,21 @@ export type ProjectHarnesses = {
 	refused: RefusedHarness[],
 };
 
+/**  One project the runner its chats run on would not hold, as the Pools group draws it. */
+export type ProjectNotHeld = {
+	/**  Where it is on this machine. */
+	root: string,
+	/**  What the window calls it: its folder's name. */
+	name: string,
+	/**  What the runner said, as plain text, at most [`MOST_SAID`] characters. */
+	why: string,
+	/**
+	 *  The pools its workspaces run their chats on, as this machine keeps them: the row the
+	 *  mark is drawn on where there is one.
+	 */
+	pools: string[],
+};
+
 /**  Both files. */
 export type ProjectSettings = {
 	shared: SettingsFile,
@@ -11496,6 +11548,11 @@ export type WindowTheme = {
 	typed: WindowTyped,
 	/**  How a workspace's colour tints it (#2329, #2393): the window keeps only the arithmetic. */
 	tint: WindowTint,
+	/**
+	 *  The stylesheet of its component parts (#2903), written by the engine
+	 *  (`purlis_core::theme::parts::stylesheet`): empty for a theme that names none.
+	 */
+	parts: string,
 };
 
 /**

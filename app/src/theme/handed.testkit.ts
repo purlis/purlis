@@ -89,4 +89,11 @@ const tint = (JSON.parse(readFileSync(TINT_CASES, "utf8")) as { classic: unknown
 const GLOBAL = "__CHARTER_AT_CREATION__";
 const held = globalThis as Record<string, unknown>;
 const classic = JSON.parse(readFileSync(CLASSIC, "utf8")) as { appearances: Appearance[] };
-held[GLOBAL] ??= { built_in: classic.appearances.map(resolved) };
+
+/** What the core hands a window as it is created, as far as a test's window needs it: the
+ *  built-in appearances. A story's page is handed the same (`.storybook/handed.plugin.ts`). */
+export function handedAtCreation() {
+  return { built_in: classic.appearances.map(resolved) };
+}
+
+held[GLOBAL] ??= handedAtCreation();

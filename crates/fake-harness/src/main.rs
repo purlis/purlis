@@ -15,6 +15,8 @@
 //! and a throughput number would be measuring the wrong thing.
 
 mod acp;
+#[cfg(unix)]
+mod mcp;
 mod synthetic;
 
 use std::io::{self, BufRead, Write};
@@ -120,6 +122,15 @@ struct Args {
     /// With `--leave-terminal`: say this process's pid, and stay a while once left.
     #[arg(long, requires = "leave_terminal")]
     linger: bool,
+
+    /// Start the MCP server `--mcp-server` names as a harness starts one, on stdio, and relay
+    /// its stdio to the socket at this path, and nothing else (`mcp.rs`).
+    #[arg(long, requires = "mcp_server", value_name = "SOCKET")]
+    mcp_relay: Option<PathBuf>,
+
+    /// With `--mcp-relay`: the MCP server's program and its words.
+    #[arg(long, num_args = 1.., allow_hyphen_values = true, value_name = "PROGRAM", requires = "mcp_relay")]
+    mcp_server: Vec<String>,
 }
 
 fn main() -> ExitCode {
@@ -147,6 +158,10 @@ fn run(args: &Args) -> Result<(), String> {
     }
     if args.leave_terminal {
         return leave_terminal(args.linger);
+    }
+    #[cfg(unix)]
+    if let Some(socket) = &args.mcp_relay {
+        return mcp::relay(socket, &args.mcp_server);
     }
     if args.acp || args.mode.is_some() {
         return acp::serve(&acp::Script {

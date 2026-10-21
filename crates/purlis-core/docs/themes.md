@@ -237,7 +237,126 @@ names its density (see [The theme check](#the-theme-check)); the theme is drawn.
 sits on a line of 1, so it fits wherever a field's words do. Every length here grows with the text
 size alike, so what fits at the default text size fits at every one.
 
+## Component parts
+
+A token reaches every control that draws from it. A **component part** reaches one named part of
+one component family: the button's root, its label, its icon. A theme sets parts in a top-level
+`parts` object of `theme.json`, for every appearance, beside its tokens:
+
+```json
+"parts": {
+  "button.root.corner-radius": "full",
+  "button.root.border-width": 0,
+  "button.root.primary.hover.fill": "accent.base",
+  "button.label.font-weight": 500
+}
+```
+
+`purlis theme parts` prints every family, part, variant, state and property there is, with each
+bound, as JSON: what the theme skill, the gallery and an editor read. The schema completes each
+key. A theme that extends another starts from its parent's parts and layers its own over them,
+key by key. A property typed in its CSS spelling (`border-color`) is told the name it means.
+
+**The key** is `<family>.<part>[.<variant>][.<state>].<property>`. The state at rest is implied: a
+key with no state is the part at rest, and in every state that does not set the property. A key
+with no variant reaches the part in every variant; one with a variant only that variant. The more
+a key names, the more it wins: a state over rest, then a variant over every variant. A key that
+names a family, part, variant, state or property purlis does not have is said and left out, as
+an unknown token is.
+
+| Family | Parts | Variants |
+|---|---|---|
+| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept) |
+
+The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
+keyboard is on it), `disabled` and `open`.
+
+| Property | Value | Bounds |
+|---|---|---|
+| `fill` | a semantic colour token, or `transparent` | |
+| `text` | a semantic colour token | |
+| `border-colour` | a semantic colour token, or `transparent` | |
+| `shadow` | `none`, `raised` or `overlay` | |
+| `border-width` | px | 0–4 |
+| `corner-radius` | one value or four (top left, top right, bottom right, bottom left): px, a `radius.*` token or `full` | 0–9999, drawn at most half the part's height; `full` is a pill at any height |
+| `padding` | one value, or two (block, inline): px at 14px or a `space.*` token | block 0–12, inline 0–32 |
+| `gap` | px at 14px or a `space.*` token | 0–16 |
+| `font-size` | px at 14px or a `font-size.*` token | 10–18 |
+| `font-weight` | a weight or a `font-weight.*` token | 300–700 |
+| `height` | px at 14px or a `size.*` token | 24–48 |
+
+**A colour names a semantic token**, never a hex or a palette name, so the palette, the
+appearances, the tints and the floors keep working for a part as they do for a token. A geometry
+token follows the person's density; a number is the same in both.
+
+**A state never changes size.** Inside a state only `fill`, `text`, `border-colour` and `shadow`
+may be set, so nothing moves when the pointer, a press, the keyboard or a choice reaches a part.
+A theme that sets any other property inside a state is refused, and the check says why.
+
+**A corner is clamped as it is drawn** to half the part's height, its variant's own height
+where the theme sets one, and `full` draws a pill at any height and density. **A control stays a target and its words fit**: in both densities a button
+the theme sizes is at least 24px tall, and its words (its font size on a line of 1), its block
+padding and its border, top and bottom, fit in its height. A theme that breaks either is refused
+with the density named: Purlis Classic's compact button is 24px, so 14px words and a 1px border
+leave room for 4px of padding above and below, not 6.
+
+**What a theme does not set is the family default**, which the window's own stylesheet draws from
+the global tokens. A theme that names no parts draws exactly as it did; the engine writes the
+parts a theme names as one stylesheet, keyed on the wrapper's `data-scope` and `data-part`, its
+`data-variant` and its state attribute, in the `parts` layer above the controls.
+
+A geometry token is held to the property's bound at the value the theme draws it at, in both
+densities: `"gap": "space.8"` is 32 comfortable, past a gap's 16, and refuses the theme.
+
+**The floors hold per part and per state.** In each variant and state a theme's parts change,
+the part's words contrast 4.5:1 with its fill, and its icon 3:1, on every surface the family is
+drawn on; a border that is the part's only edge, on a fill that is its ground or none, contrasts
+3:1. A part that breaks one draws its family default in that variant and state, and the check
+says each as a `part-falls-back` warning. A disabled control is exempt, as WCAG has it.
+
+**The consent floors hold whatever a theme changed** (ADR 0097 §6), as it is written and in
+every workspace tint, and two looks are compared by the colours they draw, never by the tokens'
+names:
+
+- an answer that grants (`grants`, the variant of an Allow or an Accept) keeps its accent edge:
+  its `border-width` 0 is refused, a theme that turns every border off still draws it, and its
+  edge contrasts 3:1 with its fill;
+- Allow is distinguishable from Keep blocked (`secondary`) by its edge, and as plain as Keep
+  blocked: in every state it is drawn on Keep blocked's fill;
+- no part draws Allow or danger nearer the primary than the family's defaults draw it in the
+  same theme, measured on what a person reads as the look as it shows on each surface;
+- danger's words stay apart from the accent and from the primary's words.
+
+A consent variant that breaks one draws its family default there, and where that is not enough,
+so does the variant it is held apart from. Allow's lock is the window's, and no property reaches
+it.
+
+**On today's controls.** The button family's rules also reach its class (`.ui-button`, each
+variant's class and the native states). A variant that is not consent never reaches a button
+that also carries a consent variant's class, so such a button draws as that consent variant. A
+size (`padding`, `gap`, `font-size`, `font-weight`, `height`, `border-width`) never reaches a
+small button (`.ui-button-sm`) or a button in a wrapping row, whose size their own classes keep,
+and a small button's corners are clamped to its own height.
+
+The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
+families with parts today: they are drawn as the note under [Geometry](#geometry) says.
+
 ## The theme check
+
+**The grey tiers** (#2902). A theme draws words in four tiers, `text.primary`,
+`text.secondary`, `text.muted` and `text.quiet`, and what is not words (a tab's ×, a separator,
+a pin, a chevron, and disabled words) in `text.faint`. Quiet is informational text: line
+numbers, placeholders, counts, paths and group labels; none of it is exempt, and none of it
+takes faint. The check measures every text tier at 4.5:1 and faint at 3:1 on every ground a
+part draws them on: the window, a field, the status bar, a panel, a card, the row under the
+pointer, the editor's code, the selected row, the tab in front and a control, at rest and
+under the pointer. **A tier the layer below draws in the grey of the tier above it follows
+that tier** (ADR 0097's amendment of 2026-10-21): over Purlis Classic, whose quiet and faint are
+its muted, a theme that names `text.muted` and not `text.quiet` draws quiet in its muted, and one
+that names no `text.faint` draws faint in its quiet. So a theme written before the tiers draws
+them as legibly as its muted words. Over a parent with tiers of its own (Purlis), a theme that
+changes only `text.muted` keeps the parent's quiet and faint; it names them to change them. A
+tint recipe names each token it tints, the tiers included.
 
 `purlis theme check <theme>` checks one theme, named by its id, by the path of a theme file, or
 by the path of a theme folder (a folder holding `theme.json`; the folders beside it are the
@@ -253,7 +372,7 @@ left out (1):
   text.primry is not a purlis token, so it is left out
 warnings (2):
   text.muted on surface.base: 2.38, under 4.5; in every workspace tint too, down to 2.38
-  text.muted on surface.hover, in the red, blue tints: down to 2.07, under 3
+  text.muted on surface.hover, in the red, blue tints: down to 2.07, under 4.5
 ```
 
 Then `consent floors:`, what the window draws of the theme. Every combination of appearance
@@ -518,6 +637,15 @@ the theme is in /home/me/.config/purlis/themes/harbor: `purlis theme check /home
 - **Each kind goes through a fixed table** (below): each token takes the first of its source
   keys that the source has. A token no row fills is Purlis Classic's of the same appearance, as
   in any theme that leaves a token out.
+- **A source's own quiet and disabled greys take the grey tiers** (#2941), and no tier reads
+  louder than the one above it. A VS Code theme's line numbers are `text.quiet` and its
+  disabled words `text.faint`; its muted words take the louder of the two greys. A base16 or
+  base24 scheme's invisibles (`base03`) are `text.faint`, walked to the mark floor. A tier the
+  source has no grey for, or whose grey would read louder than the tier above it, is left out
+  and follows that tier (see [The theme check](#the-theme-check)): a VS Code theme's faint
+  follows its quiet, which follows its muted when it has no line numbers; a base16 or base24
+  scheme's quiet follows its muted, and so does its faint when the walk would take it past
+  muted; an iTerm2 preset's and a Ghostty theme's quiet and faint are their muted.
 - **Then each kind's recipes tune the tokens the table filled** (below each table), so the
   theme reads where the source's own colours allow it. A base16 scheme makes some roles one
   colour (ANSI black is the background; the selected row is the row under the pointer) and
@@ -571,7 +699,9 @@ A VS Code theme's `colors`:
 | `control.hover` | `toolbar.hoverBackground` |
 | `text.primary` | `editor.foreground`, `foreground` |
 | `text.secondary` | `descriptionForeground` |
-| `text.muted` | `disabledForeground`, `editorLineNumber.foreground` |
+| `text.muted` | `editorLineNumber.foreground`, `disabledForeground` |
+| `text.quiet` | `editorLineNumber.foreground` |
+| `text.faint` | `disabledForeground` |
 | `border.subtle` | `panel.border`, `sideBar.border`, `editorGroup.border` |
 | `border.strong` | `input.border`, `contrastBorder` |
 | `accent.base` | `button.background`, `focusBorder` |
@@ -641,11 +771,13 @@ A VS Code theme's `colors`:
 | `chart.8` | `terminal.ansiMagenta` |
 | `window.background` | `titleBar.activeBackground`, `editor.background` |
 
-Tuned after the table (#2589): a VS Code theme names a colour for nearly every role, and those are taken as they are. Selected text it leaves to the selection is the editor's words.
+Tuned after the table (#2589): a VS Code theme names a colour for nearly every role, and those are taken as they are. Selected text it leaves to the selection is the editor's words. Its muted words take the louder of its line numbers' grey and its disabled grey, and its faint follows quiet when the disabled grey reads louder than the line numbers.
 
 | Token | Tuned |
 |---|---|
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `editor.foreground`, `foreground` |
+| `text.muted` | the one of `editorLineNumber.foreground`, `disabledForeground` that reads most on `surface.base` |
+| `text.faint` | left out when it reads louder than `text.quiet` on `surface.base` |
 
 Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
 token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
@@ -685,6 +817,7 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `text.primary` | `base05` |
 | `text.secondary` | `base04` |
 | `text.muted` | `base03` |
+| `text.faint` | `base03` |
 | `border.subtle` | `base02` |
 | `border.strong` | `base03` |
 | `accent.base` | `base0d` |
@@ -769,6 +902,8 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
 | `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
 | `text.muted` | toward `base04`, then `base05` |
+| `text.faint` | toward `base04`, then `base05` |
+| `text.faint` | left out when it reads louder than `text.muted` on `surface.base` |
 | `syntax.comment` | toward `base04`, then `base05` |
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
@@ -842,6 +977,7 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `text.primary` | `base05` |
 | `text.secondary` | `base04` |
 | `text.muted` | `base03` |
+| `text.faint` | `base03` |
 | `border.subtle` | `base02` |
 | `border.strong` | `base03` |
 | `accent.base` | `base0d` |
@@ -926,6 +1062,8 @@ Tuned as a base16 scheme is, after the table (#2589):
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
 | `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
 | `text.muted` | toward `base04`, then `base05` |
+| `text.faint` | toward `base04`, then `base05` |
+| `text.faint` | left out when it reads louder than `text.muted` on `surface.base` |
 | `syntax.comment` | toward `base04`, then `base05` |
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |

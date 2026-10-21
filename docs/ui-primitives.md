@@ -701,7 +701,7 @@ its role and writes no `font-size`, `font-weight` or `color` for it.
 | Heading   | `ui-text-heading`   | a section inside a view; a card's heading               | 14px                | strong (600)  | `text.primary`   |
 | Body      | `ui-text-body`      | what the surface is about: a row's name, an ask's words | 13px                | regular (400) | `text.primary`   |
 | Secondary | `ui-text-secondary` | where, who, a help line under a field                   | 12px                | regular (400) | `text.secondary` |
-| Meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                 | 11px                | regular (400) | `text.muted`     |
+| Meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                 | 11px                | regular (400) | `text.quiet`     |
 | Label     | `ui-text-label`     | a section label over a group; capitals, spaced `0.06em` | 11px                | strong (600)  | `text.secondary` |
 | Code      | `ui-text-code`      | a command, a path, a host                               | the role it sits in | regular (400) | inherited        |
 
@@ -1895,7 +1895,7 @@ project's and are listed whatever the scope.
 | --------- | ------------------------------------ | ----------------- | ------------------ | ------ | ------------------ |
 | primary   | what needs you: the ask's words      | `inbox-primary`   | `--font-size-md`   | 600    | `--text-primary`   |
 | secondary | where: project · workspace · persona | `inbox-secondary` | `--font-size-sm`   | 400    | `--text-secondary` |
-| meta      | its kind, then its age, trailing     | `inbox-meta`      | `--font-size-xs`   | 400    | `--text-muted`     |
+| meta      | its kind, then its age, trailing     | `inbox-meta`      | `--font-size-xs`   | 400    | `--text-quiet`     |
 
 The kind is a mark and its words together (`KindMark`, `data-kind`): a decision in
 `--state-waiting`, an update that went wrong in `--state-failed`, anything else in the secondary

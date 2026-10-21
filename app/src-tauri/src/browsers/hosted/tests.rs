@@ -266,8 +266,23 @@ fn a_start_refused_with_a_code_this_window_does_not_know_is_refused_in_the_hosts
     };
     match super::not_started(later, 3) {
         NotStarted::Failed(why) => assert_eq!(why, "this device runs at most 3 browsers at once"),
-        NotStarted::Full { .. } => panic!("a code it does not know is not device_full"),
+        other => panic!("a code it does not know is said in the host's words: {other:?}"),
     }
+}
+
+#[test]
+fn a_start_the_host_refused_for_the_engines_sandbox_is_not_started_for_it() {
+    // #2835: the host's words for it, whatever its code, are told apart from any failure.
+    use crate::chatbrowsers::NotStarted;
+    use purlis_session_protocol::session::Refusal;
+    let refused = Refusal {
+        code: "browser_failed".into(),
+        why: format!(
+            "the browser did not start: {}",
+            purlis_core::browsers::sandboxing::NO_ENGINE_SANDBOX
+        ),
+    };
+    assert_eq!(super::not_started(refused, 3), NotStarted::NoSandbox);
 }
 
 /// A key the person pressed, aimed at what a frame said it showed.

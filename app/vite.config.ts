@@ -76,7 +76,7 @@ function thirdPartyNotices(): Plugin {
 }
 
 // https://v2.tauri.app/start/frontend/vite/
-export default defineConfig(() => ({
+export default defineConfig(async () => ({
   plugins: [react(), tailwind(), ownLicence(), thirdPartyNotices()],
   // Keep Rust errors visible, and give Tauri the fixed port it expects.
   clearScreen: false,
@@ -96,8 +96,22 @@ export default defineConfig(() => ({
       },
     },
   },
+  // Two kinds of test (#2901): `unit`, every `*.test.ts(x)` in jsdom (`npm test`), and
+  // `stories`, every story run in real Chromium and WebKit (`npm run test:stories`,
+  // `.storybook/vitest.project.ts`, `docs/component-stories.md`).
   test: {
-    environment: "jsdom",
-    setupFiles: ["./src/test-setup.ts"],
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          environment: "jsdom",
+          setupFiles: ["./src/test-setup.ts"],
+        },
+      },
+      // Loaded only when Vitest reads this file: `vite dev` and `vite build` never load
+      // Storybook.
+      ...(process.env.VITEST ? [(await import("./.storybook/vitest.project.ts")).stories()] : []),
+    ],
   },
 }));

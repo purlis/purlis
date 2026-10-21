@@ -1,0 +1,21 @@
+#!/bin/sh
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+#
+# purlis's browser engine (#2835): where AppArmor restricts user namespaces to the programs a
+# profile names (Ubuntu 23.10 and later), install and load the profile that names the engine
+# purlis downloads into its data folder, as Chrome's own package does for itself. It allows that
+# one program user namespaces, which its sandbox needs, and nothing more.
+set -e
+
+SHIPPED=/usr/share/purlis/apparmor/purlis-engine
+PROFILE=/etc/apparmor.d/purlis-engine
+
+if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] && [ -d /etc/apparmor.d ]; then
+  install -m 0644 "$SHIPPED" "$PROFILE"
+  if command -v apparmor_parser >/dev/null 2>&1; then
+    apparmor_parser -r -T -W "$PROFILE" || true
+  fi
+fi
+
+exit 0

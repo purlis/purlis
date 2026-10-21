@@ -1652,7 +1652,11 @@ impl MachineStore {
     pub fn forget(&self, root: &Path) -> Result<(), String> {
         let config = self.store_home("forget a project")?;
         match machine::forget_project(config, root) {
-            Ok(true) => Ok(()),
+            Ok(true) => {
+                // A forgotten project's mark that a runner would not hold it goes (#2846).
+                crate::notheld::held(root);
+                Ok(())
+            }
             // Said, never dropped (#1240 F3): a row whose path the store does not hold, as
             // one that is not UTF-8 comes back from the window, would otherwise read as done.
             Ok(false) => Err(
