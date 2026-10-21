@@ -317,7 +317,9 @@ fn skill_tool(input: Value) -> Value {
 
 #[test]
 fn claude_codes_skill_tool_starts_the_run_of_the_skill_it_names() {
-    let p = Plane::new().with_env(crate::hookwire::HARNESS_ENV, "claude-code");
+    let p = Plane::new()
+        .with_env(crate::hookwire::HARNESS_ENV, "claude-code")
+        .with_env(crate::hookwire::SOCKET_ENV, "/tmp/hooks.sock");
     let started = p
         .ask(
             skill_tool(serde_json::json!({"skill": "charter:secrets"})),
@@ -336,7 +338,7 @@ fn claude_codes_skill_tool_starts_the_run_of_the_skill_it_names() {
             .join("personas")
             .join(crate::skilluse::DIR_NAME)
             .exists(),
-        "the hook writes no row: the host logs a run only as it opens"
+        "a host listens, so the hook writes no row: the host logs a run only as it opens"
     );
     assert_eq!(
         p.ask(
@@ -344,6 +346,36 @@ fn claude_codes_skill_tool_starts_the_run_of_the_skill_it_names() {
             posttooluse_skill
         ),
         Answer::Nothing
+    );
+}
+
+#[test]
+fn with_no_host_to_tell_the_hook_logs_the_runs_start_itself_under_this_device_and_persona() {
+    // A terminal's own harness: no app, so no host opens the run. Its use is still recorded.
+    let p = Plane::new()
+        .with_env(crate::hookwire::HARNESS_ENV, "claude-code")
+        .with_env("PURLIS_PERSONA", "ops");
+    p.persona("ops", "role: Ops");
+    let config = PathBuf::from(&p.env[crate::machine::HOME_VAR]);
+    let device = crate::machine::device_id(&config).unwrap();
+
+    let started = p
+        .ask(
+            skill_tool(serde_json::json!({"skill": "charter:secrets"})),
+            skill_started,
+        )
+        .unwrap();
+
+    assert!(crate::skilluse::path_for(&p.root, now(), &device).is_file());
+    assert!(!crate::skilluse::path_for(&p.root, now(), "box").exists());
+    let runs = crate::skilluse::runs(&p.root);
+    assert_eq!(runs.len(), 1, "{runs:#?}");
+    assert_eq!(runs[0].id.as_deref(), Some(started.run.as_str()));
+    assert_eq!(runs[0].persona.as_deref(), Some("ops"));
+    assert_eq!(runs[0].skill, "charter:secrets");
+    assert_eq!(
+        runs[0].end, None,
+        "nothing counts a host-less run's signals"
     );
 }
 

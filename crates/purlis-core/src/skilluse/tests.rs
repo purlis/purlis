@@ -42,7 +42,7 @@ fn a_skill_runs_start_is_logged_with_the_persona_or_null() {
     let mut spans = Spans::default();
     let p = started(
         dir.path(),
-        &opened(&mut spans, "charter:persona"),
+        &Starting::from(&opened(&mut spans, "charter:persona")),
         Some("ops"),
         when,
         "box",
@@ -50,7 +50,7 @@ fn a_skill_runs_start_is_logged_with_the_persona_or_null() {
     .unwrap();
     started(
         dir.path(),
-        &opened(&mut Spans::default(), "x"),
+        &Starting::from(&opened(&mut Spans::default(), "x")),
         None,
         when,
         "box",
@@ -59,7 +59,7 @@ fn a_skill_runs_start_is_logged_with_the_persona_or_null() {
     assert_eq!(
         started(
             dir.path(),
-            &opened(&mut Spans::default(), " "),
+            &Starting::from(&opened(&mut Spans::default(), " ")),
             None,
             when,
             "box"
@@ -86,7 +86,13 @@ fn no_skill_run_is_logged_in_a_project_this_purlis_may_not_write() {
     .unwrap();
     let open = opened(&mut Spans::default(), "charter:persona");
     assert_eq!(
-        started(dir.path(), &open, Some("ops"), chrono::Utc::now(), "box"),
+        started(
+            dir.path(),
+            &Starting::from(&open),
+            Some("ops"),
+            chrono::Utc::now(),
+            "box"
+        ),
         None
     );
     assert!(!dir.path().join("personas").exists());
@@ -98,7 +104,7 @@ fn a_runs_start_and_end_read_back_as_one_run_with_its_signals_and_never_a_verdic
     let when = may();
     let mut spans = Spans::default();
     let open = opened(&mut spans, "deploy");
-    started(dir.path(), &open, Some("ops"), when, "box").unwrap();
+    started(dir.path(), &Starting::from(&open), Some("ops"), when, "box").unwrap();
     spans.heard(
         "chat-run",
         Heard {

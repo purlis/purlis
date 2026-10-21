@@ -2324,7 +2324,7 @@ impl Recorder {
         self.append(under, "skill.started", body)?;
         crate::skilluse::started(
             plane,
-            &opened,
+            &(&opened).into(),
             persona.filter(|persona| *persona != NONE && *persona != UNKNOWN),
             chrono::Utc::now(),
             &self.log.device,

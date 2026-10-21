@@ -3420,7 +3420,7 @@ handoff row (`charter/dispatch.py:170` docstring).
   `tee`, in-place `sed` or `perl`, and no `>` or `>>` into a file) and names a known `SKILL.md`
   of the chat's (`PURLIS_SKILLS_DIR`, and the plane's `skills/` where `PURLIS_SKILLS_PLANE` is
   `1`). The **end** row is written when the turn ends (`skilluse::ended`), with the run's
-  signals. A chat no host records (a terminal's own harness) records no run. A skill started
+  signals. A chat no host records (a terminal's own harness) has its start row written by the hook itself (`toolhooks::skill_started`, where no hook socket is set), with no end: nothing counts its signals. A skill started
   inside another's run is its child (`parent`).
 - **Rows written before runs were recorded** (`{persona, skill, ts}`, one per `Skill` call)
   are kept as they are and read as runs of their own, with no `run`, no `started_by` and no

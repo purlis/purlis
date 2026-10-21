@@ -84,6 +84,15 @@ pub struct Hook<'a> {
 }
 
 impl Hook<'_> {
+    /// The name this device's logs are filed under: its device id, read from the machine store
+    /// the environment names and never minted here (FD-25, [`crate::machine::log_name`]).
+    fn log_name(&self) -> String {
+        crate::machine::log_name(
+            crate::machine::config_root_in(self.env).as_deref(),
+            self.host,
+        )
+    }
+
     /// `data.get(key) or ""` for a string field.
     fn text(&self, key: &str) -> &str {
         self.payload
@@ -887,13 +896,15 @@ pub fn posttooluse_skill(hook: &Hook) -> Answer {
 /// chat's harness's adapter from the call ([`crate::harness::HarnessAdapter::skill_start`]): the
 /// skill its Skill tool names, or, for a chat briefed on its skills, the skill whose `SKILL.md`
 /// a read names ([`crate::skills::readable_by_a_briefed_chat`]). The run's id is minted here,
-/// and the host opens the run under it, once per turn ([`crate::skillspan`]); nothing is
-/// written here. A chat that names no harness is Claude Code's: a terminal's own `claude`
-/// with purlis's plugin.
+/// and the host opens the run under it, once per turn ([`crate::skillspan`]). **Where no host
+/// listens** (a terminal's own harness), the hook logs the run's start itself, under the active
+/// persona, so no use of a skill goes unrecorded; its end is not, as nothing counts its signals.
+/// A chat that names no harness is Claude Code's: a terminal's own `claude` with purlis's
+/// plugin.
 pub fn skill_started(hook: &Hook) -> Option<Box<crate::hookwire::SkillStarted>> {
     use crate::harness::{Harness, SkillStart};
     use purlis_skills::runs::StartedBy;
-    let harness = (hook.env)(crate::hookwire::HARNESS_ENV)
+    let harness = crate::envvar::lookup(crate::hookwire::HARNESS_ENV, hook.env)
         .and_then(|kind| Harness::of_kind(&kind))
         .unwrap_or(Harness::ClaudeCode);
     let start = harness
@@ -912,11 +923,26 @@ pub fn skill_started(hook: &Hook) -> Option<Box<crate::hookwire::SkillStarted>> 
             (skill.name.clone(), StartedBy::Read)
         }
     };
-    Some(Box::new(crate::hookwire::SkillStarted {
+    let started = crate::hookwire::SkillStarted {
         skill,
         run: crate::reopen::mint(),
         started_by,
-    }))
+    };
+    if crate::envvar::lookup(crate::hookwire::SOCKET_ENV, hook.env).is_none() && hook.in_plane {
+        let persona = hook.persona();
+        let _ = crate::skilluse::started(
+            hook.root,
+            &crate::skilluse::Starting {
+                id: &started.run,
+                skill: &started.skill,
+                started_by,
+            },
+            persona.as_deref(),
+            hook.now,
+            &hook.log_name(),
+        );
+    }
+    Some(Box::new(started))
 }
 
 /// `posttooluse_dispatch`: nothing to the harness, since #1451. It logged which persona a

@@ -7,7 +7,7 @@
 //! `personas/_skills/<YYYY-MM>.<device>.jsonl`, append-only. A skill run is two rows under one
 //! id, both written by the event log's writer: its start as the run opens ([`started`]), and its
 //! end as the turn ends ([`ended`]), with its signals. A chat no host records (a terminal's own
-//! harness) records no run. It is committed beside the
+//! harness) has its start written by the hook itself, and no end: nothing counts its signals. It is committed beside the
 //! dispatch log for the same reason it always was: a persona whose declared `skills:` are never
 //! used, or which leans on skills it never declared, is a fact about the whole team's use of it,
 //! not about one laptop. `charter persona` reads it back as drift between what a persona
@@ -34,17 +34,18 @@ pub fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) 
 }
 
 /// **Logs the start of skill run `run`**, by `persona`: the row the event log's writer adds as
-/// the run opens, once per run however many times its turn read the skill. Nothing is logged
+/// the run opens, once per run however many times its turn read the skill, or the row a hook
+/// with no host to tell adds itself. Nothing is logged
 /// in a project this purlis may not write ([`crate::compat::read_only`], #826): the log is
 /// committed.
 pub fn started(
     root: &Path,
-    run: &Open,
+    run: &Starting<'_>,
     persona: Option<&str>,
     when: chrono::DateTime<chrono::Utc>,
     device: &str,
 ) -> Option<PathBuf> {
-    let skill = crate::memstore::py_strip(&run.skill);
+    let skill = crate::memstore::py_strip(run.skill);
     if skill.is_empty() || !writable(root) {
         return None;
     }
@@ -62,6 +63,25 @@ pub fn started(
             "ts": crate::dispatch::stamp(when),
         }),
     )
+}
+
+/// A skill run's start, as [`started`] logs it: the run the event log's writer opened, or the
+/// one a hook with no host to tell records itself ([`crate::toolhooks::skill_started`]).
+#[derive(Debug, Clone, Copy)]
+pub struct Starting<'a> {
+    pub id: &'a str,
+    pub skill: &'a str,
+    pub started_by: StartedBy,
+}
+
+impl<'a> From<&'a Open> for Starting<'a> {
+    fn from(open: &'a Open) -> Self {
+        Starting {
+            id: &open.id,
+            skill: &open.skill,
+            started_by: open.started_by,
+        }
+    }
 }
 
 /// **Logs the end of skill run `run`**, with its signals and the `tokens` spent inside it where

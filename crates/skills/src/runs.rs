@@ -27,9 +27,10 @@ use crate::Skill;
 #[serde(rename_all = "kebab-case")]
 #[non_exhaustive]
 pub enum StartedBy {
-    /// The harness's own Skill tool: Claude Code's, and opencode's `skill` tool.
+    /// The harness's own Skill tool, as the chat's adapter reads it.
     SkillTool,
-    /// The chat read a known `SKILL.md`: how a briefed harness (Codex) starts a skill.
+    /// The chat read a known `SKILL.md`: how a chat briefed on its skills starts one, as the
+    /// chat's adapter reads it.
     Read,
     /// A start a newer purlis wrote, which this one does not know. It never opens a run.
     #[serde(other)]

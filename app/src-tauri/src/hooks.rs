@@ -2165,7 +2165,7 @@ impl Hooks {
                 let plane = plane.clone();
                 let skill_runs = Arc::clone(&skill_runs);
                 Box::new(move |call| {
-                    // The skill run on the chat's tab: opened by a call that invokes a skill,
+                    // The skill run on the chat's tab: opened by a call that starts a skill,
                     // and counted by every call inside it (SK-3).
                     skill_runs.heard(&call);
                     let recorded = record(
