@@ -792,18 +792,94 @@ fn a_key_for_a_frame_with_the_focus_that_moved_on_is_dropped() {
     assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
 }
 
+/// The person's pointer moved to (`x`, `y`).
+fn move_to(aim: &Aim, x: f64, y: f64) -> PersonInput {
+    PersonInput::Mouse {
+        aim: aim.clone(),
+        kind: MouseKind::Moved,
+        x,
+        y,
+        button: MouseButton::None,
+        clicks: 0,
+        modifiers: 0,
+        delta_x: 0.0,
+        delta_y: 0.0,
+    }
+}
+
 #[test]
-fn a_click_on_the_page_away_from_a_frame_that_moved_on_reaches_the_page() {
+fn a_move_on_the_page_away_from_a_frame_that_moved_on_reaches_the_page() {
     let (browser, engine) = browser();
     browser.take_over();
     let aim = aim_now(&browser);
     the_payment_frame_moves_on(&browser, &engine, &aim);
 
-    browser.person_input(&press(&aim, 42.0, 17.5)).unwrap();
+    browser.person_input(&move_to(&aim, 42.0, 17.5)).unwrap();
 
     let sent = engine.sent("Input.dispatchMouseEvent");
     assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].params["type"], "mousePressed");
+    assert_eq!(sent[0].params["type"], "mouseMoved");
+}
+
+#[test]
+fn a_press_while_a_frame_of_the_page_moved_on_is_dropped_wherever_it_is() {
+    // What the frame that moved on draws may be moved under the point between the check and the
+    // press: only a move goes on.
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    the_payment_frame_moves_on(&browser, &engine, &aim);
+
+    let pressed = browser.person_input(&press(&aim, 42.0, 17.5));
+
+    assert_eq!(pressed, Err(Refusal::Missed));
+    assert!(engine.sent("Input.dispatchMouseEvent").is_empty());
+}
+
+#[test]
+fn a_move_through_a_box_the_pointer_passes_through_onto_a_frame_that_moved_on_is_dropped() {
+    // A box of the page's own lies over the payment frame and lets the pointer through: the
+    // event goes to the frame below, and that is what it is judged by.
+    let (browser, engine) = browser();
+    super::super::lock(&engine.model).overlay = true;
+    browser.take_over();
+    let aim = aim_now(&browser);
+    the_payment_frame_moves_on(&browser, &engine, &aim);
+
+    let moved = browser.person_input(&move_to(&aim, 120.0, 215.0));
+
+    assert_eq!(moved, Err(Refusal::Missed));
+    assert!(engine.sent("Input.dispatchMouseEvent").is_empty());
+}
+
+#[test]
+fn a_move_onto_a_frames_element_that_names_no_frame_is_dropped() {
+    let (browser, engine) = browser();
+    super::super::lock(&engine.model).frame_unnamed = true;
+    browser.take_over();
+    let aim = aim_now(&browser);
+    the_payment_frame_moves_on(&browser, &engine, &aim);
+
+    let moved = browser.person_input(&move_to(&aim, 120.0, 215.0));
+
+    assert_eq!(moved, Err(Refusal::Missed));
+}
+
+#[test]
+fn a_key_where_the_tree_shows_no_focus_but_the_page_has_one_is_dropped_once_a_frame_moved_on() {
+    // A key that does not edit goes wherever the focus is; where the tree shows none and the
+    // page's document has an element focused, it may be in a frame purlis has not read.
+    let (browser, engine) = browser();
+    super::focus_on(&engine, &[]);
+    super::super::lock(&engine.model).active = "IFRAME".into();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    the_payment_frame_moves_on(&browser, &engine, &aim);
+
+    let typed = browser.person_input(&key(&aim, "ArrowDown", true));
+
+    assert_eq!(typed, Err(Refusal::Missed));
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
 }
 
 #[test]

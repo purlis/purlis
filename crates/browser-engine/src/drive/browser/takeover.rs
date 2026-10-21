@@ -627,8 +627,10 @@ impl Browser {
 
     /// Whether `input` lands on a document of `target`'s page that has not moved on since the
     /// person saw it (#2638). A key lands in the document that has the focus (the page's own
-    /// where nothing does); a press, a move or the wheel in the document under its point. Where
-    /// a frame of the page went since, nothing under a point is known to be what they saw.
+    /// where nothing does, and the document has nothing focused either); a move in the document
+    /// under its point. A press, a release or the wheel never goes on while the page has moved
+    /// on; and where a frame of the page went since, nothing under a point is known to be what
+    /// they saw.
     fn lands_on_what_was_seen(
         &self,
         target: &str,
@@ -640,6 +642,9 @@ impl Browser {
             PersonInput::Key { .. } => {
                 let snapshot = self.snapshot_of(target)?;
                 let reached = match snapshot.focused() {
+                    // Nothing the tree shows has the focus: unless the document has nothing
+                    // focused either, the focus may be in a frame purlis has not read.
+                    [] if self.focus_unseen(session, target) => return Ok(false),
                     [] => target.to_owned(),
                     [one] => one.frame.clone(),
                     // As a key's field is found (#2295): the one its document names.
@@ -650,6 +655,10 @@ impl Browser {
                 };
                 Ok(!lock(&self.inner.state).moved_at(target, seen, &reached, false))
             }
+            // A press, a release or the wheel waits for a view of the page as it is: what a
+            // frame that moved on draws may be moved under the point between the check and the
+            // event. Only a move goes on.
+            PersonInput::Mouse { kind, .. } if *kind != MouseKind::Moved => Ok(false),
             PersonInput::Mouse { x, y, .. } => {
                 if lock(&self.inner.state)
                     .page(target)
@@ -673,7 +682,8 @@ impl Browser {
             .devtools()
             .call(
                 "DOM.getNodeForLocation",
-                json!({ "x": x.round(), "y": y.round(), "includeUserAgentShadowDOM": true, "ignorePointerEventsNone": true }),
+                // As the engine routes the event: a box the pointer passes through is not hit.
+                json!({ "x": x.round(), "y": y.round(), "includeUserAgentShadowDOM": true, "ignorePointerEventsNone": false }),
                 Some(session),
             )
             .ok()?;
@@ -687,13 +697,22 @@ impl Browser {
                 Some(session),
             )
             .ok()?;
-        Some(
-            match node.pointer("/node/frameId").and_then(Value::as_str) {
-                // A frame's element: what is under the point is its document, or one inside it.
-                Some(inside) => (inside.to_owned(), true),
-                None => (frame, false),
-            },
-        )
+        match node.pointer("/node/frameId").and_then(Value::as_str) {
+            // A frame's element: what is under the point is its document, or one inside it.
+            Some(inside) => Some((inside.to_owned(), true)),
+            // An element that holds a document and names none: what is under it is not known.
+            None if node
+                .pointer("/node/nodeName")
+                .and_then(Value::as_str)
+                .is_some_and(|name| {
+                    ["IFRAME", "FRAME", "OBJECT", "EMBED", "FENCEDFRAME"]
+                        .contains(&name.to_ascii_uppercase().as_str())
+                }) =>
+            {
+                None
+            }
+            None => Some((frame, false)),
+        }
     }
 
     /// Whether the document of `frame` on `session` has an element focused (or one inside a
