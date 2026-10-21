@@ -219,8 +219,8 @@ describe("putting a theme on the document", () => {
     // What the engine writes for a theme that rounds the button's root to a pill (#2903,
     // `purlis_core::theme::parts_tests`).
     const pill =
-      "@layer parts {\n  :where(.ui-button-sm) { --purlis-part-height: var(--size-chrome); }\n" +
-      '  :where([data-scope="button"][data-part="root"], .ui-button) { border-radius: 9999px; }\n}\n';
+      '@layer parts {\n  :where([data-scope="button"][data-part="root"][data-size="sm"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }\n' +
+      '  :where([data-scope="button"][data-part="root"]) { border-radius: 9999px; }\n}\n';
     const shaped: Theme = { ...BUILT_IN["purlis-dark"], parts: pill };
     const element = document.createElement("div");
     try {

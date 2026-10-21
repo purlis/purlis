@@ -7,6 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { Inbox } from "lucide-react";
 import { EmptyState } from "./EmptyState";
 import { drawnWith } from "./cascade.testkit";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The one empty state** (DS-3 #626): what is missing, what goes there, and the way out where a
@@ -67,11 +68,7 @@ describe("an empty state's way out", () => {
     render(
       <EmptyState
         headline="No chats yet"
-        action={
-          <button type="button" className="ui-button ui-button-primary">
-            Open the first chat
-          </button>
-        }
+        action={<Button variant="primary">Open the first chat</Button>}
       />,
     );
     const way = screen.getByRole("button", { name: "Open the first chat" });

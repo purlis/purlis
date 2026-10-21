@@ -36,6 +36,7 @@ import type { RowIds } from "./components";
 import type { Collection, LiveSetting } from "./groups";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
+import { Button } from "../ui/button/Button";
 
 /**
  * **Settings › Project › Sandbox explains what a chat here can do** (#1340, spec #1330): one
@@ -466,9 +467,9 @@ function PersonaHostsAllow({
       aria-describedby={ids.describedBy}
     >
       {said === undefined ? (
-        <button
-          type="button"
-          onClick={() =>
+        <Button
+          variant="grants"
+          onPress={() =>
             void allowPersonaHosts(plane, one).then((answer) =>
               setSaid(
                 "state" in answer ? `Allowed on this machine. ${FROM_NEXT_START}` : answer.refused,
@@ -477,7 +478,7 @@ function PersonaHostsAllow({
           }
         >
           {allowLabel(one)}
-        </button>
+        </Button>
       ) : (
         <p>{said}</p>
       )}
@@ -573,9 +574,10 @@ function ExpectsHere({
       {left.locked !== null && <p>{left.locked}</p>}
       {said !== undefined && <p>{said}</p>}
       {offered && (
-        <button type="button" className="ui-button" onClick={allow}>
+        // An answer that grants, drawn as on the project's Notice (ADR 0097 §6).
+        <Button variant="grants" onPress={allow}>
           {ALLOW_EXPECTS}
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { commands, type ForgeAccountRow, type ForgeTokenHelp } from "./bindings";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** The forges a token signs in to, and the host each defaults to. */
 export const FORGES = [
@@ -181,15 +182,9 @@ export function ForgeTokenSignIn({
                     </span>
                   ))}
                   .{" "}
-                  <button
-                    type="button"
-                    className="ui-setting-reset ui-button"
-                    // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                    tabIndex={0}
-                    onClick={() => void openUrl(help.create_at)}
-                  >
+                  <Button onPress={() => void openUrl(help.create_at)} className="ui-setting-reset">
                     Make a token on {help.host}
-                  </button>
+                  </Button>
                 </p>
               </div>
             )}
@@ -220,23 +215,12 @@ export function ForgeTokenSignIn({
             )}
 
             <SettingActions>
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={checking || help === undefined}
-              >
+              <Button variant="primary" type="submit" isDisabled={checking || help === undefined}>
                 {checking ? "Checking…" : "Sign in"}
-              </button>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                disabled={checking}
-                onClick={onCancel}
-              >
+              </Button>
+              <Button isDisabled={checking} onPress={onCancel}>
                 Cancel
-              </button>
+              </Button>
             </SettingActions>
           </form>
         </Dialog.Content>

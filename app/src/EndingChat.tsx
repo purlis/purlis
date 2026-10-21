@@ -8,6 +8,7 @@ import { AnswerBar } from "./AnswerBar";
 import { Choice, SettingRow } from "./settings/components";
 import type { WindowDraft } from "./bindings";
 import { keepSays } from "./themeDrafts";
+import { Button } from "./ui/button/Button";
 
 /** The two answers about the chats at work below a closing chat. */
 const KEEP = "keep";
@@ -251,38 +252,33 @@ export function EndingChat({
               first and Smart close last, at the edge where a primary answer sits. */}
           <AnswerBar>
             <Alert.Cancel asChild>
-              <button className="ui-button" type="button" ref={cancel} tabIndex={0}>
-                Cancel
-              </button>
+              <Button ref={cancel}>Cancel</Button>
             </Alert.Cancel>
             <Alert.Action asChild>
-              <button
-                type="button"
+              <Button
+                variant="danger"
                 ref={close}
-                className="ui-button ui-button-danger ends-it"
-                tabIndex={0}
-                disabled={unanswered}
+                isDisabled={unanswered}
                 title={unanswered ? CHOOSE_DRAFTS : undefined}
-                onClick={() => (keepDrafts === undefined ? onEnd(stop) : onEnd(stop, keepDrafts))}
+                onPress={() => (keepDrafts === undefined ? onEnd(stop) : onEnd(stop, keepDrafts))}
               >
                 Close
-              </button>
+              </Button>
             </Alert.Action>
             <Alert.Action asChild>
-              <button
-                type="button"
+              <Button
+                variant="primary"
                 ref={smartClose}
-                className="ui-button ui-button-primary smart-close"
-                tabIndex={0}
-                disabled={!smart?.available || unanswered}
+                isDisabled={!smart?.available || unanswered}
                 title={unanswered ? CHOOSE_DRAFTS : undefined}
                 aria-describedby={smart?.why ? "smart-close-why" : undefined}
-                onClick={() =>
+                onPress={() =>
                   keepDrafts === undefined ? onSmartClose(stop) : onSmartClose(stop, keepDrafts)
                 }
+                className="smart-close"
               >
                 Smart close
-              </button>
+              </Button>
             </Alert.Action>
           </AnswerBar>
         </Alert.Content>

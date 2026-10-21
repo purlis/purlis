@@ -1133,6 +1133,9 @@ describe("a project that is not in front stays drawn, off the window", () => {
     for (const plane of planes) expect(open(plane)).toBe(0);
   });
 
+  // Five projects brought to the front and three closed, each a render of the whole window: about
+  // 1.3s on a quiet machine, past the default five seconds on a loaded runner. Its time is watched
+  // with the window's other jsdom tests since the buttons moved to React Aria (#2904).
   it("keeps the room a closed project had, for the projects the window still holds", async () => {
     // `recent` = [p0, p4, p3, p2, p1] once every one has been in front and the first again:
     // the second is one too many. With the three between them closed, it is kept.
@@ -1159,7 +1162,7 @@ describe("a project that is not in front stays drawn, off the window", () => {
     await goTo(0);
     expect([started(planes[0]), started(planes[1])]).toEqual(built);
     expect([open(planes[0]), open(planes[1])]).toEqual([1, 1]);
-  });
+  }, 15_000);
 
   it("says in the doctor's dialog what each switch took, for the person to copy", async () => {
     holding(2);

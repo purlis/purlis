@@ -31,6 +31,7 @@ import { drawnWith } from "../cascade.testkit";
 import { isGeometry } from "../theme/geometry";
 import { MOTION_TOKENS, motionProperty } from "../theme/motion";
 import { property, TOKENS } from "../theme/theme";
+import { Button } from "../ui/button/Button";
 
 afterEach(cleanup);
 
@@ -99,12 +100,10 @@ function Asking() {
         <Dialog.Content className="ui-dialog warning" aria-describedby={undefined}>
           <Dialog.Title>Rename workspace</Dialog.Title>
           <div className="answer">
-            <button type="submit" tabIndex={0} className="ui-button ui-button-primary">
+            <Button type="submit" variant="primary">
               Rename
-            </button>
-            <button type="button" tabIndex={0} className="ui-button" onClick={() => setOpen(false)}>
-              Cancel
-            </button>
+            </Button>
+            <Button onPress={() => setOpen(false)}>Cancel</Button>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
@@ -115,7 +114,9 @@ function Asking() {
 function Card() {
   return (
     <Popover.Root>
-      <Popover.Trigger className="ui-button">About this row</Popover.Trigger>
+      <Popover.Trigger asChild>
+        <Button>About this row</Button>
+      </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className="ui-popover row-card" aria-label="What this row is">
           <p>Its facts.</p>
@@ -129,7 +130,9 @@ function Card() {
 function Opener() {
   return (
     <Menu.Root>
-      <Menu.Trigger className="ui-button">More</Menu.Trigger>
+      <Menu.Trigger asChild>
+        <Button>More</Button>
+      </Menu.Trigger>
       <Menu.Portal>
         <Menu.Content className="ui-menu more-menu">
           <Menu.Item className="ui-menu-item">Rename</Menu.Item>
@@ -274,15 +277,20 @@ const PARTS: [RegExp, string][] = [
   [/^(Popover|HoverCard|Tooltip)\.Arrow$/, "ui-overlay-arrow"],
 ];
 
-/** A native control inside an overlay, and the class it must wear. */
+/** A native control inside an overlay, and the class it must wear. A button of the button family
+ *  is `Button` (#2904), so a native `<button>` left inside one is a row, a segment or a menu's
+ *  row. */
 const NATIVE: Record<string, string[]> = {
-  button: ["ui-button"],
+  button: ["ui-row", "ui-tree-row", "ui-segmented-item", "ui-menu-item"],
   // A field in a dialog's settings row is the settings set's own (`.ui-field`) until the set
   // moves onto the primitives, so a dialog's fields never differ from one another.
   input: ["ui-input", "ui-field"],
   textarea: ["ui-input", "ui-field"],
   select: ["ui-select", "ui-field"],
 };
+
+/** The button family's members (`ui/button/Button.tsx`), which draw their own look. */
+const BUTTONS = new Set(["Button", "IconButton", "ToggleButton"]);
 
 interface Found {
   where: string;
@@ -327,6 +335,7 @@ function overlaysIn(): { parts: Found[]; controls: Found[] } {
         if (PARTS.some(([part]) => part.test(tag))) parts.push({ where, tag, classes });
         if (/\.Content$/.test(tag) && PARTS.some(([part]) => part.test(tag))) within = true;
         if (inside && tag in NATIVE) controls.push({ where, tag, classes });
+        if (inside && BUTTONS.has(tag)) controls.push({ where, tag: "Button", classes });
       }
       ts.forEachChild(node, (child) => visit(child, within));
     };
@@ -341,7 +350,7 @@ describe("every overlay in the window", () => {
   it("is found: the dialogs, the cards and the controls inside them", () => {
     expect(parts.filter(({ tag }) => /\.Content$/.test(tag)).length).toBeGreaterThan(40);
     expect(parts.filter(({ tag }) => tag === "Popover.Content").length).toBe(3);
-    expect(controls.filter(({ tag }) => tag === "button").length).toBeGreaterThan(80);
+    expect(controls.filter(({ tag }) => tag === "Button").length).toBeGreaterThan(80);
   });
 
   it("wears the surface: a scrim, a dialog, a popover, a tooltip and an arrow each its class", () => {
@@ -353,8 +362,9 @@ describe("every overlay in the window", () => {
   });
 
   it("draws every button and field inside one with the shared control", () => {
-    const bare = controls.filter(({ tag, classes }) =>
-      classes.some((one) => !NATIVE[tag].some((wanted) => one.includes(wanted))),
+    const bare = controls.filter(
+      ({ tag, classes }) =>
+        tag in NATIVE && classes.some((one) => !NATIVE[tag].some((wanted) => one.includes(wanted))),
     );
     expect(bare.map(({ where, tag }) => `${where} ${tag}`)).toEqual([]);
   });

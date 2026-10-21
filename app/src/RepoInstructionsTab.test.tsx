@@ -72,7 +72,7 @@ describe("a workspace whose repos hold no agent instructions", () => {
 /**
  * **Add to memory carries no emphasis** (#2591, D-2591-1): it saves a repository's own text into
  * memory, so the press is a trust decision. It is drawn as plainly as Not now beside it, and,
- * being no grant, it is not `.ui-button-grants` either.
+ * being no grant, it is not the `grants` variant either.
  */
 describe("the answers under a repository's instruction files", () => {
   it("draws Add to memory and Not now with equal weight, in their order", async () => {
@@ -83,9 +83,9 @@ describe("the answers under a repository's instruction files", () => {
     const notNow = screen.getByRole("button", { name: "Not now" });
 
     for (const answer of [add, notNow]) {
-      expect(answer).toHaveClass("ui-button");
-      expect(answer).not.toHaveClass("ui-button-primary");
-      expect(answer).not.toHaveClass("ui-button-grants");
+      expect(answer).toHaveAttribute("data-scope", "button");
+      expect(answer).not.toHaveAttribute("data-variant", "primary");
+      expect(answer).not.toHaveAttribute("data-variant", "grants");
     }
     expect(add.className).toBe(notNow.className);
     expect(add.compareDocumentPosition(notNow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

@@ -11,6 +11,7 @@ import { KindMark, kindOfAsk, RowAge } from "./InboxRow";
 import { Notice } from "./Notice";
 import type { Needing, Quiet } from "./NeedsYou";
 import { PersonaMark } from "./PersonaMark";
+import { Button, ButtonRow } from "./ui/button/Button";
 
 /**
  * **What waits on the person where this project's asks registry cannot see** (#1695): what the
@@ -146,14 +147,15 @@ export function OtherProjects({
                 </ul>
               )}
               <RovingFocusGroup.Item asChild tabStopId={`${hereKey(one.plane)}:go`}>
-                <button
-                  type="button"
-                  className="ui-button ui-button-ghost ui-button-sm inbox-go"
+                <Button
+                  size="sm"
+                  variant="ghost"
                   aria-label={`Go to project ${one.project}`}
-                  onClick={() => onOpen(one.plane)}
+                  onPress={() => onOpen(one.plane)}
+                  className="inbox-go"
                 >
                   Go to project
-                </button>
+                </Button>
               </RovingFocusGroup.Item>
             </li>
           </RovingFocusGroup.Item>
@@ -244,31 +246,33 @@ export function ElsewhereGroup({
                 </span>
               </span>
             </p>
-            <div className="inbox-acts ui-button-row">
+            <ButtonRow size="sm" className="inbox-acts">
               <RovingFocusGroup.Item asChild tabStopId={`${key}:go`}>
-                <button
-                  type="button"
-                  className="ui-button ui-button-ghost ui-button-sm inbox-go"
+                <Button
+                  size="sm"
+                  variant="ghost"
                   aria-label={`Go to chat ${item.name} · ${where}, in another window`}
-                  onClick={() => onPress(item.plane, showOffer(item.session, item.name, item.go))}
+                  onPress={() => onPress(item.plane, showOffer(item.session, item.name, item.go))}
+                  className="inbox-go"
                 >
                   Go to chat
-                </button>
+                </Button>
               </RovingFocusGroup.Item>
               {item.ignore?.available && (
                 <RovingFocusGroup.Item asChild tabStopId={`${key}:ignore`}>
-                  <button
-                    type="button"
-                    className="ui-button ui-button-ghost ui-button-sm inbox-go"
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     aria-label={item.ignore.title}
                     title={item.ignore.title}
-                    onClick={() => item.ignore && onPress(item.plane, item.ignore)}
+                    onPress={() => item.ignore && onPress(item.plane, item.ignore)}
+                    className="inbox-go"
                   >
                     Ignore
-                  </button>
+                  </Button>
                 </RovingFocusGroup.Item>
               )}
-            </div>
+            </ButtonRow>
           </li>
         </RovingFocusGroup.Item>
       </ul>

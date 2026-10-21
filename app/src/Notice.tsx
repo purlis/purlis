@@ -15,8 +15,8 @@ import {
 import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { PersonaMark } from "./PersonaMark";
-import { GrantsMark } from "./primitives/Grants";
-import { useNoticeSettle } from "./noticeSettle";
+import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
+import { Button, ButtonRow } from "./ui/button/Button";
 
 /**
  * **A Notice: a standing line in a project's window about something true now** (CONTEXT.md,
@@ -70,7 +70,7 @@ export type NoticeAction = {
    *  writes the project's files (#826). Drawn, said as its tooltip, and `aria-disabled` as a
    *  busy one is, so the keyboard stays on it; a press sends nothing. */
   off?: string;
-  /** **An answer that grants** (an Allow, an Accept): drawn as `.ui-button-grants`, edged in
+  /** **An answer that grants** (an Allow, an Accept): drawn as the `grants` variant, edged in
    *  the accent and led by an open lock, beside Keep blocked and every other way out in the plain
    *  style, so the two are told apart at a glance in every theme with equal weight (ADR 0097
    *  §6). Only the look: its place, its words, its name and the keyboard's order are the
@@ -140,6 +140,8 @@ export function Notice(props: NoticeProps) {
   const { fixes, link, copy, onDismiss, dismissSays } = props as Ways;
   const list = useContext(Listed);
   const provided = useContext(NoticeOf);
+  // A granting way out waits for the list it is drawn in to say it has settled (#1695).
+  const mayAct = useContext(NoticeWayGuard);
   // Only on a pane: a Notice a pane's chat sends to the Inbox is the project's.
   const of = at === "pane" ? provided : null;
   const stacked = list !== null && at === "inbox";
@@ -151,7 +153,7 @@ export function Notice(props: NoticeProps) {
     () => (stacked ? list.register(id, { cause, tone, host }) : undefined),
     [list, cause, host, id, stacked, tone],
   );
-  // The line is a row of its ways out that wraps (`.ui-button-row`, #1855). Standing alone (a
+  // The line is a row of its ways out that wraps (`ButtonRow`, #1855), every one small. Standing alone (a
   // Notice on a Settings page) it is the inline surface itself; in a pane the box is, and in the
   // Inbox the list's row is.
   const alone = at === "inbox" && !stacked;
@@ -159,14 +161,14 @@ export function Notice(props: NoticeProps) {
     "notice",
     `notice-${at}`,
     tone === "trouble" ? "notice-trouble" : "",
-    "ui-button-row",
     alone ? "ui-inline-surface" : "",
     alone && tone === "trouble" ? "ui-inline-surface-trouble" : "",
   ]
     .filter(Boolean)
     .join(" ");
   const line = (
-    <div
+    <ButtonRow
+      size="sm"
       className={classes}
       role="status"
       aria-label={of === null || label === undefined ? label : `${of.whose}: ${label}`}
@@ -182,66 +184,59 @@ export function Notice(props: NoticeProps) {
       </div>
       {/* The way to the chat it is about, first: its other ways out answer for that chat. */}
       {of !== null && (
-        <button
-          type="button"
-          className="notice-link notice-go ui-button ui-button-sm"
-          tabIndex={0}
-          onClick={of.onGo}
-        >
+        <Button size="sm" onPress={of.onGo} className="notice-link notice-go">
           Go to it
-        </button>
+        </Button>
       )}
-      {/* `tabIndex={0}` on every button, per `docs/ui-primitives.md` (charter-app#186). */}
       {fixes?.map((fix) => (
-        <button
+        <Button
           key={fix.label}
-          type="button"
-          className={`notice-fix ui-button ui-button-sm${fix.allows === true ? " ui-button-grants" : ""}`}
-          tabIndex={0}
+          size="sm"
+          variant={fix.allows === true ? "grants" : "secondary"}
+          className="notice-fix"
           aria-expanded={fix.opens?.open}
           aria-controls={fix.opens?.open ? fix.opens.id : undefined}
           aria-disabled={fix.busy || fix.off !== undefined || undefined}
           aria-busy={fix.busy || undefined}
           title={fix.off}
-          onClick={fix.busy || fix.off !== undefined ? undefined : fix.onPress}
+          onPress={
+            fix.busy || fix.off !== undefined
+              ? undefined
+              : (press) => {
+                  if (mayAct(press.target)) fix.onPress();
+                }
+          }
         >
-          {fix.allows === true && <GrantsMark />}
           {fix.label}
-        </button>
+        </Button>
       ))}
       {link && (
-        <button
-          type="button"
-          className="notice-link ui-button ui-button-sm"
-          tabIndex={0}
-          onClick={link.onPress}
-        >
+        <Button size="sm" onPress={link.onPress} className="notice-link">
           {link.label}
-        </button>
+        </Button>
       )}
       {copy !== undefined && (
-        <button
-          type="button"
-          className="notice-copy ui-button ui-button-sm"
-          tabIndex={0}
+        <Button
+          size="sm"
           title={copy}
-          onClick={() => void navigator.clipboard?.writeText(copy).catch(() => undefined)}
+          onPress={() => void navigator.clipboard?.writeText(copy).catch(() => undefined)}
+          className="notice-copy"
         >
           Copy command
-        </button>
+        </Button>
       )}
       {onDismiss && (
-        <button
-          type="button"
-          className="notice-dismiss ui-button ui-button-sm ui-button-ghost"
-          tabIndex={0}
+        <Button
+          size="sm"
+          variant="ghost"
           title={dismissSays}
-          onClick={onDismiss}
+          onPress={onDismiss}
+          className="notice-dismiss"
         >
           Dismiss
-        </button>
+        </Button>
       )}
-    </div>
+    </ButtonRow>
   );
   // What a way out opened is drawn after the line, never inside it: the line is a live region,
   // and a form in one would be read out again on every keystroke and every refusal.
@@ -496,7 +491,7 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
   const moreAt = useRef<HTMLButtonElement>(null);
   // **A granting Notice's ways out wait for it to settle once it moved** (#1695, train 54's
   // review): a Notice above it answered or gone can move another's way out under the pointer.
-  const { at: rowAt, guard, said } = useNoticeSettle<HTMLDivElement>("stands");
+  const { at: rowAt, allows, said } = useNoticeSettle<HTMLDivElement>("stands");
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
   const behind = Math.max(count - SHOWN, 0);
@@ -570,10 +565,9 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
     <div
       className={count === 0 ? "pane-notice-row pane-notice-row-empty" : "pane-notice-row"}
       ref={rowAt}
-      onClickCapture={guard}
     >
       <div className="pane-notices" ref={stackAt}>
-        {children}
+        <NoticeWayGuard value={allows}>{children}</NoticeWayGuard>
       </div>
       {said !== undefined && (
         <p className="inbox-refused" role="status">
@@ -581,16 +575,15 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
         </p>
       )}
       {behind > 0 && (
-        <button
-          type="button"
-          className="notice-more-pane ui-button ui-button-sm"
+        <Button
+          size="sm"
           ref={moreAt}
-          tabIndex={0}
           aria-expanded={open}
-          onClick={() => setOpen((was) => !was)}
+          onPress={() => setOpen((was) => !was)}
+          className="notice-more-pane"
         >
           +{behind} more
-        </button>
+        </Button>
       )}
     </div>
   );

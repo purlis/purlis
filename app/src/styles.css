@@ -63,6 +63,11 @@
  * redraw it and the window's focus floor does not pull its ring inside. A view still places a
  * control; `docs/ui-primitives.md` lists the classes.
  *
+ * **A component family draws itself from its wrapper's attributes** (#2904). `ui/<family>/` holds
+ * each family's one wrapper over its React Aria primitive and its stylesheet, keyed on
+ * `data-scope`, `data-part`, `data-variant` and React Aria's state attributes, in the same layer
+ * as the control classes it replaces; `docs/ui-primitives.md` lists the families.
+ *
  * **What the window draws over itself is one surface** (#1845). `primitives/overlays.css`, after
  * the controls in the same layer, gives a dialog, a popover, a menu and a tooltip one ground,
  * border, corner and elevation, and the scrim behind a modal question; a view only places and
@@ -98,6 +103,7 @@
 @import "./App.css" layer(charter);
 @import "./primitives/collections.css" layer(components);
 @import "./primitives/controls.css" layer(components);
+@import "./ui/button/button.css" layer(components);
 @import "./primitives/overlays.css" layer(components);
 @import "./primitives/text.css" layer(components);
 @import "./theme/forced-colors.css" layer(forced);

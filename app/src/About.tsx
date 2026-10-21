@@ -8,6 +8,7 @@ import { commands, type About } from "./bindings";
 import { ExternalLink, ReleaseNotes } from "./ReleaseNotes";
 import { AnswerBar } from "./AnswerBar";
 import { askLicencesTab, Licences } from "./LicencesView";
+import { Button } from "./ui/button/Button";
 
 /** Where every version's notes are, the same text this dialog shows for one of them. */
 const RELEASES = "https://github.com/purlis/purlis/releases";
@@ -92,16 +93,16 @@ export function AboutCharter() {
             does a second job here — Tauri's drag handler treats any element carrying a
             `tabindex` other than `-1` as clickable and stops the drag at it, which is what
             keeps this button a button on a bar that is otherwise a drag region. */}
-        <button
-          type="button"
-          tabIndex={0}
-          className="title-about"
+        <Button
+          size="sm"
           data-testid="title-about"
           aria-label="About purlis — what this version brought"
           title="About purlis — what this version brought"
+          icon={<Info aria-hidden="true" />}
+          className="title-about"
         >
-          <Info aria-hidden="true" /> <span>About</span>
-        </button>
+          <span>About</span>
+        </Button>
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-scrim" />
@@ -160,24 +161,19 @@ export function AboutCharter() {
           {/* `tabIndex={0}` on each, per `docs/ui-primitives.md`, as `ExternalLink` gives each link. */}
           <AnswerBar>
             <Dialog.Close asChild>
-              <button className="ui-button" type="button" tabIndex={0} ref={close}>
-                Close
-              </button>
+              <Button ref={close}>Close</Button>
             </Dialog.Close>
             {/* The dialog reads once (NO-8's follow-up, #1296): this is the retry, where closing
                 and opening it again was. In the bar, after the way out, as every act is (#1210). */}
             {trouble !== undefined && (
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                onClick={() => {
+              <Button
+                onPress={() => {
                   setTrouble(undefined);
                   ask();
                 }}
               >
                 Read again
-              </button>
+              </Button>
             )}
           </AnswerBar>
         </Dialog.Content>

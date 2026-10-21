@@ -376,12 +376,12 @@ describe("answering in place", () => {
     ]) {
       const [first, second] = answers(who);
       expect(first).toHaveAccessibleName(allow);
-      expect(first).toHaveClass("ui-button", "ui-button-grants");
-      expect(first).not.toHaveClass("ui-button-primary");
+      expect(first).toHaveAttribute("data-variant", "grants");
+      expect(first).not.toHaveAttribute("data-variant", "primary");
       expect(second).toHaveAccessibleName(keep);
-      expect(second).toHaveClass("ui-button");
-      expect(second).not.toHaveClass("ui-button-grants");
-      expect(second).not.toHaveClass("ui-button-primary");
+      expect(second).toHaveAttribute("data-scope", "button");
+      expect(second).not.toHaveAttribute("data-variant", "grants");
+      expect(second).not.toHaveAttribute("data-variant", "primary");
     }
   });
 
@@ -418,8 +418,8 @@ describe("answering in place", () => {
       "Also the open web, always for qa",
       "Keep off",
     ]);
-    expect(answers[1]).toHaveClass("ui-button-primary");
-    expect(answers[3]).not.toHaveClass("ui-button-primary");
+    expect(answers[1]).toHaveAttribute("data-variant", "primary");
+    expect(answers[3]).not.toHaveAttribute("data-variant", "primary");
     expect(calls.some((one) => one.cmd === "allow_chat_browser")).toBe(false);
     await userEvent.click(answers[0]);
     await waitFor(() =>
@@ -566,6 +566,32 @@ describe("answering in place", () => {
     const recent = within(inbox).getByRole("region", { name: "Recently answered" });
     // With the words of the way out that was pressed.
     expect(within(recent).getByText("Allow for this chat")).toBeTruthy();
+  });
+
+  it("holds a dispatch's Allow from the keyboard until the row settles, as from the pointer", async () => {
+    let held = [HELD];
+    const calls = core({
+      dispatch_grants_needed: () => held,
+      allow_dispatch: () => {
+        held = [];
+        return { said: "Allowed for this chat." };
+      },
+    });
+    render(<Inbox plane={PLANE} onGo={vi.fn()} onLeave={vi.fn()} asks={[DISPATCH]} />);
+    const inbox = screen.getByRole("region", { name: "Inbox" });
+    await within(inbox).findByText("Check why the prod deploy is red.");
+    const allow = within(inbox).getByRole("button", { name: "Allow for this chat" });
+    allow.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(" ");
+    expect(within(inbox).getByText(MOVED_JUST_NOW)).toBeTruthy();
+    expect(calls.filter((one) => one.cmd === "allow_dispatch")).toEqual([]);
+    read();
+    allow.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(calls.filter((one) => one.cmd === "allow_dispatch")).toHaveLength(1),
+    );
   });
 
   it("gives a chat waiting on a reply a box, and sends what is typed as the person's message", async () => {
@@ -874,6 +900,30 @@ describe("a Notice that grants something waits to settle (#1695)", () => {
     expect(allowed).toHaveBeenCalledOnce();
   });
 
+  it("holds a press from the keyboard as it holds one from the pointer", async () => {
+    core();
+    const allowed = vi.fn();
+    render(
+      <Inbox
+        plane={PLANE}
+        asks={[]}
+        onGo={vi.fn()}
+        onLeave={vi.fn()}
+        notices={granting(allowed)}
+      />,
+    );
+    const notices = screen.getByRole("region", { name: NOTICES });
+    const allow = within(notices).getByRole("button", { name: "Allow devops's hosts" });
+    allow.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(" ");
+    expect(allowed).not.toHaveBeenCalled();
+    expect(within(notices).getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    read();
+    await userEvent.keyboard("{Enter}");
+    expect(allowed).toHaveBeenCalledOnce();
+  });
+
   it("leaves a Notice that grants nothing to answer at once", async () => {
     core();
     const fixed = vi.fn();
@@ -1049,10 +1099,14 @@ describe("updates, after the asks (#1693)", () => {
     draw([], { updates: updates([row]) });
     const allow = screen.getByRole("button", { name: "Allow from now on: steward to devops" });
     const never = screen.getByRole("button", { name: "Never for this pair: steward" });
-    expect(allow).toHaveClass("ui-button", "inbox-answer", "allows", "ui-button-grants");
-    expect(allow.querySelector("svg.ui-button-grants-mark")).toHaveAttribute("aria-hidden", "true");
-    expect(never).not.toHaveClass("ui-button-grants");
-    expect(never).not.toHaveClass("ui-button-primary");
+    expect(allow).toHaveAttribute("data-variant", "grants");
+    expect(allow).toHaveClass("inbox-answer", "allows");
+    expect(allow.querySelector('[data-part="icon"] svg.lucide-lock-open')).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(never).not.toHaveAttribute("data-variant", "grants");
+    expect(never).not.toHaveAttribute("data-variant", "primary");
   });
 
   it("is reached by ↓ from the last ask, its two buttons first, and Enter presses one", async () => {

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { commands, type PlaneId, type ReachableRepos } from "./bindings";
 import { Choice, Field } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The repos this operator can reach on the plane's forges, to tick** (ADR 0055).
@@ -103,9 +104,9 @@ export function RepoPicker({
           value={filter}
           onChange={setFilter}
         />
-        <button type="button" tabIndex={0} onClick={refresh} disabled={found === undefined}>
+        <Button onPress={refresh} isDisabled={found === undefined}>
           Refresh
-        </button>
+        </Button>
       </div>
       {found === undefined ? (
         <p className="pending" aria-busy="true">
@@ -128,16 +129,14 @@ export function RepoPicker({
               {login !== null && (
                 <p className="honest">
                   Log in with <code>{login}</code>.{" "}
-                  <button
-                    type="button"
-                    tabIndex={0}
-                    onClick={() => {
+                  <Button
+                    onPress={() => {
                       askLogin(plane, login);
                       onLeave?.();
                     }}
                   >
                     Type it in a shell tab
-                  </button>
+                  </Button>
                 </p>
               )}
             </div>
