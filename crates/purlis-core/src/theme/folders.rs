@@ -434,8 +434,18 @@ impl FoundFolder {
     /// **The folder as one zip** ([`super::export`]), every file read from the handle it was
     /// found through.
     pub fn export(&self) -> Result<super::Packed, String> {
+        self.export_as(super::Wrapping::Zip)
+    }
+
+    /// **The folder written as `wrapping` says**: a zip, or a design-tokens file (#2926).
+    pub fn export_as(&self, wrapping: super::Wrapping) -> Result<super::Packed, String> {
         let folder = self.read.as_ref().map_err(Clone::clone)?;
-        super::archive::export_held(&self.name, folder.dir()?, &self.placed.to_string())
+        super::archive::export_held(
+            &self.name,
+            folder.dir()?,
+            &self.placed.to_string(),
+            wrapping,
+        )
     }
 }
 

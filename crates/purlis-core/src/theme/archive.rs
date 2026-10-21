@@ -65,7 +65,7 @@ pub fn is_folder_id(id: &str) -> bool {
 }
 
 /// Why `id` is not a theme folder's id, as a sentence.
-fn not_an_id(id: &str) -> String {
+pub(super) fn not_an_id(id: &str) -> String {
     if is_reserved(id) {
         format!(
             "{} is an id purlis keeps for its own themes, so no theme folder takes it",
@@ -101,7 +101,7 @@ fn is_plain(name: &str) -> bool {
 
 /// Whether `path`, inside a theme folder, is where a theme folder keeps a file: a plain name
 /// beside `theme.json`, or one in `fonts/` or `icons/`.
-fn is_kept(path: &str) -> bool {
+pub(super) fn is_kept(path: &str) -> bool {
     match path.split('/').collect::<Vec<_>>().as_slice() {
         [file] => is_plain(file),
         [folder, file] => KEPT_FOLDERS.contains(folder) && is_plain(file),
@@ -122,11 +122,43 @@ pub struct Packed {
     pub left_out: Vec<LeftOut>,
 }
 
+/// **What a theme folder is written as**: a zip, or a design-tokens file (#2926).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wrapping {
+    /// One zip, under one folder of the theme folder's name ([`pack`]).
+    Zip,
+    /// One W3C design-tokens file, format 2025.10 ([`super::design_tokens::pack`]).
+    DesignTokens,
+}
+
+impl Wrapping {
+    /// `files`, the theme folder `name`, written this way.
+    pub fn pack(self, name: &str, files: &Files) -> Result<Vec<u8>, String> {
+        match self {
+            Self::Zip => pack(name, files),
+            Self::DesignTokens => super::design_tokens::pack(name, files),
+        }
+    }
+
+    /// The file name ending what it writes has: `.zip`, `.tokens.json`.
+    pub fn ending(self) -> &'static str {
+        match self {
+            Self::Zip => ".zip",
+            Self::DesignTokens => super::design_tokens::FILE_ENDING,
+        }
+    }
+}
+
 /// **Packs the theme folder `folder`** into a zip whose one top folder is named as `folder` is.
 /// A folder that is a link, one without a plain `theme.json`, and one past the bounds are
 /// refused with a sentence. The folder that holds it is opened as the path says, the folder
 /// itself from that one refusing a link, and every file is read from its handle.
 pub fn export(folder: &Path) -> Result<Packed, String> {
+    export_as(folder, Wrapping::Zip)
+}
+
+/// **Writes the theme folder `folder` as `wrapping` says**, read as [`export`] reads it.
+pub fn export_as(folder: &Path, wrapping: Wrapping) -> Result<Packed, String> {
     let name = folder
         .file_name()
         .and_then(|it| it.to_str())
@@ -136,17 +168,22 @@ pub fn export(folder: &Path) -> Result<Packed, String> {
         return Err(not_an_id(&name));
     }
     let dir = open_named(folder, &name)?;
-    export_held(&name, &dir, &folder.display().to_string())
+    export_held(&name, &dir, &folder.display().to_string(), wrapping)
 }
 
-/// **Packs the theme folder `name` held by `dir`**: every file read from that handle and from
+/// **Packs the theme folder `name` held by `dir`** as `wrapping` says: every file read from that handle and from
 /// the handles of the folders opened from it. `shown` names it in a sentence.
-pub(crate) fn export_held(name: &str, dir: &opened::Held, shown: &str) -> Result<Packed, String> {
+pub(crate) fn export_held(
+    name: &str,
+    dir: &opened::Held,
+    shown: &str,
+    wrapping: Wrapping,
+) -> Result<Packed, String> {
     if !is_folder_id(name) {
         return Err(not_an_id(name));
     }
     let (files, left_out) = gather_held(dir, shown)?;
-    let bytes = pack(name, &files)?;
+    let bytes = wrapping.pack(name, &files)?;
     Ok(Packed {
         name: name.to_owned(),
         bytes,
@@ -468,7 +505,7 @@ fn listed_entries(bytes: &[u8]) -> Option<usize> {
 }
 
 /// A path as a case-blind, normalising filesystem compares it: composed, in lower case.
-fn fold(path: &str) -> String {
+pub(super) fn fold(path: &str) -> String {
     use unicode_normalization::UnicodeNormalization;
     path.nfc().flat_map(char::to_lowercase).collect()
 }
