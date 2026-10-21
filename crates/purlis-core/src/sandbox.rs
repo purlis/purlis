@@ -1623,6 +1623,23 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             data.join(crate::browserlogins::DIR),
             Access::ReadWrite,
         );
+        // The browser engines purlis downloads (#2835): the AppArmor profile the `.deb`
+        // installs lets a program at the pinned engine's path make user namespaces, so a chat
+        // writes nothing there, in the data home in use or under the default data folder's
+        // either name, which the profile names too.
+        let mut engines = vec![crate::browsers::engines_in(&data)];
+        if let Some(home) = &machine.home {
+            let share = home.join(".local/share");
+            for name in ["purlis", "charter"] {
+                let folder = crate::browsers::engines_in(&share.join(name));
+                if !engines.contains(&folder) {
+                    engines.push(folder);
+                }
+            }
+        }
+        for folder in engines {
+            deny(Class::HumanPowers, folder, Access::Write);
+        }
     }
     // The session host's socket and its lock, in the folder it makes this user's alone under
     // the runtime or temporary directory (#1997, `hostsocket`): a chat neither reads nor

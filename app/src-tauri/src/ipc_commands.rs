@@ -363,6 +363,8 @@ macro_rules! app_commands {
                 updates::set_update_channel,
                 browserlimits::browser_limits,
                 browserlimits::set_browser_limit,
+                enginesandbox::engine_sandbox,
+                enginesandbox::use_this_machines_chrome,
                 dockerpools::docker_pools,
                 dockerpools::add_docker_pool,
                 dockerpools::remove_docker_pool,

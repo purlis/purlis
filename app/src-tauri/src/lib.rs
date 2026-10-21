@@ -52,6 +52,8 @@ mod doing;
 #[cfg(feature = "e2e")]
 mod e2eforge;
 mod editortab;
+// When the browser engine cannot make its sandbox here (#2835).
+mod enginesandbox;
 mod extensions;
 mod filewatch;
 mod findfiles;
@@ -2843,6 +2845,11 @@ fn commands() -> Builder<tauri::Wry> {
         // The event a launch without the session bus is told the bus answers on (`portal.rs`),
         // named once for both sides.
         .constant("SESSION_BUS_ANSWERS", portal::ANSWERS)
+        // The event a browser refused for the engine's sandbox raises its Notice on (#2835).
+        .constant(
+            "ENGINE_SANDBOX_NEEDED",
+            enginesandbox::ENGINE_SANDBOX_NEEDED,
+        )
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
         // window asks again later, matching it whole.
         .constant("SPECIMEN_BUSY", specimen::BUSY)
@@ -3499,6 +3506,13 @@ pub fn run() {
             forgeaccounts::hand_over_sign_ins();
             // And the window is told when a forge ends one of them (#729).
             forgeaccounts::tell_the_window_when_a_sign_in_ends(app.handle());
+            // A browser refused for the engine's sandbox raises its Notice (#2835).
+            {
+                let window = app.handle().clone();
+                enginesandbox::telling(Box::new(move || {
+                    let _ = window.emit(enginesandbox::ENGINE_SANDBOX_NEEDED, ());
+                }));
+            }
             // A finish leans on that lock, and is refused without it.
             app.manage(vaultswaiting::VaultsWaiting::of(
                 waiting,

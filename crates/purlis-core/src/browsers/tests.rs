@@ -917,3 +917,62 @@ fn a_browsers_end_is_told_with_its_exit_why_and_where_its_engines_log_is() {
     );
     assert_eq!(stopped.exit, Exit::Code(0));
 }
+
+// ---- Which engine a browser starts on (#2835) ----
+
+use purlis_browser_engine::install::EngineChoice;
+
+use super::{Chosen, engine_for};
+
+const CHROME: &str = "/usr/bin/google-chrome";
+
+#[test]
+fn the_pinned_engine_starts_where_it_can_make_its_sandbox() {
+    let chosen = Chosen {
+        machine_chrome: false,
+        found: Some(CHROME.into()),
+        sandboxes: true,
+    };
+    assert_eq!(engine_for(&chosen), Ok(EngineChoice::Pinned));
+}
+
+#[test]
+fn where_it_cannot_and_nothing_else_is_chosen_the_start_is_refused_in_words() {
+    let chosen = Chosen {
+        machine_chrome: false,
+        found: Some(CHROME.into()),
+        sandboxes: false,
+    };
+    assert_eq!(
+        engine_for(&chosen),
+        Err(super::sandboxing::NO_ENGINE_SANDBOX.to_owned()),
+        "never the engine without its sandbox"
+    );
+}
+
+#[test]
+fn this_machines_chrome_starts_once_the_person_chose_it() {
+    let chosen = Chosen {
+        machine_chrome: true,
+        found: Some(CHROME.into()),
+        sandboxes: false,
+    };
+    assert_eq!(
+        engine_for(&chosen),
+        Ok(EngineChoice::Machine(CHROME.into()))
+    );
+}
+
+#[test]
+fn a_chosen_chrome_that_is_gone_leaves_the_pinned_engine_as_it_stands() {
+    let gone = |sandboxes| Chosen {
+        machine_chrome: true,
+        found: None,
+        sandboxes,
+    };
+    assert_eq!(engine_for(&gone(true)), Ok(EngineChoice::Pinned));
+    assert_eq!(
+        engine_for(&gone(false)),
+        Err(super::sandboxing::NO_ENGINE_SANDBOX.to_owned())
+    );
+}

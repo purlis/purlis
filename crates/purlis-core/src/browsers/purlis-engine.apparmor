@@ -1,0 +1,16 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+#
+# purlis's browser engine (#2835): the pinned Chrome for Testing purlis downloads into its data
+# folder makes its sandbox with user namespaces, which Ubuntu 23.10 and later allow only to a
+# program a profile names. This names that one program, as Chrome's own package names its own,
+# and allows it user namespaces and nothing more: it is otherwise unconfined, as Chrome is.
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile purlis-engine @{HOME}/.local/share/{purlis,charter}/engines/chrome-for-testing/*/chrome-linux64/chrome flags=(unconfined) {
+  userns,
+
+  include if exists <local/purlis-engine>
+}

@@ -1246,6 +1246,8 @@ export const commands = {
 	setUpdateChannel: __WINDOW_ONLY_RESULT,
 	browserLimits: __WINDOW_ONLY_RESULT,
 	setBrowserLimit: __WINDOW_ONLY_RESULT,
+	engineSandbox: __WINDOW_ONLY_RESULT,
+	useThisMachinesChrome: __WINDOW_ONLY_RESULT,
 	dockerPools: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
@@ -1885,6 +1887,8 @@ export const commands = {
 
 /* Constants */
 export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
+
+export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
@@ -3904,6 +3908,19 @@ export type Doing = {
 	 *  cargo"), until the next tool heard.
 	 */
 	over: boolean,
+};
+
+/**  What the Notice says and offers. */
+export type EngineSandboxShown = {
+	/**  The sentence. */
+	says: string,
+	/**
+	 *  The command that adds the profile, which the person runs themselves: none for a data
+	 *  folder whose path holds a control character.
+	 */
+	command: string | null,
+	/**  This machine's own Chrome, where one is installed. */
+	chrome: string | null,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */

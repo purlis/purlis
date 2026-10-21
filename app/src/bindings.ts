@@ -2404,6 +2404,23 @@ export const commands = {
 	 *  default. It applies at the next browser call; a browser running past a lowered limit runs on.
 	 */
 	setBrowserLimit: (limit: BrowserLimit, to: number | null) => typedError<null, string>(__TAURI_INVOKE("set_browser_limit", { limit, to })),
+	/**  **The Notice, while a start was refused for the engine's sandbox** since this launch. */
+	engineSandbox: () => typedError<{
+	/**  The sentence. */
+	says: string,
+	/**
+	 *  The command that adds the profile, which the person runs themselves: none for a data
+	 *  folder whose path holds a control character.
+	 */
+	command: string | null,
+	/**  This machine's own Chrome, where one is installed. */
+	chrome: string | null,
+} | null, string>(__TAURI_INVOKE("engine_sandbox")),
+	/**
+	 *  **Every browser starts on this machine's own Chrome from now on** (ADR 0042's choice): the
+	 *  person's press on the Notice. The next browser call starts on it.
+	 */
+	useThisMachinesChrome: () => typedError<null, string>(__TAURI_INVOKE("use_this_machines_chrome")),
 	/**  **The Docker pools on this machine**, and a new pool's default limits. */
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
 	/**
@@ -3573,6 +3590,8 @@ export const commands = {
 
 /* Constants */
 export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
+
+export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
@@ -5592,6 +5611,19 @@ export type Doing = {
 	 *  cargo"), until the next tool heard.
 	 */
 	over: boolean,
+};
+
+/**  What the Notice says and offers. */
+export type EngineSandboxShown = {
+	/**  The sentence. */
+	says: string,
+	/**
+	 *  The command that adds the profile, which the person runs themselves: none for a data
+	 *  folder whose path holds a control character.
+	 */
+	command: string | null,
+	/**  This machine's own Chrome, where one is installed. */
+	chrome: string | null,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */
