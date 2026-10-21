@@ -51,9 +51,19 @@ async fn linked(
     ours: Identity,
     runner: Pinned,
 ) -> Result<Client, String> {
-    let connector = CommandConnector::new(&docker.0, made.connect_args(), {
+    let connector = CommandConnector::new(docker.program(), made.connect_args(), {
         let (docker, made) = (docker.clone(), made.clone());
         Arc::new(move || docker.check(&made).map_err(|why| why.to_string()))
+    })
+    .preparing({
+        let docker = docker.clone();
+        Arc::new(move || {
+            let (env, cleared, held) = docker
+                .prepared()
+                .map_err(|why| why.to_string())?
+                .into_parts();
+            Ok(purlis_host::Prepared { env, cleared, held })
+        })
     });
     let mut links = hostlink::keep_linked(
         connector,
@@ -83,11 +93,9 @@ fn a_runner_container_is_linked_to_the_desktop_it_paired_and_to_no_other() {
         // it runs).
         return;
     };
-    let docker = Docker(
-        std::env::var_os("DOCKER_POOL_TEST_DOCKER")
-            .unwrap_or("docker".into())
-            .into(),
-    );
+    let settings = tempfile::tempdir().unwrap();
+    let docker = Docker::at(std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()))
+        .with_settings_in(settings.path().join("docker-settings"));
     let image = Image::pinned(&image).expect("the image is named by digest");
     let (user, home) = docker
         .declared(&image)

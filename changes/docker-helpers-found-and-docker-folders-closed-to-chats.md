@@ -13,3 +13,9 @@
 
 - **A chat cannot write the home folders Docker links `docker` into.** `~/.docker/bin`,
   `~/.orbstack/bin` and `~/.rd/bin` are denied to every chat's writes (#2752).
+- **purlis's own Docker commands never read your Docker settings as they are.** Each gets a
+  checked copy: your registry sign-ins and the credential helpers Docker's own folders hold, and
+  no plugin, hook or context, pointed at your engine (#2752).
+- **A chat cannot run Colima, Lima or a Podman machine.** Where those engines keep their
+  sockets (`~/.colima`, `~/.lima`, a Podman machine's folder) is closed to every chat's
+  writes, so `colima`, `limactl` and `podman machine` do not work from a chat (#2752).

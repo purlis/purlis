@@ -28,7 +28,7 @@ fn a_machine(config: &std::path::Path) -> Machine {
     std::fs::set_permissions(&docker, std::fs::Permissions::from_mode(0o755)).unwrap();
     Machine {
         config: config.to_path_buf(),
-        docker: Docker(docker),
+        docker: Docker::at(docker).with_settings_in(config.join("docker-settings")),
         keyring: Arc::new(FileStore::at(config.join("keyring.json"))),
     }
 }
