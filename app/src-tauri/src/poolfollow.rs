@@ -60,7 +60,9 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
     {
         return;
     }
-    let image = match runner_image(app).await {
+    let found = runner_image(app).await;
+    note_named(&found);
+    let image = match found {
         Ok(image) => image,
         Err(why) => {
             tracing::warn!("purlis: this version's runner image could not be read: {why}");
@@ -83,6 +85,33 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
         }
         Err(why) => tracing::warn!("purlis: the pools could not be moved to this version: {why}"),
     }
+}
+
+/// Whether the last look found a runner image named for this version: `None` until a look
+/// answered.
+#[cfg(unix)]
+static NAMED: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+
+/// **Notes whether this version's manifest named a runner image** (#2880), from a look's
+/// answer: a manifest that names none, as a release whose runner image failed does, leaves the
+/// pools where they are, and the Pools group says they do not follow. A look that could not be
+/// made notes nothing.
+#[cfg(unix)]
+pub fn note_named(found: &Result<Option<Image>, String>) {
+    if let Ok(found) = found {
+        *NAMED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(found.is_some());
+    }
+}
+
+/// **Whether this version's release named a runner image**, as the last look found it: `None`
+/// until a look answered (#2880).
+#[cfg(unix)]
+pub fn this_versions_image_named() -> Option<bool> {
+    *NAMED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// **The runner image the update manifest names for this version**, or none where the

@@ -145,3 +145,31 @@ fn a_pool_already_of_this_versions_image_or_of_a_teams_own_is_left_as_it_is() {
         "docker was asked to make something"
     );
 }
+
+/// **A release that names no runner image leaves every pool as it is** (#2880): the look notes
+/// that none was named, and nothing is made or moved.
+#[test]
+fn a_release_with_no_runner_image_leaves_the_pools_where_they_are() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let before = runners::read(&machine.config).unwrap();
+    let pools = runners::pools(&machine.config).unwrap();
+
+    note_named(&Ok(None));
+    assert_eq!(this_versions_image_named(), Some(false));
+    follow_and_drain(&machine, None, &|_| Ok(true));
+
+    assert_eq!(runners::read(&machine.config).unwrap(), before);
+    assert_eq!(runners::pools(&machine.config).unwrap(), pools);
+    assert!(
+        !config.path().join("log").exists(),
+        "docker was asked to do something"
+    );
+
+    // A look that could not be made notes nothing; one that found an image notes it.
+    note_named(&Err("offline".into()));
+    assert_eq!(this_versions_image_named(), Some(false));
+    note_named(&Ok(Some(Image::pinned(NEW).unwrap())));
+    assert_eq!(this_versions_image_named(), Some(true));
+}

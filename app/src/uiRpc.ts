@@ -6948,6 +6948,12 @@ export type PoolVersion = {
 	 *  removed.
 	 */
 	draining: number,
+	/**
+	 *  Whether this version's release named a runner image, as purlis last found it (#2880):
+	 *  one that named none leaves the pool where it is, not following; `None` until purlis has
+	 *  looked.
+	 */
+	named: boolean | null,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
