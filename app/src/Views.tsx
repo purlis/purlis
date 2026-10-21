@@ -100,7 +100,8 @@ import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } f
 import { PROPOSED_CHANGE_VIEW } from "./proposedChangeOpen";
 import { ProposedChangeTab } from "./ProposedChangeTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
-import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf } from "./skillStudio";
+import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf, skillStudioAs } from "./skillStudio";
+import { PersonaSkillAdd, PersonaSkillRemove, isPersonaSkills, namedOf } from "./personaSkills";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { SKILL_VIEW, isSkillTab, skillOfView } from "./skillRuns";
 import { SkillTab } from "./SkillTab";
@@ -1018,25 +1019,57 @@ function Answer({
         offerFor={from === null ? offerFor : undefined}
         onPress={from === null ? onPress : undefined}
         listHead={
-          keeps && workspace !== undefined
+          from === null && id === "persona"
             ? (at) => {
-                const list = lists.find((one) => one.at === at);
-                const change =
-                  list !== undefined && list.members.length > 0 ? list.change : undefined;
-                return change === undefined ? null : (
-                  <button
-                    type="button"
-                    className="panel-view change-push"
-                    tabIndex={0}
-                    onClick={() => setPushing(change)}
-                  >
-                    Push {change}…
-                  </button>
+                const block = (refreshed ?? changeBlocks)[at];
+                return block === undefined || !isPersonaSkills(block, key) ? null : (
+                  /* Its Skills list's Add (#2768): a block carries no input, so the window lends
+                     it, as it lends a change's Push. */
+                  <PersonaSkillAdd
+                    plane={plane}
+                    persona={key}
+                    changed={changed}
+                    onChanged={() => setRound((n) => n + 1)}
+                    readOnly={readOnly}
+                  />
+                );
+              }
+            : keeps && workspace !== undefined
+              ? (at) => {
+                  const list = lists.find((one) => one.at === at);
+                  const change =
+                    list !== undefined && list.members.length > 0 ? list.change : undefined;
+                  return change === undefined ? null : (
+                    <button
+                      type="button"
+                      className="panel-view change-push"
+                      tabIndex={0}
+                      onClick={() => setPushing(change)}
+                    >
+                      Push {change}…
+                    </button>
+                  );
+                }
+              : undefined
+        }
+        besideRow={(row) => refusedAt.get(row.key)}
+        rowTail={
+          from === null && id === "persona"
+            ? (row) => {
+                const written = row.runs === skillStudioAs(key) ? namedOf(row) : undefined;
+                return written === undefined ? null : (
+                  /* A skill its `skills:` list names, taken out of it (#2768). */
+                  <PersonaSkillRemove
+                    plane={plane}
+                    persona={key}
+                    written={written}
+                    onChanged={() => setRound((n) => n + 1)}
+                    readOnly={readOnly}
+                  />
                 );
               }
             : undefined
         }
-        besideRow={(row) => refusedAt.get(row.key)}
         // charter's own views' acts (a change's Land) write a clone, never the project.
         actsOff={from === null ? undefined : readOnly}
         onAct={
@@ -1175,9 +1208,12 @@ function AnsweredBlocks({
   onPress,
   listHead,
   besideRow,
+  rowTail,
 }: {
   blocks: readonly PanelBlock[];
   label: string;
+  /** What the window lends a row after it: a persona skill's Remove (#2768). */
+  rowTail?: (row: PanelRow) => ReactNode;
   /** What a list is headed by, from its rows: a change's Push (#474). */
   listHead?: (at: number) => ReactNode;
   /** A refusal to say beside a row, in the core's words: a Land's (#474). */
@@ -1246,6 +1282,15 @@ function AnsweredBlocks({
                 onPress === undefined && besideRow === undefined
                   ? undefined
                   : (row, item) => {
+                      const tail = rowTail?.(row);
+                      if (tail !== undefined && tail !== null) {
+                        return (
+                          <Fragment key={row.key}>
+                            {item}
+                            <li className="row-tail">{tail}</li>
+                          </Fragment>
+                        );
+                      }
                       const refused = besideRow?.(row);
                       if (refused !== undefined) {
                         return (

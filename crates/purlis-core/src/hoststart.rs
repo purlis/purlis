@@ -157,6 +157,35 @@ pub fn plane_skills_laid_out(
     crate::skills::lay_out_for_chat(root, workspace, persona, built_in.as_deref(), sets)
 }
 
+/// **What a chat's tab says of the skills its persona names that it starts without** (SK-5,
+/// #2768), where the Skill studio's flag is `on`: the chat in `root` started in `cwd` on
+/// `harness` as `persona`, whose environment is `env`
+/// ([`crate::skills::not_here`]). `None` otherwise, and where it has every one.
+pub fn skills_not_here(
+    on: bool,
+    root: &Path,
+    kit: &Kit,
+    harness: Option<Harness>,
+    cwd: Option<&Path>,
+    persona: Option<&str>,
+    env: &[(String, String)],
+) -> Option<String> {
+    if !on {
+        return None;
+    }
+    let (harness, persona) = (harness?, persona?);
+    let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
+    let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
+    crate::skills::not_here(
+        root,
+        workspace.as_deref(),
+        persona,
+        built_in.as_deref(),
+        harness,
+        &crate::harness_plugin::Env::of(env),
+    )
+}
+
 /// The host's [`Beside`], as two calls: what starts a confinement and what writes the log.
 impl<C, R> Beside for (C, R)
 where

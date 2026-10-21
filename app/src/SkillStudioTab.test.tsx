@@ -5,7 +5,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
-import { AT_THE_ROOT, inWorkspace } from "./skillStudio";
+import {
+  AT_THE_ROOT,
+  asPersona,
+  inWorkspace,
+  scopeOf,
+  skillStudioAs,
+  skillStudioTitle,
+  skillStudioView,
+} from "./skillStudio";
 import { catalogue, SKILL_STUDIO_SHOW, type Now } from "./actions";
 import { noTabs } from "./tabs";
 
@@ -172,6 +180,70 @@ describe("the Skill studio", () => {
     answering({ on: false, workspace: null, workspaces: [], skills: [] });
     render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
     expect(await screen.findByTestId("skill-studio-off")).toBeInTheDocument();
+  });
+
+  it("shows a persona's chats, with the persona's own skill and one it names", async () => {
+    const asked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd !== "skill_studio") throw new Error(`unexpected ${cmd}`);
+      asked.push(args);
+      return {
+        on: true,
+        workspace: null,
+        persona: "ops",
+        workspaces: ["alpha"],
+        skills: [
+          {
+            name: "triage",
+            level: "persona",
+            label: "persona",
+            local: false,
+            grant: null,
+            on: true,
+            left_out: null,
+            description: "Triages.",
+            folder: "personas/ops/skills/triage",
+          },
+        ],
+      };
+    });
+
+    render(<SkillStudioTab plane="p" scope={asPersona("ops")} changed={0} />);
+
+    const triage = await screen.findByTestId("skill-triage");
+    expect(within(triage).getByText("persona")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Every skill a chat as ops gets, in any workspace/),
+    ).toBeInTheDocument();
+    expect(asked[0]).toMatchObject({ plane: "p", workspace: null, persona: "ops" });
+  });
+
+  it("keys a persona's studio apart from every workspace's", () => {
+    const view = skillStudioView(asPersona("ops"));
+    expect(view.key).toBe("persona/ops");
+    expect(scopeOf(view)).toEqual(asPersona("ops"));
+    expect(scopeOf(skillStudioView(inWorkspace("ops")))).toEqual(inWorkspace("ops"));
+    expect(skillStudioTitle(asPersona("ops"))).toBe("Skill studio · ops");
+  });
+
+  it("offers each persona's studio in the palette only while its flag is on", () => {
+    const now = (skillStudio: boolean): Now => ({
+      tabs: noTabs(),
+      workspaces: [],
+      needsYou: [],
+      nameOf: (session) => String(session),
+      plane: "p",
+      personas: ["ops"],
+      skillStudio,
+    });
+    const row = (on: boolean) =>
+      catalogue(now(on)).find((offer) => offer.id === skillStudioAs("ops"));
+    expect(row(true)?.does).toEqual({
+      verb: "openView",
+      view: skillStudioView(asPersona("ops")),
+      title: "Skill studio · ops",
+    });
+    expect(row(false)).toBeUndefined();
   });
 
   it("is offered in the palette only while its flag is on", () => {

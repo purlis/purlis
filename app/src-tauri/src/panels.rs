@@ -1230,6 +1230,17 @@ pub(crate) fn persona_view(
             blocks.push(panel::Block::Facts(facts));
         }
     }
+    // Its skills (SK-5, #2768), behind the Skill studio's flag: what it brings into every
+    // workspace. The window lends each named row a Remove and the list an Add.
+    if purlis_core::skills::studio_on_here() {
+        let built_in =
+            crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
+        blocks.extend(crate::personaskills::blocks(
+            root,
+            name,
+            built_in.as_deref(),
+        ));
+    }
     match memory_rows(root, name) {
         Err(why) => blocks.push(panel::Block::Note {
             text: why,

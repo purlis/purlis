@@ -125,7 +125,7 @@ fn granting_plane() -> tempfile::TempDir {
 }
 
 fn gets(plane: &Path, workspace: Option<&str>) -> Vec<String> {
-    in_the_studio(None, plane, workspace)
+    in_the_studio(None, plane, workspace, None)
         .effective
         .into_iter()
         .map(|e| e.skill.name)
@@ -214,7 +214,7 @@ fn a_local_skill_in_a_plane_that_is_no_git_repository_is_read_and_shared() {
         "---\nname: scratch\ndescription: Tries it.\n---\n",
     )
     .unwrap();
-    let set = in_the_studio(None, plane.path(), None);
+    let set = in_the_studio(None, plane.path(), None, None);
     assert!(
         set.effective
             .iter()
@@ -225,7 +225,7 @@ fn a_local_skill_in_a_plane_that_is_no_git_repository_is_read_and_shared() {
     let moved = share_here(plane.path(), None, "scratch").unwrap();
 
     assert_eq!(moved, plane.path().join("skills/scratch"));
-    let set = in_the_studio(None, plane.path(), None);
+    let set = in_the_studio(None, plane.path(), None, None);
     assert!(
         set.effective
             .iter()
@@ -248,7 +248,7 @@ fn a_local_skill_is_read_only_while_git_ignores_it() {
     )
     .unwrap();
 
-    let set = in_the_studio(None, plane.path(), None);
+    let set = in_the_studio(None, plane.path(), None, None);
     let left = set
         .left_out
         .iter()
@@ -261,7 +261,7 @@ fn a_local_skill_is_read_only_while_git_ignores_it() {
     );
 
     std::fs::write(plane.path().join(".gitignore"), "/skills.local/\n").unwrap();
-    let set = in_the_studio(None, plane.path(), None);
+    let set = in_the_studio(None, plane.path(), None, None);
     assert!(
         set.effective
             .iter()

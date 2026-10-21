@@ -290,6 +290,38 @@ pub fn reserved_refusal(name: &str) -> Option<String> {
         })
 }
 
+/// `text`, a persona's definition, with its `key:` line saying `value`, or without one for
+/// `None`. Every other line is left as written. The first such line is rewritten where it
+/// stands, and any later one goes, since a later line would answer instead of it. `None` when
+/// `text` has no frontmatter to hold the line.
+pub fn with_key(text: &str, key: &str, value: Option<&str>) -> Option<String> {
+    let rest = text.strip_prefix("---")?;
+    let end = rest.find("---")?;
+    let (block, after) = rest.split_at(end);
+    let mut lines: Vec<String> = Vec::new();
+    let mut placed = false;
+    for line in block.split_inclusive('\n') {
+        let is_key = line
+            .split_once(':')
+            .is_some_and(|(written, _)| written.trim() == key);
+        if !is_key {
+            lines.push(line.to_owned());
+            continue;
+        }
+        if let (Some(value), false) = (value, placed) {
+            lines.push(format!("{key}: {value}\n"));
+            placed = true;
+        }
+    }
+    if let (Some(value), false) = (value, placed) {
+        if lines.last().is_some_and(|last| !last.ends_with('\n')) {
+            lines.push("\n".to_owned());
+        }
+        lines.push(format!("{key}: {value}\n"));
+    }
+    Some(format!("---{}{after}", lines.concat()))
+}
+
 /// The definition file: `personas/<name>/persona.md`, else the legacy flat
 /// `personas/<name>.md`, else the first — where a writer would create one.
 pub fn def_path(root: &Path, name: &str) -> PathBuf {

@@ -14,15 +14,18 @@
 use std::path::{Path, PathBuf};
 
 pub use purlis_skills::{
-    Chat, DIR_IN_BUNDLE, Effective, Grant, HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing,
-    Origin, PROJECT_DIR, Reason, Route, Skill, SkillSet, grant_of, in_bundle, level_dir,
-    level_shown, listing, named, read, set_grant, share,
+    BUILT_IN_PREFIXES, Chat, DIR_IN_BUNDLE, Effective, Grant, HarnessSkills, LOCAL_DIR, LeftOut,
+    Machine, Missing, OnMachine, Origin, PROJECT_DIR, Reason, Reference, Route, Skill, SkillSet,
+    grant_of, in_bundle, level_dir, level_shown, listing, named, persona_dir, read, set_grant,
+    share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
 pub use purlis_skills::runs;
 
 use crate::harness::{Harness, Kit};
+
+pub mod persona;
 
 /// The variable a chat whose harness cannot load its skills is started with: the directory of
 /// the built-in skills its set holds ([`SkillSet::built_in_dir`]), whose skills its `SessionStart` briefing then
@@ -60,6 +63,7 @@ pub fn for_chat(kit: Kit<'_>, harness: Harness) -> SkillSet {
         kit.skills,
         kit.persona.map(|persona| persona.persona),
         harness.skills(),
+        None,
     )
 }
 
@@ -90,7 +94,7 @@ pub fn lay_out_for_chat(
         workspace,
         linked: None,
     };
-    let set = ask(built_in, Some(at), persona, Route::Plugin);
+    let set = ask(built_in, Some(at), persona, Route::Plugin, None);
     match lay_out(&set, sets) {
         Ok(folder) => folder,
         Err(why) => {
@@ -593,6 +597,7 @@ pub fn briefed(
         }),
         persona.as_deref(),
         Route::Briefing,
+        None,
     );
     let skills: Vec<Skill> = set.effective.into_iter().map(|e| e.skill).collect();
     listing(&skills)
@@ -614,13 +619,15 @@ pub fn readable_by_a_briefed_chat(root: &Path, env: &dyn Fn(&str) -> Option<Stri
 }
 
 /// One ask of purlis-skills, from a directory of built-in skills, the plane with the workspace
-/// the chat works in (where the plane's skills are let in), the persona a chat runs as, and the
-/// chat's route.
+/// the chat works in (where the plane's skills are let in), the persona a chat runs as (whose
+/// `skills:` list is read where the plane's skills are let in), the chat's route, and the
+/// harness skills on this machine where they were looked for.
 fn ask(
     built_in: Option<&Path>,
     plane: Option<PlaneSkills<'_>>,
     persona: Option<&str>,
     route: Route,
+    harness: Option<&[OnMachine]>,
 ) -> SkillSet {
     let kept = |folder: &Path| match plane {
         Some(at) => crate::profiles::kept_local(at.plane, folder),
@@ -629,19 +636,79 @@ fn ask(
     let off = plane
         .and_then(|at| Some(turned_off(at.plane, at.workspace?)))
         .unwrap_or_default();
+    let names = plane
+        .zip(persona)
+        .map(|(at, persona)| names_of(at.plane, persona))
+        .unwrap_or_default();
     purlis_skills::skill_set(
         plane.map(|at| at.plane),
         &Machine {
             built_in,
             kept_local: Some(&kept),
+            harness,
         },
         &Chat {
             workspace: plane.and_then(|at| at.workspace),
             persona,
+            names: &names,
             turned_off: &off,
             harness: HarnessSkills { route },
         },
     )
+}
+
+/// **What the persona `persona`'s `skills:` list names** (SK-5, #2768), in the plane at `plane`:
+/// each entry it writes, as a [`Reference`], in order. An entry that names nothing is dropped.
+pub fn names_of(plane: &Path, persona: &str) -> Vec<Reference> {
+    crate::personaverbs::declared_skills(plane, persona)
+        .iter()
+        .filter_map(|written| Reference::parse(written))
+        .collect()
+}
+
+/// **What a chat's tab says of the skills its persona names that it starts without** (SK-5,
+/// #2768): a harness skill `harness` does not have on this machine under `env`, and a built-in
+/// skill there is none of. `None` where it has every one. The chat is in the plane at `plane`,
+/// at its root or in `workspace`, and runs as `persona`, with the built-in skills in `built_in`.
+pub fn not_here(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: &str,
+    built_in: Option<&Path>,
+    harness: crate::harness::Harness,
+    env: &crate::harness_plugin::Env<'_>,
+) -> Option<String> {
+    let here = harness.adapter().plugins().skills(env);
+    let at = PlaneSkills {
+        plane,
+        workspace,
+        linked: None,
+    };
+    let set = ask(
+        built_in,
+        Some(at),
+        Some(persona),
+        harness.skills(),
+        Some(&here),
+    );
+    let missing: Vec<&str> = set
+        .left_out
+        .iter()
+        .filter(|left| persona::said_on_the_tab(&left.reason))
+        .map(|left| left.name.as_str())
+        .collect();
+    if missing.is_empty() {
+        return None;
+    }
+    let count = crate::counts::counted(missing.len(), "skill", "skills");
+    let them = crate::counts::plural(missing.len(), "it is", "they are");
+    Some(format!(
+        "This chat started without {count} {persona} names, because {them} not installed on \
+         this machine: {}. Install {}, or take {} out of {persona}'s skills on its page.",
+        missing.join(", "),
+        crate::counts::plural(missing.len(), "it", "them"),
+        crate::counts::plural(missing.len(), "it", "them"),
+    ))
 }
 
 /// **The project skills the workspace `workspace` turned off** (#2767): `settings.skills.off`,
@@ -780,16 +847,22 @@ pub fn studio_on(flags: &crate::machine::Flags, env: &dyn Fn(&str) -> Option<Str
 }
 
 /// **What the Skill studio and `purlis skill list` show** (SK-2): the skill set of a chat in the
-/// plane at `plane`, at its root (`workspace` `None`) or in `workspace`, with the built-in skills
-/// from `built_in`. Every skill with its level, and every one left out with its reason. Read as a
-/// Claude Code chat's: the route is not what they show.
-pub fn in_the_studio(built_in: Option<&Path>, plane: &Path, workspace: Option<&str>) -> SkillSet {
+/// plane at `plane`, at its root (`workspace` `None`) or in `workspace`, as `persona` or on none
+/// (SK-5), with the built-in skills from `built_in`. Every skill with its level, and every one
+/// left out with its reason. Read as a Claude Code chat's: the route is not what they show, and
+/// no harness's own skills are looked for.
+pub fn in_the_studio(
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> SkillSet {
     let at = PlaneSkills {
         plane,
         workspace,
         linked: None,
     };
-    ask(built_in, Some(at), None, Route::Plugin)
+    ask(built_in, Some(at), persona, Route::Plugin, None)
 }
 
 /// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,

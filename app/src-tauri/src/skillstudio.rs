@@ -1,10 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The Skill studio's reads** (SK-2, #2765; SK-4, #2767): every skill a chat in a project
-//! gets, at its root or in one workspace, with its level, and every one left out with why, as
-//! `purlis_core::skills::in_the_studio` works them out; and Share, which makes a local skill
-//! shared. Behind the `skill-studio` flag until its finish line (#2786).
+//! **The Skill studio's reads** (SK-2, #2765; SK-4, #2767; SK-5, #2768): every skill a chat in a
+//! project gets, at its root, in one workspace or as one persona, with its level, and every one
+//! left out with why, as `purlis_core::skills::in_the_studio` works them out; Share, which makes
+//! a local skill shared; and a persona's `skills:` list, which its page adds to and takes from.
+//! Behind the `skill-studio` flag until its finish line (#2786).
 
 use serde::Serialize;
 use specta::Type;
@@ -16,6 +17,9 @@ pub enum Level {
     BuiltIn,
     Project,
     Workspace,
+    Persona,
+    /// A harness skill: the harness's own, which purlis never hands over.
+    Installed,
 }
 
 impl From<purlis_core::skills::Origin> for Level {
@@ -24,6 +28,8 @@ impl From<purlis_core::skills::Origin> for Level {
             purlis_core::skills::Origin::BuiltIn => Level::BuiltIn,
             purlis_core::skills::Origin::Project => Level::Project,
             purlis_core::skills::Origin::Workspace => Level::Workspace,
+            purlis_core::skills::Origin::Persona => Level::Persona,
+            purlis_core::skills::Origin::Harness => Level::Installed,
             // A level a later slice adds is drawn as the project's until the studio names it.
             _ => Level::Project,
         }
@@ -61,30 +67,41 @@ pub struct Studio {
     pub on: bool,
     /// The workspace whose chats it shows, or `None` for a chat at the project's root.
     pub workspace: Option<String>,
+    /// The persona whose chats it shows, which brings its skills into every workspace, or
+    /// `None` for a chat on no persona (SK-5).
+    pub persona: Option<String>,
     /// Every workspace of the project, which it can be shown for.
     pub workspaces: Vec<String>,
     pub skills: Vec<StudioSkill>,
 }
 
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
-/// `workspace`, with the built-in skills in `built_in`: nothing while the flag is off. Its rows
-/// are the command line's (`purlis_core::skills::studio_rows`).
+/// `workspace`, as `persona` or on none, with the built-in skills in `built_in`: nothing while
+/// the flag is off. Its rows are the command line's (`purlis_core::skills::studio_rows`).
 pub(crate) fn studio(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
     on: bool,
     workspace: Option<&str>,
+    persona: Option<&str>,
 ) -> Studio {
     let workspace = workspace.map(str::to_owned);
+    let persona = persona.map(str::to_owned);
     if !on {
         return Studio {
             on,
             workspace,
+            persona,
             workspaces: Vec::new(),
             skills: Vec::new(),
         };
     }
-    let set = purlis_core::skills::in_the_studio(built_in, root, workspace.as_deref());
+    let set = purlis_core::skills::in_the_studio(
+        built_in,
+        root,
+        workspace.as_deref(),
+        persona.as_deref(),
+    );
     let skills = purlis_core::skills::studio_rows(&set, root)
         .into_iter()
         .map(|row| StudioSkill {
@@ -105,6 +122,7 @@ pub(crate) fn studio(
     Studio {
         on,
         workspace,
+        persona,
         workspaces,
         skills,
     }
@@ -253,15 +271,16 @@ pub(crate) async fn set_skill_studio_on(on: bool) -> Result<bool, String> {
     .await
 }
 
-/// The Skill studio of the project, for a chat at its root or in `workspace`: every skill with
-/// its level, and why each left out is left out. On a blocking thread, as it reads the project's
-/// skill folders.
+/// The Skill studio of the project, for a chat at its root or in `workspace`, as `persona` or on
+/// none: every skill with its level, and why each left out is left out. On a blocking thread, as
+/// it reads the project's skill folders.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_studio(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     workspace: Option<String>,
+    persona: Option<String>,
 ) -> Result<Studio, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the project's skills", move || {
@@ -272,6 +291,7 @@ pub(crate) async fn skill_studio(
             built_in.as_deref(),
             purlis_core::skills::studio_on_here(),
             workspace.as_deref(),
+            persona.as_deref(),
         ))
     })
     .await
@@ -293,6 +313,35 @@ pub(crate) async fn skill_share(
             return Err("The Skill studio is not turned on on this machine.".to_owned());
         }
         purlis_core::skills::share_here(held.root(), workspace.as_deref(), &name).map(|_| ())
+    })
+    .await
+}
+
+/// **Adds a skill to a persona's `skills:` list, or takes one out** (SK-5, #2768): the persona
+/// page's Skills section. `written` is the skill's name as the studio lists it, `plugin:name`
+/// for an installed one, or `purlis:name` for a built-in one. Answers whether the list changed.
+/// Refused while the studio's flag is off.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn persona_skill(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    persona: String,
+    written: String,
+    add: bool,
+) -> Result<bool, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("changing the persona's skills", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Err("The Skill studio is not turned on on this machine.".to_owned());
+        }
+        let changed = if add {
+            purlis_core::skills::persona::add(held.root(), &persona, &written)
+        } else {
+            purlis_core::skills::persona::remove(held.root(), &persona, &written)
+        };
+        held.wrote(&["personas".to_owned()]);
+        changed
     })
     .await
 }

@@ -19,10 +19,11 @@ export const SKILL_STUDIO_VIEW: ViewRef = { from: null, view: "skill-studio", ke
 export const SKILL_STUDIO_TITLE = "Skill studio";
 
 /**
- * **Whose chats the studio shows** (#2767): a chat at the project's root, or a chat in one
- * workspace.
+ * **Whose chats the studio shows** (#2767): a chat at the project's root, a chat in one
+ * workspace, or a chat as one persona (#2768), which brings its skills into every workspace.
  */
-export type StudioScope = { at: "root" } | { at: "workspace"; workspace: string };
+export type StudioScope =
+  { at: "root" } | { at: "workspace"; workspace: string } | { at: "persona"; persona: string };
 
 /** A chat at the project's root. */
 export const AT_THE_ROOT: StudioScope = { at: "root" };
@@ -32,14 +33,35 @@ export function inWorkspace(workspace: string): StudioScope {
   return { at: "workspace", workspace };
 }
 
+/** A chat as `persona`, at the project's root (#2768). */
+export function asPersona(persona: string): StudioScope {
+  return { at: "persona", persona };
+}
+
 /** The workspace a scope names, for the core, which takes none for the project's root. */
 export function workspaceOf(scope: StudioScope): string | null {
   return scope.at === "workspace" ? scope.workspace : null;
 }
 
-/** The scope a studio view shows: its key is the workspace, and the view's own key the root. */
+/** The persona a scope names, for the core, which takes none for a chat on no persona. */
+export function personaOf(scope: StudioScope): string | null {
+  return scope.at === "persona" ? scope.persona : null;
+}
+
+/**
+ * What a persona's studio view is keyed by: `persona/<name>`. A workspace's name is one plain
+ * name, so it never holds the `/`.
+ */
+const PERSONA_KEY = "persona/";
+
+/**
+ * The scope a studio view shows: its key is the workspace, or `persona/<name>`, and the view's
+ * own key the root.
+ */
 export function scopeOf(view: ViewRef): StudioScope {
-  return view.key === SKILL_STUDIO_VIEW.key ? AT_THE_ROOT : inWorkspace(view.key);
+  if (view.key === SKILL_STUDIO_VIEW.key) return AT_THE_ROOT;
+  if (view.key.startsWith(PERSONA_KEY)) return asPersona(view.key.slice(PERSONA_KEY.length));
+  return inWorkspace(view.key);
 }
 
 /**
@@ -47,16 +69,26 @@ export function scopeOf(view: ViewRef): StudioScope {
  * a Skills summary row opens it on that workspace and the studio's own picker can show another.
  */
 export function skillStudioView(scope: StudioScope): ViewRef {
-  return scope.at === "root" ? SKILL_STUDIO_VIEW : { ...SKILL_STUDIO_VIEW, key: scope.workspace };
+  if (scope.at === "root") return SKILL_STUDIO_VIEW;
+  if (scope.at === "persona")
+    return { ...SKILL_STUDIO_VIEW, key: `${PERSONA_KEY}${scope.persona}` };
+  return { ...SKILL_STUDIO_VIEW, key: scope.workspace };
 }
 
 /** What the studio's tab is called while it shows `scope`'s chats. */
 export function skillStudioTitle(scope: StudioScope): string {
-  return scope.at === "root" ? SKILL_STUDIO_TITLE : `${SKILL_STUDIO_TITLE} · ${scope.workspace}`;
+  if (scope.at === "root") return SKILL_STUDIO_TITLE;
+  if (scope.at === "persona") return `${SKILL_STUDIO_TITLE} · ${scope.persona}`;
+  return `${SKILL_STUDIO_TITLE} · ${scope.workspace}`;
 }
 
 /** The catalogue row that opens the studio on `workspace`'s chats (#2767). */
 export const SKILL_STUDIO_IN = "skills.studio:";
+
+/** The catalogue row that opens the studio on `persona`'s chats (#2768): what its page's rows run. */
+export function skillStudioAs(persona: string): string {
+  return `${SKILL_STUDIO_IN}${PERSONA_KEY}${persona}`;
+}
 
 /** Whether `view` is the Skill studio. */
 export function isSkillStudio(view: ViewRef): boolean {

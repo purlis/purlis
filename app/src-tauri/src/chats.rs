@@ -3124,6 +3124,19 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
+        // A skill its persona names that this machine does not have (SK-5, #2768): the chat
+        // starts without it, and its tab says which, never a silent drop.
+        if !reattaching && !on_the_runner {
+            late.extend(purlis_core::hoststart::skills_not_here(
+                purlis_core::skills::studio_on_here(),
+                &self.project,
+                &self.kit(harness),
+                harness,
+                chat.cwd.as_deref(),
+                runs_as.as_deref(),
+                &env,
+            ));
+        }
         // A sandboxed Claude Code chat whose project's own settings it does not load says which
         // keys, in the window only (ADR 0067 as amended 2026-10-15). Its arming read the same
         // files and decided the same way.

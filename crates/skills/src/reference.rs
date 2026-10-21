@@ -1,0 +1,108 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! What a persona's `skills:` list names, one entry at a time (SK-5, #2768; ADR 0099 as amended
+//! 2026-10-21), and the harness skills a machine has to check a named one against.
+
+/// The prefixes that name a built-in skill: `purlis:<name>`, and `charter:<name>`, which personas
+/// written before the rename still say. The migration rewrites the old one (#2784); until then
+/// both mean the same skill.
+pub const BUILT_IN_PREFIXES: [&str; 2] = ["purlis", "charter"];
+
+/// One entry of a persona's `skills:` list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reference {
+    /// `purlis:<name>` (or `charter:<name>`): a built-in skill.
+    BuiltIn(String),
+    /// `<plugin>:<name>`: a skill of a harness plugin, which the harness loads.
+    Harness { plugin: String, name: String },
+    /// `<name>`: the plane skill of that name the chat can reach (the persona's own, its
+    /// workspace's, or a project skill, whatever it was granted), else the harness's own skill
+    /// of that name.
+    Named(String),
+}
+
+impl Reference {
+    /// The entry `written`, as a persona's `skills:` list holds it, or `None` for one that names
+    /// nothing: blank, or with a blank side to its `:`.
+    pub fn parse(written: &str) -> Option<Self> {
+        let written = written.trim();
+        if written.is_empty() {
+            return None;
+        }
+        let Some((prefix, name)) = written.split_once(':') else {
+            return Some(Self::Named(written.to_owned()));
+        };
+        let (prefix, name) = (prefix.trim(), name.trim());
+        if prefix.is_empty() || name.is_empty() {
+            return None;
+        }
+        Some(if BUILT_IN_PREFIXES.contains(&prefix) {
+            Self::BuiltIn(name.to_owned())
+        } else {
+            Self::Harness {
+                plugin: prefix.to_owned(),
+                name: name.to_owned(),
+            }
+        })
+    }
+
+    /// The skill's own name, without the part before a `:`.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::BuiltIn(name) | Self::Named(name) | Self::Harness { name, .. } => name,
+        }
+    }
+
+    /// Whether it names the plane skill `name`: only a bare name can.
+    pub(crate) fn names_plane(&self, name: &str) -> bool {
+        matches!(self, Self::Named(named) if named == name)
+    }
+
+    /// Whether a machine with the harness skills `here` has it.
+    pub(crate) fn is_on(&self, here: &[OnMachine]) -> bool {
+        here.iter().any(|one| match (self, one) {
+            (
+                Self::Named(name),
+                OnMachine::Skill {
+                    plugin: None,
+                    name: has,
+                },
+            ) => name == has,
+            (
+                Self::Harness { plugin, name },
+                OnMachine::Skill {
+                    plugin: Some(from),
+                    name: has,
+                },
+            ) => plugin == from && name == has,
+            (Self::Harness { plugin, .. }, OnMachine::Plugin(from)) => plugin == from,
+            _ => false,
+        })
+    }
+}
+
+/// How a persona's `skills:` list says it: `purlis:<name>` for a built-in skill (whichever prefix
+/// was written), `<plugin>:<name>`, or `<name>`.
+impl std::fmt::Display for Reference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BuiltIn(name) => write!(f, "{}:{name}", BUILT_IN_PREFIXES[0]),
+            Self::Harness { plugin, name } => write!(f, "{plugin}:{name}"),
+            Self::Named(name) => f.write_str(name),
+        }
+    }
+}
+
+/// One harness skill a chat's harness has on this machine, as its declaration reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OnMachine {
+    /// A skill by name: the person's own (`plugin` `None`), or one of a plugin's.
+    Skill {
+        plugin: Option<String>,
+        name: String,
+    },
+    /// A plugin installed whose skills cannot be listed: every skill named under it is taken as
+    /// there, so a chat is never told one is missing that it has.
+    Plugin(String),
+}

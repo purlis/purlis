@@ -9,7 +9,9 @@ import { Notice } from "./Notice";
 import { Select } from "./primitives/Select";
 import {
   AT_THE_ROOT,
+  asPersona,
   inWorkspace,
+  personaOf,
   skillStudioTitle,
   skillStudioView,
   workspaceOf,
@@ -18,14 +20,17 @@ import {
 import { skillView } from "./skillRuns";
 import type { ViewRef } from "./tabs";
 
-/** A scope as the picker's value: the root, or `in:<workspace>`. */
+/** A scope as the picker's value: the root, `in:<workspace>`, or `as:<persona>`. */
 function choiceOf(scope: StudioScope): string {
-  return scope.at === "root" ? "root" : `in:${scope.workspace}`;
+  if (scope.at === "root") return "root";
+  return scope.at === "persona" ? `as:${scope.persona}` : `in:${scope.workspace}`;
 }
 
 /** The scope a picker's value names. */
 function scopeOfChoice(choice: string): StudioScope {
-  return choice.startsWith("in:") ? inWorkspace(choice.slice(3)) : AT_THE_ROOT;
+  if (choice.startsWith("in:")) return inWorkspace(choice.slice(3));
+  if (choice.startsWith("as:")) return asPersona(choice.slice(3));
+  return AT_THE_ROOT;
 }
 /**
  * **The Skill studio's tab** (SK-2, #2765; SK-4, #2767): one chat's skill set, at the project's
@@ -53,9 +58,10 @@ export function SkillStudioTab({
   const [shareRefused, setShareRefused] = useState<string>();
   const [shared, setShared] = useState(0);
   const workspace = workspaceOf(scope);
+  const persona = personaOf(scope);
   useEffect(() => {
     let live = true;
-    void commands.skillStudio(plane, workspace).then((answer) => {
+    void commands.skillStudio(plane, workspace, persona).then((answer) => {
       if (!live) return;
       if (answer.status === "ok") {
         setStudio(answer.data);
@@ -65,7 +71,7 @@ export function SkillStudioTab({
     return () => {
       live = false;
     };
-  }, [plane, workspace, changed, shared]);
+  }, [plane, workspace, persona, changed, shared]);
 
   if (refused !== undefined)
     return (
@@ -113,6 +119,9 @@ export function SkillStudioTab({
             value: choiceOf(inWorkspace(name)),
             label: `A chat in ${name}`,
           })),
+          ...(persona === null
+            ? []
+            : [{ value: choiceOf(asPersona(persona)), label: `A chat as ${persona}` }]),
         ]}
         onValueChange={(to) => {
           const next = scopeOfChoice(to);
@@ -145,9 +154,11 @@ export function SkillStudioTab({
     <div className="skill-studio" data-testid="skill-studio">
       {picker}
       <p className="honest">
-        {workspace !== null
-          ? `Every skill a chat in ${workspace} gets, and why any other is left out.`
-          : "Every skill a chat at the project's root gets, and why any other is left out."}
+        {persona !== null
+          ? `Every skill a chat as ${persona} gets, in any workspace, and why any other is left out.`
+          : workspace !== null
+            ? `Every skill a chat in ${workspace} gets, and why any other is left out.`
+            : "Every skill a chat at the project's root gets, and why any other is left out."}
       </p>
       {shareRefused !== undefined && (
         <Notice

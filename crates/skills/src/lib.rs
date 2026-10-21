@@ -16,10 +16,15 @@
 //! skill is a folder in `workspaces/<ws>/skills/`, for that workspace's chats alone (SK-4,
 //! #2767). Each plane level also has its **local** skills, in `skills.local/` beside its
 //! `skills/`, read only while git keeps them on this machine ([`Machine::kept_local`]); [`share`]
-//! moves one to the shared folder. When two copies have one name the narrowest wins: workspace
-//! over project, local over shared, and a built-in skill's name is never taken. Every skill is
-//! handed to a harness from where it lies, and none gets a copy. The persona level, harness
-//! skills and repo skills arrive in later slices behind the `skill-studio` flag.
+//! moves one to the shared folder. A persona skill is a folder in `personas/<p>/skills/`, for
+//! that persona's chats in any workspace (SK-5, #2768), and the persona's `skills:` list names
+//! more ([`Reference`]): a built-in skill, a harness skill, or a plane skill, which then reaches
+//! the persona's chats whatever the workspace was granted. When two copies have one name the
+//! narrowest wins: persona over workspace over project, local over shared, and a built-in
+//! skill's name is never taken. Every skill is handed to a harness from where it lies, and none
+//! gets a copy. A harness skill is the harness's to load: the set only says when one the persona
+//! names is not on this machine ([`Machine::harness`]). Repo skills arrive in a later slice
+//! behind the `skill-studio` flag.
 //!
 //! **Harness-agnostic.** The crate knows no harness by name. A chat's harness is described by
 //! what it can do with skills ([`HarnessSkills`]), which purlis-core's harness declaration
@@ -30,10 +35,12 @@ use std::path::{Path, PathBuf};
 mod grant;
 mod read;
 pub mod runs;
+mod reference;
 mod share;
 
 pub use grant::{Grant, grant_of, set_grant};
 pub use read::{DIR_IN_BUNDLE, frontmatter, in_bundle, listing, read};
+pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
 pub use share::{named, share};
 
 /// A skill, as a chat is told about it: a folder in the open SKILL.md format.
@@ -71,6 +78,13 @@ pub enum Origin {
     Project,
     /// One workspace's: a folder in `workspaces/<ws>/skills/`, for that workspace's chats alone.
     Workspace,
+    /// One persona's: a folder in `personas/<p>/skills/`, for that persona's chats in any
+    /// workspace (SK-5, #2768).
+    Persona,
+    /// The harness's own: in the person's harness folders or a harness plugin. The harness loads
+    /// it, never purlis, so the set holds one only as left out: one the persona names that this
+    /// machine does not have.
+    Harness,
 }
 
 impl Origin {
@@ -80,6 +94,8 @@ impl Origin {
             Self::BuiltIn => "built-in",
             Self::Project => "project",
             Self::Workspace => "workspace",
+            Self::Persona => "persona",
+            Self::Harness => "installed",
         }
     }
 }
@@ -108,6 +124,9 @@ pub struct Chat<'a> {
     pub workspace: Option<&'a str>,
     /// The persona it runs as, or `None` for a chat on no persona.
     pub persona: Option<&'a str>,
+    /// What its persona's `skills:` list names, in order (SK-5): each reaches the chat whatever
+    /// its workspace was granted. Empty for a chat on no persona.
+    pub names: &'a [Reference],
     /// The names of the project skills its workspace turned off (`settings.skills.off`, which
     /// purlis-core's Workspace settings layer reads). It only narrows: a name whose skill is not
     /// granted to the workspace stays not granted. Empty for a chat at the project's root.
@@ -131,6 +150,10 @@ pub struct Machine<'a> {
     /// How to ask git whether a local skill's folder stays on this machine. `None` reads no
     /// local skill: each is left out, saying purlis could not ask.
     pub kept_local: Option<&'a KeptLocal<'a>>,
+    /// The harness skills the chat's harness has on this machine, which purlis-core's harness
+    /// declaration reads. `None` where nobody looked: then a harness skill the persona names is
+    /// taken as there, and never said to be missing.
+    pub harness: Option<&'a [OnMachine]>,
 }
 
 impl std::fmt::Debug for Machine<'_> {
@@ -138,6 +161,7 @@ impl std::fmt::Debug for Machine<'_> {
         f.debug_struct("Machine")
             .field("built_in", &self.built_in)
             .field("kept_local", &self.kept_local.is_some())
+            .field("harness", &self.harness)
             .finish()
     }
 }
@@ -187,6 +211,11 @@ pub enum Reason {
     /// A local skill git does not keep on this machine, or that purlis could not ask git about:
     /// the sentence that says which, and how to fix it.
     NotKeptLocal(String),
+    /// A skill the chat's persona names that this machine does not have for the chat's harness
+    /// (SK-5): the chat starts without it, and its tab says so.
+    NotOnThisMachine,
+    /// A built-in skill the chat's persona names, that no built-in skill is.
+    NoSuchBuiltIn,
 }
 
 /// What a folder lacks to be a whole skill.
@@ -239,6 +268,12 @@ impl std::fmt::Display for Reason {
                 level_shown(*origin, *local)
             ),
             Self::NotKeptLocal(why) => f.write_str(why),
+            Self::NotOnThisMachine => {
+                f.write_str("its persona names it, and it is not installed on this machine")
+            }
+            Self::NoSuchBuiltIn => {
+                f.write_str("its persona names it, and no built-in skill has this name")
+            }
         }
     }
 }
@@ -286,6 +321,14 @@ pub const PROJECT_DIR: &str = "skills";
 /// The folder, beside a level's [`PROJECT_DIR`], its local skills sit in (ADR 0099 §1).
 pub const LOCAL_DIR: &str = "skills.local";
 
+/// The folder of the persona `persona`'s skills in the plane at `plane`: its `skills/`, or its
+/// `skills.local/` where `local` (SK-5, ADR 0099 §1). `None` for a name that is not one plain
+/// name, which is no folder of the plane's.
+pub fn persona_dir(plane: &Path, persona: &str, local: bool) -> Option<PathBuf> {
+    let dir = if local { LOCAL_DIR } else { PROJECT_DIR };
+    plain(persona).then(|| plane.join("personas").join(persona).join(dir))
+}
+
 /// The folder of a plane level's skills: the plane root's for `workspace` `None`, the
 /// workspace's otherwise; its `skills.local/` where `local`. `None` for a workspace name that is
 /// not one plain name, which is no folder of the plane's.
@@ -319,12 +362,15 @@ pub(crate) fn plain(name: &str) -> bool {
 ///
 /// Every built-in skill reaches every chat by its harness's route, and its name is never taken.
 /// Then the plane's levels, narrowest first, so the first copy of a name is the one handed over
-/// and every other copy is left out saying which copy hid it (ADR 0099 §3): the workspace's local
-/// skills, its shared skills, the project's local skills and its shared skills. A project skill
-/// reaches a chat at the plane root; a chat in a workspace gets it only where its grant reaches
-/// that workspace and the workspace has not turned it off. A local skill is read only where
+/// and every other copy is left out saying which copy hid it (ADR 0099 §3): the persona's local
+/// skills, its shared skills, the workspace's local skills, its shared skills, the project's
+/// local skills and its shared skills. A project skill reaches a chat at the plane root; a chat
+/// in a workspace gets it only where its grant reaches that workspace, or the chat's persona
+/// names it, and the workspace has not turned it off. A local skill is read only where
 /// `machine` says git keeps it on this machine. A folder that is not a whole skill is left out
-/// with what it lacks.
+/// with what it lacks. Last, each skill the persona names and the chat does not get, and no
+/// copy of explains, is left out: a built-in skill there is none of, and a harness skill this
+/// machine does not have.
 pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -> SkillSet {
     let mut set = SkillSet::default();
     let route = chat.harness.route;
@@ -332,6 +378,19 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
         level(&mut set, dir, (Origin::BuiltIn, false), route, |_| None);
     }
     if let Some(plane) = plane {
+        if let Some(persona) = chat.persona {
+            for local in [true, false] {
+                if let Some(dir) = persona_dir(plane, persona, local) {
+                    level(&mut set, &dir, (Origin::Persona, local), route, |skill| {
+                        if local {
+                            kept_here(machine, folder_of_skill(skill))
+                        } else {
+                            None
+                        }
+                    });
+                }
+            }
+        }
         let workspace = chat.workspace.filter(|ws| plain(ws));
         if let Some(ws) = workspace {
             for local in [true, false] {
@@ -355,11 +414,14 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
                 if local && let Some(why) = kept_here(machine, folder) {
                     return Some(why);
                 }
+                let named = chat.names.iter().any(|one| one.names_plane(&skill.name));
                 chat.workspace
                     .and_then(|ws| reach(folder, ws, chat.turned_off, &skill.name))
+                    .filter(|reason| !named || *reason == Reason::TurnedOff)
             });
         }
     }
+    named_elsewhere(&mut set, machine, chat.names);
     set.effective
         .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
     widest_first(&mut set.left_out);
@@ -379,6 +441,45 @@ fn reach(folder: &Path, workspace: &str, off: &[String], name: &str) -> Option<R
     off.iter()
         .any(|one| one == name)
         .then_some(Reason::TurnedOff)
+}
+
+/// Each skill `names` holds that the set neither gets nor leaves out already, left out with why:
+/// a built-in skill there is none of (where the built-in skills were read), and a harness skill
+/// `machine` does not have (where it looked). A plane skill named and found in no level is a
+/// harness skill to look for, since the harness may have it by that name.
+fn named_elsewhere(set: &mut SkillSet, machine: &Machine<'_>, names: &[Reference]) {
+    for reference in names {
+        let said = reference.to_string();
+        let held = |set: &SkillSet, name: &str| {
+            set.effective.iter().any(|e| e.skill.name == name)
+                || set.left_out.iter().any(|l| l.name == name)
+        };
+        if held(set, &said) {
+            continue;
+        }
+        let missing = match reference {
+            Reference::BuiltIn(name) => machine.built_in.and_then(|dir| {
+                let built_in = set
+                    .effective
+                    .iter()
+                    .any(|e| e.origin == Origin::BuiltIn && e.skill.name == *name);
+                (!built_in).then(|| (Origin::BuiltIn, dir.join(name), Reason::NoSuchBuiltIn))
+            }),
+            _ => machine
+                .harness
+                .filter(|here| !reference.is_on(here))
+                .map(|_| (Origin::Harness, PathBuf::new(), Reason::NotOnThisMachine)),
+        };
+        if let Some((origin, folder, reason)) = missing {
+            set.left_out.push(LeftOut {
+                name: said,
+                origin,
+                local: false,
+                folder,
+                reason,
+            });
+        }
+    }
 }
 
 /// Why the local skill in `folder` is not read, or `None` where git keeps it on this machine.
@@ -409,6 +510,8 @@ fn rank(origin: Origin, local: bool) -> u8 {
         Origin::BuiltIn => 0,
         Origin::Project => 1,
         Origin::Workspace => 2,
+        Origin::Persona => 3,
+        Origin::Harness => 4,
     };
     level * 2 + u8::from(local)
 }
