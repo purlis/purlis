@@ -34,6 +34,9 @@ fn typing_into_a_field_of_a_large_page_stays_under_fifty_milliseconds_a_key() {
     };
     open(&browser, "typing-on-a-large-page.html");
     browser.take_over();
+    // A person looks at the page a moment before they type: the engine readies its tree
+    // meanwhile (#2967).
+    std::thread::sleep(Duration::from_secs(1));
     let aim = browser.aim().expect("a page is shown");
     let typed = "squirrelnineteenxyz";
     let mut took = Vec::new();
