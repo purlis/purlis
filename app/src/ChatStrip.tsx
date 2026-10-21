@@ -30,6 +30,7 @@ import {
   type Tabs,
 } from "./tabs";
 import { TabTasks, type Place as TaskPlace } from "./TabChip";
+import { SkillRunChip } from "./SkillRunChip";
 import { type Ended, type Needing } from "./tabTasks";
 import { StripTablist } from "./StripTablist";
 import { chipSays, WRAPPING_UP, WrappingUp } from "./NeedsYou";
@@ -135,6 +136,7 @@ export function ChatStrip({
   restoring = NONE_RESTORING,
   browsersOfTab,
   openBrowser,
+  openSkillRun,
 }: ChatStripProps) {
   return (
     <header
@@ -425,6 +427,12 @@ export function ChatStrip({
                               />
                             )}
                           </QueueRead>
+                          {/* **The skill run open in the tab's chat** (SK-3): pressed, it
+                            opens the skill's tab on that run. Beside the tab's button, as
+                            the tasks' chip is. */}
+                          {openSkillRun !== undefined && (
+                            <SkillRunChip session={chatOf(tabs, id)} onOpen={openSkillRun} />
+                          )}
                           {/* **The tab's chats' browsers, live** (#2024): a thumbnail each,
                             pressed to open its view. Beside the tab's button, as the fresh
                             mark is. */}
@@ -597,4 +605,6 @@ type ChatStripProps = {
   browsersOfTab?: (id: number) => readonly BrowserShown[];
   /** Opens a browser's view, from its thumbnail on a tab. */
   openBrowser?: (shown: BrowserShown) => void;
+  /** Opens a skill's tab on one of its runs, from the chip of the run open in a tab's chat. */
+  openSkillRun?: (skill: string, run: string) => void;
 };

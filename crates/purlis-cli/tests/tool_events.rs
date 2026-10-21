@@ -503,3 +503,77 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
         "the hook answered before the host had recorded its call"
     );
 }
+
+#[test]
+fn a_skill_calls_post_hook_tells_the_host_the_run_it_starts() {
+    // SK-3: the host opens the run under the id the hook minted, once per turn.
+    let (code, _, told) = hook_with(
+        "posttooluse-skill",
+        &serde_json::json!({"tool_name": "Skill", "tool_use_id": "toolu_1",
+            "tool_input": {"skill": "deploy"}}),
+        &[(purlis_core::hookwire::HARNESS_ENV, "claude-code")],
+    );
+
+    assert_eq!(code, 0);
+    let started = told
+        .expect("the host was told")
+        .skill
+        .clone()
+        .expect("the run the call starts");
+    assert_eq!(started.skill, "deploy");
+    assert_eq!(
+        started.started_by,
+        purlis_core::skills::runs::StartedBy::SkillTool
+    );
+    assert_eq!(started.run.len(), 26, "a ULID: {}", started.run);
+}
+
+#[test]
+fn a_briefed_codex_chats_shell_read_of_a_known_skill_md_tells_the_host_it_started_that_skill() {
+    // Codex: its shell's post hook is the block word, and its skills are listed by path.
+    let skills = tempfile::tempdir().unwrap();
+    let skill = skills.path().join("deploy");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Ships it.\n---\n",
+    )
+    .unwrap();
+    let dir = skills.path().display().to_string();
+    let env = [
+        (purlis_core::skills::LISTED_ENV, dir.as_str()),
+        (purlis_core::hookwire::HARNESS_ENV, "codex"),
+    ];
+    let file = skill.join("SKILL.md").display().to_string();
+    let payload = |command: String| {
+        serde_json::json!({"tool_name": "Bash", "tool_use_id": "call_1",
+            "tool_input": {"command": command}, "tool_response": ""})
+    };
+
+    let (_, _, read) = hook_with(
+        "posttooluse-blocked",
+        &payload(format!("sed -n 1,200p {file}")),
+        &env,
+    );
+    let (_, _, edited) = hook_with(
+        "posttooluse-blocked",
+        &payload(format!("sed -i 's/a/b/' {file}")),
+        &env,
+    );
+
+    assert_eq!(
+        read.expect("the host was told")
+            .skill
+            .clone()
+            .map(|s| (s.skill, s.started_by)),
+        Some((
+            "deploy".to_owned(),
+            purlis_core::skills::runs::StartedBy::Read
+        ))
+    );
+    assert_eq!(
+        edited.expect("the host was told").skill.clone(),
+        None,
+        "a chat editing the skill starts no run"
+    );
+}

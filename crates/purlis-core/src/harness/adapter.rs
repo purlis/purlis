@@ -130,6 +130,34 @@ pub trait HarnessAdapter: Sync {
         rule: &str,
         local: bool,
     ) -> Result<RuleFile, String>;
+
+    /// **What a finished tool call of this harness says about a skill starting** (SK-3), read
+    /// from the call's tool, by the harness's own name for it, and its input. Pure: nothing is
+    /// read but the two. The default is a harness that shows none.
+    fn skill_start(&self, tool: &str, input: &serde_json::Value) -> Option<SkillStart> {
+        let _ = (tool, input);
+        None
+    }
+}
+
+/// What a finished tool call says about a skill starting, in a harness's own words (SK-3): the
+/// neutral core finds the run it starts from this ([`crate::toolhooks::skill_started`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillStart {
+    /// The harness's own Skill tool started the skill it names.
+    Named(String),
+    /// The call only read: `text` names what it read. A chat briefed on its skills starts one
+    /// by reading its `SKILL.md`.
+    Reading(String),
+}
+
+/// The text field `key` of a tool call's input, where it is one and not blank.
+pub(crate) fn input_text<'a>(input: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    input
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
 }
 
 /// A command rule's writer: handed the bucket (`ask` or `allow`) and whether to write nothing.

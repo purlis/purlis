@@ -544,11 +544,11 @@ fn the_profile_denies_every_class_after_what_it_lets_the_chat_write() {
     };
     assert!(!wrap.denied.is_empty());
     for denial in &wrap.denied {
-        let path = real(&denial.path).display().to_string();
-        let rule = match denial.access {
-            Access::ReadWrite => format!("(deny file-read* file-write* (subpath \"{path}\"))"),
-            Access::Write => format!("(deny file-write* (subpath \"{path}\"))"),
-        };
+        // The first rule of each denial: under the name it resolves to (#2752 holds some under
+        // every spelling, or as an entry alone).
+        let rule = super::seatbelt::denial_rules(denial)
+            .expect("rules")
+            .remove(0);
         let at = profile
             .find(&rule)
             .unwrap_or_else(|| panic!("{rule} missing:\n{profile}"));

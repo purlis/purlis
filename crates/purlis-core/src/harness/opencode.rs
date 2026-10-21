@@ -5,7 +5,7 @@
 //! the whole config opencode reads from `OPENCODE_CONFIG_CONTENT` ([`crate::opencode`] has the
 //! measurements).
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox};
+use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
@@ -121,6 +121,15 @@ impl HarnessAdapter for Opencode {
 
     fn guard_label(&self) -> &'static str {
         "opencode"
+    }
+
+    /// opencode's `skill` tool, which purlis's shim reports as `Skill`
+    /// ([`crate::opencode::TOOLS`]), naming the skill in `name`.
+    fn skill_start(&self, tool: &str, input: &serde_json::Value) -> Option<SkillStart> {
+        (tool == "Skill")
+            .then(|| input_text(input, "name"))
+            .flatten()
+            .map(|skill| SkillStart::Named(skill.to_owned()))
     }
 
     /// `permission.bash` of the project's `opencode.json`, which holds command globs: a

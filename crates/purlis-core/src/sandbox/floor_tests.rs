@@ -332,6 +332,141 @@ fn a_wrapped_harness_at_the_floor_writes_everything_but_what_the_floor_holds() {
     }
 }
 
+/// The folders of the home Docker's installers link `docker` and its credential helpers into,
+/// which purlis runs outside any sandbox for a Docker pool, are never a chat's to write
+/// (#2752): each as written and where a link in its place leads. A project's own `.docker`
+/// folder, and Docker's settings beside them, stay the chat's.
+#[test]
+fn the_homes_docker_folders_are_never_written_by_a_chat_and_a_projects_own_docker_folder_is() {
+    use super::tests::writes;
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let home_dir = tempfile::tempdir().expect("a home");
+    let home = real(home_dir.path());
+    // OrbStack's folder is a link to where it keeps its programs.
+    let elsewhere = tempfile::tempdir().expect("where a link leads");
+    let kept = real(elsewhere.path());
+    std::fs::create_dir_all(home.join(".orbstack")).expect("a folder");
+    std::os::unix::fs::symlink(&kept, home.join(".orbstack/bin")).expect("a link");
+    let machine = Machine {
+        home: Some(home.clone()),
+        ..machine_with(bin.path())
+    };
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let profile = wrapped_floor(harness, &root, &machine, &[4040, 4041], None);
+        for folder in crate::dockerpool::DOCKER_HOME_FOLDERS {
+            for not in [
+                home.join(folder),
+                home.join(folder).join("docker"),
+                home.join(folder).join("docker-credential-desktop"),
+            ] {
+                assert!(
+                    !writes(&profile, &not),
+                    "{harness:?}: {} is writable",
+                    not.display()
+                );
+            }
+        }
+        assert!(
+            !writes(&profile, &kept.join("docker")),
+            "{harness:?}: where the link leads is writable"
+        );
+        for still in [
+            home.join(".docker/config.json"),
+            home.join(".docker/buildx/activity/default"),
+            root.join(".docker/compose.yaml"),
+            root.join(".docker/bin/build.sh"),
+        ] {
+            assert!(
+                writes(&profile, &still),
+                "{harness:?}: {} is not writable",
+                still.display()
+            );
+        }
+    }
+    // Claude Code's own sandbox holds each by its path in the home.
+    let floor = floor_of(decided(Harness::ClaudeCode, &root, &machine));
+    let deny_write = strings(&settings_of(&floor).sandbox["filesystem"]["denyWrite"]);
+    for folder in crate::dockerpool::DOCKER_HOME_FOLDERS {
+        let path = home.join(folder).display().to_string();
+        assert!(deny_write.contains(&path), "{path} in {deny_write:?}");
+    }
+    assert!(
+        deny_write.contains(&kept.display().to_string()),
+        "{} in {deny_write:?}",
+        kept.display()
+    );
+    assert!(
+        !deny_write
+            .iter()
+            .any(|rule| rule.ends_with("**/.docker/bin")),
+        "{deny_write:?}"
+    );
+}
+
+/// The home's Docker folders are held under every spelling a case-folding disk takes (#2752):
+/// where one is not there yet, a chat cannot make it under another spelling and put a program
+/// in it. The folder that holds each `bin` is held as an entry alone (the person's ruling of
+/// 2026-10-20): never made, moved aside or replaced, while what is in it beside `bin` is
+/// written.
+#[test]
+fn the_homes_docker_folders_are_held_in_every_spelling_and_their_holders_as_entries() {
+    use super::tests::writes;
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    // None of the folders is there yet.
+    let home_dir = tempfile::tempdir().expect("a home");
+    let home = real(home_dir.path());
+    let machine = Machine {
+        home: Some(home.clone()),
+        ..machine_with(bin.path())
+    };
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let profile = wrapped_floor(harness, &root, &machine, &[4040, 4041], None);
+        for not in [
+            ".Docker/Bin/docker",
+            ".docker/BIN/docker-credential-desktop",
+            ".ORBSTACK/BIN/docker",
+            ".Rd/bin/docker",
+            // Each holder, as itself and in another spelling.
+            ".docker",
+            ".DOCKER",
+            ".orbstack",
+            ".rd",
+            ".RD",
+        ] {
+            assert!(
+                !writes(&profile, &home.join(not)),
+                "{harness:?}: {not} is writable"
+            );
+        }
+        for still in [
+            ".docker/config.json",
+            ".Docker/config.json",
+            ".orbstack/run/docker.sock",
+            ".rd/docker.sock",
+        ] {
+            assert!(
+                writes(&profile, &home.join(still)),
+                "{harness:?}: {still} is not writable"
+            );
+        }
+    }
+    let floor = floor_of(decided(Harness::ClaudeCode, &root, &machine));
+    let deny_write = strings(&settings_of(&floor).sandbox["filesystem"]["denyWrite"]);
+    for folder in crate::dockerpool::DOCKER_HOME_FOLDERS {
+        let path = home.join(folder).display().to_string();
+        assert!(
+            deny_write.contains(&claude::either_case(&path)),
+            "{path} in either case in {deny_write:?}"
+        );
+    }
+    // Claude Code holds what is below a path it is given, so a holder held as an entry alone is
+    // not given to it: what is beside each `bin` stays written.
+    let holder = home.join(".docker").display().to_string();
+    assert!(!deny_write.contains(&holder), "{deny_write:?}");
+}
+
 /// The floor holds what reaches outside it (#2071 review): the profile applied for real, where
 /// this machine can apply one.
 #[cfg(target_os = "macos")]

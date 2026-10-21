@@ -510,6 +510,9 @@ pub(crate) enum Reconnect {
     /// The view the host numbers so drew a snapshot: a first one or a new one, which the host
     /// opens only while the link to the runner is up.
     Drawn(u32),
+    /// The host says the runner answered with another key than the one pinned for it
+    /// (`key_changed`, #2752): it does not link to it again until it is removed and added anew.
+    KeyChanged,
 }
 
 /// Told what a link hears of the runner its host relays it to.
@@ -1175,7 +1178,12 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                     hears.told(told);
                 }
             }
-            Told::Pushed(Pushed::LinkDown { .. }) => reconnect(&shared, Reconnect::Started),
+            Told::Pushed(Pushed::LinkDown { key_changed, .. }) => {
+                reconnect(&shared, Reconnect::Started);
+                if key_changed {
+                    reconnect(&shared, Reconnect::KeyChanged);
+                }
+            }
             Told::Pushed(Pushed::LinkBack {}) => reconnect(&shared, Reconnect::Over),
             // The hold goes over the link and waits for its answer: off the runtime.
             Told::Pushed(Pushed::NotHeld { project, why }) => {
@@ -1451,6 +1459,14 @@ fn reconnects_of(
             Reconnect::Over => {
                 let chats = std::mem::take(&mut lock(&dimmed).chats);
                 (chats.into_iter().collect(), Reconnection::Reconnected)
+            }
+            // Said whatever chats there are: the window says it once for the project.
+            Reconnect::KeyChanged => {
+                let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
+                if let Some(tell) = lock(&dimmed).tell.clone() {
+                    tell(chats, Reconnection::KeyChanged);
+                }
+                return;
             }
             Reconnect::Drawn(view) => {
                 let chat = lock(&running)

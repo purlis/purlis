@@ -45,6 +45,8 @@ impl Disk {
             path: at.join(path),
             access: Access::Write,
             named: None,
+            reach: crate::sandbox::Reach::AndBelow,
+            any_case: false,
         };
         Self {
             denied: vec![

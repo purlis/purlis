@@ -68,7 +68,7 @@
 use std::path::{Path, PathBuf};
 
 use super::seatbelt::{self, Own, quote, string, under};
-use super::{Access, Class, Compiled, Denial, Os, Uncompilable, Unheld};
+use super::{Access, Class, Compiled, Denial, Os, Reach, Uncompilable, Unheld};
 use crate::harness::Harness;
 
 /// What a Codex chat is wrapped in, before the place it opens is known.
@@ -154,6 +154,8 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
             path: operator.clone(),
             access: Access::ReadWrite,
             named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
         });
     }
     Ok(Wrap {
