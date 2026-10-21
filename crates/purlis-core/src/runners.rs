@@ -303,6 +303,26 @@ pub fn desktop_label(config_root: &Path) -> String {
         .collect()
 }
 
+/// **The runner a link that names `name` reaches** (#2865), and whether it is draining: a pool's
+/// name reaches its runner as [`runner_for`] says, where new chats start; `<pool>/<runner>`
+/// reaches that pool's runner of that name only while it is kept draining, so its chats can be
+/// answered, watched and ended until the last one has. Any other name reaches nothing.
+pub fn reachable(config_root: &Path, name: &str) -> Result<(Kept, bool), Refused> {
+    let Some((pool, runner)) = name.split_once('/') else {
+        return runner_for(config_root, name).map(|kept| (kept, false));
+    };
+    read(config_root)?
+        .into_iter()
+        .find(|kept| kept.draining && kept.pool() == pool && kept.name() == runner)
+        .map(|kept| (kept, true))
+        .ok_or_else(|| {
+            Refused::Other(format!(
+                "pool {pool} has no runner {runner} draining on this machine, so nothing was \
+                 reached"
+            ))
+        })
+}
+
 /// The lock every change of the file is made under, held for as long as this is: what
 /// [`crate::pools`] holds across adding or removing a pool, so another add or removal of it
 /// waits for this one.

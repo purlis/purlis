@@ -359,9 +359,10 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /dev/null
 
-      # The digest, and the install manifest that names it: `operator/deploy/operator.yaml` of
-      # this commit with its image set to this index by digest, as docs/cluster-operator.md
-      # installs it.
+      # The digest, and the install that names it (#2281): the plain manifests and the chart of
+      # this commit, the manifest's image and the chart's default set to this index by digest
+      # (`tools/operator-install.mjs`, which `operator/e2e/kind.sh` installs from too), as
+      # docs/cluster-operator.md installs them.
       - name: Record the digest
         env:
           DIGEST: ${{ steps.index.outputs.digest }}
@@ -372,28 +373,21 @@ jobs:
           if [ "$MAIN" = true ]; then tags="$tags and \`main\`"; fi
           mkdir -p "$RUNNER_TEMP/record"
           echo "$IMAGE@$DIGEST" > "$RUNNER_TEMP/record/operator-image.txt"
-          # The placeholder digest operator/tests/the_chart.rs holds the plain manifest to.
-          placeholder="image: $IMAGE@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-          if [ "$(grep -cxF "          $placeholder" operator/deploy/operator.yaml)" != 1 ]; then
-            echo "::error::operator/deploy/operator.yaml does not name the placeholder image exactly once"
-            exit 1
-          fi
-          sed "s|^          $placeholder\$|          image: $IMAGE@$DIGEST|" operator/deploy/operator.yaml \
-            > "$RUNNER_TEMP/record/operator.yaml"
-          grep -qxF "          image: $IMAGE@$DIGEST" "$RUNNER_TEMP/record/operator.yaml"
+          node tools/operator-install.mjs "$RUNNER_TEMP/record/install" "$IMAGE@$DIGEST"
+          grep -qxF "          image: $IMAGE@$DIGEST" "$RUNNER_TEMP/record/install/operator.yaml"
           {
             echo "### Operator image"
             echo
             echo "\`$IMAGE@$DIGEST\`"
             echo
             echo "Commit \`$SHA\`, tagged $tags, linux/amd64 and linux/arm64, signed and verified."
-            echo "The run's \`operator-image\` artifact holds \`operator.yaml\` naming it."
+            echo "The run's \`operator-image\` artifact holds the install naming it: \`install/\`, the plain manifests and the chart."
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: operator-image
           path: |
             ${{ runner.temp }}/record/operator-image.txt
-            ${{ runner.temp }}/record/operator.yaml
+            ${{ runner.temp }}/record/install/
           if-no-files-found: error
           retention-days: 90
