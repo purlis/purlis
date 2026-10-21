@@ -324,7 +324,7 @@ names:
 - Allow is distinguishable from Keep blocked (`secondary`) by its edge, and as plain as Keep
   blocked: in every state it is drawn on Keep blocked's fill;
 - no part draws Allow or danger nearer the primary than the family's defaults draw it in the
-  same theme, by the farthest of its fill, its edge and, for danger, its words;
+  same theme, measured on what a person reads as the look as it shows on each surface;
 - danger's words stay apart from the accent and from the primary's words.
 
 A consent variant that breaks one draws its family default there, and where that is not enough,

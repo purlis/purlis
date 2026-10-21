@@ -101,8 +101,8 @@ and two looks are compared by the colours they draw, never by the tokens' names:
 - Allow is distinguishable from Keep blocked by its edge, and is as plain as Keep blocked: in
   every state it is drawn on Keep blocked's fill;
 - **Allow never takes the primary look**: parts never draw a consent variant nearer the primary
-  than the family's defaults draw it in the same theme, by the farthest of its fill, its edge
-  and, for danger, its words;
+  than the family's defaults draw it in the same theme, measured on what a person reads as the
+  look as it shows on the family's grounds;
 - danger is distinguishable from primary: its words stay apart from the accent and from the
   primary's words, on the consent floors' scale.
 
