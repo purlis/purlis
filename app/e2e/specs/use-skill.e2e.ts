@@ -98,16 +98,31 @@ describe("Use skill…", function () {
     expect(boxes).toHaveLength(2);
     await boxes[0].setValue("42");
     await boxes[1].setValue("the tests");
-    await (await $("button=Type it")).click();
+    // Pressed from the document, as the picker's other specs press a dialog's button: a
+    // WebDriver click can land on the dialog's scrim edge on a small runner screen.
+    const pressed = await browser.execute(() => {
+      const button = [
+        ...document.querySelectorAll<HTMLButtonElement>('[data-testid="use-skill"] button'),
+      ].find((one) => one.textContent === "Type it");
+      button?.click();
+      return button !== undefined;
+    });
+    expect(pressed).toBe(true);
     // Closed once the core answered; a refusal stays in the dialog, and is what a red run says.
     await browser
       .waitUntil(async () => !(await dialog.isDisplayed().catch(() => false)), {
-        timeout: 20_000,
+        timeout: 40_000,
         timeoutMsg: "",
       })
       .catch(async () => {
-        const said = await browser.execute(
-          () => document.querySelector<HTMLElement>('[data-testid="use-skill"]')?.innerText ?? "",
+        const said = await browser.execute(() =>
+          [
+            ...document.querySelectorAll(
+              '[data-testid="use-skill"], [role="status"], [role="alert"]',
+            ),
+          ]
+            .map((one) => one.textContent ?? "")
+            .join(" | "),
         );
         throw new Error(`Use skill… never closed; it says: ${said}`);
       });

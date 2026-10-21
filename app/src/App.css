@@ -1543,7 +1543,7 @@ button.show-more:focus-visible {
   flex: none;
   inline-size: 1em;
   block-size: 1em;
-  margin-block-start: 0.2em;
+  margin-block-start: var(--space-1);
 }
 
 .use-skill-list {

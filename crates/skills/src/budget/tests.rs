@@ -25,10 +25,12 @@ fn set_at_the_root(plane: &Path, built_in: &Path) -> SkillSet {
         &Machine {
             built_in: Some(built_in),
             kept_local: Some(&|_| Ok(())),
+            harness: None,
         },
         &Chat {
             workspace: None,
             persona: None,
+            names: &[],
             turned_off: &[],
             harness: HarnessSkills {
                 route: Route::Plugin,

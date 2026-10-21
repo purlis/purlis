@@ -215,7 +215,10 @@ export function PaneFrame({
             {crumbs && ending}
             <ChatGauge usage={usage} />
             {/* The chat's skills and its skill budget, and Use skill… for it (#2775). */}
-            <SkillsChip plane={plane} session={session} />
+            {/* Not beside a task's breadcrumb: that line is the fullest a pane has, and the
+                state in it is read whole before anything else (`pane-crumbs.e2e.ts`). The
+                palette and the tab's menu still have Use skill… there. */}
+            {!crumbs && <SkillsChip plane={plane} session={session} />}
             {harness && <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />}
             {from && <span className="pane-from">{from}</span>}
             {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}
