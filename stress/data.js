@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792576238174,
+  "lastUpdate": 1792576256301,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -9804,6 +9804,42 @@ window.BENCHMARK_DATA = {
             "value": 693.6,
             "unit": "MB",
             "extra": "median of 6 samples: 656.5, 688.3, 694.4, 693.1, 694.1, 791.3 MB; window 413.5 MB, session host 280.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9172d4e2ebcee830345f0f7babc57b5a5a200913",
+          "message": "stories: pin the Playwright image by digest as well as tag (#2942) (#2951)\n\nBoth stories workflows run in\nmcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a…, the image index\nthe tag names today. The lockfile check moves into tools/story-image.mjs: every\nPlaywright image the two workflows use must be the locked version's tag with a\ndigest, and all of them one digest, so a tag pushed again never changes a\nbaseline. Its own test also holds the repository's workflows to it.\n\nCloses #2942\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T12:29:20+04:00",
+          "tree_id": "e082e4c2923290da5a4d4d9ae6c518a1304b6576",
+          "url": "https://github.com/purlis/purlis/commit/9172d4e2ebcee830345f0f7babc57b5a5a200913"
+        },
+        "date": 1792576253845,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1537.4,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1288.6, 1537.4, 1611.7 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 659.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 624.4, 645.6, 656.3, 662.9, 663.6, 743.2 MB; window 394 MB, session host 265.6 MB"
           }
         ]
       }
