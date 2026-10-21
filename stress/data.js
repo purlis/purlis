@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792620237633,
+  "lastUpdate": 1792620254036,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -10596,6 +10596,42 @@ window.BENCHMARK_DATA = {
             "value": 689.6,
             "unit": "MB",
             "extra": "median of 6 samples: 650.9, 671.7, 687.6, 691.6, 692.6, 765.3 MB; window 404.7 MB, session host 284.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2cdc4fbba264dfdf3cd99e6ea1924d1e5f804c45",
+          "message": "Component layer on React Aria, with the Button family (#2960)\n\n* Component layer on React Aria, with the Button family (#2904)\n\nEvery button, icon button and button drawn as a link is Button, IconButton or\nToggleButton from app/src/ui/button, one wrapper over React Aria's Button and\nToggleButton, drawn from data-scope/data-part/data-variant/data-size in\nbutton.css. Variants primary, secondary, ghost, danger, grants, soft-accent,\nwarning-soft and link; sizes sm, md and lg; ButtonRow gives a row one size.\nThe grants variant draws its own lock and never takes the primary look.\n\nLint: the primitives library only inside src/ui, the old ui-button classes an\nerror, raw controls, role=\"dialog\" and native title= warnings. ADR 0104,\nADR 0037's amendment, CONTEXT terms, stories with play tests.\n\nA Notice's granting way out asks its list's settle guard inside the press, so\nthe keyboard and the pointer are held alike.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Notice guard: a story draws what it tests, not a line of the window (#2904)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Lockfile from main's with React Aria's entries only; ADR 0104 names 0103 until it lands (#2904)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Button parts by the wrapper's attributes alone; manifest version 2 (#2904)\n\nThe theme engine reaches the button family by data-scope, data-part,\ndata-variant and React Aria's state attributes only: the interim selectors on\nthe old control classes are gone. A size a theme sets is the family's md size\nand never reaches an sm or lg button or one in a wrapping row; sm and lg\ncorners clamp to their own height. The manifest gains the soft-accent,\nwarning-soft and link variants at version 2, with their defaults held to\nui/button/button.css, and the published schema is regenerated. ADR 0103 gets\nan amendment; the consent floors hold as written.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Explorer e2e finds Changed only as the button; WindowLines waits for the recent row (#2904)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Status line bound holds a 24px small button; a long window test gets its own timeout (#2904)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Review round: unavailable buttons draw disabled, lint per family, Allows as grants (#2904)\n\n- A button that keeps the focus while unavailable (aria-disabled) is marked\n  data-disabled and never hovered or pressed; the family CSS and the engine's\n  hover and pressed states exclude [data-disabled]. Disabled draws in the\n  faint tier, not at half opacity.\n- One lint rule per family: purlis/button-family is an error and refuses a raw\n  <button> unless its role or class names a family not yet moved; fields,\n  dialogs and native tooltips stay warnings.\n- The Settings \"Allow on this machine\" and \"Allow port\" take the grants look.\n- The vault identity row is one ButtonRow; IconButton and ToggleButton take\n  no grants variant; the ring keys on data-focus-visible alone.\n- Keyboard tests for the settle guard in the Inbox's Notices and dispatch rows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Skill run chip and Skill studio's open are the button family; guards read the disabled state (#2904)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Toggle story: no pointer-ring check, a story's synthetic press cannot stand for a real one (#2904)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Parts test reads a selector prettier wraps (#2904)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A persona's skill Add and Remove are the button family (#2904)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Team policy's Accept of no sandbox is an answer that grants (#2904)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-22T00:19:38+04:00",
+          "tree_id": "cfdb2a9f1c99de37a1dee905fb9b8dfedb25ba1c",
+          "url": "https://github.com/purlis/purlis/commit/2cdc4fbba264dfdf3cd99e6ea1924d1e5f804c45"
+        },
+        "date": 1792620252466,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1545.4,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1432.1, 1545.4, 1712.6 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 684.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 643.9, 671.6, 680.8, 687.8, 688.6, 774.7 MB; window 391.2 MB, session host 293.1 MB"
           }
         ]
       }
