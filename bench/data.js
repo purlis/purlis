@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792618425114,
+  "lastUpdate": 1792619965767,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21084,6 +21084,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9949545,
             "unit": "ms",
             "extra": "median of 5 runs: 100.990, 101.182, 101.995, 102.044, 102.133 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "093ea51e22d08c7b09c03372fd09f4d0da73a0b2",
+          "message": "Browsers: the person's input is aimed at the frame it reaches (#2891)\n\n* Browsers: the person's input is aimed at the frame it reaches (#2638)\n\nWhere a frame of the page loaded another document since the person saw it,\ntheir input still goes on if it lands on a document that has not: a key in\nthe document that has the focus, a pointer event in the document under its\npoint, by the engine's hit test. That frame and every frame around it (and,\non a frame's element, inside it) must be as the person saw them. A pointer\nevent after a frame of the page went is dropped. Each frame records the\npage's document number when it last loaded.\n\nA real-Chrome test types five keys, each aimed at what was shown before an\nadvert frame that reloads every 100 ms moved on.\n\nCloses #2638\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: only a move goes on while the page has moved on, judged as the engine routes it (#2638)\n\n- A press, a release or the wheel is dropped whenever a frame of the page\n  moved on since the person saw it.\n- The hit test is asked as the engine routes the event: a box the pointer\n  passes through is not hit.\n- A frame's element that names no frame drops the move.\n- A key where the tree shows no focus but the page's document has one is\n  dropped.\n- The ADR note records D-2638-2, D-2638-3 and a known limit.\n\nRefs #2638\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T01:47:53+04:00",
+          "tree_id": "e1c82dc2899632c7525a4815b21cea3acef79e31",
+          "url": "https://github.com/purlis/purlis/commit/093ea51e22d08c7b09c03372fd09f4d0da73a0b2"
+        },
+        "date": 1792619963375,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.537496,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.510, 0.528, 0.537, 0.545, 0.559 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.371983999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.354, 16.360, 16.372, 16.395, 16.465 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5689735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.052, 101.054, 101.569, 102.564, 102.598 ms"
           }
         ]
       }
