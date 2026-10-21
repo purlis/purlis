@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as Dialog from "./overlays/dialog";
 import { commands, type ForgeAccountRow } from "./bindings";
 import { SettingActions } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** The one host purlis has a GitLab application on (ADR 0077 §1). */
 const HOST = "gitlab.com";
@@ -119,18 +120,11 @@ export function ForgeGitLabSignIn({
 
           <SettingActions>
             {!waiting && (
-              <button
-                className="ui-button ui-button-primary"
-                type="button"
-                tabIndex={0}
-                onClick={tryAgain}
-              >
+              <Button variant="primary" onPress={tryAgain}>
                 Try again
-              </button>
+              </Button>
             )}
-            <button className="ui-button" type="button" tabIndex={0} onClick={cancel}>
-              Cancel
-            </button>
+            <Button onPress={cancel}>Cancel</Button>
           </SettingActions>
         </Dialog.Content>
       </Dialog.Portal>

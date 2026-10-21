@@ -40,6 +40,7 @@ import { SaveBlockedBySecret } from "./SaveBlockedBySecret";
 import { updateSaid, UpdateFromRemote, UpdateLeftNotice } from "./SavingUpdate";
 import { RequestMerge } from "./SavingMerge";
 import { SaveConflict } from "./SavingResolve";
+import { Button, IconButton } from "./ui/button/Button";
 
 /** Settings › Saving › Mode: where a project's save mode is changed (SE-22's address). */
 const SAVING_MODE: SettingsLink = { group: "project.saving", setting: "project.saving.plane.mode" };
@@ -304,23 +305,17 @@ export function SavingView({
                 {/* A rebase, `git am`, cherry-pick, revert or bisect git stopped part-way is
                     finished with git, which a chat may not run in the project's root (qw382). */}
                 {chatMaySettle(saving) && (
-                  <button
-                    type="button"
-                    className="ui-button ui-button-sm panel-view"
-                    tabIndex={0}
-                    onClick={() => askWayOut(plane, "chat")}
-                  >
+                  <Button size="sm" onPress={() => askWayOut(plane, "chat")} className="panel-view">
                     Resolve in a chat
-                  </button>
+                  </Button>
                 )}
-                <button
-                  type="button"
-                  className="ui-button ui-button-sm panel-view"
-                  tabIndex={0}
-                  onClick={() => askWayOut(plane, "terminal")}
+                <Button
+                  size="sm"
+                  onPress={() => askWayOut(plane, "terminal")}
+                  className="panel-view"
                 >
                   Open terminal here
-                </button>
+                </Button>
               </SettingActions>
             </div>
           )}
@@ -422,13 +417,12 @@ export function SavingView({
             )}
           />
           <SettingActions>
-            <button
-              type="button"
-              className="ui-button ui-button-sm panel-view"
-              tabIndex={0}
-              onClick={() => void save()}
-              disabled={busy || !planeSavable(saving)}
+            <Button
+              size="sm"
+              onPress={() => void save()}
+              isDisabled={busy || !planeSavable(saving)}
               title={readOnly}
+              className="panel-view"
             >
               {busy ? (
                 <LoaderCircle className="node-icon spinning" aria-hidden="true" />
@@ -436,23 +430,22 @@ export function SavingView({
                 <Save className="node-icon" aria-hidden="true" />
               )}
               Save
-            </button>
+            </Button>
             {workspace !== undefined && (
-              <button
-                type="button"
-                className="ui-button ui-button-sm panel-view"
-                tabIndex={0}
-                onClick={() =>
+              <Button
+                size="sm"
+                onPress={() =>
                   setConfirming({
                     plane: planeSavable(saving) ? saving : null,
                     repos: (repos ?? []).filter(repoSavable),
                   })
                 }
-                disabled={busy || !anyToSave}
+                isDisabled={busy || !anyToSave}
+                icon={<Save className="node-icon" aria-hidden="true" />}
+                className="panel-view"
               >
-                <Save className="node-icon" aria-hidden="true" />
                 Save all
-              </button>
+              </Button>
             )}
           </SettingActions>
           {confirming !== undefined && workspace !== undefined && (
@@ -552,17 +545,15 @@ function RepoRows({
             <td>{`${repo.mode} (${repo.modeFrom})${repo.autosave ? " · auto-save" : ""}`}</td>
             <td data-testid="save-goes-to">{repoSaveGoesTo(repo, workspace)}</td>
             <td>
-              <button
-                type="button"
-                className="ui-button ui-button-sm panel-view"
-                tabIndex={0}
+              <IconButton
+                size="sm"
                 aria-label={`Save ${repo.name}`}
                 title={`Save ${repo.name}: ${repoSaveGoesTo(repo, workspace)}`}
-                disabled={busy || !repoSavable(repo)}
-                onClick={() => onSave(repo.name)}
-              >
-                <Save className="node-icon" aria-hidden="true" />
-              </button>
+                isDisabled={busy || !repoSavable(repo)}
+                onPress={() => onSave(repo.name)}
+                icon={<Save className="node-icon" aria-hidden="true" />}
+                className="panel-view"
+              />
             </td>
           </tr>
         ))}
@@ -634,20 +625,13 @@ function ConfirmSaveAll({
           </ul>
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button className="ui-button" type="button" tabIndex={0} ref={cancel}>
-                Cancel
-              </button>
+              <Button ref={cancel}>Cancel</Button>
             </AlertDialog.Cancel>
             {/* `ends-it`: a save commits, and goes as far as each repo's mode says, a push
                 included, and purlis has no Undo for it (D-1719-3, `docs/ui-primitives.md`). */}
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              onClick={onSave}
-            >
+            <Button variant="danger" onPress={onSave}>
               {`Save all ${count}`}
-            </button>
+            </Button>
           </AnswerBar>
         </AlertDialog.Content>
       </AlertDialog.Portal>
@@ -736,17 +720,15 @@ function ModeQuestion({ plane, branch }: { plane: PlaneId; branch: string }) {
         )}
       />
       <SettingActions>
-        <button
-          type="button"
-          className="ui-button ui-button-primary"
-          tabIndex={0}
-          disabled={busy || picked === undefined}
-          onClick={() => {
+        <Button
+          variant="primary"
+          isDisabled={busy || picked === undefined}
+          onPress={() => {
             if (picked !== undefined) void choose(picked);
           }}
         >
           Use this
-        </button>
+        </Button>
       </SettingActions>
       {refused !== null && (
         <p className="trouble" role="alert">
@@ -794,13 +776,13 @@ export function SaveIndicator({
     stage === "blocked" || red ? CircleAlert : stage === "saved" ? CircleCheck : CircleDot;
   return (
     <span className="save-indicator" data-stage={stage} data-checks={red ? "failed" : undefined}>
-      <button
-        type="button"
-        className="save-indicator-where ui-button ui-button-ghost ui-button-sm"
-        tabIndex={0}
+      <Button
+        size="sm"
+        variant="ghost"
         aria-label={`Saving: ${said}`}
         title={said}
-        onClick={onOpen}
+        onPress={onOpen}
+        className="save-indicator-where"
       >
         <Mark aria-hidden="true" />
         <span className="save-indicator-words">{words}</span>
@@ -811,38 +793,38 @@ export function SaveIndicator({
             ↓{incoming}
           </span>
         )}
-      </button>
+      </Button>
       {/* The count as the Update button (qw348): pressing it brings the incoming commits in,
           from the Saving tab, where the progress and the result are said. */}
       {incoming > 0 && onUpdate !== undefined && (
-        <button
-          type="button"
-          className="save-indicator-incoming ui-button ui-button-ghost ui-button-sm"
-          tabIndex={0}
+        <Button
+          size="sm"
+          variant="ghost"
           aria-label={updateSaid(incoming)}
           title={updateSaid(incoming)}
-          disabled={busy}
-          onClick={onUpdate}
+          isDisabled={busy}
+          onPress={onUpdate}
+          className="save-indicator-incoming"
         >
           ↓{incoming}
-        </button>
+        </Button>
       )}
       {savable(saving) && (
-        <button
-          type="button"
-          className="save-indicator-save ui-button ui-button-ghost ui-button-sm"
-          tabIndex={0}
+        <Button
+          size="sm"
+          variant="ghost"
           aria-label="Save the project"
           title={off ?? "Save the project"}
-          disabled={busy || off !== undefined}
-          onClick={onSave}
+          isDisabled={busy || off !== undefined}
+          onPress={onSave}
+          className="save-indicator-save"
         >
           {busy ? (
             <LoaderCircle className="spinning" aria-hidden="true" />
           ) : (
             <Save aria-hidden="true" />
           )}
-        </button>
+        </Button>
       )}
     </span>
   );

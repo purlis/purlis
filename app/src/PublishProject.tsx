@@ -9,6 +9,7 @@ import { commands, type CreateProgress, type PlaneId } from "./bindings";
 import { FORGE_NAME, OwnerAndVisibility, StagesShown, useForgeOwners } from "./CreateOnForge";
 import { askSettingsLink } from "./settings/links";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** The forges a project is published to. */
 type Forge = keyof typeof FORGE_NAME;
@@ -127,9 +128,7 @@ export function PublishProject({
                 now: saves push there.
               </p>
               <SettingActions>
-                <button className="ui-button" type="button" tabIndex={0} onClick={onClose}>
-                  Done
-                </button>
+                <Button onPress={onClose}>Done</Button>
               </SettingActions>
             </>
           ) : (
@@ -172,17 +171,14 @@ export function PublishProject({
                   <p className="came-back">
                     purlis publishes with your own {forgeName} account, and this machine is not
                     signed in to {forgeName}.{" "}
-                    <button
-                      className="ui-button"
-                      type="button"
-                      tabIndex={0}
-                      onClick={() => {
+                    <Button
+                      onPress={() => {
                         askSettingsLink(plane, { group: "you.accounts" });
                         onClose();
                       }}
                     >
                       Sign in to {forgeName}…
-                    </button>
+                    </Button>
                   </p>
                 ) : (
                   <>
@@ -216,19 +212,10 @@ export function PublishProject({
                   </>
                 )}
                 <SettingActions>
-                  <button
-                    className="ui-button ui-button-primary"
-                    type="submit"
-                    tabIndex={0}
-                    disabled={!ready}
-                  >
+                  <Button variant="primary" type="submit" isDisabled={!ready}>
                     Publish
-                  </button>
-                  {!publishing && (
-                    <button className="ui-button" type="button" tabIndex={0} onClick={onClose}>
-                      Close
-                    </button>
-                  )}
+                  </Button>
+                  {!publishing && <Button onPress={onClose}>Close</Button>}
                 </SettingActions>
               </form>
 
@@ -247,24 +234,13 @@ export function PublishProject({
                 <p className="trouble said-in-full" role="alert">
                   {doing.sentence}{" "}
                   {settingsPage && (
-                    <button
-                      className="ui-button"
-                      type="button"
-                      tabIndex={0}
-                      onClick={() => void openUrl(settingsPage).catch(() => undefined)}
-                    >
+                    <Button onPress={() => void openUrl(settingsPage).catch(() => undefined)}>
                       Open the repo&apos;s settings
-                    </button>
+                    </Button>
                   )}{" "}
-                  <button
-                    className="ui-button"
-                    type="button"
-                    tabIndex={0}
-                    disabled={!ready}
-                    onClick={() => void publish()}
-                  >
+                  <Button isDisabled={!ready} onPress={() => void publish()}>
                     Retry
-                  </button>
+                  </Button>
                 </p>
               )}
             </>

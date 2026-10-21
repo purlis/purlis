@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { commands, type DoctorFixed, type PlaneId } from "../bindings";
 import type { LiveSetting } from "./groups";
+import { Button } from "../ui/button/Button";
 
 /** The doctor's fix that catalogues what the project's forges list (FX-2, `doctor/fix.rs`). */
 export const DISCOVER = "discover";
@@ -70,9 +71,9 @@ export function discoverRow(
             aria-describedby={ids.describedBy}
             aria-busy={running}
           >
-            <button type="button" tabIndex={0} disabled={running} onClick={discover}>
+            <Button isDisabled={running} onPress={discover}>
               {running ? "Discovering…" : "Discover repos"}
-            </button>
+            </Button>
             {fixed !== undefined &&
               fixed.said.map((line, at) => (
                 <p key={at} className="ui-setting-help">

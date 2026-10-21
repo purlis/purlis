@@ -7,6 +7,7 @@ import { commands, type HarnessSetupFound, type PlaneId } from "./bindings";
 import { harnessSays } from "./harnessSays";
 import { EmptyState } from "./EmptyState";
 import { askHarnessSetup } from "./harnessSetup";
+import { Button } from "./ui/button/Button";
 
 /**
  * **No harness found** (FR-29, W10): what the first chat is on a machine with no harness
@@ -136,16 +137,14 @@ export function HarnessSetupTab({
                 <code className="harness-installer">{row.installer}</code>
                 <span className="came-back">from {row.installer_page}</span>
                 {/* `tabIndex={0}` on every button, per `docs/ui-primitives.md` (#189). */}
-                <button
-                  type="button"
-                  tabIndex={0}
-                  onClick={() => {
+                <Button
+                  onPress={() => {
                     setPressed(row.name);
                     askHarnessSetup({ plane, harness: row.name, way: "install", workspace });
                   }}
                 >
                   Install {row.title}
-                </button>
+                </Button>
               </>
             )}
           </li>
@@ -175,25 +174,21 @@ export function HarnessSetupTab({
       )}
 
       <div className="doing">
-        <button
-          type="button"
-          tabIndex={0}
-          disabled={looking}
-          onClick={() => {
+        <Button
+          isDisabled={looking}
+          onPress={() => {
             setLooking(true);
             setAsked((was) => was + 1);
           }}
         >
           Check again
-        </button>
+        </Button>
         {startOn && (
-          <button
-            type="button"
-            tabIndex={0}
-            onClick={() => askHarnessSetup({ plane, harness: startOn.name, way: "chat", cwd })}
+          <Button
+            onPress={() => askHarnessSetup({ plane, harness: startOn.name, way: "chat", cwd })}
           >
             Start a chat
-          </button>
+          </Button>
         )}
       </div>
     </div>

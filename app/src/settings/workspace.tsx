@@ -30,6 +30,7 @@ import type { FileSetting, LiveSetting, SettingsGroup } from "./groups";
 import { THEME_GROUP, themeRows } from "./themeGallery";
 import { workspaceDispatchGroup } from "./dispatch";
 import { workspaceSkillsGroup } from "./skillsSummary";
+import { Button } from "../ui/button/Button";
 
 /**
  * **The Workspace level** (SE-20, #1170; V89b, V89e, V89h): one workspace's settings in the
@@ -95,16 +96,9 @@ function liveSetting(read: WorkspaceRead, switched: () => void): LiveSetting {
         grouped: true,
         control: (ids) => (
           <div role="group" aria-labelledby={ids.labelledBy}>
-            <button
-              type="button"
-              className="panel-view"
-              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-              tabIndex={0}
-              aria-describedby={ids.describedBy}
-              onClick={() => setAsking(true)}
-            >
+            <Button size="sm" aria-describedby={ids.describedBy} onPress={() => setAsking(true)}>
               {live ? "Make local…" : "Make live…"}
-            </button>
+            </Button>
             {asking && (
               <LiveDialog
                 plane={plane}

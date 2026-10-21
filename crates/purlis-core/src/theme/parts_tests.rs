@@ -46,9 +46,12 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
     let sheet = sheet_of(json!({ "button.root.corner-radius": "full" }));
     assert_eq!(
         sheet,
-        "@layer parts {\n  :where(.ui-button-sm) { --purlis-part-height: var(--size-chrome); }\n  \
-         :where([data-scope=\"button\"][data-part=\"root\"], .ui-button) { border-radius: \
-         9999px; }\n}\n"
+        concat!(
+            "@layer parts {\n",
+            "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }\n",
+            "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]) { --purlis-part-height: calc(var(--size-control) + var(--space-2)); }\n",
+            "  :where([data-scope=\"button\"][data-part=\"root\"]) { border-radius: 9999px; }\n}\n",
+        )
     );
 }
 
@@ -76,19 +79,40 @@ fn a_key_names_a_variant_and_a_state_and_is_keyed_on_their_attributes() {
     assert!(sheet.contains(
         "[data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"][data-hovered]"
     ));
-    assert!(
-        sheet.contains(
-            ".ui-button.ui-button-primary:not(.ui-button-danger, .ui-button-grants):hover:not(:disabled, [aria-disabled=\"true\"])"
-        )
-    );
+    // Only the wrapper's attributes: no class reaches a part (#2904).
+    assert!(!sheet.contains(".ui-button"), "{sheet}");
     assert!(sheet.contains("background-color: var(--accent-base);"));
 }
 
 #[test]
-fn the_plain_variant_is_reached_on_todays_class_without_another_variant() {
+fn an_unavailable_button_is_never_drawn_under_the_pointer_or_pressed() {
+    // The wrapper marks a button that keeps the focus while unavailable (`aria-disabled`) as
+    // `data-disabled` too, so a theme's disabled parts reach it and its hover and pressed never
+    // do (#2904).
+    let sheet = sheet_of(json!({
+        "button.root.hover.fill": "control.hover",
+        "button.root.pressed.fill": "control.hover",
+        "button.root.disabled.text": "text.faint",
+    }));
+    assert!(
+        sheet.contains("[data-hovered]:not([data-disabled])"),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains("[data-pressed]:not([data-disabled])"),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains("[data-scope=\"button\"][data-part=\"root\"][data-disabled]"),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn the_plain_variant_is_reached_by_its_own_attribute() {
     let sheet = sheet_of(json!({ "button.root.secondary.fill": "control.hover" }));
     assert!(sheet.contains(
-        ".ui-button:not(.ui-button-primary, .ui-button-ghost, .ui-button-danger, .ui-button-grants)"
+        ":where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"secondary\"])"
     ));
 }
 
@@ -227,7 +251,7 @@ fn a_geometry_token_is_held_to_the_parts_bound_at_the_value_it_draws() {
 }
 
 #[test]
-fn a_size_never_reaches_todays_small_or_wrapping_buttons() {
+fn a_size_never_reaches_another_size_or_a_wrapping_row() {
     let sheet = sheet_of(json!({
         "button.root.height": 32,
         "button.root.fill": "control.hover",
@@ -237,7 +261,7 @@ fn a_size_never_reaches_todays_small_or_wrapping_buttons() {
         .find(|line| line.contains("block-size"))
         .expect("the height's rule");
     assert!(
-        sized.contains(".ui-button:not(.ui-button-sm, .ui-button-row > .ui-button)"),
+        sized.contains("[data-scope=\"button\"][data-part=\"root\"]:not([data-size=\"sm\"], [data-size=\"lg\"], [data-scope=\"button-row\"][data-wraps] > *)"),
         "{sized}"
     );
     assert!(!sized.contains("background-color"), "{sized}");
@@ -245,7 +269,7 @@ fn a_size_never_reaches_todays_small_or_wrapping_buttons() {
         .lines()
         .find(|line| line.contains("background-color: var(--control-hover)"))
         .expect("the fill's rule");
-    assert!(!coloured.contains(":not(.ui-button-sm"), "{coloured}");
+    assert!(!coloured.contains(":not([data-size"), "{coloured}");
 }
 
 // ---------------------------------------------------------------------------------------
@@ -260,8 +284,9 @@ fn a_corner_is_clamped_to_half_the_parts_height_as_it_is_drawn() {
         sheet.contains(&format!("border-radius: min(12px, {half});")),
         "{sheet}"
     );
-    // Today's small button is clamped to its own height.
-    assert!(sheet.contains(":where(.ui-button-sm) { --purlis-part-height: var(--size-chrome); }"));
+    // The small and the large button are clamped to their own height.
+    assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }"));
+    assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]) { --purlis-part-height: calc(var(--size-control) + var(--space-2)); }"));
     let four = sheet_of(json!({ "button.root.corner-radius": ["full", 0, "radius.md", 4] }));
     assert!(four.contains(&format!(
         "border-radius: 9999px min(0px, {half}) min(var(--radius-md), {half}) min(4px, {half});"
@@ -367,7 +392,8 @@ fn a_size_inside_a_state_is_refused_with_a_sentence_that_says_why() {
 fn a_property_left_unset_is_the_family_default() {
     // Only what the theme names is written: everything else is the window's own stylesheet.
     let sheet = sheet_of(json!({ "button.root.ghost.corner-radius": 4 }));
-    assert_eq!(sheet.lines().count(), 4, "{sheet}");
+    // The layer, the sm and lg clamps a corner reads, the one rule, and the layer's end.
+    assert_eq!(sheet.lines().count(), 5, "{sheet}");
     assert!(!sheet.contains("background-color") && !sheet.contains("color:"));
 }
 
@@ -488,7 +514,7 @@ fn allow_never_takes_the_primary_look() {
     let sheet = parts::stylesheet(theme);
     let last_grants = sheet
         .lines()
-        .rfind(|line| line.contains("[data-variant=\"grants\"], "))
+        .rfind(|line| line.contains("[data-variant=\"grants\"])"))
         .unwrap();
     assert!(
         last_grants.contains("background-color: var(--control-base);"),
@@ -528,7 +554,7 @@ fn keep_blocked_never_takes_allows_edge() {
         let sheet = parts::stylesheet(theme);
         let keep_blocked = sheet
             .lines()
-            .rfind(|line| line.contains("[data-variant=\"secondary\"], "))
+            .rfind(|line| line.contains("[data-variant=\"secondary\"])"))
             .expect("Keep blocked's rule");
         assert!(
             keep_blocked.contains("border-color: var(--border-strong);"),
@@ -545,7 +571,9 @@ fn allows_edge_is_drawn_whatever_else_the_theme_sets_on_it() {
     }));
     let edge = sheet
         .lines()
-        .rfind(|line| line.contains("[data-variant=\"grants\"], ") && line.contains("border-width"))
+        .rfind(|line| {
+            line.contains("[data-variant=\"grants\"]:not(") && line.contains("border-width")
+        })
         .expect("Allow's edge is drawn back");
     assert!(edge.contains("border-width: 1px;"), "{edge}");
     assert!(sheet.find("border-width: 0px").unwrap() < sheet.find("border-width: 1px").unwrap());
@@ -567,7 +595,7 @@ fn danger_never_takes_the_primary_look() {
     let sheet = parts::stylesheet(theme);
     let danger = sheet
         .lines()
-        .rfind(|line| line.contains("[data-variant=\"danger\"], "))
+        .rfind(|line| line.contains("[data-variant=\"danger\"])"))
         .expect("danger's rule");
     assert!(danger.contains("color: var(--danger-base);"), "{danger}");
     // Its words are held apart from the accent too.
@@ -612,12 +640,17 @@ fn the_consent_floors_hold_in_every_workspace_tint() {
 }
 
 #[test]
-fn a_button_with_a_consent_variants_class_draws_as_that_variant() {
+fn a_variants_rule_reaches_only_a_button_of_that_variant() {
+    // A button names one variant (`data-variant`), so a rule for the primary never reaches an
+    // Allow or a danger (ADR 0097 §6).
     let sheet = sheet_of(json!({ "button.root.primary.text": "text.secondary" }));
     assert!(
-        sheet.contains(".ui-button.ui-button-primary:not(.ui-button-danger, .ui-button-grants)"),
+        sheet.contains(
+            ":where([data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"])"
+        ),
         "{sheet}"
     );
+    assert!(!sheet.contains(".ui-button"), "{sheet}");
 }
 
 #[test]
@@ -649,7 +682,7 @@ fn a_disabled_control_is_not_held_to_the_floors() {
 fn rule<'a>(css: &'a str, selector: &str) -> &'a str {
     let at = css
         .find(&format!("\n{selector} {{"))
-        .unwrap_or_else(|| panic!("controls.css has no rule {selector}"));
+        .unwrap_or_else(|| panic!("button.css has no rule {selector}"));
     let body = &css[at..];
     &body[..body.find('}').unwrap()]
 }
@@ -662,8 +695,11 @@ fn declared<'a>(body: &'a str, property: &str) -> Option<&'a str> {
 }
 
 #[test]
-fn the_buttons_family_default_is_what_controls_css_draws() {
-    let css = include_str!("../../../../app/src/primitives/controls.css");
+fn the_buttons_family_default_is_what_button_css_draws() {
+    // A selector prettier wraps (a long variant's `:not(…)`) read back onto one line.
+    let css = &include_str!("../../../../app/src/ui/button/button.css")
+        .replace("(\n    ", "(")
+        .replace("\n  ) {", ") {");
     let token = |var: &str| -> Value {
         if var == "transparent" {
             return Value::from(var);
@@ -680,41 +716,45 @@ fn the_buttons_family_default_is_what_controls_css_draws() {
                 .to_string(),
         )
     };
-    let hover = ":hover:not(:disabled, [aria-disabled=\"true\"])";
-    let base = rule(css, ".ui-button");
+    let root = "[data-scope=\"button\"][data-part=\"root\"]";
+    let base = rule(css, root);
     let base_border = declared(base, "border")
         .and_then(|it| it.split_whitespace().last())
         .expect("the button's border");
-    let base_hover = rule(css, &format!(".ui-button{hover}"));
-    for (variant, class) in [
-        ("secondary", None),
-        ("primary", Some(".ui-button-primary")),
-        ("ghost", Some(".ui-button-ghost")),
-        ("danger", Some(".ui-button-danger")),
-        ("grants", Some(".ui-button-grants")),
-    ] {
-        let own = class.map_or("", |class| rule(css, class));
-        let own_hover = class
-            .filter(|class| css.contains(&format!("\n{class}{hover} {{")))
-            .map_or("", |class| rule(css, &format!("{class}{hover}")));
+    let base_hover = rule(css, &format!("{root}[data-hovered]:not([data-disabled])"));
+    for variant in parts::MANIFEST[0].variants.iter().map(|one| one.name) {
+        let own_selector = format!("{root}[data-variant=\"{variant}\"]");
+        let own = if css.contains(&format!("\n{own_selector} {{")) {
+            rule(css, &own_selector)
+        } else {
+            ""
+        };
+        let hovered = format!("{own_selector}[data-hovered]:not([data-disabled])");
+        let own_hover = if css.contains(&format!("\n{hovered} {{")) {
+            rule(css, &hovered)
+        } else {
+            ""
+        };
         fn first<'a>(property: &str, layers: &[&'a str]) -> &'a str {
             layers
                 .iter()
                 .find_map(|layer| declared(layer, property))
                 .unwrap_or_else(|| panic!("no {property}"))
         }
+        // A variant's own rule comes after the base's hover in the file, at the same weight,
+        // so a fill it sets is its fill under the pointer too unless it has a hover of its own.
         let drawn = json!({
             "fill": token(first("background-color", &[own, base])),
             "text": token(first("color", &[own, base])),
             "border": token(declared(own, "border-color").unwrap_or(base_border)),
-            "hover": token(first("background-color", &[own_hover, base_hover])),
+            "hover": token(first("background-color", &[own_hover, own, base_hover])),
         });
         let held = parts::defaults_json(variant);
         for key in ["fill", "text", "border", "hover"] {
             assert_eq!(held[key], drawn[key], "{variant}'s {key}");
         }
     }
-    let pressed = rule(css, ".ui-button[aria-pressed=\"true\"]");
+    let pressed = rule(css, &format!("{root}[data-selected]"));
     assert_eq!(
         parts::defaults_json("secondary")["selected"],
         json!({
@@ -731,7 +771,7 @@ fn the_buttons_family_default_is_what_controls_css_draws() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 1);
+    assert_eq!(manifest["version"], 2);
     for list in ["states", "properties"] {
         for one in manifest[list].as_array().unwrap() {
             assert_eq!(one["since"], 1, "{one}");
@@ -854,10 +894,16 @@ fn the_schema_completes_every_part_key_and_no_size_inside_a_state() {
 
 /// The digest of `purlis theme parts`' manifest at each version: a change to the manifest is a
 /// new version, with its digest added here.
-const MANIFEST_DIGESTS: &[(u32, &str)] = &[(
-    1,
-    "3c186a1690df39a4e8c20ad43f3713cb7e0149ab681e00970c0c21ac4daa8769",
-)];
+const MANIFEST_DIGESTS: &[(u32, &str)] = &[
+    (
+        1,
+        "3c186a1690df39a4e8c20ad43f3713cb7e0149ab681e00970c0c21ac4daa8769",
+    ),
+    (
+        2,
+        "0d939a9f8ad769584b644227563214dcf5e8dfbeca21e3c5a27ba545bba1d46d",
+    ),
+];
 
 #[test]
 fn the_manifest_version_changes_with_the_manifest() {
@@ -957,14 +1003,14 @@ fn dangers_words_are_apart_from_the_primarys() {
 }
 
 #[test]
-fn a_border_width_never_reaches_todays_small_buttons() {
+fn a_border_width_never_reaches_another_size() {
     let sheet = sheet_of(json!({ "button.root.border-width": 2 }));
     let line = sheet
         .lines()
         .find(|line| line.contains("border-width: 2px"))
         .expect("the width's rule");
     assert!(
-        line.contains(":not(.ui-button-sm, .ui-button-row > .ui-button)"),
+        line.contains("[data-scope=\"button\"][data-part=\"root\"]:not([data-size=\"sm\"], [data-size=\"lg\"], [data-scope=\"button-row\"][data-wraps] > *)"),
         "{line}"
     );
 }

@@ -21,6 +21,7 @@ import {
 } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
 import { said, useSwitches } from "./switchClock";
+import { Button } from "./ui/button/Button";
 
 /**
  * **`charter doctor`, from inside the window** — the last of ADR 0038's named gaps.
@@ -390,21 +391,18 @@ function FixButton({ row, fixer }: { row: DoctorRow & { fix: string }; fixer: Fi
   if (!offered) return null;
   return (
     <>
-      <button
-        type="button"
-        className="doctor-fix"
-        tabIndex={0}
-        // Named by the row, as the operator reads it; the id is the CLI's word for the
-        // same fix, kept where a pointer can read it.
+      <Button
+        size="sm"
         aria-label={`Fix ${row.name}`}
         aria-expanded={opens?.open}
         aria-controls={opens?.open ? opens.id : undefined}
         title={`purlis doctor --fix ${row.fix}`}
-        disabled={fixer.busy}
-        onClick={press}
+        isDisabled={fixer.busy}
+        onPress={press}
+        className="doctor-fix"
       >
         Fix
-      </button>
+      </Button>
       {form}
     </>
   );
@@ -590,14 +588,13 @@ function Rows({
             <span className="doctor-hint">{row.hint}</span>
           )}
           {row.settings !== null && onOpenSettings && (
-            <button
-              type="button"
+            <Button
+              size="sm"
+              onPress={() => onOpenSettings(row.settings as string)}
               className="doctor-settings"
-              tabIndex={0}
-              onClick={() => onOpenSettings(row.settings as string)}
             >
               Fix it in Settings
-            </button>
+            </Button>
           )}
           {row.status !== "ok" && row.fix && fixer && (
             <FixButton row={{ ...row, fix: row.fix }} fixer={fixer} />
@@ -659,27 +656,27 @@ export function Health({
       }}
     >
       <Dialog.Trigger asChild>
-        <button
-          type="button"
-          className={`ui-button ui-button-ghost ui-button-sm status-doctor doctor-tone-${tone}`}
-          // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written
-          // down (`docs/ui-primitives.md`, charter-app#189).
-          tabIndex={0}
+        <Button
+          variant="ghost"
+          size="sm"
+          className={`status-doctor doctor-tone-${tone}`}
           data-testid="status-doctor"
           aria-label={label}
           title={label}
+          icon={
+            running ? (
+              // It is running: this is the state the spin is for, *still happening*.
+              <LoaderCircle aria-hidden="true" className="spinning" />
+            ) : (
+              <Stethoscope aria-hidden="true" />
+            )
+          }
         >
-          {running ? (
-            // It is running: this is the state the spin is for, *still happening*.
-            <LoaderCircle aria-hidden="true" className="spinning" />
-          ) : (
-            <Stethoscope aria-hidden="true" />
-          )}{" "}
           Doctor{" "}
           {/* The count, in its verdict's colour and in words, so the colour is never the only
               thing that says it; nothing at all when nothing is wrong (qw357). */}
           {said !== undefined && <span className="doctor-said">{said}</span>}
-        </button>
+        </Button>
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-scrim" />
@@ -790,19 +787,11 @@ export function Health({
               sequence unless its `tabindex` says otherwise. It could not be reached at all. */}
           <AnswerBar>
             <Dialog.Close asChild>
-              <button className="ui-button" type="button" tabIndex={0}>
-                Close
-              </button>
+              <Button>Close</Button>
             </Dialog.Close>
-            <button
-              className="ui-button"
-              type="button"
-              tabIndex={0}
-              disabled={running}
-              onClick={() => run(true)}
-            >
+            <Button isDisabled={running} onPress={() => run(true)}>
               Check again
-            </button>
+            </Button>
           </AnswerBar>
         </Dialog.Content>
       </Dialog.Portal>

@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import * as Dialog from "./overlays/dialog";
 import { useFocusBack } from "./EndingChat";
 import { Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /**
  * **Link to work item…**, from a chat tab's menu or the palette (V60, ADR 0088 §3).
@@ -118,17 +119,10 @@ export function LinkWorkItem({
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
             <SettingActions>
               {/* A verb and what it acts on, and what it is doing while it does it (#630). */}
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={linking}
-              >
+              <Button variant="primary" type="submit" isDisabled={linking}>
                 {linking ? "Linking…" : "Link work item"}
-              </button>
-              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-                Cancel
-              </button>
+              </Button>
+              <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
           </form>
         </Dialog.Content>

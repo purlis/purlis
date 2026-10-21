@@ -4,6 +4,7 @@
 import { LoaderCircle } from "lucide-react";
 import type { GitInstall } from "./bindings";
 import type { GitGate } from "./gitPresence";
+import { Button } from "./ui/button/Button";
 
 /**
  * **Git is not installed** (#1813): the guided screen a {@link GitGate} opens when an action
@@ -39,21 +40,12 @@ export function GitMissing({ gate }: { gate: GitGate }) {
       <div className="doing">
         {install?.kind === "developer-tools" && !gate.installing && (
           // `tabIndex={0}` on every button, per `docs/ui-primitives.md` (#189).
-          <button type="button" tabIndex={0} onClick={() => void gate.startInstall()}>
-            Install
-          </button>
+          <Button onPress={() => void gate.startInstall()}>Install</Button>
         )}
-        <button
-          type="button"
-          tabIndex={0}
-          disabled={gate.checking}
-          onClick={() => void gate.checkAgain()}
-        >
+        <Button isDisabled={gate.checking} onPress={() => void gate.checkAgain()}>
           Check again
-        </button>
-        <button type="button" tabIndex={0} onClick={gate.cancel}>
-          Not now
-        </button>
+        </Button>
+        <Button onPress={gate.cancel}>Not now</Button>
       </div>
       {gate.checking && (
         <p className="pending" aria-busy="true" role="status">

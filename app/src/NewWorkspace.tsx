@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import type { PlaneId } from "./bindings";
 import { RepoPicker } from "./RepoPicker";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /**
  * Making a workspace, asked where the answer is given.
@@ -179,17 +180,10 @@ export function NewWorkspace({
                 tab to a `<button>` whose `tabindex` is not written down. The two text boxes
                 were reachable and the one that acts on them was not. */}
             <SettingActions>
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={!ready}
-              >
+              <Button variant="primary" type="submit" isDisabled={!ready}>
                 {making ? "Creating…" : "Create workspace"}
-              </button>
-              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-                Cancel
-              </button>
+              </Button>
+              <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
           </form>
         </Dialog.Content>

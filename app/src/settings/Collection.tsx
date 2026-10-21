@@ -8,6 +8,7 @@ import type { Driven, EntryReferrer, EntryRefused, EntryRefusal } from "./driver
 import { askSettingsLink, referrerElsewhere } from "./links";
 import { OutLink } from "./OutLink";
 import type { Collection, CollectionEntry, EntryField, Setting } from "./groups";
+import { Button } from "../ui/button/Button";
 
 /**
  * **A collection, drawn** (ST-3, V91e–g): each entry a heading with its Remove over its own rows,
@@ -140,12 +141,9 @@ export function CollectionView({
           {undoSaid !== undefined && (
             <>
               <span>{undoSaid}</span>
-              <button
-                type="button"
-                className="ui-setting-reset"
-                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                tabIndex={0}
-                onClick={() => {
+              <Button
+                size="sm"
+                onPress={() => {
                   driver.undo();
                   // On an entry's page, the Undo may take the page away (a rename back, an add
                   // undone): the person lands on the collection's group, where it is said.
@@ -154,7 +152,7 @@ export function CollectionView({
                 }}
               >
                 Undo
-              </button>
+              </Button>
             </>
           )}
           {refused && atHead && (
@@ -173,50 +171,42 @@ export function CollectionView({
           <div className="ui-collection-head">
             <h4>{entry.label}</h4>
             {entry.page !== undefined && reachable(entry.page) && (
-              <button
-                type="button"
-                className="ui-setting-reset"
-                tabIndex={0}
+              <Button
+                size="sm"
                 aria-label={`Open ${entry.label}`}
-                onClick={() => onGo(entry.page ?? "")}
+                onPress={() => onGo(entry.page ?? "")}
               >
                 Open
-              </button>
+              </Button>
             )}
             {collection.renames && (
-              <button
-                type="button"
-                className="ui-setting-reset"
-                tabIndex={0}
-                disabled={removing !== undefined || renaming !== undefined}
+              <Button
+                size="sm"
+                isDisabled={removing !== undefined || renaming !== undefined}
                 aria-label={`Rename ${entry.label}`}
-                onClick={() => setRenaming(entry.id)}
+                onPress={() => setRenaming(entry.id)}
               >
                 Rename
-              </button>
+              </Button>
             )}
             {entry.confirm && (
-              <button
-                type="button"
-                className="ui-setting-reset"
-                tabIndex={0}
-                disabled={removing !== undefined}
+              <Button
+                size="sm"
+                isDisabled={removing !== undefined}
                 aria-label={`Confirm ${entry.label}`}
-                onClick={() => void confirm(entry)}
+                onPress={() => void confirm(entry)}
               >
                 Confirm
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
-              className="ui-setting-reset"
-              tabIndex={0}
-              disabled={removing !== undefined}
+            <Button
+              size="sm"
+              isDisabled={removing !== undefined}
               aria-label={`Remove ${entry.label}`}
-              onClick={() => void remove(entry)}
+              onPress={() => void remove(entry)}
             >
               Remove
-            </button>
+            </Button>
           </div>
           {sure?.entry === entry.id && (
             <div
@@ -234,18 +224,14 @@ export function CollectionView({
                 {`${runningSaid(sure.running, entry.label, noun)} Remove ${entry.label}?`}
               </p>
               <SettingActions>
-                <button
+                <Button
                   ref={sureButton}
-                  type="button"
-                  tabIndex={0}
-                  disabled={removing !== undefined}
-                  onClick={() => void remove(entry, true)}
+                  isDisabled={removing !== undefined}
+                  onPress={() => void remove(entry, true)}
                 >
                   Remove
-                </button>
-                <button type="button" tabIndex={0} onClick={() => unsure(entry)}>
-                  Cancel
-                </button>
+                </Button>
+                <Button onPress={() => unsure(entry)}>Cancel</Button>
               </SettingActions>
             </div>
           )}
@@ -388,16 +374,14 @@ function ReferrerLink({
   return (
     <>
       {" "}
-      <button
-        type="button"
-        className="ui-setting-reset"
-        tabIndex={0}
-        onClick={() =>
+      <Button
+        size="sm"
+        onPress={() =>
           elsewhere === undefined ? onGo(group ?? "") : askSettingsLink(plane, elsewhere.link)
         }
       >
         Fix it in Settings
-      </button>
+      </Button>
     </>
   );
 }
@@ -476,15 +460,9 @@ function AddForm({
   if (values === undefined)
     return (
       <div className="ui-collection-add">
-        <button
-          ref={adding}
-          type="button"
-          className="ui-setting-reset"
-          tabIndex={0}
-          onClick={() => setValues(initial(fields))}
-        >
+        <Button size="sm" ref={adding} onPress={() => setValues(initial(fields))}>
           {`Add ${noun}`}
-        </button>
+        </Button>
       </div>
     );
   const set = (one: EntryField) => (to: string) => {
@@ -577,12 +555,10 @@ function AddForm({
         </div>
       )}
       <SettingActions>
-        <button type="submit" tabIndex={0} disabled={sending}>
+        <Button type="submit" isDisabled={sending}>
           {`Add ${noun}`}
-        </button>
-        <button type="button" tabIndex={0} onClick={close}>
-          Cancel
-        </button>
+        </Button>
+        <Button onPress={close}>Cancel</Button>
       </SettingActions>
     </form>
   );
@@ -671,17 +647,15 @@ function RenameForm({
         <p className="ui-setting-help">{runningSaid(running, entry.label, collection.noun)}</p>
       )}
       <SettingActions>
-        <button type="submit" tabIndex={0} disabled={sending}>
+        <Button type="submit" isDisabled={sending}>
           Rename
-        </button>
+        </Button>
         {followsEverywhere(refusal) && (
-          <button type="button" tabIndex={0} disabled={sending} onClick={() => void send(true)}>
+          <Button isDisabled={sending} onPress={() => void send(true)}>
             Rename everywhere
-          </button>
+          </Button>
         )}
-        <button type="button" tabIndex={0} onClick={() => onDone(undefined)}>
-          Cancel
-        </button>
+        <Button onPress={() => onDone(undefined)}>Cancel</Button>
       </SettingActions>
     </form>
   );

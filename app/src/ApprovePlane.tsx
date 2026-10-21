@@ -5,6 +5,7 @@ import { useRef } from "react";
 import * as Dialog from "./overlays/dialog";
 import type { Ask, FontTheme } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * What opening this project will put in force, and the question about it.
@@ -225,18 +226,12 @@ export function ApprovePlane({
           )}
 
           <AnswerBar>
-            <button
-              className="ui-button"
-              type="button"
-              tabIndex={0}
-              ref={cancel}
-              onClick={onCancel}
-            >
+            <Button ref={cancel} onPress={onCancel}>
               Cancel
-            </button>
-            <button className="ui-button" type="button" tabIndex={0} onClick={() => onApprove(ask)}>
+            </Button>
+            <Button onPress={() => onApprove(ask)}>
               {yes ?? (ask.first ? "Open project" : "Open it anyway")}
-            </button>
+            </Button>
           </AnswerBar>
         </Dialog.Content>
       </Dialog.Portal>
