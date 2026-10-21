@@ -206,7 +206,7 @@ fn a_pool_whose_runner_could_not_all_be_removed_stays_to_be_removed_again() {
         .unwrap();
     assert!(!removed.forgotten);
     assert_eq!(runners::pools(config.path()).unwrap().len(), 1);
-    std::fs::remove_file(fake.docker().0.with_file_name("rm-fails-volume")).unwrap();
+    std::fs::remove_file(fake.docker().program().with_file_name("rm-fails-volume")).unwrap();
     assert!(
         remove(config.path(), &fake.docker(), "first", None)
             .unwrap()

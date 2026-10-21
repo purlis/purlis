@@ -1281,6 +1281,19 @@ impl Denied {
         // not there yet is made under the name as typed. Paths of the home alone: a project's
         // own `.docker` stays the chat's, and so does what is beside each `bin`.
         if let Some(home) = &machine.home {
+            // …and where each installer keeps its engine's socket in the home (D-2752-7),
+            // which purlis points each run of `docker` at only where no chat can put another
+            // socket in its place ([`crate::dockerpool::settings::trusted`]).
+            for held in crate::dockerpool::settings::HELD_IN_HOME {
+                paths.push(Denial {
+                    class: Class::LaterCode,
+                    path: home.join(held),
+                    access: Access::Write,
+                    named: None,
+                    reach: Reach::AndBelow,
+                    any_case: true,
+                });
+            }
             for folder in crate::dockerpool::DOCKER_HOME_FOLDERS {
                 let bin = home.join(folder);
                 let holder = bin.parent().map(Path::to_path_buf);
@@ -1296,6 +1309,33 @@ impl Denied {
                     });
                 }
             }
+        }
+        // …and where a Podman machine's helper and a rootless engine keep their socket, in the
+        // temporary and the runtime folder (D-2752-7).
+        let named = |name: &str| {
+            machine
+                .env
+                .get(name)
+                .map(PathBuf::from)
+                .filter(|folder| folder.is_absolute())
+        };
+        let in_tmp = named("TMPDIR")
+            .into_iter()
+            .map(|tmp| tmp.join(crate::dockerpool::settings::HELD_IN_TMP));
+        let in_runtime = named("XDG_RUNTIME_DIR").into_iter().flat_map(|runtime| {
+            crate::dockerpool::settings::HELD_IN_RUNTIME
+                .iter()
+                .map(move |at| runtime.join(at))
+        });
+        for path in in_tmp.chain(in_runtime) {
+            paths.push(Denial {
+                class: Class::LaterCode,
+                path,
+                access: Access::Write,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: machine.os == Os::MacOs,
+            });
         }
         // …and what a protected config points at elsewhere, resolved now (V73d).
         let xdg_config = machine
@@ -1658,6 +1698,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(
             Class::HumanPowers,
             data.join(crate::datahome::BROWSERS),
+            Access::ReadWrite,
+        );
+        // The checked copies of Docker's settings purlis makes for each run of `docker`
+        // (#2752): they hold the person's registry sign-ins, so a chat neither reads nor
+        // writes them.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::dockerpool::settings::DIR),
             Access::ReadWrite,
         );
         // The browser logins this device keeps sealed (#2021, the person's ruling of
