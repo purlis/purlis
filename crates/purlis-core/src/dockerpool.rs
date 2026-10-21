@@ -37,6 +37,11 @@ use std::fmt;
 /// The label every runner container of the pool carries: its runner's name.
 pub const LABEL: &str = "purlis.runner";
 
+/// **The label naming the desktop that made a runner's container** (#2869): what tells this
+/// desktop's leftovers from another's on a Docker daemon two config homes share. Internal: a
+/// hash of the config home, never a path.
+pub const DESKTOP_LABEL: &str = "purlis.desktop";
+
 /// Every runner container's and volume's name starts with this.
 pub const PREFIX: &str = "purlis-runner-";
 
@@ -369,6 +374,12 @@ impl Runner {
     /// `docker`'s arguments that make and start the runner's container, confined as the
     /// module says. Its id is what `docker` prints.
     pub fn create_args(&self) -> Vec<String> {
+        self.create_args_for(None)
+    }
+
+    /// [`Runner::create_args`], the container also labelled as made by `desktop`
+    /// ([`DESKTOP_LABEL`], #2869), where one is named.
+    pub fn create_args_for(&self, desktop: Option<&str>) -> Vec<String> {
         let mut args: Vec<String> = Vec::new();
         let mut pair = |flag: &str, value: String| {
             args.push(flag.to_owned());
@@ -376,6 +387,9 @@ impl Runner {
         };
         pair("--name", self.container());
         pair("--label", format!("{LABEL}={}", self.name));
+        if let Some(desktop) = desktop {
+            pair("--label", format!("{DESKTOP_LABEL}={desktop}"));
+        }
         pair("--user", self.user.spelled());
         pair("--cap-drop", "ALL".into());
         pair("--security-opt", "no-new-privileges".into());
@@ -940,6 +954,11 @@ impl Docker {
     /// one whose id cannot be read, is removed with its volume, and a removal that fails is said
     /// with the refusal.
     pub fn make(&self, runner: &Runner) -> Result<Made, Refused> {
+        self.make_for(runner, None)
+    }
+
+    /// [`Docker::make`], the container labelled as made by `desktop` where one is named (#2869).
+    pub fn make_for(&self, runner: &Runner, desktop: Option<&str>) -> Result<Made, Refused> {
         self.check_daemon()?;
         let volume = runner.volume();
         let listed = self.run(
@@ -983,7 +1002,7 @@ impl Docker {
         }
         // Docker makes the container and its volume before it starts it, so a run that fails
         // can leave both: they are removed with the refusal.
-        let out = match self.run(&runner.create_args(), None, MOST_INSPECTED) {
+        let out = match self.run(&runner.create_args_for(desktop), None, MOST_INSPECTED) {
             Ok(out) => out,
             Err(why) => return Err(self.and_removed(why, &container, &volume)),
         };
@@ -1042,24 +1061,26 @@ impl Docker {
         crate::runnerlink::from_line(&out).map_err(refused)
     }
 
-    /// **Removes what a make of the runner `name` left behind** (#2869): its container, only where
-    /// one of exactly its name carries the runner label of that name, and its home volume of
-    /// exactly its name. What it removed, each named; nothing where nothing was there. Only for a
-    /// name no kept runner holds: the caller says so.
-    pub fn remove_leftovers_of(&self, name: &str) -> Result<Vec<String>, Refused> {
+    /// **Removes what a make of the runner `name` by `desktop` left behind** (#2869): its
+    /// container, only where one of exactly its name carries the runner label of that name and
+    /// `desktop`'s label ([`DESKTOP_LABEL`]), removed by the id the listing gave; then its home
+    /// volume of exactly its name, only once no container of that name is left, whatever its
+    /// labels. One another desktop made, or one made before the label, is left as it is. What it
+    /// removed, each named. Only for a name no kept runner holds: the caller says so.
+    pub fn remove_leftovers_of(&self, name: &str, desktop: &str) -> Result<Vec<String>, Refused> {
         let words = |words: &[&str]| -> Vec<String> {
             words.iter().map(|word| (*word).to_owned()).collect()
         };
         let container = format!("{PREFIX}{name}");
         let volume = format!("{PREFIX}{name}-home");
         let mut removed = Vec::new();
-        let named = self.run(
+        let listed = self.run(
             &words(&[
                 "container",
                 "ls",
                 "--all",
                 "--format",
-                "{{.Names}}",
+                &format!("{{{{.ID}}}} {{{{.Names}}}} {{{{.Label \"{DESKTOP_LABEL}\"}}}}"),
                 "--filter",
                 &format!("name={container}"),
                 "--filter",
@@ -1068,15 +1089,42 @@ impl Docker {
             None,
             MOST_INSPECTED,
         )?;
-        if named.lines().any(|line| line.trim() == container) {
+        for line in listed.lines() {
+            let mut fields = line.split_whitespace();
+            let (Some(id), Some(named), Some(made_by), None) =
+                (fields.next(), fields.next(), fields.next(), fields.next())
+            else {
+                continue;
+            };
+            if named != container || made_by != desktop {
+                continue;
+            }
+            let id = ContainerId::new(id)?;
             self.run(
-                &words(&["container", "rm", "--force", "--volumes", &container]),
+                &words(&["container", "rm", "--force", "--volumes", id.as_str()]),
                 None,
                 MOST_INSPECTED,
             )?;
             removed.push(format!("container {container}"));
         }
-        let listed = self.run(
+        // A home volume goes only once no container of its name is left, whoever made it.
+        let still = self.run(
+            &words(&[
+                "container",
+                "ls",
+                "--all",
+                "--format",
+                "{{.Names}}",
+                "--filter",
+                &format!("name={container}"),
+            ]),
+            None,
+            MOST_INSPECTED,
+        )?;
+        if still.lines().any(|line| line.trim() == container) {
+            return Ok(removed);
+        }
+        let volumes = self.run(
             &words(&[
                 "volume",
                 "ls",
@@ -1087,7 +1135,7 @@ impl Docker {
             None,
             MOST_INSPECTED,
         )?;
-        if listed.lines().any(|line| line.trim() == volume) {
+        if volumes.lines().any(|line| line.trim() == volume) {
             self.run(
                 &words(&["volume", "rm", "--force", &volume]),
                 None,

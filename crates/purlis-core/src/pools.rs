@@ -49,7 +49,7 @@ pub fn add(
         .declared(pool.image())
         .and_then(|(user, home)| Runner::new(pool.name(), pool.image().clone(), user, &home))
         .map(|runner| runner.limited(pool.limits()))
-        .and_then(|runner| docker.make(&runner));
+        .and_then(|runner| docker.make_for(&runner, Some(&runners::desktop_label(config_root))));
     let made = match made {
         Ok(made) => made,
         Err(why) => return Err(forgotten(config_root, pool, Refused::Other(why.0), &locked)),
@@ -205,7 +205,7 @@ pub fn follow(
         .declared(image)
         .and_then(|(user, home)| Runner::new(&successor, image.clone(), user, &home))
         .map(|runner| runner.limited(pool.limits()))
-        .and_then(|runner| docker.make(&runner))
+        .and_then(|runner| docker.make_for(&runner, Some(&runners::desktop_label(config_root))))
         .map_err(|why| Refused::Other(why.0))?;
     let kept = docker
         .pair(&made, desktop)
@@ -253,7 +253,7 @@ fn clear_leftovers_locked(
         return Ok(None);
     }
     let removed = docker
-        .remove_leftovers_of(name)
+        .remove_leftovers_of(name, &runners::desktop_label(config_root))
         .map_err(|why| Refused::Other(why.0))?;
     Ok((!removed.is_empty()).then(|| {
         format!(

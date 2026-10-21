@@ -427,9 +427,23 @@ fn only_a_draining_runner_is_drained_and_removing_the_pool_removes_every_runner_
 
 const IMAGE_OF_FIRST: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-/// **A follow leaves no runner behind** (#2869): a container and a home volume of the new
-/// runner's name that a follow stopped short of keeping are removed by the next one, which then
-/// makes the runner.
+/// The id Docker gave a container a follow left behind.
+const LEFT: &str = "1eff0000000000000000000000000000000000000000000000000000000000aa";
+
+/// What a follow that stopped after Docker made the runner `name` left: its container, labelled
+/// as that runner made by `desktop`, and its home volume.
+fn left_behind(fake: &FakeDocker, name: &str, desktop: &str) {
+    fake.set("containers", &format!("purlis-runner-{name}\n"));
+    fake.set(
+        "containers-full",
+        &format!("{LEFT} purlis-runner-{name} {desktop}\n"),
+    );
+    fake.set("volumes", &format!("purlis-runner-{name}-home\n"));
+}
+
+/// **A follow leaves no runner behind** (#2869): a container this desktop made, and the home
+/// volume, of the new runner's name that a follow stopped short of keeping are removed by the
+/// next one, the container by its id, which then makes the runner.
 #[test]
 fn a_container_and_volume_a_follow_left_behind_are_removed_by_the_next() {
     let config = tempfile::tempdir().unwrap();
@@ -439,10 +453,7 @@ fn a_container_and_volume_a_follow_left_behind_are_removed_by_the_next() {
     let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
     let successor = crate::dockerpool::successor_name("first", &new_image);
     makes(&fake, &successor, NEW, &successor_answers());
-    // What a follow that stopped after Docker made them leaves: the container, labelled as a
-    // runner of the successor's name, and its home volume.
-    fake.set("containers", &format!("purlis-runner-{successor}\n"));
-    fake.set("volumes", &format!("purlis-runner-{successor}-home\n"));
+    left_behind(&fake, &successor, &runners::desktop_label(config.path()));
 
     let kept = follow(config.path(), &fake.docker(), "first", &new_image, &ours)
         .unwrap()
@@ -451,21 +462,58 @@ fn a_container_and_volume_a_follow_left_behind_are_removed_by_the_next() {
     assert_eq!(kept.name(), successor);
     let log = fake.file("log");
     assert!(
-        log.contains(&format!(
-            "container ls --all --format {{{{.Names}}}} --filter name=purlis-runner-{successor} --filter label=purlis.runner={successor}"
-        )),
-        "{log}"
-    );
-    assert!(
-        log.contains(&format!(
-            "container rm --force --volumes purlis-runner-{successor}"
-        )),
+        log.contains(&format!("container rm --force --volumes {LEFT}")),
         "{log}"
     );
     assert!(
         log.contains(&format!("volume rm --force purlis-runner-{successor}-home")),
         "{log}"
     );
+    // The runner it made carries this desktop's label.
+    assert!(
+        log.contains(&format!(
+            "--label purlis.desktop={}",
+            runners::desktop_label(config.path())
+        )),
+        "{log}"
+    );
+}
+
+/// **Another desktop's runner on the same Docker is never taken for a leftover** (#2869): a
+/// container the same in every way but made by another config home, and its home volume, stay;
+/// the follow is refused as it was before.
+#[test]
+fn a_runner_another_desktop_made_is_left_as_it_is() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    left_behind(&fake, &successor, "0123456789abcdef");
+
+    assert!(follow(config.path(), &fake.docker(), "first", &new_image, &ours).is_err());
+
+    let log = fake.file("log");
+    assert!(!log.contains("container rm"), "{log}");
+    assert!(!log.contains("volume rm"), "{log}");
+}
+
+/// A container made before runners were labelled with their desktop keeps the refusal.
+#[test]
+fn a_runner_made_before_the_desktop_label_is_left_as_it_is() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    left_behind(&fake, &successor, "<no value>");
+
+    assert!(follow(config.path(), &fake.docker(), "first", &new_image, &ours).is_err());
+    assert!(!fake.file("log").contains(" rm "), "{}", fake.file("log"));
 }
 
 /// **A container or volume a kept runner claims is never removed** (#2869): a runner kept under

@@ -14,3 +14,12 @@
    the container, with no label, so a volume named `purlis-runner-<name>-home` that no kept
    runner claims is taken as one purlis made. *Decided in implementation, to be confirmed*
    (D-2869-2).
+3. **A leftover is this desktop's own, by a label.** Each runner container a desktop makes
+   carries `purlis.desktop=<the first 16 hex digits of a SHA-256 of its config home>`. A
+   container counts as a leftover only when it carries this desktop's label as well as the
+   runner's, and it is removed by the id Docker listed, never by its name. Its home volume goes
+   only once no container of its name is left, whatever made it. So two config homes on one
+   Docker daemon (a development build beside the installed app, or two people sharing one
+   daemon) never remove each other's runners; a container made before the label keeps the
+   refusal to make a runner where one of its name is. The label is internal, not a format a
+   person writes. *Decided in implementation, to be confirmed* (D-2869-3).
