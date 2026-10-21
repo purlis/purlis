@@ -53,7 +53,10 @@ describe("a persona's skills", function () {
     written.push(writeSkill(join(root, "skills"), NAMED));
     // Its own `skills:` line, whatever it said: a later line of a key answers instead of an
     // earlier one.
-    writeFileSync(file, was.replace(/^skills:.*\n/m, "").replace(/^---\n/, `---\nskills: ${NAMED}\n`));
+    writeFileSync(
+      file,
+      was.replace(/^skills:.*\n/m, "").replace(/^---\n/, `---\nskills: ${NAMED}\n`),
+    );
     wereOpen = await tabNames();
     await showView("Personas");
     await untilSays('[data-testid="panel-personas"]', PERSONA);

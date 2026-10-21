@@ -3,6 +3,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { commands, type PanelBlock, type PanelRow, type PlaneId } from "./bindings";
+import { Notice } from "./Notice";
 import { skillStudioAs } from "./skillStudio";
 
 /**
@@ -111,6 +112,7 @@ export function PersonaSkillAdd({
       <label htmlFor={input}>Add a skill</label>
       <input
         id={input}
+        className="ui-input"
         list={suggestions}
         value={written}
         placeholder="Its name, as the Skill studio lists it"
@@ -133,9 +135,14 @@ export function PersonaSkillAdd({
         {busy ? "Adding…" : "Add"}
       </button>
       {refused !== undefined && (
-        <p className="trouble" role="alert">
+        <Notice
+          cause={`persona-skill-add:${persona}`}
+          tone="trouble"
+          label="The skill was not added"
+          onDismiss={() => setRefused(undefined)}
+        >
           {refused}
-        </p>
+        </Notice>
       )}
     </form>
   );
@@ -178,9 +185,14 @@ export function PersonaSkillRemove({
         {busy ? "Removing…" : "Remove"}
       </button>
       {refused !== undefined && (
-        <span className="trouble" role="alert">
+        <Notice
+          cause={`persona-skill-remove:${persona}:${written}`}
+          tone="trouble"
+          label="The skill was not removed"
+          onDismiss={() => setRefused(undefined)}
+        >
           {refused}
-        </span>
+        </Notice>
       )}
     </>
   );

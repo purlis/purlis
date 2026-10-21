@@ -600,6 +600,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // to choose, in their window.
     "engine_sandbox",
     "use_this_machines_chrome",
+    // A persona's Skills section (#2768): adds a skill to the persona's definition or takes one
+    // out, as its profile is set. The person's own press in their window.
+    "persona_skill",
     // This machine's Docker pools (#2679): adding one runs a container on the person's machine
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.

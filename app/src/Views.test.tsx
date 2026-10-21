@@ -19,6 +19,7 @@ import type {
   ExtensionView,
   LandQuestion,
   PanelBlock,
+  PanelRow,
   RowAction,
   ViewAnswer,
 } from "./bindings";
@@ -315,7 +316,7 @@ describe("the persona view", () => {
     // carry, as it lends a change's Land.
     const asked: unknown[] = [];
     const studio = "skills.studio:persona/steward";
-    const skillRow = (key: string, text: string) => ({
+    const skillRow = (key: string, text: string): PanelRow => ({
       key,
       text,
       note: "project",
@@ -328,12 +329,12 @@ describe("the persona view", () => {
     const withSkills: ViewAnswer = {
       ...PERSONA,
       blocks: [
-        { kind: "note", text: "It brings 2 skills into every workspace.", tone: "plain" },
+        { kind: "note", text: "It brings 2 skills into every workspace.", tone: "plain" } as const,
         {
-          kind: "list",
+          kind: "list" as const,
           rows: [skillRow("own:triage", "triage"), skillRow("named:deploy", "deploy")],
           empty: { headline: "No skills go with it yet", body: null, offer: studio },
-        } as PanelBlock,
+        },
         ...PERSONA.blocks,
       ],
     };

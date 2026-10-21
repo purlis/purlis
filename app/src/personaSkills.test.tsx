@@ -75,7 +75,7 @@ describe("a persona's Skills section", () => {
     fireEvent.change(screen.getByTestId("persona-skill-name"), { target: { value: ":x" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("names no skill");
+    expect(await screen.findByText(/names no skill/)).toBeInTheDocument();
     expect(screen.getByTestId("persona-skill-name")).toHaveValue(":x");
   });
 
