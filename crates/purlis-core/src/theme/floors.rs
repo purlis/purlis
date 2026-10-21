@@ -255,13 +255,35 @@ impl Chromas {
             })
             .collect();
         if self.at.is_empty() || rules != self.rules {
-            self.at = (0..360)
-                .map(|degree| tint::apart_chroma_of(&held, f64::from(degree)))
-                .collect();
+            self.at = KNOWN.with(|known| {
+                let mut known = known.borrow_mut();
+                if let Some((_, at)) = known.iter().find(|(them, _)| *them == rules) {
+                    return at.clone();
+                }
+                let at: Vec<Option<f64>> = (0..360)
+                    .map(|degree| tint::apart_chroma_of(&held, f64::from(degree)))
+                    .collect();
+                if known.len() == KNOWN_MOST {
+                    known.remove(0);
+                }
+                known.push((rules.clone(), at.clone()));
+                at
+            });
             self.rules = rules;
         }
         &self.at
     }
+}
+
+/// How many recipes' chromas a thread keeps between draws: a window draws the same few themes
+/// again and again, and finding each degree's chroma is most of what holding the floors costs.
+const KNOWN_MOST: usize = 8;
+
+/// The recipes' chromas this thread found last, by their rules.
+type Known = Vec<(Vec<(String, bool, String, bool)>, Vec<Option<f64>>)>;
+
+thread_local! {
+    static KNOWN: std::cell::RefCell<Known> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
@@ -304,9 +326,28 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
             .flat_map(|look| look.fills)
             .chain(super::parts::allow_grounds())
             .collect();
-        for (degree, most) in (0_u32..).zip(chromas.of(theme).to_vec()) {
-            let drawn = tint::turned_at(theme, f64::from(degree), most, &only);
-            found.extend(allow_near_primary(&drawn, true));
+        let turned: Vec<&'static str> = theme
+            .tint
+            .tabs()
+            .iter()
+            .copied()
+            .filter(|token| only.contains(token))
+            .collect();
+        if !turned.is_empty() {
+            // One copy, its few turned tokens rewritten at each degree, as `tint::turned_at`
+            // draws them; a degree with no chroma that holds the tint apart is drawn untinted.
+            let mut drawn = theme.clone();
+            for (degree, most) in (0_u32..).zip(chromas.of(theme).to_vec()) {
+                let Some(most) = most else {
+                    continue;
+                };
+                for token in &turned {
+                    if let Some(value) = drawn.values.get_mut(token) {
+                        *value = tint::tint_hex_within(theme.value(token), f64::from(degree), most);
+                    }
+                }
+                found.extend(allow_near_primary(&drawn, true));
+            }
         }
     }
     // A workspace's own colour can take any hue. A tint keeps each shade's luminance on its own
