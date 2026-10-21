@@ -3132,7 +3132,8 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
             // A window's link is relayed to a pool's runner this machine keeps (#2679).
             Some(config) => hosting
                 .heeding(purlis_core::halt::OnDisk(config.clone()))
-                .relaying_with(runnerlinks::relays_to(config)),
+                .relaying_with(runnerlinks::relays_to(config.clone()))
+                .draining_with(runnerlinks::drains_to(config)),
             None => hosting,
         };
         purlis_core::browsers::given_to(hosting)

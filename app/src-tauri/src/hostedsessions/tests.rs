@@ -2834,15 +2834,18 @@ fn a_desktop_relaying_to(runner_host: Hosting) -> Hosting {
         }
         let (connector, desktop, pinned) =
             (connector.clone(), Arc::clone(&desktop), pinned.clone());
-        Ok(Arc::new(move || {
-            purlis_session_protocol::hostlink::keep_linked(
-                connector.clone(),
-                purlis_session_protocol::hostlink::Handshake::THIS_BUILD,
-                desktop.identity(),
-                pinned.clone(),
-                purlis_session_protocol::hostlink::Liveness::default(),
-            )
-        }) as purlis_host::Keep)
+        Ok((
+            Arc::new(move || {
+                purlis_session_protocol::hostlink::keep_linked(
+                    connector.clone(),
+                    purlis_session_protocol::hostlink::Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    purlis_session_protocol::hostlink::Liveness::default(),
+                )
+            }) as purlis_host::Keep,
+            format!("{name}/{name}"),
+        ))
     });
     Hosting::running_with(
         crate::sessionhost::Composes::as_the_tests_ship(),
