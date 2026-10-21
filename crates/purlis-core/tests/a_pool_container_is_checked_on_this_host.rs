@@ -60,17 +60,17 @@ fn made_and_inspected(
     loosened: &[&str],
     out: &Path,
     name: &str,
-) -> (Made, serde_json::Value) {
+) -> Result<(Made, serde_json::Value), String> {
     let mut args = runner.create_args();
     // Each loosening as a flag and its value: in place of the pool's own value of a flag the
-    // pool gives once (`--network`), else after `run --detach`.
+    // pool gives once (`--network`, `--ipc`, `--cgroupns`), else after `run --detach`.
     for pair in loosened.chunks(2) {
         let (flag, value) = match pair {
             [flag] => (*flag, None),
             [flag, value] => (*flag, Some(*value)),
             _ => unreachable!(),
         };
-        let once = matches!(flag, "--network");
+        let once = matches!(flag, "--network" | "--ipc" | "--cgroupns");
         match args.iter().position(|word| word == flag) {
             Some(at) if once => {
                 if let Some(value) = value {
@@ -89,7 +89,10 @@ fn made_and_inspected(
     let made = run(docker, &args);
     record(out, &format!("{name}-run"), &made);
     let removes = Removes(docker.to_path_buf(), runner.container(), runner.volume());
-    assert!(made.ok, "{name}: the container was not made: {}", made.said);
+    // An engine that cannot make a container this way says why, which is recorded.
+    if !made.ok {
+        return Err(made.said.trim().to_owned());
+    }
     let id = ContainerId::new(made.out.trim()).expect("docker run printed the container's id");
     // Long enough for a container that would end to have ended.
     std::thread::sleep(std::time::Duration::from_secs(2));
@@ -98,13 +101,13 @@ fn made_and_inspected(
     drop(removes);
     assert!(inspected.ok, "{name}: not inspected: {}", inspected.said);
     let value = serde_json::from_str(&inspected.out).expect("inspect printed JSON");
-    (
+    Ok((
         Made {
             container: id,
             runner: runner.clone(),
         },
         value,
-    )
+    ))
 }
 
 /// Removes a container and its home volume, however the test ends.
@@ -168,7 +171,8 @@ fn a_container_made_the_pools_way_passes_the_check_here_and_a_loosened_one_does_
     let whole = whole.map(drop);
     seen.push(format!("made by the pool: {whole:?}"));
 
-    let (made, inspected) = made_and_inspected(&docker, &runner("measured"), &[], &out, "made");
+    let (made, inspected) = made_and_inspected(&docker, &runner("measured"), &[], &out, "made")
+        .expect("the pool's own container is made");
     // The engine its daemon's check finds: a rootless Podman says so.
     let engine = serde_json::from_str(
         &run(
@@ -196,8 +200,22 @@ fn a_container_made_the_pools_way_passes_the_check_here_and_a_loosened_one_does_
         ),
         ("host-users", &["--userns", "host"][..]),
         ("host-network", &["--network", "host"][..]),
+        // #2895: the machine's IPC, host name and cgroups, a folder of the machine, a device.
+        ("host-ipc", &["--ipc", "host"][..]),
+        ("host-uts", &["--uts", "host"][..]),
+        ("host-cgroups", &["--cgroupns", "host"][..]),
+        ("host-folder", &["--volume", "/:/host:ro"][..]),
+        ("device", &["--device", "/dev/fuse"][..]),
     ] {
-        let (made, inspected) = made_and_inspected(&docker, &runner(name), loosened, &out, name);
+        let (made, inspected) =
+            match made_and_inspected(&docker, &runner(name), loosened, &out, name) {
+                Ok(both) => both,
+                // Nothing this engine makes this way is ever a runner: said, not failed.
+                Err(why) => {
+                    seen.push(format!("{name}: not made by this engine ({why})"));
+                    continue;
+                }
+            };
         let checked = dockerpool::check_on(&inspected, &made, engine);
         seen.push(format!("{name}: {checked:?}"));
         // Podman's own user namespace is the machine's unless it is asked for another, so
