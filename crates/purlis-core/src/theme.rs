@@ -46,7 +46,8 @@
 //! - [`import`] makes a theme folder's files from a VS Code colour theme, a base16 or base24
 //!   scheme, an iTerm2 or a Ghostty palette through a fixed mapping table ([`table`]), and says
 //!   every source key no token takes; [`export`] packs a theme folder as a zip that [`unpack`]
-//!   gives back file for file (#2334).
+//!   gives back file for file (#2334); [`design_tokens`] writes one as a W3C design-tokens
+//!   file, format 2025.10, which [`import`] reads back to the same folder (#2926).
 //! - [`schema`] is the published JSON Schema of format 2, generated from this module's own
 //!   vocabulary (`docs/schema/theme.v2.schema.json`, held to it by a test), and [`SCHEMA_URL`]
 //!   its address at this release, which a format only ever grows at (`published`).
@@ -73,6 +74,7 @@ use serde_json::Value;
 mod archive;
 mod check;
 pub mod choices;
+pub mod design_tokens;
 pub mod drafts;
 mod floors;
 mod folders;
@@ -102,7 +104,8 @@ mod warnings;
 
 pub use archive::{
     MOST_FILE_BYTES, MOST_FILES, MOST_FOLDER_BYTES, MOST_ZIP_BYTES, NotWritten, Packed, Staged,
-    export, gather, is_folder_id, is_reserved, pack, rename_no_replace, stage, unpack,
+    Wrapping, export, export_as, gather, is_folder_id, is_reserved, pack, rename_no_replace, stage,
+    unpack,
 };
 pub use check::{FAINT, FITS, Finding, Fit, PAIRS, Pair, Report, TEXT_TIERS, TIER_GROUNDS};
 pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
@@ -145,6 +148,10 @@ pub use warnings::{
 mod choice_tests;
 #[cfg(test)]
 mod default_values_tests;
+#[cfg(test)]
+mod design_tokens_tests;
+#[cfg(test)]
+mod draft7;
 #[cfg(test)]
 mod drafts_tests;
 #[cfg(test)]
