@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792609577115,
+  "lastUpdate": 1792611795481,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5100,6 +5100,42 @@ window.BENCHMARK_DATA = {
             "value": 375.7,
             "unit": "MB",
             "extra": "median of 6 samples: 346.9, 396.5, 384.1, 375.3, 376.2, 285.6 MB; window 162.2 MB, session host 215.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "419b9ba6bb650e7f189241582f5c70f59338eaae",
+          "message": "Runners: a runner's journal never names a vault (#2838) (#2996)\n\n* Runners: a runner's journal never names a vault\n\nA host that logs as a service (applog::widen_for_a_service, which\npurlis serve calls) logs a brokered secret exec by its program alone:\na run names the chat, its persona and the program, and a refusal names\nthe chat and the program, without the refusal's words. The window's own\nlog still names the vault.\n\nADR 0068 amended 2026-10-21 for #2838.\n\nCloses #2838\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a runner's journal says a tunnel by its port, never the secret's variable\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T23:03:57+04:00",
+          "tree_id": "7281f3589ba51f458d045636b289979955f232d5",
+          "url": "https://github.com/purlis/purlis/commit/419b9ba6bb650e7f189241582f5c70f59338eaae"
+        },
+        "date": 1792611792600,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 920,
+            "unit": "MB",
+            "extra": "median of 3 samples: 869, 920, 1046 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 322.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 276.5, 335.5, 332.8, 322.4, 323.3, 271.3 MB; window 157.4 MB, session host 167.1 MB"
           }
         ]
       }
