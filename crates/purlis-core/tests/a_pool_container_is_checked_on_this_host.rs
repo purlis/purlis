@@ -98,6 +98,24 @@ fn made_and_inspected(
     std::thread::sleep(std::time::Duration::from_secs(2));
     let inspected = run(docker, &words(&["container", "inspect", id.as_str()]));
     record(out, &format!("{name}-inspect"), &inspected);
+    // Podman's own record of what it asked its runtime for, beside what it says of the
+    // container: kept to be measured (#2895), and read by nothing here.
+    if let Some(oci) = serde_json::from_str::<serde_json::Value>(&inspected.out)
+        .ok()
+        .and_then(|value| {
+            value
+                .pointer("/0/OCIConfigPath")
+                .and_then(|path| path.as_str().map(str::to_owned))
+        })
+    {
+        let read = run(Path::new("/bin/cat"), &words(&[&oci]));
+        let read = if read.ok {
+            read
+        } else {
+            run(Path::new("/usr/bin/sudo"), &words(&["cat", &oci]))
+        };
+        record(out, &format!("{name}-oci"), &read);
+    }
     drop(removes);
     assert!(inspected.ok, "{name}: not inspected: {}", inspected.said);
     let value = serde_json::from_str(&inspected.out).expect("inspect printed JSON");
