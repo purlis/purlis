@@ -25,6 +25,8 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
+mod holds;
+
 use crate::engine::{Engine, Screen, Size};
 
 /// The terminal type every program a session starts is given, as `TERM`.
@@ -49,6 +51,12 @@ pub struct Spec {
     /// and nothing else. A chat is started this way, from what `purlis_core::chatenv` keeps.
     pub env_clear: bool,
     pub size: Size,
+    /// **Folders that say this program runs** while it does: once it has started, a file named
+    /// by its process id is written in each, and it is removed once the program has been ended
+    /// with the session. A caller that must not take away what a running program uses reads
+    /// them. Each, and the folder it is in, is made a folder itself: one that cannot be, or that
+    /// is a link, refuses the start before anything runs, and nothing is written through it.
+    pub holds: Vec<PathBuf>,
 }
 
 impl Spec {
@@ -61,6 +69,7 @@ impl Spec {
             env_without: Vec::new(),
             env_clear: false,
             size,
+            holds: Vec::new(),
         }
     }
 
@@ -279,6 +288,9 @@ pub struct Session {
     input: SyncSender<Vec<u8>>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     child: Arc<Mutex<Held>>,
+    /// The files that say this session's program runs ([`Spec::holds`]), removed when the
+    /// session lets go of it.
+    notes: Vec<holds::Note>,
     /// Taken by [`Session::when_it_ends`]. The reading thread sends on it once, when the
     /// program's output ends — which is when the program has.
     ended: Mutex<Option<Receiver<()>>>,
@@ -318,6 +330,12 @@ impl Session {
         start_fits(&command, &spec.env, crate::exec::Exec::HERE).map_err(|too_long| {
             let then = crate::exec::TOO_LONG_WAY_OUT;
             spawn_error(format!("{too_long}, so nothing was started. {then}"))
+        })?;
+        let holds = holds::open_all(&spec.holds).map_err(|(hold, why)| {
+            spawn_error(format!(
+                "{} could not be made ({why}), so nothing was started",
+                hold.display()
+            ))
         })?;
 
         // Under the fork lock, because `openpty` hands back two descriptors that are not
@@ -373,12 +391,25 @@ impl Session {
             .map_err(|err| spawn_error(err.to_string()))?;
         // Only the program may hold the terminal's other end, or the reader never sees it close.
         drop(pair.slave);
+        let child = Arc::new(Mutex::new(Held::of(child)));
+        let notes = match holds::write_all(holds, lock(&child).process_id()) {
+            Ok(notes) => notes,
+            Err(why) => {
+                // Started, but not noted: ended at once, so nothing runs that a caller could
+                // take away what it uses from under.
+                end(&child);
+                return Err(spawn_error(format!(
+                    "purlis could not note that it runs ({why}), so it was ended"
+                )));
+            }
+        };
 
         Ok(Self {
             terminal,
             input,
             master: Mutex::new(pair.master),
-            child: Arc::new(Mutex::new(Held::of(child))),
+            child,
+            notes,
             ended: Mutex::new(Some(ended)),
         })
     }
@@ -802,7 +833,14 @@ impl Drop for Session {
     /// closing a tab or quitting with many sessions never waits on a program.
     fn drop(&mut self) {
         let child = Arc::clone(&self.child);
-        let reap = move || end(&child);
+        // Its notes go once it has been ended, never while it may still run: held here too, so
+        // a reaper that never starts takes none of them with it.
+        let notes = Arc::new(Mutex::new(std::mem::take(&mut self.notes)));
+        let reapers_notes = Arc::clone(&notes);
+        let reap = move || {
+            end(&child);
+            lock(&reapers_notes).clear();
+        };
         if thread::Builder::new()
             .name("charter-session-reaper".into())
             .spawn(reap)
@@ -810,6 +848,7 @@ impl Drop for Session {
         {
             // No thread to spare: ending it here is slower, but it still ends.
             end(&self.child);
+            lock(&notes).clear();
         }
     }
 }
@@ -1192,6 +1231,7 @@ mod tests {
     use std::process::Command;
 
     use super::*;
+
     use crate::engine::AlacrittyEngine;
 
     const SIZE: Size = Size {

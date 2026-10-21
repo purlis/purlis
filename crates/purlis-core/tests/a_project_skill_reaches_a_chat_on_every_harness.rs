@@ -277,7 +277,11 @@ fn arming_every_harness_writes_nothing_in_the_plane_and_two_chats_share_one_fold
     );
     assert_eq!(plugin_dirs(&first), plugin_dirs(&second));
     assert_eq!(
-        fs::read_dir(&here.sets).unwrap().count(),
+        fs::read_dir(&here.sets)
+            .unwrap()
+            // Beside the sets' folders: the lock a tidy takes turns on (SK-24).
+            .filter(|entry| entry.as_ref().unwrap().file_name() != ".lock")
+            .count(),
         1,
         "one set, one folder"
     );

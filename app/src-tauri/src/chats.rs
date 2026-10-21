@@ -3694,6 +3694,9 @@ impl Chats {
         drop(front);
         let closed = self.sessions.close(session);
         self.write_it_down();
+        // The folder of links to the plane's skills it used, once its program has ended, where
+        // no other running chat uses it (SK-24).
+        purlis_core::skills::tidy_here_later(purlis_core::skills::TIDY_AFTER_A_CLOSE);
         closed
     }
 
