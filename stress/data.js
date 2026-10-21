@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792611815037,
+  "lastUpdate": 1792613587327,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5136,6 +5136,42 @@ window.BENCHMARK_DATA = {
             "value": 322.9,
             "unit": "MB",
             "extra": "median of 6 samples: 276.5, 335.5, 332.8, 322.4, 323.3, 271.3 MB; window 157.4 MB, session host 167.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f6c8ad5a68985c19f41a044f7db0eb85785fdbf1",
+          "message": "Browsers: a purge of the .deb takes the engine profile the person added (#2900) (#2979)\n\n* Browsers: a purge of the .deb takes the engine profile the person added (#2900)\n\nThe Notice's command writes /etc/apparmor.d/purlis-engine-here, and\nnothing removed it. The postrm now unloads and removes it on a purge,\nonly where it is still that profile, and a remove keeps it, as a remove\nkeeps a package's configuration.\n\nCloses #2900\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a purge takes the engine profile only where it is purlis's whole (#2900)\n\nThe postrm reads the file line by line as the Notice's command writes it:\nthe engine's path in a data folder's engines, allowed userns alone. A\nfile that only starts like it, or allows more, is left. A remove never\nunloads it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the postrm test runs its shell through forklock (#2900)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T23:10:57+04:00",
+          "tree_id": "c43b055254dac5ab9489dc4c106fad478cdf78e6",
+          "url": "https://github.com/purlis/purlis/commit/f6c8ad5a68985c19f41a044f7db0eb85785fdbf1"
+        },
+        "date": 1792613585046,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 960,
+            "unit": "MB",
+            "extra": "median of 3 samples: 821, 960, 1074 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 323.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 254.5, 340.5, 329.2, 323.5, 324.4, 252.8 MB; window 155.8 MB, session host 171 MB"
           }
         ]
       }
