@@ -5,8 +5,7 @@
 #2904, with the button as the first family. It amends
 [ADR 0037](0037-charter-takes-the-behaviour-and-keeps-the-look.md) (its amendment of
 2026-10-21 says where) and sits beside
-[ADR 0103](0103-a-theme-sets-component-parts-through-a-closed-manifest-and-a-state-never-changes-size.md),
-which says how a theme reaches a family's parts.
+ADR 0103 (#2903), which says how a theme reaches a family's parts.
 
 ## Where purlis was
 
