@@ -228,3 +228,34 @@ fn scopeguard(config: PathBuf, docker: Docker, name: String) -> impl Drop {
     }
     Removes(config, docker, name)
 }
+
+/// **A runner's version is asked of it once for each container and image** (#2749): a link
+/// after the first reads what the first was told; one that could not be read is asked again.
+#[test]
+fn a_runners_version_is_read_once_for_its_container_and_image() {
+    let asked = std::cell::Cell::new(0);
+    let read = |answer: Result<&str, &str>| {
+        asked.set(asked.get() + 1);
+        answer.map(str::to_owned).map_err(str::to_owned)
+    };
+    let (container, image) = ("c".repeat(64), "ghcr.io/purlis/purlis-runner@sha256:once");
+    assert!(once_for(&container, image, || read(Err("not up yet"))).is_err());
+    assert_eq!(
+        once_for(&container, image, || read(Ok("0.4.2-dev.9"))),
+        Ok("0.4.2-dev.9".into())
+    );
+    assert_eq!(
+        once_for(&container, image, || read(Ok("another"))),
+        Ok("0.4.2-dev.9".into())
+    );
+    assert_eq!(asked.get(), 2, "read once it answered, and not again");
+    // Another image in the same container is read anew.
+    assert_eq!(
+        once_for(
+            &container,
+            "ghcr.io/purlis/purlis-runner@sha256:other",
+            || read(Ok("0.4.3"))
+        ),
+        Ok("0.4.3".into())
+    );
+}

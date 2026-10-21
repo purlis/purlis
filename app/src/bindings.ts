@@ -2417,6 +2417,8 @@ export const commands = {
 	 *  let go of.
 	 */
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
+	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
+	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	/**
@@ -3502,12 +3504,6 @@ export const commands = {
 	 *  sets the appearance; every window sets its own colour.
 	 */
 	drawNativeWindow: (appearance: string, background: string, followsSystem: boolean) => typedError<null, string>(__TAURI_INVOKE("draw_native_window", { appearance, background, followsSystem })),
-	/**
-	 *  **What the operating system draws this window in** (#2328, #2760): the appearance of its
-	 *  native parts and its background colour, each read back from the platform, not from what
-	 *  purlis last asked for. The scenario tests ask; nothing in the UI does.
-	 */
-	nativeWindowDrawn: () => typedError<NativeDrawn, string>(__TAURI_INVOKE("native_window_drawn")),
 	/**  One secret's value, to show in the window for a while ([`reveal`]). */
 	vaultSecretReveal: (plane: PlaneId, vault: string, key: string) => typedError<SecretValue, string>(__TAURI_INVOKE("vault_secret_reveal", { plane, vault, key })),
 	/**
@@ -7370,21 +7366,6 @@ export type Moved = {
 };
 
 /**
- *  **What the operating system draws this window in**, read back from the platform: the
- *  appearance its native parts are drawn in and the background colour the window was given.
- */
-export type NativeDrawn = {
-	/**  `dark` or `light`. */
-	appearance: string,
-	/**
-	 *  The window's colour, `#rrggbb` in lowercase, opaque as the window is drawn: `null` where
-	 *  the platform gives no colour purlis reads (Windows for now, or a colour with no sRGB
-	 *  form). An unread colour never stops the appearance from being read.
-	 */
-	background: string | null,
-};
-
-/**
  *  The branch the window's focus is on, by name, in the project a scope puts first. It only
  *  orders the scope: a name no branch of the project has moves nothing.
  */
@@ -8571,6 +8552,29 @@ export type PoolRow = {
 	image: string,
 	/**  What its runner is held to: what the person set, and the defaults for the rest. */
 	limits: PoolLimitsShown,
+};
+
+/**
+ *  **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
+ *  when they differ, and whether purlis moves the pool along with the desktop.
+ */
+export type PoolVersion = {
+	/**  The version its runner's `purlis --version` says; none where it could not be read. */
+	runner: string | null,
+	/**  Why it could not be read, in Docker's or purlis's words. */
+	why: string | null,
+	/**  This desktop's version. */
+	desktop: string,
+	/**
+	 *  Whether the pool is of purlis's own runner image, which purlis moves to the desktop's
+	 *  version after an update; a team's own image is never moved.
+	 */
+	follows: boolean,
+	/**
+	 *  How many of its older runners drain: each keeps its chats until they end, then is
+	 *  removed.
+	 */
+	draining: number,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */

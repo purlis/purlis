@@ -46,6 +46,35 @@ fn main() {
         "Every project template's files, as `(<template>/<path>, text)`, sorted by path.",
     );
     println!("cargo:rustc-env=PURLIS_BUILD_PROFILE={}", profile());
+    println!(
+        "cargo:rustc-env=PURLIS_RELEASE_VERSION={}",
+        release_version()
+    );
+}
+
+/// **The version this build says it is** (#2749): the one a release stamps it with,
+/// `PURLIS_VERSION_STAMP` (`release.yml`'s `plan`, a dev build's `<version>-dev.<run>`), so the
+/// desktop and the runner image built for it say the same; else the crate's own. A stamp that is
+/// not the crate's version, or a prerelease of it, stops the build.
+fn release_version() -> String {
+    println!("cargo:rerun-if-env-changed=PURLIS_VERSION_STAMP");
+    let own = std::env::var("CARGO_PKG_VERSION").expect("cargo sets CARGO_PKG_VERSION");
+    let stamp = std::env::var("PURLIS_VERSION_STAMP").unwrap_or_default();
+    if stamp.is_empty() {
+        return own;
+    }
+    let plain = stamp
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+    let of_it = stamp == own
+        || stamp
+            .strip_prefix(&own)
+            .is_some_and(|rest| rest.starts_with('-'));
+    assert!(
+        plain && of_it,
+        "PURLIS_VERSION_STAMP {stamp:?} is not {own} or a prerelease of it"
+    );
+    stamp
 }
 
 /// The Cargo profile this build is made with, by the name Cargo files it under: `release`,

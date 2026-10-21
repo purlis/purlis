@@ -151,7 +151,10 @@ fn only_the_provenance_job_can_sign_and_publish_can_only_read() {
         .filter(|j| j.can_mint_an_oidc_token())
         .map(|j| j.name.as_str())
         .collect();
-    assert_eq!(signers, ["provenance"], "{signers:?}");
+    // `runner-image` calls `runner-image.yml`, whose `index` signs the runner image keyless
+    // with its OIDC token (#2749): an image signature, never provenance, in a job that holds no
+    // secret and cannot write the release.
+    assert_eq!(signers, ["runner-image", "provenance"], "{signers:?}");
     let attesters: Vec<&str> = jobs
         .iter()
         .filter(|j| {

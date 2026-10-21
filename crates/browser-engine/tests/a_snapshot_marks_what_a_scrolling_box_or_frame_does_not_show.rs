@@ -5,7 +5,9 @@
 //! scrolled out of a list that scrolls, and an element scrolled out of a frame, on the page's
 //! own site or on another one read in a session of its own (#2689), are marked out of view;
 //! what the list or the frame shows is not, and an item scrolled to is not marked again. A box
-//! on the page that cuts off a frame from another site marks what it hides of the frame.
+//! on the page that cuts off a frame from another site marks what it hides of the frame, placed
+//! inside the frame's border and padding, where the page scales it, and through a frame further
+//! out (#2840).
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
@@ -111,4 +113,48 @@ fn a_box_on_the_page_that_cuts_off_a_frame_from_another_site_marks_what_it_hides
     for line in lines_of(&low, "Low in the cut frame") {
         assert!(line.contains("(out of view)"), "{low}");
     }
+}
+
+/// Opens `path`, and checks that `shown` is not marked out of view and `hidden` is.
+fn marks_in(path: &str, shown: &str, hidden: &str) {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let opened = open(&browser, path);
+    assert_eq!(opened.settled, Settled::Yes, "{opened:?}");
+    let found = find(&browser, shown);
+    for line in lines_of(&found, shown) {
+        assert!(!line.contains("(out of view)"), "{found}");
+    }
+    let found = find(&browser, hidden);
+    for line in lines_of(&found, hidden) {
+        assert!(line.contains("(out of view)"), "{found}");
+    }
+}
+
+#[test]
+fn a_box_cuts_off_a_padded_frame_inside_its_border_and_padding() {
+    marks_in(
+        "frame-boxes-padded.html",
+        "Top of the padded frame",
+        "Low in the padded frame",
+    );
+}
+
+#[test]
+fn a_box_cuts_off_a_frame_the_page_scales_where_the_page_draws_it() {
+    marks_in(
+        "frame-boxes-scaled.html",
+        "Shown in the scaled frame",
+        "Hidden in the scaled frame",
+    );
+}
+
+#[test]
+fn a_box_on_the_page_cuts_off_what_a_frame_nested_in_another_holds() {
+    marks_in(
+        "frame-boxes-nested.html",
+        "Top of the inner frame",
+        "Low in the inner frame",
+    );
 }

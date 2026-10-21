@@ -1408,7 +1408,9 @@ _Avoid_: built-ins (for core features), platform
 **Extension**:
 A directory the operator installs and approves on this machine, whose manifest declares what it
 contributes and which capabilities it asks for. Its program runs as the operator, one question
-at a time.
+at a time, except an extension that declares a **studio capability**, which runs confined in a
+chat's sandbox profile: it reads and writes only its own folder and what purlis hands it, and
+reaches only the hosts it declares, never a model provider's (ADR 0101).
 _Avoid_: plugin, add-on, module
 
 **Built-in extension**:
@@ -1418,9 +1420,43 @@ _Avoid_: bundled plugin, first-party plugin, core extension
 
 **Capability**:
 One thing purlis does for an extension that asked for it in its manifest and was approved,
-such as showing a badge or adding a CLI command. It describes purlis's conduct, never a limit
-on the extension.
+such as showing a badge or adding a CLI command. It describes purlis's conduct. It limits what
+the extension itself can do only for a **studio capability**, whose extension is confined
+(ADR 0101).
 _Avoid_: permission, grant (that is a runner's **Grant**), power
+
+**Studio capability**:
+One of the six capabilities the Skill studio is built from: SkillSource, Grader, SkillLint,
+SkillTemplate, StudioPanel and SkillRouter. Each has a built-in first user. An extension that
+declares one is confined, and they are experimental until the studio's finish line (ADR 0101).
+_Avoid_: studio extension point, skill capability
+
+**SkillSource**:
+The studio capability for a source of skills that is not git, such as a registry or an artifact
+store. It hands purlis a skill's folder at an immutable revision; the review, copy and pin are
+purlis's (ADR 0100). The built-in git source is its first user.
+
+**Grader**:
+The studio capability that is the extension form of a **grading framework**. It gets a skill and
+its fixtures and returns scores, and every chat it needs, a judge's included, is one purlis runs
+for it. The built-in runner is its first user.
+_Avoid_: eval engine, judge (a judge is a role a chat plays in a grade)
+
+**SkillLint**:
+The studio capability that adds findings to a skill's live lint and install review. It never
+edits a skill. The built-in lints are its first user.
+
+**SkillTemplate**:
+The studio capability that offers starting points for a new skill, which lands as a draft skill.
+The blank and starter templates are its first user.
+
+**StudioPanel**:
+The studio capability that adds a panel to a skill's tab, drawn with panel blocks. The Runs and
+Grades panels are its first user.
+
+**SkillRouter**:
+The studio capability that is the extension form of a **skill router** (ADR 0102). The built-in
+router is its first user.
 
 **Facts file**:
 A file an extension keeps in its own state directory, holding the values purlis shows for it
@@ -1608,6 +1644,17 @@ _Avoid_: invocation, call, execution
 What decides which skills a chat sees or can load for its task. One ships with purlis; others
 arrive as extensions.
 _Avoid_: skill selector, dispatcher (dispatch is persona work)
+
+**Skill budget**:
+How many skills, and how many characters of their descriptions, one chat's listing may hold on
+its harness. purlis sets it below each harness's own limit and shows it on the chat tab; past
+it, the skill router hides skills behind the index skill (ADR 0102).
+_Avoid_: context budget (for this), skill limit
+
+**Index skill**:
+An always-loaded skill a skill router shows whenever it hides any skill, listing every hidden
+skill by name and one line and saying that `skill_load` loads it (ADR 0102).
+_Avoid_: catalogue skill, skill menu
 
 **Grading framework**:
 A pluggable way of grading a skill. purlis ships one; others arrive as extensions.

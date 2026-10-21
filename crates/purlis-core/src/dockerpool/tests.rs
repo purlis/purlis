@@ -191,7 +191,7 @@ fn a_runner_name_that_is_not_lower_case_letters_digits_and_dashes_is_refused() {
         "a b",
         "a/b",
         "a.b",
-        &"x".repeat(41),
+        &"x".repeat(50),
     ] {
         assert!(
             Runner::new(
@@ -1146,4 +1146,55 @@ fn a_home_candidate_is_taken_only_from_the_installers_own_folder() {
             home.display()
         );
     }
+}
+
+#[test]
+fn an_image_says_its_name_and_digest_and_whether_it_is_purlis_own() {
+    let own = Image::pinned(&format!("ghcr.io/purlis/purlis-runner:main@{DIGEST}")).unwrap();
+    assert_eq!(own.name(), "ghcr.io/purlis/purlis-runner");
+    assert_eq!(own.digest(), DIGEST.strip_prefix("sha256:").unwrap());
+    assert!(own.is_purlis_own());
+    let team = Image::pinned(&format!("localhost:5000/team/runner@{DIGEST}")).unwrap();
+    assert_eq!(team.name(), "localhost:5000/team/runner");
+    assert!(!team.is_purlis_own());
+    assert!(
+        !Image::pinned(&format!("ghcr.io/purlis/purlis-runner-fork@{DIGEST}"))
+            .unwrap()
+            .is_purlis_own()
+    );
+}
+
+#[test]
+fn the_version_purlis_says_is_read_from_its_version_line_alone() {
+    assert_eq!(
+        version_in("purlis 0.4.2-dev.17 (dev-release profile)\n"),
+        Some("0.4.2-dev.17")
+    );
+    assert_eq!(version_in("purlis 0.4.2 (release profile)"), Some("0.4.2"));
+    for not in [
+        "",
+        "purlis",
+        "charter 0.4.2 (release profile)",
+        "purlis 0.4.2",
+        "purlis 0.4.2 release",
+    ] {
+        assert_eq!(version_in(not), None, "{not:?}");
+    }
+}
+
+#[test]
+fn a_runners_version_is_asked_of_its_own_purlis_once_its_container_passes_the_check() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("paired", "purlis 0.4.2-dev.17 (dev-release profile)\n");
+    let made = made();
+    assert_eq!(fake.docker().version_of(&made).unwrap(), "0.4.2-dev.17");
+    assert!(
+        fake.file("log").contains(&format!(
+            "exec -i --user 10001:10001 {ID} /usr/local/bin/purlis --version"
+        )),
+        "{}",
+        fake.file("log")
+    );
+    fake.set("paired", "something else\n");
+    assert!(fake.docker().version_of(&made).is_err());
 }

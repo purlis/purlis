@@ -572,8 +572,27 @@ impl HostLink {
         ended: impl FnOnce() + Send + 'static,
         naming: Option<purlis_session_protocol::browsing::Secret>,
     ) -> Result<HostLink, String> {
+        Self::over_relayed(link, runtime, ended, naming, None).await
+    }
+
+    /// [`Self::over_named`], the link then relayed by the host to the runner it keeps as
+    /// `relaying`, where one is named (`relay_to`, 1.33), before it subscribes.
+    ///
+    /// **A window that restarted before its host let go of its old link is relayed on a second
+    /// try** (#2744): the old link still holds the window's name, so the host refuses the
+    /// `relay_to` `not_allowed`, and keeps the name for this link. The window sends the same
+    /// `relay_to` once more, [`NAMED_AGAIN_AFTER`] later, once the old link has ended. A second
+    /// refusal is the link's: it is not opened.
+    pub async fn over_relayed(
+        link: Link,
+        runtime: tokio::runtime::Handle,
+        ended: impl FnOnce() + Send + 'static,
+        naming: Option<purlis_session_protocol::browsing::Secret>,
+        relaying: Option<&str>,
+    ) -> Result<HostLink, String> {
         let (client, views, events) = Client::new(link);
         let client = Arc::new(client);
+        let named = naming.is_some() && client.version() >= NAMES_ITSELF;
         let unnamed = match naming.filter(|_| client.version() >= NAMES_ITSELF) {
             Some(name) => client
                 .call(Command::NameWindow { name })
@@ -582,6 +601,22 @@ impl HostLink {
                 .map(|why| why.to_string()),
             None => None,
         };
+        if let Some(runner) = relaying {
+            let mut relayed = client.relay_to(runner).await;
+            let name_held = |sent: &Result<(), session::CallError>| {
+                sent.as_ref()
+                    .err()
+                    .and_then(session::CallError::refusal)
+                    .is_some_and(|refusal| refusal.code == session::NOT_ALLOWED)
+            };
+            if named && unnamed.is_none() && name_held(&relayed) {
+                tokio::time::sleep(NAMED_AGAIN_AFTER).await;
+                relayed = client.relay_to(runner).await;
+            }
+            relayed.map_err(|why| {
+                format!("the session host did not relay the link to runner {runner}: {why}")
+            })?;
+        }
         client
             .subscribe(session::Since::new())
             .await
@@ -1611,6 +1646,11 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
         }
     })
 }
+
+/// How long a window waits to send its `relay_to` once more, where the host refused it because
+/// another link holds the window's name (#2744): long enough for the host to see the end of the
+/// window's link from before a restart, short enough that a person does not notice it.
+const NAMED_AGAIN_AFTER: Duration = Duration::from_millis(500);
 
 /// The session protocol version whose host takes the window's name for a link (#2623).
 const NAMES_ITSELF: purlis_session_protocol::version::Version =

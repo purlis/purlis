@@ -176,6 +176,9 @@ test("the shipping workflows' builds, as read, one by one", () => {
       { manifest: "Cargo.toml", packages: ["purlis-cli", "persona-statistics"] },
       app,
       app,
+      // `cargo run --release -p release-manifest --bin sign-runner-image`: signs the runner
+      // image's line with the updater's key (#2749).
+      { manifest: "Cargo.toml", packages: ["release-manifest"] },
       // `cargo run --release -p release-manifest`: the tool that writes the update manifests.
       { manifest: "Cargo.toml", packages: ["release-manifest"] },
     ],

@@ -100,6 +100,14 @@ impl Connector for ToTheRunner {
 /// The desktop's host, which relays to the runner kept as `builds` alone, pinning `pinned` for
 /// it; and the runner's host.
 fn a_desktop(pinned: impl Fn(&Kept) -> Pinned) -> (Hosting, Hosting) {
+    a_desktop_waiting(pinned, Arc::new(|| {}))
+}
+
+/// [`a_desktop`], each runner looked up only once `waits` returns: as a lookup that takes a while.
+fn a_desktop_waiting(
+    pinned: impl Fn(&Kept) -> Pinned,
+    waits: Arc<dyn Fn() + Send + Sync>,
+) -> (Hosting, Hosting) {
     let b = Hosting::running_with(Echo, StandIns::default());
     let (desktop, runner) = (Arc::new(Kept::new(DESKTOP)), Arc::new(Kept::new(RUNNER)));
     let pinned = pinned(&runner);
@@ -109,6 +117,7 @@ fn a_desktop(pinned: impl Fn(&Kept) -> Pinned) -> (Hosting, Hosting) {
         desktop: desktop.pinned(),
     };
     let relays: RelaysTo = Arc::new(move |name: &str| {
+        waits();
         if name != "builds" {
             return Err(format!("no runner named {name} is kept on this machine"));
         }
@@ -308,4 +317,96 @@ async fn a_second_name_while_the_link_is_undecided_is_refused_and_the_first_stay
         .await
         .unwrap_err();
     assert_eq!(code(&again), Some(session::MALFORMED), "{again}");
+}
+
+/// **One link of the desktop's host holds a window's name at a time** (#2623, #2744), across the
+/// relays its links make: a second link that names itself so is refused `relay_to`
+/// `not_allowed` while the first holds the name, and keeps the name, so the same `relay_to`
+/// sent again once the first link has ended is relayed.
+#[tokio::test]
+async fn a_name_another_relayed_link_holds_is_refused_until_that_link_ends() {
+    let (a, _b) = a_desktop(Kept::pinned);
+    let name = purlis_session_protocol::browsing::Secret::new("ab".repeat(16));
+    let first = routed(Scope::LocalUi, a.clone()).await;
+    first
+        .call(Command::NameWindow { name: name.clone() })
+        .await
+        .unwrap();
+    tokio::time::timeout(PATIENCE, first.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("the first link is relayed");
+
+    let second = routed(Scope::LocalUi, a.clone()).await;
+    second
+        .call(Command::NameWindow { name })
+        .await
+        .expect("kept while the link is undecided");
+    let refused = tokio::time::timeout(PATIENCE, second.relay_to("builds"))
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(code(&refused), Some(session::NOT_ALLOWED), "{refused}");
+
+    drop(first);
+    let deadline = tokio::time::Instant::now() + PATIENCE;
+    while let Err(refused) = second.relay_to("builds").await {
+        assert_eq!(code(&refused), Some(session::NOT_ALLOWED), "{refused}");
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the name was never let go of"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    second.list().await.expect("relayed");
+}
+
+/// **A link that ends while its `relay_to` is taken holds no name** (#2744): the name it gave is
+/// let go of with it, so the window's next link, named the same, is relayed. Here the runner's
+/// lookup waits until the first link has ended.
+#[tokio::test]
+async fn a_link_that_ends_while_it_is_relayed_lets_go_of_its_name() {
+    let gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+    let waits: Arc<dyn Fn() + Send + Sync> = {
+        let gate = Arc::clone(&gate);
+        Arc::new(move || {
+            let (open, changed) = &*gate;
+            let mut open = open.lock().unwrap();
+            while !*open {
+                open = changed.wait(open).unwrap();
+            }
+        })
+    };
+    let (a, _b) = a_desktop_waiting(Kept::pinned, waits);
+    let name = purlis_session_protocol::browsing::Secret::new("cd".repeat(16));
+
+    let first = routed(Scope::LocalUi, a.clone()).await;
+    first
+        .call(Command::NameWindow { name: name.clone() })
+        .await
+        .unwrap();
+    let relaying = tokio::spawn(async move {
+        let _ = first.relay_to("builds").await;
+    });
+    // The link ends while its runner is being looked up, then the lookup goes on.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    relaying.abort();
+    let _ = relaying.await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    {
+        let (open, changed) = &*gate;
+        *open.lock().unwrap() = true;
+        changed.notify_all();
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let second = routed(Scope::LocalUi, a).await;
+    second
+        .call(Command::NameWindow { name })
+        .await
+        .expect("kept while the link is undecided");
+    tokio::time::timeout(PATIENCE, second.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("the name the ended link gave is free");
 }

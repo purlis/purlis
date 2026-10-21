@@ -1248,6 +1248,7 @@ export const commands = {
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
+	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	installUpdate: __WINDOW_ONLY,
@@ -1867,7 +1868,6 @@ export const commands = {
 	 */
 	useDefaultLayout: () => typedError<string, string>(__TAURI_INVOKE("use_default_layout")),
 	drawNativeWindow: __WINDOW_ONLY_RESULT,
-	nativeWindowDrawn: __WINDOW_ONLY_RESULT,
 	vaultSecretReveal: __WINDOW_ONLY_RESULT,
 	vaultSecretCopy: __WINDOW_ONLY_RESULT,
 	vaultSetupAccounts: __WINDOW_ONLY_RESULT,
@@ -5686,21 +5686,6 @@ export type Moved = {
 };
 
 /**
- *  **What the operating system draws this window in**, read back from the platform: the
- *  appearance its native parts are drawn in and the background colour the window was given.
- */
-export type NativeDrawn = {
-	/**  `dark` or `light`. */
-	appearance: string,
-	/**
-	 *  The window's colour, `#rrggbb` in lowercase, opaque as the window is drawn: `null` where
-	 *  the platform gives no colour purlis reads (Windows for now, or a colour with no sRGB
-	 *  form). An unread colour never stops the appearance from being read.
-	 */
-	background: string | null,
-};
-
-/**
  *  The branch the window's focus is on, by name, in the project a scope puts first. It only
  *  orders the scope: a name no branch of the project has moves nothing.
  */
@@ -6887,6 +6872,29 @@ export type PoolRow = {
 	image: string,
 	/**  What its runner is held to: what the person set, and the defaults for the rest. */
 	limits: PoolLimitsShown,
+};
+
+/**
+ *  **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
+ *  when they differ, and whether purlis moves the pool along with the desktop.
+ */
+export type PoolVersion = {
+	/**  The version its runner's `purlis --version` says; none where it could not be read. */
+	runner: string | null,
+	/**  Why it could not be read, in Docker's or purlis's words. */
+	why: string | null,
+	/**  This desktop's version. */
+	desktop: string,
+	/**
+	 *  Whether the pool is of purlis's own runner image, which purlis moves to the desktop's
+	 *  version after an update; a team's own image is never moved.
+	 */
+	follows: boolean,
+	/**
+	 *  How many of its older runners drain: each keeps its chats until they end, then is
+	 *  removed.
+	 */
+	draining: number,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
