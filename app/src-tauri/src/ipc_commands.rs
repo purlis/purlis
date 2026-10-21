@@ -386,6 +386,8 @@ macro_rules! app_commands {
                 browserlimits::browser_limits,
                 browserlimits::set_browser_limit,
                 enginesandbox::engine_sandbox,
+                enginedownload::engine_downloads,
+                enginedownload::cancel_engine_download,
                 enginesandbox::use_this_machines_chrome,
                 dockerpools::docker_pools,
                 dockerpools::add_docker_pool,

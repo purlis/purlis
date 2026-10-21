@@ -231,9 +231,22 @@ use crate::view::{Limits, Views};
 /// 1.36 added a refusal code of its own for a browser whose engine cannot make its sandbox on
 /// the host's machine (#2899): `no_engine_sandbox`, its `why` the binary's words for it. A host
 /// before 1.36 refuses it `not_started` in the same words, which its window reads by them.
+///
+/// 1.37 added a browser engine's first download, told as it goes (#2207): the pushed
+/// `engine_download` says how far the download for a browser's start has come (`done`, of `total`
+/// where that is known), a few times a second at most, and `cancel_engine_download` stops it,
+/// keeping nothing of it. The window's alone ([`crate::grants::Power::Browser`]): a host pushes
+/// it only to a link of 1.37 or later that may start a browser.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 36,
+    minor: 37,
+};
+
+/// The version that first knows a browser engine's download (#2207): no link before it is
+/// pushed [`Pushed::EngineDownload`].
+pub const KNOWS_ENGINE_DOWNLOADS: Version = Version {
+    major: 1,
+    minor: 37,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -617,6 +630,11 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         have: Vec<String>,
     },
+    /// The person cancels the engine's download for browser `program`'s start (1.37, #2207):
+    /// the download stops, nothing of it is kept, and the start is refused in words that say
+    /// so. Answered [`Answer::Done`], also where nothing is downloading for it. The window's
+    /// alone ([`crate::grants::Power::Browser`]).
+    CancelEngineDownload { program: String },
 }
 
 /// One ref of a repository and the commit it is at (1.34): what `take_code` names and `code`
@@ -1305,6 +1323,16 @@ pub enum Pushed {
         project: String,
         why: String,
     },
+    /// The engine's download for browser `program`'s start has come to `done` bytes, of `total`
+    /// where its server said (1.37, #2207): told a few times a second at most, and once more as
+    /// it ends. Pushed only to a link of 1.37 or later that may start a browser
+    /// ([`KNOWS_ENGINE_DOWNLOADS`]).
+    EngineDownload {
+        program: String,
+        done: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        total: Option<u64>,
+    },
 }
 
 wire_words!(Command {
@@ -1356,6 +1384,7 @@ wire_words!(Command {
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
+    CancelEngineDownload => "cancel_engine_download",
 });
 
 impl Command {
@@ -1395,7 +1424,8 @@ impl Command {
             | Command::TakeOver { .. }
             | Command::HandBack { .. }
             | Command::BrowserInput { .. }
-            | Command::SizeBrowser { .. } => Power::Browser,
+            | Command::SizeBrowser { .. }
+            | Command::CancelEngineDownload { .. } => Power::Browser,
             Command::LogIn { .. } => Power::LogIn,
             Command::ProgramsOf { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
@@ -1419,6 +1449,7 @@ impl Pushed {
             Pushed::Saving { .. } | Pushed::WhoIsMidTurn { .. } => Some(Power::Save),
             Pushed::Sandbox { .. } => Some(Power::Confine),
             Pushed::Event(_)
+            | Pushed::EngineDownload { .. }
             | Pushed::Missed { .. }
             | Pushed::Ended { .. }
             | Pushed::ViewEnded { .. }
@@ -1473,6 +1504,7 @@ wire_words!(Pushed {
     LinkDown => "link_down",
     LinkBack => "link_back",
     NotHeld => "not_held",
+    EngineDownload => "engine_download",
 });
 
 /// One event, in ADR 0066's envelope.
@@ -1875,7 +1907,9 @@ impl Lane {
             | Command::Unpair
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
-            | Command::GiveCode { .. } => None,
+            | Command::GiveCode { .. }
+            // Never behind the start it cancels, which waits on the download.
+            | Command::CancelEngineDownload { .. } => None,
             Command::Attach { chat: program }
             | Command::Detach { chat: program, .. }
             | Command::AttachView { program, .. }
@@ -2527,6 +2561,15 @@ impl Client {
         }
     }
 
+    /// Cancel the engine's download for browser `program`'s start (1.37, #2207): nothing of it
+    /// is kept.
+    pub async fn cancel_engine_download(&self, program: &str) -> Result<(), CallError> {
+        self.done(Command::CancelEngineDownload {
+            program: program.to_owned(),
+        })
+        .await
+    }
+
     /// Throw the kill switch: every program the host runs ends, and none starts until the
     /// window re-arms (1.5).
     pub async fn stop_all(&self) -> Result<KillSwitch, CallError> {
@@ -2811,7 +2854,8 @@ impl Subscribed {
                 | Pushed::WhoIsMidTurn { .. }
                 | Pushed::LinkDown { .. }
                 | Pushed::LinkBack {}
-                | Pushed::NotHeld { .. } => {}
+                | Pushed::NotHeld { .. }
+                | Pushed::EngineDownload { .. } => {}
             };
             let _ = self.queue.try_send(Told::Pushed(pushed));
             return false;

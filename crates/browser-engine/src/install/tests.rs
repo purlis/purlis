@@ -147,3 +147,45 @@ fn a_body_left_unread_is_heard_as_not_answered() {
         [("https://a.test/m".to_owned(), Some(200), false)]
     );
 }
+
+/// #2207: a download says how long its body is where its server says, so its progress can be
+/// shown as a share of it; a server that does not say gives no length.
+#[test]
+fn a_download_says_how_long_its_body_is_where_its_server_says() {
+    let (port, _done) = serving(|_| {
+        vec![
+            (
+                Duration::ZERO,
+                "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nthe archive".to_owned(),
+            ),
+            (
+                Duration::ZERO,
+                "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nno length".to_owned(),
+            ),
+        ]
+    });
+    let (https, _) = plain(Duration::from_secs(10));
+    let url = format!("http://127.0.0.1:{port}/archive.zip");
+
+    let (mut body, length) = https.fetch_sized(&url).unwrap();
+    let mut read = String::new();
+    body.read_to_string(&mut read).unwrap();
+    assert_eq!((read.as_str(), length), ("the archive", Some(11)));
+    drop(body);
+
+    let (_, length) = https.fetch_sized(&url).unwrap();
+    assert_eq!(length, None);
+}
+
+/// A download that does not know its length says none.
+#[test]
+fn a_download_that_knows_no_length_says_none() {
+    struct Bytes;
+    impl Fetch for Bytes {
+        fn fetch(&self, _url: &str) -> std::io::Result<Box<dyn Read + '_>> {
+            Ok(Box::new(Cursor::new(b"bytes".to_vec())))
+        }
+    }
+    let (_, length) = Bytes.fetch_sized("https://a.test/x").unwrap();
+    assert_eq!(length, None);
+}

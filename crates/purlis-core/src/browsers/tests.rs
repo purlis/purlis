@@ -976,3 +976,172 @@ fn a_chosen_chrome_that_is_gone_leaves_the_pinned_engine_as_it_stands() {
         Err(super::sandboxing::NO_ENGINE_SANDBOX.to_owned())
     );
 }
+
+// ---- The engine's first download, told and cancelled (#2207) ----
+
+use std::io::{Cursor, Read};
+use std::sync::{Arc, Mutex};
+
+use super::{DOWNLOAD_TOLD_EVERY, Progressing, download_failed_said};
+
+/// An archive of `chunks` reads of `size` bytes each, whose length is said.
+struct Chunked {
+    chunks: usize,
+    size: usize,
+}
+
+impl Fetch for Chunked {
+    fn fetch(&self, url: &str) -> std::io::Result<Box<dyn Read + '_>> {
+        self.fetch_sized(url).map(|(body, _)| body)
+    }
+
+    fn fetch_sized(&self, _url: &str) -> std::io::Result<(Box<dyn Read + '_>, Option<u64>)> {
+        let total = self.chunks * self.size;
+        Ok((
+            Box::new(OneReadAtATime {
+                body: Cursor::new(vec![7_u8; total]),
+                size: self.size,
+            }),
+            Some(total as u64),
+        ))
+    }
+}
+
+/// A body that gives at most `size` bytes a read.
+struct OneReadAtATime {
+    body: Cursor<Vec<u8>>,
+    size: usize,
+}
+
+impl Read for OneReadAtATime {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let most = buf.len().min(self.size);
+        self.body.read(&mut buf[..most])
+    }
+}
+
+/// What a download was told, in order: how far it had come, and of how much.
+type Told = Arc<Mutex<Vec<(u64, Option<u64>)>>>;
+
+fn told() -> (purlis_host::Download, Told) {
+    let told: Told = Arc::default();
+    let into = Arc::clone(&told);
+    (
+        purlis_host::Download::telling(Arc::new(move |done, total| {
+            into.lock().unwrap().push((done, total));
+        })),
+        told,
+    )
+}
+
+#[test]
+fn a_download_is_told_a_few_times_a_second_at_most_and_once_as_it_ends() {
+    let (download, told) = told();
+    let archive = Chunked {
+        chunks: 50,
+        size: 1000,
+    };
+    let reads = Progressing::new(&archive, &download, Duration::from_secs(3600));
+
+    let mut body = reads.fetch("https://engine.test/a.zip").unwrap();
+    std::io::copy(&mut body, &mut std::io::sink()).unwrap();
+
+    assert_eq!(
+        *told.lock().unwrap(),
+        [(1000, Some(50_000)), (50_000, Some(50_000))],
+        "its first read, then nothing until its end"
+    );
+    assert!(DOWNLOAD_TOLD_EVERY >= Duration::from_millis(200));
+    assert!(DOWNLOAD_TOLD_EVERY <= Duration::from_millis(500));
+}
+
+#[test]
+fn a_cancelled_download_fails_its_next_read_in_the_cancels_words() {
+    let (download, told) = told();
+    let archive = Chunked {
+        chunks: 50,
+        size: 1000,
+    };
+    let reads = Progressing::new(&archive, &download, Duration::ZERO);
+    let mut body = reads.fetch("https://engine.test/a.zip").unwrap();
+    let mut buf = [0_u8; 4096];
+    assert_eq!(body.read(&mut buf).unwrap(), 1000);
+
+    download.cancel();
+
+    let why = body.read(&mut buf).unwrap_err();
+    assert_eq!(why.to_string(), purlis_host::ENGINE_DOWNLOAD_CANCELLED);
+    assert_eq!(told.lock().unwrap().len(), 1, "nothing more is told");
+}
+
+#[test]
+fn a_cancelled_download_keeps_nothing_in_the_engines_folder() {
+    use purlis_browser_engine::install::{EngineSettings, Engines, Manifest, NoSigner, Platform};
+    let folder = tempfile::tempdir().unwrap();
+    let archive = vec![7_u8; 10_000];
+    let digest: String = {
+        use sha2::Digest as _;
+        sha2::Sha256::digest(&archive)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    };
+    let url = "https://engine.test/155.0.8059.79/linux64/chrome-linux64.zip";
+    let manifest = Manifest::parse(
+        format!(
+            r#"{{"version":"155.0.8059.79","issued":"2026-10-15T00:00:00Z","downloads":[{{"platform":"linux64","url":"{url}","sha256":"{digest}"}}]}}"#
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    let engines = Engines::new(
+        folder.path(),
+        Platform::Linux64,
+        manifest,
+        Box::new(NoSigner),
+    );
+    // The person cancelled it as it began.
+    let (download, _told) = told();
+    download.cancel();
+    let archive = Chunked {
+        chunks: 10,
+        size: 1000,
+    };
+    let reads = Progressing::new(&archive, &download, Duration::ZERO);
+
+    let refused = engines
+        .prepare(
+            &EngineSettings::default(),
+            &reads,
+            chrono::DateTime::parse_from_rfc3339("2026-10-15T00:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        )
+        .unwrap_err();
+
+    assert!(
+        download_failed_said(&refused).contains("cancelled"),
+        "{}",
+        download_failed_said(&refused)
+    );
+    let left: Vec<_> = std::fs::read_dir(folder.path())
+        .map(|entries| entries.flatten().map(|entry| entry.file_name()).collect())
+        .unwrap_or_default();
+    assert!(left.is_empty(), "nothing of it is kept: {left:?}");
+}
+
+#[test]
+fn a_download_that_failed_says_what_to_do() {
+    use purlis_browser_engine::install::Refused;
+    let failed = Refused::Download(std::io::Error::other("connection reset"));
+    let said = download_failed_said(&failed);
+    assert!(said.contains("connection reset"), "{said}");
+    assert!(said.contains("open the browser again"), "{said}");
+    let digest = Refused::Digest {
+        expected: "aa".into(),
+        got: "bb".into(),
+    };
+    let said = download_failed_said(&digest);
+    assert!(said.contains("was not kept"), "{said}");
+    assert!(said.contains("open the browser again"), "{said}");
+}

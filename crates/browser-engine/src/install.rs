@@ -225,6 +225,12 @@ impl ManifestSignature for NoSigner {
 pub trait Fetch {
     /// The bytes at `url`.
     fn fetch(&self, url: &str) -> io::Result<Box<dyn Read + '_>>;
+
+    /// The bytes at `url`, and how many there are where the answer says (#2207): what a
+    /// download's progress is a share of. Where it is not known, none.
+    fn fetch_sized(&self, url: &str) -> io::Result<(Box<dyn Read + '_>, Option<u64>)> {
+        Ok((self.fetch(url)?, None))
+    }
 }
 
 /// What a download heard, for each request it made: its address, the status that came back
@@ -308,6 +314,10 @@ impl Default for Https {
 
 impl Fetch for Https {
     fn fetch(&self, url: &str) -> io::Result<Box<dyn Read + '_>> {
+        self.fetch_sized(url).map(|(body, _)| body)
+    }
+
+    fn fetch_sized(&self, url: &str) -> io::Result<(Box<dyn Read + '_>, Option<u64>)> {
         let https_only = self.https_only();
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .https_only(https_only)
@@ -369,16 +379,17 @@ impl Fetch for Https {
                 });
                 return Err(io::Error::other(format!("{url} answered {status}")));
             }
-            let body = response
-                .into_body()
-                .into_with_config()
-                .limit(MAX_ARCHIVE_BYTES)
-                .reader();
-            return Ok(Box::new(Heard {
-                body,
-                heard: Some((self.clone(), url, status, started)),
-                whole: false,
-            }));
+            let body = response.into_body();
+            let length = body.content_length();
+            let body = body.into_with_config().limit(MAX_ARCHIVE_BYTES).reader();
+            return Ok((
+                Box::new(Heard {
+                    body,
+                    heard: Some((self.clone(), url, status, started)),
+                    whole: false,
+                }),
+                length,
+            ));
         }
         Err(io::Error::other(format!(
             "more than {MAX_REDIRECTS} redirects from {url}"

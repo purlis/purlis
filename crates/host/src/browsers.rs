@@ -196,6 +196,55 @@ pub const NOT_DRIVING: &str = "the person is not driving this browser: take it o
 /// What the person's input is refused with where the page has moved on (#2014).
 pub const INPUT_MISSED: &str = "the page changed before this input reached it, so it was dropped";
 
+/// **A browser's engine download, as it starts** (#2207): told how far the download has come,
+/// and asked whether the person cancelled it. The binary tells it no more than a few times a
+/// second; the host pushes each to the links that know of downloads (1.37).
+#[derive(Clone)]
+pub struct Download {
+    told: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
+    cancelled: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Download {
+    /// A download whose progress is told to `told`: the bytes done, and of how many where that
+    /// is known.
+    pub fn telling(told: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>) -> Self {
+        Download {
+            told,
+            cancelled: Arc::default(),
+        }
+    }
+
+    /// A download nobody watches, and nobody cancels.
+    pub fn unwatched() -> Self {
+        Download::telling(Arc::new(|_, _| {}))
+    }
+
+    /// The download has come to `done` bytes, of `total` where that is known.
+    pub fn tell(&self, done: u64, total: Option<u64>) {
+        (self.told)(done, total);
+    }
+
+    /// The person cancelled it: the next read of it fails, and nothing of it is kept.
+    pub fn cancel(&self) {
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Whether the person cancelled it.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl std::fmt::Debug for Download {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Download")
+            .field("cancelled", &self.is_cancelled())
+            .finish_non_exhaustive()
+    }
+}
+
 /// Starts browsers: the binary's, built on the engine and the core.
 pub trait Browsers: Send + Sync + 'static {
     /// The folder each browser's data folder is made in, under the host's store. Asked as a
@@ -210,11 +259,14 @@ pub trait Browsers: Send + Sync + 'static {
     /// Start a browser whose data folder is `data` (made by the binary, this user's alone),
     /// reaching what `reach` says, or with none, nothing listed and every site new to the
     /// project refused (#2013); opened from the kept login `kept`, where one is named (#2021).
+    /// Its engine's download, where the engine is not there yet, is told to `download`, and
+    /// stops where it is cancelled (#2207), refused in [`ENGINE_DOWNLOAD_CANCELLED`]'s words.
     fn start(
         &self,
         data: &Path,
         reach: Option<&BrowserReach>,
         kept: Option<&KeptLogin>,
+        download: &Download,
     ) -> Result<Arc<dyn Screen>, NotStarted>;
 }
 
@@ -249,6 +301,11 @@ impl std::fmt::Display for NotStarted {
     }
 }
 
+/// What a browser's start is refused with where the person cancelled its engine's download
+/// (#2207).
+pub const ENGINE_DOWNLOAD_CANCELLED: &str = "the person cancelled the browser engine's download, \
+     and nothing of it was kept";
+
 /// A host whose binary starts no browser: every start of one is refused with a sentence.
 pub struct NoBrowsers;
 
@@ -262,6 +319,7 @@ impl Browsers for NoBrowsers {
         _data: &Path,
         _reach: Option<&BrowserReach>,
         _kept: Option<&KeptLogin>,
+        _download: &Download,
     ) -> Result<Arc<dyn Screen>, NotStarted> {
         Err("this session host was not given a way to start a browser".into())
     }

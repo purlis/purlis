@@ -147,3 +147,6 @@
 {"reply":{"re":143,"refused":{"code":"too_large","why":"the bundle is larger than 1073741824 bytes, the most one transfer carries, so it was not taken"}}}
 {"call":{"id":144,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser"}}
 {"reply":{"re":144,"refused":{"code":"no_engine_sandbox","why":"the browser engine cannot make its sandbox on this machine, and purlis never runs it without"}}}
+{"pushed":{"engine_download":{"program":"01J9ZQ8000000000000000000D","done":52428800,"total":158334976}}}
+{"pushed":{"engine_download":{"program":"01J9ZQ8000000000000000000D","done":1048576}}}
+{"call":{"id":150,"command":"cancel_engine_download","program":"01J9ZQ8000000000000000000D"}}
