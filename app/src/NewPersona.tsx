@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import * as Dialog from "./overlays/dialog";
 import { commands } from "./bindings";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /**
  * Making a persona (SI-3), asked where the answer is given — `NewVault`'s shape, for `charter
@@ -170,23 +171,12 @@ export function NewPersona({
             )}
 
             <SettingActions>
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={!ready}
-              >
+              <Button variant="primary" type="submit" isDisabled={!ready}>
                 {making ? "Creating…" : "Create persona"}
-              </button>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                disabled={making}
-                onClick={onCancel}
-              >
+              </Button>
+              <Button isDisabled={making} onPress={onCancel}>
                 Cancel
-              </button>
+              </Button>
             </SettingActions>
             {/* Why Create waits, said at the act rather than only in one row's help (#1719). */}
             {name.trim() !== "" && given(when) === null && given(parent) === null && (

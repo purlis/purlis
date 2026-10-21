@@ -21,6 +21,7 @@ import {
 import { skillView } from "./skillRuns";
 import { PersonaSkillAdd, PersonaSkillRemove } from "./personaSkills";
 import type { ViewRef } from "./tabs";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The Skill studio's tab** (SK-2, #2765; SK-4, #2767): one chat's skill set, at the project's
@@ -193,14 +194,12 @@ export function SkillStudioTab({
                 {skill.local && (
                   <>
                     {" "}
-                    <button
-                      type="button"
-                      className="ui-button"
-                      onClick={() => share(skill)}
+                    <Button
+                      onPress={() => share(skill)}
                       title="Give it to the team: the next save commits it with the project"
                     >
                       Share
-                    </button>
+                    </Button>
                   </>
                 )}
               </td>

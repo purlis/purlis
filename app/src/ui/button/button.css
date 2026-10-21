@@ -1,0 +1,239 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The button family's default** (#2904, ADR 0103, ADR 0104): how `Button`, `IconButton` and
+   `ToggleButton` are drawn when a theme names none of their parts. Every rule is keyed on the
+   wrapper's attributes (`data-scope`, `data-part`, `data-variant`, `data-size`) and React Aria's
+   state attributes, never on a class, so a screen cannot reach a button's look and a theme's parts
+   reach exactly what this file draws.
+
+   **It is in the `components` layer** (`styles.css`), above `App.css`: a view places a button
+   (margin, width, flex, order) and nothing it writes redraws one.
+
+   **Only tokens.** Every colour is one `var()` per declaration, so `contrast.test.ts` reads each
+   pair a rule draws; every size is a core geometry token.
+
+   **A state never changes size** (#2800): hover, pressed, selected, focus and disabled change a
+   colour, a ground or a ring, never a padding, a border width, a height or a weight. */
+
+/* ---------------------------------------------------------------------------------------------
+   The root, at rest: the secondary button, md.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="button"][data-part="root"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  block-size: var(--size-control);
+  padding-block: 0;
+  padding-inline: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background-color: var(--control-base);
+  font: inherit;
+  font-size: var(--font-size-base);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  appearance: none;
+}
+
+[data-scope="button"][data-part="root"][data-hovered] {
+  background-color: var(--control-hover);
+}
+
+/* The parts inside: the words and the icon, each laid out as the bare text and the bare icon
+   were, an item of the root's flex box. */
+[data-scope="button"][data-part="label"] {
+  min-inline-size: 0;
+}
+
+[data-scope="button"][data-part="icon"] {
+  display: inline-flex;
+  flex: none;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Variants.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="button"][data-part="root"][data-variant="primary"] {
+  border-color: var(--accent-base);
+  color: var(--text-primary);
+  background-color: var(--accent-surface);
+}
+
+[data-scope="button"][data-part="root"][data-variant="primary"][data-hovered] {
+  background-color: var(--tab-active);
+}
+
+[data-scope="button"][data-part="root"][data-variant="ghost"] {
+  border-color: transparent;
+  color: var(--text-primary);
+  background-color: transparent;
+}
+
+[data-scope="button"][data-part="root"][data-variant="ghost"][data-hovered] {
+  background-color: var(--surface-hover);
+}
+
+/* What cannot be undone from purlis (D-1719-3) says so in the danger colour, on the control's
+   own ground, and takes the danger ground under the pointer. */
+[data-scope="button"][data-part="root"][data-variant="danger"] {
+  color: var(--danger-base);
+  background-color: var(--control-base);
+}
+
+[data-scope="button"][data-part="root"][data-variant="danger"][data-hovered] {
+  background-color: var(--danger-surface);
+}
+
+/* **An answer that grants** (an Allow, an Accept; ADR 0097 §6): as plain as Keep blocked beside
+   it, on the control's own ground, so neither is pressed for its weight. It is told apart by its
+   edge in the accent and the open lock the family draws before its words, a cue that is not
+   colour. The primary look stays the answer purlis suggests, and is never a grant's. */
+[data-scope="button"][data-part="root"][data-variant="grants"] {
+  border-color: var(--accent-base);
+}
+
+/* A suggestion that is not the answer: the accent's ground, no edge. */
+[data-scope="button"][data-part="root"][data-variant="soft-accent"] {
+  border-color: transparent;
+  color: var(--text-primary);
+  background-color: var(--accent-surface);
+}
+
+[data-scope="button"][data-part="root"][data-variant="soft-accent"][data-hovered] {
+  background-color: var(--list-selected);
+}
+
+/* What asks for care without ending anything: its words in the waiting colour, no edge. */
+[data-scope="button"][data-part="root"][data-variant="warning-soft"] {
+  border-color: transparent;
+  color: var(--state-waiting);
+  background-color: var(--control-base);
+}
+
+[data-scope="button"][data-part="root"][data-variant="warning-soft"][data-hovered] {
+  background-color: var(--control-hover);
+}
+
+/* A button that reads as a link: the link colour, no box, underlined under the pointer and the
+   keyboard. It keeps its size's height, so it is still a target. */
+[data-scope="button"][data-part="root"][data-variant="link"] {
+  border-color: transparent;
+  color: var(--markdown-link);
+  background-color: transparent;
+  padding-inline: 0;
+}
+
+[data-scope="button"][data-part="root"][data-variant="link"]:is(
+    [data-hovered],
+    [data-focus-visible]
+  ) {
+  text-decoration: underline;
+}
+
+/* **Pressed, as a toggle** (`ToggleButton`, DS-12): it stands on the accent's ground behind the
+   accent's edge, as a chosen segment does, so it is told by its edge and not by colour alone.
+   Under the pointer it stays pressed. */
+[data-scope="button"][data-part="root"][data-selected] {
+  border-color: var(--accent-base);
+  background-color: var(--accent-surface);
+}
+
+[data-scope="button"][data-part="root"][data-selected][data-hovered] {
+  background-color: var(--tab-active);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   States every variant shares.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="button"][data-part="root"]:is([data-disabled], [aria-disabled="true"]) {
+  opacity: 0.5;
+}
+
+/* A press on its way (`aria-busy`, #1190): still reachable, drawn as not for pressing, and the
+   pointer says it is working. */
+[data-scope="button"][data-part="root"][aria-busy="true"] {
+  cursor: progress;
+}
+
+/* The ring: from the keyboard only, outside the button (R162). */
+[data-scope="button"][data-part="root"]:is(:focus-visible, [data-focus-visible]) {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Sizes: sm 24, md 28, lg 32 at the default text size and density (#2793, #2877). md is the
+   control height; sm is the chrome's, and never under 24px at the text size, the target size
+   WCAG 2.5.8 asks for; lg is a step over md, only beside a list's main filter field.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="button"][data-part="root"][data-size="sm"] {
+  block-size: max(var(--size-chrome), var(--space-7));
+  padding-inline: var(--space-3);
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="button"][data-part="root"][data-size="lg"] {
+  block-size: calc(var(--size-control) + var(--space-2));
+  padding-inline: var(--space-5);
+}
+
+/* A button that reads as a link is as tall as its words, so it can stand in a sentence: a target
+   inline in text is exempt from the target size (WCAG 2.5.8). */
+[data-scope="button"][data-part="root"][data-variant="link"][data-size] {
+  block-size: auto;
+  padding: 0;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* An icon button is square at its size. */
+[data-scope="button"][data-part="root"][data-icon-only] {
+  padding-inline: 0;
+  aspect-ratio: 1;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A row of buttons (`ButtonRow`): one size for all of them, and, where it wraps (#1855), as many
+   lines as they need. A button that alone is wider than the row breaks its words over lines
+   instead of being clipped: it keeps its height as its least, and grows past it only then. Words
+   before the buttons (a Notice's sentence) may stand in the row too.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="button-row"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-inline-size: 0;
+}
+
+[data-scope="button-row"][data-wraps] {
+  flex-wrap: wrap;
+}
+
+[data-scope="button-row"][data-wraps] > [data-scope="button"][data-part="root"] {
+  flex: none;
+  max-inline-size: 100%;
+  block-size: auto;
+  min-block-size: var(--size-control);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: inherit;
+}
+
+[data-scope="button-row"][data-wraps][data-size="sm"] > [data-scope="button"][data-part="root"] {
+  min-block-size: max(var(--size-chrome), var(--space-7));
+}
+
+[data-scope="button-row"][data-wraps][data-size="lg"] > [data-scope="button"][data-part="root"] {
+  min-block-size: calc(var(--size-control) + var(--space-2));
+}

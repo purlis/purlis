@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import { ScrollText } from "lucide-react";
 import { commands, type BriefOf, type PlaneId, type TaskBrief } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The brief a task was sent, read back** (#1494, V100-45).
@@ -353,44 +354,29 @@ export function BriefPanel({
             {/* The answer bar's order (#630, `docs/design-system.md`): the way out first, the
                 copies after it at the trailing edge. */}
             <Dialog.Close asChild>
-              <button className="ui-button" type="button" tabIndex={0} ref={close}>
-                Close
-              </button>
+              <Button ref={close}>Close</Button>
             </Dialog.Close>
             {said !== undefined &&
               said.kept !== "missing" &&
               (said.inert === null ? (
-                <button
-                  className="ui-button"
-                  type="button"
-                  tabIndex={0}
-                  onClick={() => copy(said.brief, "sent")}
-                >
-                  Copy brief
-                </button>
+                <Button onPress={() => copy(said.brief, "sent")}>Copy brief</Button>
               ) : (
                 // What is pasted is what was read, unless the person asks for the other by
                 // name: the brief as sent holds characters this panel would not draw. As shown
                 // stands next to Close, so it is the first one Tab reaches from it.
                 <>
-                  <button
-                    className="ui-button"
-                    type="button"
-                    tabIndex={0}
+                  <Button
                     title="The text as it is shown here: nothing hidden, nothing that turns text around."
-                    onClick={() => copy(said.inert ?? said.brief, "shown")}
+                    onPress={() => copy(said.inert ?? said.brief, "shown")}
                   >
                     Copy as shown
-                  </button>
-                  <button
-                    className="ui-button"
-                    type="button"
-                    tabIndex={0}
+                  </Button>
+                  <Button
                     title="The brief exactly as it was sent, with the characters this panel wrote out as codes."
-                    onClick={() => copy(said.brief, "sent")}
+                    onPress={() => copy(said.brief, "sent")}
                   >
                     Copy as sent
-                  </button>
+                  </Button>
                 </>
               ))}
           </AnswerBar>

@@ -242,10 +242,10 @@ describe("the dispatch grant Notice", () => {
 
     const allow = await screen.findByRole("button", { name: "Allow for this chat" });
     const keep = screen.getByRole("button", { name: "Keep blocked" });
-    expect(allow).toHaveClass("ui-button", "ui-button-grants");
-    expect(allow).not.toHaveClass("ui-button-primary");
-    expect(keep).toHaveClass("ui-button");
-    expect(keep).not.toHaveClass("ui-button-grants");
+    expect(allow).toHaveAttribute("data-variant", "grants");
+    expect(allow).not.toHaveAttribute("data-variant", "primary");
+    expect(keep).toHaveAttribute("data-scope", "button");
+    expect(keep).not.toHaveAttribute("data-variant", "grants");
   });
 
   it("keeps it blocked on Keep blocked, grants nothing and goes", async () => {

@@ -9,7 +9,7 @@
  * A Notice is not drawn over anything (#1647), so it takes no overlay's lift; it is the inline
  * surface (`primitives/overlays.css`): the overlay's border and corner scale, a ground in the
  * page, and no shadow. Its ways out must still wrap in the narrowest pane (#1481), so they are
- * `.ui-button` inside `.ui-button-row` (`primitives/controls.css`), where a button may break its
+ * small `Button` inside a `ButtonRow` (`ui/button/button.css`), where a button may break its
  * words over lines instead of being clipped.
  *
  * Held through the window's cascade (`cascade.testkit.ts`), so a view rule cannot fake it; the
@@ -48,12 +48,12 @@ function waysOf(name = "Every way") {
 /** A way out is the shared small button, and in its row it may wrap rather than be clipped. */
 function isASharedWrappingButton(button: HTMLElement) {
   const what = button.textContent ?? "";
-  expect(button, what).toHaveClass("ui-button", "ui-button-sm");
+  expect(button, what).toHaveAttribute("data-size", "sm");
   expect(drawnWith(button, "border-radius"), what).toBe("var(--radius-md)");
   expect(drawnWith(button, "white-space"), what).toBe("normal");
   expect(drawnWith(button, "max-inline-size"), what).toBe("100%");
   expect(drawnWith(button, "block-size"), what).toBe("auto");
-  expect(drawnWith(button, "min-block-size"), what).toBe("var(--size-chrome)");
+  expect(drawnWith(button, "min-block-size"), what).toBe("max(var(--size-chrome), var(--space-7))");
 }
 
 describe("a Notice's ways out", () => {
@@ -71,18 +71,21 @@ describe("a Notice's ways out", () => {
       "Copy command",
       "Dismiss",
     ]);
-    expect(line).toHaveClass("ui-button-row");
+    expect(line).toHaveAttribute("data-scope", "button-row");
     expect(drawnWith(line, "display")).toBe("flex");
     expect(drawnWith(line, "flex-wrap")).toBe("wrap");
     for (const button of buttons) isASharedWrappingButton(button);
     // Dismiss puts it away and fixes nothing: the quiet one.
-    expect(screen.getByRole("button", { name: "Dismiss" })).toHaveClass("ui-button-ghost");
+    expect(screen.getByRole("button", { name: "Dismiss" })).toHaveAttribute(
+      "data-variant",
+      "ghost",
+    );
   });
 
   it("are the shared small button in the Inbox's list too", async () => {
     render(<NoticeList>{everyWay("inbox")}</NoticeList>);
     const line = await screen.findByRole("status", { name: "Every way" });
-    expect(line).toHaveClass("ui-button-row");
+    expect(line).toHaveAttribute("data-scope", "button-row");
     for (const button of within(line).getAllByRole("button")) isASharedWrappingButton(button);
   });
 
@@ -116,8 +119,8 @@ describe("a Notice's ways out", () => {
     );
     render(<NoticePaneRow>{[one("a:1"), one("b:1"), one("c:1")]}</NoticePaneRow>);
     const more = await screen.findByRole("button", { name: "+1 more" });
-    expect(more).toHaveClass("ui-button", "ui-button-sm");
-    expect(drawnWith(more, "block-size")).toBe("var(--size-chrome)");
+    expect(more).toHaveAttribute("data-size", "sm");
+    expect(drawnWith(more, "block-size")).toBe("max(var(--size-chrome), var(--space-7))");
   });
 });
 

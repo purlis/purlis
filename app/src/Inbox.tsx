@@ -42,7 +42,6 @@ import {
 } from "./inboxScope";
 import { quietSaid } from "./NeedsYou";
 import { NoticeList } from "./Notice";
-import { GrantsMark } from "./primitives/Grants";
 import { PersonaMark } from "./PersonaMark";
 import {
   askKey,
@@ -58,11 +57,12 @@ import {
 import { KIND_SAID } from "./inboxUpdates";
 import { useAllowedLately, type AllowedLately } from "./allowedLately";
 import { SETTLE_MS } from "./TaskBlocksNotice";
-import { useNoticeSettle } from "./noticeSettle";
+import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
 import { useProjectShown } from "./projectShown";
 import { capMarks } from "./combiningMarks";
 import { AskWrites } from "./AskWrites";
 import { ScopeSwitch } from "./ScopeSwitch";
+import { Button, ButtonRow } from "./ui/button/Button";
 
 /** What an empty Inbox says (I-12). */
 export const NOTHING_WAITS = "Nothing is waiting on you";
@@ -353,7 +353,7 @@ export function Inbox({
   const [noticed, setNoticed] = useState(0);
   const {
     at: noticesAt,
-    guard: guardNotices,
+    allows: noticesAllow,
     said: noticesSaid,
   } = useNoticeSettle<HTMLElement>("moves");
   const counted = useCallback(
@@ -467,7 +467,6 @@ export function Inbox({
               aria-label={NOTICES}
               hidden={noticed === 0 && windowLinesCount === 0}
               ref={noticesAt}
-              onClickCapture={guardNotices}
             >
               <h3 className="inbox-chain sidebar-title">{NOTICES}</h3>
               <NothingDone said={noticesSaid} />
@@ -475,12 +474,14 @@ export function Inbox({
               {placeWindowLines !== undefined && (
                 <div className="inbox-window-lines" ref={placeWindowLines} />
               )}
-              <NoticeList onCount={counted} onAnswer={onNoticeAnswer}>
-                {notices}
-                {elsewhere !== undefined && (
-                  <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
-                )}
-              </NoticeList>
+              <NoticeWayGuard value={noticesAllow}>
+                <NoticeList onCount={counted} onAnswer={onNoticeAnswer}>
+                  {notices}
+                  {elsewhere !== undefined && (
+                    <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
+                  )}
+                </NoticeList>
+              </NoticeWayGuard>
             </section>
           )}
           {updates !== undefined && <UpdateList updates={updates} stops={stops} />}
@@ -731,24 +732,23 @@ function Ask({
     ask.source === "dispatch" ? (
       // The dispatch's own Notice, whole: what an Allow is bound to is read before it. Only a
       // press of one of its ways out counts as answering it here, never a tick or a scroll.
-      <div
-        className="inbox-notice"
-        onClickCapture={(event) => {
-          const way = (event.target as Element).closest("button.notice-fix");
-          if (!way) return;
-          // **Its answers wait for the row to settle** (#1695), as an ask's Allow does: the
-          // Notice grants, and what is under the pointer must be what the person read.
-          if (tooSoon()) {
-            event.preventDefault();
-            event.stopPropagation();
-            setSaid(MOVED_JUST_NOW);
-            return;
-          }
-          setSaid(undefined);
-          if (way.textContent) onTouched(way.textContent);
-        }}
-      >
-        <DispatchGrantNotice plane={plane} session={ask.session} asks={dispatches} />
+      <div className="inbox-notice">
+        <NoticeWayGuard
+          value={(way) => {
+            // **Its answers wait for the row to settle** (#1695), as an ask's Allow does: the
+            // Notice grants, and what is under the pointer or the keyboard must be what the
+            // person read.
+            if (tooSoon()) {
+              setSaid(MOVED_JUST_NOW);
+              return false;
+            }
+            setSaid(undefined);
+            if (way.textContent) onTouched(way.textContent);
+            return true;
+          }}
+        >
+          <DispatchGrantNotice plane={plane} session={ask.session} asks={dispatches} />
+        </NoticeWayGuard>
       </div>
     ) : shape.reply ? (
       <Reply plane={plane} ask={ask} stop={key} />
@@ -770,35 +770,30 @@ function Ask({
             />
           </Stop>
         )}
-        <div className="inbox-answers ui-button-row" role="group" aria-label={`Answers to ${who}`}>
+        <ButtonRow className="inbox-answers" role="group" aria-label={`Answers to ${who}`}>
           {shape.offers.map((option) => (
             // Never `disabled` while busy: a disabled button drops the keyboard to the page
             // (#1700). It says it is busy, and `answer` sends nothing a second time.
             <Stop key={option.id} id={`${key}:${option.id}`}>
-              <button
-                type="button"
-                // The answer the source suggests is styled as the primary one, in its place
-                // (#2241): a persona's declared browser. Still only the person's press answers.
-                // On an ask of Allow and Keep blocked, each Allow is the grants style, as plain
-                // as Keep blocked and told apart by its edge and its lock (ADR 0097 §6).
-                className={[
-                  "ui-button inbox-answer",
-                  option.allows ? "allows" : "",
-                  option.preselected === true ? "ui-button-primary" : "",
-                  grants(option) ? "ui-button-grants" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
+              <Button
+                // The answer the source suggests is the primary one, in its place (#2241): a
+                // persona's declared browser. Still only the person's press answers. On an ask
+                // of Allow and Keep blocked, each Allow is the grants variant, as plain as Keep
+                // blocked and told apart by its edge and its lock, and never the primary look
+                // (ADR 0097 §6).
+                variant={
+                  grants(option) ? "grants" : option.preselected === true ? "primary" : "secondary"
+                }
+                className={option.allows ? "inbox-answer allows" : "inbox-answer"}
                 aria-disabled={busy || undefined}
                 aria-busy={busy || undefined}
-                onClick={() => answer(option)}
+                onPress={() => answer(option)}
               >
-                {grants(option) && <GrantsMark />}
                 {option.label}
-              </button>
+              </Button>
             </Stop>
           ))}
-        </div>
+        </ButtonRow>
       </WithWrites>
     ) : null;
 
@@ -854,33 +849,35 @@ function Ask({
           </p>
         )}
         {/* Its ways on, side by side at its foot: one line, never one each. */}
-        <div className="inbox-acts ui-button-row">
+        <ButtonRow size="sm" className="inbox-acts">
           {shape.go && (
             <Stop id={`${key}:go`}>
-              <button
-                type="button"
-                className="ui-button ui-button-ghost ui-button-sm inbox-go"
+              <Button
+                size="sm"
+                variant="ghost"
                 aria-label={`Go to chat ${who}`}
-                onClick={onGo}
+                onPress={onGo}
+                className="inbox-go"
               >
                 Go to chat
-              </button>
+              </Button>
             </Stop>
           )}
           {shape.ignore && onIgnore !== undefined && (
             <Stop id={`${key}:ignore`}>
-              <button
-                type="button"
-                className="ui-button ui-button-ghost ui-button-sm inbox-go"
+              <Button
+                size="sm"
+                variant="ghost"
                 aria-label={`Ignore ${who} until it asks again`}
                 title={`Ignore ${who} until it asks again`}
-                onClick={() => onIgnore(ask.session)}
+                onPress={() => onIgnore(ask.session)}
+                className="inbox-go"
               >
                 Ignore
-              </button>
+              </Button>
             </Stop>
           )}
-        </div>
+        </ButtonRow>
       </li>
     </Stop>
   );
@@ -958,13 +955,9 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
         />
       </Stop>
       <Stop id={`${stop}:send`} focusable={!busy && replyBytes(text) !== undefined}>
-        <button
-          type="submit"
-          className="ui-button"
-          disabled={busy || replyBytes(text) === undefined}
-        >
+        <Button type="submit" isDisabled={busy || replyBytes(text) === undefined}>
           Send reply
-        </button>
+        </Button>
       </Stop>
       {said !== undefined && (
         <p className="inbox-refused" role="status">
@@ -1108,9 +1101,9 @@ function EmptyScope({
       <p className="inbox-none">
         {`${wider.count} ${wider.count === 1 ? "waits" : "wait"} in ${scopeOf(wider.scope)}.`}
       </p>
-      <button type="button" className="ui-button ui-button-sm" onClick={onWiden}>
+      <Button size="sm" onPress={onWiden}>
         {`Show ${scopeOf(wider.scope)}`}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -1193,25 +1186,27 @@ function UpdateList({ updates, stops }: { updates: Updates; stops: readonly stri
       <div className="inbox-updates-head">
         <h3 className="inbox-chain sidebar-title">{UPDATES}</h3>
         <Stop id={READ_ALL_STOP} focusable={unread}>
-          <button
-            type="button"
-            className="ui-button ui-button-ghost ui-button-sm inbox-go"
-            disabled={!unread}
+          <Button
+            size="sm"
+            variant="ghost"
+            isDisabled={!unread}
             title="Mark every update read. Nothing that waits on you is answered."
-            onClick={updates.onMarkAllRead}
+            onPress={updates.onMarkAllRead}
+            className="inbox-go"
           >
             Mark all read
-          </button>
+          </Button>
         </Stop>
         <Stop id={DISMISS_ALL_STOP}>
-          <button
-            type="button"
-            className="ui-button ui-button-ghost ui-button-sm inbox-go"
+          <Button
+            size="sm"
+            variant="ghost"
             title="Put every update away. Nothing that waits on you is answered."
-            onClick={updates.onDismissAll}
+            onPress={updates.onDismissAll}
+            className="inbox-go"
           >
             Dismiss all
-          </button>
+          </Button>
         </Stop>
       </div>
       <ul>
@@ -1333,58 +1328,55 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
         </p>
         {more !== undefined && <p className="inbox-more">{more}</p>}
         {answers.length > 0 && (
-          <div
-            className="inbox-answers ui-button-row"
+          <ButtonRow
+            className="inbox-answers"
             role="group"
             aria-label={`Answers to ${update.says}`}
           >
             {answers.map((answer, at) => (
               <Stop key={answer.label} id={`${key}:${at}`}>
-                <button
-                  type="button"
+                <Button
                   // An answer that allows is a grant, drawn as every grant is (ADR 0097 §6).
-                  className={
-                    answer.allows
-                      ? "ui-button inbox-answer allows ui-button-grants"
-                      : "ui-button inbox-answer"
-                  }
+                  variant={answer.allows ? "grants" : "secondary"}
+                  className={answer.allows ? "inbox-answer allows" : "inbox-answer"}
                   aria-label={answer.name}
                   title={answer.title}
-                  onClick={() => press(answer)}
+                  onPress={() => press(answer)}
                 >
-                  {answer.allows && <GrantsMark />}
                   {answer.label}
-                </button>
+                </Button>
               </Stop>
             ))}
-          </div>
+          </ButtonRow>
         )}
         <NothingDone said={said} />
-        <div className="inbox-acts ui-button-row">
+        <ButtonRow size="sm" className="inbox-acts">
           {go !== undefined && (
             <Stop id={`${key}:go`}>
-              <button
-                type="button"
-                className="ui-button ui-button-ghost ui-button-sm inbox-go"
+              <Button
+                size="sm"
+                variant="ghost"
                 aria-label={`Go to chat ${who}`}
-                onClick={go}
+                onPress={go}
+                className="inbox-go"
               >
                 Go to chat
-              </button>
+              </Button>
             </Stop>
           )}
           <Stop id={`${key}:dismiss`}>
-            <button
-              type="button"
-              className="ui-button ui-button-ghost ui-button-sm inbox-go"
+            <Button
+              size="sm"
+              variant="ghost"
               aria-label={`Dismiss: ${about}`}
               title={dismissSays ?? "Put this update away"}
-              onClick={dismiss}
+              onPress={dismiss}
+              className="inbox-go"
             >
               Dismiss
-            </button>
+            </Button>
           </Stop>
-        </div>
+        </ButtonRow>
       </li>
     </Stop>
   );

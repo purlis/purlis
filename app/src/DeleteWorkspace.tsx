@@ -5,6 +5,7 @@ import { useRef } from "react";
 import * as AlertDialog from "./overlays/alert-dialog";
 import type { AtRisk, Refused } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * Deleting a workspace: what goes, what charter can see that would be lost with it, and two
@@ -153,15 +154,9 @@ export function DeleteWorkspace({
 
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                ref={cancel}
-                onClick={onCancel}
-              >
+              <Button ref={cancel} onPress={onCancel}>
                 Cancel
-              </button>
+              </Button>
             </AlertDialog.Cancel>
             {/* **Before a refusal there is one answer, and it does not force.** After one there
                 is a different answer, and it says what it costs. Never both: a dialog offering
@@ -178,25 +173,13 @@ export function DeleteWorkspace({
                 down. These two are the scope's edges, so Radix reached them anyway — but only
                 in one direction, and only for as long as there are exactly two. */}
             {refusal === undefined || risky.length === 0 ? (
-              <button
-                type="button"
-                className="ui-button ui-button-danger ends-it"
-                tabIndex={0}
-                disabled={deleting}
-                onClick={() => onDelete(false)}
-              >
+              <Button variant="danger" isDisabled={deleting} onPress={() => onDelete(false)}>
                 {deleting ? "Deleting…" : "Delete workspace"}
-              </button>
+              </Button>
             ) : (
-              <button
-                type="button"
-                className="ui-button ui-button-danger ends-it"
-                tabIndex={0}
-                disabled={deleting}
-                onClick={() => onDelete(true)}
-              >
+              <Button variant="danger" isDisabled={deleting} onPress={() => onDelete(true)}>
                 {deleting ? "Deleting…" : discarding(risky)}
-              </button>
+              </Button>
             )}
           </AnswerBar>
         </AlertDialog.Content>

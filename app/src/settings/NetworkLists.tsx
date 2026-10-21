@@ -16,6 +16,7 @@ import { inTheWindow } from "../personaHostsAllow";
 import { useReadOnlySaid } from "../ReadOnlyLine";
 import { sandboxCommandReturned, useSandboxCommands } from "../sandboxAsked";
 import { Choice, Field, type RowIds } from "./components";
+import { Button } from "../ui/button/Button";
 
 /**
  * **Settings › Sandbox › Network** (#1662, spec #1661): the hosts every sandboxed chat here
@@ -186,18 +187,16 @@ export function RefusedRows({
             {row.target !== null &&
               row.looked_up === null &&
               row.levels.map((level) => (
-                <button
+                <Button
+                  variant="grants"
                   key={level}
-                  type="button"
-                  tabIndex={0}
-                  // An Allow for everyone edits the committed file (#1759).
-                  disabled={level === "project" && readOnly !== undefined}
+                  isDisabled={level === "project" && readOnly !== undefined}
                   title={level === "project" ? readOnly : undefined}
                   aria-label={`${ALLOW_SAID[level]}: ${row.target}`}
-                  onClick={() => row.target !== null && allow(row.target, level)}
+                  onPress={() => row.target !== null && allow(row.target, level)}
                 >
                   {ALLOW_SAID[level]}
-                </button>
+                </Button>
               ))}
           </li>
         ))}
@@ -343,15 +342,9 @@ export function AddPort({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
           }
         />
       </label>{" "}
-      <button
-        type="button"
-        className="ui-button"
-        tabIndex={0}
-        disabled={busy || typed.trim() === ""}
-        onClick={add}
-      >
+      <Button isDisabled={busy || typed.trim() === ""} onPress={add}>
         Allow port
-      </button>
+      </Button>
       <p className="granted-note">
         A Claude Code chat reaches it by name only, as <code>this-mac.internal</code> at that port.
       </p>

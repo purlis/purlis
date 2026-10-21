@@ -83,9 +83,9 @@ describe("the answers under a repository's instruction files", () => {
     const notNow = screen.getByRole("button", { name: "Not now" });
 
     for (const answer of [add, notNow]) {
-      expect(answer).toHaveClass("ui-button");
-      expect(answer).not.toHaveClass("ui-button-primary");
-      expect(answer).not.toHaveClass("ui-button-grants");
+      expect(answer).toHaveAttribute("data-scope", "button");
+      expect(answer).not.toHaveAttribute("data-variant", "primary");
+      expect(answer).not.toHaveAttribute("data-variant", "grants");
     }
     expect(add.className).toBe(notNow.className);
     expect(add.compareDocumentPosition(notNow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

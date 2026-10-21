@@ -8,6 +8,7 @@ import { AnswerBar } from "../AnswerBar";
 import { Choice, Field, SettingActions, SettingRow } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { askProfileSignIn } from "./links";
+import { Button } from "../ui/button/Button";
 
 /**
  * **You › Profiles** (#2034, ADR 0095): this machine's own profiles, each available in every
@@ -217,16 +218,14 @@ function EntryButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className="ui-setting-reset ui-button"
-      tabIndex={0}
+    <Button
       aria-label={spoken}
-      disabled={disabled}
-      onClick={onClick}
+      isDisabled={disabled}
+      onPress={onClick}
+      className="ui-setting-reset"
     >
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -387,18 +386,11 @@ export function RemoveProfile({
           )}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-                Cancel
-              </button>
+              <Button onPress={onCancel}>Cancel</Button>
             </AlertDialog.Cancel>
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              onClick={() => onRemove(removal)}
-            >
+            <Button variant="danger" onPress={() => onRemove(removal)}>
               {removal.adopted ? "Forget profile" : "Remove profile"}
-            </button>
+            </Button>
           </AnswerBar>
         </AlertDialog.Content>
       </AlertDialog.Portal>
@@ -481,14 +473,9 @@ const add: LiveSetting = {
             )}
           />
           <SettingActions>
-            <button
-              type="submit"
-              className="ui-button"
-              tabIndex={0}
-              disabled={now.busy || name.trim() === ""}
-            >
+            <Button type="submit" isDisabled={now.busy || name.trim() === ""}>
               Add profile
-            </button>
+            </Button>
           </SettingActions>
         </form>
       ),

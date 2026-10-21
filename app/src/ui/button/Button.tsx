@@ -1,0 +1,270 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * **The button family** (#2904, spec #2897, ADR 0104): every button, icon button and button
+ * drawn as a link in the window, on React Aria's `Button` and `ToggleButton`, wrapped here once.
+ * A screen imports these and never `react-aria-components` (`eslint.config.js`).
+ *
+ * - **Drawn by its parts.** The root carries `data-scope="button"`, `data-part="root"`, its
+ *   `data-variant` and its `data-size`; its words are the `label` part and its icon the `icon`
+ *   part. `button.css` draws the family default from them and a theme's parts reach the same
+ *   attributes (ADR 0103). A screen gives a button a place (`className` for margin, width,
+ *   order), never a look.
+ * - **Variants**: `secondary` (the plain button, the default), `primary` (the answer purlis
+ *   suggests), `ghost`, `danger` (what cannot be undone from purlis, D-1719-3), `soft-accent`,
+ *   `warning-soft`, `link`, and `grants`: an answer that grants, an Allow or an Accept
+ *   (ADR 0097 §6), which leads with the open lock the family draws itself and never takes the
+ *   primary look.
+ * - **Sizes**: `sm`, `md` (the default) and `lg`, which is only for the control beside a list's
+ *   main filter field. A row of buttons takes one size (`ButtonRow`), so a mixed row cannot be
+ *   built.
+ * - **Behaviour is React Aria's**: press by pointer, Enter and Space, focus on press in WebKit,
+ *   a visible focus ring only from the keyboard. Every button is in the tab sequence, which
+ *   WebKit leaves a button out of without `tabIndex` (#190).
+ */
+import {
+  Children,
+  createContext,
+  useContext,
+  type ButtonHTMLAttributes,
+  type ComponentPropsWithRef,
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+} from "react";
+import {
+  Button as AriaButton,
+  ToggleButton as AriaToggleButton,
+  type ButtonProps as AriaButtonProps,
+  type KeyboardEvent,
+  type ToggleButtonProps as AriaToggleButtonProps,
+} from "react-aria-components";
+import { LockOpen } from "lucide-react";
+
+/** The family's variants, in the order the manifest names them. */
+export const BUTTON_VARIANTS = [
+  "secondary",
+  "primary",
+  "ghost",
+  "danger",
+  "grants",
+  "soft-accent",
+  "warning-soft",
+  "link",
+] as const;
+export type ButtonVariant = (typeof BUTTON_VARIANTS)[number];
+
+/** The family's sizes: 24, 28 and 32 px at the default text size and density (`button.css`). */
+export const BUTTON_SIZES = ["sm", "md", "lg"] as const;
+export type ButtonSize = (typeof BUTTON_SIZES)[number];
+
+/**
+ * The native attributes React Aria does not hand to its element, which a call site still needs:
+ * a tooltip (until the shared tooltip replaces `title`, #2897), a busy press (#1190), a
+ * shortcut, and the place in a roving group's tab sequence.
+ */
+type Native = Pick<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  | "title"
+  | "tabIndex"
+  | "aria-busy"
+  | "aria-keyshortcuts"
+  | "aria-live"
+  | "aria-atomic"
+  | "aria-owns"
+  | "aria-roledescription"
+  | "aria-errormessage"
+>;
+
+const NATIVE_KEYS = [
+  "title",
+  "tabIndex",
+  "aria-busy",
+  "aria-keyshortcuts",
+  "aria-live",
+  "aria-atomic",
+  "aria-owns",
+  "aria-roledescription",
+  "aria-errormessage",
+] as const satisfies readonly (keyof Native)[];
+
+/** What every member of the family takes beside React Aria's own props. */
+interface Drawn extends Native {
+  variant?: ButtonVariant;
+  /** Ignored inside a `ButtonRow`, whose size every button in it takes. */
+  size?: ButtonSize;
+  /** A place for the button in its view: margin, width, flex, order. Never a look. */
+  className?: string;
+  style?: CSSProperties;
+  /** An icon before the words: the family's `icon` part. */
+  icon?: ReactNode;
+  ref?: Ref<HTMLButtonElement>;
+  /** `data-*` attributes reach the element as they are. */
+  [data: `data-${string}`]: string | number | boolean | undefined;
+}
+
+export interface ButtonProps
+  extends Drawn, Omit<AriaButtonProps, "className" | "style" | "children" | "render"> {
+  children?: ReactNode;
+}
+
+export interface ToggleButtonProps
+  extends Drawn, Omit<AriaToggleButtonProps, "className" | "style" | "children" | "render"> {
+  children?: ReactNode;
+}
+
+export type IconButtonProps = Omit<ButtonProps, "children" | "icon"> & {
+  /** The icon, which is all the button shows. */
+  icon: ReactNode;
+} & ({ "aria-label": string } | { "aria-labelledby": string });
+
+/** The size a `ButtonRow` hands every button in it. */
+const RowSize = createContext<ButtonSize | undefined>(undefined);
+
+/**
+ * **A row of buttons** (#2897: one size per row; #1855: a row that wraps). Every button in it
+ * takes the row's size, whatever its own `size` says. `wraps` lets the buttons go onto as many
+ * lines as they need, where the room may be narrower than they are (a Notice in a narrow pane),
+ * and a button that alone is wider than the row breaks its words instead of being clipped.
+ */
+export function ButtonRow({
+  size = "md",
+  wraps = true,
+  children,
+  ...rest
+}: Omit<ComponentPropsWithRef<"div">, "style"> & {
+  size?: ButtonSize;
+  wraps?: boolean;
+}) {
+  return (
+    <RowSize.Provider value={size}>
+      <div {...rest} data-scope="button-row" data-size={size} data-wraps={wraps ? "" : undefined}>
+        {children}
+      </div>
+    </RowSize.Provider>
+  );
+}
+
+/**
+ * The words of a button as its `label` part: each run of text, as a browser makes each run an
+ * anonymous item of a flex box, so a label is laid out exactly as the bare text was. Elements
+ * (an icon, a count, a key) stay where they are.
+ */
+function labelled(children: ReactNode): ReactNode {
+  const out: ReactNode[] = [];
+  let run: (string | number)[] = [];
+  const close = () => {
+    if (run.length === 0) return;
+    out.push(
+      <span key={`label-${out.length}`} data-scope="button" data-part="label">
+        {run.join("")}
+      </span>,
+    );
+    run = [];
+  };
+  for (const child of Children.toArray(children)) {
+    if (typeof child === "string" || typeof child === "number") run.push(child);
+    else {
+      close();
+      out.push(child);
+    }
+  }
+  close();
+  return out;
+}
+
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <span data-scope="button" data-part="icon" aria-hidden="true">
+      {children}
+    </span>
+  );
+}
+
+/** The lock an answer that grants leads with (ADR 0097 §6): the cue that is not colour. */
+function GrantsLock() {
+  return (
+    <Icon>
+      <LockOpen aria-hidden="true" focusable="false" />
+    </Icon>
+  );
+}
+
+/** Splits a call's props into what React Aria takes and the native attributes it would drop. */
+function split<T extends Drawn>(props: T) {
+  const native: Record<string, unknown> = {};
+  const aria: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(props)) {
+    if ((NATIVE_KEYS as readonly string[]).includes(key)) native[key] = value;
+    else aria[key] = value;
+  }
+  return { native, aria };
+}
+
+function useDrawn(props: Drawn & { children?: ReactNode; isDisabled?: boolean }, iconOnly = false) {
+  const rowSize = useContext(RowSize);
+  const {
+    variant = "secondary",
+    size: ownSize = "md",
+    icon,
+    children,
+    className,
+    style,
+    ref,
+    ...rest
+  } = props;
+  const size = rowSize ?? ownSize;
+  const { native, aria } = split(rest);
+  // A key a button's own handler does not stop goes on to its row, its list and the window, as
+  // a native button's does; React Aria stops every key at a handler unless told otherwise.
+  for (const name of ["onKeyDown", "onKeyUp"] as const) {
+    const handler = aria[name] as ((event: KeyboardEvent) => void) | undefined;
+    if (handler)
+      aria[name] = (event: KeyboardEvent) => {
+        event.continuePropagation();
+        handler(event);
+      };
+  }
+  const content = (
+    <>
+      {variant === "grants" ? <GrantsLock /> : null}
+      {icon !== undefined && icon !== null ? <Icon>{icon}</Icon> : null}
+      {iconOnly ? null : labelled(children)}
+    </>
+  );
+  return {
+    ...aria,
+    ref,
+    className,
+    style,
+    "data-scope": "button",
+    "data-part": "root",
+    "data-variant": variant,
+    "data-size": size,
+    "data-icon-only": iconOnly ? "" : undefined,
+    // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+    render: (domProps: ComponentPropsWithRef<"button">) => (
+      <button {...domProps} tabIndex={domProps.tabIndex ?? 0} {...native} />
+    ),
+    children: content,
+  };
+}
+
+/** **A button**: words, an icon before them if it has one, in a variant and a size. */
+export function Button(props: ButtonProps) {
+  const drawn = useDrawn(props);
+  return <AriaButton {...(drawn as AriaButtonProps)} />;
+}
+
+/** **An icon button**: square at its size, named by its `aria-label`. */
+export function IconButton(props: IconButtonProps) {
+  const drawn = useDrawn(props as Drawn, true);
+  return <AriaButton {...(drawn as AriaButtonProps)} />;
+}
+
+/** **A toggle button**: pressed or not (`aria-pressed`), told by its edge and its ground. */
+export function ToggleButton(props: ToggleButtonProps) {
+  const drawn = useDrawn(props);
+  return <AriaToggleButton {...(drawn as AriaToggleButtonProps)} />;
+}

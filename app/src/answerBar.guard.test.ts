@@ -98,8 +98,12 @@ const formRows = (source: string) =>
 export function endsInAForm({ name, text }: { name: string; text: string }): string[] {
   if (!drawsADialog(text)) return [];
   return formRows(text)
-    .flatMap(classNames)
-    .filter((one) => one === "ends-it")
+    .flatMap((row) => [
+      ...classNames(row).filter((one) => one === "ends-it"),
+      // The button family's word for it (#2904): `variant="danger"`, or a variant an expression
+      // picks that can be it.
+      ...[...row.matchAll(/\bvariant=(?:"danger"|\{[^}]*"danger"[^}]*\})/g)].map(() => "danger"),
+    ])
     .map((one) => `${name}: ${one}`);
 }
 
@@ -126,17 +130,21 @@ describe("a question dialog's answer bar", () => {
   });
 
   /**
-   * **What cannot be taken back keeps its danger under the pointer** (#1210). The tint was on
-   * `.warning .doing button.ends-it:hover`, which no dialog draws once every row is the bar's.
-   * jsdom computes no hover, so this reads the rule, and the rule must outrank the bar's own
-   * neutral `.answer button:hover:not(:disabled)` (0,4,0 against 0,3,1).
+   * **What cannot be taken back keeps its danger under the pointer** (#1210). The bar's answers
+   * are the button family's (#2904), so the tint is the danger variant's own, in the family's
+   * stylesheet; jsdom computes no hover, so this reads the rule.
    */
   it("tints a destructive answer with the danger surface under the pointer", () => {
+    const family = readFileSync(join(SRC, "ui/button/button.css"), "utf8");
+    const hover =
+      /\n\[data-scope="button"\]\[data-part="root"\]\[data-variant="danger"\]\[data-hovered\] \{([^}]*)\}/.exec(
+        family,
+      )?.[1] ?? "";
+    expect(hover).toMatch(/background-color:\s*var\(--danger-surface\)/);
+    // Nothing is left styling a row no dialog draws, nor a bar's button by hand.
     const css = readFileSync(join(SRC, "App.css"), "utf8");
-    const hover = /\n\.answer \.ends-it:hover:not\(:disabled\) \{([^}]*)\}/.exec(css)?.[1] ?? "";
-    expect(hover).toMatch(/background:\s*var\(--danger-surface\)/);
-    // Nothing is left styling a row no dialog draws.
     expect(css).not.toMatch(/\.warning \.doing/);
+    expect(css).not.toMatch(/\n\.answer button/);
   });
 
   it("would be caught if one came back", () => {
@@ -207,5 +215,24 @@ describe("a question dialog's answer bar", () => {
     ).toEqual(["X.tsx: ends-it"]);
     // A page, not a dialog, keeps its own rows: NotCloned and WorkspaceRepos draw none.
     expect(endsInAForm({ name: "NotCloned.tsx", text: row(ends) })).toEqual([]);
+    // The button family's danger counts as the class did (#2904).
+    expect(
+      endsInAForm({
+        name: "X.tsx",
+        text: `${dialog}${row(`<Button variant="danger" type="submit">Delete</Button>`)}`,
+      }),
+    ).toEqual(["X.tsx: danger"]);
+    expect(
+      endsInAForm({
+        name: "X.tsx",
+        text: `${dialog}${row(`<Button variant={busy ? "danger" : "secondary"}>Go</Button>`)}`,
+      }),
+    ).toEqual(["X.tsx: danger"]);
+    expect(
+      endsInAForm({
+        name: "X.tsx",
+        text: `${dialog}<AnswerBar><Button variant="danger">Delete</Button></AnswerBar>`,
+      }),
+    ).toEqual([]);
   });
 });

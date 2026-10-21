@@ -376,12 +376,12 @@ describe("answering in place", () => {
     ]) {
       const [first, second] = answers(who);
       expect(first).toHaveAccessibleName(allow);
-      expect(first).toHaveClass("ui-button", "ui-button-grants");
-      expect(first).not.toHaveClass("ui-button-primary");
+      expect(first).toHaveAttribute("data-variant", "grants");
+      expect(first).not.toHaveAttribute("data-variant", "primary");
       expect(second).toHaveAccessibleName(keep);
-      expect(second).toHaveClass("ui-button");
-      expect(second).not.toHaveClass("ui-button-grants");
-      expect(second).not.toHaveClass("ui-button-primary");
+      expect(second).toHaveAttribute("data-scope", "button");
+      expect(second).not.toHaveAttribute("data-variant", "grants");
+      expect(second).not.toHaveAttribute("data-variant", "primary");
     }
   });
 
@@ -418,8 +418,8 @@ describe("answering in place", () => {
       "Also the open web, always for qa",
       "Keep off",
     ]);
-    expect(answers[1]).toHaveClass("ui-button-primary");
-    expect(answers[3]).not.toHaveClass("ui-button-primary");
+    expect(answers[1]).toHaveAttribute("data-variant", "primary");
+    expect(answers[3]).not.toHaveAttribute("data-variant", "primary");
     expect(calls.some((one) => one.cmd === "allow_chat_browser")).toBe(false);
     await userEvent.click(answers[0]);
     await waitFor(() =>
@@ -1049,10 +1049,14 @@ describe("updates, after the asks (#1693)", () => {
     draw([], { updates: updates([row]) });
     const allow = screen.getByRole("button", { name: "Allow from now on: steward to devops" });
     const never = screen.getByRole("button", { name: "Never for this pair: steward" });
-    expect(allow).toHaveClass("ui-button", "inbox-answer", "allows", "ui-button-grants");
-    expect(allow.querySelector("svg.ui-button-grants-mark")).toHaveAttribute("aria-hidden", "true");
-    expect(never).not.toHaveClass("ui-button-grants");
-    expect(never).not.toHaveClass("ui-button-primary");
+    expect(allow).toHaveAttribute("data-variant", "grants");
+    expect(allow).toHaveClass("inbox-answer", "allows");
+    expect(allow.querySelector('[data-part="icon"] svg.lucide-lock-open')).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(never).not.toHaveAttribute("data-variant", "grants");
+    expect(never).not.toHaveAttribute("data-variant", "primary");
   });
 
   it("is reached by ↓ from the last ask, its two buttons first, and Enter presses one", async () => {

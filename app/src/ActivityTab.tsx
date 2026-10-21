@@ -37,6 +37,7 @@ import { saidAt } from "./dispatches";
 import { usePretendActivity } from "./e2eActivity";
 import { useReferenceChats } from "./references";
 import { useTasksBelow } from "./TasksBelow";
+import { Button } from "./ui/button/Button";
 
 /** A count as the tab says it: `2,000`. */
 const count = (n: number) => n.toLocaleString("en-US");
@@ -474,21 +475,20 @@ export function ActivityTab({
                 <p className="activity-text">{full ? line.text : shown}</p>
               )}
               {more && (
-                <button
-                  type="button"
-                  className="activity-more"
-                  tabIndex={0}
+                <Button
+                  variant="link"
                   aria-expanded={full}
-                  onClick={() =>
+                  onPress={() =>
                     setOpen((was) => {
                       const now = new Set(was);
                       if (!now.delete(key)) now.add(key);
                       return now;
                     })
                   }
+                  className="activity-more"
                 >
                   {full ? "Show less" : "Show all"}
-                </button>
+                </Button>
               )}
               {/* An answer the person gave that the task never had (#1496): it ended first. */}
               {line.unread && (
@@ -531,20 +531,19 @@ export function ActivityTab({
                 toAnswer.has(key) &&
                 !answered.has(key) &&
                 !closed(line.from_key) && (
-                  <button
-                    type="button"
-                    className="panel-view activity-answer"
+                  <Button
+                    size="sm"
                     ref={(node) => {
                       if (node === null) answerControls.current.delete(key);
                       else answerControls.current.set(key, node);
                     }}
-                    tabIndex={0}
                     aria-label={`Answer ${line.from}'s question`}
                     title={`${line.from} is paused until this is answered. Your answer reaches it marked as yours.`}
-                    onClick={() => void answer(line)}
+                    onPress={() => void answer(line)}
+                    className="activity-answer"
                   >
                     Answer
-                  </button>
+                  </Button>
                 )
               )}
               {unfound.has(key) && (

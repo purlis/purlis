@@ -618,11 +618,11 @@ appearance and option values, and no option value can bring a consent surface be
   (an answer's button, Allow's and Keep blocked's alike, at rest and under the pointer) and on
   `danger.wash` over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
 - **Allow is distinguishable from Keep blocked**: on every ask of the two they carry equal
-  weight. Keep blocked is the plain `.ui-button`, edged in `border.strong`; each Allow is
-  `.ui-button-grants`, on the same `control.base` ground, edged in `accent.base` and led by an
+  weight. Keep blocked is the plain `Button`, edged in `border.strong`; each Allow is
+  `variant="grants"`, on the same `control.base` ground, edged in `accent.base` and led by an
   open lock, a cue that is not colour. The two edges are at least 0.1 apart in OKLab as the theme
   writes them, and `accent.base` clears 3:1 on `control.base` and on `control.hover`, so the edge
-  that tells them apart is seen. `.ui-button-primary` stays the answer purlis suggests and is
+  that tells them apart is seen. `variant="primary"` stays the answer purlis suggests and is
   never a grant's;
 - **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
   is a `danger.*` token;
@@ -1530,13 +1530,14 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   and a strip's cap on a tab are each that box's own.
 - **`controls.guard.test.ts`** fails on a control that does not wear its class
   (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
-  `asChild` (`ui-button`, or a row, segment or menu row), an `<input>` or `<textarea>`
+  `asChild` (a row, segment or menu row; a button of the button family is `Button`, never a
+  native `<button>`), an `<input>` or `<textarea>`
   (`ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
   trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
   (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
   `block-size` or `min-block-size` set on a control is `--size-control`, and one set on a strip
   or a pane header is `--size-chrome`. A control is `--size-chrome` only as the small form: a
-  `.ui-button-sm` or `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
+  `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
   field of several lines is a whole number of controls. A control is what the rule's subject
   names (each selector of a list on its own, a nested rule as its full selector, an `:is()` or
   `:where()` as each selector in it): a `button`, `select`, `textarea` or non-toggle `input`, a

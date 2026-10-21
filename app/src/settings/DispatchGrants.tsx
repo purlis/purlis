@@ -20,7 +20,7 @@ import { ColumnHeading } from "./ColumnHeading";
 import { Choice, type RowIds } from "./components";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
-import { GrantsMark } from "../primitives/Grants";
+import { Button } from "../ui/button/Button";
 
 /** No grants and no locks: what a core that answers nothing is read as. */
 const NONE: DispatchGrants = {
@@ -1058,25 +1058,22 @@ export function DispatchGrantsList({
       {offers.map((offer) => {
         const key = `${line}\u001e${offer.yes}`;
         return (
-          <button
+          <Button
+            variant={offer.grants === true ? "grants" : "secondary"}
             key={key}
-            type="button"
-            className={offer.grants === true ? "ui-button ui-button-grants" : "ui-button"}
-            tabIndex={0}
-            disabled={busy || (offer.machine !== true && readOnly !== undefined)}
+            isDisabled={busy || (offer.machine !== true && readOnly !== undefined)}
             title={offer.machine === true ? undefined : readOnly}
             data-ask={key}
             data-line={line}
             aria-label={named(offer)}
             aria-expanded={asking?.key === key}
-            onClick={() => {
+            onPress={() => {
               setDone(undefined);
               setAsking({ ...offer, key, line });
             }}
           >
-            {offer.grants === true && <GrantsMark />}
             {offer.yes}
-          </button>
+          </Button>
         );
       })}
     </div>
@@ -1096,21 +1093,18 @@ export function DispatchGrantsList({
       }}
     >
       <p id={`${ids.id}-confirm`}>{ask.says}</p>
-      <button
-        type="button"
-        className={ask.grants === true ? "ui-button ui-button-grants" : "ui-button"}
+      <Button
+        variant={ask.grants === true ? "grants" : "secondary"}
         ref={yes}
-        tabIndex={0}
-        disabled={busy}
+        isDisabled={busy}
         aria-describedby={`${ids.id}-confirm`}
-        onClick={() => void confirm()}
+        onPress={() => void confirm()}
       >
-        {ask.grants === true && <GrantsMark />}
         {ask.yes}
-      </button>
-      <button type="button" className="ui-button" tabIndex={0} disabled={busy} onClick={cancel}>
+      </Button>
+      <Button isDisabled={busy} onPress={cancel}>
         Cancel
-      </button>
+      </Button>
     </div>
   );
 
@@ -1236,23 +1230,20 @@ export function DispatchGrantsList({
             />
           </label>
         )}{" "}
-        <button
-          type="button"
-          className="ui-button ui-button-grants"
-          tabIndex={0}
-          disabled={busy || where === ""}
+        <Button
+          variant="grants"
+          isDisabled={busy || where === ""}
           data-ask={key}
           data-line={ADD}
           aria-label={named(offer)}
           aria-expanded={asking?.key === key}
-          onClick={() => {
+          onPress={() => {
             setDone(undefined);
             setAsking({ ...offer, key, line: ADD });
           }}
         >
-          <GrantsMark />
           {offer.yes}
-        </button>
+        </Button>
         {waits !== undefined && (
           <p role="note" className="granted-note">
             {waits}

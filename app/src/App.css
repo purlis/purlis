@@ -4444,45 +4444,6 @@ h2.sidebar-title .node-icon {
   justify-content: flex-end;
 }
 
-/* The buttons a dialog is answered with, drawn the way the bar's are. They were the browser's
-   own — light grey chrome on a dark window — so `ends-it`'s red sat on a background it was
-   never picked against, and a disabled Start was a greyed light button rather than a visibly
-   unavailable one. */
-.answer button {
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-4);
-  font: inherit;
-  cursor: pointer;
-}
-
-.answer button:hover:not(:disabled) {
-  background: var(--border-subtle);
-}
-
-/* Unavailable, and said by more than a shade: the cursor stops offering it too. */
-.answer button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.answer button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-/* The answer that ends everything is marked, and it is not the one Return finds. */
-.answer .ends-it {
-  border-color: var(--danger-base);
-  color: var(--danger-base);
-}
-
-.answer .ends-it:hover:not(:disabled) {
-  background: var(--danger-surface);
-}
-
 /* What a chat is doing. A mark, plus a shape per state: colour alone is no state at all to
    anyone who cannot see it, and the accessible name carries the word either way. */
 .state {
@@ -8409,40 +8370,6 @@ h2.sidebar-title .node-icon {
 
 .absent-list .ui-setting-actions {
   margin: 0;
-}
-
-.ui-setting-actions button {
-  padding: var(--space-2) var(--space-4);
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  font: inherit;
-  cursor: pointer;
-}
-
-.ui-setting-actions button:hover:not(:disabled) {
-  background: var(--control-hover);
-}
-
-.ui-setting-actions button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.ui-setting-actions button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-/* The answer that destroys something, in the one colour the window keeps for it. */
-.ui-setting-actions button.ends-it {
-  border-color: var(--danger-base);
-  color: var(--danger-base);
-}
-
-.ui-setting-actions button.ends-it:hover:not(:disabled) {
-  background: var(--danger-surface);
 }
 
 /* A row whose control is its answers (the forge question): the row already spaces them. */
