@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792539544924,
+  "lastUpdate": 1792541208531,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19950,6 +19950,48 @@ window.BENCHMARK_DATA = {
             "value": 101.81304499999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.048, 101.438, 101.813, 102.583, 103.020 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "34aca758c9645cc66f64818ee49ad3a0d6834f68",
+          "message": "Browsers: out-of-view marks follow every box and transform around a frame (#2861)\n\n* Browsers: out-of-view marks follow every box and transform around a frame (#2840)\n\nAn element's part is cut to its boxes and its frame's content box, then\ncarried into the frame element's document and cut again, outward through\nevery frame to the page; a frame from another site is carried through the\nlayout of each session around it. A frame's document starts inside its\nelement's border and padding, side by side, and is drawn at the scale the\npage draws the element at. A frame turned or skewed, or in a box that is,\nis not carried through.\n\nReal-Chrome tests: a padded frame with a thick top border, a frame the page\nscales, and a frame from a third site nested in one from another, each in a\nbox on the page.\n\nCloses #2840\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: what its own boxes hide stays marked in a frame that cannot be placed (#2840)\n\n- An element its own document or frame already hides is cut off whatever\n  is around the frame.\n- The layout read asks for `rotate`, `scale` and `offset-path` too; a frame\n  turned by `rotate`, flipped or flattened by `scale`, or on an\n  `offset-path` is not carried through.\n- The ADR note records D-2840-4 and how near a placed frame is.\n\nRefs #2840\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a box inside a fixed one still cuts off what it hides (#2840)\n\nA part already cut to nothing is answered as nothing at once, before a\nfixed box further out ends what is known. Tests for the axis and unit\nforms of `rotate`.\n\nRefs #2840\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T04:05:26+04:00",
+          "tree_id": "7dacb8ffcff0cd25aac7d8bb55222675dbb23939",
+          "url": "https://github.com/purlis/purlis/commit/34aca758c9645cc66f64818ee49ad3a0d6834f68"
+        },
+        "date": 1792541206619,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.670373,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.653, 0.668, 0.670, 0.672, 0.678 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5734495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.488, 16.508, 16.573, 16.610, 16.822 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4211035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.251, 102.373, 102.421, 102.960, 103.146 ms"
           }
         ]
       }
