@@ -2176,10 +2176,18 @@ impl Opening<'_> {
                         port
                     }
                 };
-                tracing::info!(
-                    "purlis: {name} of a brokered `secret exec` reaches its host through a \
-                     tunnel on port {at}"
-                );
+                // A runner's journal names no secret's variable (#2838).
+                if crate::applog::is_a_service() {
+                    tracing::info!(
+                        "purlis: a variable of a brokered `secret exec` reaches its host \
+                         through a tunnel on port {at}"
+                    );
+                } else {
+                    tracing::info!(
+                        "purlis: {name} of a brokered `secret exec` reaches its host through a \
+                         tunnel on port {at}"
+                    );
+                }
                 Ok(Some((pointed, at)))
             }
             Route::Refused(pointed) => {

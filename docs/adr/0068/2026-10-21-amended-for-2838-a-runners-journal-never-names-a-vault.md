@@ -7,5 +7,7 @@ in #2838 and is marked *decided in implementation, to be confirmed*.
 1. **A host that logs as a service names the program of a brokered `secret exec`, never its
    vault.** Under `purlis serve`, the line of a run says the chat, its persona and the program,
    and a refusal says the chat and the program, without the refusal's words, which name vaults.
+   A secret's host reached through a tunnel is said by the tunnel's port, never by the
+   variable that holds it.
    The window's own log, which only the person reads, still names the vault. *Decided in
    implementation, to be confirmed* (D-2838-1).

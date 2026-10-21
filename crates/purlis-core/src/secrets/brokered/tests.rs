@@ -3163,6 +3163,47 @@ fn a_host_alone_in_pghost_the_chat_may_reach_goes_through_a_tunnel() {
     assert!(reached.contains(&(None, "open", 1)), "{reached:?}");
 }
 
+/// [`under_a_service_a_brokered_run_is_logged_by_its_program_and_never_its_vault`], for a run
+/// whose secret's host is reached through a tunnel (#2838): the tunnel's line says its port,
+/// never the secret's variable. Binds sockets: first run on CI.
+#[test]
+fn under_a_service_a_tunnel_is_logged_by_its_port_and_never_its_variable() {
+    use std::io::Read as _;
+    let database = std::net::TcpListener::bind("127.0.0.1:0").expect("a stand-in database");
+    let at = database.local_addr().unwrap();
+    let answering = std::thread::spawn(move || {
+        let (mut conn, _) = database.accept().expect("the tunnel's connection");
+        let mut asked = [0u8; 4];
+        conn.read_exact(&mut asked).expect("the client's bytes");
+        conn.write_all(b"pong").expect("answered");
+    });
+    let project = project();
+    holding_dsn(project.path(), "127.0.0.1");
+    let logged = logged_as_a_service(|| {
+        let mut want = wanted(
+            project.path(),
+            "team",
+            sh(r#"printf ping | /usr/bin/nc -w 5 "$PGHOST" "$PGPORT""#),
+        );
+        want.env = vec!["PGHOST=DSN".into()];
+        want.environment
+            .push(("PGPORT".into(), at.port().to_string().into()));
+        let listed = format!("127.0.0.1:{}", at.port());
+        let (frames, _, _) = served_recorded(
+            &reaching(asker(project.path(), Some("devops")), &[listed.as_str()]),
+            want,
+        );
+        assert_eq!(stdout(&frames), "pong", "{frames:?}");
+    });
+    answering.join().unwrap();
+    assert!(logged.contains("through a tunnel on port"), "{logged}");
+    assert!(
+        !logged.contains("PGHOST"),
+        "the variable was logged: {logged}"
+    );
+    assert!(!logged.contains("team"), "the vault was logged: {logged}");
+}
+
 // ---- a chat runs only its persona's declared tools (D-PE-ruling-2) ----------------------------
 
 /// The operator's ruling of 2026-10-12: a sandboxed chat no longer runs an arbitrary program
