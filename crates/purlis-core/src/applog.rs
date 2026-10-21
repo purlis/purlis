@@ -168,9 +168,40 @@ pub fn install_for_a_terminal() {
 /// [`install_for_a_terminal`]: a runner's host has no terminal and no file of purlis's, and its
 /// standard error is the service's journal or its container's log. Redacted the same way.
 pub fn widen_for_a_service() {
+    SERVICE.store(true, std::sync::atomic::Ordering::SeqCst);
     if let Some(widening) = WIDENING.get() {
         let _ = widening.reload(what_a_log_keeps());
     }
+}
+
+/// Whether this process logs as a service ([`widen_for_a_service`]).
+static SERVICE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// **Whether this process is a host that logs as a service** (#2838): `purlis serve`, whose
+/// standard error is a runner's journal, which names a program but never a vault.
+pub fn is_a_service() -> bool {
+    SERVICE.load(std::sync::atomic::Ordering::SeqCst) || service_here()
+}
+
+#[cfg(test)]
+thread_local! {
+    static SERVICE_HERE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn service_here() -> bool {
+    SERVICE_HERE.with(std::cell::Cell::get)
+}
+
+#[cfg(not(test))]
+fn service_here() -> bool {
+    false
+}
+
+/// A test's: this thread logs as a service does, or no longer.
+#[cfg(test)]
+pub(crate) fn as_a_service_on_this_thread(service: bool) {
+    SERVICE_HERE.with(|here| here.set(service));
 }
 
 /// How [`install_for_a_terminal`]'s filter is widened for a service.
