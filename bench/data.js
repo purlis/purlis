@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792541208531,
+  "lastUpdate": 1792551675459,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -19992,6 +19992,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4211035,
             "unit": "ms",
             "extra": "median of 5 runs: 101.251, 102.373, 102.421, 102.960, 103.146 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2599a8b8f2dc7a3938439913177544687697be7a",
+          "message": "SK-4: grants, workspace and local skills, with a reason for every skill left out (#2860)\n\n* SK-4: grants, workspace and local skills, and a reason for every one left out\n\npurlis-skills reads a project skill's grant beside its folder, a\nworkspace's settings.skills.off, the workspace level, and each level's\nskills.local/ under the live/local rule. The narrowest copy of a name wins\nand every hidden copy says which copy hid it. Share moves a local skill to\nshared. `purlis skill grant` sets where a project skill reaches, and with\n-w --off/--on what a workspace turned off; it never turns on one a\nworkspace was not granted. A LIVE workspace now shares its skills/.\n\nThe Skill studio is keyed by the workspace whose chats it shows, with a\npicker, each skill's grant, and Share on a local skill. The Workspace\nlevel gets a Skills group behind the flag: a summary of what its chats get\nand Open in Skill studio, the workspace menu's skills.studio:<ws> row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-4: a save and init keep every level's local skills out of git\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-4: answer the review: local skills stay out of git, the window's words\n\n- init and reinit write /skills.local/ and /workspaces/*/skills.local/;\n  a save's stage and the standing's status exclude every level's\n  skills.local/ whatever .gitignore says (#2874).\n- The recorded fixture goes back to main's; CI's blessed file follows.\n- Window copy: no plane, no storage; one level label (level_shown) for\n  the command line and the studio; plurals through counted.\n- purlis-core reads a workspace's turn-offs through its settings layer\n  and hands them to the chat; one helper for the .toml beside a folder;\n  Grant::from_words reads the CLI's words by the grant file's rule.\n- The studio's scope is a type, not an empty key.\n- ADR 0099's record only links its amendments; a changes/ fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-4: the recorded answers CI blessed for the new ignore and LIVE lines\n\nTaken from the recorded job's recorded-behaviour-blessed artifact and\nheld by `node tools/recorded-bless-check.mjs … init- reinit-\nworkspace-create-live- workspace-fork-live- workspace-live-\nworkspace-reinit- --tree .gitignore`: 41 rows, each moved only in its\n.gitignore (the /skills.local/ lines and the LIVE skills pair).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-4: init's and reinit's own tests expect the local skills' ignore lines\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T06:59:32+04:00",
+          "tree_id": "573413aa6133e03cf91115c697d960f578962b14",
+          "url": "https://github.com/purlis/purlis/commit/2599a8b8f2dc7a3938439913177544687697be7a"
+        },
+        "date": 1792551673796,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.51081,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.505, 0.506, 0.511, 0.511, 0.536 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.314616,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.228, 16.261, 16.315, 16.333, 16.519 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.189629,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.868, 100.905, 101.190, 102.123, 104.295 ms"
           }
         ]
       }
