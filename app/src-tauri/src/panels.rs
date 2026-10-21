@@ -1230,6 +1230,11 @@ pub(crate) fn persona_view(
             blocks.push(panel::Block::Facts(facts));
         }
     }
+    // Its skills (SK-5, #2768), behind the Skill studio's flag: a count of what it brings into
+    // every workspace, which opens the studio on it.
+    if purlis_core::skills::studio_on_here() {
+        blocks.extend(crate::personaskills::blocks(root, name));
+    }
     match memory_rows(root, name) {
         Err(why) => blocks.push(panel::Block::Note {
             text: why,
