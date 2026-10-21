@@ -84,13 +84,20 @@ impl ToARunner {
     fn kept(kept: &Kept, docker: Docker, desktop: Identity) -> ToARunner {
         let made = kept.made.clone();
         let checking = docker.clone();
+        let preparing = docker.clone();
         let connector = CommandConnector::new(
-            docker.0.clone(),
+            docker.program().to_path_buf(),
             made.connect_args(),
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || checking.check(&made).map_err(|why| why.0)),
-        );
+        )
+        // Each run of `docker exec` is given what every run of `docker` is: a checked copy of
+        // Docker's settings and the engine pinned (#2752).
+        .preparing(Arc::new(move || {
+            let (env, cleared, held) = preparing.prepared().map_err(|why| why.0)?.into_parts();
+            Ok(purlis_host::Prepared { env, cleared, held })
+        }));
         ToARunner {
             connector,
             device: desktop.device,

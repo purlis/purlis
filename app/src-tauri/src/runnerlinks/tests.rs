@@ -53,7 +53,10 @@ async fn a_window_of(host: Hosting) -> Client {
 #[test]
 fn a_pool_this_machine_does_not_keep_is_never_reached() {
     let config = tempfile::tempdir().unwrap();
-    let machine = a_machine(config.path(), Docker("/nonexistent/docker".into()));
+    let machine = a_machine(
+        config.path(),
+        Docker::at("/nonexistent/docker").with_settings_in(config.path().join("docker-settings")),
+    );
     let refused = ToARunner::of(&machine, "builds").err().unwrap();
     assert!(refused.contains("not on this machine"), "{refused}");
     // A pool kept with no runner reaches nothing either.
@@ -74,7 +77,10 @@ fn a_pool_this_machine_does_not_keep_is_never_reached() {
 #[test]
 fn a_link_to_a_runner_reads_this_desktops_key_and_never_makes_one() {
     let config = tempfile::tempdir().unwrap();
-    let machine = a_machine(config.path(), Docker("/nonexistent/docker".into()));
+    let machine = a_machine(
+        config.path(),
+        Docker::at("/nonexistent/docker").with_settings_in(config.path().join("docker-settings")),
+    );
     let image = Image::pinned(&format!(
         "ghcr.io/purlis/purlis-runner@sha256:{}",
         "0".repeat(64)
@@ -130,12 +136,9 @@ fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
     let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
         return;
     };
-    let docker = Docker(
-        std::env::var_os("DOCKER_POOL_TEST_DOCKER")
-            .unwrap_or("docker".into())
-            .into(),
-    );
     let config = tempfile::tempdir().unwrap();
+    let docker = Docker::at(std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()))
+        .with_settings_in(config.path().join("docker-settings"));
     let machine = a_machine(config.path(), docker.clone());
     let name = format!(
         "test-{}",

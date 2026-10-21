@@ -10,5 +10,6 @@ Chrome for Testing, through the chat's tool server and the window's view, by the
    field has the focus, so the person's first key after the agent clicked a field was held. A
    document the engine says has the focus is dropped only where a focused element is in its own
    frame or a frame nested in it. A document focused beside an element in another frame stays,
-   and the two still read as unclear, so the key is held. An element the engine names twice
-   counts once. *D-2294-4, decided in implementation, to be confirmed.*
+   and the two are unclear in the tree; then each document is asked which element has its focus
+   (D-2295-3), and the key is held only where no single element is named. An element the engine
+   names twice counts once. *D-2294-4, decided in implementation, to be confirmed.*
