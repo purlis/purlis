@@ -163,6 +163,8 @@ mod icons_tests;
 #[cfg(test)]
 mod import_tests;
 #[cfg(test)]
+mod import_tiers_tests;
+#[cfg(test)]
 mod levels_tests;
 #[cfg(test)]
 mod measured_tests;
