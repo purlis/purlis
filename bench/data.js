@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792607158276,
+  "lastUpdate": 1792609517932,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20874,6 +20874,48 @@ window.BENCHMARK_DATA = {
             "value": 100.992801,
             "unit": "ms",
             "extra": "median of 5 runs: 100.350, 100.738, 100.993, 101.030, 101.777 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "419b9ba6bb650e7f189241582f5c70f59338eaae",
+          "message": "Runners: a runner's journal never names a vault (#2838) (#2996)\n\n* Runners: a runner's journal never names a vault\n\nA host that logs as a service (applog::widen_for_a_service, which\npurlis serve calls) logs a brokered secret exec by its program alone:\na run names the chat, its persona and the program, and a refusal names\nthe chat and the program, without the refusal's words. The window's own\nlog still names the vault.\n\nADR 0068 amended 2026-10-21 for #2838.\n\nCloses #2838\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a runner's journal says a tunnel by its port, never the secret's variable\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T23:03:57+04:00",
+          "tree_id": "7281f3589ba51f458d045636b289979955f232d5",
+          "url": "https://github.com/purlis/purlis/commit/419b9ba6bb650e7f189241582f5c70f59338eaae"
+        },
+        "date": 1792609515447,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.346876,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.336, 0.345, 0.347, 0.348, 0.353 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.542785000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.041, 16.158, 16.543, 16.647, 16.718 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.38021850000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.110, 101.232, 101.380, 101.759, 102.223 ms"
           }
         ]
       }
