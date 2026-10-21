@@ -36,6 +36,8 @@ others are **decided in implementation, to be confirmed** (D-2680-1 to D-2680-5)
 6. **Podman's own folders are never a chat's to write** (the person's ruling). Its settings
    (`containers/` in `$XDG_CONFIG_HOME` and `~/.config`), its storage (`containers/` in
    `$XDG_DATA_HOME` and `~/.local/share`) and its run state (`containers/` and `libpod/` in
-   `$XDG_RUNTIME_DIR`) are denied to every chat's writes as later code, each with everything
+   `$XDG_RUNTIME_DIR`, or, where that is unset, `/tmp/podman-run-<uid>`,
+   `/tmp/storage-run-<uid>` and `/tmp/containers-user-<uid>`, #2896) are denied to every chat's
+   writes as later code, each with everything
    below it, under every spelling on macOS. Rootless stays the preferred engine for a local
    runner, as V55 has it.
