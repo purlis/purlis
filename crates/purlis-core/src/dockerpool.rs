@@ -1079,6 +1079,8 @@ impl Docker {
                 "container",
                 "ls",
                 "--all",
+                // The whole id: Docker cuts it to 12 digits otherwise.
+                "--no-trunc",
                 "--format",
                 &format!("{{{{.ID}}}} {{{{.Names}}}} {{{{.Label \"{DESKTOP_LABEL}\"}}}}"),
                 "--filter",
