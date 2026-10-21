@@ -293,6 +293,7 @@ fn tool_call(
         hook_ms: 3,
         agent: None,
         at_ms: 0,
+        skill: None,
     }
 }
 
@@ -3065,5 +3066,357 @@ fn an_audit_naming_a_start_taken_back_begins_no_run() {
         kinds_and_runs(dir.path()),
         [("trust.sandbox.grant".to_owned(), None)],
         "no run begun, and the held trust event dropped"
+    );
+}
+
+// ---- skill runs (SK-3, #2766) -------------------------------------------------------------
+
+/// A tool call of chat `chat` that starts `skill` (as the hook found it), with the harness's id
+/// `call` for it.
+fn starting(chat: u32, word: &str, call: &str, skill: &str) -> crate::hookwire::ToolCall {
+    let mut starting = tool_call(chat, word, crate::hookwire::Decision::None);
+    starting.tool = Some("Skill".to_owned());
+    starting.call = Some(call.to_owned());
+    starting.skill = Some(Box::new(crate::hookwire::SkillStarted {
+        skill: skill.to_owned(),
+        run: crate::reopen::mint(),
+        started_by: purlis_skills::runs::StartedBy::SkillTool,
+    }));
+    starting
+}
+
+#[test]
+fn a_skill_started_opens_a_run_that_lasts_to_the_end_of_the_turn_and_every_entry_inside_carries_it()
+{
+    use crate::hookwire::Decision;
+    use crate::state::Event::{Stop, UserPromptSubmit};
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/p");
+    let mut host = recorder(dir.path());
+
+    host.report(plane, &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    let before = host
+        .tool(
+            plane,
+            &tool_call(3, "pretooluse", Decision::None),
+            Instant::now(),
+        )
+        .unwrap();
+    let skill = starting(3, "posttooluse-skill", "toolu_skill", "deploy");
+    let id = skill.skill.clone().unwrap().run;
+    let started = host.tool(plane, &skill, Instant::now()).unwrap();
+    let mut inside = tool_call(3, "pretooluse", Decision::Deny);
+    inside.call = Some("toolu_02".to_owned());
+    host.tool(plane, &inside, Instant::now()).unwrap();
+    let mut asked = tool_call(3, "pretooluse", Decision::Ask);
+    asked.call = Some("toolu_03".to_owned());
+    host.tool(plane, &asked, Instant::now()).unwrap();
+    asked.tool_hook = "posttooluse".to_owned();
+    asked.decision = Decision::None;
+    host.tool(plane, &asked, Instant::now()).unwrap();
+    let stop = host.report(plane, &report(3, Stop), Followed::No).unwrap();
+
+    let events = read(dir.path()).unwrap();
+    let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            "run.started",
+            "hook.userpromptsubmit",
+            "hook.pretooluse",
+            "skill.started",
+            "hook.posttooluse-skill",
+            "hook.pretooluse",
+            "hook.pretooluse",
+            "hook.posttooluse",
+            "skill.ended",
+            "hook.stop",
+        ],
+        "the run opens at the Skill call and ends with the turn: {events:#?}"
+    );
+    assert_eq!(
+        before.body.get("skill"),
+        None,
+        "before it, nothing is inside a skill"
+    );
+    assert_eq!(stop.body.get("skill"), None, "the turn's end is outside it");
+    for event in &events[3..9] {
+        assert_eq!(event.body["skill"], "deploy", "{event:#?}");
+        assert_eq!(event.body["skill_run"], id.as_str(), "{event:#?}");
+        assert_eq!(
+            event.run, started.run,
+            "a skill run is a span of the chat's run"
+        );
+    }
+    let opened = &events[3];
+    assert_eq!(opened.body["started_by"], "skill-tool");
+    assert_eq!(opened.body.get("parent_skill_run"), None);
+    let ended = &events[8];
+    assert_eq!(ended.body["ended"], "turn");
+    assert_eq!(
+        (
+            ended.body["tool_calls"].clone(),
+            ended.body["refusals"].clone(),
+            ended.body["asks"].clone(),
+            ended.body["tool_errors"].clone(),
+        ),
+        (
+            serde_json::json!(3),
+            serde_json::json!(1),
+            serde_json::json!(1),
+            serde_json::json!(0)
+        ),
+        "the Skill call, the refused one and the asked one, each once: {ended:#?}"
+    );
+    assert!(ended.body["ms"].is_u64());
+    assert_eq!(
+        ended.body.get("passed"),
+        None,
+        "a run shows signals, never a verdict"
+    );
+}
+
+#[test]
+fn an_audit_or_a_trust_event_inside_a_skill_run_carries_the_skill_too() {
+    use crate::sandbox::grant::{Audited, Level};
+    use crate::state::Event::UserPromptSubmit;
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/p");
+    let mut host = recorder(dir.path());
+    let prompt = host
+        .report(plane, &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    host.tool(
+        plane,
+        &starting(3, "posttooluse-skill", "toolu_a", "deploy"),
+        Instant::now(),
+    )
+    .unwrap();
+
+    let granted = host
+        .sandbox_grant(
+            plane,
+            Some(3),
+            &Audited {
+                granted: true,
+                what: "host",
+                target: "api.example.com",
+                level: Level::Chat,
+            },
+        )
+        .unwrap();
+    let sandbox_on = host
+        .apply(Entry::Trust {
+            chat: prompt.chat.clone().unwrap(),
+            run: prompt.run.clone().unwrap(),
+            kind: "trust.sandbox.on".to_owned(),
+            body: serde_json::json!({}),
+        })
+        .unwrap();
+
+    assert_eq!(granted.body["skill"], "deploy", "{granted:#?}");
+    assert_eq!(
+        sandbox_on[0].body["skill"], "deploy",
+        "the sandbox's own event too"
+    );
+}
+
+#[test]
+fn a_skill_started_inside_another_is_its_child_and_a_turn_opens_one_skill_once() {
+    use crate::state::Event::{Stop, UserPromptSubmit};
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/p");
+    let mut host = recorder(dir.path());
+
+    host.report(plane, &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    let outer = starting(3, "posttooluse-skill", "toolu_a", "release");
+    let outer_id = outer.skill.clone().unwrap().run;
+    host.tool(plane, &outer, Instant::now()).unwrap();
+    let inner = starting(3, "posttooluse-skill", "toolu_b", "changelog");
+    let inner_id = inner.skill.clone().unwrap().run;
+    host.tool(plane, &inner, Instant::now()).unwrap();
+    let again = host
+        .tool(
+            plane,
+            &starting(3, "posttooluse-skill", "toolu_c", "release"),
+            Instant::now(),
+        )
+        .unwrap();
+    host.report(plane, &report(3, Stop), Followed::No).unwrap();
+
+    let events = read(dir.path()).unwrap();
+    let opened: Vec<_> = events
+        .iter()
+        .filter(|e| e.kind == "skill.started")
+        .collect();
+    assert_eq!(
+        opened.len(),
+        2,
+        "release read again opens nothing: {events:#?}"
+    );
+    assert_eq!(opened[1].body["skill"], "changelog");
+    assert_eq!(opened[1].body["parent_skill_run"], outer_id.as_str());
+    assert_eq!(
+        again.body["skill"], "changelog",
+        "an entry is inside the innermost run"
+    );
+    let ended: Vec<_> = events
+        .iter()
+        .filter(|e| e.kind == "skill.ended")
+        .map(|e| e.body["skill_run"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(ended, vec![inner_id, outer_id], "the child ends first");
+}
+
+/// A plane on disk, so the skill log is written.
+fn a_plane() -> tempfile::TempDir {
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::write(plane.path().join(crate::plane::MANIFEST), "schema = 2\n").unwrap();
+    plane
+}
+
+/// A Codex chat's shell read of a skill's `SKILL.md`, as its block word reports it.
+fn codex_read(chat: u32, call: &str, run: &str) -> crate::hookwire::ToolCall {
+    let mut read = tool_call(chat, "posttooluse-blocked", crate::hookwire::Decision::None);
+    read.call = Some(call.to_owned());
+    read.skill = Some(Box::new(crate::hookwire::SkillStarted {
+        skill: "deploy".to_owned(),
+        run: run.to_owned(),
+        started_by: purlis_skills::runs::StartedBy::Read,
+    }));
+    read
+}
+
+#[test]
+fn two_reads_of_a_skill_in_one_codex_turn_are_one_run_with_one_start_row_ended_by_its_stop() {
+    use crate::state::Event::{Stop, UserPromptSubmit};
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    let first = crate::reopen::mint();
+
+    host.tool(
+        plane.path(),
+        &codex_read(3, "call_1", &first),
+        Instant::now(),
+    )
+    .unwrap();
+    host.tool(
+        plane.path(),
+        &codex_read(3, "call_2", &crate::reopen::mint()),
+        Instant::now(),
+    )
+    .unwrap();
+    host.report(plane.path(), &report(3, Stop), Followed::No)
+        .unwrap();
+
+    let runs = crate::skilluse::runs(plane.path());
+    assert_eq!(runs.len(), 1, "one run, and no orphan start row: {runs:#?}");
+    assert_eq!(runs[0].id.as_deref(), Some(first.as_str()));
+    assert_eq!(
+        runs[0].started_by,
+        Some(purlis_skills::runs::StartedBy::Read)
+    );
+    let end = runs[0].end.as_ref().expect("its end, with the turn");
+    assert_eq!(end.ended, purlis_skills::runs::Ended::Turn);
+    assert_eq!(end.tool_calls, 2, "both reads are calls inside it");
+}
+
+#[test]
+fn an_opencode_run_ends_with_the_turn_an_interruption_or_the_session() {
+    // opencode's shim reports its `skill` tool as `Skill` on `posttooluse-skill`, its turn's
+    // end (`session.idle`) as `stop`, a new message as `userpromptsubmit`, and its session's
+    // end as `sessionend`.
+    use crate::state::Event::{SessionEnd, Stop, UserPromptSubmit};
+    use std::time::Instant;
+    for (ending, said) in [
+        (Stop, purlis_skills::runs::Ended::Turn),
+        (UserPromptSubmit, purlis_skills::runs::Ended::Interrupted),
+        (SessionEnd, purlis_skills::runs::Ended::Session),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let plane = a_plane();
+        let mut host = recorder(dir.path());
+        host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+            .unwrap();
+        host.tool(
+            plane.path(),
+            &starting(3, "posttooluse-skill", "call_skill", "deploy"),
+            Instant::now(),
+        )
+        .unwrap();
+        let next = host
+            .report(plane.path(), &report(3, ending), Followed::No)
+            .unwrap();
+
+        let events = read(dir.path()).unwrap();
+        let ended = events.iter().find(|e| e.kind == "skill.ended").unwrap();
+        assert_eq!(ended.body["ended"], said.word(), "{ending:?}");
+        assert!(ended.seq < next.seq, "{ending:?}");
+        assert_eq!(next.body.get("skill"), None, "{ending:?}: outside it");
+        let runs = crate::skilluse::runs(plane.path());
+        assert_eq!(runs[0].end.as_ref().map(|end| end.ended), Some(said));
+    }
+}
+
+#[test]
+fn a_codex_run_ends_with_an_interruption_or_the_session_too() {
+    use crate::state::Event::{SessionEnd, UserPromptSubmit};
+    use std::time::Instant;
+    for (ending, said) in [(UserPromptSubmit, "interrupted"), (SessionEnd, "session")] {
+        let dir = tempfile::tempdir().unwrap();
+        let plane = Path::new("/p");
+        let mut host = recorder(dir.path());
+        host.report(plane, &report(3, UserPromptSubmit), Followed::No)
+            .unwrap();
+        host.tool(
+            plane,
+            &codex_read(3, "call_1", &crate::reopen::mint()),
+            Instant::now(),
+        )
+        .unwrap();
+        host.report(plane, &report(3, ending), Followed::No)
+            .unwrap();
+
+        let events = read(dir.path()).unwrap();
+        let ended = events.iter().find(|e| e.kind == "skill.ended").unwrap();
+        assert_eq!(ended.body["ended"], said);
+    }
+}
+
+#[test]
+fn a_refused_skill_call_or_a_claim_that_does_not_check_opens_no_run() {
+    use crate::state::Event::UserPromptSubmit;
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/p");
+    let mut host = recorder(dir.path());
+
+    host.report(plane, &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    let mut refused = starting(3, "pretooluse", "toolu_a", "release");
+    refused.decision = crate::hookwire::Decision::Deny;
+    let event = host.tool(plane, &refused, Instant::now()).unwrap();
+    let mut not_a_ulid = starting(3, "posttooluse-skill", "toolu_b", "release");
+    not_a_ulid.skill.as_mut().unwrap().run = "../../x".to_owned();
+    host.tool(plane, &not_a_ulid, Instant::now()).unwrap();
+    let mut unknown = starting(3, "posttooluse-skill", "toolu_c", "release");
+    unknown.skill.as_mut().unwrap().started_by = purlis_skills::runs::StartedBy::Unknown;
+    host.tool(plane, &unknown, Instant::now()).unwrap();
+
+    assert_eq!(event.body.get("skill"), None);
+    assert!(
+        read(dir.path())
+            .unwrap()
+            .iter()
+            .all(|e| e.kind != "skill.started")
     );
 }

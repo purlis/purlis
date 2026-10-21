@@ -138,6 +138,45 @@ pub fn held_names(path: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// The rules that deny `denial`: under each name it is held by, as itself and as its target
+/// (#1336), each also across a firmlink (#1356). Everything below the name, or the entry alone
+/// for one held as itself, which is then never written as an entry: never created, renamed,
+/// moved or removed (#2752). One held under every spelling is a regular expression with each
+/// letter in either case, so a folder not there yet and made under another spelling of its name
+/// is held too (#2752).
+pub fn denial_rules(denial: &Denial) -> Result<Vec<String>, &'static str> {
+    let what = match (denial.reach, denial.access) {
+        (Reach::Itself, _) | (Reach::AndBelow, Access::Write) => "file-write*",
+        (Reach::AndBelow, Access::ReadWrite) => "file-read* file-write*",
+    };
+    let mut names: Vec<PathBuf> = Vec::new();
+    for held in held_names(&denial.path) {
+        for name in super::both_firmlink_names(held) {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
+    let mut rules = Vec::new();
+    for name in names {
+        let spelled = name.display().to_string();
+        let filter = match (denial.any_case, denial.reach) {
+            (false, Reach::AndBelow) => format!("(subpath {})", string(&spelled)?),
+            (false, Reach::Itself) => format!("(literal {})", string(&spelled)?),
+            (true, reach) => {
+                let tail = match reach {
+                    Reach::AndBelow => "(/.*)?$",
+                    Reach::Itself => "$",
+                };
+                let regex = format!("^{}{tail}", either_case(&escaped(&spelled)));
+                format!("(regex {})", string(&regex)?)
+            }
+        };
+        rules.push(format!("(deny {what} {filter})"));
+    }
+    Ok(rules)
+}
+
 /// `text` with every regular-expression character escaped.
 pub fn escaped(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -286,6 +325,8 @@ pub fn keychains(home: Option<&Path>) -> Option<Denial> {
         path: home.join("Library/Keychains"),
         access: Access::ReadWrite,
         named: None,
+        reach: Reach::AndBelow,
+        any_case: false,
     })
 }
 
@@ -327,6 +368,8 @@ pub fn profile(
             path: folder.to_path_buf(),
             access: Access::Write,
             named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
         });
     }
     let denied = held.as_slice();
@@ -361,24 +404,8 @@ pub fn profile(
     // firmlink (`/Users` and `/System/Volumes/Data/Users`), which resolving leaves as spelled
     // (#1356).
     for denial in denied {
-        let what = match denial.access {
-            Access::ReadWrite => "file-read* file-write*",
-            Access::Write => "file-write*",
-        };
-        // Held as itself and as its target (#1336), each also across a firmlink (#1356).
-        let mut names: Vec<PathBuf> = Vec::new();
-        for held in held_names(&denial.path) {
-            for name in super::both_firmlink_names(held) {
-                if !names.contains(&name) {
-                    names.push(name);
-                }
-            }
-        }
-        for name in names {
-            line(format!(
-                "(deny {what} (subpath {}))",
-                string(&name.display().to_string())?
-            ));
+        for rule in denial_rules(denial)? {
+            line(rule);
         }
     }
     // Each directory between the chat's own and a denied path, as an entry only, so it is never
@@ -486,6 +513,8 @@ pub fn floor_profile(
                 path: folder.to_path_buf(),
                 access: Access::Write,
                 named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
             });
         }
     }
@@ -494,25 +523,12 @@ pub fn floor_profile(
         path: path.clone(),
         access: Access::Write,
         named: None,
+        reach: Reach::AndBelow,
+        any_case: false,
     }));
     for denial in &all {
-        let what = match denial.access {
-            Access::ReadWrite => "file-read* file-write*",
-            Access::Write => "file-write*",
-        };
-        let mut names: Vec<PathBuf> = Vec::new();
-        for held in held_names(&denial.path) {
-            for name in super::both_firmlink_names(held) {
-                if !names.contains(&name) {
-                    names.push(name);
-                }
-            }
-        }
-        for name in names {
-            line(format!(
-                "(deny {what} (subpath {}))",
-                string(&name.display().to_string())?
-            ));
+        for rule in denial_rules(denial)? {
+            line(rule);
         }
     }
     // Every folder above a denied path, as an entry: never moved away with it, nor replaced.

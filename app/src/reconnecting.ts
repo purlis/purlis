@@ -35,7 +35,8 @@ export function useReconnecting(plane: PlaneId, session: number): boolean {
           const told = event.payload;
           if (told.plane !== plane || !told.sessions.includes(session)) return;
           heard = true;
-          show(told.reconnection === "reconnecting");
+          // A runner whose key changed is not linked again: its chats stay dimmed (#2752).
+          show(told.reconnection !== "reconnected");
         });
         if (gone) unlisten();
         else stop = unlisten;

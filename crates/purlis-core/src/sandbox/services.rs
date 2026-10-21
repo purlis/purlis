@@ -349,7 +349,12 @@ impl SocketGround {
     /// Why a socket at `resolved` may not be granted here, or none.
     fn refuses(&self, resolved: &Path) -> Option<Refused> {
         if let Some(denial) = self.denied.iter().find(|denial| {
-            resolved.starts_with(&denial.path) || resolved.starts_with(super::real(&denial.path))
+            let held = |path: &Path| match denial.reach {
+                super::Reach::AndBelow => resolved.starts_with(path),
+                // An entry held alone holds nothing below it (#2752).
+                super::Reach::Itself => resolved == path,
+            };
+            held(&denial.path) || held(&super::real(&denial.path))
         }) {
             return Some(Refused::Never(
                 super::grant::brokered_route(denial.class).to_owned(),

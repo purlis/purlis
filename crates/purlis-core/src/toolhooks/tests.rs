@@ -309,29 +309,183 @@ fn a_returned_helper_is_no_longer_logged() {
     assert!(!p.root.join(".charter/agent-personas.json").exists());
 }
 
-#[test]
-fn a_skill_use_is_logged_under_this_devices_id_and_never_its_hostname() {
-    let p = Plane::new();
-    let config = PathBuf::from(&p.env[crate::machine::HOME_VAR]);
-    let device = crate::machine::device_id(&config).unwrap();
-    let skill = serde_json::json!({"tool_name": "Skill", "tool_input": {"skill": "x"}});
+// ---- skill runs (SK-3) ---------------------------------------------------------------------
 
-    p.ask(skill, posttooluse_skill);
-
-    assert!(crate::skilluse::path_for(&p.root, now(), &device).is_file());
-    assert!(!crate::skilluse::path_for(&p.root, now(), "box").exists());
+fn skill_tool(input: Value) -> Value {
+    serde_json::json!({"tool_name": "Skill", "tool_input": input})
 }
 
 #[test]
-fn a_skill_use_is_logged_under_the_active_persona() {
-    let p = Plane::new().with_env("PURLIS_PERSONA", "ops");
-    p.persona("ops", "role: Ops");
-    p.ask(
-        serde_json::json!({"tool_name": "Skill", "tool_input": {"skill": "charter:secrets"}}),
-        posttooluse_skill,
+fn claude_codes_skill_tool_starts_the_run_of_the_skill_it_names() {
+    let p = Plane::new()
+        .with_env(crate::hookwire::HARNESS_ENV, "claude-code")
+        .with_env(crate::hookwire::SOCKET_ENV, "/tmp/hooks.sock");
+    let started = p
+        .ask(
+            skill_tool(serde_json::json!({"skill": "charter:secrets"})),
+            skill_started,
+        )
+        .unwrap();
+
+    assert_eq!(started.skill, "charter:secrets");
+    assert_eq!(
+        started.started_by,
+        purlis_skills::runs::StartedBy::SkillTool
     );
-    let log = std::fs::read_to_string(crate::skilluse::path_for(&p.root, now(), "box")).unwrap();
-    assert!(log.contains("\"persona\": \"ops\", \"skill\": \"charter:secrets\""));
+    assert!(ulid::Ulid::from_string(&started.run).is_ok());
+    assert!(
+        !p.root
+            .join("personas")
+            .join(crate::skilluse::DIR_NAME)
+            .exists(),
+        "a host listens, so the hook writes no row: the host logs a run only as it opens"
+    );
+    assert_eq!(
+        p.ask(
+            skill_tool(serde_json::json!({"skill": "x"})),
+            posttooluse_skill
+        ),
+        Answer::Nothing
+    );
+}
+
+#[test]
+fn with_no_host_to_tell_the_hook_logs_the_runs_start_itself_under_this_device_and_persona() {
+    // A terminal's own harness: no app, so no host opens the run. Its use is still recorded.
+    let p = Plane::new()
+        .with_env(crate::hookwire::HARNESS_ENV, "claude-code")
+        .with_env("PURLIS_PERSONA", "ops");
+    p.persona("ops", "role: Ops");
+    let config = PathBuf::from(&p.env[crate::machine::HOME_VAR]);
+    let device = crate::machine::device_id(&config).unwrap();
+
+    let started = p
+        .ask(
+            skill_tool(serde_json::json!({"skill": "charter:secrets"})),
+            skill_started,
+        )
+        .unwrap();
+
+    assert!(crate::skilluse::path_for(&p.root, now(), &device).is_file());
+    assert!(!crate::skilluse::path_for(&p.root, now(), "box").exists());
+    let runs = crate::skilluse::runs(&p.root);
+    assert_eq!(runs.len(), 1, "{runs:#?}");
+    assert_eq!(runs[0].id.as_deref(), Some(started.run.as_str()));
+    assert_eq!(runs[0].persona.as_deref(), Some("ops"));
+    assert_eq!(runs[0].skill, "charter:secrets");
+    assert_eq!(
+        runs[0].end, None,
+        "nothing counts a host-less run's signals"
+    );
+}
+
+#[test]
+fn opencodes_skill_tool_names_its_skill_as_name() {
+    let p = Plane::new().with_env(crate::hookwire::HARNESS_ENV, "opencode");
+    let started = p
+        .ask(
+            skill_tool(serde_json::json!({"name": "deploy"})),
+            skill_started,
+        )
+        .unwrap();
+    assert_eq!(started.skill, "deploy");
+    let claude = Plane::new().with_env(crate::hookwire::HARNESS_ENV, "claude-code");
+    assert_eq!(
+        claude.ask(
+            skill_tool(serde_json::json!({"name": "deploy"})),
+            skill_started
+        ),
+        None,
+        "each harness's own field: Claude Code's Skill tool names it in `skill`"
+    );
+}
+
+/// `p`, a Codex chat briefed on a built-in skills directory holding `deploy`, as a briefed
+/// chat is started with it.
+fn briefed_on_deploy(p: Plane) -> Plane {
+    let dir = p.root.join("bundle-skills");
+    std::fs::create_dir_all(dir.join("deploy")).unwrap();
+    std::fs::write(
+        dir.join("deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Ships it.\n---\nSteps.\n",
+    )
+    .unwrap();
+    let dir = dir.display().to_string();
+    p.with_env(crate::skills::LISTED_ENV, &dir)
+        .with_env(crate::hookwire::HARNESS_ENV, "codex")
+}
+
+fn shell(command: &str) -> Value {
+    serde_json::json!({"tool_name": "Bash", "tool_input": {"command": command}})
+}
+
+#[test]
+fn a_briefed_chat_reading_a_known_skill_md_starts_that_skill() {
+    let p = briefed_on_deploy(Plane::new());
+    let file = p.root.join("bundle-skills/deploy/SKILL.md");
+    for command in [
+        format!("sed -n 1,200p '{}'", file.display()),
+        format!("cat {} | head -50 2>/dev/null", file.display()),
+        "cat ./bundle-skills/deploy/SKILL.md".to_owned(),
+    ] {
+        let started = p.ask(shell(&command), skill_started);
+        assert_eq!(
+            started.map(|s| (s.skill, s.started_by)),
+            Some(("deploy".to_owned(), purlis_skills::runs::StartedBy::Read)),
+            "{command}"
+        );
+    }
+}
+
+#[test]
+fn a_chat_editing_a_skill_or_reading_another_file_starts_no_run() {
+    let p = briefed_on_deploy(Plane::new());
+    let file = p
+        .root
+        .join("bundle-skills/deploy/SKILL.md")
+        .display()
+        .to_string();
+    for command in [
+        format!("sed -i 's/Ships/Sends/' {file}"),
+        format!("sed -i.bak -e 's/a/b/' {file}"),
+        format!("perl -pi -e 's/a/b/' {file}"),
+        format!("vim {file}"),
+        format!("git add {file}"),
+        format!("git diff -- {file}"),
+        format!("echo more >> {file}"),
+        format!("cat {file} > /tmp/copy.md"),
+        format!("cp {file} /tmp/copy.md"),
+        format!("mv {file} /tmp/copy.md"),
+        format!("rm {file}"),
+        format!("cat {file} | tee /tmp/copy.md"),
+        "cat /elsewhere/deploy/SKILL.md".to_owned(),
+        format!("cat {}", file.replace("SKILL.md", "README.md")),
+        format!("cat {file}x"),
+    ] {
+        assert_eq!(p.ask(shell(&command), skill_started), None, "{command}");
+    }
+}
+
+#[test]
+fn a_chat_not_briefed_on_its_skills_starts_none_by_reading_one() {
+    // Its harness loads its skills itself, and starts one by its Skill tool.
+    let briefed = briefed_on_deploy(Plane::new());
+    let file = briefed.root.join("bundle-skills/deploy/SKILL.md");
+    let read = shell(&format!("cat {}", file.display()));
+    assert!(briefed.ask(read.clone(), skill_started).is_some());
+    let mut not_briefed = briefed;
+    not_briefed.env.remove(crate::skills::LISTED_ENV);
+    assert_eq!(not_briefed.ask(read.clone(), skill_started), None);
+    let mut claude = briefed_on_deploy(Plane::new());
+    claude.env.insert(
+        crate::hookwire::HARNESS_ENV.to_owned(),
+        "claude-code".to_owned(),
+    );
+    assert_eq!(
+        claude.ask(read, skill_started),
+        None,
+        "Claude Code's shell starts none"
+    );
 }
 
 // ---- posttooluse --------------------------------------------------------------------------

@@ -137,16 +137,17 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
     let mut read_rules = Vec::new();
     let mut edit_rules = Vec::new();
     for (denial, path) in names_of(&compiled.denied.paths) {
-        let path = path.display().to_string();
-        let rooted = format!("/{path}");
-        if denial.access == Access::ReadWrite {
-            deny_read.push(path.clone());
-            read_rules.push(format!("Read({rooted})"));
-            read_rules.push(format!("Read({rooted}/**)"));
+        for path in spelled(denial, &path) {
+            let rooted = format!("/{path}");
+            if denial.access == Access::ReadWrite {
+                deny_read.push(path.clone());
+                read_rules.push(format!("Read({rooted})"));
+                read_rules.push(format!("Read({rooted}/**)"));
+            }
+            deny_write.push(path);
+            edit_rules.push(format!("Edit({rooted})"));
+            edit_rules.push(format!("Edit({rooted}/**)"));
         }
-        deny_write.push(path);
-        edit_rules.push(format!("Edit({rooted})"));
-        edit_rules.push(format!("Edit({rooted}/**)"));
     }
     // No project's vaults are read, at either level (#2071): under every spelling of a state
     // folder, anywhere. The chat's own project's are denied by path above.
@@ -512,20 +513,21 @@ impl Settings {
     pub fn denying(&self, denied: &[super::Denial]) -> Settings {
         let mut out = self.clone();
         for (denial, path) in names_of(denied) {
-            let path = path.display().to_string();
-            let filesystem = &mut out.sandbox["filesystem"];
-            if denial.access == Access::ReadWrite {
-                if let Some(list) = filesystem["denyRead"].as_array_mut() {
+            for path in spelled(denial, &path) {
+                let filesystem = &mut out.sandbox["filesystem"];
+                if denial.access == Access::ReadWrite {
+                    if let Some(list) = filesystem["denyRead"].as_array_mut() {
+                        list.push(json!(path));
+                    }
+                    out.deny.push(format!("Read(/{path})"));
+                    out.deny.push(format!("Read(/{path}/**)"));
+                }
+                if let Some(list) = filesystem["denyWrite"].as_array_mut() {
                     list.push(json!(path));
                 }
-                out.deny.push(format!("Read(/{path})"));
-                out.deny.push(format!("Read(/{path}/**)"));
+                out.deny.push(format!("Edit(/{path})"));
+                out.deny.push(format!("Edit(/{path}/**)"));
             }
-            if let Some(list) = filesystem["denyWrite"].as_array_mut() {
-                list.push(json!(path));
-            }
-            out.deny.push(format!("Edit(/{path})"));
-            out.deny.push(format!("Edit(/{path}/**)"));
         }
         out
     }
@@ -538,15 +540,32 @@ impl Settings {
 /// it, so the link itself is held as well as its target ([`super::seatbelt::held_names`], #1336).
 /// Each of those is also denied on the other side of a macOS firmlink (`/Users` and
 /// `/System/Volumes/Data/Users`, #1356), which resolving leaves as it is spelled.
+///
+/// A denial of an entry alone is left out: a rule here holds what is below a path too, and
+/// what is below such an entry is the chat's to write (#2752), as a later-code name that holds
+/// only itself is left out.
 fn names_of(denied: &[super::Denial]) -> Vec<(&super::Denial, std::path::PathBuf)> {
     denied
         .iter()
+        .filter(|denial| denial.reach == super::Reach::AndBelow)
         .flat_map(|denial| {
             names_for(&denial.path)
                 .into_iter()
                 .map(move |name| (denial, name))
         })
         .collect()
+}
+
+/// The spellings a rule on `path` for `denial` is written under: as it is, and, for one held
+/// under every spelling, with each letter in either case too (#2752).
+fn spelled(denial: &super::Denial, path: &Path) -> Vec<String> {
+    let plain = path.display().to_string();
+    if denial.any_case {
+        let cased = either_case(&plain);
+        vec![plain, cased]
+    } else {
+        vec![plain]
+    }
 }
 
 /// **`name`, a glob's tail, with each ASCII letter as a class of both its cases** (`a` as

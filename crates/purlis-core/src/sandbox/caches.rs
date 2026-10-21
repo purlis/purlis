@@ -820,10 +820,10 @@ fn granted(home: &CacheHome, machine: &Machine, root: &Path, denied: &Denied) ->
     {
         return false;
     }
-    !denied
-        .paths
-        .iter()
-        .any(|denial| holds(&denial.path) || inside(&denial.path))
+    !denied.paths.iter().any(|denial| {
+        // An entry held alone holds nothing below it (#2752).
+        holds(&denial.path) || (denial.reach == super::Reach::AndBelow && inside(&denial.path))
+    })
 }
 
 /// Whether `path` is there and is a link, or is reached through one its own parent does not

@@ -270,8 +270,8 @@ enum Command {
     #[command(subcommand)]
     Persona(memory::PersonaCommand),
 
-    /// Skills: the ones a chat in this project gets, and why each other one is left out (behind
-    /// the `skill-studio` flag).
+    /// Skills: the ones a chat in this project gets, why each other one is left out, and every run
+    /// of one with its signals (behind the `skill-studio` flag).
     #[command(subcommand)]
     Skill(skill::SkillCommand),
 
@@ -1839,6 +1839,7 @@ fn tell_the_host_about_the_tool_call(
     payload: &str,
     answered: &hooks::Answered,
     took: std::time::Duration,
+    skill: Option<Box<hookwire::SkillStarted>>,
 ) {
     use std::io::Write as _;
     let Some(socket) = purlis_core::envvar::var_os(SOCKET_ENV) else {
@@ -1874,6 +1875,7 @@ fn tell_the_host_about_the_tool_call(
             .and_then(|began| began.duration_since(std::time::UNIX_EPOCH).ok())
             .and_then(|since| u64::try_from(since.as_millis()).ok())
             .unwrap_or_default(),
+        skill,
     };
     let token = hookwire::ChatToken::from_env();
     if let Err(why) = hookwire::deliver_tool(std::path::Path::new(&socket), token.as_ref(), &call) {
@@ -2002,7 +2004,7 @@ fn tell_the_host_about_a_crash(word: &str, unanswered: bool) {
     };
     let answered =
         hooks::Answered::exit(ExitCode::from(BLOCK), hookwire::Decision::Deny, Some(rule));
-    tell_the_host_about_the_tool_call(word, "", &answered, Duration::ZERO);
+    tell_the_host_about_the_tool_call(word, "", &answered, Duration::ZERO, None);
 }
 
 #[cfg(not(unix))]
@@ -2011,6 +2013,7 @@ fn tell_the_host_about_the_tool_call(
     _payload: &str,
     _answered: &hooks::Answered,
     _took: std::time::Duration,
+    _skill: Option<Box<hookwire::SkillStarted>>,
 ) {
 }
 
@@ -2035,7 +2038,7 @@ fn hook_on_disagreement(name: &str, disagree: &purlis_core::envvar::Disagreement
         hookwire::Decision::Deny,
         Some(DISAGREEING_NAMES_RULE),
     );
-    tell_the_host_about_the_tool_call(name, &payload(), &answered, Duration::ZERO);
+    tell_the_host_about_the_tool_call(name, &payload(), &answered, Duration::ZERO, None);
     answered.print()
 }
 
@@ -2089,7 +2092,14 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
             let answered = decide(&text);
             (text, answered)
         };
-        tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed());
+        // The skill run the call starts (SK-3): heard once, as the call came back, and
+        // never of a call the guard refused, which ran nothing.
+        let skill = (purlis_core::hookreg::find(name)
+            .is_some_and(purlis_core::hookreg::Handler::hears_a_call_come_back)
+            && answered.decision != hookwire::Decision::Deny)
+            .then(|| hooks::with_hook(&text, now, purlis_core::toolhooks::skill_started))
+            .flatten();
+        tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed(), skill);
         let taken = tell_the_host_about_blocks(name, &text);
         // A block word answers nothing of its own, so this is the one line it prints (#1631).
         // And what a git command the sandbox stopped partway left behind (qw349), in the
@@ -2116,7 +2126,7 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
         if purlis_core::envvar::var_os(SOCKET_ENV).is_some() {
             let text = payload();
             let answered = hooks::Answered::exit(ExitCode::SUCCESS, hookwire::Decision::None, None);
-            tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed());
+            tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed(), None);
         }
         return ExitCode::SUCCESS;
     }
@@ -2148,7 +2158,13 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
                 hookwire::Decision::Deny,
                 Some(UNKNOWN_HOOK_RULE),
             );
-            tell_the_host_about_the_tool_call(name.as_ref(), &payload(), &answered, Duration::ZERO);
+            tell_the_host_about_the_tool_call(
+                name.as_ref(),
+                &payload(),
+                &answered,
+                Duration::ZERO,
+                None,
+            );
         }
         return ExitCode::from(BLOCK);
     };
