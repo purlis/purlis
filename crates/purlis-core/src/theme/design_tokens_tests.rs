@@ -62,6 +62,11 @@ fn round_trip(name: &str, files: &Files) -> super::Imported {
 fn assert_same(files: &Files, back: &Files) {
     let json = |files: &Files| -> Value { serde_json::from_slice(&files[THEME_JSON]).unwrap() };
     assert_eq!(json(back), json(files), "theme.json changed on the way");
+    assert_eq!(
+        serde_json::to_string(&json(back)).unwrap(),
+        serde_json::to_string(&json(files)).unwrap(),
+        "theme.json's keys moved on the way"
+    );
     let others = |files: &Files| -> Vec<(String, Vec<u8>)> {
         files
             .iter()
@@ -395,6 +400,19 @@ fn a_colour_is_read_as_hex_from_its_hex_or_its_srgb_components() {
         refused.contains("appearance.dark.surface.base") && refused.contains("hex"),
         "{refused}"
     );
+    assert_eq!(
+        read(theme(
+            json!({ "colorSpace": "srgb", "components": ["none", 0, 0], "hex": "#000000" })
+        ))
+        .unwrap(),
+        "#000000",
+        "a component that is none leaves the colour to its hex"
+    );
+    let refused = read(theme(
+        json!({ "colorSpace": "srgb", "components": ["none", 0, 0] }),
+    ))
+    .unwrap_err();
+    assert!(refused.contains("hex"), "{refused}");
     let refused = read(theme(
         json!({ "colorSpace": "srgb", "components": [1, 1, 1], "hex": "#000000" }),
     ))
@@ -476,6 +494,11 @@ fn a_carried_file_is_held_to_a_theme_folder_s_places_and_bounds() {
     let newer = json!({ "$extensions": { VENDOR: { "version": 99 } } });
     let why = design_tokens::unpack("x.tokens.json", newer.to_string().as_bytes()).unwrap_err();
     assert!(why.contains("newer purlis"), "{why}");
+    for version in [json!("2"), json!(1.5), json!(-1)] {
+        let odd = json!({ "$extensions": { VENDOR: { "version": version } } });
+        let why = design_tokens::unpack("x.tokens.json", odd.to_string().as_bytes()).unwrap_err();
+        assert!(why.contains("not a whole number"), "{version}: {why}");
+    }
 }
 
 #[test]
@@ -498,6 +521,18 @@ fn a_design_tokens_file_is_told_apart_from_the_other_kinds() {
         super::detect("tokens.json", foreign),
         Some(SourceKind::DesignTokens)
     );
+    // A tokens file whose top group is `colors`, as design tools often write it, is no VS Code
+    // theme.
+    let colors = br##"{ "colors": { "$type": "color", "red": { "$value": { "colorSpace": "srgb", "components": [1, 0, 0], "hex": "#ff0000" } } } }"##;
+    assert_eq!(
+        super::detect("tokens.json", colors),
+        Some(SourceKind::DesignTokens)
+    );
+    let vscode = br##"{ "type": "dark", "colors": { "editor.background": "#101010" } }"##;
+    assert_eq!(
+        super::detect("theme.json", vscode),
+        Some(SourceKind::Vscode)
+    );
     assert_eq!(
         SourceKind::named("design-tokens"),
         Some(SourceKind::DesignTokens)
@@ -511,4 +546,109 @@ fn a_reserved_or_unnamed_folder_is_not_exported() {
     assert!(design_tokens::pack("Not A Name", &files).is_err());
     let not_json = Files::from([(THEME_JSON.to_owned(), b"[1]".to_vec())]);
     assert!(design_tokens::pack("pill", &not_json).is_err());
+}
+
+#[test]
+fn a_token_where_an_appearance_goes_is_listed_not_made_an_appearance() {
+    let black = json!({ "colorSpace": "srgb", "components": [0, 0, 0] });
+    let document = json!({ "appearance": {
+        "stray": { "$type": "color", "$value": black },
+        "dark": { "surface": { "base": { "$type": "color", "$value": black } } }
+    } });
+    let read = design_tokens::unpack("x.tokens.json", document.to_string().as_bytes()).unwrap();
+    let written: Value = serde_json::from_slice(&read.files[THEME_JSON]).unwrap();
+    let ids: Vec<&str> = written["appearances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|it| it["id"].as_str())
+        .collect();
+    assert_eq!(ids, ["dark"]);
+    assert!(
+        read.left_out
+            .iter()
+            .any(|one| one.key == "appearance.stray"),
+        "{:?}",
+        read.left_out
+    );
+}
+
+/// What `run` answers, and the most this process's memory grew while it ran, sampled every
+/// millisecond.
+fn peak_growth<T>(run: impl FnOnce() -> T) -> (T, usize) {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let now = || memory_stats::memory_stats().map_or(0, |it| it.physical_mem);
+    let before = now();
+    let done = std::sync::Arc::new(AtomicBool::new(false));
+    let most = std::sync::Arc::new(AtomicUsize::new(before));
+    let sampler = {
+        let (done, most) = (done.clone(), most.clone());
+        std::thread::spawn(move || {
+            while !done.load(Ordering::Relaxed) {
+                most.fetch_max(now(), Ordering::Relaxed);
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        })
+    };
+    let answer = run();
+    most.fetch_max(now(), Ordering::Relaxed);
+    done.store(true, Ordering::Relaxed);
+    sampler.join().unwrap();
+    (answer, most.load(Ordering::Relaxed).saturating_sub(before))
+}
+
+/// A file of about `len` bytes: purlis's mark, and `filler` repeated in a list in its theme.
+fn crafted(filler: &str, len: usize) -> Vec<u8> {
+    let mut text = format!("{{\"$extensions\":{{\"{VENDOR}\":{{\"version\":1,\"theme\":{{\"x\":[");
+    while text.len() + filler.len() + 8 < len {
+        text.push_str(filler);
+    }
+    text.push_str("0]}}}}");
+    text.into_bytes()
+}
+
+#[test]
+fn imports_are_bounded_in_size_and_work() {
+    let started = std::time::Instant::now();
+    // At the byte cap, and past the count of values.
+    let full = crafted(
+        "0,",
+        usize::try_from(design_tokens::MOST_BYTES).unwrap() - 16,
+    );
+    let why = design_tokens::unpack("x.tokens.json", &full).unwrap_err();
+    assert!(why.contains("values"), "{why}");
+    // At the byte cap and just within the count: read, and refused for the theme.json it makes.
+    let filler = format!("\"{}\",", "a".repeat(62));
+    let most = crafted(
+        &filler,
+        usize::try_from(design_tokens::MOST_BYTES).unwrap() - 16,
+    );
+    let (said, grew) = peak_growth(|| design_tokens::unpack("x.tokens.json", &most));
+    let why = said.unwrap_err();
+    assert!(why.contains("MiB"), "{why}");
+    // The file is 24 MiB: reading it holds it parsed once, and a little more.
+    assert!(
+        grew < 128 * 1024 * 1024,
+        "reading it took {} MiB more",
+        grew / 1024 / 1024
+    );
+    // Within the count, but a theme.json past a theme folder's file cap.
+    let long = format!("\"{}\",", "a".repeat(1024));
+    let wide = crafted(&long, 3 * 1024 * 1024);
+    let why = design_tokens::unpack("x.tokens.json", &wide).unwrap_err();
+    assert!(why.contains("MiB"), "{why}");
+    // More appearances than a theme may have.
+    let many: Vec<Value> = (0..65).map(|at| json!(format!("a{at}"))).collect();
+    let ordered = json!({ "$extensions": { VENDOR: { "version": 1, "appearances": many } } });
+    let why = design_tokens::unpack("x.tokens.json", ordered.to_string().as_bytes()).unwrap_err();
+    assert!(why.contains("appearances"), "{why}");
+    // Many top-level keys, each read once.
+    let keys: Vec<Value> = (0..100_000).map(|at| json!(format!("k{at}"))).collect();
+    let listed = json!({ "$extensions": { VENDOR: { "version": 1, "keys": keys } } });
+    design_tokens::unpack("x.tokens.json", listed.to_string().as_bytes()).unwrap();
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(20),
+        "took {:?}",
+        started.elapsed()
+    );
 }

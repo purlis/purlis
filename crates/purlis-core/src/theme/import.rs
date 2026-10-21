@@ -181,11 +181,19 @@ pub fn detect(file_name: &str, bytes: &[u8]) -> Option<SourceKind> {
         "yaml" | "yml" => return scheme(),
         "json" | "jsonc" => {
             return text.and_then(|text| {
+                // Only a design-tokens file may be larger than any other source: it is read,
+                // within its own bounds, by its import, never parsed whole here.
+                if text.len() as u64 > MOST_SOURCE_BYTES {
+                    return Some(SourceKind::DesignTokens);
+                }
                 let document = jsonc(text).ok()?;
-                if document.get("colors").is_some() || document.get("tokenColors").is_some() {
-                    Some(SourceKind::Vscode)
-                } else if super::design_tokens::looks_like(&document) {
+                // Design tokens first: a tokens file's `colors` group holds tokens, where a
+                // VS Code theme's holds colours.
+                if super::design_tokens::looks_like(&document) {
                     Some(SourceKind::DesignTokens)
+                } else if document.get("colors").is_some() || document.get("tokenColors").is_some()
+                {
+                    Some(SourceKind::Vscode)
                 } else {
                     scheme()
                 }

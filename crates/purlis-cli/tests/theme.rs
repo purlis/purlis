@@ -1485,9 +1485,9 @@ fn purlis_exports_as_a_copy_with_its_fonts_icons_and_licence() {
 
 /// A theme folder's files as the engine compares them: `theme.json` read as JSON, the rest as
 /// bytes.
-fn folder_as_read(folder: &Path) -> (serde_json::Value, Vec<(String, Vec<u8>)>) {
+fn folder_as_read(folder: &Path) -> (String, Vec<(String, Vec<u8>)>) {
     let files = folder_files(folder);
-    let theme = files
+    let theme: serde_json::Value = files
         .iter()
         .find(|(name, _)| name == "theme.json")
         .map(|(_, bytes)| serde_json::from_slice(bytes).expect("theme.json is JSON"))
@@ -1496,7 +1496,8 @@ fn folder_as_read(folder: &Path) -> (serde_json::Value, Vec<(String, Vec<u8>)>) 
         .into_iter()
         .filter(|(name, _)| name != "theme.json")
         .collect();
-    (theme, rest)
+    // Written as text, so the comparison sees the keys' order too.
+    (serde_json::to_string(&theme).expect("JSON"), rest)
 }
 
 #[test]
@@ -1584,7 +1585,11 @@ fn every_built_in_theme_exports_as_design_tokens_and_imports_back_the_same() {
         let (theme, rest) = folder_as_read(&back.join(copy));
         let expected: serde_json::Value =
             serde_json::from_slice(&files["theme.json"]).expect("JSON");
-        assert_eq!(theme, expected, "{id}'s theme.json");
+        assert_eq!(
+            theme,
+            serde_json::to_string(&expected).expect("JSON"),
+            "{id}'s theme.json"
+        );
         let expected_rest: Vec<(String, Vec<u8>)> = files
             .into_iter()
             .filter(|(name, _)| name != "theme.json")

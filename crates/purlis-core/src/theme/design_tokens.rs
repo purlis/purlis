@@ -50,7 +50,9 @@
 //! reference to its `palette` keeps the palette name, and any other reference is followed to
 //! the colour it ends at. Every token no purlis token takes is listed with why.
 //!
-//! **Bounds**: a file is at most [`MOST_BYTES`]; the files it carries are held to a theme
+//! **Bounds**: a file is at most [`MOST_BYTES`] and holds at most [`MOST_VALUES`] JSON values,
+//! counted before it is parsed, so reading one takes little memory and time; the `theme.json` it
+//! makes is held to a theme folder's file cap; the files it carries are held to a theme
 //! folder's zip's bounds (`super::archive`); its groups nest at most [`MOST_DEPTH`] deep, it
 //! holds at most [`MOST_NODES`] groups and tokens, and a reference is followed at most
 //! [`MOST_HOPS`] times.
@@ -60,13 +62,13 @@ use std::collections::BTreeSet;
 use base64::Engine as _;
 use serde_json::{Map, Number, Value, json};
 
-use super::THEME_JSON;
 use super::archive::{
     MOST_FILE_BYTES, MOST_FILES, MOST_FOLDER_BYTES, fold, is_folder_id, is_kept, not_an_id,
 };
 use super::geometry::{self, Unit};
 use super::import::{Files, LeftOut};
 use super::vocabulary::{DURATIONS, EASINGS, LINE_HEIGHT, TOKENS, is_colour};
+use super::{MOST_APPEARANCES, THEME_JSON};
 
 /// The key purlis keeps what a token cannot hold under, in each `$extensions`: reverse domain
 /// notation, as the format recommends.
@@ -100,6 +102,11 @@ pub const MOST_DEPTH: usize = 32;
 /// The most groups and tokens a file holds.
 pub const MOST_NODES: usize = 100_000;
 
+/// The most JSON values a file holds (every object, array, string, number, flag and null, in
+/// `$extensions` too), counted in its text before it is parsed: a theme with every appearance a
+/// theme may have, each naming every token, holds far fewer.
+pub const MOST_VALUES: usize = 400_000;
+
 /// The most references one value is followed through.
 pub const MOST_HOPS: usize = 16;
 
@@ -114,6 +121,10 @@ const APPEARANCE: &str = "appearance";
 
 /// The group an appearance's motion is written in.
 const MOTION: &str = "motion";
+
+/// Where an appearance's group keeps the order of its tokens and motion: a `$` key, which no
+/// appearance of a theme purlis draws has.
+const ORDER: &str = "$order";
 
 /// The group the `compact` layer is written in.
 const COMPACT: &str = "compact";
@@ -148,6 +159,7 @@ pub fn pack(folder: &str, files: &Files) -> Result<Vec<u8>, String> {
         Value::Array(theme.keys().map(|key| json!(key)).collect()),
     );
     let mut kept = Map::new();
+    let mut orders = Map::new();
     let palette_names: BTreeSet<String> = match theme.get(PALETTE) {
         Some(Value::Object(palette)) => {
             let (group, left) = palette_tokens(palette);
@@ -160,6 +172,7 @@ pub fn pack(folder: &str, files: &Files) -> Result<Vec<u8>, String> {
                 document.insert(PALETTE.to_owned(), group_typed(group, "color"));
             }
             own.insert(PALETTE.to_owned(), Value::Object(left));
+            orders.insert(PALETTE.to_owned(), key_list(palette));
             names
         }
         _ => BTreeSet::new(),
@@ -196,6 +209,10 @@ pub fn pack(folder: &str, files: &Files) -> Result<Vec<u8>, String> {
             document.insert(COMPACT.to_owned(), Value::Object(group));
         }
         own.insert(COMPACT.to_owned(), Value::Object(left));
+        orders.insert(COMPACT.to_owned(), key_list(compact));
+    }
+    if !orders.is_empty() {
+        own.insert("order".to_owned(), Value::Object(orders));
     }
     for (key, value) in &theme {
         let handled = match key.as_str() {
@@ -288,6 +305,7 @@ fn appearance_group(
     }
     let mut group = Map::new();
     let mut own = Map::new();
+    let mut orders = Map::new();
     for (key, value) in fields {
         match (key.as_str(), value) {
             ("id", _) => {}
@@ -306,6 +324,7 @@ fn appearance_group(
                     }
                 }
                 own.insert(key.clone(), Value::Object(left));
+                orders.insert(key.clone(), key_list(tokens));
             }
             ("motion", Value::Object(motion)) => {
                 let mut left = Map::new();
@@ -322,14 +341,23 @@ fn appearance_group(
                     insert_group(&mut group, MOTION, moving);
                 }
                 own.insert(key.clone(), Value::Object(left));
+                orders.insert(key.clone(), key_list(motion));
             }
             _ => {
                 own.insert(key.clone(), value.clone());
             }
         }
     }
+    if !orders.is_empty() {
+        own.insert(ORDER.to_owned(), Value::Object(orders));
+    }
     group.insert("$extensions".to_owned(), vendor(Value::Object(own)));
     Some((id.to_owned(), group))
+}
+
+/// An object's keys in its order, which the import writes them back in.
+fn key_list(object: &Map<String, Value>) -> Value {
+    Value::Array(object.keys().map(|key| json!(key)).collect())
 }
 
 /// Puts the group `inner` at `name` in `group`, beside a token already there as its `$root`.
@@ -534,25 +562,25 @@ pub(super) struct Read {
 
 /// One token of the file, found by its path.
 #[derive(Debug, Clone)]
-struct Found {
+struct Found<'a> {
     /// Its path, the names of its groups and its own (a `$root` is its group's path).
     path: Vec<String>,
-    /// The token's object.
-    token: Map<String, Value>,
+    /// The token's object, in the document.
+    token: &'a Map<String, Value>,
     /// The type it has: its own, or its nearest group's.
-    kind: Option<String>,
+    kind: Option<&'a str>,
 }
 
 /// The file's tokens, by their dotted path, and what its groups say that purlis does not read.
-struct Tokens {
-    all: Vec<Found>,
+struct Tokens<'a> {
+    all: Vec<Found<'a>>,
     /// Where each token is in `all`, by its dotted path.
     index: std::collections::HashMap<String, usize>,
     notes: Vec<LeftOut>,
 }
 
-impl Tokens {
-    fn read(document: &Map<String, Value>) -> Result<Self, String> {
+impl<'a> Tokens<'a> {
+    fn read(document: &'a Map<String, Value>) -> Result<Self, String> {
         let mut tokens = Self {
             all: Vec::new(),
             index: std::collections::HashMap::new(),
@@ -565,9 +593,9 @@ impl Tokens {
 
     fn walk(
         &mut self,
-        group: &Map<String, Value>,
+        group: &'a Map<String, Value>,
         at: &mut Vec<String>,
-        kind: Option<&str>,
+        kind: Option<&'a str>,
         nodes: &mut usize,
     ) -> Result<(), String> {
         if at.len() > MOST_DEPTH {
@@ -617,21 +645,13 @@ impl Tokens {
         Ok(())
     }
 
-    fn found(&mut self, path: Vec<String>, token: &Map<String, Value>, kind: Option<&str>) {
-        let kind = token
-            .get("$type")
-            .and_then(Value::as_str)
-            .or(kind)
-            .map(str::to_owned);
+    fn found(&mut self, path: Vec<String>, token: &'a Map<String, Value>, kind: Option<&'a str>) {
+        let kind = token.get("$type").and_then(Value::as_str).or(kind);
         self.index.insert(path.join("."), self.all.len());
-        self.all.push(Found {
-            path,
-            token: token.clone(),
-            kind,
-        });
+        self.all.push(Found { path, token, kind });
     }
 
-    fn at(&self, dotted: &str) -> Option<&Found> {
+    fn at(&self, dotted: &str) -> Option<&Found<'a>> {
         self.index.get(dotted).map(|at| &self.all[*at])
     }
 }
@@ -667,6 +687,11 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| format!("{file_name} is not text"))?
         .trim_start_matches('\u{feff}');
+    if values_in(text) > MOST_VALUES {
+        return Err(format!(
+            "{file_name} holds more than {MOST_VALUES} values, the most a design-tokens file may"
+        ));
+    }
     let document = match serde_json::from_str::<Value>(text) {
         Ok(Value::Object(document)) => document,
         Ok(_) => {
@@ -676,23 +701,35 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
         }
         Err(why) => return Err(format!("{file_name} is not JSON: {why}")),
     };
-    let own = vendor_of(&document).cloned().unwrap_or_default();
-    if let Some(version) = own.get("version").and_then(Value::as_u64)
-        && version > VERSION
-    {
-        return Err(format!(
-            "{file_name} was written by a newer purlis (its {VENDOR} version is {version}; this \
-             one reads up to {VERSION}): update purlis to import it"
-        ));
+    let empty = Map::new();
+    let foreign = vendor_of(&document).is_none();
+    let own = vendor_of(&document).unwrap_or(&empty);
+    match own.get("version") {
+        None => {}
+        Some(version) => match version.as_u64() {
+            Some(version) if version <= VERSION => {}
+            Some(version) => {
+                return Err(format!(
+                    "{file_name} was written by a newer purlis (its {VENDOR} version is \
+                     {version}; this one reads up to {VERSION}): update purlis to import it"
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "{file_name}'s {VENDOR} version is {}, which is not a whole number purlis \
+                     reads",
+                    crate::shown::short(&super::stringify(version))
+                ));
+            }
+        },
     }
     let tokens = Tokens::read(&document)?;
     let mut left_out = tokens.notes.clone();
-    let mut theme = Map::new();
     let kept = own
         .get("theme")
         .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
+        .unwrap_or(&empty);
+    let orders = own.get("order");
 
     // The palette.
     let mut palette = own
@@ -723,43 +760,73 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
             Taken::Not(why) => left_out.push(LeftOut::new(found.path.join("."), why)),
         }
     }
+    let palette = in_order(palette, orders.and_then(|it| it.get(PALETTE)));
 
-    // The appearances.
-    let groups: Vec<String> = match document.get(APPEARANCE) {
-        Some(Value::Object(group)) => group
-            .iter()
-            .filter(|(name, value)| !name.starts_with('$') && value.is_object())
-            .map(|(name, _)| name.clone())
-            .collect(),
-        _ => Vec::new(),
-    };
-    let mut appearances = Vec::new();
-    let order: Vec<Value> = match own.get("appearances").and_then(Value::as_array) {
-        Some(order) => order.clone(),
-        None => groups.iter().map(|id| json!(id)).collect(),
-    };
-    let mut placed = BTreeSet::new();
-    // A group the order does not name (a design tool added it) comes after the rest.
-    let unnamed: Vec<Value> = groups.iter().map(|id| json!(id)).collect();
-    for one in order.iter().chain(unnamed.iter()) {
-        let Some(id) = one.as_str() else {
-            if let Some(kept) = one.get("kept") {
-                appearances.push(kept.clone());
+    // The appearances: each group, its tokens found once.
+    let mut groups: Vec<&str> = Vec::new();
+    if let Some(Value::Object(group)) = document.get(APPEARANCE) {
+        for (name, value) in group {
+            if name.starts_with('$') {
+                continue;
             }
-            continue;
+            match value.as_object() {
+                Some(object) if !is_token(object) => groups.push(name),
+                _ => left_out.push(LeftOut::new(
+                    format!("{APPEARANCE}.{name}"),
+                    "is not an appearance: an appearance is a group of tokens",
+                )),
+            }
+        }
+    }
+    let order: &[Value] = own
+        .get("appearances")
+        .and_then(Value::as_array)
+        .map_or(&[], Vec::as_slice);
+    if groups.len() > MOST_APPEARANCES || order.len() > MOST_APPEARANCES {
+        return Err(format!(
+            "{file_name} has more than {MOST_APPEARANCES} appearances, the most a theme may have"
+        ));
+    }
+    let named: std::collections::HashSet<&str> = groups.iter().copied().collect();
+    let mut of_group: std::collections::HashMap<&str, Vec<&Found<'_>>> =
+        std::collections::HashMap::new();
+    for found in &tokens.all {
+        if found.path.len() > 2 && found.path[0] == APPEARANCE {
+            of_group
+                .entry(found.path[1].as_str())
+                .or_default()
+                .push(found);
+        }
+    }
+    let mut appearances = Vec::new();
+    let mut placed = BTreeSet::new();
+    let listed = order.iter().filter_map(|one| match one.as_str() {
+        Some(id) => Some(Ok(id)),
+        None => one.get("kept").map(Err),
+    });
+    // A group the order does not name (a design tool added it) comes after the rest.
+    let rest = groups.iter().map(|id| Ok(*id));
+    for one in listed.chain(rest) {
+        let id = match one {
+            Ok(id) => id,
+            Err(kept) => {
+                appearances.push(kept.clone());
+                continue;
+            }
         };
-        if !groups.iter().any(|it| it == id) || !placed.insert(id.to_owned()) {
+        if !named.contains(id) || !placed.insert(id) {
             continue;
         }
+        let found = of_group.get(id).map_or(&[][..], Vec::as_slice);
         appearances.push(appearance_of(
             id,
             &document,
+            found,
             &tokens,
             &palette_names,
             &mut left_out,
         )?);
     }
-    let foreign = vendor_of(&document).is_none();
     if appearances.is_empty() && foreign {
         if let Some(one) = top_level(&tokens, &palette_names, &mut left_out)? {
             appearances.push(one);
@@ -795,6 +862,7 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
             Taken::Not(why) => left_out.push(LeftOut::new(found.path.join("."), why)),
         }
     }
+    let compact = compact.map(|it| in_order(it, orders.and_then(|it| it.get(COMPACT))));
 
     // The theme, in the order it was written.
     let name = kept
@@ -803,42 +871,53 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
         .map(str::to_owned)
         .filter(|it| !it.trim().is_empty())
         .unwrap_or_else(|| stem(file_name).trim().chars().take(MOST_NAME).collect());
-    let mut keys: Vec<String> = own
+    let mut keys: Vec<&str> = own
         .get("keys")
         .and_then(Value::as_array)
-        .map(|keys| {
-            keys.iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
+        .map(|keys| keys.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
     if keys.is_empty() {
-        keys = ["$schema", "name", PALETTE, "appearances", COMPACT]
-            .map(str::to_owned)
-            .to_vec();
+        keys = vec!["$schema", "name", PALETTE, "appearances", COMPACT];
     }
+    let mut seen: std::collections::HashSet<&str> = keys.iter().copied().collect();
     for key in kept.keys() {
-        if !keys.contains(key) {
-            keys.push(key.clone());
+        if seen.insert(key) {
+            keys.push(key);
         }
     }
     let has_own_palette = own.contains_key(PALETTE);
-    for key in &keys {
-        let value = match key.as_str() {
-            PALETTE if has_own_palette || !palette.is_empty() => Value::Object(palette.clone()),
-            "appearances" if own.contains_key("appearances") || !appearances.is_empty() => {
-                Value::Array(appearances.clone())
+    // Written from the file's own values, which are not copied: only what purlis made is owned.
+    let mut theme: Vec<(&str, std::borrow::Cow<'_, Value>)> = Vec::new();
+    let mut palette = Some(palette);
+    let mut appearances = Some(appearances);
+    let mut compact = compact;
+    let mut written = BTreeSet::new();
+    for key in keys {
+        if !written.insert(key) {
+            continue;
+        }
+        use std::borrow::Cow::{Borrowed, Owned};
+        let value = match key {
+            PALETTE if has_own_palette || palette.as_ref().is_some_and(|it| !it.is_empty()) => {
+                Owned(Value::Object(palette.take().unwrap_or_default()))
             }
-            COMPACT if compact.is_some() => Value::Object(compact.clone().unwrap_or_default()),
-            "$schema" if foreign => json!(super::SCHEMA_URL),
-            "name" if !kept.contains_key("name") => json!(name),
+            "appearances"
+                if own.contains_key("appearances")
+                    || appearances.as_ref().is_some_and(|it| !it.is_empty()) =>
+            {
+                Owned(Value::Array(appearances.take().unwrap_or_default()))
+            }
+            COMPACT if compact.is_some() => {
+                Owned(Value::Object(compact.take().unwrap_or_default()))
+            }
+            "$schema" if foreign => Owned(json!(super::SCHEMA_URL)),
+            "name" if !kept.contains_key("name") => Owned(json!(name)),
             _ => match kept.get(key) {
-                Some(value) => value.clone(),
+                Some(value) => Borrowed(value),
                 None => continue,
             },
         };
-        theme.insert(key.clone(), value);
+        theme.push((key, value));
     }
 
     // The folder and its files.
@@ -853,16 +932,116 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
             not_an_id(&folder)
         ));
     }
-    let mut files = carried(&own)?;
-    let mut text = serde_json::to_string_pretty(&Value::Object(theme)).unwrap_or_default();
-    text.push('\n');
-    files.insert(THEME_JSON.to_owned(), text.into_bytes());
+    let mut files = carried(own)?;
+    let mut text = Capped::default();
+    if serde_json::to_writer_pretty(&mut text, &Entries(&theme)).is_err() || text.over {
+        return Err(format!(
+            "the {THEME_JSON} {file_name} makes is larger than {} MiB, the most a theme \
+             folder's file may be",
+            MOST_FILE_BYTES / 1024 / 1024
+        ));
+    }
+    let mut text = text.bytes;
+    text.push(b'\n');
+    files.insert(THEME_JSON.to_owned(), text);
     Ok(Read {
         name,
         folder,
         files,
         left_out,
     })
+}
+
+/// An object's entries, in their order, written as a JSON object.
+struct Entries<'a, 'v>(&'a [(&'v str, std::borrow::Cow<'v, Value>)]);
+
+impl serde::Serialize for Entries<'_, '_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap as _;
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (key, value) in self.0 {
+            map.serialize_entry(key, value.as_ref())?;
+        }
+        map.end()
+    }
+}
+
+/// Bytes written up to a theme folder's file cap, and whether more were offered.
+#[derive(Default)]
+struct Capped {
+    bytes: Vec<u8>,
+    over: bool,
+}
+
+impl std::io::Write for Capped {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if (self.bytes.len() + buf.len()) as u64 >= MOST_FILE_BYTES {
+            self.over = true;
+            return Err(std::io::Error::other("past the cap"));
+        }
+        self.bytes.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// **How many JSON values `text` can hold**, at most: every object and array, and every value
+/// after the first in one, counted outside strings. One pass, no allocation.
+fn values_in(text: &str) -> usize {
+    let mut count = 1;
+    let mut in_string = false;
+    let mut escaped = false;
+    for byte in text.bytes() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'{' | b'[' | b',' | b':' => count += 1,
+            _ => {}
+        }
+    }
+    count
+}
+
+/// `object`'s entries in the order `order` lists their keys, then the rest in their own order.
+fn in_order(object: Map<String, Value>, order: Option<&Value>) -> Map<String, Value> {
+    let Some(order) = order.and_then(Value::as_array) else {
+        return object;
+    };
+    let at: std::collections::HashMap<&str, usize> = order
+        .iter()
+        .filter_map(Value::as_str)
+        .enumerate()
+        .map(|(at, key)| (key, at))
+        .collect();
+    let mut entries: Vec<(usize, usize, String, Value)> = object
+        .into_iter()
+        .enumerate()
+        .map(|(own, (key, value))| {
+            (
+                at.get(key.as_str()).copied().unwrap_or(usize::MAX),
+                own,
+                key,
+                value,
+            )
+        })
+        .collect();
+    entries.sort_by_key(|(at, own, _, _)| (*at, *own));
+    entries
+        .into_iter()
+        .map(|(_, _, key, value)| (key, value))
+        .collect()
 }
 
 /// What purlis wrote under [`VENDOR`] on the document, if it wrote anything.
@@ -886,39 +1065,33 @@ fn stem(file_name: &str) -> String {
     base.to_owned()
 }
 
-/// **One appearance, from its group `appearance.<id>`**: what purlis kept on the group, its
-/// tokens and its motion.
+/// **One appearance, from its group `appearance.<id>`** and the tokens found in it: what
+/// purlis kept on the group, its tokens and its motion, in the order they were written.
 fn appearance_of(
     id: &str,
     document: &Map<String, Value>,
-    tokens: &Tokens,
+    found_here: &[&Found<'_>],
+    tokens: &Tokens<'_>,
     palette: &BTreeSet<String>,
     left_out: &mut Vec<LeftOut>,
 ) -> Result<Value, String> {
-    let group = document
+    let own = document
         .get(APPEARANCE)
         .and_then(|it| it.get(id))
         .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    let own = vendor_of(&group).cloned();
+        .and_then(vendor_of);
+    let orders = own.and_then(|it| it.get(ORDER));
     let mut appearance = Map::new();
     appearance.insert("id".to_owned(), json!(id));
     let mut values = own
-        .as_ref()
         .and_then(|it| it.get("tokens"))
         .and_then(Value::as_object)
         .cloned();
     let mut motion = own
-        .as_ref()
         .and_then(|it| it.get("motion"))
         .and_then(Value::as_object)
         .cloned();
-    for found in tokens
-        .all
-        .iter()
-        .filter(|one| one.path.len() > 2 && one.path[0] == APPEARANCE && one.path[1] == id)
-    {
+    for found in found_here {
         let inner = &found.path[2..];
         if inner[0] == MOTION && inner.len() > 1 {
             let name = inner[1..].join(".");
@@ -938,10 +1111,13 @@ fn appearance_of(
             Taken::Not(why) => left_out.push(LeftOut::new(found.path.join("."), why)),
         }
     }
+    let mut values = values.map(|it| in_order(it, orders.and_then(|it| it.get("tokens"))));
+    let mut motion = motion.map(|it| in_order(it, orders.and_then(|it| it.get("motion"))));
     match own {
         Some(own) => {
-            for (key, value) in &own {
+            for (key, value) in own {
                 let value = match key.as_str() {
+                    ORDER => continue,
                     "tokens" if value.is_object() => {
                         Value::Object(values.take().unwrap_or_default())
                     }
@@ -1048,12 +1224,13 @@ fn is_light(rgb: [u8; 3]) -> bool {
 }
 
 /// **The token at the end of `found`'s references**, and the palette name the first one names
-/// when it names the palette. A reference that leads nowhere, or round in a circle, refuses the
-/// file.
-fn followed<'a>(
-    found: &'a Found,
-    tokens: &'a Tokens,
-) -> Result<(&'a Found, Option<String>), String> {
+/// when it names the palette. Only a token that refers to the palette itself keeps the palette
+/// name: one that refers to it through another token takes the colour. A reference that leads
+/// nowhere, or round in a circle, refuses the file.
+fn followed<'a, 'd>(
+    found: &'a Found<'d>,
+    tokens: &'a Tokens<'d>,
+) -> Result<(&'a Found<'d>, Option<String>), String> {
     let mut at = found;
     let mut palette = None;
     for hop in 0..=MOST_HOPS {
@@ -1092,8 +1269,8 @@ fn reference_of(text: &str) -> Option<String> {
 }
 
 /// The type of the token at the end of `found`'s references.
-fn kind_of(found: &Found, end: &Found) -> Option<String> {
-    found.kind.clone().or_else(|| end.kind.clone())
+fn kind_of<'d>(found: &Found<'d>, end: &Found<'d>) -> Option<&'d str> {
+    found.kind.or(end.kind)
 }
 
 /// What a token whose value is a JSON pointer is not.
@@ -1110,7 +1287,7 @@ fn token_value(
         return Ok(Taken::Not(POINTER.to_owned()));
     }
     let (end, _) = followed(found, tokens)?;
-    match kind_of(found, end).as_deref() {
+    match kind_of(found, end) {
         Some("color") => colour_value(found, tokens, palette),
         Some("dimension" | "fontWeight" | "number") => number_value(found, tokens, name),
         Some(other) => Ok(Taken::Not(format!(
@@ -1135,7 +1312,7 @@ fn colour_value(
     {
         return Ok(Taken::Value(json!(name)));
     }
-    if kind_of(found, end).as_deref() != Some("color") {
+    if kind_of(found, end) != Some("color") {
         return Ok(Taken::Not("is not a color token".to_owned()));
     }
     let at = found.path.join(".");
@@ -1154,7 +1331,7 @@ fn colour_value(
 }
 
 /// **A colour value's hex**, `#rrggbb` or `#rrggbbaa`: from `srgb` components, from `hex` in any
-/// space, and the two agreeing when both are given. What is not one is said as a refusal.
+/// space or when a component is `none`, and the two agreeing when both are given. What is not one is said as a refusal.
 fn hex_of(value: Option<&Value>, at: &str) -> Result<String, String> {
     let colour = value
         .and_then(Value::as_object)
@@ -1182,7 +1359,10 @@ fn hex_of(value: Option<&Value>, at: &str) -> Result<String, String> {
     };
     let space = colour.get("colorSpace").and_then(Value::as_str);
     let from_components = match (space, colour.get("components")) {
-        (Some("srgb"), Some(Value::Array(three))) if three.len() == 3 => {
+        // A component may be "none": then the hex says the colour.
+        (Some("srgb"), Some(Value::Array(three)))
+            if three.len() == 3 && !three.iter().any(|it| it == "none") =>
+        {
             let rgb: Option<Vec<u8>> = three.iter().map(byte).collect();
             Some(rgb.ok_or_else(|| {
                 format!("{at} has srgb components that are not three numbers from 0 to 1")
@@ -1221,7 +1401,7 @@ fn number_value(found: &Found, tokens: &Tokens, name: &str) -> Result<Taken, Str
     let (end, _) = followed(found, tokens)?;
     let value = end.token.get("$value").cloned().unwrap_or(Value::Null);
     let at = found.path.join(".");
-    Ok(match kind_of(found, end).as_deref() {
+    Ok(match kind_of(found, end) {
         Some("dimension") => {
             let unit = value.get("unit").and_then(Value::as_str);
             match (value.get("value"), unit) {
@@ -1249,7 +1429,7 @@ fn motion_value(found: &Found, tokens: &Tokens) -> Result<Taken, String> {
     }
     let (end, _) = followed(found, tokens)?;
     let value = end.token.get("$value").cloned().unwrap_or(Value::Null);
-    Ok(match kind_of(found, end).as_deref() {
+    Ok(match kind_of(found, end) {
         Some("duration") => match (
             value.get("value"),
             value.get("unit").and_then(Value::as_str),
@@ -1301,6 +1481,14 @@ fn carried(own: &Map<String, Value>) -> Result<Files, String> {
                 "the design tokens carry {} and another file a filesystem writes as the same \
                  file, in other case or other accents",
                 crate::shown::short(path)
+            ));
+        }
+        let encoded = text.as_str().unwrap_or_default();
+        if (encoded.len() / 4 * 3) as u64 > MOST_FILE_BYTES + 2 {
+            return Err(format!(
+                "the design tokens' {} is larger than {} MiB, the most a theme folder's file may be",
+                crate::shown::short(path),
+                MOST_FILE_BYTES / 1024 / 1024
             ));
         }
         let bytes = text

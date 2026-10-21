@@ -140,11 +140,15 @@ impl Schemas {
             self.check(target, &target_base, instance, at, errors, depth + 1);
             return;
         }
-        for keyword in object.keys() {
+        for (keyword, value) in object {
             assert!(
                 READ.contains(&keyword.as_str()) || ANNOTATIONS.contains(&keyword.as_str()),
                 "the schema uses the keyword {keyword}, which this validator does not read: \
                  teach it the keyword before trusting its verdict"
+            );
+            assert!(
+                well_formed(keyword, value),
+                "the schema's {keyword} is {value}, which is not the shape draft-07 gives it"
             );
         }
         let sub = |schema: &Value, instance: &Value, at: &str| {
@@ -311,6 +315,36 @@ impl Schemas {
     }
 }
 
+/// Whether a keyword this validator reads has the shape draft-07 gives it: one it would read
+/// some other way panics instead of passing quietly.
+fn well_formed(keyword: &str, value: &Value) -> bool {
+    let schema = |value: &Value| value.is_object() || value.is_boolean();
+    let names = |value: &Value| {
+        value
+            .as_array()
+            .is_some_and(|it| it.iter().all(Value::is_string))
+    };
+    match keyword {
+        "type" => value.is_string() || names(value),
+        "properties" | "patternProperties" => {
+            value.as_object().is_some_and(|it| it.values().all(schema))
+        }
+        "additionalProperties" | "additionalItems" | "not" | "if" | "then" | "else" => {
+            schema(value)
+        }
+        "required" => names(value),
+        "enum" => value.is_array(),
+        "oneOf" | "anyOf" | "allOf" => value
+            .as_array()
+            .is_some_and(|it| !it.is_empty() && it.iter().all(schema)),
+        "items" => schema(value) || value.as_array().is_some_and(|it| it.iter().all(schema)),
+        "minItems" | "maxItems" => value.is_u64(),
+        "minimum" | "maximum" | "exclusiveMaximum" => value.is_number(),
+        "pattern" | "format" | "$ref" => value.is_string(),
+        _ => true,
+    }
+}
+
 /// Whether `text` is of the format `format`.
 fn is_format(format: &str, text: &str) -> bool {
     match format {
@@ -319,7 +353,9 @@ fn is_format(format: &str, text: &str) -> bool {
             pattern_of(r"(?i)^#(?:/(?:[a-z0-9_\-.!$&'()*+,;:=@]|%[0-9a-f]{2}|~0|~1)*)*$")
                 .is_match(text)
         }
-        // RFC 3986's characters, and each percent sign starting an escape.
+        // RFC 3986's characters, and each percent sign starting an escape: looser than
+        // ajv-formats' grammar (it takes `http://[`), which purlis's exports never meet, since
+        // they hold no URI.
         "uri-reference" => {
             pattern_of(r"^(?:[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=]|%[0-9A-Fa-f]{2})*$")
                 .is_match(text)

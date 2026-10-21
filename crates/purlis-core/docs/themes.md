@@ -1427,9 +1427,9 @@ untyped values; on the file, the rest of `theme.json`. The files beside `theme.j
 licence, an icon set) travel there too, as base64.
 
 **Colours are hex.** A colour is written in `srgb` with its `hex`, and its `alpha` when it is not
-opaque. Reading, purlis takes a colour's `srgb` components or, in any other colour space, its
-`hex`; a colour with neither, and one whose components and hex are two colours, refuse the file
-with a sentence that names the token. A colour spelled another way than the format writes it
+opaque. Reading, purlis takes a colour's `srgb` components or, in any other colour space or when
+a component is `none`, its `hex`; a colour with neither, and one whose components and hex are two
+colours, refuse the file with a sentence that names the token. A colour spelled another way than the format writes it
 (`#FFF`) keeps its spelling under the vendor key.
 
 **A file purlis did not write** is read by the same rules. Its `appearance.<id>` groups are the
@@ -1440,11 +1440,14 @@ no purlis token takes, a dimension in `rem`, a font weight given as a word, a JS
 (`$ref`) and a group's `$extends` are listed under `not taken`. A reference to a token that is
 not there, or round in a circle, refuses the file.
 
-A design-tokens file is at most 24 MiB; the files it carries are held to a zip's bounds (64
+Imports are bounded in size and work. A design-tokens file is at most 24 MiB and holds at most
+400,000 JSON values, counted before it is read; the `theme.json` it makes is at most 2 MiB, as a
+zip's is; it has at most 64 appearances; the files it carries are held to a zip's bounds (64
 files, each at most 2 MiB, 16 MiB together, each where a theme folder keeps a file, no two a
 filesystem writes as one); its groups nest at most 32 deep and it holds at most 100,000 groups
 and tokens. A file a newer purlis wrote, whose `dev.purlis.theme` version this one does not
-read, is refused with the version it has.
+read, and one whose version is not a whole number, are refused with the version they have.
+A `.json` file with tokens in it is read as design tokens even when its top group is `colors`.
 
 ## Names every platform holds
 
