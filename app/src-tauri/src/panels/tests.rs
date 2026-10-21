@@ -928,3 +928,50 @@ fn a_session_record_is_read_for_its_tab_by_its_path_and_a_path_out_is_refused() 
         "a record that has gone is gone, not a failure"
     );
 }
+
+#[test]
+fn the_plane_root_names_what_the_last_send_of_the_project_left_out_and_nothing_else() {
+    let dir = tempfile::tempdir().expect("a plane");
+    let root = std::fs::canonicalize(dir.path()).expect("a resolved plane");
+    std::fs::write(root.join("charter.toml"), "").expect("a manifest");
+    let titles = |panels: &PlaneRootPanels| -> Vec<String> {
+        serde_json::to_value(panels).expect("serialisable")["contributed"]
+            .as_array()
+            .expect("contributed")
+            .iter()
+            .map(|one| one["title"].as_str().unwrap_or_default().to_owned())
+            .collect()
+    };
+    assert!(!titles(&plane_root(&root)).contains(&"Sent to runners".to_owned()));
+
+    sent_leaving(&root, vec!["workspaces/app/memory/token.md".to_owned()]);
+    let shown = serde_json::to_value(plane_root(&root)).expect("serialisable");
+    let sent = shown["contributed"]
+        .as_array()
+        .expect("contributed")
+        .iter()
+        .find(|one| one["title"] == "Sent to runners")
+        .expect("the panel is drawn")
+        .to_string();
+    assert!(sent.contains("left out 1 file"), "{sent}");
+    assert!(
+        sent.contains("refuse it: workspaces/app/memory/token.md"),
+        "{sent}"
+    );
+    assert!(sent.contains("It stays on this machine"), "{sent}");
+
+    sent_leaving(&root, Vec::new());
+    assert!(!titles(&plane_root(&root)).contains(&"Sent to runners".to_owned()));
+}
+
+#[test]
+fn what_a_send_left_out_is_said_in_words_that_agree_and_names_at_most_five() {
+    let many: Vec<String> = (1..=7).map(|n| format!("f{n}.key")).collect();
+    let said = left_out_said("the project", &many);
+    assert!(said.contains("left out 7 files"), "{said}");
+    assert!(
+        said.contains("refuse them: f1.key, f2.key, f3.key, f4.key, f5.key, and 2 more."),
+        "{said}"
+    );
+    assert!(said.ends_with("They stay on this machine."), "{said}");
+}

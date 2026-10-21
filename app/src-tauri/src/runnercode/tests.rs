@@ -313,3 +313,41 @@ fn a_clones_send_leaves_out_the_persons_list_and_names_what_a_save_refuses() {
         vec![".npmrc".to_owned()]
     );
 }
+
+#[test]
+fn a_leave_out_list_that_cannot_be_read_refuses_the_send_in_words() {
+    let world = World::new();
+    std::fs::write(
+        world.root.join("workspaces/app/workspace.json"),
+        serde_json::json!({
+            "name": "app",
+            "settings": {"runners": {"leave_out": ["local/", "../out"]}},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let web = world.root.join("workspaces/app/web");
+    std::fs::create_dir_all(web.join("local")).unwrap();
+    std::fs::write(web.join("local/notes.txt"), "mine alone\n").unwrap();
+
+    let refused = world
+        .sessions
+        .open_named(
+            None,
+            &Named {
+                workspace: Some("app".into()),
+                ..crate::hostedsessions::tests::by_its_names()
+            },
+            Default::default(),
+            &|_| {},
+        )
+        .map(|composed| composed.number)
+        .expect_err("not sent");
+
+    assert!(refused.contains("settings.runners.leave_out"), "{refused}");
+    assert!(refused.contains("Sent to runners"), "{refused}");
+    assert!(
+        !world.kept().join("workspaces/app/web").exists(),
+        "nothing reached the runner"
+    );
+}

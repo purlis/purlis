@@ -185,8 +185,8 @@ fn a_settings_key_no_reader_reads_is_refused() {
         refusals(text, "alpha"),
         vec![
             "settings.colour in workspaces/alpha/workspace.json is not read — a workspace's \
-             settings hold extensions, harness_plugins, harness_skills, theme, skills and \
-             nothing else"
+             settings hold extensions, harness_plugins, harness_skills, theme, skills, runners \
+             and nothing else"
                 .to_owned()
         ]
     );
@@ -948,7 +948,7 @@ fn what_a_workspace_leaves_out_of_its_sends_is_saved_and_read_back() {
     )
     .unwrap();
     assert_eq!(saved, vec!["secrets/", "config/local.yml"]);
-    assert_eq!(send_leaves_out(dir.path(), "alpha"), saved);
+    assert_eq!(send_leaves_out(dir.path(), "alpha"), Ok(saved.clone()));
     assert!(on_disk(dir.path()).contains("\"leave_out\""));
     // None left takes the key away.
     assert_eq!(
@@ -998,4 +998,30 @@ fn a_runners_table_the_reader_would_not_read_is_refused() {
             .iter()
             .any(|why| why.contains("settings.runners.leave_out"))
     );
+}
+
+#[test]
+fn a_leave_out_list_with_one_bad_entry_never_reads_as_empty() {
+    let text = serde_json::json!({
+        "name": "alpha",
+        "settings": {"runners": {"leave_out": ["secrets/", "../out"]}},
+    })
+    .to_string();
+    let dir = plane(Some(&text));
+    let refused = send_leaves_out(dir.path(), "alpha").expect_err("not read as nothing");
+    assert!(refused.contains("settings.runners.leave_out"), "{refused}");
+    let many: Vec<String> = (0..=MOST_LEFT_OUT).map(|n| format!("f{n}")).collect();
+    let text = serde_json::json!({
+        "name": "alpha",
+        "settings": {"runners": {"leave_out": many}},
+    })
+    .to_string();
+    let dir = plane(Some(&text));
+    assert!(send_leaves_out(dir.path(), "alpha").is_err());
+    // Nor does a file that is not JSON.
+    let dir = plane(Some("{ not json"));
+    assert!(send_leaves_out(dir.path(), "alpha").is_err());
+    // And none at all names nothing.
+    let dir = plane(None);
+    assert_eq!(send_leaves_out(dir.path(), "alpha"), Ok(Vec::new()));
 }

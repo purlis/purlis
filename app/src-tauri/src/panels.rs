@@ -446,6 +446,58 @@ pub(crate) fn sent_leaving(clone: &Path, paths: Vec<String>) {
     }
 }
 
+/// How many left-out files a line names before it says how many more there are.
+const LEFT_OUT_NAMED: usize = 5;
+
+/// **What a send left out, in one line** (#2046): the first few paths, drawn inertly, and how
+/// many more, with the words agreeing with how many there are.
+pub(crate) fn left_out_said(of: &str, paths: &[String]) -> String {
+    let named: Vec<String> = paths
+        .iter()
+        .take(LEFT_OUT_NAMED)
+        .map(|path| purlis_core::dispatchgrant::inert(path))
+        .collect();
+    let more = paths.len().saturating_sub(LEFT_OUT_NAMED);
+    let more = if more == 0 {
+        String::new()
+    } else {
+        format!(", and {more} more")
+    };
+    let (them, stay) = if paths.len() == 1 {
+        ("it", "It stays")
+    } else {
+        ("them", "They stay")
+    };
+    format!(
+        "The last send of {of} to its pool's runner left out {}, as a save to the forge would \
+         refuse {them}: {}{more}. {stay} on this machine.",
+        purlis_core::counts::counted(paths.len(), "file", "files"),
+        named.join(", ")
+    )
+}
+
+/// The plane root's panel naming what the last send of the project's own repository to a
+/// runner left out (#2046), where it left out anything.
+fn sent_to_runners_panel(root: &Path) -> Option<panel::Panel> {
+    let paths = left_out_of_send(root);
+    if paths.is_empty() {
+        return None;
+    }
+    Some(panel::Panel {
+        id: "sent-to-runners".into(),
+        title: "Sent to runners".into(),
+        // After the sessions: something to know, not to work on.
+        order: 40,
+        mark: panel::Mark::Note,
+        blocks: vec![panel::Block::Note {
+            text: left_out_said("the project", &paths),
+            tone: panel::Tone::Plain,
+        }],
+        from: panel::By::Charter,
+        about: None,
+    })
+}
+
 /// What the last send of the clone at `clone` left out, as [`sent_leaving`] was told.
 pub(crate) fn left_out_of_send(clone: &Path) -> Vec<String> {
     LEFT_OUT_OF_SEND
@@ -774,7 +826,10 @@ pub(crate) fn plane_root(root: &Path) -> PlaneRootPanels {
     };
     PlaneRootPanels {
         sessions: records.iter().map(SessionRecordRow::from).collect(),
-        contributed: vec![personas, PanelView::from(&sessions_panel(&place, &records))],
+        contributed: [personas, PanelView::from(&sessions_panel(&place, &records))]
+            .into_iter()
+            .chain(sent_to_runners_panel(root).as_ref().map(PanelView::from))
+            .collect(),
     }
 }
 

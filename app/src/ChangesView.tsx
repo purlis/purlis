@@ -317,6 +317,18 @@ const ciRow = (repo: string) => `ci:${repo}`;
 const runnerRow = (repo: string, pool: string, branch: string) =>
   `runner:${repo}:${pool}:${branch}`;
 const leftOutRow = (repo: string) => `left-out:${repo}`;
+
+/** How many left-out files a row names before it says how many more there are. */
+const LEFT_OUT_NAMED = 5;
+
+/** What the last send to the runner left out, in one line: the first few paths, drawn inertly,
+ *  and how many more, the words agreeing with how many there are (#2046). */
+export function leftOutSaid(paths: readonly string[]): string {
+  const named = paths.slice(0, LEFT_OUT_NAMED).map(inertly).join(", ");
+  const more = paths.length - LEFT_OUT_NAMED;
+  const them = paths.length === 1 ? "it" : "them";
+  return `Not sent to the runner, as a save would refuse ${them}: ${named}${more > 0 ? `, and ${more} more` : ""}`;
+}
 const factRow = (repo: string, column: FactColumn) =>
   `fact:${repo}/${column.extension}/${column.id}`;
 
@@ -629,10 +641,7 @@ function RepoRows({
               testId={`left-out-${name}`}
             >
               <ShieldOff className="node-icon" />
-              <span className="upstream">
-                Not sent to the runner, as a save would refuse them:{" "}
-                {(state?.left_out_of_send ?? []).map(inertly).join(", ")}
-              </span>
+              <span className="upstream">{leftOutSaid(state?.left_out_of_send ?? [])}</span>
             </CloneRow>
           )}
           <CloneRow id={ciRow(name)} at={at} className="ci" testId={`ci-${name}`}>

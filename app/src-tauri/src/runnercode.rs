@@ -86,16 +86,26 @@ pub(crate) fn send(
     let leave_out = if rel.is_empty() {
         codelink::plane_leaves_out()
     } else {
-        rel.strip_prefix("workspaces/")
+        match rel
+            .strip_prefix("workspaces/")
             .and_then(|rest| rest.split('/').next())
-            .map(|workspace| {
+        {
+            // A list that cannot be read is never taken as one that names nothing: the send is
+            // refused in its words, and what the person listed stays here.
+            Some(workspace) => purlis_core::settings::workspace::send_leaves_out(root, workspace)
+                .map_err(|why| {
+                    format!(
+                        "the code of {} was not sent to the runner: {why}. Mend the list in the \
+                         workspace's settings, Sent to runners",
+                        shown(rel)
+                    )
+                })?
+                .into_iter()
                 // A folder is named by its path: git's pathspec takes it without the slash.
-                purlis_core::settings::workspace::send_leaves_out(root, workspace)
-                    .into_iter()
-                    .map(|entry| entry.trim_end_matches('/').to_owned())
-                    .collect()
-            })
-            .unwrap_or_default()
+                .map(|entry| entry.trim_end_matches('/').to_owned())
+                .collect(),
+            None => Vec::new(),
+        }
     };
     let have = lock(sent).get(rel).cloned().unwrap_or_default();
     let once = |have: &[String]| -> Result<(Vec<Ref>, Vec<String>), String> {
@@ -124,9 +134,8 @@ pub(crate) fn send(
     // Named where the person looks: Changes, under the clone (`panels::left_out_of_send`).
     if !left_out.is_empty() {
         tracing::info!(
-            "purlis: {} file(s) of {} were not sent to the runner, as a save to the forge would \
-             refuse them",
-            left_out.len(),
+            "purlis: {} of {} not sent to the runner, as a save to the forge would refuse them",
+            purlis_core::counts::counted(left_out.len(), "file", "files"),
             shown(rel)
         );
     }

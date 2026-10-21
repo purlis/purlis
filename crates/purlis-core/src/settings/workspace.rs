@@ -84,23 +84,47 @@ pub fn leave_out_ok(entry: &str) -> bool {
 }
 
 /// **What `workspace`'s sends to a pool's runner leave out besides what a save refuses**
-/// (#2046): `settings.runners.leave_out`. Empty where it names none, or holds something its
-/// save refuses to write.
-pub fn send_leaves_out(plane: &Path, workspace: &str) -> Vec<String> {
-    read(plane, workspace)
-        .and_then(|table| {
-            let names = table.get(RUNNERS)?.get(LEAVE_OUT)?.as_array()?;
+/// (#2046): `settings.runners.leave_out`. Empty where it names none. **Never empty for a list
+/// it cannot read**: a workspace whose `workspace.json` cannot be read, or whose list holds an
+/// entry its save refuses or more than [`MOST_LEFT_OUT`], is answered why, and its sends are
+/// refused in those words, so what the person listed never goes for want of a reading.
+pub fn send_leaves_out(plane: &Path, workspace: &str) -> Result<Vec<String>, String> {
+    let held = Plane::open(plane)
+        .workspace(workspace)
+        .map_err(|why| why.to_string())?;
+    let (doc, owner) = held.manifest();
+    let file = named(workspace);
+    let Some(doc) = doc else {
+        // Absent is also what a file purlis may not read says (one that leads out of the
+        // project): only one that is not there at all names nothing.
+        let there = std::fs::symlink_metadata(held.dir().join(FILE)).is_ok();
+        return if owner == Ownership::Absent && !there {
+            Ok(Vec::new())
+        } else {
+            Err(format!(
+                "{file} cannot be read, so what it leaves out of a send is not known"
+            ))
+        };
+    };
+    let Some(table) = table_of(&doc) else {
+        return Ok(Vec::new());
+    };
+    let refused = runners_refused(&table, &file);
+    if let Some(first) = refused.first() {
+        return Err(first.why.clone());
+    }
+    Ok(table
+        .get(RUNNERS)
+        .and_then(|runners| runners.get(LEAVE_OUT))
+        .and_then(toml::Value::as_array)
+        .map(|names| {
             names
                 .iter()
-                .map(|name| {
-                    name.as_str()
-                        .filter(|one| leave_out_ok(one))
-                        .map(str::to_owned)
-                })
-                .collect::<Option<Vec<_>>>()
+                .filter_map(toml::Value::as_str)
+                .map(str::to_owned)
+                .collect()
         })
-        .filter(|names| names.len() <= MOST_LEFT_OUT)
-        .unwrap_or_default()
+        .unwrap_or_default())
 }
 
 /// **Sets what `workspace`'s sends to a pool's runner leave out** to `entries` (#2046), through
@@ -120,7 +144,7 @@ pub fn set_send_leaves_out(
     {
         if !leave_out_ok(entry) {
             return Err(format!(
-                "{entry:?} is not a file or folder in a clone, so nothing was saved: name one \
+                "“{entry}” is not a file or folder in a clone, so nothing was saved: name one \
                  relative to the top of the clone, such as secrets/ or config/local.yml"
             ));
         }

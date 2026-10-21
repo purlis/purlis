@@ -417,9 +417,7 @@ pub async fn send_leaves_out(
 ) -> Result<Vec<String>, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
     crate::off_the_window("reading what the workspace's sends leave out", move || {
-        Ok(purlis_core::settings::workspace::send_leaves_out(
-            &root, &workspace,
-        ))
+        purlis_core::settings::workspace::send_leaves_out(&root, &workspace)
     })
     .await
 }
