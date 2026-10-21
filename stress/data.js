@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792541965227,
+  "lastUpdate": 1792543815328,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4454,6 +4454,42 @@ window.BENCHMARK_DATA = {
             "value": 366.6,
             "unit": "MB",
             "extra": "median of 6 samples: 417.5, 400.9, 378.2, 354, 355, 270.3 MB; window 162.5 MB, session host 204.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "34aca758c9645cc66f64818ee49ad3a0d6834f68",
+          "message": "Browsers: out-of-view marks follow every box and transform around a frame (#2861)\n\n* Browsers: out-of-view marks follow every box and transform around a frame (#2840)\n\nAn element's part is cut to its boxes and its frame's content box, then\ncarried into the frame element's document and cut again, outward through\nevery frame to the page; a frame from another site is carried through the\nlayout of each session around it. A frame's document starts inside its\nelement's border and padding, side by side, and is drawn at the scale the\npage draws the element at. A frame turned or skewed, or in a box that is,\nis not carried through.\n\nReal-Chrome tests: a padded frame with a thick top border, a frame the page\nscales, and a frame from a third site nested in one from another, each in a\nbox on the page.\n\nCloses #2840\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: what its own boxes hide stays marked in a frame that cannot be placed (#2840)\n\n- An element its own document or frame already hides is cut off whatever\n  is around the frame.\n- The layout read asks for `rotate`, `scale` and `offset-path` too; a frame\n  turned by `rotate`, flipped or flattened by `scale`, or on an\n  `offset-path` is not carried through.\n- The ADR note records D-2840-4 and how near a placed frame is.\n\nRefs #2840\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a box inside a fixed one still cuts off what it hides (#2840)\n\nA part already cut to nothing is answered as nothing at once, before a\nfixed box further out ends what is known. Tests for the axis and unit\nforms of `rotate`.\n\nRefs #2840\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T04:05:26+04:00",
+          "tree_id": "7dacb8ffcff0cd25aac7d8bb55222675dbb23939",
+          "url": "https://github.com/purlis/purlis/commit/34aca758c9645cc66f64818ee49ad3a0d6834f68"
+        },
+        "date": 1792543813879,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 921,
+            "unit": "MB",
+            "extra": "median of 3 samples: 810, 921, 937 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 379,
+            "unit": "MB",
+            "extra": "median of 6 samples: 409.7, 381, 385.7, 376.1, 377, 286.7 MB; window 156.3 MB, session host 221.7 MB"
           }
         ]
       }
