@@ -72,3 +72,59 @@ fn a_call_made_while_another_cannot_be_written_fails_within_its_own_limit() {
     assert!(matches!(answer, Err(CallError::TimedOut)), "{answer:?}");
     assert!(took < Duration::from_secs(2), "{took:?}");
 }
+
+#[test]
+fn a_call_that_failed_while_it_waited_to_be_written_is_never_written() {
+    // The engine stops reading: a large call fills the pipe, and a small call made meanwhile
+    // fails within its limit. Once the engine reads again, the failed call never reaches it.
+    let (connection, unread, _unanswered) = to_an_engine_that_never_reads();
+    let connection = std::sync::Arc::new(connection);
+    let filling = std::sync::Arc::clone(&connection);
+    std::thread::spawn(move || {
+        let _ = filling.call_within(
+            "Page.setDocumentContent",
+            json!({ "html": "x".repeat(4 << 20) }),
+            None,
+            Duration::from_millis(100),
+        );
+    });
+    // Long enough for the large call to be made and its writing to have filled the pipe.
+    std::thread::sleep(Duration::from_millis(500));
+    let failed =
+        connection.call_within("Purlis.never", json!({}), None, Duration::from_millis(100));
+    assert!(matches!(failed, Err(CallError::TimedOut)), "{failed:?}");
+
+    // The engine reads again, everything that reaches it.
+    let (read, methods) = mpsc::channel();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        let mut from_purlis = std::io::BufReader::new(unread);
+        loop {
+            let mut message = Vec::new();
+            if from_purlis.read_until(0, &mut message).unwrap_or(0) == 0 {
+                break;
+            }
+            message.pop();
+            let method = serde_json::from_slice::<serde_json::Value>(&message)
+                .ok()
+                .and_then(|m| m["method"].as_str().map(str::to_owned))
+                .unwrap_or_default();
+            let _ = read.send(method);
+        }
+    });
+    // A call made now, after the failed one, is written: everything before it was too.
+    let marker = std::sync::Arc::clone(&connection);
+    std::thread::spawn(move || {
+        let _ = marker.call_within("Purlis.after", json!({}), None, Duration::from_secs(5));
+    });
+    let mut seen = Vec::new();
+    while let Ok(method) = methods.recv_timeout(Duration::from_secs(10)) {
+        let done = method == "Purlis.after";
+        seen.push(method);
+        if done {
+            break;
+        }
+    }
+    assert!(seen.iter().any(|m| m == "Purlis.after"), "{seen:?}");
+    assert!(!seen.iter().any(|m| m == "Purlis.never"), "{seen:?}");
+}

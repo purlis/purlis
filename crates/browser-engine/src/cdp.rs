@@ -27,7 +27,8 @@
 //! a writer of its own, on a thread of its own, and the call waits for its answer only as long
 //! as its limit: an engine that stops reading fills the pipe and holds the writer, never the
 //! call, and never another call. At most [`MAX_QUEUED_CALLS`] wait to be written; past that a
-//! call fails at once, as one not answered in time.
+//! call fails at once, as one not answered in time. A call whose limit passed before its turn
+//! is not written at all: what its caller was told failed never reaches the engine.
 //!
 //! **Why it closed is kept** ([`Connection::closed`], [`Closed`]): the end of the pipe, a read
 //! that failed, or the message that ended it, named by its method and never by what it held.
@@ -306,11 +307,19 @@ impl Connection {
 }
 
 /// Writes each call's message to the engine, in the order they were made, until the connection
-/// is dropped. A write that fails fails its call, and every later one, with why (#2123): what
+/// is dropped; a call that failed before its turn is not written. A write that fails fails its call, and every later one, with why (#2123): what
 /// follows a broken write would reach the engine cut.
 fn write_until_dropped(mut to_engine: impl Write, calls: &Receiver<Outgoing>, shared: &Shared) {
     let mut broken: Option<io::ErrorKind> = None;
     for call in calls {
+        // A call that already failed (its limit passed while it waited) is never written: what
+        // its caller was told failed never reaches the engine (#2123).
+        let waiting = lock(&shared.pending)
+            .as_ref()
+            .is_some_and(|pending| pending.contains_key(&call.id));
+        if !waiting {
+            continue;
+        }
         let failed = match broken {
             Some(kind) => Some(io::Error::from(kind)),
             None => to_engine
