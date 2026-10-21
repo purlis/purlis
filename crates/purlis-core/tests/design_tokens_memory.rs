@@ -133,6 +133,7 @@ fn shared_values() -> Vec<(&'static str, Vec<u8>, Option<&'static str>, u64)> {
 /// Each shape that meets a bound, what its import says, and the most its read may hold.
 #[test]
 fn every_shape_that_meets_a_bound_is_read_within_its_memory() {
+    purlis_core::unsteered!();
     let cases: Vec<(&str, Vec<u8>, Option<&str>, u64)> = vec![
         // The value count, at the byte cap: refused before it is parsed.
         (

@@ -1341,7 +1341,7 @@ fn kind_of<'d>(found: &Found<'d>, end: &Found<'d>) -> Option<&'d str> {
 }
 
 /// What a token whose value is a JSON pointer is not.
-const POINTER: &str = "a JSON pointer ($ref) is not read: purlis follows curly-brace references";
+const POINTER: &str = "a JSON pointer ($ref) is not read: only curly-brace references are followed";
 
 /// **A token of an appearance, as `theme.json` writes it**: by its type.
 fn token_value(
