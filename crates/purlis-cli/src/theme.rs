@@ -1,10 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis theme list`, `check`, `draft`, `import` and `export` (spec #2313, #2321, #2332,
-//! #2334): every theme available on this machine and where it comes from, the theme check of any
-//! one of them, a chat's theme draft, a theme folder made from a theme of another program, and a
-//! theme folder as a zip.
+//! `purlis theme list`, `check`, `draft`, `import`, `export` and `parts` (spec #2313, #2321,
+//! #2332, #2334, #2903): every theme available on this machine and where it comes from, the theme
+//! check of any one of them, a chat's theme draft, a theme folder made from a theme of another
+//! program, a theme folder as a zip, and every component part a theme may set.
 //!
 //! **Nothing here judges a theme.** The theme engine (`purlis_core::theme`) reads it, refuses it or
 //! says what it left out, and checks each appearance; this module finds the themes there are, asks
@@ -176,6 +176,12 @@ pub enum ThemeCommand {
         #[arg(long)]
         force: bool,
     },
+    /// Every component part a theme may set (#2903), as JSON: the key grammar
+    /// (`<family>.<part>[.<variant>][.<state>].<property>`), each state and the attribute it is
+    /// drawn by, each property with its bounds and whether a state may set it, and every family
+    /// with its parts and variants, each with its description and the manifest version it came
+    /// in. A theme names them in its theme.json's `parts`. Writes nothing; exits 0.
+    Parts,
 }
 
 /// Where a theme comes from.
@@ -530,7 +536,23 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
             *json,
         ),
         ThemeCommand::Export { theme, to, force } => export(here, theme, to.as_deref(), *force),
+        ThemeCommand::Parts => {
+            println!("{}", parts_json());
+            ExitCode::SUCCESS
+        }
     }
+}
+
+/// `purlis theme parts`: the engine's closed manifest of component parts, with the version of
+/// this answer and the theme schema a theme naming them is written against.
+fn parts_json() -> String {
+    let mut said = json!({ "schema": SCHEMA, "theme_schema": theme::SCHEMA_URL });
+    if let (Some(said), Value::Object(manifest)) =
+        (said.as_object_mut(), theme::parts::manifest_json())
+    {
+        said.extend(manifest);
+    }
+    serde_json::to_string_pretty(&said).unwrap_or_default()
 }
 
 /// The most of a path a line prints.

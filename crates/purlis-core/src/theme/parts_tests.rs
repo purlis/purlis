@@ -1,0 +1,650 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! Component parts at the engine's interface (#2903): the manifest, the key grammar, the bounds
+//! and the corner clamp, the state-size rule, the fallback to the family default, the floors per
+//! part and state with the consent parts, and the stylesheet the window draws.
+
+use serde_json::{Value, json};
+
+use super::parts::{self, Prop, STATES};
+use super::*;
+
+/// A theme over Purlis Classic that sets `parts`.
+fn with_parts(parts: Value) -> Value {
+    json!({ "name": "Shaped", "extends": "purlis-classic", "parts": parts })
+}
+
+fn said(resolved: &Resolved) -> Vec<String> {
+    resolved
+        .complaints
+        .iter()
+        .map(|one| one.said.clone())
+        .collect()
+}
+
+/// The stylesheet of a theme's first appearance, which must be drawn.
+fn sheet_of(parts: Value) -> String {
+    let loaded = load(&with_parts(parts));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    parts::stylesheet(loaded.theme.first())
+}
+
+/// The sentences a refused theme says.
+fn refusal(parts: Value) -> Vec<String> {
+    let loaded = load(&with_parts(parts));
+    assert!(loaded.refused, "the theme was drawn");
+    said(&loaded)
+}
+
+// ---------------------------------------------------------------------------------------
+// The tracer: a theme rounds the button's root to a pill
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_theme_rounds_the_buttons_root_to_a_pill() {
+    let sheet = sheet_of(json!({ "button.root.corner-radius": "full" }));
+    assert_eq!(
+        sheet,
+        "@layer parts {\n  :where([data-scope=\"button\"][data-part=\"root\"], .ui-button) { \
+         border-radius: calc(var(--size-control) / 2); }\n}\n"
+    );
+}
+
+#[test]
+fn a_theme_that_names_no_parts_draws_exactly_as_today() {
+    for theme in built_ins() {
+        assert!(theme.parts.is_empty(), "{} names parts", theme.name);
+        assert_eq!(parts::stylesheet(theme), "");
+        assert!(parts::fallen(theme).is_empty());
+    }
+    let loaded = load(&json!({ "name": "Plain", "extends": "purlis-classic" }));
+    assert_eq!(parts::stylesheet(loaded.theme.first()), "");
+    let empty = load(&with_parts(json!({})));
+    assert!(!empty.refused);
+    assert_eq!(parts::stylesheet(empty.theme.first()), "");
+}
+
+// ---------------------------------------------------------------------------------------
+// The key grammar and the values
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_key_names_a_variant_and_a_state_and_is_keyed_on_their_attributes() {
+    let sheet = sheet_of(json!({ "button.root.primary.hover.fill": "accent.base" }));
+    assert!(sheet.contains(
+        "[data-scope=\"button\"][data-part=\"root\"][data-variant=\"primary\"][data-hovered]"
+    ));
+    assert!(
+        sheet.contains(
+            ".ui-button.ui-button-primary:hover:not(:disabled, [aria-disabled=\"true\"])"
+        )
+    );
+    assert!(sheet.contains("background-color: var(--accent-base);"));
+}
+
+#[test]
+fn the_plain_variant_is_reached_on_todays_class_without_another_variant() {
+    let sheet = sheet_of(json!({ "button.root.secondary.fill": "control.hover" }));
+    assert!(sheet.contains(
+        ".ui-button:not(.ui-button-primary, .ui-button-ghost, .ui-button-danger, .ui-button-grants)"
+    ));
+}
+
+#[test]
+fn a_part_other_than_the_root_is_reached_inside_its_root() {
+    let sheet = sheet_of(json!({ "button.label.ghost.text": "text.secondary" }));
+    assert!(sheet.contains(
+        "[data-scope=\"button\"][data-part=\"root\"][data-variant=\"ghost\"] \
+         [data-scope=\"button\"][data-part=\"label\"]"
+    ));
+    assert!(sheet.contains("color: var(--text-secondary);"));
+}
+
+#[test]
+fn a_key_naming_nothing_purlis_has_is_said_and_left_out() {
+    let loaded = load(&with_parts(json!({
+        "button.root.corner-radius": 6,
+        "spinner.root.fill": "accent.base",
+        "button.knob.fill": "accent.base",
+        "button.root.opacity": 0.5,
+        "button.icon.fill": "accent.base",
+        "button.root.primary.rest.fill": "accent.base",
+    })));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let notes = said(&loaded);
+    for key in [
+        "spinner.root.fill",
+        "button.knob.fill",
+        "button.root.opacity",
+        "button.icon.fill",
+        "button.root.primary.rest.fill",
+    ] {
+        assert!(
+            notes
+                .iter()
+                .any(|one| one.contains(&format!("parts.{key} is not"))),
+            "{key}: {notes:?}"
+        );
+    }
+    assert_eq!(loaded.theme.first().parts.len(), 1);
+}
+
+#[test]
+fn a_colour_names_a_semantic_token_never_a_hex_or_a_palette_name() {
+    let said = refusal(json!({ "button.root.fill": "#ff0000" }));
+    assert_eq!(
+        said,
+        [
+            "parts.button.root.fill is \"#ff0000\": a part's colour names a semantic colour token \
+          (accent.base) or transparent, never a hex or a palette name, so palettes, appearances \
+          and tints keep working"
+        ]
+    );
+    let loaded = load(&json!({
+        "name": "Named", "extends": "purlis-classic",
+        "palette": { "rose": "#ff00aa" },
+        "parts": { "button.root.fill": "rose" }
+    }));
+    assert!(loaded.refused);
+    let clear = load(&with_parts(
+        json!({ "button.root.ghost.fill": "transparent" }),
+    ));
+    assert!(!clear.refused);
+    assert!(!refusal(json!({ "button.root.text": "transparent" })).is_empty());
+}
+
+#[test]
+fn a_size_is_a_number_in_its_bound_or_a_geometry_token() {
+    let sheet = sheet_of(json!({
+        "button.root.padding": [3, "space.5"],
+        "button.root.gap": "space.1",
+        "button.root.font-weight": 600,
+        "button.root.border-width": 2,
+        "button.root.shadow": "raised",
+    }));
+    assert!(sheet.contains("padding-block: calc(3rem / 14); padding-inline: var(--space-5);"));
+    assert!(sheet.contains("gap: var(--space-1);"));
+    assert!(sheet.contains("font-weight: 600;"));
+    assert!(sheet.contains("border-width: 2px; border-style: solid;"));
+    assert!(sheet.contains("box-shadow: var(--elevation-raised);"));
+    for (key, value, bound) in [
+        ("button.root.gap", json!(40), "from 0 to 16"),
+        ("button.root.border-width", json!(9), "from 0 to 4"),
+        ("button.root.font-size", json!(30), "from 10 to 18"),
+        ("button.root.padding", json!([20, 4]), "from 0 to 12"),
+        ("button.root.font-weight", json!(950), "from 300 to 700"),
+        ("button.root.corner-radius", json!(-1), "from 0 to 9999"),
+    ] {
+        let said = refusal(json!({ key: value }));
+        assert!(
+            said.iter().any(|one| one.contains(bound)),
+            "{key}: {said:?}"
+        );
+    }
+    let said = refusal(json!({ "button.root.gap": "radius.md" }));
+    assert!(said[0].contains("a space.* token"), "{said:?}");
+}
+
+// ---------------------------------------------------------------------------------------
+// Corners, heights and the room for words
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_corner_is_clamped_to_half_the_parts_height_as_it_is_drawn() {
+    let sheet = sheet_of(json!({ "button.root.corner-radius": 12 }));
+    assert!(sheet.contains("border-radius: min(12px, calc(var(--size-control) / 2));"));
+    let four = sheet_of(json!({ "button.root.corner-radius": ["full", 0, "radius.md", 4] }));
+    assert!(four.contains(
+        "border-radius: calc(var(--size-control) / 2) min(0px, calc(var(--size-control) / 2)) \
+         min(var(--radius-md), calc(var(--size-control) / 2)) \
+         min(4px, calc(var(--size-control) / 2));"
+    ));
+    let tall = sheet_of(json!({
+        "button.root.primary.height": 32,
+        "button.root.corner-radius": "full",
+    }));
+    // The plain rule reaches every variant, at the family's height; the primary's own height is
+    // the one its corner is clamped to only where a rule names the primary.
+    assert!(tall.contains("border-radius: calc(var(--size-control) / 2);"));
+    assert!(tall.contains("block-size: calc(32rem / 14);"));
+    let own = sheet_of(json!({
+        "button.root.primary.height": 32,
+        "button.root.primary.corner-radius": "full",
+    }));
+    assert!(own.contains("border-radius: calc(calc(32rem / 14) / 2);"));
+    assert!(
+        refusal(json!({ "button.root.corner-radius": [1, 2] }))[0].contains("one value or four")
+    );
+}
+
+#[test]
+fn a_control_stays_a_target_and_its_words_fit_in_both_densities() {
+    let said = refusal(json!({ "button.root.height": 20 }));
+    assert!(said[0].contains("from 24 to 48"), "{said:?}");
+    // size.chrome is 21 comfortable and 18 compact: below a target, in both.
+    let said = refusal(json!({ "button.root.height": "size.chrome" }));
+    for density in [("21", "comfortable"), ("18", "compact")] {
+        assert!(
+            said.contains(&format!(
+                "parts: button.root.secondary is {}px tall in {}, below the 24px a control \
+                 keeps so it can be reached",
+                density.0, density.1
+            )),
+            "{said:?}"
+        );
+    }
+    // 14px words, 6px of padding above and below and a 1px border take 28px: more than 24.
+    let said = refusal(json!({ "button.root.height": 24, "button.root.padding": [6, 8] }));
+    assert!(
+        said.contains(
+            &"parts: button.root.secondary's words, padding and border take 28px in comfortable, \
+          more than its 24px height, so its words would not fit"
+                .to_owned()
+        )
+    );
+    // In compact the control is 24px: room for 14px words and 4px of padding, not 6.
+    let fits = load(&with_parts(json!({ "button.root.padding": [4, 8] })));
+    assert!(!fits.refused, "{:?}", super::parts_tests::said(&fits));
+    let compact = refusal(json!({ "button.root.padding": [6, 8] }));
+    assert!(
+        compact.iter().all(|one| one.contains("in compact")),
+        "{compact:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// A state never changes size
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_size_inside_a_state_is_refused_with_a_sentence_that_says_why() {
+    for property in parts::PROPERTIES.iter().filter(|one| !one.in_state()) {
+        for state in STATES {
+            let key = format!("button.root.{}.{}", state.name(), property.name());
+            let value = match property {
+                Prop::Padding => json!(4),
+                Prop::FontWeight => json!(500),
+                Prop::FontSize => json!(12),
+                Prop::Height => json!(28),
+                _ => json!(2),
+            };
+            let said = refusal(json!({ key.clone(): value }));
+            assert_eq!(said.len(), 1, "{key}: {said:?}");
+            assert!(
+                said[0].starts_with(&format!(
+                    "parts.{key} is refused: {}",
+                    parts::NO_SIZE_IN_A_STATE
+                )),
+                "{said:?}"
+            );
+        }
+    }
+    let said = refusal(json!({ "button.root.primary.selected.font-weight": 600 }));
+    assert_eq!(
+        said,
+        [
+            "parts.button.root.primary.selected.font-weight is refused: a state never changes a \
+          part's size, so nothing moves when the pointer, a press, the keyboard or a choice \
+          reaches it; inside a state only fill, text, border-colour and shadow may be set. Give \
+          font-weight to button.root.primary at rest"
+        ]
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// Unset properties are the family default
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_property_left_unset_is_the_family_default() {
+    // Only what the theme names is written: everything else is the window's own stylesheet.
+    let sheet = sheet_of(json!({ "button.root.ghost.corner-radius": 4 }));
+    assert_eq!(sheet.lines().count(), 3);
+    assert!(!sheet.contains("background-color") && !sheet.contains("color:"));
+}
+
+#[test]
+fn a_child_theme_layers_its_parts_over_its_parents() {
+    let library = Library::new().with(
+        "round",
+        with_parts(json!({ "button.root.corner-radius": "full", "button.root.gap": 6 })),
+    );
+    let child = library.load(
+        None,
+        &json!({ "name": "Child", "extends": "round", "parts": { "button.root.gap": 2 } }),
+    );
+    assert!(!child.refused, "{:?}", said(&child));
+    let sheet = parts::stylesheet(child.theme.first());
+    assert!(sheet.contains("border-radius: calc(var(--size-control) / 2);"));
+    assert!(sheet.contains("gap: calc(2rem / 14);"));
+}
+
+#[test]
+fn a_theme_folders_zip_gives_its_parts_back() {
+    let document = with_parts(json!({ "button.root.corner-radius": "full" }));
+    let files = Files::from([(
+        THEME_JSON.to_owned(),
+        serde_json::to_vec_pretty(&document).unwrap(),
+    )]);
+    let (name, back) = unpack(&pack("shaped", &files).unwrap()).unwrap();
+    assert_eq!(name, "shaped");
+    let read: Value = serde_json::from_slice(&back[THEME_JSON]).unwrap();
+    assert_eq!(
+        load(&read).theme.first().parts,
+        load(&document).theme.first().parts
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// Floors per part and state, and the consent parts
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_part_whose_words_break_their_floor_draws_its_family_default_there() {
+    let loaded = load(&with_parts(
+        json!({ "button.root.hover.fill": "text.primary" }),
+    ));
+    let theme = loaded.theme.first();
+    let fallen = parts::fallen(theme);
+    let names: Vec<&str> = fallen.iter().map(|one| one.part.as_str()).collect();
+    // Every variant whose words are text.primary breaks under the pointer; danger's words are
+    // its own colour, which still reads on a light fill.
+    assert!(names.contains(&"button.root.secondary.hover"), "{names:?}");
+    assert!(names.contains(&"button.root.primary.hover"), "{names:?}");
+    assert!(fallen[0].floor.contains("4.5:1"), "{fallen:?}");
+    assert!(fallen[0].ratio.is_some_and(|ratio| ratio < 4.5));
+    let sheet = parts::stylesheet(theme);
+    assert!(sheet.contains("[data-variant=\"secondary\"][data-hovered]"));
+    assert!(sheet.contains("background-color: var(--control-hover);"));
+    // The theme check says each one.
+    let report = check(theme);
+    assert!(report.findings.iter().any(|one| matches!(
+        one,
+        check::Finding::PartFallsBack { part, .. } if part == "button.root.secondary.hover"
+    )));
+}
+
+#[test]
+fn a_part_that_clears_its_floors_is_drawn_as_written() {
+    let loaded = load(&with_parts(json!({
+        "button.root.primary.fill": "accent.surface",
+        "button.root.secondary.hover.fill": "surface.hover",
+    })));
+    let fallen = parts::fallen(loaded.theme.first());
+    assert!(fallen.is_empty(), "{fallen:?}");
+}
+
+#[test]
+fn allows_edge_cannot_be_turned_off() {
+    let said = refusal(json!({ "button.root.grants.border-width": 0 }));
+    assert_eq!(
+        said,
+        [
+            "parts.button.root.grants.border-width is refused: an answer that grants keeps its \
+          accent edge and its lock, so a theme can never disguise a consent decision"
+        ]
+    );
+    // A theme with no borders anywhere still draws Allow's.
+    let sheet = sheet_of(json!({ "button.root.border-width": 0 }));
+    let allow = sheet
+        .lines()
+        .find(|line| line.contains("[data-variant=\"grants\"]"))
+        .expect("Allow's edge is drawn back");
+    assert!(allow.contains("border-width: 1px;"), "{allow}");
+    assert!(
+        sheet.find("border-width: 0px").unwrap() < sheet.find("border-width: 1px").unwrap(),
+        "Allow's edge is written after the theme's, so it wins"
+    );
+    // Its edge's colour is held too: Keep blocked's colour is no edge.
+    let loaded = load(&with_parts(
+        json!({ "button.root.grants.border-colour": "border.strong" }),
+    ));
+    let fallen = parts::fallen(loaded.theme.first());
+    assert!(
+        fallen.iter().any(|one| one.part == "button.root.grants"),
+        "{fallen:?}"
+    );
+}
+
+#[test]
+fn allow_never_takes_the_primary_look() {
+    let loaded = load(&with_parts(
+        json!({ "button.root.grants.fill": "accent.surface" }),
+    ));
+    let theme = loaded.theme.first();
+    let fallen = parts::fallen(theme);
+    assert!(
+        fallen.iter().any(|one| one.part == "button.root.grants"
+            && one.floor == "Allow never takes the primary look"),
+        "{fallen:?}"
+    );
+    let sheet = parts::stylesheet(theme);
+    let last_grants = sheet
+        .lines()
+        .rfind(|line| line.contains("[data-variant=\"grants\"], "))
+        .unwrap();
+    assert!(
+        last_grants.contains("background-color: var(--control-base);"),
+        "{last_grants}"
+    );
+    // A theme that draws every button alike falls back for Allow, and for the primary when
+    // Allow's own default would still be its look.
+    let alike = load(&with_parts(json!({
+        "button.root.fill": "control.base",
+        "button.root.border-colour": "accent.base",
+    })));
+    let fallen = parts::fallen(alike.theme.first());
+    assert!(
+        fallen.iter().any(|one| one.part == "button.root.grants"),
+        "{fallen:?}"
+    );
+    let sheet = parts::stylesheet(alike.theme.first());
+    assert!(sheet.contains("[data-variant=\"primary\"]"), "{sheet}");
+}
+
+// ---------------------------------------------------------------------------------------
+// The family default is the window's own stylesheet
+// ---------------------------------------------------------------------------------------
+
+/// The declarations of the rule `selector` opens in `css`.
+fn rule<'a>(css: &'a str, selector: &str) -> &'a str {
+    let at = css
+        .find(&format!("\n{selector} {{"))
+        .unwrap_or_else(|| panic!("controls.css has no rule {selector}"));
+    let body = &css[at..];
+    &body[..body.find('}').unwrap()]
+}
+
+fn declared<'a>(body: &'a str, property: &str) -> Option<&'a str> {
+    body.lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix(&format!("{property}: ")))
+        .map(|value| value.trim_end_matches(';'))
+}
+
+#[test]
+fn the_buttons_family_default_is_what_controls_css_draws() {
+    let css = include_str!("../../../../app/src/primitives/controls.css");
+    let token = |var: &str| -> Value {
+        if var == "transparent" {
+            return Value::from(var);
+        }
+        let name = var
+            .strip_prefix("var(--")
+            .and_then(|it| it.strip_suffix(')'))
+            .unwrap_or_else(|| panic!("{var} is not one token"));
+        Value::from(
+            vocabulary::TOKENS
+                .iter()
+                .find(|token| token.replace('.', "-") == name)
+                .unwrap_or_else(|| panic!("--{name} is not a token"))
+                .to_string(),
+        )
+    };
+    let hover = ":hover:not(:disabled, [aria-disabled=\"true\"])";
+    let base = rule(css, ".ui-button");
+    let base_border = declared(base, "border")
+        .and_then(|it| it.split_whitespace().last())
+        .expect("the button's border");
+    let base_hover = rule(css, &format!(".ui-button{hover}"));
+    for (variant, class) in [
+        ("secondary", None),
+        ("primary", Some(".ui-button-primary")),
+        ("ghost", Some(".ui-button-ghost")),
+        ("danger", Some(".ui-button-danger")),
+        ("grants", Some(".ui-button-grants")),
+    ] {
+        let own = class.map_or("", |class| rule(css, class));
+        let own_hover = class
+            .filter(|class| css.contains(&format!("\n{class}{hover} {{")))
+            .map_or("", |class| rule(css, &format!("{class}{hover}")));
+        fn first<'a>(property: &str, layers: &[&'a str]) -> &'a str {
+            layers
+                .iter()
+                .find_map(|layer| declared(layer, property))
+                .unwrap_or_else(|| panic!("no {property}"))
+        }
+        let drawn = json!({
+            "fill": token(first("background-color", &[own, base])),
+            "text": token(first("color", &[own, base])),
+            "border": token(declared(own, "border-color").unwrap_or(base_border)),
+            "hover": token(first("background-color", &[own_hover, base_hover])),
+        });
+        let held = parts::defaults_json(variant);
+        for key in ["fill", "text", "border", "hover"] {
+            assert_eq!(held[key], drawn[key], "{variant}'s {key}");
+        }
+    }
+    let pressed = rule(css, ".ui-button[aria-pressed=\"true\"]");
+    assert_eq!(
+        parts::defaults_json("secondary")["selected"],
+        json!({
+            "fill": token(declared(pressed, "background-color").unwrap()),
+            "border": token(declared(pressed, "border-color").unwrap()),
+        })
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// The manifest and the schema
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
+    let manifest = parts::manifest_json();
+    assert_eq!(manifest["version"], 1);
+    assert_eq!(
+        manifest["grammar"],
+        "<family>.<part>[.<variant>][.<state>].<property>"
+    );
+    let states: Vec<&str> = manifest["states"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|one| one["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        states,
+        [
+            "hover", "pressed", "selected", "focused", "disabled", "open"
+        ]
+    );
+    let properties: Vec<(&str, bool)> = manifest["properties"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|one| {
+            (
+                one["name"].as_str().unwrap(),
+                one["in_state"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        properties,
+        [
+            ("fill", true),
+            ("text", true),
+            ("border-colour", true),
+            ("shadow", true),
+            ("border-width", false),
+            ("corner-radius", false),
+            ("padding", false),
+            ("gap", false),
+            ("font-size", false),
+            ("font-weight", false),
+            ("height", false),
+        ]
+    );
+    let height = &manifest["properties"][10]["bounds"];
+    assert_eq!(
+        (height["least"].as_i64(), height["most"].as_i64()),
+        (Some(24), Some(48))
+    );
+    let button = &manifest["families"][0];
+    assert_eq!(button["name"], "button");
+    assert_eq!(button["since"], 1);
+    let parts: Vec<&str> = button["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|one| one["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(parts, ["root", "label", "icon"]);
+    assert!(
+        button["variants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|one| one["name"] == "grants" && one["consent"] == true)
+    );
+}
+
+#[test]
+fn the_schema_completes_every_part_key_and_no_size_inside_a_state() {
+    let schema = schema();
+    let keys = schema["properties"]["parts"]["properties"]
+        .as_object()
+        .expect("the part keys");
+    assert_eq!(schema["properties"]["parts"]["additionalProperties"], false);
+    for key in [
+        "button.root.corner-radius",
+        "button.root.primary.hover.fill",
+        "button.label.font-weight",
+        "button.icon.grants.focused.text",
+    ] {
+        assert!(keys.contains_key(key), "{key}");
+    }
+    for key in [
+        "button.root.hover.height",
+        "button.root.selected.font-weight",
+        "button.icon.fill",
+    ] {
+        assert!(!keys.contains_key(key), "{key}");
+    }
+    // Every key it completes is one the engine reads, with a value the engine accepts.
+    for key in keys.keys() {
+        let value =
+            if key.ends_with("fill") || key.ends_with("border-colour") || key.ends_with(".text") {
+                json!("text.secondary")
+            } else if key.ends_with("shadow") {
+                json!("none")
+            } else if key.ends_with("font-weight") {
+                json!(500)
+            } else if key.ends_with("font-size") {
+                json!(12)
+            } else if key.ends_with("height") {
+                json!(28)
+            } else {
+                json!(2)
+            };
+        let loaded = load(&with_parts(json!({ key.clone(): value })));
+        assert!(
+            !said(&loaded)
+                .iter()
+                .any(|one| one.contains("is not a component part")),
+            "{key}"
+        );
+    }
+}

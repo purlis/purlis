@@ -390,6 +390,10 @@ export type Theme = {
   /** How a workspace's colour tints it (#2329, #2393): the recipe the core's theme engine
    *  resolved for it. The window keeps no list of its own and only does the arithmetic. */
   tint: TintRecipe;
+  /** The stylesheet of its component parts (#2903), as the engine wrote it from their parsed
+   *  values (`purlis_core::theme::parts::stylesheet`): empty, or absent, for a theme that names
+   *  none, which draws every control as its family default. */
+  parts?: string;
 };
 
 /** A resolved theme's tokens that are not colours, by token (`purlis_core::theme::Typed`). */
@@ -530,7 +534,8 @@ export function sameTheme(a: Theme, b: Theme): boolean {
     JSON.stringify(a.typed) === JSON.stringify(b.typed) &&
     JSON.stringify(a.motion) === JSON.stringify(b.motion) &&
     JSON.stringify(a.geometry) === JSON.stringify(b.geometry) &&
-    JSON.stringify(a.fonts) === JSON.stringify(b.fonts)
+    JSON.stringify(a.fonts) === JSON.stringify(b.fonts) &&
+    (a.parts ?? "") === (b.parts ?? "")
   );
 }
 
@@ -841,11 +846,38 @@ export function apply(
     if (stack !== undefined) to.style.setProperty(`--font-${slot}`, stack);
   }
   for (const [name, value] of Object.entries(syntaxFaces(theme))) to.style.setProperty(name, value);
+  drawParts(theme, to.ownerDocument);
   to.style.colorScheme = theme.appearance;
   to.dataset.theme = theme.name;
   to.dataset.themeDraws = themeDraws(theme);
   to.dataset.density = over.density;
   loadFaces(theme, over);
+}
+
+/** The id of the `<style>` a theme's component parts are drawn from. */
+export const PARTS_STYLE = "purlis-parts";
+
+/**
+ * **Draws a theme's component parts** (#2903): the engine's stylesheet, in the one `<style>` the
+ * window keeps for it, in the `parts` layer `styles.css` declares above the controls. Nothing is
+ * written for a theme that names none, and a theme that names some and then none takes its rules
+ * away. The text is the engine's, written from parsed values (ADR 0041, property 4).
+ */
+function drawParts(theme: Theme, document: Document): void {
+  const sheet = theme.parts ?? "";
+  const drawn = document.getElementById(PARTS_STYLE);
+  if (sheet === "") {
+    drawn?.remove();
+    return;
+  }
+  if (drawn !== null) {
+    if (drawn.textContent !== sheet) drawn.textContent = sheet;
+    return;
+  }
+  const style = document.createElement("style");
+  style.id = PARTS_STYLE;
+  style.textContent = sheet;
+  document.head.append(style);
 }
 
 /** The geometry `theme` is drawn in for `over`'s density: its custom properties, as the engine

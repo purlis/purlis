@@ -1169,6 +1169,13 @@ A toggle or a choice a theme offers, such as an accent or borders on or off, tha
 when picked. Its values are the person's choice. An option never sets a free number.
 _Avoid_: setting (that is the person's, for every theme), variant, preference
 
+**Component part**:
+A named, stable element of a component family, such as the button's root, label or icon, that a
+theme may set on its own: its fill, border, corners or size, within bounds, keyed
+`<family>.<part>[.<variant>][.<state>].<property>`. Each family declares its parts once, in the
+window's wrapper and in the theme engine's closed, versioned manifest (ADR 0103).
+_Avoid_: part (bare, which is plain composition here), slot, sub-component, element
+
 **Palette** (of a theme):
 A theme's named colours, which its tokens refer to by name, so one colour is changed once. The
 names belong to that theme alone.

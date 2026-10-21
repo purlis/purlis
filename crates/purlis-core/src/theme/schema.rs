@@ -144,7 +144,7 @@ pub fn schema() -> Value {
     let mut schema = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": format!("A purlis theme folder's {THEME_JSON} (format 2)"),
-        "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, its appearances, each tagged dark or light and optionally high contrast, what compact draws, its fonts, its options, and how a workspace's colour tints it. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
+        "description": "A theme: a name, optionally the theme it extends, a palette of named colours, its icon set, its appearances, each tagged dark or light and optionally high contrast, what compact draws, its fonts, its options, how a workspace's colour tints it, and its component parts. purlis refuses a theme that breaks this grammar and draws Purlis in its place.",
         "type": "object",
         "additionalProperties": false,
         "required": ["name"],
@@ -292,6 +292,13 @@ pub fn schema() -> Value {
     });
     if let (Some(defs), Value::Object(more)) = (schema["$defs"].as_object_mut(), option_defs()) {
         defs.extend(more);
+    }
+    // Component parts (#2903): every key the manifest has, and each property's value.
+    if let Some(properties) = schema["properties"].as_object_mut() {
+        properties.insert("parts".to_owned(), super::parts::schema());
+    }
+    if let Some(defs) = schema["$defs"].as_object_mut() {
+        defs.extend(super::parts::schema_defs());
     }
     schema
 }
