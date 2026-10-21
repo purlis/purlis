@@ -39,3 +39,11 @@ others are **decided in implementation, to be confirmed** (D-2680-1 to D-2680-5)
    `$XDG_RUNTIME_DIR`) are denied to every chat's writes as later code, each with everything
    below it, under every spelling on macOS. Rootless stays the preferred engine for a local
    runner, as V55 has it.
+7. **The live check also loosens IPC, the host name, cgroups, a folder and a device** (#2895):
+   `--ipc host`, `--uts host`, `--cgroupns host`, `--volume /:/host:ro` and `--device`, each
+   refused on every host it is measured on, and a loosening an engine cannot make is said in its
+   words rather than failing the job. **On rootless Podman, the container's runtime config is
+   checked too**: Podman writes a device it was given there, as a mount, and not in what
+   `inspect` says. Its devices must be none, and its mounts the runtime's own file systems, the
+   container's own files and the home's volume alone (`check_oci`), as measured. *Decided in
+   implementation, to be confirmed (D-2895-1).*

@@ -1059,6 +1059,26 @@ fn recorded(host: &str, case: &str) -> serde_json::Value {
         }
         "podman-rootless-host-users" => include_str!("hosts/podman-rootless-host-users.json"),
         "podman-rootless-host-network" => include_str!("hosts/podman-rootless-host-network.json"),
+        "podman-rootless-made-oci" => include_str!("hosts/podman-rootless-made-oci.json"),
+        "podman-rootless-device-oci" => include_str!("hosts/podman-rootless-device-oci.json"),
+        "podman-rootless-host-folder-oci" => {
+            include_str!("hosts/podman-rootless-host-folder-oci.json")
+        }
+        "docker-apparmor-host-ipc" => include_str!("hosts/docker-apparmor-host-ipc.json"),
+        "docker-apparmor-host-uts" => include_str!("hosts/docker-apparmor-host-uts.json"),
+        "docker-apparmor-host-cgroups" => include_str!("hosts/docker-apparmor-host-cgroups.json"),
+        "docker-apparmor-host-folder" => include_str!("hosts/docker-apparmor-host-folder.json"),
+        "docker-apparmor-device" => include_str!("hosts/docker-apparmor-device.json"),
+        "podman-rootful-host-ipc" => include_str!("hosts/podman-rootful-host-ipc.json"),
+        "podman-rootful-host-uts" => include_str!("hosts/podman-rootful-host-uts.json"),
+        "podman-rootful-host-cgroups" => include_str!("hosts/podman-rootful-host-cgroups.json"),
+        "podman-rootful-host-folder" => include_str!("hosts/podman-rootful-host-folder.json"),
+        "podman-rootful-device" => include_str!("hosts/podman-rootful-device.json"),
+        "podman-rootless-host-ipc" => include_str!("hosts/podman-rootless-host-ipc.json"),
+        "podman-rootless-host-uts" => include_str!("hosts/podman-rootless-host-uts.json"),
+        "podman-rootless-host-cgroups" => include_str!("hosts/podman-rootless-host-cgroups.json"),
+        "podman-rootless-host-folder" => include_str!("hosts/podman-rootless-host-folder.json"),
+        "podman-rootless-device" => include_str!("hosts/podman-rootless-device.json"),
         other => panic!("nothing is recorded as {other}"),
     };
     serde_json::from_str(text).unwrap()
@@ -1148,7 +1168,17 @@ fn a_loosened_container_is_refused_on_every_host_it_was_measured_on() {
             "seccomp-unconfined",
             "host-users",
             "host-network",
+            "host-ipc",
+            "host-uts",
+            "host-cgroups",
+            "host-folder",
+            "device",
         ] {
+            // Rootless Podman writes a device only in its runtime's config, which
+            // `rootless_podmans_runtime_config_is_held_to_the_pools_own` holds (#2895).
+            if case == "device" && host == "podman-rootless" {
+                continue;
+            }
             // Podman's own user namespace is the machine's: `--userns host` is the pool's own
             // container, word for word (measured 2026-10-20).
             if case == "host-users" && host.starts_with("podman") {
@@ -1502,4 +1532,51 @@ fn a_runners_version_is_asked_of_its_own_purlis_once_its_container_passes_the_ch
     );
     fake.set("paired", "something else\n");
     assert!(fake.docker().version_of(&made).is_err());
+}
+
+/// The pool's runner as rootless Podman's runtime was asked to make it, on the run that recorded
+/// `hosts/podman-rootless-*-oci.json`.
+fn rootless_runner(name: &str) -> Made {
+    Made {
+        container: ContainerId::new(&"a".repeat(64)).unwrap(),
+        runner: Runner::new(
+            name,
+            Image::pinned(&format!("localhost:5000/pool-stand-in@{DIGEST}")).unwrap(),
+            User::new(10001, 10001).unwrap(),
+            "/home/purlis",
+        )
+        .unwrap(),
+    }
+}
+
+/// Rootless Podman writes a device it was given nowhere `inspect` reads, only as a mount in what
+/// it asked its runtime for (measured 2026-10-21, #2895). So on rootless Podman that, too, is
+/// held to the pool's own: its devices none, and its mounts the runtime's own, the container's
+/// files and its home's volume alone.
+#[test]
+fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
+    let made = rootless_runner("measured-8364");
+    assert_eq!(
+        check_oci(&recorded("podman-rootless", "made-oci"), &made),
+        Ok(())
+    );
+    for (case, name) in [
+        ("device-oci", "device-8364"),
+        ("host-folder-oci", "host-folder-8364"),
+    ] {
+        let refused = check_oci(&recorded("podman-rootless", case), &rootless_runner(name));
+        assert!(refused.is_err(), "{case} passed");
+    }
+    // A device named for the runtime, a home of another volume, and a config of another shape.
+    let mut devices = recorded("podman-rootless", "made-oci");
+    devices["linux"]["devices"] = serde_json::json!([{"path": "/dev/fuse"}]);
+    assert!(check_oci(&devices, &made).is_err());
+    assert!(
+        check_oci(
+            &recorded("podman-rootless", "made-oci"),
+            &rootless_runner("other")
+        )
+        .is_err()
+    );
+    assert!(check_oci(&serde_json::json!({}), &made).is_err());
 }
