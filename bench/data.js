@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792579866315,
+  "lastUpdate": 1792587989791,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20664,6 +20664,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7111625,
             "unit": "ms",
             "extra": "median of 5 runs: 100.685, 100.985, 101.711, 102.065, 102.232 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5550f4de773bdf8237a3a48a0191ff946603edd9",
+          "message": "Browsers: every DevTools call to an engine ends within its limit, writing included (#2889)\n\n* Browsers: every DevTools call to an engine ends within its limit, writing included (#2123)\n\nA call's message is handed to a writer thread of the connection's own, and\nthe call waits for its answer only within its limit: an engine that stops\nreading holds the writer, never a call or the calls after it. Past 256\nwaiting calls, a call fails at once. A failed write fails its call and every\nlater one. A stop asks the engine to close and waits for it within one grace\nin all, then ends the group.\n\nCloses #2123\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a call that failed before its turn is never written (#2123)\n\nA call whose limit passed while it waited to be written is skipped when its\nturn comes, so what its caller was told failed never reaches the engine.\nThe ADR note records D-2123-3 and D-2123-4.\n\nRefs #2123\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T17:04:45+04:00",
+          "tree_id": "039eba3e82024cc7f10afab6886a9fc1a23b21e9",
+          "url": "https://github.com/purlis/purlis/commit/5550f4de773bdf8237a3a48a0191ff946603edd9"
+        },
+        "date": 1792587987547,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2939385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.274, 0.281, 0.294, 0.298, 0.309 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.658983,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.230, 16.651, 16.659, 16.661, 16.692 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.120637,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.693, 100.745, 101.121, 101.935, 102.081 ms"
           }
         ]
       }
