@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792558103444,
+  "lastUpdate": 1792563017034,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20160,6 +20160,48 @@ window.BENCHMARK_DATA = {
             "value": 101.479259,
             "unit": "ms",
             "extra": "median of 5 runs: 100.607, 100.809, 101.479, 101.524, 102.235 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b841a5211437116eb565e32491b966315d20a320",
+          "message": "Component test harness: stories as tests, axe, keyboard and screenshot gates (#2937)\n\n* Component test harness: stories as tests, axe, keyboard and screenshot gates\n\nStorybook 10 with its Vitest and a11y addons. Every story under app/src is a\ntest in the new `stories` Vitest project, run in real Chromium and WebKit\n(Vitest browser mode, Playwright): it fails when the story does not render,\nwhen its play function fails, on any axe violation tagged WCAG 2.2 AA with\ntarget-size on, and, in the pinned Playwright Linux image only, when its\npicture is not its baseline.\n\nThe stories workflow runs them in mcr.microsoft.com/playwright:v1.64.1-noble,\nheld to the lockfile's Playwright. A baseline changes only through the\nupdate-baselines label: stories-baselines.yml draws the pictures in that image\nwith a read-only token, and a second job, which runs no app code, takes only\nbaseline PNGs and commits them to the pull request, so they show in its diff.\n\nThe first story is the settings set's radio Choice, with a keyboard play test\nand the focus-in-sight check (WCAG 2.4.11) from stories.testkit.ts.\n\nPart of #2897.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: the lockfile in sync, so npm ci installs it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* debug: npm ci errors as annotations\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: the lockfile as every npm reads it (10, 11, 12), and no debug step\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: keep the pictures from where Vitest writes them\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: deliberate breaks of the keyboard and axe gates (to be reverted)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: name each story that failed, and in which browser, as an annotation\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: an annotation names the axe rules a story broke\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: the keyboard and axe breaks reverted; a deliberate drawing break of the radio mark (to be reverted)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: the drawing break reverted; what a baseline push's other checks wait for\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: what a component family's ticket ships to be done (N14)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: the baseline commit runs only the base branch's tool, and every run tests one tree\n\nThe commit job takes baselines with the base branch's copy of the tool, keeps no\ncredentials in the pull request's checkout, and hands the token to git for the push\nalone. take() accepts only whole PNGs within a size and a count limit, and writes\nnothing through a link on either side. The label's job refuses a branch behind its\nbase, so it draws the tree the pull request's own run tests. Each browser runs on\nits own so every failure annotation names it. Concurrency moves to the jobs, the\nbaseline artifact is kept one day, and vite dev and build no longer load Storybook.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-21T10:08:37+04:00",
+          "tree_id": "b052f1b1ef020e2c080ec2d4ad14609bacb3a0b2",
+          "url": "https://github.com/purlis/purlis/commit/b841a5211437116eb565e32491b966315d20a320"
+        },
+        "date": 1792563014512,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46727150000000006,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.456, 0.464, 0.467, 0.467, 0.472 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1553725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.072, 16.122, 16.155, 16.167, 16.827 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.62865450000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.688, 101.268, 101.629, 101.654, 101.688 ms"
           }
         ]
       }
