@@ -100,6 +100,10 @@ pub fn held_as(write: Write) -> Write {
             name,
             vision: trim_some(vision),
         },
+        Write::WorkspaceSnapshot { description, force } => Write::WorkspaceSnapshot {
+            description: trim_some(description),
+            force,
+        },
         other => other,
     }
 }
@@ -137,6 +141,9 @@ pub fn texts(write: &Write) -> Vec<&str> {
             .flatten()
             .collect(),
         Write::WorkspaceOptimize { .. } | Write::PersonaOptimize { .. } => Vec::new(),
+        Write::WorkspaceSnapshot { description, .. } => {
+            description.as_deref().into_iter().collect()
+        }
     }
 }
 
@@ -211,6 +218,7 @@ pub fn subject(write: &Write) -> String {
         Write::PersonaOptimize { of, .. } => format!("tidying {}", store(*of)),
         Write::TodoClose { .. } => "closing a todo".to_owned(),
         Write::WorkspaceCreate { .. } => "a new workspace".to_owned(),
+        Write::WorkspaceSnapshot { .. } => "a record of this workspace's branches".to_owned(),
     }
 }
 
@@ -300,6 +308,17 @@ fn said_held_to(write: &Write, most: Option<usize>) -> String {
             Some(vision) => format!("Make workspace {name}, its vision: {}", shown(vision)),
             None => format!("Make workspace {name}"),
         },
+        Write::WorkspaceSnapshot { description, force } => {
+            let branches = if *force {
+                "Record this workspace's repos and branches as they stand, even those that would not restore"
+            } else {
+                "Record this workspace's repos and branches"
+            };
+            match description {
+                Some(description) => format!("{branches}, described as: {}", shown(description)),
+                None => branches.to_owned(),
+            }
+        }
     }
 }
 

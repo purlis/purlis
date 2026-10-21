@@ -1148,8 +1148,12 @@ fn no_projects_vault_is_read_at_the_full_sandbox_either() {
         assert!(profile.contains(&rule), "{rule} is not in the full profile");
     }
     // Nor does the full sandbox take on the floor's every-project write rules: it writes no
-    // other project in the first place.
+    // other project in the first place. The one both hold is the workspace folders' (#2046).
+    let shared = seatbelt::workspace_folder_rules().expect("rules");
     for rule in seatbelt::every_project_rules().expect("rules") {
+        if shared.contains(&rule) {
+            continue;
+        }
         assert!(!profile.contains(&rule), "{rule}");
     }
     let claude = match decided(Harness::ClaudeCode, &root, &machine) {
@@ -1655,5 +1659,51 @@ fn no_chat_writes_a_workspaces_manifest_at_the_floor_or_in_the_full_sandbox() {
             "{} is not held",
             path.display()
         );
+    }
+}
+
+#[test]
+fn no_workspaces_folder_is_moved_aside_and_back_at_either_level() {
+    let (_dir, root) = project();
+    std::fs::create_dir_all(root.join("workspaces/alpha")).expect("a workspace");
+    let machine = machine_with(Path::new("/opt/none"));
+    let rules = seatbelt::workspace_folder_rules().expect("rules");
+
+    // The floor, and the full sandbox, both carry the folders' rule.
+    let floor = wrapped_floor(Harness::Codex, &root, &machine, &[], None);
+    std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("on");
+    let compiled = match decided(Harness::Codex, &root, &machine) {
+        Some(Decided::Sandboxed(applied)) => applied,
+        other => panic!("not sandboxed: {other:?}"),
+    };
+    let Form::Codex(wrap) = compiled.form() else {
+        panic!("not Codex's form");
+    };
+    let full = codex::profile(wrap, &root, Path::new("/tmp"), &[], None).expect("a profile");
+    for rule in &rules {
+        assert!(floor.contains(rule), "{rule} is not in the floor's profile");
+        assert!(full.contains(rule), "{rule} is not in the full profile");
+    }
+
+    // `mv workspaces/late /p/aside`, write `/p/aside/workspace.json`, `mv /p/aside
+    // workspaces/late`: each move names a folder entry the rule holds, so the first is refused,
+    // and the write in between is never of a manifest's path.
+    let folders = regex::Regex::new(&seatbelt::workspace_folders_regex()).expect("a regex");
+    let p = root.display().to_string();
+    for held in [
+        format!("{p}/workspaces/late"),
+        format!("{p}/workspaces"),
+        format!("{p}/Workspaces/Late"),
+        "/elsewhere/workspaces/other".to_owned(),
+    ] {
+        assert!(folders.is_match(&held), "{held} is not held");
+    }
+    // What is in a workspace is written as ever.
+    for free in [
+        format!("{p}/workspaces/alpha/web"),
+        format!("{p}/workspaces/alpha/memory/a-lesson.md"),
+        format!("{p}/aside"),
+    ] {
+        assert!(!folders.is_match(&free), "{free} is held");
     }
 }

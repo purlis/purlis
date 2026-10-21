@@ -1291,7 +1291,6 @@ fn a_sandboxed_chat_rewrites_no_workspaces_manifest_and_says_who_does() {
     for args in [
         &["workspace", "rename", "alpha", "gamma"][..],
         &["workspace", "fork", "alpha", "delta"][..],
-        &["workspace", "snapshot", "alpha"][..],
         &["skill", "grant", "lint", "-w", "alpha", "--off"][..],
     ] {
         let out = purlis(&tmp, args, &chat);
@@ -1313,4 +1312,38 @@ fn a_sandboxed_chat_rewrites_no_workspaces_manifest_and_says_who_does() {
         "{}",
         said(&out)
     );
+}
+
+#[test]
+fn workspace_snapshot_in_a_sandboxed_chat_is_recorded_by_the_app_in_its_own_workspace() {
+    let tmp = a_project();
+    let app = an_app(&tmp, None);
+    let mut chat = app.chat_env();
+    chat.push((hookwire::SANDBOXED_ENV.to_owned(), "1".to_owned()));
+
+    let ran = purlis(
+        &tmp,
+        &["workspace", "snapshot", "--description", "the login work"],
+        &chat,
+    );
+
+    assert!(ran.status.success(), "{}", said(&ran));
+    assert_eq!(
+        app.write_asked(),
+        Write::WorkspaceSnapshot {
+            description: Some("the login work".to_owned()),
+            force: false,
+        }
+    );
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(root(&tmp).join("workspaces/alpha/workspace.json"))
+            .expect("the app recorded it"),
+    )
+    .expect("JSON");
+    assert_eq!(manifest["description"], "the login work", "{manifest}");
+
+    // Another workspace's is not the chat's to record.
+    let other = purlis(&tmp, &["workspace", "snapshot", "beta"], &chat);
+    assert!(!other.status.success(), "{}", said(&other));
+    assert!(!root(&tmp).join("workspaces/beta/workspace.json").exists());
 }

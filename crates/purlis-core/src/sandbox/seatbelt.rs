@@ -458,6 +458,11 @@ pub fn profile(
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
     }
+    // No workspace's folder is made, moved or removed (#2046), so no workspace's manifest is
+    // moved out of its path to be written.
+    for rule in workspace_folder_rules()? {
+        line(rule);
+    }
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
     for rule in vaults_everywhere_rules()? {
         line(rule);
@@ -584,11 +589,12 @@ pub fn every_project_rules() -> Result<Vec<String>, &'static str> {
         let regex = format!("^/(.*/)?{}$", either_case(&escaped(manifest)));
         rules.push(format!("(deny file-write* (regex {}))", string(&regex)?));
     }
-    // And every workspace's manifest (#2046), in any case.
+    // And every workspace's manifest (#2046), in any case, and the folders it is found by.
     rules.push(format!(
         "(deny file-write* (regex {}))",
         string(&workspace_manifests_regex())?
     ));
+    rules.extend(workspace_folder_rules()?);
     Ok(rules)
 }
 
@@ -600,6 +606,25 @@ pub fn workspace_manifests_regex() -> String {
         either_case(&escaped(super::WORKSPACES)),
         either_case(&escaped(super::WORKSPACE_MANIFEST))
     )
+}
+
+/// The pattern a project's `workspaces` folder and each workspace's folder in it match, the
+/// entries alone, in any case (#2046): `…/workspaces` and `…/workspaces/<workspace>`.
+pub fn workspace_folders_regex() -> String {
+    format!(
+        "^/(.*/)?{}(/[^/]+)?$",
+        either_case(&escaped(super::WORKSPACES))
+    )
+}
+
+/// **No workspace's folder is made, moved or removed by a chat, at either level** (#2046): its
+/// manifest is held by its path, and a folder moved aside would take it out of that path to be
+/// written and back. The entries alone: what is in a workspace is written as ever.
+pub fn workspace_folder_rules() -> Result<Vec<String>, &'static str> {
+    Ok(vec![format!(
+        "(deny file-write* (regex {}))",
+        string(&workspace_folders_regex())?
+    )])
 }
 
 /// **No project's vaults are read, at either level** (#2071): the vaults and the fingerprint key

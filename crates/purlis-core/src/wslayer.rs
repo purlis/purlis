@@ -1339,6 +1339,25 @@ pub fn scaffold(
     now: chrono::DateTime<chrono::Utc>,
     author: &str,
 ) -> Vec<Row> {
+    scaffold_as(
+        plane,
+        name,
+        now,
+        author,
+        crate::sandbox::chat_is_sandboxed(),
+    )
+}
+
+/// [`scaffold`], told whether it runs in a sandboxed chat (#2046): there, the workspace's
+/// manifest is left for the app, which makes it as it next makes the workspace's structure
+/// (`wscmd::ensure`, a clone the app makes for the chat).
+fn scaffold_as(
+    plane: &crate::workspaces::Plane,
+    name: &str,
+    now: chrono::DateTime<chrono::Utc>,
+    author: &str,
+    sandboxed: bool,
+) -> Vec<Row> {
     let Ok(workspace) = plane.workspace(name) else {
         return Vec::new();
     };
@@ -1377,7 +1396,7 @@ pub fn scaffold(
         let _ = workspace.scaffold_charter();
     }
     // A sandboxed chat writes no workspace's manifest (#2046): the app scaffolds it.
-    if is_clear("workspace.json") && !crate::sandbox::chat_is_sandboxed() {
+    if is_clear("workspace.json") && !sandboxed {
         let _ = workspace.scaffold_manifest(now, author);
     }
     let layer = wire(plane.root(), &dir);

@@ -900,3 +900,25 @@ fn a_workspace_or_stamp_it_cannot_read_is_unknown_not_behind() {
     std::fs::write(&marker, "4\n").unwrap();
     assert!(needs_reinit(&ws));
 }
+
+#[test]
+fn a_sandboxed_scaffold_leaves_the_manifest_to_the_app_which_makes_it_next() {
+    let (dir, ws) = plane();
+    let opened = crate::workspaces::Plane::open(dir.path());
+    let now = chrono::Utc::now();
+
+    // In a sandboxed chat: the workspace's structure, and no manifest.
+    scaffold_as(&opened, "alpha", now, "a chat", true);
+    assert!(ws.join("workspace.md").is_file(), "the structure is made");
+    assert!(
+        !ws.join("workspace.json").exists(),
+        "the manifest is the app's"
+    );
+
+    // The app's own ensure, as it runs before it clones for the chat, makes it.
+    crate::wscmd::ensure::ensure(dir.path(), "alpha", now, "the app").expect("ensured");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(ws.join("workspace.json")).unwrap())
+            .expect("JSON");
+    assert_eq!(manifest["name"], "alpha", "{manifest}");
+}

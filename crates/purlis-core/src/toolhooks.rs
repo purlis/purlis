@@ -715,7 +715,8 @@ pub fn posttooluse(hook: &Hook) -> Answer {
                          Glossary so a teammate or a fork inherits the real picture. Both are \
                          committed + shared + auto-saved. Commit the actual code inside the repo \
                          (its own remote), then `purlis workspace snapshot` to record the \
-                         branch. Do this **without asking the engineer** — it's the flow."
+                         branch (in a sandboxed chat, purlis's app records it for you). Do this \
+                         **without asking the engineer** — it's the flow."
                     ),
                 )],
             );

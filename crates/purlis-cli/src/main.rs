@@ -2817,7 +2817,6 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
     let rewrites = match verb {
         WorkspaceCommand::Rename { .. } => Some("workspace rename"),
         WorkspaceCommand::Fork { .. } => Some("workspace fork"),
-        WorkspaceCommand::Snapshot { .. } => Some("workspace snapshot"),
         _ => None,
     };
     if let Some(why) = rewrites.and_then(brokered::manifest_refused) {
@@ -3099,6 +3098,24 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
                 },
                 None => chrono::Utc::now(),
             };
+            // In a sandboxed chat the app records the chat's own workspace (#2046): its sandbox
+            // writes no workspace's manifest. Another workspace's is refused.
+            if brokered::sandboxed() {
+                match brokered::named_here(&here, name.as_deref()) {
+                    brokered::Named::Own => {
+                        if let Some(code) = brokered::said_by_the_app(
+                            purlis_core::brokered::Write::WorkspaceSnapshot {
+                                description: description.clone(),
+                                force: *force,
+                            },
+                        ) {
+                            return Some(ExitCode::from(code));
+                        }
+                    }
+                    brokered::Named::Here => {}
+                    brokered::Named::Refused(why) => return Some(refused(&why)),
+                }
+            }
             wscmd::snapshot::snapshot(
                 &wscmd::snapshot::Request {
                     root: &root,

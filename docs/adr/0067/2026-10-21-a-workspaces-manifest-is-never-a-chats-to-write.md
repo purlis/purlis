@@ -9,12 +9,18 @@ the person. *Decided by the steward on 2026-10-21 under those rulings.*
    - in the full sandbox, each of the project's workspaces' by its path
      (`purlis_core::sandbox::workspace_manifests_held`), beside the project's manifests;
    - at the floor, every project's by pattern, `…/workspaces/<any>/workspace.json` in any case
-     (`seatbelt::workspace_manifests_regex`, and the same glob in Claude Code's settings).
+     (`seatbelt::workspace_manifests_regex`, and the same glob in Claude Code's settings);
+   - and, for Seatbelt at both levels, the folder entries `…/workspaces` and
+     `…/workspaces/<any>`, in any case (`seatbelt::workspace_folder_rules`): no workspace's
+     folder is made, moved or removed by a chat, so no manifest is moved out of its path to be
+     written. What is in a workspace is written as ever.
 2. **What a chat's asks need, the app writes.** A chat's `purlis clone` is made by the app, which
    records the repo in the workspace's manifest (the clone ask of §2). A new workspace is made by
-   the app too (`WorkspaceCreate`).
-3. **The rest is the person's.** `purlis workspace rename`, `fork` and `snapshot`, and
+   the app too (`WorkspaceCreate`), and so is a chat's `purlis workspace snapshot` of its own
+   workspace (`WorkspaceSnapshot`), which records its repos and branches.
+3. **The rest is the person's.** `purlis workspace rename` and `fork`, and
    `purlis skill grant --on/--off`, each of which rewrites a workspace's manifest, are refused in
    a sandboxed chat in words, and nothing is changed; the person runs them in a terminal, or
    changes the setting in the window. Where a sandboxed chat's command adds a workspace's
-   structure, its manifest is left for the app to scaffold.
+   structure, its manifest is left for the app, which makes it as it next makes the workspace's
+   structure (`wscmd::ensure`, before a clone it makes for the chat).
