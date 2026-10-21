@@ -27,12 +27,14 @@ use crate::hosting::Hosting;
 use crate::relay::{Keep, Relay};
 
 /// What links a window's link to the runner this machine keeps under a name: how to keep a link
-/// to it ([`Keep`]), or why there is none. Called off the runtime, as each `relay_to` is taken.
-pub type RelaysTo = Arc<dyn Fn(&str) -> Result<Keep, String> + Send + Sync>;
+/// to it ([`Keep`]), and the runner the name resolved to, as `<pool>/<runner>` (#2865); or why
+/// there is none. Called off the runtime, as each `relay_to` is taken.
+pub type RelaysTo = Arc<dyn Fn(&str) -> Result<(Keep, String), String> + Send + Sync>;
 
-/// **Whether the runner kept as the name it is handed drains** (#2865): one replaced by a runner
+/// **Whether the runner `<pool>/<runner>` it is handed drains** (#2865): one replaced by a runner
 /// of the desktop's version, which keeps its chats until they end. A link relayed to it starts
-/// no new program there. The binary's, or nothing, and no runner drains.
+/// no new program there, asked again at each start, so a link relayed before a follow drains
+/// with its runner. Called off the runtime. The binary's, or nothing, and no runner drains.
 pub type DrainsTo = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 
 /// One link, served by this host or by a relay to a runner, as its first command decides: what
@@ -43,8 +45,9 @@ pub struct Routed {
     /// The window's `name_window` (1.31), while the link is undecided: handed to whichever
     /// serves the link once it is decided, before anything else.
     named: Mutex<Option<Command>>,
-    /// The runner the link is relayed to drains (#2865): it starts no new program there.
-    draining: std::sync::atomic::AtomicBool,
+    /// The runner the link is relayed to, as `<pool>/<runner>` (#2865): asked at each start
+    /// whether it drains.
+    runner: Mutex<Option<String>>,
 }
 
 #[derive(Clone)]
@@ -78,7 +81,7 @@ impl Routed {
             hosting,
             route: Mutex::new(Route::Undecided),
             named: Mutex::new(None),
-            draining: std::sync::atomic::AtomicBool::new(false),
+            runner: Mutex::new(None),
         }
     }
 
@@ -116,7 +119,6 @@ impl Routed {
             }
             *route = Route::Relaying;
         }
-        let drains = self.hosting.drains().is_some_and(|drains| drains(&runner));
         let relayed = match self.hosting.relays() {
             None => Err("this host relays to no runner".to_owned()),
             Some(relays) => tokio::task::spawn_blocking(move || relays(&runner))
@@ -124,7 +126,10 @@ impl Routed {
                 .unwrap_or_else(|why| Err(format!("the runner could not be looked up: {why}"))),
         };
         let relay = match relayed {
-            Ok(keep) => Relay::kept(keep).claiming(self.hosting.claimed()),
+            Ok((keep, resolved)) => {
+                *lock(&self.runner) = Some(resolved);
+                Relay::kept(keep).claiming(self.hosting.claimed())
+            }
             Err(why) => {
                 *lock(&self.route) = Route::Undecided;
                 return Err(Refusal {
@@ -144,8 +149,6 @@ impl Routed {
             *lock(&self.route) = Route::Undecided;
             return Err(refused);
         }
-        self.draining
-            .store(drains, std::sync::atomic::Ordering::SeqCst);
         *lock(&self.route) = Route::There(relay.clone());
         // A link that ended while this was taken was ended as this host's: its relay is told
         // too, so the name it holds there goes with it.
@@ -157,6 +160,18 @@ impl Routed {
 }
 
 impl Routed {
+    /// Whether the runner this link is relayed to drains now, read off the runtime.
+    async fn drains(&self) -> bool {
+        let (Some(drains), Some(runner)) = (self.hosting.drains(), lock(&self.runner).clone())
+        else {
+            return false;
+        };
+        // A look that could not be made refuses the start rather than let it through.
+        tokio::task::spawn_blocking(move || drains(&runner))
+            .await
+            .unwrap_or(true)
+    }
+
     /// The window's name, kept while the link was undecided, handed to this host now that the
     /// link is its own.
     async fn named_here(&self, peer: &Peer) {
@@ -203,17 +218,17 @@ impl session::Host for Routed {
                 self.named_here(peer).await;
                 session::Host::call(&self.hosting, command, peer).await
             }
-            // A runner that drains keeps its chats, and starts no new one (#2865).
-            Goes::There(_)
-                if matches!(command, Command::StartProgram(_))
-                    && self.draining.load(std::sync::atomic::Ordering::SeqCst) =>
-            {
-                Err(not_allowed(
-                    "this runner is being replaced by one of this desktop's version: it keeps its \
-                     chats until they end, and new chats start on its pool's runner",
-                ))
+            Goes::There(relay) => {
+                // A runner that drains keeps its chats, and starts no new one (#2865): asked at
+                // each start, so a link relayed before its runner was replaced drains with it.
+                if matches!(command, Command::StartProgram(_)) && self.drains().await {
+                    return Err(not_allowed(
+                        "this runner is being replaced by one of this desktop's version: it keeps \
+                         its chats until they end, and new chats start on its pool's runner",
+                    ));
+                }
+                session::Host::call(&relay, command, peer).await
             }
-            Goes::There(relay) => session::Host::call(&relay, command, peer).await,
             Goes::Refused(refusal) => Err(refusal),
         }
     }

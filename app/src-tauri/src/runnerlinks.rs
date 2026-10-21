@@ -149,8 +149,9 @@ pub fn relaying(
         if let Some(behind) = behind(&machine, &kept) {
             tracing::warn!("purlis: pool {pool}: {behind}");
         }
+        let resolved = format!("{}/{}", kept.pool(), kept.name());
         let to = ToARunner::of_kept(&machine, &kept)?;
-        Ok(Arc::new(move || to.keep()) as purlis_host::Keep)
+        Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
     })
 }
 

@@ -203,6 +203,13 @@ pub fn waiting_on(config: &std::path::Path, pool: &str) -> u32 {
         .sum()
 }
 
+/// **What pool `pool`'s draining runners waited on is let go of** (#2865): the pool is removed,
+/// its runners with it.
+#[cfg(unix)]
+pub fn forget_waiting(config: &std::path::Path, pool: &str) {
+    lock_waiting().retain(|(home, of, _), _| !(home == config && of == pool));
+}
+
 /// A draining runner, by its config home, its pool and its name.
 #[cfg(unix)]
 type Waiting = (std::path::PathBuf, String, String);

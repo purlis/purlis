@@ -164,7 +164,7 @@ fn a_release_with_no_runner_image_leaves_the_pools_where_they_are() {
 
     note_named(&Ok(Found::NoneNamed));
     assert_eq!(this_versions_image_named(), Some(false));
-    follow_and_drain(&machine, None, &|_| Ok(true));
+    follow_and_drain(&machine, None, &|_| Ok(1));
 
     assert_eq!(runners::read(&machine.config).unwrap(), before);
     assert_eq!(runners::pools(&machine.config).unwrap(), pools);
@@ -202,4 +202,17 @@ fn only_a_manifest_of_this_version_says_its_release_has_no_runner_image() {
         found_in(Some(&serde_json::json!({ "version": ours })), "", ours),
         Ok(Found::NoneNamed)
     );
+}
+
+/// A removed pool waits on nothing: what its draining runners waited on goes with it (#2865).
+#[test]
+fn a_removed_pools_waiting_chats_are_let_go_of() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    follow_and_drain(&machine, None, &|_| Ok(3));
+    assert_eq!(waiting_on(&machine.config, "first"), 3);
+
+    forget_waiting(&machine.config, "first");
+    assert_eq!(waiting_on(&machine.config, "first"), 0);
 }

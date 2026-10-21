@@ -124,15 +124,22 @@ fn a_desktop_waiting(
         }
         let (connector, desktop, pinned) =
             (connector.clone(), Arc::clone(&desktop), pinned.clone());
-        Ok(Arc::new(move || {
-            keep_linked(
-                connector.clone(),
-                Handshake::THIS_BUILD,
-                desktop.identity(),
-                pinned.clone(),
-                Liveness::default(),
-            )
-        }) as Keep)
+        Ok((
+            Arc::new(move || {
+                keep_linked(
+                    connector.clone(),
+                    Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    Liveness::default(),
+                )
+            }) as Keep,
+            if name.contains('/') {
+                name.to_owned()
+            } else {
+                format!("{name}/{name}")
+            },
+        ))
     });
     let a = Hosting::running_with(Echo, StandIns::default()).relaying_with(relays);
     (a, b)
@@ -414,13 +421,26 @@ async fn a_link_that_ends_while_it_is_relayed_lets_go_of_its_name() {
 
 /// **A link relayed to a draining runner keeps its chats and starts no new one** (#2865): the
 /// window answers and watches what runs there, and a start is refused in words that say where
-/// new chats start. A link to the pool's runner starts chats as before.
+/// new chats start. Asked at each start: a link relayed by its pool's name before the runner was
+/// replaced is refused too, once it drains.
 #[tokio::test]
 async fn a_link_to_a_draining_runner_reaches_its_chats_and_starts_none() {
     let (a, _b) = a_desktop(Kept::pinned);
-    let a = a.draining_with(Arc::new(|name: &str| name == "builds/old"));
+    let draining = Arc::new(std::sync::Mutex::new(vec!["builds/old".to_owned()]));
+    let a = a.draining_with({
+        let draining = Arc::clone(&draining);
+        Arc::new(move |name: &str| draining.lock().unwrap().iter().any(|one| one == name))
+    });
     let start =
         || session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell);
+    let refused_as_draining = |started: &Result<String, CallError>| {
+        started.as_ref().err().is_some_and(|why| {
+            code(why) == Some(session::NOT_ALLOWED)
+                && why
+                    .to_string()
+                    .contains("new chats start on its pool's runner")
+        })
+    };
 
     let old = routed(Scope::LocalUi, a.clone()).await;
     tokio::time::timeout(PATIENCE, old.relay_to("builds/old"))
@@ -428,27 +448,16 @@ async fn a_link_to_a_draining_runner_reaches_its_chats_and_starts_none() {
         .unwrap()
         .expect("a draining runner is reached");
     old.list().await.expect("its chats are listed");
-    let refused = old.start_program(start()).await.unwrap_err();
-    assert_eq!(code(&refused), Some(session::NOT_ALLOWED), "{refused}");
-    assert!(
-        refused
-            .to_string()
-            .contains("new chats start on its pool's runner"),
-        "{refused}"
-    );
+    assert!(refused_as_draining(&old.start_program(start()).await));
 
-    let new = routed(Scope::LocalUi, a).await;
-    tokio::time::timeout(PATIENCE, new.relay_to("builds"))
+    // Relayed by the pool's name while its runner is the pool's: it starts chats.
+    let now = routed(Scope::LocalUi, a).await;
+    tokio::time::timeout(PATIENCE, now.relay_to("builds"))
         .await
         .unwrap()
         .unwrap();
-    let started = new.start_program(start()).await;
-    assert!(
-        started
-            .as_ref()
-            .err()
-            .and_then(|why| code(why))
-            .is_none_or(|code| code != session::NOT_ALLOWED),
-        "the pool's runner refused a start as draining: {started:?}"
-    );
+    assert!(!refused_as_draining(&now.start_program(start()).await));
+    // The pool moves to a new runner: that same link starts no new chat there.
+    draining.lock().unwrap().push("builds/builds".to_owned());
+    assert!(refused_as_draining(&now.start_program(start()).await));
 }

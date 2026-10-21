@@ -9,8 +9,12 @@ decided in #2865 and is marked *decided in implementation, to be confirmed*.
    (`purlis_core::runners::reachable`). Pool and runner names hold no `/`, so the two never meet,
    and `relay_to` takes the same one string as before: no protocol change. Once the runner is
    removed, the name reaches nothing. *Decided in implementation, to be confirmed* (D-2865-1).
-2. **A link to a draining runner starts no new chat there.** The desktop's host refuses
-   `start_program` on a link it relays to a draining runner, `not_allowed`, in words that say new
+2. **A link to a draining runner starts no new chat there, asked at each start.** The lookup
+   that relays a link names the runner it reached as `<pool>/<runner>`, and at each
+   `start_program` the desktop's host asks, off its runtime, whether that runner drains now; a
+   look that cannot be made refuses. So a link relayed by its pool's name before the pool moved
+   to a new runner drains with its runner too. The desktop's host refuses `start_program` on a
+   link it relays to a draining runner, `not_allowed`, in words that say new
    chats start on the pool's runner; everything else on the link reaches the runner, so its chats
    are listed, answered, watched and ended. *Decided in implementation, to be confirmed*
    (D-2865-2).

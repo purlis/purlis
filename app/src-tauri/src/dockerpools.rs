@@ -256,6 +256,8 @@ pub fn remove_on(machine: &Machine, name: &str) -> Result<Option<String>, String
         .map_err(|why| why.to_string())?;
     // The projects that ran their chats on it run them on no pool now: their marks go (#2846).
     crate::notheld::recheck(&machine.config);
+    // Nothing of it waits on chats any more (#2865).
+    crate::poolfollow::forget_waiting(&machine.config, name);
     Ok(removed.and_then(|removed| removed.left()))
 }
 
