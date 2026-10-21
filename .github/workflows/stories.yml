@@ -12,8 +12,9 @@ name: stories
 # **One pinned image draws and compares every picture.** A picture differs by its machine's
 # fonts and rasteriser, so it is taken nowhere but in Playwright's own image for the Playwright
 # version `app/package-lock.json` locks, and the job fails when the two disagree. The image is
-# named by its tag here and in `stories-baselines.yml`, which draws the baselines this job
-# compares with; the two must name the same one.
+# named by its tag and its digest here and in `stories-baselines.yml`, which draws the baselines
+# this job compares with; the two must name the same digest (`tools/story-image.mjs`). A tag can
+# be pushed again, and a digest cannot, so a baseline is compared in the image it was drawn in.
 #
 # A baseline changes only through `stories-baselines.yml`, which a pull request's
 # `update-baselines` label starts. `workflow_dispatch` is how that job starts this one on the
@@ -39,13 +40,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
       # An init that reaps, and the host's IPC namespace, which Chromium wants for its shared
       # memory (Playwright's own advice for this image).
       options: --init --ipc=host
     env:
-      # Playwright's version in the image's tag above, held to the lockfile's below.
-      PLAYWRIGHT_IMAGE: "1.64.1"
       PURLIS_STORY_PICTURES: "1"
       HOME: /root
     defaults:
@@ -61,13 +60,8 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
-      - name: The image is the Playwright the lockfile names
-        run: |
-          locked=$(node -p 'require("playwright/package.json").version')
-          if [ "$locked" != "$PLAYWRIGHT_IMAGE" ]; then
-            echo "::error::app/package-lock.json locks Playwright $locked, and the stories image is $PLAYWRIGHT_IMAGE: move both workflows' image to v$locked-noble"
-            exit 1
-          fi
+      - name: The image is the Playwright the lockfile names, by its tag and its digest
+        run: node ../tools/story-image.mjs
       # Storybook's own index says which stories there are; a baseline of any other is obsolete.
       - name: Every baseline was drawn in this image, of a story there is
         run: |
