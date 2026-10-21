@@ -6,8 +6,9 @@ name: stories-baselines
 # **The only way a story's baseline changes** (#2901, `docs/component-stories.md`): the
 # `update-baselines` label on a pull request. `fresh` refuses a branch behind its base; `draw`
 # runs every story in the pinned image `stories.yml` compares in, writing the pictures that are
-# new or differ; `commit` pushes them to the pull request's branch as one commit, so the pictures
-# show in its diff, takes the label off and starts `stories.yml` on that commit.
+# new or differ; `commit` pushes them to the pull request's branch as one commit, with every
+# baseline whose story is gone deleted, so the pictures show in its diff, takes the label off and
+# starts `stories.yml` on that commit.
 #
 # **Up to date with its base, so every run tests one tree.** A pull request's `stories` run tests
 # the branch merged into its base; `draw`, and the run `commit` starts, test the branch. On a
@@ -17,9 +18,10 @@ name: stories-baselines
 # **Only code from the base branch runs while a token can push.** `draw` runs the pull request's
 # code, with a read-only token. `commit` runs the baseline tool from a checkout of the base, and
 # takes from `draw`'s pictures only whole PNG baselines within its limits, written nowhere but
-# under the pull request's `app/src` (`tools/story-baselines.mjs take`). The pull request's
-# checkout keeps no credentials; the token is handed to git for the push alone. A pull request
-# from a fork gets no token that can push, so `commit` says so and stops.
+# under the pull request's `app/src`; it deletes nothing but the other files in that tree's
+# `__screenshots__` directories, each reached through no link (`tools/story-baselines.mjs take`).
+# The pull request's checkout keeps no credentials; the token is handed to git for the push
+# alone. A pull request from a fork gets no token that can push, so `commit` says so and stops.
 #
 # The `pull_request` runs a push made with the workflow's own token starts wait for a maintainer
 # to approve them, so the rest of the pull request's checks run once approved, or on its next push
@@ -98,8 +100,13 @@ jobs:
       # story that passes everything else.
       - name: The stories, writing each picture that is new or differs
         run: npm run test:stories -- --update
+      # Only the baselines of the stories Storybook's index has: `commit` deletes every other one.
       - name: The baselines, gathered
-        run: node ../tools/story-baselines.mjs gather "$RUNNER_TEMP/baselines"
+        run: |
+          npx storybook index --disable-telemetry --quiet -c .storybook \
+            -o "$RUNNER_TEMP/stories-index.json"
+          node ../tools/story-baselines.mjs gather "$RUNNER_TEMP/stories-index.json" \
+            "$RUNNER_TEMP/baselines"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: story-baselines
@@ -156,7 +163,7 @@ jobs:
         with:
           name: story-baselines
           path: ${{ runner.temp }}/drawn
-      - name: The baselines, taken
+      - name: The baselines, taken, and the obsolete ones deleted
         run: node trusted/tools/story-baselines.mjs take "$RUNNER_TEMP/drawn" pr/app
       - name: The baselines, committed and pushed
         id: taken
@@ -175,6 +182,8 @@ jobs:
             echo "every baseline already matches what the pinned image draws"
             exit 0
           fi
+          drawn=$(git diff --cached --name-only --diff-filter=d)
+          deleted=$(git diff --cached --name-only --diff-filter=D)
           git commit -q -m "stories: baselines drawn in the pinned image" \
             -m "By the update-baselines label (.github/workflows/stories-baselines.yml)."
           # The token reaches git for this one command, never the checkout's config.
@@ -185,6 +194,12 @@ jobs:
           {
             echo "changed<<EOF"
             echo "$changed"
+            echo "EOF"
+            echo "drawn<<EOF"
+            echo "$drawn"
+            echo "EOF"
+            echo "deleted<<EOF"
+            echo "$deleted"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
       - name: The stories, started on the new commit
@@ -197,15 +212,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHANGED: ${{ steps.taken.outputs.changed }}
+          DRAWN: ${{ steps.taken.outputs.drawn }}
+          DELETED: ${{ steps.taken.outputs.deleted }}
         run: |
           gh pr edit "$PR" --remove-label update-baselines || true
           if [ -n "$CHANGED" ]; then
             {
-              echo "The pinned image drew these baselines anew; the pictures are in this pull request's diff:"
-              echo
               # A baseline's path has no space in it (tools/story-baselines.mjs).
-              for path in $CHANGED; do echo "- \`$path\`"; done
-              echo
+              if [ -n "$DRAWN" ]; then
+                echo "The pinned image drew these baselines anew; the pictures are in this pull request's diff:"
+                echo
+                for path in $DRAWN; do echo "- \`$path\`"; done
+                echo
+              fi
+              if [ -n "$DELETED" ]; then
+                echo "These baselines were deleted, as their stories are gone:"
+                echo
+                for path in $DELETED; do echo "- \`$path\`"; done
+                echo
+              fi
               echo "The \`stories\` check runs on the new commit now. Its other checks wait for a maintainer to approve them, or run on the branch's next push."
             } > "$RUNNER_TEMP/comment.md"
             gh pr comment "$PR" --body-file "$RUNNER_TEMP/comment.md"

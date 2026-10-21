@@ -4,14 +4,21 @@
 // **The story baselines** (#2901, `docs/component-stories.md`): the pictures each story is
 // compared with, drawn only in the pinned Playwright image of `.github/workflows/stories.yml`.
 //
-//   node tools/story-baselines.mjs check            every baseline is one that image drew, of a
-//                                                   story file that exists (the stories job)
-//   node tools/story-baselines.mjs gather <out>     copy every baseline to <out>, under its path
-//                                                   in `app/` (the labelled job, after drawing)
+//   node tools/story-baselines.mjs check <index>    every baseline is one that image drew, of a
+//                                                   story the index has (the stories job)
+//   node tools/story-baselines.mjs gather <index> <out>
+//                                                   copy the baseline of every story the index
+//                                                   has to <out>, under its path in `app/` (the
+//                                                   labelled job, after drawing)
 //   node tools/story-baselines.mjs take <drawn> <app>
-//                                                   write what `gather` copied into <app> (the
+//                                                   write what `gather` copied into <app> and
+//                                                   delete every other baseline there (the
 //                                                   labelled job's commit, run from a trusted
 //                                                   checkout against the pull request's)
+//
+// <index> is Storybook's own index of the stories, which `storybook index` writes. A story is
+// live when the index has it with the `test` tag, the stories the Vitest addon runs; every other
+// baseline is obsolete, and `check` fails on it, naming its story.
 //
 // A baseline is `app/src/<dir>/__screenshots__/<name>.stories.tsx/<story id>-<browser>-linux.png`,
 // where Vitest's `toMatchScreenshot` keeps it (`app/.storybook/screenshots.setup.ts`).
@@ -23,9 +30,10 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32 } from "node:zlib";
 
@@ -42,6 +50,49 @@ const SIDE = 4096;
 
 /** The eight bytes every PNG starts with. */
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** The tag of the stories the Vitest addon runs, so the only ones a baseline is drawn of. */
+const TESTED = "test";
+
+/** The name Vitest gives a story's picture: its id with each run of dashes made one. */
+export function pictureName(id) {
+  return id
+    .replace(/\s+/g, "-")
+    .replace(/[^\w-]+/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+/** The pictures each story file's live stories are drawn as: story file path in `app/` (with
+ *  `/`), to the picture names of its stories that run as tests. */
+export function liveStories(index) {
+  if (
+    typeof index !== "object" ||
+    index === null ||
+    typeof index.entries !== "object" ||
+    index.entries === null
+  )
+    throw new Error(
+      "not a story index: expected the JSON `storybook index` writes",
+    );
+  const live = new Map();
+  for (const entry of Object.values(index.entries)) {
+    if (entry?.type !== "story" || !entry.tags?.includes(TESTED)) continue;
+    const file = String(entry.importPath).replace(/^\.\//, "");
+    if (!live.has(file)) live.set(file, new Set());
+    live.get(file).add(pictureName(String(entry.id)));
+  }
+  return live;
+}
+
+/** A baseline's story file, and the picture name of its story. */
+function storyOf(path) {
+  const parts = path.split("/");
+  const at = parts.indexOf("__screenshots__");
+  return {
+    file: [...parts.slice(0, at), parts[at + 1]].join("/"),
+    story: basename(path).replace(/-(?:chromium|webkit)-linux\.png$/, ""),
+  };
+}
 
 /** Every file under `root`, as paths relative to it with `/` between their parts. */
 function files(root, at = root) {
@@ -115,28 +166,38 @@ function confined(root, path) {
   }
 }
 
-/** What is wrong with the baselines in `app`, one line each. */
-export function problems(app) {
+/** What is wrong with the baselines in `app`, one line each, against Storybook's `index`. */
+export function problems(app, index) {
+  const live = liveStories(index);
   return baselinesIn(app).flatMap((path) => {
     if (!BASELINE.test(path))
       return [
         `${path}: not a baseline the pinned image draws (<story id>-<chromium|webkit>-linux.png); ` +
           "baselines are drawn only by the update-baselines label (docs/component-stories.md)",
       ];
-    const parts = path.split("/");
-    const at = parts.indexOf("__screenshots__");
-    const story = [...parts.slice(0, at), parts[at + 1]].join("/");
-    if (!existsSync(join(app, story)))
+    const { file, story } = storyOf(path);
+    if (!existsSync(join(app, file)))
       return [
-        `${path}: its story file ${story} is gone; delete the baseline with it`,
+        `${path}: its story file ${file} is gone; delete the baseline with it`,
+      ];
+    if (!live.get(file)?.has(story))
+      return [
+        `${path}: no story ${story} in ${file} runs as a test, so the baseline is obsolete; ` +
+          "the update-baselines label deletes it, or delete it with the story (docs/component-stories.md)",
       ];
     return [];
   });
 }
 
-/** Copies every baseline in `app` to `out`, under the same path, and says which. */
-export function gather(app, out) {
-  const all = baselinesIn(app).filter((path) => BASELINE.test(path));
+/** Copies the baseline of every live story in `app` to `out`, under the same path, and says
+ *  which: an obsolete one is left out, so `take` deletes it. */
+export function gather(app, index, out) {
+  const live = liveStories(index);
+  const all = baselinesIn(app).filter((path) => {
+    if (!BASELINE.test(path)) return false;
+    const { file, story } = storyOf(path);
+    return live.get(file)?.has(story) ?? false;
+  });
   for (const path of all) {
     mkdirSync(dirname(join(out, path)), { recursive: true });
     copyFileSync(join(app, path), join(out, path));
@@ -145,12 +206,16 @@ export function gather(app, out) {
 }
 
 /**
- * Writes the baselines `gather` copied to `drawn` into `app`, and says which. Everything in
- * `drawn` must be a baseline: a path a baseline has, a plain file reached through no link, a
- * whole PNG within {@link LIMITS}; and nothing in `app` it would be written to may be a link.
- * Unless all of it is, nothing is written.
+ * Writes the baselines `gather` copied to `drawn` into `app`, deletes every other file in a
+ * `__screenshots__` directory of `app/src`, and says which it wrote and which it deleted.
+ * Everything in `drawn` must be a baseline: a path a baseline has, a plain file reached through
+ * no link, a whole PNG within {@link LIMITS}. Nothing in `app` written or deleted may be a link
+ * or be reached through one, `app` included. Unless all of it holds, nothing is written or
+ * deleted.
  */
 export function take(drawn, app, limits = LIMITS) {
+  if (lstatSync(app).isSymbolicLink())
+    throw new Error(`not a baseline, so nothing was taken: ${app} is a link`);
   const all = files(drawn).sort();
   if (all.length > limits.files)
     throw new Error(
@@ -175,6 +240,15 @@ export function take(drawn, app, limits = LIMITS) {
       );
     return { path, bytes };
   });
+  const drew = new Set(all);
+  const removed = baselinesIn(app).filter((path) => !drew.has(path));
+  for (const path of removed) {
+    confined(app, path);
+    if (!lstatSync(join(app, path)).isFile())
+      throw new Error(
+        `not a baseline, so nothing was taken: ${path} is not a plain file`,
+      );
+  }
   for (const { path, bytes } of taken) {
     const to = join(app, path);
     mkdirSync(dirname(to), { recursive: true });
@@ -188,26 +262,32 @@ export function take(drawn, app, limits = LIMITS) {
         constants.O_NOFOLLOW,
     });
   }
-  return all;
+  // `unlink` takes away the name, never what a link would point to; none is on the way here.
+  for (const path of removed) unlinkSync(join(app, path));
+  return { taken: all, removed };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const app = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
   const [command, dir, into] = process.argv.slice(2);
-  if (command === "check") {
-    const found = problems(app);
+  const indexAt = (path) => JSON.parse(readFileSync(resolve(path), "utf8"));
+  if (command === "check" && dir) {
+    const found = problems(app, indexAt(dir));
     for (const line of found) console.error(`::error::${line}`);
     if (found.length > 0) process.exit(1);
     console.log(
-      `${baselinesIn(app).length} baselines, each drawn by the pinned image`,
+      `${baselinesIn(app).length} baselines, each drawn by the pinned image of a live story`,
     );
-  } else if (command === "gather" && dir) {
-    for (const path of gather(app, resolve(dir))) console.log(path);
+  } else if (command === "gather" && dir && into) {
+    for (const path of gather(app, indexAt(dir), resolve(into)))
+      console.log(path);
   } else if (command === "take" && dir && into) {
-    for (const path of take(resolve(dir), resolve(into))) console.log(path);
+    const { taken, removed } = take(resolve(dir), resolve(into));
+    for (const path of taken) console.log(`drawn: ${path}`);
+    for (const path of removed) console.log(`deleted: ${path}`);
   } else {
     console.error(
-      "usage: story-baselines.mjs check | gather <out> | take <drawn> <app>",
+      "usage: story-baselines.mjs check <index> | gather <index> <out> | take <drawn> <app>",
     );
     process.exit(2);
   }

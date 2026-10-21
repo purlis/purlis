@@ -89,9 +89,11 @@ image by the `stories` workflow (`.github/workflows/stories.yml`).
 2. Bring the branch up to date with its base (`gh pr update-branch`), then put the
    `update-baselines` label on the pull request. `.github/workflows/stories-baselines.yml`
    refuses a branch behind its base, runs every story in the pinned image, writes each picture
-   that is new or differs, pushes them to the branch as one commit, takes the label off and
-   comments which baselines changed. What it commits is only whole PNG baselines within a size
-   and a count limit, checked by the base branch's own copy of `tools/story-baselines.mjs`.
+   that is new or differs, deletes every baseline whose story is gone, pushes both to the branch
+   as one commit, takes the label off and comments which baselines it drew and which it deleted.
+   What it commits is only whole PNG baselines within a size and a count limit, and the deletion
+   of other files in `__screenshots__` directories, checked by the base branch's own copy of
+   `tools/story-baselines.mjs`.
 3. Review the pictures in the pull request's diff, which shows each one beside the one it
    replaces.
 4. The job starts the `stories` check on the new commit itself. The other checks of a push made
@@ -103,8 +105,11 @@ is the one branch protection reads. The run the label's job starts tests the bra
 branch that is up to date with its base, which the job requires, the two test the same tree.
 
 The `stories` check also refuses a baseline the pinned image did not draw (one named for another
-platform), and a baseline whose story file is gone (`tools/story-baselines.mjs check`). When a
-story is renamed or deleted, delete its baselines in the same change.
+platform), and an obsolete one: a baseline whose story file is gone, or whose story is no longer
+in its file with the `test` tag, the stories the Vitest addon runs. Storybook's own index
+(`storybook index`) says which stories there are, and the check names the story of each obsolete
+baseline (`tools/story-baselines.mjs check`). When a story is renamed or deleted, delete its
+baselines in the same change, or put the `update-baselines` label on, which deletes them.
 
 Only a pull request from a branch of this repository can be labelled this way: the workflow's
 token cannot push to a fork.
