@@ -920,3 +920,35 @@ fn a_remote_that_differs_from_the_pool_in_case_alone_is_refused_too() {
         "{refused:?}"
     );
 }
+
+#[test]
+fn a_file_that_vanished_from_disk_after_it_was_staged_is_left_out_of_the_send() {
+    let world = World::new();
+    std::fs::write(world.desktop.join("gone.txt"), "here a moment\n").unwrap();
+    std::fs::write(world.desktop.join("fix.txt"), "the work\n").unwrap();
+    let index = world.scratch().join("vanished.index");
+    for args in [
+        &["read-tree", "HEAD"][..],
+        &["add", "--", "gone.txt", "fix.txt"][..],
+    ] {
+        let ran = git::run_with_index(&world.desktop, &index, args).unwrap();
+        assert!(ran.ok(), "{args:?}: {ran:?}");
+    }
+    // Staged, then gone before it is looked at: what it was can no longer be told.
+    std::fs::remove_file(world.desktop.join("gone.txt")).unwrap();
+
+    let left = keep_secrets_out(&world.desktop, &index).unwrap();
+
+    assert_eq!(left, vec!["gone.txt".to_owned()]);
+    let staged = git::run_with_index(&world.desktop, &index, &["ls-files"]).unwrap();
+    assert!(
+        !staged.out.lines().any(|one| one == "gone.txt"),
+        "{}",
+        staged.out
+    );
+    assert!(
+        staged.out.lines().any(|one| one == "fix.txt"),
+        "{}",
+        staged.out
+    );
+}
