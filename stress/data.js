@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792572067226,
+  "lastUpdate": 1792573376080,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4776,6 +4776,42 @@ window.BENCHMARK_DATA = {
             "value": 345.9,
             "unit": "MB",
             "extra": "median of 6 samples: 292.4, 389.3, 362.7, 345.5, 346.4, 266.7 MB; window 157.9 MB, session host 191.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6407747cae70b50182e689a3d2a4b94d0b6f4ace",
+          "message": "Component parts in the theme engine (#2939)\n\n* Component parts in the theme engine (#2903)\n\nA theme's theme.json takes a `parts` object keyed\n`<family>.<part>[.<variant>][.<state>].<property>`, read against the engine's\nclosed, versioned manifest (the button first: root, label, icon). Colours name\nsemantic tokens; sizes are bounded numbers or geometry tokens; corners go to\nfull and are clamped to half the part's height as drawn; a control stays 24px\nwith its words fitting in both densities; a size inside a state is refused\nwith a sentence that says why. Floors are held per part and state, falling\nback to the family default; Allow keeps its edge and never takes the primary\nlook. The engine writes one stylesheet keyed on data-scope/data-part,\ndata-variant and state attributes, which the window puts in a `parts` layer.\nA theme that names no parts writes nothing. `purlis theme parts` prints the\nmanifest and the published schema completes every key. ADR 0103.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Component parts: consent floors held whatever a theme changes (#2903)\n\nThe consent floors of ADR 0097 §6 hold for parts unchanged, whatever variant\na theme's parts touch, as written and in every workspace tint: Allow keeps\nits accent edge (its width read from the rule that sets it) at 3:1 on its\nfill and apart from Keep blocked's, Allow and danger never take the primary\nlook, and danger's words stay apart from the accent. Looks are compared by\nthe colours they draw. Where a consent variant's own default is not enough,\nthe variant it is held apart from draws its default too.\n\nAlso: a geometry token is held to the part's bound at the value the theme\ndraws it at; `full` is a pill at every variant height, and a corner is\nclamped to the variant's own height; on today's classes a size never reaches\nsmall or wrapping buttons, and a non-consent variant never reaches a button\ncarrying a consent class; a border that is a part's only edge is held at\n3:1; disabled controls are exempt; every manifest entry says its `since`,\nand a test pins the manifest to VERSION; `border-color` and other CSS\nspellings get a hint.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Component parts: a consent look is never drawn nearer the primary (#2903)\n\nAllow is as plain as Keep blocked: in every state it is drawn on Keep\nblocked's fill. Parts never draw a consent variant nearer the primary than\nthe family's defaults draw it in the same theme, by the farthest of its fill,\nits edge and, for danger, its words. Danger's words stay apart from the\nprimary's words as well as from the accent. A border width never reaches\ntoday's small or wrapping buttons. Public text states what holds now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Component parts: a look is measured as a person reads it (#2903)\n\nTwo consent looks are compared on what a person reads as the look: each fill\nas it shows on every ground the family is drawn on, the nearest counting,\nand an edge only where it stands out at a glance. The published schema\ncompletes the colour tokens main gained. Docs and doc comments state what\nholds today.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Component parts: the ADR and the theme docs state the look rule (#2903)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T12:11:48+04:00",
+          "tree_id": "30dabcc57921ed45ea19a86f17195dab3ece7f38",
+          "url": "https://github.com/purlis/purlis/commit/6407747cae70b50182e689a3d2a4b94d0b6f4ace"
+        },
+        "date": 1792573374619,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 874,
+            "unit": "MB",
+            "extra": "median of 3 samples: 874, 874, 1037 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 369.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 279.3, 386.5, 376.9, 369.3, 370.2, 252 MB; window 157.8 MB, session host 211.9 MB"
           }
         ]
       }
