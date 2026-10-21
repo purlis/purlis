@@ -368,8 +368,10 @@ class Reader {
       const component = /^[A-Z]/.test(tag) ? tag.split(".").pop() : undefined;
       if (component !== undefined) unit.uses.push({ name: component, frames: inside });
       // What a component is given is placed where it places its `children`, or around them.
-      const places =
-        (component && this.units.get(component)?.flatMap((one) => one.childrenAt)) ?? [];
+      const places: Frame[][] =
+        component === undefined
+          ? []
+          : (this.units.get(component)?.flatMap((one) => one.childrenAt) ?? []);
       const given = places.length === 0 ? [inside] : places.map((at) => [...inside, ...at]);
       for (const one of attributes) for (const at of given) again(one, at);
       if (ts.isJsxElement(node))
