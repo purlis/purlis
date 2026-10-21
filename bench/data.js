@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792571293801,
+  "lastUpdate": 1792572537307,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20412,6 +20412,48 @@ window.BENCHMARK_DATA = {
             "value": 102.006144,
             "unit": "ms",
             "extra": "median of 5 runs: 101.466, 101.585, 102.006, 102.228, 102.246 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9172d4e2ebcee830345f0f7babc57b5a5a200913",
+          "message": "stories: pin the Playwright image by digest as well as tag (#2942) (#2951)\n\nBoth stories workflows run in\nmcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a…, the image index\nthe tag names today. The lockfile check moves into tools/story-image.mjs: every\nPlaywright image the two workflows use must be the locked version's tag with a\ndigest, and all of them one digest, so a tag pushed again never changes a\nbaseline. Its own test also holds the repository's workflows to it.\n\nCloses #2942\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T12:29:20+04:00",
+          "tree_id": "e082e4c2923290da5a4d4d9ae6c518a1304b6576",
+          "url": "https://github.com/purlis/purlis/commit/9172d4e2ebcee830345f0f7babc57b5a5a200913"
+        },
+        "date": 1792572535691,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33104,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.328, 0.330, 0.331, 0.331, 0.334 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5007935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.331, 16.466, 16.501, 16.512, 16.666 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.527163,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.329, 101.027, 101.527, 101.684, 101.798 ms"
           }
         ]
       }
