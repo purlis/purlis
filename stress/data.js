@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792623012446,
+  "lastUpdate": 1792623030892,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -10668,6 +10668,42 @@ window.BENCHMARK_DATA = {
             "value": 684.3,
             "unit": "MB",
             "extra": "median of 6 samples: 643.9, 671.6, 680.8, 687.8, 688.6, 774.7 MB; window 391.2 MB, session host 293.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a43f2722b7c1ece4067defb2ea1932190fc83a72",
+          "message": "Docker pool: copies of Docker's settings left by a run that ended outright are swept (#2893) (#3010)\n\nEach run holds its folder's run.lock while it goes. A run-* folder not\nchanged for a day whose lock no run holds is removed as a run is prepared\nand as the app starts; a run still going keeps its copy however old.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T01:58:28+04:00",
+          "tree_id": "b49e93fe2cc091b905e78d891e2feeacf67f0f49",
+          "url": "https://github.com/purlis/purlis/commit/a43f2722b7c1ece4067defb2ea1932190fc83a72"
+        },
+        "date": 1792623027961,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1449.4,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1432, 1449.4, 1623.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 708.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 649, 687.9, 704.8, 711.8, 712.6, 799.7 MB; window 408 MB, session host 300.3 MB"
           }
         ]
       }
