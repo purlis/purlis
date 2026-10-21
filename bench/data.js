@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792619965767,
+  "lastUpdate": 1792621327697,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21126,6 +21126,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5689735,
             "unit": "ms",
             "extra": "median of 5 runs: 101.052, 101.054, 101.569, 102.564, 102.598 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a43f2722b7c1ece4067defb2ea1932190fc83a72",
+          "message": "Docker pool: copies of Docker's settings left by a run that ended outright are swept (#2893) (#3010)\n\nEach run holds its folder's run.lock while it goes. A run-* folder not\nchanged for a day whose lock no run holds is removed as a run is prepared\nand as the app starts; a run still going keeps its copy however old.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T01:58:28+04:00",
+          "tree_id": "b49e93fe2cc091b905e78d891e2feeacf67f0f49",
+          "url": "https://github.com/purlis/purlis/commit/a43f2722b7c1ece4067defb2ea1932190fc83a72"
+        },
+        "date": 1792621325593,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6832505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.670, 0.674, 0.683, 0.688, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.676274,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.497, 16.633, 16.676, 16.699, 16.786 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.71950849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.449, 102.432, 102.720, 102.792, 103.045 ms"
           }
         ]
       }
