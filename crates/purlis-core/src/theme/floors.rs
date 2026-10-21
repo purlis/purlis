@@ -25,7 +25,16 @@
 //!   accent-hued token drawn beside it ([`tint::ACCENT_KIN`]), as the theme writes them and under
 //!   each of its own tints;
 //! - **the state marks meet the mark floor** ([`Floor::StateMarks`]): every state's colour and
-//!   the needs-you mark on each ground they are drawn on.
+//!   the needs-you mark on each ground they are drawn on;
+//! - **Allow is distinguishable from the primary** ([`Floor::AllowNotPrimary`], #2948): a
+//!   theme's tokens alone draw an answer that grants at least [`ALLOW_FROM_PRIMARY`] from the suggested
+//!   answer, at rest and in each state, measured as the component parts check measures two
+//!   looks ([`super::parts`]): the fills as each shows on the grounds the family is drawn on,
+//!   the nearest ground counting, and the edges where they stand out. It holds as the theme
+//!   writes them and under each of its own tints. Like every floor here it is measured on the
+//!   final token set the window draws, so a layer laid over a theme after it is read passes
+//!   through it too. Where it fails, the primary's fill is drawn as purlis's own first, and
+//!   Allow's only when that is not enough.
 //!
 //! The contrast floors are pairs of the check's own [`PAIRS`], held to the floor the check holds
 //! each to, so a pair is measured in one place. Each holds as the theme is and tinted by every
@@ -45,6 +54,10 @@ use std::collections::BTreeSet;
 use super::check::{self, PAIRS, Pair, ratio};
 use super::{Appearance, ResolvedTheme, built_in_for, tint};
 
+#[cfg(test)]
+#[path = "allow_primary_tests.rs"]
+mod allow_primary_tests;
+
 /// One consent floor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -59,6 +72,8 @@ pub enum Floor {
     DangerApart,
     /// The state marks meet the mark floor.
     StateMarks,
+    /// Allow is distinguishable from the primary (#2948).
+    AllowNotPrimary,
 }
 
 impl Floor {
@@ -70,6 +85,7 @@ impl Floor {
             Self::Danger => "the danger colours contrast with what they are drawn on",
             Self::DangerApart => "danger is distinguishable from primary",
             Self::StateMarks => "the state marks meet the mark floor",
+            Self::AllowNotPrimary => "Allow is distinguishable from the primary",
         }
     }
 }
@@ -84,6 +100,11 @@ pub const DANGER_APART: f64 = 0.1;
 /// `accent.base` and `border.strong` in OKLab, held as [`DANGER_APART`] is, for the same reason:
 /// two answers told apart at a glance, not on a second look.
 pub const ALLOW_APART: f64 = 0.1;
+
+/// **How far apart Allow's look and the primary's are, at least**, as a theme's tokens alone
+/// draw them ([`Floor::AllowNotPrimary`]): measured as the component parts check measures two
+/// looks, on its own scale.
+pub const ALLOW_FROM_PRIMARY: f64 = super::parts::SEEN;
 
 /// The ask's pairs, by `front` on `back`: its words on the dialog it is asked in, its answers'
 /// words on their buttons (Allow's and Keep blocked's alike) at rest and under the pointer, what
@@ -271,6 +292,7 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
                 });
             }
         }
+        found.extend(allow_near_primary(&drawn, tinted));
     }
     // A workspace's own colour can take any hue. A tint keeps each shade's luminance on its own
     // side of the middle, so a pair of a dark shade and a light one holds at every hue as it does
@@ -284,6 +306,23 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
         for (degree, most) in (0_u32..).zip(chromas.of(theme).to_vec()) {
             let drawn = tint::turned_at(theme, f64::from(degree), most, &only);
             found.extend(moving.iter().filter_map(|one| failing(&drawn, true, *one)));
+        }
+    }
+    found
+}
+
+/// Each state in which `drawn`'s tokens bring Allow nearer the primary than [`ALLOW_FROM_PRIMARY`]: the
+/// primary's fill, then Allow's, the order they are drawn as purlis's own in.
+fn allow_near_primary(drawn: &ResolvedTheme, tinted: bool) -> Vec<Failure> {
+    let mut found: Vec<Failure> = Vec::new();
+    for look in super::parts::allow_from_primary(drawn) {
+        let tokens = look.fills.to_vec();
+        if look.apart < ALLOW_FROM_PRIMARY && !found.iter().any(|one| one.tokens == tokens) {
+            found.push(Failure {
+                floor: Floor::AllowNotPrimary,
+                tinted,
+                tokens,
+            });
         }
     }
     found
@@ -409,6 +448,10 @@ pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
                 .collect();
             take.extend(if !selection.is_empty() {
                 selection
+            } else if failure.floor == Floor::AllowNotPrimary {
+                // The primary's fill first, so Allow stays as plain as Keep blocked; Allow's own
+                // fill only once the primary's is purlis's and that is not enough.
+                open.into_iter().take(1).collect()
             } else if consent.is_empty() {
                 open
             } else {

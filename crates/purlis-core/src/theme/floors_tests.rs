@@ -286,7 +286,8 @@ fn a_theme_of_one_colour_everywhere_is_drawn_clearing_every_consent_floor() {
                 Floor::AllowApart,
                 Floor::Danger,
                 Floor::DangerApart,
-                Floor::StateMarks
+                Floor::StateMarks,
+                Floor::AllowNotPrimary
             ]
         );
         let drawn = drawn.theme.expect("drawn");
