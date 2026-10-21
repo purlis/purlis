@@ -1,0 +1,277 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **The tier floors** (#2940, ruling #2803·3) at the engine's interface: a theme in, what the
+//! window draws and what the check says out.
+
+use serde_json::{Value, json};
+
+use super::super::check::{PAIRS, TIER_GROUNDS, contrast};
+use super::super::{
+    Finding, ResolvedTheme, built_ins, check, check_every, draw, load, purlis, tint, warnings,
+};
+use super::{Lifted, hold};
+
+/// Every built-in appearance: Purlis Classic's and Purlis's.
+fn every_built_in() -> impl Iterator<Item = &'static ResolvedTheme> {
+    built_ins().iter().chain(&purlis().appearances)
+}
+
+/// A format 2 theme of one dark appearance that sets `tokens`, as read.
+fn dark(tokens: Value) -> ResolvedTheme {
+    let resolved = load(&json!({
+        "name": "Probe",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": tokens }]
+    }));
+    assert!(!resolved.refused, "{:?}", resolved.complaints);
+    resolved.theme.first().clone()
+}
+
+/// What the window draws for `theme`.
+fn drawn(theme: &ResolvedTheme) -> ResolvedTheme {
+    draw(theme).theme.expect("a theme is drawn")
+}
+
+/// The least contrast `tier` has on any ground it is held on, in `theme` as it is.
+fn least_on_grounds(theme: &ResolvedTheme, tier: &str) -> f64 {
+    TIER_GROUNDS
+        .iter()
+        .map(|ground| contrast(theme.value(tier), theme.value(ground)))
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// What the check says it lifted.
+fn lifted_in(theme: &ResolvedTheme) -> Vec<(&'static str, String, String)> {
+    check(theme)
+        .findings
+        .into_iter()
+        .filter_map(|one| match one {
+            Finding::TierFallsBack {
+                tier,
+                written,
+                drawn,
+                ..
+            } => Some((tier, written, drawn)),
+            _ => None,
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------------------
+// The built-in themes are unchanged
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn every_built_in_appearance_is_drawn_with_its_own_tiers() {
+    for theme in every_built_in() {
+        let (held, lifted) = hold(theme);
+        assert_eq!(
+            lifted,
+            Vec::<Lifted>::new(),
+            "{} ({})",
+            theme.name,
+            theme.id
+        );
+        assert_eq!(held.values, theme.values, "{} ({})", theme.name, theme.id);
+        for tier in [
+            "text.primary",
+            "text.secondary",
+            "text.muted",
+            "text.quiet",
+            "text.faint",
+        ] {
+            assert_eq!(
+                drawn(theme).value(tier),
+                theme.value(tier),
+                "{}: {tier}",
+                theme.id
+            );
+        }
+    }
+}
+
+#[test]
+fn the_check_names_no_fallback_for_a_built_in_in_any_combination() {
+    for theme in [super::super::classic(), purlis()] {
+        for one in check_every(theme) {
+            assert!(
+                !one.report
+                    .findings
+                    .iter()
+                    .any(|finding| matches!(finding, Finding::TierFallsBack { .. })),
+                "{}: {:?}",
+                one.appearance,
+                one.report.findings
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// A third-party tier under its floor falls back
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_quiet_tier_under_its_floor_is_drawn_as_the_nearest_grey_that_clears_it() {
+    // Figma's quiet grey before the ruling lifted it: 4.10 on the row under the pointer.
+    let theme = dark(json!({ "surface.hover": "#2a2a31", "text.quiet": "#8a8896" }));
+    let window = drawn(&theme);
+    let quiet = window.value("text.quiet");
+    assert_ne!(quiet, "#8a8896");
+    assert!(least_on_grounds(&window, "text.quiet") >= 4.5, "{quiet}");
+    // Lifted toward the light, on a dark theme, and kept the grey's own hue.
+    let (Some(was), Some(now)) = (tint::oklab_of("#8a8896"), tint::oklab_of(quiet)) else {
+        panic!("colours");
+    };
+    assert!(now[0] > was[0], "{quiet}");
+    let hue = |lab: [f64; 3]| lab[2].atan2(lab[1]);
+    assert!((hue(now) - hue(was)).abs() < 0.1, "{quiet}");
+    // The nearest: a step of lightness back toward the written grey no longer clears.
+    let back = tint::at_lightness(quiet, now[0] - 0.004).expect("a colour");
+    let mut nearer = window.clone();
+    nearer.values.insert("text.quiet", back.clone());
+    assert!(least_on_grounds(&nearer, "text.quiet") < 4.5, "{back}");
+}
+
+#[test]
+fn the_rest_of_the_theme_draws_as_written() {
+    let theme = dark(json!({ "surface.hover": "#2a2a31", "text.quiet": "#8a8896" }));
+    let window = drawn(&theme);
+    for (token, value) in &theme.values {
+        if *token != "text.quiet" {
+            assert_eq!(window.value(token), value, "{token}");
+        }
+    }
+}
+
+#[test]
+fn a_faint_mark_is_held_to_the_mark_floor() {
+    let theme = dark(json!({ "list.selected": "#2a2936", "text.faint": "#6f6d7a" }));
+    let window = drawn(&theme);
+    let faint = window.value("text.faint");
+    assert!(least_on_grounds(&window, "text.faint") >= 3.0, "{faint}");
+    // A mark, not words: lifted to its own floor and no further.
+    assert!(least_on_grounds(&window, "text.faint") < 4.5, "{faint}");
+}
+
+#[test]
+fn a_tier_that_clears_its_floor_is_never_moved() {
+    let theme = dark(json!({
+        "text.muted": "#a0a0a8",
+        "text.quiet": "#989aa0",
+        "text.faint": "#78787f",
+    }));
+    let (held, lifted) = hold(&theme);
+    assert!(lifted.is_empty(), "{lifted:?}");
+    assert_eq!(held.values, theme.values);
+}
+
+#[test]
+fn a_dark_tier_on_a_light_theme_is_drawn_darker() {
+    let resolved = load(&json!({
+        "name": "Paper",
+        "appearances": [{ "id": "light", "appearance": "light", "tokens": {
+            "text.quiet": "#a8a8a8"
+        } }]
+    }));
+    let theme = resolved.theme.first().clone();
+    let window = drawn(&theme);
+    let quiet = window.value("text.quiet");
+    assert!(least_on_grounds(&window, "text.quiet") >= 4.5, "{quiet}");
+    let (Some(was), Some(now)) = (tint::oklab_of("#a8a8a8"), tint::oklab_of(quiet)) else {
+        panic!("colours");
+    };
+    assert!(now[0] < was[0], "{quiet}");
+}
+
+#[test]
+fn every_text_tier_is_held_primary_included() {
+    let theme = dark(json!({ "text.secondary": "#55555c", "text.primary": "#6a6a70" }));
+    let window = drawn(&theme);
+    for tier in ["text.primary", "text.secondary"] {
+        assert!(
+            least_on_grounds(&window, tier) >= 4.5,
+            "{tier}: {}",
+            window.value(tier)
+        );
+    }
+}
+
+#[test]
+fn a_see_through_tier_keeps_its_alpha_when_that_is_enough() {
+    let theme = dark(json!({ "text.quiet": "#909090e0" }));
+    let window = drawn(&theme);
+    let quiet = window.value("text.quiet");
+    assert_eq!(quiet.len(), 9, "{quiet}");
+    assert!(quiet.ends_with("e0"), "{quiet}");
+    let least = TIER_GROUNDS
+        .iter()
+        .map(|ground| {
+            let back = window.value(ground);
+            contrast(&super::super::check::onto(quiet, back), back)
+        })
+        .fold(f64::INFINITY, f64::min);
+    assert!(least >= 4.5, "{quiet}: {least}");
+}
+
+#[test]
+fn the_colour_drawn_clears_the_floor_in_every_workspace_tint() {
+    // A quiet grey that clears every ground as written, on a selected row a tint can move.
+    let theme = dark(json!({ "text.quiet": "#8f8e9b" }));
+    let window = drawn(&theme);
+    for one in &window.tint.hues {
+        let tinted = super::super::tint::tinted(&window, one.name);
+        for pair in PAIRS
+            .iter()
+            .filter(|pair| pair.front == "text.quiet" && TIER_GROUNDS.contains(&pair.back))
+        {
+            let ratio = super::super::check::ratio(&tinted, pair).unwrap_or(f64::INFINITY);
+            assert!(
+                ratio >= pair.floor,
+                "{} on {}: {ratio}",
+                one.name,
+                pair.back
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// The check names the fallback
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn the_check_names_the_tier_it_lifts_and_the_colour_drawn() {
+    let theme = dark(json!({ "surface.hover": "#2a2a31", "text.quiet": "#8a8896" }));
+    let window = drawn(&theme);
+    assert_eq!(
+        lifted_in(&theme),
+        vec![(
+            "text.quiet",
+            "#8a8896".to_owned(),
+            window.value("text.quiet").to_owned()
+        )]
+    );
+}
+
+#[test]
+fn the_check_says_the_fallback_in_words() {
+    let theme = load(&json!({
+        "name": "Probe",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
+            "surface.hover": "#2a2a31", "text.quiet": "#8a8896"
+        } }]
+    }))
+    .theme;
+    let lines = warnings::said(&theme, &check_every(&theme));
+    let drawn = drawn(theme.first());
+    let quiet = drawn.value("text.quiet");
+    assert!(
+        lines.iter().any(|line| line
+            == &format!(
+                "text.quiet is drawn as {quiet}, not #8a8896: 3.92 on control.hover, under 4.5, \
+                 so purlis draws the nearest colour that clears it"
+            )),
+        "{lines:#?}"
+    );
+}

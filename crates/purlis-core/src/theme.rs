@@ -97,6 +97,7 @@ mod published;
 pub mod reload;
 mod resolve;
 mod schema;
+mod tiers;
 mod tint;
 mod typed;
 pub mod vocabulary;
@@ -132,6 +133,7 @@ pub use placed::{Placed, PlacedIn};
 pub use published::{SCHEMA_FILE, SCHEMA_URL};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
+pub use tiers::Lifted;
 pub use tint::{
     ACCENT_KIN, APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, hue_of,
     tint_hex, tint_hex_within, tinted,

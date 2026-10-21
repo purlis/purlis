@@ -348,7 +348,8 @@ fn tints_found(report: &Report) -> Vec<Option<&'static str>> {
             Finding::SelectionTextAlone
             | Finding::LineDoesNotFit { .. }
             | Finding::StyleWithoutAFace { .. }
-            | Finding::PartFallsBack { .. } => None,
+            | Finding::PartFallsBack { .. }
+            | Finding::TierFallsBack { .. } => None,
         })
         .collect();
     found.dedup();
