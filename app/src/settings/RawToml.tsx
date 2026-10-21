@@ -94,6 +94,7 @@ export function RawLinks({
         <button
           key={one.id}
           type="button"
+          className="ui-settings-raw-file"
           // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
           tabIndex={0}
           aria-current={one.id === editing ? "true" : undefined}

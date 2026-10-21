@@ -24,7 +24,7 @@ import { counted } from "./Vaults";
 import { saidOfTheOldExport, saidOfTheOthers, VaultSignIn } from "./VaultSignIn";
 import { AnswerBar } from "./AnswerBar";
 import { providerName } from "./vaultProviders";
-import { Button, ToggleButton } from "./ui/button/Button";
+import { Button, ButtonRow, ToggleButton } from "./ui/button/Button";
 
 /**
  * **One vault, in a tab of its own** (charter-app#235): its name, its provider and how many
@@ -763,7 +763,8 @@ function IdentityPanel({
         {say}
         {stillExported}
       </p>
-      <div className="vault-identity-put">
+      {/* One size for the row, the field's (#2897): the token box and its ways out line up. */}
+      <ButtonRow className="vault-identity-put">
         {!several && (
           <>
             <input
@@ -785,16 +786,16 @@ function IdentityPanel({
           </>
         )}
         {inEnv && (
-          <Button size="sm" isDisabled={busy} onPress={onMove} className="panel-view">
+          <Button isDisabled={busy} onPress={onMove} className="panel-view">
             Move the token from purlis's environment
           </Button>
         )}
         {unread !== undefined && onAgain && (
-          <Button size="sm" isDisabled={busy} onPress={onAgain} className="panel-view">
+          <Button isDisabled={busy} onPress={onAgain} className="panel-view">
             Read again
           </Button>
         )}
-      </div>
+      </ButtonRow>
     </div>
   );
 }

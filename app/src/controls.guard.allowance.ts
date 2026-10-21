@@ -79,25 +79,25 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "Welcome.tsx": [
     "<button className=\"welcome-door\">",
-    "<button>",
+    "<button className=\"recent-project\">",
   ],
   "WorkspaceStrip.tsx": [
     "<button className={root ? \"plane-root\" : undefined}>",
   ],
   "YourRepos.tsx": [
-    "<button className=\"welcome-link\">",
+    "<button className=\"welcome-link repo-card\">",
   ],
   "references.tsx": [
     "<button>",
   ],
   "settings/RawToml.tsx": [
-    "<button>",
+    "<button className=\"ui-settings-raw-file\">",
   ],
   "settings/SettingsTab.tsx": [
     "<input>",
   ],
   "settings/components.tsx": [
-    "<button className={one.sub ? \"ui-settings-sub\" : undefined}>",
+    "<button className={one.sub ? \"ui-settings-nav-item ui-settings-sub\" : \"ui-settings-nav-item\"}>",
     "<input>",
     "<input type=\"checkbox\" className=\"m-0\">",
   ],

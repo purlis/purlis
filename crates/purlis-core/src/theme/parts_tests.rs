@@ -85,6 +85,30 @@ fn a_key_names_a_variant_and_a_state_and_is_keyed_on_their_attributes() {
 }
 
 #[test]
+fn an_unavailable_button_is_never_drawn_under_the_pointer_or_pressed() {
+    // The wrapper marks a button that keeps the focus while unavailable (`aria-disabled`) as
+    // `data-disabled` too, so a theme's disabled parts reach it and its hover and pressed never
+    // do (#2904).
+    let sheet = sheet_of(json!({
+        "button.root.hover.fill": "control.hover",
+        "button.root.pressed.fill": "control.hover",
+        "button.root.disabled.text": "text.faint",
+    }));
+    assert!(
+        sheet.contains("[data-hovered]:not([data-disabled])"),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains("[data-pressed]:not([data-disabled])"),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains("[data-scope=\"button\"][data-part=\"root\"][data-disabled]"),
+        "{sheet}"
+    );
+}
+
+#[test]
 fn the_plain_variant_is_reached_by_its_own_attribute() {
     let sheet = sheet_of(json!({ "button.root.secondary.fill": "control.hover" }));
     assert!(sheet.contains(
@@ -694,7 +718,7 @@ fn the_buttons_family_default_is_what_button_css_draws() {
     let base_border = declared(base, "border")
         .and_then(|it| it.split_whitespace().last())
         .expect("the button's border");
-    let base_hover = rule(css, &format!("{root}[data-hovered]"));
+    let base_hover = rule(css, &format!("{root}[data-hovered]:not([data-disabled])"));
     for variant in parts::MANIFEST[0].variants.iter().map(|one| one.name) {
         let own_selector = format!("{root}[data-variant=\"{variant}\"]");
         let own = if css.contains(&format!("\n{own_selector} {{")) {
@@ -702,7 +726,7 @@ fn the_buttons_family_default_is_what_button_css_draws() {
         } else {
             ""
         };
-        let hovered = format!("{own_selector}[data-hovered]");
+        let hovered = format!("{own_selector}[data-hovered]:not([data-disabled])");
         let own_hover = if css.contains(&format!("\n{hovered} {{")) {
             rule(css, &hovered)
         } else {
@@ -874,7 +898,7 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     ),
     (
         2,
-        "cd67ca0282bc098d5ab42d74a0a2bfe277d4ab2fc01911d022a780ea61fe7337",
+        "0d939a9f8ad769584b644227563214dcf5e8dfbeca21e3c5a27ba545bba1d46d",
     ),
 ];
 

@@ -153,7 +153,7 @@ describe("the status line", () => {
     // ring. The bound is deliberately loose — this is a guard against it becoming a panel, not
     // a pin on the font metrics.
     expect(height).toBeGreaterThan(8);
-    expect(height).toBeLessThanOrEqual(36);
+    expect(height).toBeLessThanOrEqual(34);
 
     // The panel group stops above it. A status line laid over the regions would leave the
     // group's bottom below the line's top, and the terminals' last row unreadable.

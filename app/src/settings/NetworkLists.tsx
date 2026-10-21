@@ -342,7 +342,8 @@ export function AddPort({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
           }
         />
       </label>{" "}
-      <Button isDisabled={busy || typed.trim() === ""} onPress={add}>
+      {/* An answer that grants (ADR 0097 §6). */}
+      <Button variant="grants" isDisabled={busy || typed.trim() === ""} onPress={add}>
         Allow port
       </Button>
       <p className="granted-note">

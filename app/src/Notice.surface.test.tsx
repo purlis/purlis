@@ -101,7 +101,8 @@ describe("a Notice's ways out", () => {
     );
     const undo = screen.getByRole("button", { name: "Undo" });
     expect(undo).toHaveAttribute("aria-busy", "true");
-    expect(drawnWith(undo, "opacity")).toBe("0.5");
+    expect(undo).toHaveAttribute("data-disabled", "true");
+    expect(drawnWith(undo, "color")).toBe("var(--text-faint)");
     expect(drawnWith(undo, "cursor")).toBe("progress");
   });
 

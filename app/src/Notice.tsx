@@ -70,7 +70,7 @@ export type NoticeAction = {
    *  writes the project's files (#826). Drawn, said as its tooltip, and `aria-disabled` as a
    *  busy one is, so the keyboard stays on it; a press sends nothing. */
   off?: string;
-  /** **An answer that grants** (an Allow, an Accept): drawn as `.ui-button-grants`, edged in
+  /** **An answer that grants** (an Allow, an Accept): drawn as the `grants` variant, edged in
    *  the accent and led by an open lock, beside Keep blocked and every other way out in the plain
    *  style, so the two are told apart at a glance in every theme with equal weight (ADR 0097
    *  §6). Only the look: its place, its words, its name and the keyboard's order are the

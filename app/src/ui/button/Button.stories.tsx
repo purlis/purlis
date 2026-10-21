@@ -240,6 +240,15 @@ export const Toggle: Story = {
   play: async ({ canvas, userEvent }) => {
     const toggle = canvas.getByRole("button", { name: "Wrap lines" });
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    // Pressed by the pointer it takes the focus (WebKit too) and draws no ring: the ring is the
+    // keyboard's (R162).
+    await userEvent.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-pressed", "true"));
+    await expect(toggle).toHaveFocus();
+    await expect(getComputedStyle(toggle).outlineStyle).toBe("none");
+    await userEvent.click(toggle);
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-pressed", "false"));
+    toggle.blur();
     await userEvent.tab();
     await expect(toggle).toHaveFocus();
     await userEvent.keyboard(" ");

@@ -125,7 +125,7 @@ interface Offer {
   readonly machine?: boolean;
   /**
    * **It grants**: an Allow, an Accept, a grant held wider or given back. Its button, and the
-   * confirming one, are `.ui-button-grants` with the open lock, as plain as the answers beside
+   * confirming one, are the `grants` variant with the open lock, as plain as the answers beside
    * them and told apart by the edge and the lock (ADR 0097 §6).
    */
   readonly grants?: boolean;

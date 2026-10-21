@@ -110,13 +110,19 @@ export interface ButtonProps
 }
 
 export interface ToggleButtonProps
-  extends Drawn, Omit<AriaToggleButtonProps, "className" | "style" | "children" | "render"> {
+  extends
+    Omit<Drawn, "variant">,
+    Omit<AriaToggleButtonProps, "className" | "style" | "children" | "render"> {
+  /** Not `grants`: an answer that grants is pressed once, never held pressed (ADR 0097 §6). */
+  variant?: Exclude<ButtonVariant, "grants">;
   children?: ReactNode;
 }
 
-export type IconButtonProps = Omit<ButtonProps, "children" | "icon"> & {
+export type IconButtonProps = Omit<ButtonProps, "children" | "icon" | "variant"> & {
   /** The icon, which is all the button shows. */
   icon: ReactNode;
+  /** Not `grants`: an answer that grants says its words beside its lock (ADR 0097 §6). */
+  variant?: Exclude<ButtonVariant, "grants">;
 } & ({ "aria-label": string } | { "aria-labelledby": string });
 
 /** The size a `ButtonRow` hands every button in it. */
@@ -244,9 +250,27 @@ function useDrawn(props: Drawn & { children?: ReactNode; isDisabled?: boolean },
     "data-size": size,
     "data-icon-only": iconOnly ? "" : undefined,
     // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-    render: (domProps: ComponentPropsWithRef<"button">) => (
-      <button {...domProps} tabIndex={domProps.tabIndex ?? 0} {...native} />
-    ),
+    render: (domProps: ComponentPropsWithRef<"button">) => {
+      // A button that says it is unavailable but keeps the focus (`aria-disabled`, #1700) is
+      // drawn and themed as disabled, and never as under the pointer or pressed: React Aria
+      // marks only `isDisabled` so.
+      const unavailable = String(domProps["aria-disabled"]) === "true";
+      const {
+        "data-hovered": hovered,
+        "data-pressed": pressed,
+        ...rest
+      } = domProps as ComponentPropsWithRef<"button"> & Record<`data-${string}`, unknown>;
+      return (
+        <button
+          {...rest}
+          data-hovered={unavailable ? undefined : (hovered as string | undefined)}
+          data-pressed={unavailable ? undefined : (pressed as string | undefined)}
+          data-disabled={unavailable ? "true" : (rest["data-disabled"] as string | undefined)}
+          tabIndex={domProps.tabIndex ?? 0}
+          {...native}
+        />
+      );
+    },
     children: content,
   };
 }

@@ -5,20 +5,26 @@
  * **The component layer's lint** (#2904, spec #2897, ADR 0104): a screen draws a control from
  * its family in `src/ui/<family>`, never by hand.
  *
- * - `purlis/button-family` (error, since the button family moved): no control outside
- *   `src/ui` wears the family's old classes (`ui-button`, `ui-button-primary`, …), whose look
- *   the family now draws from its wrapper's attributes. A screen gives a `Button` a place
- *   (`className` for margin, width, order), never a look.
- * - `purlis/unmigrated-control` (warning, until each family moves): a raw `<button>`,
- *   `<input>`, `<select>` or `<textarea>`, a `role="dialog"` and a native `title=` tooltip.
- *   Each family's ticket moves its call sites and turns its own case into an error.
+ * **One rule per family**, so each family's ticket turns its own rule into an error as it moves
+ * every call site (ADR 0104 §5-6):
+ *
+ * - `purlis/button-family` (error: the button family has moved): a raw `<button>` is a control
+ *   of another family that has not moved yet, said by its role or its class (`otherFamilies`,
+ *   set in `eslint.config.js`), or it is an error; and no control outside `src/ui` wears the
+ *   family's old classes (`ui-button`, `ui-button-primary`, `ui-button-row`, …), whose look the
+ *   family draws from its wrapper's attributes. A screen gives a `Button` a place (`className`
+ *   for margin, width, order), never a look.
+ * - `purlis/field-family` (warning until the field families move): a raw `<input>`, `<select>`
+ *   or `<textarea>`.
+ * - `purlis/dialog-family` (warning until the dialog family moves): a `role="dialog"`.
+ * - `purlis/tooltip-family` (warning until the tooltip family moves): a native `title=`.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
  */
 
-/** The button family's old styling classes: `ui-button` and every `ui-button-*` but the row. */
-const BUTTON_CLASS = /(?:^|\s)ui-button(?:-(?!row\b)[\w-]+)?(?=\s|$)/;
+/** The button family's old styling classes: `ui-button` and every `ui-button-*`. */
+const BUTTON_CLASS = /(?:^|\s)ui-button(?:-[\w-]+)?(?=\s|$)/;
 
 /** Every string a `className` value can hand on: literals, template text, branches, arrays. */
 function* classStrings(node) {
@@ -56,17 +62,45 @@ function* classStrings(node) {
   }
 }
 
+/** A JSX attribute of `node` by name. */
+const attributeOf = (node, name) =>
+  node.attributes.find((one) => one.type === "JSXAttribute" && one.name.name === name);
+
+/** The words every string of a `className` can hold. */
+const classWordsOf = (attribute) =>
+  [...classStrings(attribute?.value)].flatMap(([, text]) => text.split(/\s+/)).filter(Boolean);
+
+/** The button family's members, which hand a `title` on to their element as a native tooltip. */
+const BUTTONS = new Set(["Button", "IconButton", "ToggleButton"]);
+
 const buttonFamily = {
   meta: {
     type: "problem",
-    docs: { description: "A button is the shared Button family, never a hand-styled control" },
+    docs: { description: "A button is the shared Button family, never a hand-drawn control" },
     messages: {
       oldClass:
-        "`{{word}}` is the button family's old class: draw it as `<Button>`, `<IconButton>` or `<ToggleButton>` from `ui/button/Button` with a `variant` and a `size` (docs/ui-primitives.md).",
+        "`{{word}}` is the button family's old class: draw it as `<Button>`, `<IconButton>`, `<ToggleButton>` or `<ButtonRow>` from `ui/button/Button` with a `variant` and a `size` (docs/ui-primitives.md).",
+      raw: "A raw `<button>` is the button family's `<Button>`, `<IconButton>` or `<ToggleButton>` (`ui/button/Button`), unless it is another family's control: say which by its role or its family's class (`otherFamilies` in eslint.config.js).",
     },
-    schema: [],
+    schema: [
+      {
+        type: "object",
+        properties: {
+          otherFamilies: {
+            type: "object",
+            properties: {
+              roles: { type: "array", items: { type: "string" } },
+              classes: { type: "array", items: { type: "string" } },
+            },
+            additionalProperties: false,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
   },
   create(context) {
+    const { roles = [], classes = [] } = context.options[0]?.otherFamilies ?? {};
     return {
       JSXAttribute(node) {
         if (node.name.name !== "className") return;
@@ -76,53 +110,69 @@ const buttonFamily = {
             context.report({ node: at, messageId: "oldClass", data: { word: found[0].trim() } });
         }
       },
-    };
-  },
-};
-
-const RAW_CONTROLS = new Set(["button", "input", "select", "textarea"]);
-
-/** The button family's members, which hand a `title` on to their element as a native tooltip. */
-const BUTTONS = new Set(["Button", "IconButton", "ToggleButton"]);
-
-const unmigratedControl = {
-  meta: {
-    type: "suggestion",
-    docs: { description: "A control is drawn from its component family in src/ui" },
-    messages: {
-      raw: "A raw `<{{tag}}>`: draw it from its component family in `src/ui` once that family has moved (spec #2897).",
-      dialog:
-        '`role="dialog"`: draw it from the dialog family in `src/ui` once that family has moved (spec #2897).',
-      title:
-        "A native `title=` tooltip: the shared tooltip replaces it once that family has moved (spec #2897).",
-    },
-    schema: [],
-  },
-  create(context) {
-    return {
       JSXOpeningElement(node) {
-        if (node.name.type !== "JSXIdentifier") return;
-        const tag = node.name.name;
-        const intrinsic = /^[a-z]/.test(tag);
-        if (RAW_CONTROLS.has(tag)) context.report({ node, messageId: "raw", data: { tag } });
-        for (const attribute of node.attributes) {
-          if (attribute.type !== "JSXAttribute") continue;
-          const name = attribute.name.name;
-          if (
-            name === "role" &&
-            attribute.value?.type === "Literal" &&
-            attribute.value.value === "dialog"
-          )
-            context.report({ node: attribute, messageId: "dialog" });
-          if (name === "title" && (intrinsic || BUTTONS.has(tag)))
-            context.report({ node: attribute, messageId: "title" });
-        }
+        if (node.name.type !== "JSXIdentifier" || node.name.name !== "button") return;
+        const role = attributeOf(node, "role")?.value;
+        if (role?.type === "Literal" && roles.includes(role.value)) return;
+        if (classWordsOf(attributeOf(node, "className")).some((word) => classes.includes(word)))
+          return;
+        context.report({ node, messageId: "raw" });
       },
     };
   },
 };
 
+/** A rule that warns of one family's raw control until that family moves. */
+function unmoved({ description, message, test }) {
+  return {
+    meta: { type: "suggestion", docs: { description }, messages: { unmoved: message }, schema: [] },
+    create(context) {
+      return {
+        JSXOpeningElement(node) {
+          if (node.name.type !== "JSXIdentifier") return;
+          for (const at of test(node)) context.report({ node: at, messageId: "unmoved" });
+        },
+      };
+    },
+  };
+}
+
+const FIELDS = new Set(["input", "select", "textarea"]);
+
+const fieldFamily = unmoved({
+  description: "A field is drawn from its family in src/ui once the field families move",
+  message:
+    "A raw field: draw it from its component family in `src/ui` once that family has moved (spec #2897).",
+  test: (node) => (FIELDS.has(node.name.name) ? [node] : []),
+});
+
+const dialogFamily = unmoved({
+  description: "A dialog is drawn from the dialog family in src/ui once it moves",
+  message:
+    '`role="dialog"`: draw it from the dialog family in `src/ui` once that family has moved (spec #2897).',
+  test: (node) => {
+    const role = attributeOf(node, "role");
+    return role?.value?.type === "Literal" && role.value.value === "dialog" ? [role] : [];
+  },
+});
+
+const tooltipFamily = unmoved({
+  description: "A tooltip is the shared tooltip once that family moves",
+  message:
+    "A native `title=` tooltip: the shared tooltip replaces it once that family has moved (spec #2897).",
+  test: (node) => {
+    const tag = node.name.name;
+    const title = attributeOf(node, "title");
+    return title && (/^[a-z]/.test(tag) || BUTTONS.has(tag)) ? [title] : [];
+  },
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
-  rules: { "button-family": buttonFamily, "unmigrated-control": unmigratedControl },
+  rules: {
+    "button-family": buttonFamily,
+    "field-family": fieldFamily,
+    "dialog-family": dialogFamily,
+    "tooltip-family": tooltipFamily,
+  },
 };

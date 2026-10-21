@@ -502,7 +502,7 @@ export type WindowLines = {
 /**
  * **The asks whose answers are Allow and Keep blocked** (ADR 0097 §6): a permission prompt, a
  * sandbox's host, folder or local service, and a browser's sites. On these, each answer that
- * allows is drawn as `.ui-button-grants` and every other in the plain style: equal in weight,
+ * allows is drawn as the `grants` variant and every other in the plain style: equal in weight,
  * and told apart at a glance in every theme by the grant's edge and its open lock. A question's choices, a removal and a browser's reach are
  * answers of another kind and keep their own looks.
  */

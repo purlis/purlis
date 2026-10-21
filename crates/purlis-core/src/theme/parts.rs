@@ -122,8 +122,9 @@ impl State {
     /// The attribute React Aria sets on a part in this state, which the stylesheet keys on.
     pub fn attribute(self) -> &'static str {
         match self {
-            Self::Hover => "[data-hovered]",
-            Self::Pressed => "[data-pressed]",
+            // An unavailable button is never drawn under the pointer or pressed (#2904).
+            Self::Hover => "[data-hovered]:not([data-disabled])",
+            Self::Pressed => "[data-pressed]:not([data-disabled])",
             Self::Selected => "[data-selected]",
             Self::Focused => "[data-focus-visible]",
             Self::Disabled => "[data-disabled]",

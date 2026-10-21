@@ -548,7 +548,12 @@ export function Welcome({
           <ul className="recents">
             {planes.map((plane) => (
               <li key={plane.path}>
-                <button type="button" tabIndex={0} onClick={() => open(plane.path)}>
+                <button
+                  type="button"
+                  className="recent-project"
+                  tabIndex={0}
+                  onClick={() => open(plane.path)}
+                >
                   <span className="tab-name">{plane.name}</span>
                   <code className="where">{plane.path}</code>
                 </button>

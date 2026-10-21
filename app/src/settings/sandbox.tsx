@@ -573,7 +573,12 @@ function ExpectsHere({
       {left.items.length === 0 && said === undefined && <p>This machine allows all of it now.</p>}
       {left.locked !== null && <p>{left.locked}</p>}
       {said !== undefined && <p>{said}</p>}
-      {offered && <Button onPress={allow}>{ALLOW_EXPECTS}</Button>}
+      {offered && (
+        // An answer that grants, drawn as on the project's Notice (ADR 0097 §6).
+        <Button variant="grants" onPress={allow}>
+          {ALLOW_EXPECTS}
+        </Button>
+      )}
     </div>
   );
 }

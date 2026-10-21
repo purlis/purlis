@@ -6,5 +6,8 @@ import type { Rule } from "eslint";
 
 export const purlisUi: {
   meta: { name: string };
-  rules: Record<"button-family" | "unmigrated-control", Rule.RuleModule>;
+  rules: Record<
+    "button-family" | "field-family" | "dialog-family" | "tooltip-family",
+    Rule.RuleModule
+  >;
 };

@@ -72,7 +72,7 @@ describe("a workspace whose repos hold no agent instructions", () => {
 /**
  * **Add to memory carries no emphasis** (#2591, D-2591-1): it saves a repository's own text into
  * memory, so the press is a trust decision. It is drawn as plainly as Not now beside it, and,
- * being no grant, it is not `.ui-button-grants` either.
+ * being no grant, it is not the `grants` variant either.
  */
 describe("the answers under a repository's instruction files", () => {
   it("draws Add to memory and Not now with equal weight, in their order", async () => {

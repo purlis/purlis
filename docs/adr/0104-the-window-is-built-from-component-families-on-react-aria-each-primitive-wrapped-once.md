@@ -75,10 +75,18 @@ Allow, an Accept): it draws its own lock, keeps the accent edge, and never takes
 
 ### 5. Lint holds it
 
-`app/eslint.config.js` refuses the primitives library outside `app/src/ui`, and a moved family's
-old styling classes anywhere outside it (an error). A raw `<button>`, `<input>`, `<select>`,
-`<textarea>`, a `role="dialog"` and a native `title=` are warnings until their family moves; each
-family's ticket moves every call site and turns its own case into an error.
+`app/eslint.config.js` refuses the primitives library outside `app/src/ui` (an error). Each family
+has a lint rule of its own (`app/eslint.ui-rules.js`), a warning until the family moves and an
+error from the ticket that moves its last call site:
+
+- `purlis/button-family`, an error since #2904: a raw `<button>` is an error unless its role or
+  its class names a family that has not moved yet (a tab, a row, a menu's row, a segment, a
+  strip's mark, a title-bar chip, a status item, a card, the settings nav), and the old
+  `.ui-button*` classes are an error anywhere outside `app/src/ui`;
+- `purlis/field-family` (`<input>`, `<select>`, `<textarea>`), `purlis/dialog-family`
+  (`role="dialog"`) and `purlis/tooltip-family` (a native `title=`) are warnings.
+
+A family's ticket takes its own role and classes out of the button rule's list as it moves.
 
 ### 6. A family is done when it is proven
 

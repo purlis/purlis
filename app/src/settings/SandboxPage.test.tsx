@@ -503,6 +503,11 @@ describe("Settings › Project › Sandbox", () => {
     expect(here).toHaveTextContent("about the same as no sandbox");
     expect(here).toHaveTextContent("com.example.helper");
 
+    // The same answer as the project's Notice gives, in the same grant's look (ADR 0097 §6).
+    expect(within(here).getByRole("button", { name: "Allow on this machine" })).toHaveAttribute(
+      "data-variant",
+      "grants",
+    );
     await userEvent.click(within(here).getByRole("button", { name: "Allow on this machine" }));
 
     await waitFor(() =>

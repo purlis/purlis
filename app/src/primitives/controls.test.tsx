@@ -390,9 +390,7 @@ describe("the menu", () => {
   function Opener({ onGo }: { onGo: (to: string) => void }) {
     return (
       <Menu.Root modal={false}>
-        <Menu.Trigger className="ui-button ui-button-ghost" tabIndex={0}>
-          More
-        </Menu.Trigger>
+        <Menu.Trigger tabIndex={0}>More</Menu.Trigger>
         <Menu.Portal>
           <Menu.Content className="ui-menu more-menu" aria-label="More">
             <Menu.Item className="ui-menu-item" onSelect={() => onGo("rename")}>
@@ -457,9 +455,7 @@ describe("the menu", () => {
   function Noted() {
     return (
       <Menu.Root modal={false}>
-        <Menu.Trigger className="ui-button ui-button-ghost" tabIndex={0}>
-          More
-        </Menu.Trigger>
+        <Menu.Trigger tabIndex={0}>More</Menu.Trigger>
         <Menu.Portal>
           <Menu.Content className="ui-menu item-menu" aria-label="More">
             <Menu.Label className="ui-menu-label ui-text-label">This chat</Menu.Label>

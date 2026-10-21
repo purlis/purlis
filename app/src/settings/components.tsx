@@ -199,7 +199,9 @@ export function SettingsLayout({
               <RovingFocusGroup.Item key={one.id} asChild tabStopId={one.id}>
                 <button
                   type="button"
-                  className={one.sub ? "ui-settings-sub" : undefined}
+                  className={
+                    one.sub ? "ui-settings-nav-item ui-settings-sub" : "ui-settings-nav-item"
+                  }
                   aria-current={one.id === group ? "true" : undefined}
                   onClick={() => onGroupChange(one.id)}
                 >

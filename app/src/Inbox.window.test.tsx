@@ -568,6 +568,32 @@ describe("answering in place", () => {
     expect(within(recent).getByText("Allow for this chat")).toBeTruthy();
   });
 
+  it("holds a dispatch's Allow from the keyboard until the row settles, as from the pointer", async () => {
+    let held = [HELD];
+    const calls = core({
+      dispatch_grants_needed: () => held,
+      allow_dispatch: () => {
+        held = [];
+        return { said: "Allowed for this chat." };
+      },
+    });
+    render(<Inbox plane={PLANE} onGo={vi.fn()} onLeave={vi.fn()} asks={[DISPATCH]} />);
+    const inbox = screen.getByRole("region", { name: "Inbox" });
+    await within(inbox).findByText("Check why the prod deploy is red.");
+    const allow = within(inbox).getByRole("button", { name: "Allow for this chat" });
+    allow.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(" ");
+    expect(within(inbox).getByText(MOVED_JUST_NOW)).toBeTruthy();
+    expect(calls.filter((one) => one.cmd === "allow_dispatch")).toEqual([]);
+    read();
+    allow.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(calls.filter((one) => one.cmd === "allow_dispatch")).toHaveLength(1),
+    );
+  });
+
   it("gives a chat waiting on a reply a box, and sends what is typed as the person's message", async () => {
     const calls = core({ asks_waiting: { asks: [QUESTION] } });
     draw([QUESTION]);
@@ -871,6 +897,30 @@ describe("a Notice that grants something waits to settle (#1695)", () => {
     expect(within(notices).getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
     read();
     await userEvent.click(within(notices).getByRole("button", { name: "Allow devops's hosts" }));
+    expect(allowed).toHaveBeenCalledOnce();
+  });
+
+  it("holds a press from the keyboard as it holds one from the pointer", async () => {
+    core();
+    const allowed = vi.fn();
+    render(
+      <Inbox
+        plane={PLANE}
+        asks={[]}
+        onGo={vi.fn()}
+        onLeave={vi.fn()}
+        notices={granting(allowed)}
+      />,
+    );
+    const notices = screen.getByRole("region", { name: NOTICES });
+    const allow = within(notices).getByRole("button", { name: "Allow devops's hosts" });
+    allow.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(" ");
+    expect(allowed).not.toHaveBeenCalled();
+    expect(within(notices).getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    read();
+    await userEvent.keyboard("{Enter}");
     expect(allowed).toHaveBeenCalledOnce();
   });
 

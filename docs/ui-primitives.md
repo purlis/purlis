@@ -470,7 +470,9 @@ own `min-width: max-content` beside the class.
 **Every button, icon button and button drawn as a link is `Button`, `IconButton` or
 `ToggleButton`** (`app/src/ui/button/Button.tsx`, #2904, ADR 0104), on React Aria's `Button` and
 `ToggleButton`. No screen draws a `<button>` of its own for one, and none wears the old
-`.ui-button*` classes: `eslint.config.js` refuses them (`purlis/button-family`, an error).
+`.ui-button*` classes: `eslint.config.js` refuses both (`purlis/button-family`, an error). A raw
+`<button>` left is another family's control, said by its role or its family's class (the rule's
+`otherFamilies`).
 
 | Prop | Says |
 | --- | --- |
@@ -498,8 +500,11 @@ own `min-width: max-content` beside the class.
   changes a colour, a ground or a ring, never a size.
 - **The keyboard is React Aria's**: Tab reaches every button (the wrapper writes the `tabIndex`
   WebKit needs, #190), Enter and Space press it, the ring shows only from the keyboard, 2px in
-  `focus.ring` at 2px outside it (R162). A disabled button is out of the tab sequence; one that is
-  busy says `aria-busy` and stays reachable.
+  `focus.ring` at 2px outside it (R162), keyed on React Aria's `data-focus-visible` alone. A
+  disabled button is out of the tab sequence; one that is unavailable but keeps the focus
+  (`aria-disabled`, #1700) or busy (`aria-busy`) stays reachable. Both draw their words in the
+  faint tier, on their own ground and edge, and never as under the pointer or pressed: the
+  wrapper marks them `data-disabled`.
 - **Stories hold it** (`Button.stories.tsx`, `docs/component-stories.md`): each variant, size and
   state, Allow beside Keep blocked, a row of one size, the icon buttons and a toggle, each walked
   by the keyboard and checked by axe in Chromium and WebKit.

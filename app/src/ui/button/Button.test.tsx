@@ -243,21 +243,42 @@ describe("the family's look, from the tokens (button.css)", () => {
     expect(drawnWith(toggle, "background", { hover: true })).toBe("var(--tab-active)");
   });
 
-  it("dims what is unavailable or busy without changing its size", () => {
+  it("draws what is unavailable or busy in faint words, without changing its size", () => {
     render(
       <>
         <Button isDisabled>Off</Button>
-        <Button aria-disabled="true" aria-busy="true">
+        <Button variant="danger" aria-disabled="true" aria-busy="true">
           Busy
         </Button>
       </>,
     );
     const off = screen.getByRole("button", { name: "Off" });
     const busy = screen.getByRole("button", { name: "Busy" });
-    expect(drawnWith(off, "opacity")).toBe("0.5");
-    expect(drawnWith(busy, "opacity")).toBe("0.5");
+    expect(drawnWith(off, "color")).toBe("var(--text-faint)");
+    expect(drawnWith(busy, "color")).toBe("var(--text-faint)");
+    expect(drawnWith(off, "opacity")).toBeUndefined();
     expect(drawnWith(busy, "cursor")).toBe("progress");
     heldToTheTokens(off);
+    heldToTheTokens(busy);
+  });
+
+  it("marks a button that keeps the focus while unavailable as disabled, never hovered or pressed", async () => {
+    const pressed = vi.fn();
+    render(
+      <Button aria-disabled="true" onPress={pressed}>
+        Allow
+      </Button>,
+    );
+    const allow = screen.getByRole("button", { name: "Allow" });
+    expect(allow).toHaveAttribute("data-disabled", "true");
+    // Still a Tab stop (#1700), so the keyboard is not dropped to the page.
+    expect(allow).toHaveAttribute("tabindex", "0");
+    await userEvent.hover(allow);
+    expect(allow).not.toHaveAttribute("data-hovered");
+    fireEvent.pointerDown(allow, { pointerId: 1, button: 0 });
+    expect(allow).not.toHaveAttribute("data-pressed");
+    // Its ground under the pointer is its ground at rest.
+    expect(drawnWith(allow, "background", { hover: true })).toBe("var(--control-base)");
   });
 });
 
