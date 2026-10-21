@@ -798,7 +798,9 @@ fn a_fetch_made_as_a_bundle_is_read_reaches_no_transport_but_a_file() {
             url,
             "refs/heads/main:refs/heads/elsewhere",
         ]);
-        let ran = run(&world.desktop, &args).unwrap();
+        // Through purlis's network entry, as a fetch that names another repository is run: git
+        // itself refuses every transport but the file one a bundle is read through.
+        let ran = git::run_network(&world.desktop, None, &args).unwrap();
         assert!(!ran.ok(), "{url} was reached: {ran:?}");
         assert!(ran.err.contains("not allowed"), "{url}: {}", ran.err);
     }
