@@ -1,0 +1,212 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: stories-baselines
+
+# **The only way a story's baseline changes** (#2901, `docs/component-stories.md`): the
+# `update-baselines` label on a pull request. `fresh` refuses a branch behind its base; `draw`
+# runs every story in the pinned image `stories.yml` compares in, writing the pictures that are
+# new or differ; `commit` pushes them to the pull request's branch as one commit, so the pictures
+# show in its diff, takes the label off and starts `stories.yml` on that commit.
+#
+# **Up to date with its base, so every run tests one tree.** A pull request's `stories` run tests
+# the branch merged into its base; `draw`, and the run `commit` starts, test the branch. On a
+# branch its base is an ancestor of, the two are the same tree, so a picture drawn here is the
+# picture the pull request's own run compares with.
+#
+# **Only code from the base branch runs while a token can push.** `draw` runs the pull request's
+# code, with a read-only token. `commit` runs the baseline tool from a checkout of the base, and
+# takes from `draw`'s pictures only whole PNG baselines within its limits, written nowhere but
+# under the pull request's `app/src` (`tools/story-baselines.mjs take`). The pull request's
+# checkout keeps no credentials; the token is handed to git for the push alone. A pull request
+# from a fork gets no token that can push, so `commit` says so and stops.
+#
+# The `pull_request` runs a push made with the workflow's own token starts wait for a maintainer
+# to approve them, so the rest of the pull request's checks run once approved, or on its next push
+# (or `gh pr update-branch`).
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+# At job level, which a job skipped by its `if:` never enters: another label put on the pull
+# request starts a run that skips every job, and so never displaces a pending baseline run.
+jobs:
+  fresh:
+    name: baselines (the branch is up to date with its base)
+    if: github.event.label.name == 'update-baselines'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: stories-baselines-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Nothing on the base the branch does not have
+        run: |
+          behind=$(gh api "repos/$GH_REPO/compare/$BASE_REF...$HEAD_SHA" --jq .behind_by)
+          if [ "$behind" != "0" ]; then
+            echo "::error::the branch is $behind commits behind $BASE_REF: update the branch (gh pr update-branch), then put the label on again"
+            exit 1
+          fi
+
+  draw:
+    name: baselines (draw in the pinned image)
+    needs: fresh
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: stories-baselines-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    container:
+      # The same image as `stories.yml`'s, by the same tag.
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --init --ipc=host
+    env:
+      PLAYWRIGHT_IMAGE: "1.64.1"
+      PURLIS_STORY_PICTURES: "1"
+      HOME: /root
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: The image is the Playwright the lockfile names
+        run: |
+          locked=$(node -p 'require("playwright/package.json").version')
+          if [ "$locked" != "$PLAYWRIGHT_IMAGE" ]; then
+            echo "::error::app/package-lock.json locks Playwright $locked, and the stories image is $PLAYWRIGHT_IMAGE: move both workflows' image to v$locked-noble"
+            exit 1
+          fi
+      # Every story must still pass its keyboard test and axe: a baseline is drawn only of a
+      # story that passes everything else.
+      - name: The stories, writing each picture that is new or differs
+        run: npm run test:stories -- --update
+      - name: The baselines, gathered
+        run: node ../tools/story-baselines.mjs gather "$RUNNER_TEMP/baselines"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: story-baselines
+          path: ${{ runner.temp }}/baselines/
+          if-no-files-found: error
+          retention-days: 1
+
+  commit:
+    name: baselines (commit to the pull request)
+    needs: draw
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: stories-baselines-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - name: A pull request from this repository
+        if: env.SAME_REPO != 'true'
+        run: |
+          echo "::error::the pull request comes from a fork, whose branch this job cannot push to: a maintainer draws its baselines on a branch of this repository"
+          exit 1
+      # The tool that decides what is taken, from the base branch: nothing the pull request
+      # changed runs in this job.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          sparse-checkout: tools/story-baselines.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          path: pr
+          persist-credentials: false
+      - name: The branch is where it was labelled
+        working-directory: pr
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+            echo "::error::the branch moved after the label was put on; put it on again"
+            exit 1
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: story-baselines
+          path: ${{ runner.temp }}/drawn
+      - name: The baselines, taken
+        run: node trusted/tools/story-baselines.mjs take "$RUNNER_TEMP/drawn" pr/app
+      - name: The baselines, committed and pushed
+        id: taken
+        working-directory: pr
+        env:
+          TOKEN: ${{ github.token }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          git add -A -- app/src
+          changed=$(git diff --cached --name-only)
+          if [ -z "$changed" ]; then
+            echo "changed=" >> "$GITHUB_OUTPUT"
+            echo "every baseline already matches what the pinned image draws"
+            exit 0
+          fi
+          git commit -q -m "stories: baselines drawn in the pinned image" \
+            -m "By the update-baselines label (.github/workflows/stories-baselines.yml)."
+          # The token reaches git for this one command, never the checkout's config.
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push origin "HEAD:refs/heads/$HEAD_REF"
+          {
+            echo "changed<<EOF"
+            echo "$changed"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: The stories, started on the new commit
+        if: steps.taken.outputs.changed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run stories.yml --ref "$HEAD_REF"
+      - name: The label, taken off, and what changed said
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGED: ${{ steps.taken.outputs.changed }}
+        run: |
+          gh pr edit "$PR" --remove-label update-baselines || true
+          if [ -n "$CHANGED" ]; then
+            {
+              echo "The pinned image drew these baselines anew; the pictures are in this pull request's diff:"
+              echo
+              # A baseline's path has no space in it (tools/story-baselines.mjs).
+              for path in $CHANGED; do echo "- \`$path\`"; done
+              echo
+              echo "The \`stories\` check runs on the new commit now. Its other checks wait for a maintainer to approve them, or run on the branch's next push."
+            } > "$RUNNER_TEMP/comment.md"
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/comment.md"
+          fi
