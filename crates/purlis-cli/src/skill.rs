@@ -73,6 +73,7 @@ pub enum SkillCommand {
         /// The workspace whose local skill to share (default: the project's root).
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
+    },
     /// Every skill run the project's skill log holds, newest first, with its signals (tool
     /// calls, tool errors, refusals, asks, tokens, time): never a pass or a fail. With a name,
     /// that skill's runs alone.
