@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792611183992,
+  "lastUpdate": 1792612768820,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20958,6 +20958,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9419145,
             "unit": "ms",
             "extra": "median of 5 runs: 100.963, 101.385, 101.942, 102.075, 102.454 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "978d48fef031c09f8997728b161f13626b7c6070",
+          "message": "Runners: a draining runner's chats stay reachable, and it starts no new one (#2865) (#2888)\n\n* Runners: a draining runner's chats stay reachable, and it starts no new one\n\nrelay_to reaches a pool's draining runner as <pool>/<runner> while it is\nkept draining (runners::reachable); the pool's name still reaches its\nrunner of the desktop's version. The desktop's host refuses\nstart_program on a link relayed to a draining runner (DrainsTo,\nHosting::draining_with), and everything else on the link reaches it.\nEach look counts the chats a draining runner still keeps, and the Pools\ngroup says how many, so an idle chat holds a drain only while the\nperson keeps it.\n\nADR 0078 amended 2026-10-21 for #2865.\n\nRefs #2865\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: whether a runner drains is asked at each start, off the runtime\n\nThe relay lookup names the runner it reached as <pool>/<runner>, and\nRouted asks DrainsTo for it at each start_program, off the runtime, so\na link relayed by its pool's name before a follow drains with its\nrunner. A removed pool's waiting counts are let go of.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a start is refused unless its runner is kept and not draining\n\nDrainsTo fails closed: a runners file that cannot be read, a runner not\nkept, a name of another shape and a runner that drains all refuse a\nstart; only a kept runner that is not draining takes one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\nAssisted-by: claude-code\n\n* Runners: the release-image fixtures carry how many chats still wait\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T23:57:43+04:00",
+          "tree_id": "9d59473be778156a23398371224601f1cebab2e2",
+          "url": "https://github.com/purlis/purlis/commit/978d48fef031c09f8997728b161f13626b7c6070"
+        },
+        "date": 1792612765822,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6320250000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.600, 0.618, 0.632, 0.640, 0.640 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.580739,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.439, 16.580, 16.581, 16.630, 16.768 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.62051349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.216, 102.379, 102.621, 102.819, 102.840 ms"
           }
         ]
       }
