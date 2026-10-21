@@ -16,7 +16,7 @@ publish = false
 # (`tests/the_host_links_no_git_http_or_keyring_code.rs`).
 [dependencies]
 thiserror.workspace = true
-tokio = { version = "1", features = ["io-std", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
 
 [target."cfg(unix)".dependencies]
 purlis-session-protocol = { path = "../session-protocol" }
@@ -39,6 +39,8 @@ serde.workspace = true
 # `O_NOFOLLOW` for the host's lock and its host record, and the signal that ends what a host
 # left running (#2007): the version purlis-same-user already links.
 nix = { version = "0.31", default-features = false, features = ["fs", "signal"] }
+# Where a bundle of code is kept while it crosses the link (#2046), removed with it.
+tempfile.workspace = true
 
 [features]
 # `standin`: a program that stands in for a terminal's, for tests of what drives the host.
