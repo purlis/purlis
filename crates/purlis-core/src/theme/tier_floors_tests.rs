@@ -275,3 +275,95 @@ fn the_check_says_the_fallback_in_words() {
         "{lines:#?}"
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// Where no lightness clears every ground
+// ---------------------------------------------------------------------------------------
+
+/// Purlis Classic dark with a light code ground: no grey clears both it and the dark surfaces.
+fn light_code_ground() -> ResolvedTheme {
+    dark(json!({ "terminal.background": "#f4f4f0" }))
+}
+
+#[test]
+fn a_tier_that_clears_the_window_s_own_surfaces_keeps_its_colour() {
+    let theme = light_code_ground();
+    let window = drawn(&theme);
+    for tier in ["text.primary", "text.secondary", "text.muted", "text.quiet"] {
+        assert_eq!(window.value(tier), theme.value(tier), "{tier}");
+    }
+    // A mark's floor has a grey that clears both sides, so faint is walked to it.
+    assert!(least_on_grounds(&window, "text.faint") >= 3.0);
+}
+
+#[test]
+fn the_tiers_stay_apart_on_a_theme_with_a_ground_on_the_other_side() {
+    let window = drawn(&light_code_ground());
+    let on_window = |tier: &str| contrast(window.value(tier), window.value("surface.base"));
+    assert!(on_window("text.primary") > on_window("text.muted") + 2.0);
+}
+
+#[test]
+fn a_tier_off_the_window_s_own_surfaces_is_walked_on_them_only() {
+    // Quiet under its floor on the row under the pointer, and a light code ground no grey clears
+    // with the dark surfaces: quiet is lifted on the dark surfaces, and the code ground is named.
+    let theme = dark(json!({
+        "terminal.background": "#f4f4f0",
+        "surface.hover": "#2a2a31",
+        "text.quiet": "#8a8896",
+    }));
+    let window = drawn(&theme);
+    let quiet = window.value("text.quiet");
+    assert_ne!(quiet, "#8a8896");
+    let dark_grounds: Vec<&str> = TIER_GROUNDS
+        .into_iter()
+        .filter(|ground| *ground != "terminal.background")
+        .collect();
+    let least = dark_grounds
+        .iter()
+        .map(|ground| contrast(quiet, window.value(ground)))
+        .fold(f64::INFINITY, f64::min);
+    assert!(least >= 4.5, "{quiet}: {least}");
+    // Never the mid grey that would read worse on the window.
+    assert!(
+        contrast(quiet, window.value("surface.base"))
+            >= contrast("#8a8896", window.value("surface.base"))
+    );
+}
+
+#[test]
+fn the_check_names_the_ground_off_the_window_s_own_surfaces() {
+    let theme = light_code_ground();
+    let named: Vec<(&str, &str, bool)> = check(&theme)
+        .findings
+        .iter()
+        .filter_map(|one| match one {
+            Finding::TierFallsBack {
+                tier,
+                ground,
+                clears,
+                ..
+            } => Some((*tier, *ground, *clears)),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        named.contains(&("text.quiet", "terminal.background", false)),
+        "{named:?}"
+    );
+    let resolved = load(&json!({
+        "name": "Probe",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
+            "terminal.background": "#f4f4f0"
+        } }]
+    }))
+    .theme;
+    let lines = warnings::said(&resolved, &check_every(&resolved));
+    assert!(
+        lines.iter().any(|line| line.starts_with(
+            "text.quiet is drawn as written: no colour clears every ground, so purlis holds it \
+             on the window's own surfaces; it is"
+        ) && line.contains("on terminal.background")),
+        "{lines:#?}"
+    );
+}

@@ -354,7 +354,10 @@ under the pointer. **No theme draws a tier under its floor** (ruling #2803·3, A
 amendment of 2026-10-21): a tier that falls under it on one of those grounds, as written or in a
 workspace tint, is drawn as the nearest colour that clears it, the theme's own colour walked
 along its lightness with its hue kept, and the check says so as a `tier-falls-back` warning
-beside the pair's own. **A tier the layer below draws in the grey of the tier above it follows
+beside the pair's own. A lifted tier can read as loud as the tier above it: the floor comes
+before the order. Where no lightness clears every ground (a dark window with a light code
+ground), the floor is held on the window's own surfaces, a tier that already clears them keeps
+its colour, and the check names the ground on the other side. **A tier the layer below draws in the grey of the tier above it follows
 that tier** (ADR 0097's amendment of 2026-10-21): over Purlis Classic, whose quiet and faint are
 its muted, a theme that names `text.muted` and not `text.quiet` draws quiet in its muted, and one
 that names no `text.faint` draws faint in its quiet. So a theme written before the tiers draws

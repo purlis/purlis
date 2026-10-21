@@ -200,21 +200,31 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 floor,
                 tinted,
                 clears,
-            } => (
-                format!(
-                    "{tier} is drawn as {drawn}, not {written}: {ratio:.2} on {ground}{}, \
-                     under {floor}{}",
-                    if *tinted { " in a workspace tint" } else { "" },
+            } => {
+                let tint = if *tinted { " in a workspace tint" } else { "" };
+                let as_drawn = if drawn == written {
+                    format!("{tier} is drawn as written")
+                } else {
+                    format!("{tier} is drawn as {drawn}, not {written}")
+                };
+                (
                     if *clears {
-                        ", so purlis draws the nearest colour that clears it"
+                        format!(
+                            "{as_drawn}: {ratio:.2} on {ground}{tint}, under {floor}, so purlis \
+                             draws the nearest colour that clears it"
+                        )
                     } else {
-                        "; no lightness clears every ground, so purlis draws the nearest"
-                    }
-                ),
-                None,
-                None,
-                None,
-            ),
+                        format!(
+                            "{as_drawn}: no colour clears every ground, so purlis holds it on the \
+                             window's own surfaces; it is {ratio:.2} on {ground}{tint}, under \
+                             {floor}"
+                        )
+                    },
+                    None,
+                    None,
+                    None,
+                )
+            }
         };
         let at = match found
             .iter()
