@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792551675459,
+  "lastUpdate": 1792554692603,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20034,6 +20034,48 @@ window.BENCHMARK_DATA = {
             "value": 101.189629,
             "unit": "ms",
             "extra": "median of 5 runs: 100.868, 100.905, 101.190, 102.123, 104.295 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "43d59b96b83845c0652eacf31ea8b0b1c10b4200",
+          "message": "Runners: a project a re-link could not hold is marked on its pool's row (#2870)\n\nWhere the runner refuses to hold a project again after not_held, a\nrefusal that carries NOT_HELD, the window keeps it with the runner's\nwords as plain text, at most 300 characters (notheld,\nasknotify::plain_within), until a hold of it is taken, and tells the\nwindow each time that changes (projects_not_held, the\nprojects-not-held event). The Pools group draws a Notice on the row of\nthe pool the project's chats run on, by this machine's chatsRunOn, with\nthe runner's words in <bdi> and Dismiss. The mark goes once the\nproject is forgotten, its pool is removed or it runs its chats on no\npool.\n\nADR 0078 amended 2026-10-21 for #2846.\n\nCloses #2846\n\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T07:49:48+04:00",
+          "tree_id": "35fea6e048ea114c44cce69e3ca2925f89793b88",
+          "url": "https://github.com/purlis/purlis/commit/43d59b96b83845c0652eacf31ea8b0b1c10b4200"
+        },
+        "date": 1792554690883,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5228349999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.517, 0.523, 0.525, 0.528 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.569530999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.266, 16.338, 16.570, 16.891, 17.526 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3721,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.252, 102.287, 102.372, 102.611, 104.098 ms"
           }
         ]
       }
