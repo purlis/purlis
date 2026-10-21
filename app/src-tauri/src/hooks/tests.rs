@@ -523,6 +523,7 @@ fn every_hook_call_the_channel_hears_is_one_event_in_the_hosts_log() {
             hook_ms: 1,
             agent: None,
             at_ms: 0,
+            skill: None,
         },
     )
     .expect("told");
@@ -1695,6 +1696,7 @@ fn a_touched_path_reaches_the_window_and_no_file_the_host_writes() {
             hook_ms: 1,
             agent: None,
             at_ms: 0,
+            skill: None,
         },
     )
     .expect("told");
@@ -1944,6 +1946,7 @@ fn a_chat_refused_an_update_of_the_root_asks_the_person_for_one() {
         hook_ms: 1,
         agent: None,
         at_ms: 0,
+        skill: None,
     };
     let deliver = |call: &purlis_core::hookwire::ToolCall| {
         purlis_core::hookwire::deliver_tool(
@@ -2120,6 +2123,7 @@ fn a_line_spooled_while_no_host_listened_is_recorded_when_the_project_is_opened_
         hook_ms: 1,
         agent: None,
         at_ms: 0,
+        skill: None,
     };
     // The app issued chat 7 its token and quit; the chat's hook spooled its call.
     {
@@ -2172,6 +2176,7 @@ fn a_closed_chats_spool_is_drained_into_the_log_and_its_key_does_not_outlive_it(
         hook_ms: 1,
         agent: None,
         at_ms: 0,
+        skill: None,
     };
     let hooks =
         Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
@@ -2251,6 +2256,7 @@ fn an_open_with_no_event_log_drops_an_ended_chats_key_unless_its_line_waits() {
         hook_ms: 1,
         agent: None,
         at_ms: 0,
+        skill: None,
     };
     spool::append(&spooling, 8, &waiting, &call).expect("spooled");
 
@@ -2287,6 +2293,7 @@ fn a_running_chats_spooled_line_is_recorded_once_the_chat_is_heard_from_again() 
         hook_ms: 1,
         agent: None,
         at_ms: 0,
+        skill: None,
     };
     let hooks =
         Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");

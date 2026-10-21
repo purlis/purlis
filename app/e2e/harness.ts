@@ -377,6 +377,20 @@ export function singleQuoted(text: string): string {
  */
 export const ASKS_A_PERMISSION = join(THE_RUNS_TREE, "asks-a-permission");
 
+/**
+ * **While this file is in the run's tree, the reporting harness uses a skill and holds its turn**
+ * (SK-3, #2766). It behaves as the Codex it is declared as: a Codex chat is briefed on its skills
+ * (`PURLIS_SKILLS_DIR`) and starts one by reading its `SKILL.md`, so after its output it runs the
+ * block word Codex runs after a shell command, for a `cat` of {@link USED_SKILL}'s `SKILL.md`,
+ * through the real binary. The window opens a skill run on the chat's tab, and since the harness
+ * does not say its turn ended, the run stays open until the chat ends. A spec writes the file
+ * before it starts its chat and removes it after.
+ */
+export const USES_A_SKILL = join(THE_RUNS_TREE, "uses-a-skill");
+
+/** The built-in skill the reporting harness reads while {@link USES_A_SKILL} is there. */
+export const USED_SKILL = "secrets";
+
 /** What the reporting harness says once the window allowed its permission ask. */
 export const INBOX_ALLOWED = "carried on: the window allowed it";
 
@@ -424,13 +438,35 @@ export function writeReportingShell(fakeHarness: string, charter: string): strin
       // The permission ask, only while a spec asks for it (`ASKS_A_PERMISSION`): Codex's hook
       // payload, the decision the hook prints, and the line that says the chat went on.
       `  --hook ${singleQuoted(permissionHook(charter))} \\`,
-      `  --hook ${JSON.stringify(`${charter} hook stop </dev/null`)} \\`,
+      `  --hook ${singleQuoted(skillHook(charter))} \\`,
+      `  --hook ${singleQuoted(`[ -f ${singleQuoted(USES_A_SKILL)} ] || ${singleQuoted(charter)} hook stop </dev/null`)} \\`,
       "  --interactive",
       "",
     ].join("\n"),
   );
   chmodSync(shell, 0o755);
   return shell;
+}
+
+/**
+ * The reporting harness's skill hook: nothing unless {@link USES_A_SKILL} is there, and then the
+ * end of one shell command that reads {@link USED_SKILL}'s `SKILL.md` from the directory the
+ * chat was briefed on, as Codex's `PostToolUse` says it.
+ */
+function skillHook(charter: string): string {
+  const payload = JSON.stringify({
+    session_id: "scenario",
+    hook_event_name: "PostToolUse",
+    tool_name: "Bash",
+    tool_use_id: "call_e2e_skill",
+    tool_input: { command: `cat %s/${USED_SKILL}/SKILL.md` },
+    tool_response: "",
+  });
+  return [
+    `if [ -f ${singleQuoted(USES_A_SKILL)} ]; then`,
+    `  printf ${singleQuoted(payload)} "$PURLIS_SKILLS_DIR" | ${singleQuoted(charter)} hook posttooluse-blocked`,
+    "fi",
+  ].join("\n");
 }
 
 /**

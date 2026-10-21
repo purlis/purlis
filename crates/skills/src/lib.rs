@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 
 mod grant;
 mod read;
+pub mod runs;
 mod share;
 
 pub use grant::{Grant, grant_of, set_grant};

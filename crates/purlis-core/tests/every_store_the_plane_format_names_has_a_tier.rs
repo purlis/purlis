@@ -617,6 +617,7 @@ fn a_chat_touches_a_file(run: &Path) {
         hook_ms: 1,
         agent: None,
         at_ms: 0,
+        skill: None,
     };
     let touching = Touching {
         chat: 2,

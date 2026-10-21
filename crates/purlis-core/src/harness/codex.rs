@@ -4,7 +4,7 @@
 //! Codex's adapter (ADR 0073, FD-13): charter's hooks, armed on one session by Codex's own
 //! `-c hooks.<Event>=…` flags.
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox};
+use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
@@ -150,6 +150,17 @@ impl HarnessAdapter for Codex {
 
     fn guard_label(&self) -> &'static str {
         "codex"
+    }
+
+    /// Codex has no Skill tool: a chat briefed on its skills starts one by reading its
+    /// `SKILL.md`, in a shell command that only reads (decision 9;
+    /// [`purlis_skills::runs::is_a_plain_read`]). Its shell is `Bash` to a hook.
+    fn skill_start(&self, tool: &str, input: &serde_json::Value) -> Option<SkillStart> {
+        let command = (tool == "Bash")
+            .then(|| input_text(input, "command"))
+            .flatten()?;
+        purlis_skills::runs::is_a_plain_read(command)
+            .then(|| SkillStart::Reading(command.to_owned()))
     }
 
     /// None: Codex has no command-pattern permissions, so a rule has no file to go into, and

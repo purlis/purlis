@@ -1,9 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A chat's browser, end to end on a real engine** (#2243, spec #2008): every hop at once,
-//! as the person runs it. Each hop has its own tests against a stand-in for the next; here
-//! none is stood in for.
+//! **A chat's browser, end to end on a real engine** (#2243, #2294, spec #2008): every hop at
+//! once, as the person runs it, the person taking the browser over included. Each hop has its
+//! own tests against a stand-in for the next; here none is stood in for.
 //!
 //! - **The chat** is the repo's fake harness, run in a real `purlis serve` as the window runs
 //!   its chats there by default ([`crate::hostedsessions::chats_in_the_host`]). It starts
@@ -320,6 +320,9 @@ impl Drop for Host {
 pub(crate) struct Window {
     pub(crate) planes: Planes,
     pub(crate) held: Arc<Held>,
+    pub(crate) browsers: Arc<WindowBrowsers>,
+    /// The chats' browsers as the window drives them, with how many acts are in flight.
+    pub(crate) acting: Arc<Acting>,
     pub(crate) root: PathBuf,
     /// Ended after the planes let go, before the folders it serves from go.
     pub(crate) host: Host,
@@ -376,17 +379,23 @@ impl Window {
 
         let host = host();
         let browsers = Arc::new(WindowBrowsers::new(host.session.connection()));
+        let acting = Arc::new(Acting {
+            browsers: Arc::clone(&browsers),
+            in_flight: std::sync::atomic::AtomicUsize::new(0),
+        });
         let planes = crate::hostedsessions::chats_in_the_host(
             Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None),
             &host.session.connection(),
         )
-        .driving_browsers_with(Arc::clone(&browsers) as Arc<dyn crate::chatbrowsers::Driver>);
+        .driving_browsers_with(Arc::clone(&acting) as Arc<dyn crate::chatbrowsers::Driver>);
         let held = planes
             .held(&planes.open(&root))
             .expect("the project is held");
         Window {
             planes,
             held,
+            browsers,
+            acting,
             root,
             host,
             _project: project,
@@ -485,6 +494,65 @@ impl Window {
     }
 }
 
+/// **The window's browsers, as its chats drive them**, counting the acts in flight: what a test
+/// waits on to take a browser over while a call of the agent's runs.
+pub(crate) struct Acting {
+    browsers: Arc<WindowBrowsers>,
+    in_flight: std::sync::atomic::AtomicUsize,
+}
+
+impl Acting {
+    /// How many acts of the chats' are being carried out now.
+    pub(crate) fn in_flight(&self) -> usize {
+        self.in_flight.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl crate::chatbrowsers::Driver for Acting {
+    fn start(
+        &self,
+        root: &Path,
+        reach: purlis_session_protocol::browsing::BrowserReach,
+        kept: Option<purlis_session_protocol::browsing::KeptLogin>,
+    ) -> Result<String, crate::chatbrowsers::NotStarted> {
+        self.browsers.start(root, reach, kept)
+    }
+
+    fn act(
+        &self,
+        program: &str,
+        call_id: &str,
+        act: purlis_session_protocol::browsing::Act,
+        reach: purlis_session_protocol::browsing::BrowserReach,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::chatbrowsers::Refused> {
+        use std::sync::atomic::Ordering;
+        self.in_flight.fetch_add(1, Ordering::SeqCst);
+        let acted = self.browsers.act(program, call_id, act, reach);
+        self.in_flight.fetch_sub(1, Ordering::SeqCst);
+        acted
+    }
+
+    fn log_in(
+        &self,
+        program: &str,
+        login: purlis_session_protocol::browsing::LogIn,
+    ) -> Result<purlis_session_protocol::browsing::Browsed, crate::chatbrowsers::Refused> {
+        self.browsers.log_in(program, login)
+    }
+
+    fn close(&self, program: &str) -> Result<(), String> {
+        self.browsers.close(program)
+    }
+
+    fn stop(&self, program: &str) -> Result<(), String> {
+        self.browsers.stop(program)
+    }
+
+    fn driven(&self) -> Result<Vec<String>, String> {
+        self.browsers.driven()
+    }
+}
+
 impl Drop for Window {
     fn drop(&mut self) {
         self.planes.let_go_of_all();
@@ -531,9 +599,20 @@ impl Tools {
     }
 
     fn request(&mut self, method: &str, params: Value) -> Value {
+        let id = self.ask(method, params);
+        self.answer_to(id)
+    }
+
+    /// Sends a request and answers its id, without waiting for its answer.
+    fn ask(&mut self, method: &str, params: Value) -> u64 {
         let id = self.next;
         self.next += 1;
         self.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }));
+        id
+    }
+
+    /// The answer to request `id`.
+    fn answer_to(&mut self, id: u64) -> Value {
         loop {
             let mut line = String::new();
             let read = self
@@ -565,10 +644,21 @@ impl Tools {
 
     /// Calls tool `name` with `arguments`, as the model does.
     pub(crate) fn call(&mut self, name: &str, arguments: Value) -> Said {
-        let answer = self.request(
+        let id = self.start(name, arguments);
+        self.answered(name, id)
+    }
+
+    /// Calls tool `name` with `arguments` and leaves it in flight: its call's id.
+    pub(crate) fn start(&mut self, name: &str, arguments: Value) -> u64 {
+        self.ask(
             "tools/call",
             json!({ "name": name, "arguments": arguments }),
-        );
+        )
+    }
+
+    /// What the call of tool `name` with id `id` answered.
+    pub(crate) fn answered(&mut self, name: &str, id: u64) -> Said {
+        let answer = self.answer_to(id);
         let result = answer
             .get("result")
             .unwrap_or_else(|| panic!("{name} was not answered: {answer}"));
@@ -626,6 +716,15 @@ pub(crate) fn red_pixels(png_bytes: &[u8]) -> usize {
         .chunks(channels)
         .filter(|pixel| pixel.len() >= 3 && pixel[0] > 200 && pixel[1] < 60 && pixel[2] < 60)
         .count()
+}
+
+/// Waits until `done`, at most [`PATIENCE`].
+pub(crate) fn until(what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + PATIENCE;
+    while !done() {
+        assert!(Instant::now() < deadline, "{what} never happened");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 /// Whether `bytes` are a PNG.
@@ -959,4 +1058,266 @@ fn the_engines_sandbox_and_this_machines_chrome_in_homes_of_their_own() {
     window.opens(&mut tools, &site.at("counter.html"));
     let read = tools.done("browser_snapshot", json!({}));
     assert!(read.text.contains("Count: 0"), "{}", read.text);
+}
+
+// ---- #2294: the person takes the browser over, end to end ----
+
+/// What the person typed, letters alone, in words no page or answer says by itself.
+const THEIR_NAME: &str = "zqvname";
+const THEIR_PASSWORD: &str = "zqvpass";
+const THEIR_ECHO: &str = "zqvecho";
+
+/// The person's view of a chat's browser, as the window draws it: what its latest frame said it
+/// shows (`p1:5`, its page and document), which their input names back.
+pub(crate) struct Watching {
+    latest: Arc<Mutex<Option<String>>>,
+}
+
+impl Watching {
+    pub(crate) fn of(window: &Window, program: &str) -> Watching {
+        let latest: Arc<Mutex<Option<String>>> = Arc::default();
+        let drawn = Arc::clone(&latest);
+        window
+            .browsers
+            .watch(
+                program,
+                crate::browsers::BrowserViewRole::Focused,
+                Box::new(move |aim, _image| {
+                    if aim.is_some() {
+                        *drawn.lock().unwrap_or_else(PoisonError::into_inner) = aim;
+                    }
+                }),
+                Arc::new(|_| {}),
+            )
+            .expect("the person watches the browser");
+        let watching = Watching { latest };
+        watching.aim_other_than(None);
+        watching
+    }
+
+    /// What the latest frame shows, once it is not `than`.
+    pub(crate) fn aim_other_than(&self, than: Option<&str>) -> String {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            let latest = self
+                .latest
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            if let Some(aim) = latest.filter(|aim| Some(aim.as_str()) != than) {
+                return aim;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "no frame shows anything but {than:?}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+/// The person presses and lets go of `key`, aimed at `aim`: what became of each.
+pub(crate) fn press(
+    window: &Window,
+    program: &str,
+    aim: &str,
+    key: &str,
+    physical: &str,
+    key_code: u32,
+) -> Vec<crate::browsers::InputOutcome> {
+    use crate::browsers::{BrowserInput, KeyAct};
+    [KeyAct::Down, KeyAct::Up]
+        .into_iter()
+        .map(|action| {
+            window
+                .browsers
+                .input(
+                    program,
+                    BrowserInput::Key {
+                        aim: aim.to_owned(),
+                        action,
+                        key: key.to_owned(),
+                        physical: physical.to_owned(),
+                        key_code,
+                        modifiers: 0,
+                    },
+                )
+                .expect("the window reaches its host")
+        })
+        .collect()
+}
+
+/// The person types `letters` (a to z alone) where the focus is, each key taken.
+pub(crate) fn types(window: &Window, program: &str, aim: &str, letters: &str) {
+    for letter in letters.chars() {
+        let upper = letter.to_ascii_uppercase();
+        let outcomes = press(
+            window,
+            program,
+            aim,
+            &letter.to_string(),
+            &format!("Key{upper}"),
+            u32::from(upper),
+        );
+        assert!(
+            outcomes
+                .iter()
+                .all(|outcome| *outcome == crate::browsers::InputOutcome::Taken),
+            "{letter:?} did not reach the page: {outcomes:?}"
+        );
+    }
+}
+
+/// The acceptance lines of #2294 on a real engine: a wait in flight answers interrupted as the
+/// person takes the browser over; every call of the agent's is refused while they drive; they
+/// type into the fixture site's login form and its page that echoes, and hand it back; a
+/// reference dealt before is refused after; no later snapshot, find or screenshot holds what
+/// they typed, the form's "Show password" pressed or not; and input aimed at a document the
+/// page has left is dropped.
+#[test]
+fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
+    if !a_real_engine_runs_here() {
+        return;
+    }
+    let site = Site::serve();
+    let window = Window::holding(&site, &[&site]);
+    let (chat, mut tools) = window.a_chat();
+    tools.call("browser_snapshot", json!({}));
+    crate::chatbrowsers::allowed(&window.held, chat, false).expect("the person allows it");
+    tools.done(
+        "browser_open",
+        json!({ "address": site.at("login-stays.html") }),
+    );
+    let program = window.program_of(chat);
+    // The agent clicks a plain text field, and the person then takes over and types.
+    let name_field = ref_on(
+        &tools
+            .done("browser_find", json!({ "text": "User name" }))
+            .text,
+        "textbox \"User name\"",
+    );
+    tools.done("browser_click", json!({ "target": name_field }));
+    let watching = Watching::of(&window, &program);
+    let form = watching.aim_other_than(None);
+
+    // A wait in flight answers interrupted as the person takes over.
+    let waiting = tools.start(
+        "browser_wait_for_text",
+        json!({ "text": "words this page never shows", "seconds": 60 }),
+    );
+    until("the wait to be in flight", || window.acting.in_flight() > 0);
+    window
+        .browsers
+        .take_over(&program)
+        .expect("the person takes it over");
+    let cut = tools.answered("browser_wait_for_text", waiting);
+    assert!(cut.text.contains("it was interrupted"), "{cut:?}");
+
+    // While they drive, every call of the agent's is refused in words.
+    let refused = tools.call("browser_snapshot", json!({}));
+    assert!(refused.error, "{refused:?}");
+    assert!(
+        refused
+            .text
+            .contains(purlis_host::A_BROWSER_THE_PERSON_DRIVES),
+        "{}",
+        refused.text
+    );
+
+    // They type their name where the agent clicked, move on with Tab, type a password.
+    types(&window, &program, &form, THEIR_NAME);
+    press(&window, &program, &form, "Tab", "Tab", 9);
+    types(&window, &program, &form, THEIR_PASSWORD);
+    window
+        .browsers
+        .hand_back(&program)
+        .expect("they hand it back");
+
+    // A reference dealt before the take-over is refused.
+    let stale = tools.call("browser_click", json!({ "target": name_field }));
+    assert!(stale.error, "{stale:?}");
+    assert!(
+        stale
+            .text
+            .contains("was dealt before the browser last changed hands"),
+        "{}",
+        stale.text
+    );
+    // What they typed reached the page, and no read the agent gets holds it, the password
+    // shown by the page's toggle or not.
+    let read = tools.done("browser_snapshot", json!({}));
+    assert!(
+        read.text.contains(&format!(
+            "the password field holds {} characters",
+            THEIR_PASSWORD.len()
+        )),
+        "their keys reached the page: {}",
+        read.text
+    );
+    let form_shot = tools.done("browser_screenshot", json!({}));
+    assert_eq!(form_shot.images.len(), 1, "{form_shot:?}");
+    tools.call("browser_find", json!({ "text": "Password" }));
+    let show = ref_on(
+        &tools
+            .done("browser_find", json!({ "text": "Show password" }))
+            .text,
+        "button \"Show password\"",
+    );
+    tools.done("browser_click", json!({ "target": show, "changes": true }));
+    tools.done("browser_snapshot", json!({}));
+    tools.call("browser_find", json!({ "text": "User name" }));
+    let shown_shot = tools.done("browser_screenshot", json!({}));
+    assert_eq!(shown_shot.images.len(), 1, "{shown_shot:?}");
+
+    // The page that echoes what is typed.
+    tools.done(
+        "browser_navigate",
+        json!({ "address": site.at("echo-hidden.html") }),
+    );
+    let echo_field = ref_on(
+        &tools
+            .done("browser_find", json!({ "text": "Say something" }))
+            .text,
+        "textbox \"Say something\"",
+    );
+    tools.done("browser_click", json!({ "target": echo_field }));
+    let echo = watching.aim_other_than(Some(&form));
+    window
+        .browsers
+        .take_over(&program)
+        .expect("the person takes it over again");
+    // Input aimed at the document the page has left is dropped.
+    assert_eq!(
+        press(&window, &program, &form, "x", "KeyX", 88),
+        [
+            crate::browsers::InputOutcome::Missed,
+            crate::browsers::InputOutcome::Missed
+        ],
+        "input aimed at the form the page has left"
+    );
+    types(&window, &program, &echo, THEIR_ECHO);
+    window
+        .browsers
+        .hand_back(&program)
+        .expect("they hand it back");
+    tools.done("browser_snapshot", json!({}));
+    tools.call("browser_find", json!({ "text": "Say something" }));
+    let echo_shot = tools.done("browser_screenshot", json!({}));
+    assert_eq!(echo_shot.images.len(), 1, "{echo_shot:?}");
+    // The page draws its echo of what was typed in the fixture's red: none of it is left to see.
+    assert_eq!(
+        red_pixels(&echo_shot.images[0]),
+        0,
+        "what the person typed is painted over wherever the page draws it"
+    );
+
+    for said in &tools.told {
+        for typed in [THEIR_NAME, THEIR_PASSWORD, THEIR_ECHO] {
+            assert!(
+                !said.text.contains(typed),
+                "what the person typed reached the agent: {}",
+                said.text
+            );
+        }
+    }
 }

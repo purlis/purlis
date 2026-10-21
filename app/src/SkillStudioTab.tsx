@@ -15,6 +15,7 @@ import {
   workspaceOf,
   type StudioScope,
 } from "./skillStudio";
+import { skillView } from "./skillRuns";
 import type { ViewRef } from "./tabs";
 
 /** A scope as the picker's value: the root, or `in:<workspace>`. */
@@ -26,7 +27,6 @@ function choiceOf(scope: StudioScope): string {
 function scopeOfChoice(choice: string): StudioScope {
   return choice.startsWith("in:") ? inWorkspace(choice.slice(3)) : AT_THE_ROOT;
 }
-
 /**
  * **The Skill studio's tab** (SK-2, #2765; SK-4, #2767): one chat's skill set, at the project's
  * root or in one workspace. Every skill the chat gets, with its level, and every one it does not
@@ -44,7 +44,8 @@ export function SkillStudioTab({
   /** Whose chats it shows: a chat at the project's root, or in one workspace. */
   scope: StudioScope;
   changed: number;
-  /** Opens the studio on another workspace's chats, in its own tab. */
+  /** Opens the studio on another workspace's chats, or a skill's own tab with its runs
+   *  (SK-3), each in its own tab. */
   onOpenView?: (view: ViewRef, title: string) => void;
 }) {
   const [studio, setStudio] = useState<Studio>();
@@ -172,7 +173,18 @@ export function SkillStudioTab({
           {studio.skills.map((skill) => (
             <tr key={`${skill.level}\u0000${skill.folder}`} data-testid={testid(skill.name)}>
               <td>
-                <code>{skill.name}</code>
+                {onOpenView === undefined ? (
+                  <code>{skill.name}</code>
+                ) : (
+                  <button
+                    type="button"
+                    className="ui-button ui-button-ghost ui-button-sm"
+                    aria-label={`Open ${skill.name}`}
+                    onClick={() => onOpenView(skillView(skill.name), skill.name)}
+                  >
+                    <code>{skill.name}</code>
+                  </button>
+                )}
               </td>
               <td>
                 {skill.label}

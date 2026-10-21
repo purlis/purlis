@@ -58,6 +58,7 @@ fn a_chat_with_a_sub_agent(log: &EventLog, root: &Path, number: u32) {
             hook_ms: 1,
             agent: Some("agent-1".into()),
             at_ms: 0,
+            skill: None,
         },
     });
 }

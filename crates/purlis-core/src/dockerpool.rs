@@ -37,6 +37,11 @@ use std::fmt;
 /// The label every runner container of the pool carries: its runner's name.
 pub const LABEL: &str = "purlis.runner";
 
+/// **The label naming the desktop that made a runner's container** (#2869): what tells this
+/// desktop's leftovers from another's on a Docker daemon two config homes share. Internal: a
+/// hash of the config home, never a path.
+pub const DESKTOP_LABEL: &str = "purlis.desktop";
+
 /// Every runner container's and volume's name starts with this.
 pub const PREFIX: &str = "purlis-runner-";
 
@@ -369,6 +374,12 @@ impl Runner {
     /// `docker`'s arguments that make and start the runner's container, confined as the
     /// module says. Its id is what `docker` prints.
     pub fn create_args(&self) -> Vec<String> {
+        self.create_args_for(None)
+    }
+
+    /// [`Runner::create_args`], the container also labelled as made by `desktop`
+    /// ([`DESKTOP_LABEL`], #2869), where one is named.
+    pub fn create_args_for(&self, desktop: Option<&str>) -> Vec<String> {
         let mut args: Vec<String> = Vec::new();
         let mut pair = |flag: &str, value: String| {
             args.push(flag.to_owned());
@@ -376,6 +387,9 @@ impl Runner {
         };
         pair("--name", self.container());
         pair("--label", format!("{LABEL}={}", self.name));
+        if let Some(desktop) = desktop {
+            pair("--label", format!("{DESKTOP_LABEL}={desktop}"));
+        }
         pair("--user", self.user.spelled());
         pair("--cap-drop", "ALL".into());
         pair("--security-opt", "no-new-privileges".into());
@@ -770,6 +784,24 @@ const DOCKER_INSTALLED: &[&str] = &[
     "/usr/bin/docker",
 ];
 
+/// The folders of the home where Docker Desktop, OrbStack and Rancher Desktop link `docker`
+/// and its credential helpers: never a chat's to write (#2752, [`crate::sandbox`]).
+pub const DOCKER_HOME_FOLDERS: [&str; 3] = [".docker/bin", ".orbstack/bin", ".rd/bin"];
+
+/// **Whether `at`, a path in `home`, is in the installer's own folder** (#2752): the folder that
+/// holds it (`.docker`, `.orbstack`, `.rd`) is there under exactly that name, itself, and not
+/// a link to somewhere else or another spelling of its name, which a chat could have made or
+/// moved into its place before the sandbox held it. Anything else is passed over.
+pub fn its_own_in(home: &std::path::Path, at: &str) -> bool {
+    let Some(holder) = std::path::Path::new(at).components().next() else {
+        return false;
+    };
+    let (Ok(real_home), Ok(found)) = (home.canonicalize(), home.join(holder).canonicalize()) else {
+        return false;
+    };
+    found.as_os_str() == real_home.join(holder).as_os_str()
+}
+
 /// Where Docker Desktop, OrbStack and Rancher Desktop link it in the home folder.
 const DOCKER_IN_HOME: &[&str] = &[
     ".docker/bin/docker",
@@ -786,10 +818,22 @@ impl Docker {
         path: Option<&str>,
         home: Option<&std::path::Path>,
     ) -> Result<Docker, Refused> {
-        let installed = DOCKER_INSTALLED.iter().map(std::path::PathBuf::from);
-        let in_home = home
-            .into_iter()
-            .flat_map(|home| DOCKER_IN_HOME.iter().map(move |at| home.join(at)));
+        Docker::found_in(DOCKER_INSTALLED, path, home)
+    }
+
+    /// [`Docker::on_this_machine`], with `installed` the places installers put it.
+    fn found_in(
+        installed: &[&str],
+        path: Option<&str>,
+        home: Option<&std::path::Path>,
+    ) -> Result<Docker, Refused> {
+        let installed = installed.iter().map(std::path::PathBuf::from);
+        let in_home = home.into_iter().flat_map(|home| {
+            DOCKER_IN_HOME
+                .iter()
+                .filter(move |at| its_own_in(home, at))
+                .map(move |at| home.join(at))
+        });
         let on_path = path
             .into_iter()
             .flat_map(|path| path.split(':'))
@@ -810,12 +854,65 @@ impl Docker {
             })
     }
 
+    /// **The folders `docker` looks for a registry's credential helper in** (#2752), in order:
+    /// Docker runs one (`docker-credential-desktop`, `-osxkeychain`) by its name on its own
+    /// `PATH`, and a window started from the Finder has a `PATH` that names none of the places
+    /// Docker's installers put one. So it is looked for where `docker` itself is found
+    /// ([`Docker::on_this_machine`]): the folder this `docker` is in and the one its link leads
+    /// to, where each installer puts its helpers beside it; then each place Docker's installers
+    /// put `docker` (`DOCKER_INSTALLED`, then under `home`); then `path`, of its absolute folders
+    /// alone. Each folder once, where it first comes.
+    pub fn helpers_searched(
+        &self,
+        path: Option<&str>,
+        home: Option<&std::path::Path>,
+    ) -> Vec<std::path::PathBuf> {
+        use std::path::{Path, PathBuf};
+        let folder_of = |file: &Path| file.parent().map(Path::to_path_buf);
+        let own = folder_of(&self.0);
+        let linked = self.0.canonicalize().ok().as_deref().and_then(folder_of);
+        let installed = DOCKER_INSTALLED
+            .iter()
+            .filter_map(|at| folder_of(Path::new(at)));
+        let in_home = home.into_iter().flat_map(|home| {
+            DOCKER_IN_HOME
+                .iter()
+                .filter(move |at| its_own_in(home, at))
+                .filter_map(move |at| folder_of(&home.join(at)))
+        });
+        let on_path = path
+            .into_iter()
+            .flat_map(|path| path.split(':'))
+            .filter(|dir| dir.starts_with('/'))
+            .map(PathBuf::from);
+        let mut searched: Vec<PathBuf> = Vec::new();
+        for folder in own
+            .into_iter()
+            .chain(linked)
+            .chain(installed)
+            .chain(in_home)
+            .chain(on_path)
+        {
+            if !searched.contains(&folder) {
+                searched.push(folder);
+            }
+        }
+        searched
+    }
+
     /// Runs `docker` with `args`, handing it `input`, and answers what it printed, read up to
     /// `most` bytes: one that prints more is ended and refused. What it says on standard error
     /// is kept only to be shown, up to [`MOST_SAID`], and never read to decide anything.
     fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
         use std::io::{Read, Write};
         let mut command = std::process::Command::new(&self.0);
+        // Its credential helpers are found where it is (#2752), whatever `PATH` the window has.
+        let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
+        let searched =
+            self.helpers_searched(crate::envvar::var("PATH").as_deref(), home.as_deref());
+        if let Ok(joined) = std::env::join_paths(searched) {
+            command.env("PATH", joined);
+        }
         command
             .args(args)
             .stdin(if input.is_some() {
@@ -940,6 +1037,11 @@ impl Docker {
     /// one whose id cannot be read, is removed with its volume, and a removal that fails is said
     /// with the refusal.
     pub fn make(&self, runner: &Runner) -> Result<Made, Refused> {
+        self.make_for(runner, None)
+    }
+
+    /// [`Docker::make`], the container labelled as made by `desktop` where one is named (#2869).
+    pub fn make_for(&self, runner: &Runner, desktop: Option<&str>) -> Result<Made, Refused> {
         self.check_daemon()?;
         let volume = runner.volume();
         let listed = self.run(
@@ -983,7 +1085,7 @@ impl Docker {
         }
         // Docker makes the container and its volume before it starts it, so a run that fails
         // can leave both: they are removed with the refusal.
-        let out = match self.run(&runner.create_args(), None, MOST_INSPECTED) {
+        let out = match self.run(&runner.create_args_for(desktop), None, MOST_INSPECTED) {
             Ok(out) => out,
             Err(why) => return Err(self.and_removed(why, &container, &volume)),
         };
@@ -1040,6 +1142,93 @@ impl Docker {
         let line = format!("{}\n", crate::runnerlink::to_line(desktop));
         let out = self.run(&made.pair_args(), Some(&line), crate::runnerlink::MOST_LINE)?;
         crate::runnerlink::from_line(&out).map_err(refused)
+    }
+
+    /// **Removes what a make of the runner `name` by `desktop` left behind** (#2869): its
+    /// container, only where one of exactly its name carries the runner label of that name and
+    /// `desktop`'s label ([`DESKTOP_LABEL`]), removed by the id the listing gave; then its home
+    /// volume of exactly its name, only once no container of that name is left, whatever its
+    /// labels. One another desktop made, or one made before the label, is left as it is. What it
+    /// removed, each named. Only for a name no kept runner holds: the caller says so.
+    pub fn remove_leftovers_of(&self, name: &str, desktop: &str) -> Result<Vec<String>, Refused> {
+        let words = |words: &[&str]| -> Vec<String> {
+            words.iter().map(|word| (*word).to_owned()).collect()
+        };
+        let container = format!("{PREFIX}{name}");
+        let volume = format!("{PREFIX}{name}-home");
+        let mut removed = Vec::new();
+        let listed = self.run(
+            &words(&[
+                "container",
+                "ls",
+                "--all",
+                // The whole id: Docker cuts it to 12 digits otherwise.
+                "--no-trunc",
+                "--format",
+                &format!("{{{{.ID}}}} {{{{.Names}}}} {{{{.Label \"{DESKTOP_LABEL}\"}}}}"),
+                "--filter",
+                &format!("name={container}"),
+                "--filter",
+                &format!("label={LABEL}={name}"),
+            ]),
+            None,
+            MOST_INSPECTED,
+        )?;
+        for line in listed.lines() {
+            let mut fields = line.split_whitespace();
+            let (Some(id), Some(named), Some(made_by), None) =
+                (fields.next(), fields.next(), fields.next(), fields.next())
+            else {
+                continue;
+            };
+            if named != container || made_by != desktop {
+                continue;
+            }
+            let id = ContainerId::new(id)?;
+            self.run(
+                &words(&["container", "rm", "--force", "--volumes", id.as_str()]),
+                None,
+                MOST_INSPECTED,
+            )?;
+            removed.push(format!("container {container}"));
+        }
+        // A home volume goes only once no container of its name is left, whoever made it.
+        let still = self.run(
+            &words(&[
+                "container",
+                "ls",
+                "--all",
+                "--format",
+                "{{.Names}}",
+                "--filter",
+                &format!("name={container}"),
+            ]),
+            None,
+            MOST_INSPECTED,
+        )?;
+        if still.lines().any(|line| line.trim() == container) {
+            return Ok(removed);
+        }
+        let volumes = self.run(
+            &words(&[
+                "volume",
+                "ls",
+                "--quiet",
+                "--filter",
+                &format!("name={volume}"),
+            ]),
+            None,
+            MOST_INSPECTED,
+        )?;
+        if volumes.lines().any(|line| line.trim() == volume) {
+            self.run(
+                &words(&["volume", "rm", "--force", &volume]),
+                None,
+                MOST_INSPECTED,
+            )?;
+            removed.push(format!("volume {volume}"));
+        }
+        Ok(removed)
     }
 
     /// **The version `made`'s runner runs** (#2749), as its `purlis --version` says it, once

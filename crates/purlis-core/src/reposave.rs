@@ -1113,39 +1113,36 @@ pub(crate) fn secret_name(name: &str) -> Option<&'static str> {
 /// Asked of the staged blob (`git show :<path>`), as the plane's guard asks it. What was found
 /// is named by path and kind, never by value.
 fn secret_files(clone: &Path, staged: &[String]) -> Vec<(String, &'static str)> {
-    let mut out = Vec::new();
-    for path in staged {
-        let name = path.rsplit('/').next().unwrap_or(path);
-        if let Some(kind) = secret_name(name) {
+    staged
+        .iter()
+        .filter_map(|path| {
             // A deletion is staged too, and taking a secret out is not what this refuses.
-            if git::run(clone, &["cat-file", "-e", &format!(":{path}")], git::READ)
-                .is_ok_and(|r| r.ok())
-            {
-                out.push((path.clone(), kind));
-            }
-            continue;
-        }
-        let Ok(blob) = git::run(clone, &["show", &format!(":{path}")], git::READ) else {
-            continue;
-        };
-        if !blob.ok() {
-            continue;
-        }
-        let lower = name.to_ascii_lowercase();
-        if (lower == ".npmrc" || lower == ".pypirc")
-            && blob.out.lines().any(|line| {
-                let line = line.to_ascii_lowercase();
-                (line.contains("_authtoken") || line.contains("password")) && line.contains('=')
-            })
-        {
-            out.push((path.clone(), "a package registry token"));
-            continue;
-        }
-        if let Some(kind) = crate::secretshape::token_kind_as_read(&blob.out) {
-            out.push((path.clone(), kind));
-        }
+            let blob = git::run(clone, &["show", &format!(":0:{path}")], git::READ)
+                .ok()
+                .filter(git::Run::ok)?;
+            refused_as(path, &blob.out).map(|kind| (path.clone(), kind))
+        })
+        .collect()
+}
+
+/// **What the file at `path`, holding `text`, looks like where a save to the forge refuses
+/// it**, or none: [`secret_files`]'s rule for one file, which a send of uncommitted work to a
+/// runner follows too (ADR 0078 §7, the operator's ruling of 2026-10-25).
+pub(crate) fn refused_as(path: &str, text: &str) -> Option<&'static str> {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    if let Some(kind) = secret_name(name) {
+        return Some(kind);
     }
-    out
+    let lower = name.to_ascii_lowercase();
+    if (lower == ".npmrc" || lower == ".pypirc")
+        && text.lines().any(|line| {
+            let line = line.to_ascii_lowercase();
+            (line.contains("_authtoken") || line.contains("password")) && line.contains('=')
+        })
+    {
+        return Some("a package registry token");
+    }
+    crate::secretshape::token_kind_as_read(text)
 }
 
 /// The repo's default branch: its `default_branch` in `inventory/repos.json`, else what the

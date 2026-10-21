@@ -173,6 +173,8 @@ fn a_kept_socket_swapped_for_a_link_reshaped_or_where_a_chat_writes_is_not_compi
             path: at.join("vaults"),
             access: Access::ReadWrite,
             named: None,
+            reach: crate::sandbox::Reach::AndBelow,
+            any_case: false,
         }],
         writable: vec![at.join("project")],
         // This fixture may itself sit in a harness's temp root: that rule has its own test.

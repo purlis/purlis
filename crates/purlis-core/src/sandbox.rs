@@ -982,6 +982,8 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
                     path: spelled.join(name),
                     access: Access::Write,
                     named: None,
+                    reach: Reach::AndBelow,
+                    any_case: false,
                 };
                 if !out.contains(&denial) {
                     out.push(denial);
@@ -1084,6 +1086,13 @@ pub struct Denial {
     /// The file and the word in it that named the path, for one a config named
     /// ([`Class::LaterCode`]); `None` for one charter names itself.
     pub named: Option<Named>,
+    /// How much of `path` is held: it and everything below it, or the entry alone, which is
+    /// never created, renamed, moved or removed while what is below it is written (#2752).
+    pub reach: Reach,
+    /// Whether it is held under every spelling of its name a case-folding disk takes for it,
+    /// as well as its own: a folder that is not there yet is made under the name as typed
+    /// (#2752).
+    pub any_case: bool,
 }
 
 /// Where a config named a denied path: the file, and the word in it as written.
@@ -1222,6 +1231,8 @@ impl Denied {
                 path: root.join(state).join(crate::handback::DIR_NAME),
                 access: Access::ReadWrite,
                 named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
             });
         }
         self
@@ -1243,6 +1254,8 @@ impl Denied {
             path: real(&policy::machine_folder()),
             access: Access::Write,
             named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
         });
 
         // 5. Later code: the project root's manifests, under every name (#1336); those between
@@ -1256,7 +1269,34 @@ impl Denied {
             path: root.join(crate::harness_declaration::DIR),
             access: Access::Write,
             named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
         });
+        // …and where Docker Desktop, OrbStack and Rancher Desktop link `docker` and its
+        // credential helpers in the home folder (#2752), which purlis runs outside any sandbox
+        // for a Docker pool ([`crate::dockerpool::Docker::on_this_machine`]): each `bin` folder
+        // and what is in it, and the folder that holds it as an entry alone, so it is never
+        // moved aside for one that brings a `docker` of its own (the person's ruling of
+        // 2026-10-20). Under every spelling a case-folding disk takes, since a folder that is
+        // not there yet is made under the name as typed. Paths of the home alone: a project's
+        // own `.docker` stays the chat's, and so does what is beside each `bin`.
+        if let Some(home) = &machine.home {
+            for folder in crate::dockerpool::DOCKER_HOME_FOLDERS {
+                let bin = home.join(folder);
+                let holder = bin.parent().map(Path::to_path_buf);
+                for (path, reach) in [(Some(bin), Reach::AndBelow), (holder, Reach::Itself)] {
+                    let Some(path) = path else { continue };
+                    paths.push(Denial {
+                        class: Class::LaterCode,
+                        path,
+                        access: Access::Write,
+                        named: None,
+                        reach,
+                        any_case: true,
+                    });
+                }
+            }
+        }
         // …and what a protected config points at elsewhere, resolved now (V73d).
         let xdg_config = machine
             .env
@@ -1290,6 +1330,8 @@ impl Denied {
                     file: it.file,
                     word: it.word,
                 }),
+                reach: Reach::AndBelow,
+                any_case: false,
             });
         }
 
@@ -1336,6 +1378,8 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             path,
             access,
             named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
         })
     };
 
@@ -1672,6 +1716,8 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 path,
                 access: Access::ReadWrite,
                 named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
             }));
             notes.extend(found.not_looked_in.into_iter().map(KeptNote::NotLookedIn));
         }
@@ -3451,6 +3497,8 @@ impl Applied {
                 path,
                 access: Access::ReadWrite,
                 named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
             })
             .filter(|denial| !self.denied.contains(denial))
             .collect();
@@ -4515,19 +4563,23 @@ pub fn covering(denied: &[Denial], ground: &[PathBuf]) -> Option<NotStarted> {
             spellings(folder).into_iter().map(move |name| (name, folds))
         })
         .collect();
-    denied.iter().find_map(|denial| {
-        let covers = spellings(&denial.path).iter().any(|name| {
-            ground.iter().any(|(folder, folds)| {
-                folder.starts_with(name) || (*folds && folded(folder).starts_with(folded(name)))
+    // An entry held alone holds nothing below it (#2752), so no ground is under it.
+    denied
+        .iter()
+        .filter(|denial| denial.reach == Reach::AndBelow)
+        .find_map(|denial| {
+            let covers = spellings(&denial.path).iter().any(|name| {
+                ground.iter().any(|(folder, folds)| {
+                    folder.starts_with(name) || (*folds && folded(folder).starts_with(folded(name)))
+                })
+            });
+            covers.then(|| NotStarted::CoversItsGround {
+                path: denial.path.clone(),
+                class: denial.class,
+                named: denial.named.clone(),
+                within: None,
             })
-        });
-        covers.then(|| NotStarted::CoversItsGround {
-            path: denial.path.clone(),
-            class: denial.class,
-            named: denial.named.clone(),
-            within: None,
         })
-    })
 }
 
 /// Each spelling of `path` a sandbox or a tool may compare: as written, with `..` taken off,

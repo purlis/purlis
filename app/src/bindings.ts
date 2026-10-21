@@ -1255,6 +1255,13 @@ export const commands = {
 	 */
 	chatDoings: (plane: PlaneId) => typedError<ChatDoing[], string>(__TAURI_INVOKE("chat_doings", { plane })),
 	/**
+	 *  The skill run open in each open chat, for the chip on its tab (SK-3, #2766).
+	 * 
+	 *  The window asks once, when it opens; after that it is told (`chat-skill-run`). A chat with
+	 *  no run open is not answered.
+	 */
+	chatSkillRuns: (plane: PlaneId) => typedError<ChatSkillRun[], string>(__TAURI_INVOKE("chat_skill_runs", { plane })),
+	/**
 	 *  The chats the app already has open — at a launch, the ones put back from the record.
 	 * 
 	 *  The window asks this instead of opening its own: the core puts the record back, once the
@@ -1726,6 +1733,11 @@ export const commands = {
 	 *  skill folders.
 	 */
 	skillStudio: (plane: PlaneId, workspace: string | null) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane, workspace })),
+	/**
+	 *  The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
+	 *  flag is off. On a blocking thread, as it reads the project's skill log.
+	 */
+	skillRuns: (plane: PlaneId, skill: string) => typedError<StudioRun[], string>(__TAURI_INVOKE("skill_runs", { plane, skill })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	/**
@@ -4768,6 +4780,17 @@ export type ChatRestart = {
 	not_yet: string | null,
 };
 
+/**
+ *  What `chat-skill-run` carries, and what `chat_skill_runs` answers a list of: one chat's open
+ *  run, or that it has none.
+ */
+export type ChatSkillRun = {
+	plane: PlaneId,
+	session: number,
+	/**  The innermost run open, or null: none is, or the turn it was in ended. */
+	run: OpenRun | null,
+};
+
 /**  One step of one chat's stop, as the window is told it. */
 export type ChatStop = {
 	plane: PlaneId,
@@ -7751,6 +7774,16 @@ export type OpenHosts = {
 	hosts: string[],
 };
 
+/**  A skill run open in a chat, as its tab's chip shows it. */
+export type OpenRun = {
+	/**  The skill, by the name its harness started it by. */
+	skill: string,
+	/**  The run's id, as the skill's Runs panel lists it. */
+	id: string,
+	/**  Tool calls made inside it so far, each once. */
+	tool_calls: number,
+};
+
 /**
  *  What came of asking to open a plane: it is open, or there is a question to answer first.
  * 
@@ -9136,7 +9169,13 @@ export type Reconnection =
  *  The link is back, or its view drew again, or the window cannot tell any more: it is
  *  drawn as it comes.
  */
-"reconnected";
+"reconnected" | 
+/**
+ *  The runner answered with another key than the one pinned at its pairing (#2752): its
+ *  host sends it nothing and does not link to it again until it is removed and added anew,
+ *  so its chats stay dimmed and the window says why in a Notice of its own.
+ */
+"key_changed";
 
 /**
  *  The level a referrer is changed at, when it is not the entry's own
@@ -9481,6 +9520,26 @@ export type RowWorktree = {
 	 */
 	discard: boolean,
 };
+
+/**  How a skill run ended, as the Runs panel draws it. */
+export type RunEnd = 
+/**  With its turn. */
+"turn" | 
+/**  A new prompt came first. */
+"interrupted" | 
+/**  The chat ended under it. */
+"session" | 
+/**  An end a newer purlis wrote. */
+"unknown";
+
+/**  What started a skill run, as the Runs panel draws it. */
+export type RunStart = 
+/**  The chat's own Skill tool. */
+"skill-tool" | 
+/**  The chat read the skill's `SKILL.md`. */
+"read" | 
+/**  A start a newer purlis wrote. */
+"unknown";
 
 /**  What the picker says about the sandbox for one profile, before anything starts. */
 export type SandboxAhead = {
@@ -10453,6 +10512,30 @@ export type Studio = {
 	/**  Every workspace of the project, which it can be shown for. */
 	workspaces: string[],
 	skills: StudioSkill[],
+};
+
+/**
+ *  One skill run, as a skill's Runs panel lists it (SK-3): what started it and its signals,
+ *  never a pass or a fail.
+ */
+export type StudioRun = {
+	/**  Its id, or null for a use from before runs were recorded. */
+	id: string | null,
+	skill: string,
+	persona: string | null,
+	/**  What started it, or null for a use from before runs were recorded. */
+	started_by: RunStart | null,
+	/**  When it started. */
+	started: string,
+	/**  How it ended, or null while no end is recorded. */
+	ended: RunEnd | null,
+	ms: number | null,
+	tool_calls: number | null,
+	tool_errors: number | null,
+	refusals: number | null,
+	asks: number | null,
+	/**  Tokens spent inside it, where the harness reported them. */
+	tokens: number | null,
 };
 
 /**  One skill the studio lists: [`purlis_core::skills::StudioRow`], for the window. */
