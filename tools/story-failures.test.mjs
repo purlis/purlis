@@ -4,7 +4,7 @@
 // The stories job's annotation for each story that failed (#2901, #2944), and the reporter that
 // keeps what it is made from. Run with `node --test tools/`.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -13,6 +13,7 @@ import StoryFailures, {
   annotations,
   gateOf,
   REPORT,
+  reportPath,
 } from "./story-failures.mjs";
 
 const DEPS = "http://localhost:1/node_modules/.cache/storybook/sb-vitest/deps";
@@ -126,6 +127,108 @@ test("a line that would end the annotation early is kept on one line", () => {
   assert.match(one, /title=A%3A%3AB in chromium::/);
 });
 
+test("annotation text is escaped, so each failure stays one annotation on one line", () => {
+  const message = "boom\r::warning::x\r\nmore 100%";
+  const [story] = annotations(
+    {
+      failures: [
+        { file: "src/A::B.stories.tsx", story: "A", errors: [{ message }] },
+      ],
+      errors: [],
+    },
+    "webkit",
+  );
+  assert.equal(
+    story,
+    "::error title=A in webkit::src/A::B.stories.tsx: renders: boom",
+  );
+  const [outside] = annotations(
+    { failures: [], errors: [{ message: "50%0A done\r::add-mask::y" }] },
+    "webkit",
+  );
+  assert.equal(
+    outside,
+    "::error title=stories in webkit::an error outside any story: 50%250A done",
+  );
+  const [cut] = annotations(
+    reportOf("A", { message: `${"x".repeat(299)}%\n`, stack: "" }),
+    "chromium",
+  );
+  assert.match(cut, /x%25$/);
+  for (const line of [story, outside, cut]) assert.doesNotMatch(line, /[\r\n]/);
+});
+
+test("the reason is cut by characters, never inside one", () => {
+  const [one] = annotations(
+    reportOf("A", { message: `${"x".repeat(299)}\u{1F600}y`, stack: "" }),
+    "chromium",
+  );
+  assert.ok(one.endsWith("x\u{1F600}"));
+});
+
+test("a run that failed naming no story says so, for the browser it failed in", () => {
+  assert.deepEqual(
+    annotations({ failed: true, failures: [], errors: [] }, "webkit"),
+    [
+      "::error title=stories in webkit::the run failed but named no story; the job's log says why",
+    ],
+  );
+  assert.deepEqual(
+    annotations({ failed: false, failures: [], errors: [] }, "chromium"),
+    [],
+  );
+});
+
+test("a loader or beforeEach that throws is the renders gate's", () => {
+  for (const stack of [
+    `Error: no data\n    at loaders (${STORY}?import:12:9)\n    at applyLoaders (${DEPS}/csf.js:751:9)`,
+    `@${STORY}:12:9\napplyLoaders@${DEPS}/csf.js:751:9\nasync runStory@${DEPS}/csf.js:1210:24`,
+    `@${STORY}:12:9\napplyBeforeEach@${DEPS}/csf.js:764:9`,
+  ])
+    assert.equal(gateOf({ message: "no data", stack }), "renders");
+  assert.equal(
+    gateOf({ message: "x", stack: `@${DEPS}/replay.js:1:2` }),
+    "renders",
+  );
+});
+
+test("the report goes only to the absolute path the variable names", () => {
+  assert.equal(reportPath({}), null);
+  assert.equal(reportPath({ [REPORT]: "" }), null);
+  assert.equal(reportPath({ [REPORT]: "app/src/x.json" }), null);
+  assert.equal(reportPath({ [REPORT]: "/tmp/r.json" }), "/tmp/r.json");
+});
+
+/** Runs the reporter with `PURLIS_STORY_REPORT` set to `to` (unset for `undefined`). */
+function reporting(to, run) {
+  const before = process.env[REPORT];
+  if (to === undefined) delete process.env[REPORT];
+  else process.env[REPORT] = to;
+  try {
+    run(new StoryFailures());
+  } finally {
+    if (before === undefined) delete process.env[REPORT];
+    else process.env[REPORT] = before;
+  }
+}
+
+/** A story file as Vitest's reporter API hands it over. */
+function moduleOf({ tests = [], errors = [], suites = [] }) {
+  return {
+    relativeModuleId: "src/Probe.stories.tsx",
+    errors: () => errors,
+    children: {
+      *allTests(state) {
+        assert.equal(state, "failed");
+        yield* tests;
+      },
+      *allSuites() {
+        yield* suites.map((suiteErrors) => ({ errors: () => suiteErrors }));
+      },
+    },
+  };
+}
+
 test("the reporter keeps each failed story's message apart from its stack", () => {
   const to = join(
     mkdtempSync(join(tmpdir(), "story-failures-")),
@@ -139,28 +242,16 @@ test("the reporter keeps each failed story's message apart from its stack", () =
       ],
     }),
   };
-  const module = {
-    relativeModuleId: "src/Probe.stories.tsx",
-    children: {
-      *allTests(state) {
-        assert.equal(state, "failed");
-        yield failedTest;
-      },
-    },
-  };
-  const before = process.env[REPORT];
-  process.env[REPORT] = to;
-  try {
-    new StoryFailures().onTestRunEnd(
-      [module],
+  reporting(to, (reporter) =>
+    reporter.onTestRunEnd(
+      [moduleOf({ tests: [failedTest] })],
       [{ message: "outside", stack: "s" }],
-    );
-  } finally {
-    if (before === undefined) delete process.env[REPORT];
-    else process.env[REPORT] = before;
-  }
+      "failed",
+    ),
+  );
   const report = JSON.parse(readFileSync(to, "utf8"));
   assert.deepEqual(report, {
+    failed: true,
     failures: [
       {
         file: "src/Probe.stories.tsx",
@@ -176,4 +267,43 @@ test("the reporter keeps each failed story's message apart from its stack", () =
     `::error title=Probe Steps in webkit::src/Probe.stories.tsx: keyboard: ${WHY.keyboard}`,
     "::error title=stories in webkit::an error outside any story: outside",
   ]);
+});
+
+test("the reporter keeps a story file's and a suite's own errors, with the file", () => {
+  const to = join(
+    mkdtempSync(join(tmpdir(), "story-failures-")),
+    "report.json",
+  );
+  reporting(to, (reporter) =>
+    reporter.onTestRunEnd(
+      [
+        moduleOf({
+          errors: [{ message: "Failed to import ./components", stack: "" }],
+          suites: [[{ message: "beforeAll threw", stack: "" }]],
+        }),
+      ],
+      [],
+      "failed",
+    ),
+  );
+  const report = JSON.parse(readFileSync(to, "utf8"));
+  assert.deepEqual(annotations(report, "webkit"), [
+    "::error title=stories in webkit::src/Probe.stories.tsx: an error outside any story: Failed to import ./components",
+    "::error title=stories in webkit::src/Probe.stories.tsx: an error outside any story: beforeAll threw",
+  ]);
+});
+
+test("the reporter writes nothing when the variable is unset or not absolute", () => {
+  const dir = mkdtempSync(join(tmpdir(), "story-failures-"));
+  const before = process.cwd();
+  process.chdir(dir);
+  try {
+    for (const to of [undefined, "report.json"])
+      reporting(to, (reporter) =>
+        reporter.onTestRunEnd([moduleOf({})], [], "failed"),
+      );
+  } finally {
+    process.chdir(before);
+  }
+  assert.deepEqual(readdirSync(dir), []);
 });

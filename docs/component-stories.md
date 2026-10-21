@@ -77,7 +77,9 @@ wrong. A local run checks rendering, the keyboard and axe, and takes no picture.
 titled `<story> in <browser>`: its file, the gate it failed (`renders`, `keyboard`,
 `accessibility` or `screenshot`), the first line of why, and the axe rules it broke. It says the
 same in WebKit as in Chromium: `tools/story-failures.mjs` is the Vitest reporter that keeps each
-error's message, and the script that turns the reports into annotations.
+error's message, and the script that turns the reports into annotations. An error in a story
+file or a suite outside any one story is an annotation of its own, and a run that fails without
+naming anything says so.
 
 ## Baselines
 

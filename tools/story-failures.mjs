@@ -13,21 +13,26 @@
 // - run as a script, it reads those reports and prints one annotation per story that failed:
 //
 //   node tools/story-failures.mjs <browser> <report> [<browser> <report> ...]
+//
+// Every text an annotation carries is escaped as the runner reads a workflow command, so it
+// stays one annotation on one line.
 import { readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-/** The environment variable naming the file the reporter writes. */
+/** The environment variable naming the file the reporter writes: an absolute path. */
 export const REPORT = "PURLIS_STORY_REPORT";
 
+/** A workflow command's data, escaped as the runner reads it (as `@actions/core` does). */
+const data = (text) =>
+  text.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+
 /** A workflow command's property, escaped as the runner reads it. */
-const property = (text) =>
-  text
-    .replace(/%/g, "%25")
-    .replace(/\r/g, "%0D")
-    .replace(/\n/g, "%0A")
-    .replace(/:/g, "%3A")
-    .replace(/,/g, "%2C");
+const property = (text) => data(text).replace(/:/g, "%3A").replace(/,/g, "%2C");
+
+/** The longest reason an annotation gives, in characters. */
+const LONGEST = 300;
 
 /** Colour codes a terminal reporter leaves in a message. */
 // eslint-disable-next-line no-control-regex
@@ -46,14 +51,18 @@ const DEBUG_LINK = /^Click to debug the error directly in Storybook:/;
 const RENDERING =
   /\b(renderWithHooks|react_stack_bottom_frame|performUnitOfWork)\b/;
 
-/** A frame of a story's own file, or of the kit its `play` functions call. */
-const STORY_CODE = /\.stories\.tsx|stories\.testkit\.ts|\bplay\b/;
+/** Storybook preparing a story, before it is drawn: its loaders and `beforeEach`. */
+const PREPARING = /\b(applyLoaders|applyBeforeEach)\b/;
+
+/** A frame of a story's own file, of its `play` function, or of the kit `play` functions call. */
+const STORY_CODE =
+  /\.stories\.tsx|stories\.testkit\.ts|(^|\n)\s*(at (async )?play \(|play@)/;
 
 /**
  * **The gate a story failed** (`docs/component-stories.md`), told from its error alone, the same
  * way for both engines: the screenshot gate's setup file is on its stack, the a11y addon's
- * matcher is in its message, React's rendering is on the stack of one that did not render, and
- * the story's own code is on the stack of a `play` function that failed.
+ * matcher is in its message, React's rendering or Storybook's preparing is on the stack of one
+ * that did not render, and the story's own code is on the stack of a `play` function that failed.
  */
 export function gateOf(error) {
   const message = error.message ?? "";
@@ -62,7 +71,7 @@ export function gateOf(error) {
     return "screenshot";
   if (/toHaveNoViolations/.test(message) || /addon-a11y/.test(stack))
     return "accessibility";
-  if (RENDERING.test(stack)) return "renders";
+  if (RENDERING.test(stack) || PREPARING.test(stack)) return "renders";
   if (STORY_CODE.test(stack)) return "keyboard";
   return "renders";
 }
@@ -71,7 +80,7 @@ export function gateOf(error) {
 export function whyOf(error) {
   const lines = (error.message ?? "")
     .replace(ANSI, "")
-    .split("\n")
+    .split(/\r\n|\r|\n/)
     .map((line) => line.trim())
     .filter(
       (line) => line && !/^Error:?$/.test(line) && !DEBUG_LINK.test(line),
@@ -81,15 +90,21 @@ export function whyOf(error) {
   const [first, next] = lines;
   const why =
     MATCHER.test(first) && next ? `${first}: ${next.replace(/:$/, "")}` : first;
-  return why.slice(0, 300);
+  // Cut by characters, not UTF-16 units, so no character is split.
+  return [...why].slice(0, LONGEST).join("");
 }
 
+/** One annotation: its title and its text, each escaped. */
+const error = (title, text) =>
+  `::error title=${property(title)}::${data(text)}`;
+
 /** One `::error` line per failed story in one browser's report: the story's name and that
- *  browser, its file, its gate, why, and the axe rules it broke. The report does not say which
- *  browser ran it, so the job runs each browser on its own and says which report is whose. */
+ *  browser, its file, its gate, why, and the axe rules it broke; one for each error outside any
+ *  story; and, for a run that failed naming nothing, one that says so. The report does not say
+ *  which browser ran it, so the job runs each browser on its own and says which report is whose. */
 export function annotations(report, browser) {
   const failed = report.failures.map(({ file, story, errors }) => {
-    const [error = { message: "" }] = errors;
+    const [first = { message: "" }] = errors;
     const rules = [
       ...new Set(
         errors.flatMap((one) =>
@@ -98,24 +113,44 @@ export function annotations(report, browser) {
       ),
     ];
     const broke = rules.length > 0 ? ` [axe: ${rules.join(", ")}]` : "";
-    return `::error title=${property(`${story} in ${browser}`)}::${file}: ${gateOf(error)}: ${whyOf(error)}${broke}`;
+    return error(
+      `${story} in ${browser}`,
+      `${file}: ${gateOf(first)}: ${whyOf(first)}${broke}`,
+    );
   });
-  const outside = report.errors.map(
-    (error) =>
-      `::error title=${property(`stories in ${browser}`)}::an error outside any story: ${whyOf(error)}`,
+  const outside = report.errors.map((one) =>
+    error(
+      `stories in ${browser}`,
+      `${one.file ? `${one.file}: ` : ""}an error outside any story: ${whyOf(one)}`,
+    ),
   );
-  return [...failed, ...outside];
+  const named = [...failed, ...outside];
+  if (named.length === 0 && report.failed)
+    return [
+      error(
+        `stories in ${browser}`,
+        "the run failed but named no story; the job's log says why",
+      ),
+    ];
+  return named;
 }
 
 /** An error as the report keeps it: its message and its stack, apart. */
-const kept = (error) => ({
-  message: String(error.message ?? ""),
-  stack: String(error.stack ?? ""),
+const kept = (one) => ({
+  message: String(one.message ?? ""),
+  stack: String(one.stack ?? ""),
 });
 
-/** **The reporter**: at the end of the run, each failed story's errors, and those outside any. */
+/** Where the reporter writes: the absolute path `PURLIS_STORY_REPORT` names, or nowhere. */
+export function reportPath(env) {
+  const to = env[REPORT];
+  return to && isAbsolute(to) ? to : null;
+}
+
+/** **The reporter**: at the end of the run, each failed story's errors, the errors of a story
+ *  file or a suite, those outside any, and whether the run failed. */
 export default class StoryFailures {
-  onTestRunEnd(testModules, unhandledErrors = []) {
+  onTestRunEnd(testModules, unhandledErrors = [], reason) {
     const failures = testModules.flatMap((module) =>
       [...module.children.allTests("failed")].map((test) => ({
         file: module.relativeModuleId,
@@ -123,16 +158,25 @@ export default class StoryFailures {
         errors: (test.result().errors ?? []).map(kept),
       })),
     );
-    const to = process.env[REPORT];
-    if (to)
-      writeFileSync(
-        to,
-        JSON.stringify(
-          { failures, errors: unhandledErrors.map(kept) },
-          null,
-          2,
-        ),
-      );
+    const inFiles = testModules.flatMap((module) =>
+      [module, ...module.children.allSuites()]
+        .flatMap((part) => part.errors())
+        .map((one) => ({ file: module.relativeModuleId, ...kept(one) })),
+    );
+    const errors = [...inFiles, ...unhandledErrors.map(kept)];
+    const failed =
+      reason === "failed" ||
+      reason === "interrupted" ||
+      failures.length + errors.length > 0;
+    const to = reportPath(process.env);
+    if (to === null) {
+      if (process.env[REPORT])
+        console.error(
+          `${REPORT} is not an absolute path; no report is written`,
+        );
+      return;
+    }
+    writeFileSync(to, JSON.stringify({ failed, failures, errors }, null, 2));
   }
 }
 
@@ -145,7 +189,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       report = JSON.parse(readFileSync(given[at + 1], "utf8"));
     } catch {
       console.log(
-        `::error title=stories in ${given[at]}::the run wrote no report; the job's log says why`,
+        error(
+          `stories in ${given[at]}`,
+          "the run wrote no report; the job's log says why",
+        ),
       );
       continue;
     }
