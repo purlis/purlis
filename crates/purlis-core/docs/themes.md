@@ -314,6 +314,11 @@ drawn on; a border that is the part's only edge, on a fill that is its ground or
 3:1. A part that breaks one draws its family default in that variant and state, and the check
 says each as a `part-falls-back` warning. A disabled control is exempt, as WCAG has it.
 
+**A family's grounds are every surface the window draws it on**: for a button, the window's
+surfaces and the strips' layers, and a Notice's danger surface and wash among them. A wash is
+read laid over the surface under it. `app/src/theme/grounds.test.ts` finds them from the components, and fails until the
+manifest lists a new one.
+
 **The consent floors hold whatever a theme changed** (ADR 0097 §6), as it is written and in
 every workspace tint, and two looks are compared by the colours they draw, never by the tokens'
 names:

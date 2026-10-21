@@ -1127,3 +1127,23 @@ fn parts_apply_bench() {
         "parts apply (stylesheet and fallen of one theme): {each:?} per theme, drawn {digest:016x}"
     );
 }
+
+#[test]
+fn a_parts_words_are_held_on_every_ground_its_family_is_drawn_on() {
+    // A ghost button is see-through, so its words are read on whatever it is drawn on: a
+    // Notice's trouble line puts buttons on the danger surface, and a wash is read laid over the
+    // surface under it.
+    let words = json!({ "button.root.ghost.text": "text.secondary" });
+    let as_given = fallen_parts(&with_tokens_and_parts(json!({}), words.clone()));
+    assert!(as_given.is_empty(), "{as_given:?}");
+    for (ground, hex) in [("danger.surface", "#8a8980"), ("danger.wash", "#c9c8c0c0")] {
+        let fallen = fallen_parts(&with_tokens_and_parts(
+            json!({ ground: hex }),
+            words.clone(),
+        ));
+        assert!(
+            fallen.contains(&"button.root.ghost".to_owned()),
+            "{ground}: {fallen:?}"
+        );
+    }
+}

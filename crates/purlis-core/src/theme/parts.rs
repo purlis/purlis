@@ -343,7 +343,8 @@ pub struct Family {
     pub since: u32,
     pub parts: &'static [Part],
     pub variants: &'static [Variant],
-    /// The surfaces it is drawn on, which a see-through fill shows.
+    /// The surfaces it is drawn on, which a see-through fill shows: every one the window draws it
+    /// on, found from the components (`app/src/theme/grounds.test.ts`).
     pub grounds: &'static [&'static str],
     /// The selectors of the roots drawn at another of the family's sizes, or in a row that keeps
     /// their size (a button in a wrapping row): a part's size never reaches them.
@@ -439,7 +440,23 @@ pub const MANIFEST: &[Family] = &[Family {
             consent: None,
         },
     ],
-    grounds: &["surface.base", "surface.raised", "surface.overlay"],
+    // Every surface a button is drawn on in the window, as `app/src/theme/grounds.test.ts` finds
+    // them from the components; that test fails until a new one is listed here.
+    grounds: &[
+        "surface.base",
+        "surface.raised",
+        "surface.overlay",
+        "surface.sunken",
+        "surface.deep",
+        "border.subtle",
+        "tab.active",
+        "danger.surface",
+        "danger.wash",
+        "layer.project",
+        "layer.workspace",
+        "layer.chat",
+        "layer.selected",
+    ],
     keeps_size: &[
         "[data-size=\"sm\"]",
         "[data-size=\"lg\"]",
@@ -560,10 +577,8 @@ fn look_apart(theme: &ResolvedTheme, family: &Family, a: &Drawn, b: &Drawn, word
     let shown = |fill: &str, ground: &str| {
         hex(theme, fill).map_or_else(|| ground.to_owned(), |fill| onto(fill, ground))
     };
-    let fills = family
-        .grounds
+    let fills = grounds(theme, family)
         .iter()
-        .filter_map(|ground| hex(theme, ground))
         .filter_map(|ground| {
             let (x, y) = (shown(a.fill, ground), shown(b.fill, ground));
             Some(tint::distance(tint::oklab_of(&x)?, tint::oklab_of(&y)?))
@@ -1226,16 +1241,36 @@ fn hex<'a>(theme: &'a ResolvedTheme, token: &str) -> Option<&'a str> {
     (value != PLATFORM && !value.is_empty()).then_some(value)
 }
 
+/// **The family's grounds as `theme` draws them**: each opaque one as it is, and a wash laid
+/// over each opaque one, since a wash is drawn over what is under it.
+fn grounds(theme: &ResolvedTheme, family: &Family) -> Vec<String> {
+    let opaque = |hex: &str| matches!(hex.trim_start_matches('#').len(), 3 | 6);
+    let given: Vec<&str> = family
+        .grounds
+        .iter()
+        .filter_map(|ground| hex(theme, ground))
+        .collect();
+    let under: Vec<&str> = given.iter().copied().filter(|one| opaque(one)).collect();
+    given
+        .iter()
+        .flat_map(|one| {
+            if opaque(one) {
+                vec![(*one).to_owned()]
+            } else {
+                under.iter().map(|below| onto(one, below)).collect()
+            }
+        })
+        .collect()
+}
+
 /// The lowest contrast `front` has on `fill` over each of the family's grounds.
 fn lowest(theme: &ResolvedTheme, family: &Family, fill: &str, front: &str) -> Option<f64> {
     let front = hex(theme, front)?;
-    family
-        .grounds
+    grounds(theme, family)
         .iter()
-        .filter_map(|ground| {
-            let ground = hex(theme, ground)?;
-            let back = hex(theme, fill).map_or_else(|| ground.to_owned(), |f| onto(f, ground));
-            Some(contrast(&onto(front, &back), &back))
+        .map(|ground| {
+            let back = hex(theme, fill).map_or_else(|| ground.clone(), |f| onto(f, ground));
+            contrast(&onto(front, &back), &back)
         })
         .reduce(f64::min)
         .map(|ratio| (ratio * 100.0).floor() / 100.0)
@@ -1332,10 +1367,9 @@ fn unreadable(
     if let Some(border) = edge(rules, family, variant, look) {
         let fill = hex(theme, look.fill);
         let on_its_ground = fill.is_none_or(|fill| {
-            family
-                .grounds
+            grounds(theme, family)
                 .iter()
-                .any(|ground| hex(theme, ground).is_some_and(|g| g.eq_ignore_ascii_case(fill)))
+                .any(|ground| ground.eq_ignore_ascii_case(fill))
         });
         if on_its_ground
             && let Some(ratio) = lowest(theme, family, look.fill, border)
