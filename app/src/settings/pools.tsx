@@ -88,6 +88,14 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
         ? "1 older runner keeps its chats until they end, then purlis removes it."
         : `${version.draining} older runners keep their chats until they end, then purlis removes them.`,
     );
+    // What they still wait on, as purlis last found it (#2865).
+    if (version.waiting > 0) {
+      lines.push(
+        version.waiting === 1
+          ? "1 chat still runs there: end it to let purlis remove the older runner."
+          : `${version.waiting} chats still run there: end them to let purlis remove the older runners.`,
+      );
+    }
   }
   return lines.length === 0 ? undefined : lines.join(" ");
 }

@@ -102,7 +102,7 @@ pub use recording::{Ended, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
 pub use relay::{Dial, Keep, Relay};
 #[cfg(unix)]
-pub use routing::{RelaysTo, Routed};
+pub use routing::{DrainsTo, RelaysTo, Routed};
 #[cfg(unix)]
 pub use serving::{
     Answering, HostError, LOCK, Pairing, Place, Unpairing, Window, serve, serve_answering,
