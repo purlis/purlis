@@ -606,3 +606,94 @@ fn a_pools_runner_of_another_image_is_not_its_runner() {
         "{refused}"
     );
 }
+
+#[test]
+fn a_runner_kept_of_a_pool_and_draining_reads_back_as_it_was_written() {
+    let config = tempfile::tempdir().unwrap();
+    let path = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let row = |name: &str, extra: serde_json::Value| {
+        let mut row = serde_json::json!({
+            "name": name,
+            "pool": "docker",
+            "container": "a".repeat(64),
+            "image": IMAGE,
+            "user": "10001:10001",
+            "home": "/home/purlis",
+            "device": format!("01JB0RUNNER000000000000000{}", name.len() % 10),
+            "key": "12".repeat(32),
+            "paired": 1,
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            row[key] = value.clone();
+        }
+        row
+    };
+    let text = serde_json::json!({
+        "version": 1,
+        "pools": [{ "name": "first", "kind": "docker", "image": IMAGE }],
+        "runners": [
+            row("first", serde_json::json!({ "draining": true })),
+            row("first-01234567", serde_json::json!({ "of": "first" })),
+        ],
+    });
+    write_private(&path, &text);
+
+    let kept = read(config.path()).unwrap();
+    assert!(kept[0].draining && kept[0].of.is_none());
+    assert_eq!(kept[0].pool(), "first");
+    assert_eq!(kept[1].of.as_deref(), Some("first"));
+    assert!(!kept[1].draining);
+    assert_eq!(
+        runner_for(config.path(), "first").unwrap().name(),
+        "first-01234567"
+    );
+    assert_eq!(draining(config.path()).unwrap().len(), 1);
+
+    // Written back exactly: `of` and `draining` only where they say something.
+    let locked = lock(config.path());
+    forget_pool_locked(config.path(), "none", &locked).unwrap();
+    let held = load(config.path()).unwrap();
+    write(config.path(), &held).unwrap();
+    assert_eq!(the_file(config.path())["runners"], text["runners"]);
+}
+
+#[test]
+fn a_runner_row_with_a_draining_that_is_not_true_or_an_unusable_pool_is_refused() {
+    for extra in [
+        serde_json::json!({ "draining": false }),
+        serde_json::json!({ "draining": "yes" }),
+        serde_json::json!({ "of": "Not A Pool" }),
+        serde_json::json!({ "of": 3 }),
+        serde_json::json!({ "else": 1 }),
+    ] {
+        let config = tempfile::tempdir().unwrap();
+        let path = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut row = serde_json::json!({
+            "name": "first",
+            "pool": "docker",
+            "container": "a".repeat(64),
+            "image": IMAGE,
+            "user": "10001:10001",
+            "home": "/home/purlis",
+            "device": "01JB0RUNNER0000000000000000",
+            "key": "12".repeat(32),
+            "paired": 1,
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            row[key] = value.clone();
+        }
+        write_private(
+            &path,
+            &serde_json::json!({ "version": 1, "runners": [row] }),
+        );
+        assert!(read(config.path()).is_err(), "{extra}");
+    }
+}
+
+fn write_private(path: &Path, text: &serde_json::Value) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, text.to_string()).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+}

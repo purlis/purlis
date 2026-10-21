@@ -197,6 +197,11 @@ fn kept_title(title: &str) -> String {
     title.chars().take(MOST_TITLE_CHARS).collect()
 }
 
+/// The drag event that cancels the engine's own drag carrying `data`, at `at`.
+fn drag_cancel(at: (f64, f64), data: &Value) -> Value {
+    json!({ "type": "dragCancel", "x": at.0, "y": at.1, "modifiers": 0, "data": data })
+}
+
 /// How long the driver gives the engine to say whether a document has loaded.
 const READY_STATE_WITHIN: Duration = Duration::from_secs(2);
 /// How long listing the pages gives the engine to read every page's title from its document,
@@ -404,6 +409,9 @@ struct State {
     /// What the engine's own drag carries, once a drag of the agent's started one (#2136), by
     /// the session it started on.
     dragged: Option<(String, Value)>,
+    /// Where a drag of the agent's ended without the engine's word that its own drag started,
+    /// by session (#2839): a word that comes later is answered by cancelling that drag there.
+    cancels_late: Option<(String, (f64, f64))>,
 }
 
 impl State {
@@ -664,12 +672,12 @@ impl State {
         }
     }
 
-    /// Forgets `frame` and every frame inside it.
-    fn frame_gone(&mut self, target: &str, frame: &str) {
+    /// Forgets `frame` and every frame inside it, and answers them.
+    fn frame_gone(&mut self, target: &str, frame: &str) -> Vec<String> {
         self.generations += 1;
         let shows = self.generations;
         let Some(page) = self.page_mut(target) else {
-            return;
+            return Vec::new();
         };
         let mut gone = vec![frame.to_owned()];
         let mut at = 0;
@@ -691,6 +699,7 @@ impl State {
             self.refs.forget_frame(id);
             self.excluded.retain(|key| &key.frame != id);
         }
+        gone
     }
 }
 
@@ -700,6 +709,13 @@ enum FollowUp {
     Close(String),
     SetUp(String),
     Release(String),
+    /// The engine's own drag, told of only after the agent's drag that started it ended
+    /// (#2839): cancelled at where that drag ended.
+    CancelDrag {
+        session: String,
+        at: (f64, f64),
+        data: Value,
+    },
     /// A request held until the judge says whether it goes (#2018).
     Judge {
         paused: Paused,
@@ -2341,7 +2357,12 @@ impl Browser {
             // A native drag source starts the engine's own drag, which the engine hands over
             // while this drag lasts, and never after (#2136): once asked to, it is told to stop
             // however the drag ends.
-            lock(&self.inner.state).dragged = None;
+            {
+                let mut state = lock(&self.inner.state);
+                state.dragged = None;
+                state.cancels_late = None;
+            }
+            let mut taken = false;
             let dragged = self
                 .devtools()
                 .call(
@@ -2350,13 +2371,40 @@ impl Browser {
                     Some(session),
                 )
                 .map_err(refusal)
-                .and_then(|_| self.dragging(&page, session, start, end, &drops_into));
+                .and_then(|_| self.dragging(&page, session, start, end, &drops_into, &mut taken));
             let handed_back = self.devtools().call(
                 "Input.setInterceptDrags",
                 json!({ "enabled": false }),
                 Some(session),
             );
-            lock(&self.inner.state).dragged = None;
+            // A drag the engine told of only after this one stopped waiting is cancelled, now
+            // or as the word comes, however late (#2839).
+            let late = {
+                let mut state = lock(&self.inner.state);
+                let told = state.dragged.take();
+                match told {
+                    Some((on, data)) if !taken && on == *session => Some(data),
+                    _ if !taken => {
+                        state.cancels_late = Some((session.clone(), end));
+                        None
+                    }
+                    _ => None,
+                }
+            };
+            if let Some(data) = late {
+                let _ = self.devtools().call(
+                    "Input.dispatchDragEvent",
+                    drag_cancel(end, &data),
+                    Some(session),
+                );
+            }
+            // Said where the drag's own failure is what its call answers.
+            if let (Err(_), Err(why)) = (&dragged, &handed_back) {
+                tracing::warn!(
+                    "purlis: a browser was not told to stop handing its drags over after a drag \
+                     that failed: {why}"
+                );
+            }
             let note = dragged?;
             handed_back.map_err(refusal)?;
             Ok(note)
@@ -2374,11 +2422,13 @@ impl Browser {
         start: (f64, f64),
         end: (f64, f64),
         drops_into: &[String],
+        taken: &mut bool,
     ) -> Result<Option<String>, Refusal> {
         self.mouse(session, "mouseMoved", start.0, start.1, 0, 0)?;
         self.mouse(session, "mousePressed", start.0, start.1, 1, 1)?;
         let mut carried = None;
         let dragged = self.dragged_on(session, start, end, drops_into, target, &mut carried);
+        *taken = carried.is_some();
         if dragged.is_err() || matches!(dragged, Ok(Some(_))) {
             self.let_go(session, end, carried.as_ref());
         }
@@ -2451,7 +2501,7 @@ impl Browser {
         if let Some(data) = carried {
             let _ = self.devtools().call(
                 "Input.dispatchDragEvent",
-                json!({ "type": "dragCancel", "x": end.0, "y": end.1, "modifiers": 0, "data": data }),
+                drag_cancel(end, data),
                 Some(session),
             );
         }
@@ -3290,6 +3340,14 @@ impl Inner {
                         {
                             page.settle.forget_session(&session, now);
                         }
+                        // A drag ended on a session that is gone is answered by nobody (#2839).
+                        if state
+                            .cancels_late
+                            .as_ref()
+                            .is_some_and(|(on, _)| *on == session)
+                        {
+                            state.cancels_late = None;
+                        }
                         state.sessions.remove(&session);
                     }
                 }
@@ -3392,14 +3450,29 @@ impl Inner {
                         && let (Some(session), Some(frame)) = (&event.session_id, text("/frameId"))
                         && let Some(target) = state.page_of_session(session)
                     {
-                        state.frame_gone(&target, &frame);
+                        let gone = state.frame_gone(&target, &frame);
+                        // What they had loading or open went with them (#2841).
+                        if let Some(page) = state.page_mut(&target) {
+                            page.settle.frames_gone(session, &gone, now);
+                        }
                     }
                 }
                 // A drag of the agent's started the engine's own (#2136): it is carried on by
                 // drag events from here.
                 "Input.dragIntercepted" => {
                     if let Some(session) = &event.session_id {
-                        state.dragged = Some((session.clone(), params["data"].clone()));
+                        match state.cancels_late.take() {
+                            // Told of after the drag that started it ended (#2839).
+                            Some((on, at)) if on == *session => follow.push(FollowUp::CancelDrag {
+                                session: on,
+                                at,
+                                data: params["data"].clone(),
+                            }),
+                            other => {
+                                state.cancels_late = other;
+                                state.dragged = Some((session.clone(), params["data"].clone()));
+                            }
+                        }
                     }
                 }
                 _ => {}
@@ -3528,6 +3601,13 @@ impl Inner {
                 if let Some((paused, outbound)) = unsent {
                     self.judged(&paused, &outbound);
                 }
+            }
+            FollowUp::CancelDrag { session, at, data } => {
+                let _ = devtools.call(
+                    "Input.dispatchDragEvent",
+                    drag_cancel(at, &data),
+                    Some(&session),
+                );
             }
             FollowUp::Release(session) => {
                 let on = Some(session.as_str());

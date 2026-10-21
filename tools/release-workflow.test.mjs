@@ -334,16 +334,83 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
   const names = block("jobs")
     .filter((line) => /^ {2}\S/.test(line))
     .map((line) => line.trim().slice(0, -1));
-  assert.deepEqual(names, ["plan", "build", "sbom", "manifest", "provenance", "publish", "profile-guard"]);
-  let whole = 0;
+  assert.deepEqual(names, [
+    "plan",
+    "build",
+    "runner-image",
+    "runner-image-signature",
+    "sbom",
+    "manifest",
+    "provenance",
+    "publish",
+    "profile-guard",
+  ]);
+  // A job that calls a workflow has no deadline of its own: it takes the longest chain of
+  // the called workflow's jobs, each of which has one (#2749).
+  const called = (body) => {
+    const uses = body.find((line) => line.startsWith("    uses: ./.github/workflows/"));
+    if (!uses) return null;
+    const other = readFileSync(new URL(`../${uses.trim().slice("uses: ./".length)}`, import.meta.url), "utf8");
+    return deadlines(other.split("\n"));
+  };
+  const minutesOf = new Map();
   for (const name of names) {
-    const minutes = Number(value(job(name), 4, "timeout-minutes"));
+    const body = job(name);
+    const inner = called(body);
+    if (inner !== null) {
+      assert.ok(!body.some((line) => line.startsWith("    timeout-minutes:")), name);
+      minutesOf.set(name, inner);
+      continue;
+    }
+    const minutes = Number(value(body, 4, "timeout-minutes"));
     assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= 90, `${name}: ${minutes}`);
-    whole += minutes;
+    minutesOf.set(name, minutes);
   }
-  // The longest a run can hold the group, every job at its deadline one after another.
-  assert.ok(whole <= 240, `a run may hold the group for ${whole} minutes`);
+  // The longest a run can hold the group: the slowest chain of jobs, each waiting on those it
+  // needs, every one at its deadline.
+  const longest = chain(names, minutesOf, (name) => needsOf(job(name)));
+  assert.ok(longest <= 240, `a run may hold the group for ${longest} minutes`);
 });
+
+/** The jobs `body` waits on. */
+function needsOf(body) {
+  const line = body.find((l) => l.startsWith("    needs:"));
+  if (!line) return [];
+  const value = line.slice("    needs:".length).trim();
+  return value.startsWith("[") ? value.slice(1, -1).split(",").map((n) => n.trim()) : [value];
+}
+
+/** The longest chain through `names`, by `minutesOf`, each after what `needs` names. */
+function chain(names, minutesOf, needs) {
+  const done = new Map();
+  const finish = (name) => {
+    if (!done.has(name)) {
+      const before = Math.max(0, ...needs(name).map(finish));
+      done.set(name, before + minutesOf.get(name));
+    }
+    return done.get(name);
+  };
+  return Math.max(...names.map(finish));
+}
+
+/** The longest chain of deadlines through a workflow's jobs, given its lines. */
+function deadlines(other) {
+  const start = other.indexOf("jobs:");
+  const bodies = new Map();
+  let current = null;
+  for (const line of other.slice(start + 1)) {
+    if (/^\S/.test(line)) break;
+    if (/^ {2}[\w-]+:$/.test(line)) {
+      current = line.trim().slice(0, -1);
+      bodies.set(current, []);
+    } else if (current && !line.trim().startsWith("#")) {
+      bodies.get(current).push(line);
+    }
+  }
+  const names = [...bodies.keys()];
+  const minutesOf = new Map(names.map((n) => [n, Number(value(bodies.get(n), 4, "timeout-minutes"))]));
+  return chain(names, minutesOf, (name) => needsOf(bodies.get(name)));
+}
 
 test("the tool reads the commit from the notes the manifest job writes, and the version plan gives", () => {
   const manifest = job("manifest").map((line) => line.trim());

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A drag whose source is a native drag-and-drop element (#2136), through a real engine: to a
-//! drop target, and by an offset.
+//! drop target, and by an offset. A drag the person cuts short by taking over leaves no drag of
+//! the engine's own under way: the next one drops (#2839).
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
@@ -102,4 +103,48 @@ fn a_native_drop_under_a_frame_of_another_site_is_judged_as_sent_there() {
         "{dragged:?}"
     );
     assert!(snapshot(&browser).contains("Nothing dropped"));
+}
+
+#[test]
+fn a_native_drag_cut_by_the_person_taking_over_leaves_the_next_drag_to_drop() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let browser = Arc::new(browser);
+    open(&browser, "native-drag.html");
+    let tree = snapshot(&browser);
+    let (card, bin) = (ref_on(&tree, "\"Card\""), ref_on(&tree, "\"Bin\""));
+    let dragging = Arc::clone(&browser);
+    let cut = std::thread::spawn(move || {
+        dragging.call(
+            &common::drive::next_id(),
+            Call::Drag {
+                from: card,
+                to: DragTo::Element(bin),
+            },
+        )
+    });
+    // Whenever it lands in the drag, the take-over cuts it.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    browser.take_over();
+    let _ = cut.join().unwrap();
+    // The engine's word of its own drag may come after the cut drag ended: it is cancelled then.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    browser.hand_back();
+    // The page again, so only the next drag can say it dropped.
+    open(&browser, "native-drag.html");
+    let tree = snapshot(&browser);
+    let (card, bin) = (ref_on(&tree, "\"Card\""), ref_on(&tree, "\"Bin\""));
+    call(
+        &browser,
+        Call::Drag {
+            from: card,
+            to: DragTo::Element(bin),
+        },
+    );
+    assert!(
+        sees(&browser, "Dropped card in the bin"),
+        "{}",
+        snapshot(&browser)
+    );
 }

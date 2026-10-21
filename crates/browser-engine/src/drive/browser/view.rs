@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
-use super::super::clipped::{STYLES, clipped, shown_through};
+use super::super::clipped::{STYLES, clipped, empty, shown_parts, through};
 use super::{Browser, NodeKey, Placings, Rect, Session, lock};
 
 /// The most nodes a page's process may hold for its layout to be read for what a box or a frame
@@ -94,57 +94,116 @@ impl Browser {
             let Some(answer) = layouts.of(self, &session) else {
                 continue;
             };
-            let shows = if session == page_session {
-                None
-            } else {
-                match self.viewport_of(&session, true) {
-                    // What the frame's own viewport shows, cut to what the boxes its element
-                    // is in on the page around it let show (#2689).
-                    Some(shows) => Some(
-                        match self.shown_from_around(&mut layouts, &session, shows) {
-                            Some(around) => overlap(&shows, &around),
-                            None => shows,
-                        },
-                    ),
-                    None => continue,
-                }
-            };
             let wanted: HashSet<i64> = keys.iter().map(|key| key.backend).collect();
-            let cut = clipped(&answer, &wanted, shows);
-            out.extend(
-                keys.into_iter()
-                    .filter(|key| cut.contains(&key.backend))
-                    .cloned(),
-            );
+            if session == page_session {
+                let cut = clipped(&answer, &wanted, None);
+                out.extend(
+                    keys.into_iter()
+                        .filter(|key| cut.contains(&key.backend))
+                        .cloned(),
+                );
+                continue;
+            }
+            // A frame read in a session of its own: what its own viewport shows, carried out
+            // through the boxes and frames of each session around it (#2689, #2840).
+            let Some(shows) = self.viewport_of(&session, true) else {
+                continue;
+            };
+            let around = self.sessions_around(&mut layouts, target, &session, page_session);
+            let parts = shown_parts(&answer, &wanted, Some(shows));
+            for key in keys {
+                let Some(Some(mut part)) = parts.get(&key.backend).copied() else {
+                    continue;
+                };
+                let mut scrolled = (shows.x, shows.y);
+                let mut cut = empty(&part);
+                for hop in &around {
+                    if cut {
+                        break;
+                    }
+                    let Some(carried) = through(&hop.layout, hop.owner, part, scrolled, hop.shows)
+                    else {
+                        break;
+                    };
+                    part = carried;
+                    cut = empty(&part);
+                    let Some(next) = hop.shows else {
+                        break;
+                    };
+                    scrolled = (next.x, next.y);
+                }
+                if cut {
+                    out.insert(key.clone());
+                }
+            }
         }
         out
     }
 
-    /// What the boxes on the page around the frame `session` reads let its document show, in
-    /// the document's coordinates, scrolled as `shows` is (#2689): read from the layout of the
-    /// session that holds the frame's element. `None` where that is not known.
-    fn shown_from_around(&self, layouts: &mut Layouts, session: &str, shows: Rect) -> Option<Rect> {
-        let (frame, around) = {
-            let state = lock(&self.inner.state);
-            let Some(Session::Frame { page, frame }) = state.sessions.get(session) else {
-                return None;
+    /// The sessions around the frame `session` reads, nearest first, out to the page's: each
+    /// one's layout, the frame element there that holds the one inside it, and what its own
+    /// viewport shows (none for the page's, whose viewport is [`Browser::out_of_view`]'s). It
+    /// stops at the first that is not known.
+    fn sessions_around(
+        &self,
+        layouts: &mut Layouts,
+        target: &str,
+        session: &str,
+        page_session: &str,
+    ) -> Vec<Around> {
+        let mut out = Vec::new();
+        let mut inside = session.to_owned();
+        while inside != page_session && out.len() < 32 {
+            let (frame, around) = {
+                let state = lock(&self.inner.state);
+                let Some(Session::Frame { page, frame }) = state.sessions.get(&inside) else {
+                    break;
+                };
+                if page != target {
+                    break;
+                }
+                let Some(page) = state.page(page) else {
+                    break;
+                };
+                let Some(parent) = page.frames.get(frame).and_then(|f| f.parent.clone()) else {
+                    break;
+                };
+                let Some(around) = page.frames.get(&parent).map(|f| f.session.clone()) else {
+                    break;
+                };
+                (frame.clone(), around)
             };
-            let page = state.page(page)?;
-            let parent = page.frames.get(frame)?.parent.clone()?;
-            (frame.clone(), page.frames.get(&parent)?.session.clone())
-        };
-        let owner = self
-            .devtools()
-            .call(
-                "DOM.getFrameOwner",
-                json!({ "frameId": frame }),
-                Some(&around),
-            )
-            .ok()?
-            .get("backendNodeId")?
-            .as_i64()?;
-        let answer = layouts.of(self, &around)?;
-        shown_through(&answer, owner, (shows.x, shows.y))
+            let Some(owner) = self
+                .devtools()
+                .call(
+                    "DOM.getFrameOwner",
+                    json!({ "frameId": frame }),
+                    Some(&around),
+                )
+                .ok()
+                .and_then(|o| o.get("backendNodeId").and_then(Value::as_i64))
+            else {
+                break;
+            };
+            let Some(layout) = layouts.of(self, &around) else {
+                break;
+            };
+            let shows = if around == page_session {
+                None
+            } else {
+                match self.viewport_of(&around, true) {
+                    Some(shows) => Some(shows),
+                    None => break,
+                }
+            };
+            out.push(Around {
+                layout,
+                owner,
+                shows,
+            });
+            inside = around;
+        }
+        out
     }
 
     /// What the viewport of `session`'s document shows, in CSS pixels: the page's visual
@@ -226,16 +285,13 @@ impl Layouts {
     }
 }
 
-/// The part `a` and `b` share: empty (no width) where they share none.
-fn overlap(a: &Rect, b: &Rect) -> Rect {
-    let x = a.x.max(b.x);
-    let y = a.y.max(b.y);
-    Rect {
-        x,
-        y,
-        width: ((a.x + a.width).min(b.x + b.width) - x).max(0.0),
-        height: ((a.y + a.height).min(b.y + b.height) - y).max(0.0),
-    }
+/// A session around a frame read in a session of its own (#2840): its layout, the frame element
+/// there that holds the session inside it, and what its own viewport shows, where it is not the
+/// page's.
+struct Around {
+    layout: std::sync::Arc<Value>,
+    owner: i64,
+    shows: Option<Rect>,
 }
 
 /// Whether `a` and `b` share any part.

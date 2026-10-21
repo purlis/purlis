@@ -13,8 +13,14 @@
 //!   [`crate::runners::remove`]), and forgets the pool once its runner is gone, so a removal
 //!   that leaves something can be asked again.
 //!
-//! A pool has one runner, called by the pool's name. Chats in a workspace that runs on the pool
-//! all run on it.
+//! - **After an update, a pool of purlis's own image follows the desktop's version, side by
+//!   side** ([`follow`], #2749, ruled 2026-10-20): a runner of the image of the desktop's
+//!   version is made, checked and paired beside the pool's, kept as the pool's runner, and the
+//!   one it replaces is kept draining: it keeps its chats and starts no new one, and is removed
+//!   once its last chat has ended ([`drain`]). A pool of a team's own image is never moved.
+//!
+//! A pool's chats start on its one runner that is not draining: the one called by the pool's
+//! name, or the one made beside it after an update.
 
 use std::path::Path;
 
@@ -100,17 +106,20 @@ pub fn remove(
             "no pool named {name} is on this machine"
         )));
     }
-    let removed = match runners::named(config_root, name)? {
-        Some(_) => Some(runners::remove_locked(
-            config_root,
-            docker,
-            name,
-            unpair,
-            &locked,
-        )?),
-        None => None,
-    };
-    if removed.as_ref().is_none_or(|removed| removed.forgotten) {
+    // Every runner of the pool, a draining one too (#2749), the pool's current one last.
+    let mut of_it: Vec<runners::Kept> = runners::read(config_root)?
+        .into_iter()
+        .filter(|kept| kept.pool() == name)
+        .collect();
+    of_it.sort_by_key(|kept| !kept.draining);
+    let mut removed = None;
+    let mut all_gone = true;
+    for kept in of_it {
+        let one = runners::remove_locked(config_root, docker, kept.name(), unpair, &locked)?;
+        all_gone &= one.forgotten;
+        removed = Some(one);
+    }
+    if all_gone {
         runners::forget_pool_locked(config_root, name, &locked)?;
         // Every workspace that ran its chats on it runs them on this machine again.
         crate::machine::update(config_root, |store| {
@@ -156,6 +165,86 @@ pub fn starts_here(
          code yet, so nothing was started. Remove pool {pool} in {SETTING} to run them on this \
          machine again."
     ))
+}
+
+/// **Moves the pool `name` to `image`, the runner image of the desktop's version** (#2749): a
+/// runner of `image` is made beside the pool's, held to the pool's limits, checked, paired with
+/// `desktop` and kept as the pool's runner, and every runner of the pool before it is kept
+/// draining ([`runners::succeed_locked`]). The runner kept, or `None` where the pool is of
+/// `image` already.
+///
+/// Refused, with nothing changed, for a pool of a team's own image, which is never moved, and
+/// for an `image` that is not purlis's own. What fails takes back the runner this made; the
+/// pool and its runner stay as they were.
+pub fn follow(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    image: &crate::dockerpool::Image,
+    desktop: &Pinned,
+) -> Result<Option<Kept>, Refused> {
+    let locked = runners::lock(config_root);
+    let pool = runners::pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
+    if pool.image() == image {
+        return Ok(None);
+    }
+    if !pool.image().is_purlis_own() || !image.is_purlis_own() {
+        return Err(Refused::Other(format!(
+            "pool {name} runs {}, which is not purlis's own runner image, so purlis does not \
+             move it to another",
+            pool.image().as_str()
+        )));
+    }
+    let successor = crate::dockerpool::successor_name(name, image);
+    let made = docker
+        .declared(image)
+        .and_then(|(user, home)| Runner::new(&successor, image.clone(), user, &home))
+        .map(|runner| runner.limited(pool.limits()))
+        .and_then(|runner| docker.make(&runner))
+        .map_err(|why| Refused::Other(why.0))?;
+    let kept = docker
+        .pair(&made, desktop)
+        .map_err(|why| Refused::Other(why.0))
+        .and_then(|answered| {
+            runners::succeed_locked(config_root, name, &made, &answered, desktop, &locked)
+        });
+    match kept {
+        Ok(kept) => Ok(Some(kept)),
+        Err(why) => Err(match docker.remove(&made) {
+            Ok(()) => why,
+            Err(left) => Refused::Other(format!(
+                "{why}; and the runner made for it could not all be removed ({left}): remove \
+                 the container {} and the volume {} with docker",
+                made.container.as_str(),
+                made.runner.volume()
+            )),
+        }),
+    }
+}
+
+/// **Removes the draining runner `name`** (#2749), once its last chat has ended, as a runner is
+/// removed ([`runners::remove`]). Refused for a runner that is not draining.
+pub fn drain(
+    config_root: &Path,
+    docker: &Docker,
+    name: &str,
+    unpair: Option<&Unpair<'_>>,
+) -> Result<Removed, Refused> {
+    let locked = runners::lock(config_root);
+    match runners::named(config_root, name)? {
+        Some(kept) if kept.draining => {
+            runners::remove_locked(config_root, docker, name, unpair, &locked)
+        }
+        Some(_) => Err(Refused::Other(format!(
+            "runner {name} is its pool's runner, not one draining, so it was not removed"
+        ))),
+        None => Err(Refused::Other(format!(
+            "no runner named {name} is kept on this machine"
+        ))),
+    }
 }
 
 #[cfg(test)]

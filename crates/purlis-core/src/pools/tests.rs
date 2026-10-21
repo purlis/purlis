@@ -23,6 +23,14 @@ fn runner_answers() -> Pinned {
     }
 }
 
+/// What the runner made beside a pool's after an update answers: a device id of its own.
+fn successor_answers() -> Pinned {
+    Pinned {
+        device: "01JB0RUNNER0000000000000001".into(),
+        key: LinkKey::generate().unwrap().public(),
+    }
+}
+
 /// A Docker that makes a runner called `first` of the runner image, and pairs it as `answers`.
 fn a_docker(answers: &Pinned) -> FakeDocker {
     let fake = FakeDocker::new(&inspected());
@@ -261,3 +269,160 @@ fn a_workspace_set_to_run_on_a_pool_starts_nothing_here_and_says_why() {
         None
     );
 }
+
+/// The runner image of the desktop's new version, purlis's own.
+const NEW: &str = "ghcr.io/purlis/purlis-runner@sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+/// `fake` makes the runner `name` of `image` from now on, and pairs it as `answers`.
+fn makes(fake: &FakeDocker, name: &str, image: &str, answers: &Pinned) {
+    let mut inspect = inspected();
+    inspect[0]["Config"]["Image"] = image.into();
+    inspect[0]["Image"] = image.rsplit_once('@').unwrap().1.into();
+    inspect[0]["Config"]["Labels"]["purlis.runner"] = name.into();
+    inspect[0]["Mounts"][0]["Name"] = format!("purlis-runner-{name}-home").into();
+    fake.set("inspect", &inspect.to_string());
+    fake.set(
+        "volume",
+        &serde_json::json!([{
+            "Name": format!("purlis-runner-{name}-home"),
+            "Driver": "local",
+            "Options": null,
+            "Labels": null
+        }])
+        .to_string(),
+    );
+    fake.set(
+        "paired",
+        &format!("{}\n", crate::runnerlink::to_line(answers)),
+    );
+}
+
+/// A pool of purlis's own image, added, whose runner is `first`.
+fn a_pool_added(config: &Path, fake: &FakeDocker, ours: &Pinned) -> Kept {
+    add(config, &fake.docker(), &pool("first", Set::default()), ours).unwrap()
+}
+
+#[test]
+fn after_an_update_a_pool_gets_a_runner_of_the_desktops_version_beside_the_old_one() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    assert_eq!(successor, "first-fedcba98");
+    let answers = successor_answers();
+    makes(&fake, &successor, NEW, &answers);
+
+    let kept = follow(config.path(), &fake.docker(), "first", &new_image, &ours)
+        .unwrap()
+        .expect("a runner made beside the old one");
+
+    assert_eq!(kept.name(), successor);
+    assert_eq!(kept.of.as_deref(), Some("first"));
+    assert_eq!(kept.pinned, answers);
+    // New chats start on the new runner; the old one drains, and is kept.
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().name(),
+        successor
+    );
+    let draining = runners::draining(config.path()).unwrap();
+    assert_eq!(draining.len(), 1);
+    assert_eq!(draining[0].made, old.made);
+    assert_eq!(
+        runners::pools(config.path()).unwrap()[0].image(),
+        &new_image
+    );
+    // Asked again, nothing more is made.
+    let log = fake.file("log");
+    assert!(
+        follow(config.path(), &fake.docker(), "first", &new_image, &ours)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(fake.file("log"), log);
+}
+
+#[test]
+fn a_pool_of_a_teams_own_image_is_never_moved() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let team = "registry.example/team/runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let mut inspect = inspected();
+    inspect[0]["Config"]["Image"] = team.into();
+    fake.set("inspect", &inspect.to_string());
+    let pool = Pool::new(
+        "first",
+        crate::dockerpool::Image::pinned(team).unwrap(),
+        Set::default(),
+    )
+    .unwrap();
+    add(config.path(), &fake.docker(), &pool, &ours).unwrap();
+    let log = fake.file("log");
+
+    let refused = follow(
+        config.path(),
+        &fake.docker(),
+        "first",
+        &crate::dockerpool::Image::pinned(NEW).unwrap(),
+        &ours,
+    )
+    .unwrap_err();
+    assert!(
+        refused.to_string().contains("not purlis's own"),
+        "{refused}"
+    );
+    assert_eq!(fake.file("log"), log, "nothing was made");
+    assert!(runners::draining(config.path()).unwrap().is_empty());
+}
+
+#[test]
+fn a_new_runner_that_does_not_pair_is_taken_back_and_the_pool_stays_as_it_was() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    makes(
+        &fake,
+        &crate::dockerpool::successor_name("first", &new_image),
+        NEW,
+        &successor_answers(),
+    );
+    fake.set("paired", "not a pin\n");
+
+    assert!(follow(config.path(), &fake.docker(), "first", &new_image, &ours).is_err());
+
+    assert!(fake.file("log").contains("container rm --force"));
+    assert_eq!(runners::read(config.path()).unwrap(), vec![old.clone()]);
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().made,
+        old.made
+    );
+}
+
+#[test]
+fn only_a_draining_runner_is_drained_and_removing_the_pool_removes_every_runner_of_it() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+
+    assert!(drain(config.path(), &fake.docker(), &successor, None).is_err());
+    let removed = drain(config.path(), &fake.docker(), "first", None).unwrap();
+    assert!(removed.forgotten);
+    assert_eq!(runners::read(config.path()).unwrap().len(), 1);
+
+    // A pool with a runner draining beside its own is removed whole.
+    makes(&fake, "first", IMAGE_OF_FIRST, &runner_answers());
+    remove(config.path(), &fake.docker(), "first", None).unwrap();
+    assert!(runners::read(config.path()).unwrap().is_empty());
+    assert!(runners::pools(config.path()).unwrap().is_empty());
+}
+
+const IMAGE_OF_FIRST: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
