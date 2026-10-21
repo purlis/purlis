@@ -1441,7 +1441,9 @@ no purlis token takes, a dimension in `rem`, a font weight given as a word, a JS
 not there, or round in a circle, refuses the file.
 
 Imports are bounded in size and work. A design-tokens file is at most 24 MiB and holds at most
-400,000 JSON values, counted before it is read; a group's or a token's name is at most 64 bytes
+400,000 JSON values, counted before it is read, no number longer than 64 KiB and no more strings
+that long than the files it may carry; a number is taken when it is at most 32 characters long;
+a group's or a token's name is at most 64 bytes
 and a token's path, its groups' names and its own, at most 256; the `theme.json` it makes is at
 most 2 MiB, as a zip's is; it has at most 64 appearances; the files it carries are held to a
 zip's bounds (64 files, each at most 2 MiB, 16 MiB together, each where a theme folder keeps a

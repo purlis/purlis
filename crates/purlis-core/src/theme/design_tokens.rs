@@ -51,15 +51,17 @@
 //! the colour it ends at. Every token no purlis token takes is listed with why.
 //!
 //! **Imports are bounded**, each bound checked before the work it limits: a file is at most
-//! [`MOST_BYTES`] and holds at most [`MOST_VALUES`] JSON values, counted before it is parsed; a
+//! [`MOST_BYTES`] and holds at most [`MOST_VALUES`] JSON values, counted before it is parsed, with
+//! no number and no more strings past [`MOST_SCALAR_BYTES`] than the files it may carry; a
 //! group's or a token's name is at most [`MOST_NAME_BYTES`] and a token's path at most
 //! [`MOST_PATH_BYTES`]; its groups nest at most [`MOST_DEPTH`] deep and it holds at most
 //! [`MOST_NODES`] groups and tokens; it has at most a theme's [`MOST_APPEARANCES`]; a reference is
 //! followed at most [`MOST_HOPS`] times; the `theme.json` it makes is held to a theme folder's
 //! file cap, and the files it carries to a theme folder's zip's bounds (`super::archive`), each
-//! file's size checked before it is decoded. Paths and values are borrowed from the parsed file,
-//! so reading one holds it once and what purlis makes of it, as `design_tokens_memory.rs`
-//! measures.
+//! file's size checked before it is decoded. Paths and values are borrowed from the parsed file
+//! and a value is copied only once it is taken, a number only when it is short; a message names a
+//! type the format has, never the file's own words. So reading one holds it once and what purlis
+//! makes of it, however many tokens refer to one value, as `design_tokens_memory.rs` measures.
 
 use std::collections::BTreeSet;
 
@@ -717,11 +719,7 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| format!("{file_name} is not text"))?
         .trim_start_matches('\u{feff}');
-    if values_in(text) > MOST_VALUES {
-        return Err(format!(
-            "{file_name} holds more than {MOST_VALUES} values, the most a design-tokens file may"
-        ));
-    }
+    scanned(file_name, text)?;
     let document = match serde_json::from_str::<Value>(text) {
         Ok(Value::Object(document)) => document,
         Ok(_) => {
@@ -955,7 +953,8 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
         .map_or_else(|| super::folder_name(&name), str::to_owned);
     if !is_folder_id(&folder) {
         return Err(format!(
-            "{name} would be the theme folder {folder}: {}; rename the theme and import it again",
+            "{} would be the theme folder {folder}: {}; rename the theme and import it again",
+            crate::shown::short(&name),
             not_an_id(&folder)
         ));
     }
@@ -1015,30 +1014,70 @@ impl std::io::Write for Capped {
     }
 }
 
-/// **How many JSON values `text` can hold**, at most: every object and array, and every value
-/// after the first in one, counted outside strings. One pass, no allocation.
-fn values_in(text: &str) -> usize {
-    let mut count = 1;
+/// The most bytes one string or number of a file may be, but for the files it carries.
+pub const MOST_SCALAR_BYTES: usize = 64 * 1024;
+
+/// **`text` read once before it is parsed**: at most [`MOST_VALUES`] values (every object and
+/// array, and every value after the first in one, counted outside strings), no number longer than
+/// [`MOST_SCALAR_BYTES`], and no more strings longer than that than a theme folder carries files
+/// ([`MOST_FILES`]), since only a carried file is that long. One pass, no allocation.
+fn scanned(file_name: &str, text: &str) -> Result<(), String> {
+    let mut count = 1usize;
+    let mut long_strings = 0usize;
     let mut in_string = false;
     let mut escaped = false;
+    let mut run = 0usize;
     for byte in text.bytes() {
         if in_string {
+            run += 1;
             if escaped {
                 escaped = false;
             } else if byte == b'\\' {
                 escaped = true;
             } else if byte == b'"' {
                 in_string = false;
+                if run > MOST_SCALAR_BYTES {
+                    long_strings += 1;
+                    if long_strings >= MOST_FILES {
+                        return Err(format!(
+                            "{file_name} holds more strings longer than {} KiB than the files a \
+                             theme folder carries",
+                            MOST_SCALAR_BYTES / 1024
+                        ));
+                    }
+                }
+                run = 0;
             }
             continue;
         }
         match byte {
-            b'"' => in_string = true,
-            b'{' | b'[' | b',' | b':' => count += 1,
-            _ => {}
+            b'"' => {
+                in_string = true;
+                run = 0;
+            }
+            b'{' | b'[' | b',' | b':' => {
+                count += 1;
+                if count > MOST_VALUES {
+                    return Err(format!(
+                        "{file_name} holds more than {MOST_VALUES} values, the most a \
+                         design-tokens file may"
+                    ));
+                }
+                run = 0;
+            }
+            b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E' => {
+                run += 1;
+                if run > MOST_SCALAR_BYTES {
+                    return Err(format!(
+                        "{file_name} holds a number longer than {} KiB",
+                        MOST_SCALAR_BYTES / 1024
+                    ));
+                }
+            }
+            _ => run = 0,
         }
     }
-    count
+    Ok(())
 }
 
 /// `object`'s entries in the order `order` lists their keys, then the rest in their own order.
@@ -1272,7 +1311,7 @@ fn followed<'a, 'd>(
         {
             palette = Some(name.to_owned());
         }
-        at = tokens.at(&reference).ok_or_else(|| {
+        at = tokens.at(reference).ok_or_else(|| {
             format!(
                 "{} refers to {{{reference}}}, which is no token of the file",
                 found.path.join(".")
@@ -1286,10 +1325,14 @@ fn followed<'a, 'd>(
 }
 
 /// The dotted path a value's curly-brace reference names (`{palette.ink}` is `palette.ink`).
-fn reference_of(text: &str) -> Option<String> {
+/// A reference longer than a path may be is no reference.
+fn reference_of(text: &str) -> Option<&str> {
+    if text.len() > MOST_PATH_BYTES + 2 + "$root".len() + 1 {
+        return None;
+    }
     let inner = text.strip_prefix('{')?.strip_suffix('}')?;
     let inner = inner.strip_suffix(".$root").unwrap_or(inner);
-    (!inner.is_empty() && inner.split('.').all(is_segment)).then(|| inner.to_owned())
+    (!inner.is_empty() && inner.split('.').all(is_segment)).then_some(inner)
 }
 
 /// The type of the token at the end of `found`'s references.
@@ -1315,9 +1358,47 @@ fn token_value(
         Some("color") => colour_value(found, tokens, palette),
         Some("dimension" | "fontWeight" | "number") => number_value(found, tokens, name),
         Some(other) => Ok(Taken::Not(format!(
-            "a {other} token is not one purlis takes here"
+            "{} is not one purlis takes here",
+            a_type(other)
         ))),
         None => Ok(Taken::Not("has no $type".to_owned())),
+    }
+}
+
+/// The format's token types, as a sentence may name one.
+const TYPES: &[&str] = &[
+    "color",
+    "dimension",
+    "fontFamily",
+    "fontWeight",
+    "duration",
+    "cubicBezier",
+    "number",
+    "strokeStyle",
+    "border",
+    "transition",
+    "shadow",
+    "gradient",
+    "typography",
+];
+
+/// A token of type `kind`, as a sentence names it: the format's own type by name, any other as an
+/// unknown type, so nothing of the file's own text reaches a message.
+fn a_type(kind: &str) -> String {
+    match TYPES.iter().find(|it| **it == kind) {
+        Some(known) => format!("a {known} token"),
+        None => "a token of a type the format does not have".to_owned(),
+    }
+}
+
+/// The most characters a number's text may have to be taken: a theme's are a few.
+const MOST_NUMBER: usize = 32;
+
+/// `value` when it is a number whose text is short, as a theme's numbers are.
+fn short_number(value: &Value) -> Option<&Value> {
+    match value {
+        Value::Number(number) if number.as_str().len() <= MOST_NUMBER => Some(value),
+        _ => None,
     }
 }
 
@@ -1361,7 +1442,7 @@ fn hex_of(value: Option<&Value>, at: &str) -> Result<String, String> {
         .and_then(Value::as_object)
         .ok_or_else(|| format!("{at} is a color token whose value is not a colour object"))?;
     let byte = |value: &Value| -> Option<u8> {
-        let number = value.as_f64().filter(|_| value.is_number())?;
+        let number = short_number(value)?.as_f64()?;
         (0.0..=1.0)
             .contains(&number)
             .then(|| (number * 255.0).round() as u8)
@@ -1409,64 +1490,82 @@ fn hex_of(value: Option<&Value>, at: &str) -> Result<String, String> {
             return Err(format!(
                 "{at} is a colour in {} with no hex: purlis reads colours as hex, so give it its \
                  hex or srgb components",
-                space.unwrap_or("no colour space")
+                space.map_or_else(|| "no colour space".to_owned(), crate::shown::short)
             ));
         }
     };
     Ok(canonical(rgb, alpha))
 }
 
-/// **A number token's value**: a dimension in px, a font weight, a number. A dimension in rem
-/// and a font weight given as a word are listed, not taken.
+/// **A number token's value**: a dimension in px, a font weight, a number, each a short number.
+/// A dimension in rem and a font weight given as a word are listed, not taken. The value is read
+/// where it is in the file and copied only once it is taken.
 fn number_value(found: &Found, tokens: &Tokens, name: &str) -> Result<Taken, String> {
     if found.token.contains_key("$ref") {
         return Ok(Taken::Not(POINTER.to_owned()));
     }
     let (end, _) = followed(found, tokens)?;
-    let value = end.token.get("$value").cloned().unwrap_or(Value::Null);
+    let value = end.token.get("$value").unwrap_or(&Value::Null);
     let at = found.path.join(".");
+    let short = |value: &Value| short_number(value).map(|it| Taken::Value(it.clone()));
+    let not_short = || {
+        Taken::Not(format!(
+            "is not a number of at most {MOST_NUMBER} characters"
+        ))
+    };
     Ok(match kind_of(found, end) {
-        Some("dimension") => {
-            let unit = value.get("unit").and_then(Value::as_str);
-            match (value.get("value"), unit) {
-                (Some(number), Some("px")) if number.is_number() => Taken::Value(number.clone()),
-                (_, Some(unit)) => Taken::Not(format!(
-                    "is a dimension in {unit}: purlis reads its geometry in px"
-                )),
-                _ => return Err(format!("{at} is a dimension with no value and unit")),
+        Some("dimension") => match (
+            value.get("value"),
+            value.get("unit").and_then(Value::as_str),
+        ) {
+            (Some(number), Some("px")) => short(number).unwrap_or_else(not_short),
+            (_, Some("rem")) => {
+                Taken::Not("is a dimension in rem: purlis reads its geometry in px".to_owned())
             }
-        }
-        Some("fontWeight") if value.is_number() => Taken::Value(value),
+            (_, Some(_)) => Taken::Not(
+                "is a dimension in a unit the format does not have: purlis reads px".to_owned(),
+            ),
+            _ => return Err(format!("{at} is a dimension with no value and unit")),
+        },
+        Some("fontWeight") if value.is_number() => short(value).unwrap_or_else(not_short),
         Some("fontWeight") => Taken::Not(
             "is a font weight given as a word: purlis reads a font weight as a number".to_owned(),
         ),
-        Some("number") if value.is_number() => Taken::Value(value),
-        Some(other) => Taken::Not(format!("a {other} token is not one {name} takes")),
+        Some("number") => short(value).unwrap_or_else(not_short),
+        Some(other) => Taken::Not(format!("{} is not one {name} takes", a_type(other))),
         None => Taken::Not("has no $type".to_owned()),
     })
 }
 
-/// **A motion token's value**: a duration in ms (or whole ms in s), an easing's four numbers.
+/// **A motion token's value**: a duration in ms (or whole ms in s), an easing as four numbers,
+/// each number short. The value is read where it is in the file and copied only once it is taken.
 fn motion_value(found: &Found, tokens: &Tokens) -> Result<Taken, String> {
     if found.token.contains_key("$ref") {
         return Ok(Taken::Not(POINTER.to_owned()));
     }
     let (end, _) = followed(found, tokens)?;
-    let value = end.token.get("$value").cloned().unwrap_or(Value::Null);
+    let value = end.token.get("$value").unwrap_or(&Value::Null);
     Ok(match kind_of(found, end) {
         Some("duration") => match (
-            value.get("value"),
+            value.get("value").and_then(short_number),
             value.get("unit").and_then(Value::as_str),
         ) {
-            (Some(number), Some("ms")) if number.is_number() => Taken::Value(number.clone()),
+            (Some(number), Some("ms")) => Taken::Value(number.clone()),
             (Some(number), Some("s")) => match number.as_f64().map(|s| s * 1000.0) {
-                Some(ms) if ms.fract() == 0.0 && ms >= 0.0 => Taken::Value(json!(ms as u64)),
+                Some(ms) if ms.fract() == 0.0 && (0.0..=f64::from(u32::MAX)).contains(&ms) => {
+                    Taken::Value(json!(ms as u64))
+                }
                 _ => Taken::Not("is a duration that is not a whole number of ms".to_owned()),
             },
-            _ => Taken::Not("is a duration with no value in ms or s".to_owned()),
+            _ => Taken::Not("is a duration with no short value in ms or s".to_owned()),
         },
-        Some("cubicBezier") if value.is_array() => Taken::Value(value),
-        Some(other) => Taken::Not(format!("a {other} token is not motion")),
+        Some("cubicBezier") => match value.as_array() {
+            Some(four) if four.len() == 4 && four.iter().all(|it| short_number(it).is_some()) => {
+                Taken::Value(value.clone())
+            }
+            _ => Taken::Not("is a cubicBezier that is not four short numbers".to_owned()),
+        },
+        Some(other) => Taken::Not(format!("{} is not motion", a_type(other))),
         None => Taken::Not("has no $type".to_owned()),
     })
 }

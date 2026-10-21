@@ -639,3 +639,32 @@ fn imports_are_bounded_in_size_and_work() {
         started.elapsed()
     );
 }
+
+#[test]
+fn a_value_is_taken_only_short_and_a_message_names_only_the_format_s_words() {
+    let long = "9".repeat(40);
+    let text = format!(
+        r#"{{ "appearance": {{ "dark": {{
+            "radius": {{ "md": {{ "$type": "dimension", "$value": {{ "value": {long}, "unit": "px" }} }} }},
+            "space": {{ "4": {{ "$type": "dimension", "$value": {{ "value": 1, "unit": "furlong" }} }} }},
+            "odd": {{ "$type": "sparkle", "$value": 1 }}
+        }} }} }}"#
+    );
+    let read = design_tokens::unpack("x.tokens.json", text.as_bytes()).unwrap();
+    let said: Vec<(&str, &str)> = read
+        .left_out
+        .iter()
+        .map(|one| (one.key.as_str(), one.why.as_str()))
+        .collect();
+    assert!(
+        said.iter()
+            .any(|(key, why)| *key == "appearance.dark.radius.md" && why.contains("32")),
+        "{said:?}"
+    );
+    for (_, why) in &said {
+        assert!(
+            !why.contains("furlong") && !why.contains("sparkle"),
+            "{why}"
+        );
+    }
+}

@@ -6,7 +6,7 @@
 //! test binary of its own, so nothing else allocates beside it.
 
 use purlis_core::theme::design_tokens::{
-    MOST_BYTES, MOST_NAME_BYTES, MOST_PATH_BYTES, MOST_VALUES, VENDOR,
+    MOST_BYTES, MOST_NAME_BYTES, MOST_PATH_BYTES, MOST_SCALAR_BYTES, MOST_VALUES, VENDOR,
 };
 use purlis_core::theme::{self, SourceKind};
 use serde_json::{Value, json};
@@ -46,6 +46,88 @@ fn nested(name: &str, depth: usize, count: usize) -> Vec<u8> {
         group = json!({ name: group });
     }
     group.to_string().into_bytes()
+}
+
+/// An appearance group `dark` holding `base`, a token of type `kind` whose value is the JSON text
+/// `value`, and `count` tokens of that type that refer to it.
+fn referred(kind: &str, value: &str, count: usize) -> Vec<u8> {
+    let mut text = format!(
+        "{{\"appearance\":{{\"dark\":{{\"base\":{{\"$type\":\"{kind}\",\"$value\":{value}}}"
+    );
+    for at in 0..count {
+        text.push_str(&format!(
+            ",\"r{at}\":{{\"$type\":\"{kind}\",\"$value\":\"{{appearance.dark.base}}\"}}"
+        ));
+    }
+    text.push_str("}}}");
+    text.into_bytes()
+}
+
+/// An appearance group `dark` whose `$type` is `kind`, holding `count` tokens that take it.
+fn inheriting(kind: &str, count: usize) -> Vec<u8> {
+    let mut text = format!("{{\"appearance\":{{\"dark\":{{\"$type\":\"{kind}\"");
+    for at in 0..count {
+        text.push_str(&format!(",\"t{at}\":{{\"$value\":1}}"));
+    }
+    text.push_str("}}}");
+    text.into_bytes()
+}
+
+/// The shapes where one value is reached by many tokens: by a reference, or by a group's type.
+/// Each holds what 40,000 small tokens take to read; one copy of the long value for each would
+/// be gigabytes.
+fn shared_values() -> Vec<(&'static str, Vec<u8>, Option<&'static str>, u64)> {
+    let long = "9".repeat(60 * 1024);
+    let word = format!("\"{}\"", "w".repeat(60 * 1024));
+    let list = format!("[{}0]", "0,".repeat(100_000));
+    vec![
+        // A number longer than one may be: refused before it is parsed.
+        (
+            "a number too long",
+            referred("number", &"9".repeat(MOST_SCALAR_BYTES + 1), 0),
+            Some("number longer"),
+            MIB,
+        ),
+        // A long number, referred to by many tokens: read where it is, never copied.
+        (
+            "a long number referred to",
+            referred("number", &long, 40_000),
+            None,
+            48 * MIB,
+        ),
+        // A long unit, referred to by many tokens: never in a message.
+        (
+            "a long unit referred to",
+            referred(
+                "dimension",
+                &format!("{{\"value\":1,\"unit\":{word}}}"),
+                40_000,
+            ),
+            None,
+            48 * MIB,
+        ),
+        // A long list as an easing, referred to by many tokens: never copied.
+        (
+            "a long list referred to",
+            referred("cubicBezier", &list, 2_000),
+            None,
+            48 * MIB,
+        ),
+        // A long word as a group's type, taken by many tokens: never in a message.
+        (
+            "a long type inherited",
+            inheriting(&"w".repeat(60 * 1024), 40_000),
+            None,
+            48 * MIB,
+        ),
+        // A long word as a font weight, referred to by many tokens.
+        (
+            "a long word referred to",
+            referred("fontWeight", &word, 40_000),
+            None,
+            48 * MIB,
+        ),
+    ]
 }
 
 /// Each shape that meets a bound, what its import says, and the most its read may hold.
@@ -114,7 +196,8 @@ fn every_shape_that_meets_a_bound_is_read_within_its_memory() {
         ),
     ];
     let mut over = Vec::new();
-    for (shape, bytes, refusal, most) in cases {
+    for (shape, bytes, refusal, most) in cases.into_iter().chain(shared_values()) {
+        let started = std::time::Instant::now();
         assert!(
             bytes.len() as u64 <= MOST_BYTES,
             "{shape} is within the byte cap"
@@ -124,6 +207,23 @@ fn every_shape_that_meets_a_bound_is_read_within_its_memory() {
             (Some(said), Err(why)) => assert!(why.contains(said), "{shape}: {why}"),
             (None, Ok(_)) => {}
             (_, answer) => panic!("{shape}: {:?}", answer.as_ref().map(|it| &it.folder)),
+        }
+        if let Ok(imported) = &answer {
+            let said: usize = imported
+                .left_out
+                .iter()
+                .map(|it| it.key.len() + it.why.len())
+                .sum();
+            if said > 16 * 1024 * 1024 {
+                over.push(format!(
+                    "{shape}: says {said} bytes of what it did not take"
+                ));
+            }
+        }
+        // A debug build under a counting allocator: each shape reads in seconds, where a copy for
+        // each reference would take minutes and gigabytes.
+        if started.elapsed() > std::time::Duration::from_secs(30) {
+            over.push(format!("{shape}: took {:?}", started.elapsed()));
         }
         if held > most {
             over.push(format!(
