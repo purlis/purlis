@@ -1514,20 +1514,6 @@ button.show-more:focus-visible {
   opacity: 1;
 }
 
-/* **Not in a narrow pane** (#2775): there the top line holds a breadcrumb's state and its
-   neighbours, and an item cut to nothing still takes the line's gap and its own border
-   (\`pane-crumbs.e2e.ts\`). The palette and the tab's menu keep Use skill… for that chat. The
-   frame is as wide as its panel whatever it holds, so measuring it is safe. */
-.pane-frame {
-  container: pane-frame / inline-size;
-}
-
-@container pane-frame (max-width: 40rem) {
-  .pane-chips > .pane-skills {
-    display: none;
-  }
-}
-
 .pane-chips > .pane-skills > svg {
   flex: none;
   inline-size: 1em;
