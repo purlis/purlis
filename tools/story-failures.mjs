@@ -67,5 +67,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       continue;
     }
     for (const line of annotations(report, given[at])) console.log(line);
+    // Temporary (#2944): each failure's raw message, to see its shape.
+    for (const file of report.testResults)
+      for (const one of file.assertionResults)
+        if (one.status === "failed")
+          console.log(
+            `::notice title=${property(`raw ${one.fullName} in ${given[at]}`)}::${JSON.stringify(one.failureMessages).slice(0, 3000)}`,
+          );
   }
 }
