@@ -44,6 +44,10 @@ others are **decided in implementation, to be confirmed** (D-2680-1 to D-2680-5)
    refused on every host it is measured on, and a loosening an engine cannot make is said in its
    words rather than failing the job. **On rootless Podman, the container's runtime config is
    checked too**: Podman writes a device it was given there, as a mount, and not in what
-   `inspect` says. Its devices must be none, and its mounts the runtime's own file systems, the
-   container's own files and the home's volume alone (`check_oci`), as measured. *Decided in
+   `inspect` says. The config must be that container's own, under Podman's store as `podman
+   info` names it; its devices none; and its mounts the runtime's own file systems, the
+   container's own files from exactly its own folder of Podman's storage or run state, and the
+   home's volume from exactly Podman's own volumes (`check_oci`), as measured. It is opened
+   without waiting and read only when it is a file; one that is not on this machine, as a
+   Podman machine keeps it in its VM, refuses the check with a sentence that says so. *Decided in
    implementation, to be confirmed (D-2895-1).*

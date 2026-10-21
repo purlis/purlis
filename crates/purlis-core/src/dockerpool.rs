@@ -850,24 +850,59 @@ const RUNTIME_MOUNTS: [(&str, &str); 9] = [
     ("/var/tmp", "tmpfs"),
 ];
 
-/// The files Podman binds into a container from the container's own folder of its storage.
-const CONTAINER_FILES: [&str; 7] = [
-    "/etc/hostname",
-    "/etc/hosts",
-    "/etc/resolv.conf",
-    "/etc/passwd",
-    "/etc/group",
-    "/run/.containerenv",
-    "/dev/shm",
+/// The files Podman binds into a container, each where it binds it and by the name it keeps it
+/// under in the container's own folder of its storage, or of its run state.
+const CONTAINER_FILES: [(&str, &str); 7] = [
+    ("/etc/hostname", "hostname"),
+    ("/etc/hosts", "hosts"),
+    ("/etc/resolv.conf", "resolv.conf"),
+    ("/etc/passwd", "passwd"),
+    ("/etc/group", "group"),
+    ("/run/.containerenv", ".containerenv"),
+    ("/dev/shm", "shm"),
 ];
 
-/// **Whether `oci`, what rootless Podman asked its runtime to make `made`'s container with, is
-/// the pool's own** (#2895). Rootless Podman writes a device it was given nowhere `inspect`
-/// reads, only as a mount here (measured 2026-10-21). So: no device for the runtime, and every
-/// mount one of the runtime's own file systems where Podman puts it, a file from the
-/// container's own folder of its storage, or the home's volume at the home. Anything else, a
-/// field missing included, is refused.
-pub fn check_oci(oci: &serde_json::Value, made: &Made) -> Result<(), Refused> {
+/// Where Podman keeps its containers, its run state and its volumes, as `podman info` says
+/// (`{{json .Store}}`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PodmanStore {
+    pub graph_root: std::path::PathBuf,
+    pub run_root: std::path::PathBuf,
+    pub volume_path: std::path::PathBuf,
+}
+
+/// The [`PodmanStore`] `store`, what `podman info --format '{{json .Store}}'` printed, names:
+/// each an absolute path, or refused.
+pub fn podman_store(store: &serde_json::Value) -> Result<PodmanStore, Refused> {
+    let path = |key: &str| {
+        store
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .ok_or_else(|| refused(format!("podman did not say its store's {key}")))
+    };
+    Ok(PodmanStore {
+        graph_root: path("graphRoot")?,
+        run_root: path("runRoot")?,
+        volume_path: path("volumePath")?,
+    })
+}
+
+/// **Whether `oci`, what rootless Podman asked its runtime to make `made`'s container with, read
+/// from `config`, is the pool's own** (#2895). Rootless Podman writes a device it was given
+/// nowhere `inspect` reads, only as a mount here (measured 2026-10-21). So: `config` is that
+/// container's own (`<graph root>/overlay-containers/<container>/userdata/config.json`); no
+/// device for the runtime; and every mount one of the runtime's own file systems where Podman
+/// puts it, one of the container's own files from exactly its own folder of Podman's storage or
+/// run state, or the home's volume from exactly Podman's own volumes. Anything else, a field
+/// missing included, is refused.
+pub fn check_oci(
+    oci: &serde_json::Value,
+    made: &Made,
+    config: &std::path::Path,
+    store: &PodmanStore,
+) -> Result<(), Refused> {
     let not = |what: &str| {
         refused(format!(
             "runner {}'s container {what}, so purlis does not link to it; remove the runner and \
@@ -875,6 +910,16 @@ pub fn check_oci(oci: &serde_json::Value, made: &Made) -> Result<(), Refused> {
             made.runner.name
         ))
     };
+    let own_folder = |root: &std::path::Path| {
+        root.join("overlay-containers")
+            .join(made.container.as_str())
+            .join("userdata")
+    };
+    let userdata = own_folder(&store.graph_root);
+    let run_userdata = own_folder(&store.run_root);
+    if config != userdata.join("config.json") {
+        return Err(not("has a runtime config that is not its own"));
+    }
     match oci.pointer("/linux/devices") {
         None | Some(serde_json::Value::Null) => {}
         Some(serde_json::Value::Array(devices)) if devices.is_empty() => {}
@@ -886,7 +931,7 @@ pub fn check_oci(oci: &serde_json::Value, made: &Made) -> Result<(), Refused> {
         .ok_or_else(|| {
             not("could not be checked (its runtime's mounts are not as Podman writes them)")
         })?;
-    let home_volume = format!("/volumes/{}/_data", made.runner.volume());
+    let home_volume = store.volume_path.join(made.runner.volume()).join("_data");
     for mount in mounts {
         let field = |name: &str| {
             mount
@@ -895,10 +940,14 @@ pub fn check_oci(oci: &serde_json::Value, made: &Made) -> Result<(), Refused> {
                 .unwrap_or("")
         };
         let (to, kind, from) = (field("destination"), field("type"), field("source"));
+        let from_path = std::path::Path::new(from);
+        let own_file = CONTAINER_FILES.iter().any(|(at, name)| {
+            *at == to && (from_path == userdata.join(name) || from_path == run_userdata.join(name))
+        });
         let own = RUNTIME_MOUNTS.contains(&(to, kind)) && from == kind
             || (to == "/dev/shm" && kind == "tmpfs")
-            || (kind == "bind" && CONTAINER_FILES.contains(&to) && from.contains("/userdata/"))
-            || (kind == "bind" && to == made.runner.home && from.ends_with(&home_volume));
+            || (kind == "bind" && own_file)
+            || (kind == "bind" && to == made.runner.home && from_path == home_volume);
         if !own {
             return Err(not(&format!(
                 "has {to} mounted from {from}, which is not the pool's own"
@@ -1410,7 +1459,9 @@ impl Docker {
                 .pointer("/0/OCIConfigPath")
                 .and_then(serde_json::Value::as_str)
                 .ok_or_else(|| refused("podman did not say where its runtime's config is"))?;
-            check_oci(&read_oci(std::path::Path::new(path))?, made)?;
+            let store = self.json(&["info", "--format", "{{json .Store}}"], "podman info")?;
+            let config = std::path::Path::new(path);
+            check_oci(&read_oci(config)?, made, config, &podman_store(&store)?)?;
         }
         let volume = made.runner.volume();
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
@@ -1631,9 +1682,37 @@ impl Docker {
 /// What rootless Podman asked its runtime for, read up to [`MOST_INSPECTED`].
 fn read_oci(path: &std::path::Path) -> Result<serde_json::Value, Refused> {
     use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    // Opened without waiting, and read only once the open file is seen to be a plain file: a
+    // FIFO in its place is refused at once rather than waited on.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(rustix::fs::OFlags::NONBLOCK.bits() as i32)
+        .open(path)
+        .map_err(|why| {
+            if why.kind() == std::io::ErrorKind::NotFound {
+                refused(format!(
+                    "podman's runtime config {} is not on this machine, as a Podman machine \
+                     keeps it in its VM, so purlis cannot check the runner's container; run the \
+                     pool on a Podman or Docker whose containers run on this machine",
+                    path.display()
+                ))
+            } else {
+                refused(format!(
+                    "podman's runtime config {} could not be read: {why}",
+                    path.display()
+                ))
+            }
+        })?;
+    if !file.metadata().is_ok_and(|meta| meta.is_file()) {
+        return Err(refused(format!(
+            "podman's runtime config {} is not a file, so purlis does not read it",
+            path.display()
+        )));
+    }
     let mut text = String::new();
-    std::fs::File::open(path)
-        .and_then(|file| file.take(MOST_INSPECTED).read_to_string(&mut text))
+    file.take(MOST_INSPECTED)
+        .read_to_string(&mut text)
         .map_err(|why| {
             refused(format!(
                 "podman's runtime config {} could not be read: {why}",

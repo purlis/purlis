@@ -131,6 +131,7 @@ fn made_and_inspected(
 /// The check purlis makes of a container on `engine`: what `inspect` says of it, and, on
 /// rootless Podman, what Podman asked its runtime for, as it was recorded beside it.
 fn checked_whole(
+    docker: &Path,
     inspected: &serde_json::Value,
     made: &Made,
     engine: dockerpool::Engine,
@@ -141,7 +142,20 @@ fn checked_whole(
     if engine.rootless {
         let oci = std::fs::read_to_string(out.join(format!("{name}-oci.json"))).unwrap_or_default();
         let oci = serde_json::from_str(&oci).unwrap_or(serde_json::Value::Null);
-        dockerpool::check_oci(&oci, made)?;
+        let config = inspected
+            .pointer("/0/OCIConfigPath")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let store = serde_json::from_str(
+            &run(docker, &words(&["info", "--format", "{{json .Store}}"])).out,
+        )
+        .unwrap_or(serde_json::Value::Null);
+        dockerpool::check_oci(
+            &oci,
+            made,
+            Path::new(config),
+            &dockerpool::podman_store(&store)?,
+        )?;
     }
     Ok(())
 }
@@ -221,7 +235,7 @@ fn a_container_made_the_pools_way_passes_the_check_here_and_a_loosened_one_does_
     .and_then(|security| dockerpool::check_podman(&security).ok())
     .unwrap_or_default();
     seen.push(format!("engine: {engine:?}"));
-    let checked = checked_whole(&inspected, &made, engine, &out, "made");
+    let checked = checked_whole(&docker, &inspected, &made, engine, &out, "made");
     seen.push(format!("made the pool's way: {checked:?}"));
 
     let mut loosened_taken = Vec::new();
@@ -252,7 +266,7 @@ fn a_container_made_the_pools_way_passes_the_check_here_and_a_loosened_one_does_
                     continue;
                 }
             };
-        let checked = checked_whole(&inspected, &made, engine, &out, name);
+        let checked = checked_whole(&docker, &inspected, &made, engine, &out, name);
         seen.push(format!("{name}: {checked:?}"));
         // Podman's own user namespace is the machine's unless it is asked for another, so
         // `--userns host` makes the container the pool makes, word for word (measured
