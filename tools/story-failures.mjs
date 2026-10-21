@@ -23,7 +23,7 @@ const property = (text) =>
 const ANSI = /\u001b\[[0-9;]*m/g;
 
 /** A line of a stack trace, which says where, not why. */
-const FRAME = /@https?:|^\s*at |^\s*❯/;
+const FRAME = /@https?:|@\[native code\]|^\s*at |^\s*❯/;
 
 /** Each axe rule a message names, as the a11y addon prints it: `"<help> (<rule id>)"`. */
 const RULE = /"[^"\n]*\(([a-z0-9-]+)\)"/g;

@@ -325,8 +325,8 @@ textarea.ui-input.ui-list-field {
 .ui-radio-mark {
   display: block;
   /* Under 6px at the default text size: a fifth of a control. */
-  inline-size: calc(var(--size-control) / 5);
-  block-size: calc(var(--size-control) / 5);
+  inline-size: calc(var(--size-control) / 4);
+  block-size: calc(var(--size-control) / 4);
   border-radius: var(--radius-full);
   background-color: var(--accent-base);
 }

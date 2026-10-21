@@ -932,7 +932,7 @@ export function Choice(props: ChoiceProps) {
       aria-label={ids.label}
       aria-labelledby={ids.labelledBy}
       aria-describedby={ids.describedBy}
-      {...(listen && {})}
+      {...listen}
     >
       {props.options.map((one, at) => (
         // By place, not by value: two options can share one (two owners' `api`, D-DS3e-10).
