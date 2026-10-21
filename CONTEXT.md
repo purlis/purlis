@@ -1177,6 +1177,13 @@ window's wrapper and in the theme engine's closed, versioned manifest (ADR 0103)
 `grants` variant is the look of an answer that grants (an Allow, an Accept), not a grant itself.
 _Avoid_: part (bare, which is plain composition here), slot, sub-component, element
 
+**Design-tokens file**:
+A theme folder written in the W3C Design Tokens Community Group's format, version 2025.10
+(`.tokens.json`), for exchanging a theme with a design tool: `purlis theme export --kind
+design-tokens` writes one and `purlis theme import` reads one back to the same folder. It is a way
+in and out, never a theme format purlis draws from; `theme.json` is that.
+_Avoid_: token file (a theme's tokens live in `theme.json`), tokens export
+
 **Palette** (of a theme):
 A theme's named colours, which its tokens refer to by name, so one colour is changed once. The
 names belong to that theme alone.
