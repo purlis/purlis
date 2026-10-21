@@ -126,7 +126,9 @@ pub(crate) struct Snapshot {
     lines: Vec<Line>,
     /// What the blanked elements held when this was built, to keep out of every later answer.
     blanked_text: Kept,
-    /// Every element the engine says has the focus.
+    /// What has the focus ([`what_has_the_focus`]): every element the engine says has it, and a
+    /// document it says has it where no such element is in its frame or one nested in it, each
+    /// once.
     focused: Vec<NodeKey>,
     /// Every element whose name or value held a text kept out: where the page shows it.
     echoes: Vec<NodeKey>,
@@ -396,6 +398,7 @@ pub(crate) fn build_kept(
         lines: Vec::new(),
         blanked_text: Kept::default(),
         focused: Vec::new(),
+        focused_documents: Vec::new(),
         held: HashMap::new(),
     };
     let tree = FrameNodes::new(&main.nodes);
@@ -447,11 +450,55 @@ pub(crate) fn build_kept(
         title,
         lines,
         blanked_text,
-        focused: builder.focused,
+        focused: what_has_the_focus(frames, builder.focused, builder.focused_documents),
         echoes,
         groups,
         out_of_view: HashSet::new(),
     }
+}
+
+/// **What has the focus**, of the elements and the documents a real engine says have it: a
+/// real engine says a document has the focus while a field in it has it too (#2294), and the
+/// field is what has it. So a document is dropped only where a focused element is in its own
+/// frame or a frame nested in it; a document focused beside an element in another frame stays,
+/// and the two read as a page that cannot tell which has the focus.
+fn what_has_the_focus(
+    frames: &[FrameAx],
+    elements: Vec<NodeKey>,
+    documents: Vec<NodeKey>,
+) -> Vec<NodeKey> {
+    let parent_of = |frame: &str| {
+        frames
+            .iter()
+            .find(|one| one.id == frame)
+            .and_then(|one| one.parent.clone())
+    };
+    // Whether `frame` is `document_frame` or nested in it.
+    let within = |frame: &str, document_frame: &str| {
+        let mut at = Some(frame.to_owned());
+        let mut steps = 0;
+        while let Some(one) = at {
+            if one == document_frame {
+                return true;
+            }
+            steps += 1;
+            if steps > frames.len() {
+                return false;
+            }
+            at = parent_of(&one);
+        }
+        false
+    };
+    let mut focused = elements;
+    for document in documents {
+        let holds_a_focused_element = focused
+            .iter()
+            .any(|element| within(&element.frame, &document.frame));
+        if !holds_a_focused_element && !focused.contains(&document) {
+            focused.push(document);
+        }
+    }
+    focused
 }
 
 /// `address` with every one of `blanked` taken out of it ([`scrubbed_address_by`]).
@@ -1046,6 +1093,8 @@ struct Builder<'f> {
     /// of every other line.
     blanked_text: Kept,
     focused: Vec<NodeKey>,
+    /// The documents the engine says have the focus.
+    focused_documents: Vec<NodeKey>,
     /// What each blanked element holds as its value, to join a group of boxes by.
     held: HashMap<NodeKey, String>,
 }
@@ -1146,7 +1195,14 @@ impl Builder<'_> {
         if let Some(key) = &key
             && is_true(property(node, "focused"))
         {
-            self.focused.push(key.clone());
+            let focused = if role == "RootWebArea" {
+                &mut self.focused_documents
+            } else {
+                &mut self.focused
+            };
+            if !focused.contains(key) {
+                focused.push(key.clone());
+            }
         }
         // A blanked element is blanked whatever the engine says of it, ignored or a wrapper.
         if let Some(key) = &key

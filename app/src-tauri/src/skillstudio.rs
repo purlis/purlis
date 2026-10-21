@@ -110,6 +110,125 @@ pub(crate) fn studio(
     }
 }
 
+/// What started a skill run, as the Runs panel draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum RunStart {
+    /// The chat's own Skill tool.
+    SkillTool,
+    /// The chat read the skill's `SKILL.md`.
+    Read,
+    /// A start a newer purlis wrote.
+    Unknown,
+}
+
+impl From<purlis_core::skills::runs::StartedBy> for RunStart {
+    fn from(started_by: purlis_core::skills::runs::StartedBy) -> RunStart {
+        use purlis_core::skills::runs::StartedBy;
+        match started_by {
+            StartedBy::SkillTool => RunStart::SkillTool,
+            StartedBy::Read => RunStart::Read,
+            _ => RunStart::Unknown,
+        }
+    }
+}
+
+/// How a skill run ended, as the Runs panel draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum RunEnd {
+    /// With its turn.
+    Turn,
+    /// A new prompt came first.
+    Interrupted,
+    /// The chat ended under it.
+    Session,
+    /// An end a newer purlis wrote.
+    Unknown,
+}
+
+impl From<purlis_core::skills::runs::Ended> for RunEnd {
+    fn from(ended: purlis_core::skills::runs::Ended) -> RunEnd {
+        use purlis_core::skills::runs::Ended;
+        match ended {
+            Ended::Turn => RunEnd::Turn,
+            Ended::Interrupted => RunEnd::Interrupted,
+            Ended::Session => RunEnd::Session,
+            _ => RunEnd::Unknown,
+        }
+    }
+}
+
+/// One skill run, as a skill's Runs panel lists it (SK-3): what started it and its signals,
+/// never a pass or a fail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioRun {
+    /// Its id, or null for a use from before runs were recorded.
+    pub id: Option<String>,
+    pub skill: String,
+    pub persona: Option<String>,
+    /// What started it, or null for a use from before runs were recorded.
+    pub started_by: Option<RunStart>,
+    /// When it started.
+    pub started: String,
+    /// How it ended, or null while no end is recorded.
+    pub ended: Option<RunEnd>,
+    pub ms: Option<u32>,
+    pub tool_calls: Option<u32>,
+    pub tool_errors: Option<u32>,
+    pub refusals: Option<u32>,
+    pub asks: Option<u32>,
+    /// Tokens spent inside it, where the harness reported them.
+    pub tokens: Option<u32>,
+}
+
+/// Every run of `skill` the project at `root` has recorded, newest first, at most `limit`.
+pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<StudioRun> {
+    let small = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
+    purlis_core::skills::studio_runs(root, Some(skill), limit)
+        .into_iter()
+        .map(|run| {
+            let end = run.end.as_ref();
+            StudioRun {
+                id: run.id.clone(),
+                skill: run.skill.clone(),
+                persona: run.persona.clone(),
+                started_by: run.started_by.map(RunStart::from),
+                started: run.started.clone(),
+                ended: end.map(|end| RunEnd::from(end.ended)),
+                ms: end.map(|end| small(end.ms)),
+                tool_calls: end.map(|end| small(end.tool_calls)),
+                tool_errors: end.map(|end| small(end.tool_errors)),
+                refusals: end.map(|end| small(end.refusals)),
+                asks: end.map(|end| small(end.asks)),
+                tokens: end.and_then(|end| end.tokens).map(small),
+            }
+        })
+        .collect()
+}
+
+/// How many runs a skill's Runs panel lists at most.
+const RUNS_SHOWN: usize = 200;
+
+/// The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
+/// flag is off. On a blocking thread, as it reads the project's skill log.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_runs(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    skill: String,
+) -> Result<Vec<StudioRun>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the skill's runs", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Ok(Vec::new());
+        }
+        Ok(runs(held.root(), &skill, RUNS_SHOWN))
+    })
+    .await
+}
+
 /// Whether the Skill studio is on in this window: this machine's flag, or the variable over it.
 #[tauri::command]
 #[specta::specta]

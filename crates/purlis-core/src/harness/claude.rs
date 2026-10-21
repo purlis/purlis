@@ -4,7 +4,7 @@
 //! Claude Code's adapter (ADR 0073, FD-13): the bundled plugin, loaded for one chat alone, with
 //! the session's own `--settings`.
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox};
+use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
 use super::{Harness, Kit, StateHooks, words};
 use crate::sandbox::Form;
 
@@ -157,6 +157,15 @@ impl HarnessAdapter for ClaudeCode {
 
     fn guard_label(&self) -> &'static str {
         "claude-code"
+    }
+
+    /// Claude Code's `Skill` tool, which names the skill in `skill` (a plugin's own as
+    /// `plugin:name`).
+    fn skill_start(&self, tool: &str, input: &serde_json::Value) -> Option<SkillStart> {
+        (tool == "Skill")
+            .then(|| input_text(input, "skill"))
+            .flatten()
+            .map(|skill| SkillStart::Named(skill.to_owned()))
     }
 
     /// `permissions.<bucket>` of `.claude/settings.json`, or with `local` of

@@ -500,6 +500,15 @@ struct Inner {
     /// The window each link this host relays is named, across every relay its links make
     /// (#2744): one link holds a name at a time.
     claimed: crate::relay::Claimed,
+    /// What moves code in a project this host keeps (#2046): the binary's, or nothing, and every
+    /// transfer is refused.
+    code: OnceLock<Arc<dyn crate::code::Code>>,
+    /// Where this host keeps its own projects (#2046): a runner's `<data>/projects`, each in a
+    /// folder named by its id. None, and a hold that names no place is refused.
+    projects: OnceLock<PathBuf>,
+    /// The most bytes one bundle may be here: [`purlis_session_protocol::code::MOST_BUNDLE_BYTES`]
+    /// unless a test holds it lower.
+    most_bundle: OnceLock<u64>,
     /// Set once the window has quit (#2006): whoever serves this host stops.
     quit: tokio::sync::watch::Sender<bool>,
     /// Told whenever a window links or goes, or a project is held or let go of: what the host's
@@ -877,6 +886,9 @@ impl Hosting {
                 elsewhere: OnceLock::new(),
                 relays: OnceLock::new(),
                 claimed: Arc::default(),
+                code: OnceLock::new(),
+                projects: OnceLock::new(),
+                most_bundle: OnceLock::new(),
                 seen_elsewhere: Mutex::new(None),
                 quit: tokio::sync::watch::Sender::new(false),
                 changed: tokio::sync::Notify::new(),
@@ -971,6 +983,98 @@ impl Hosting {
     /// The names this host's relayed links hold (#2744), which every relay it makes shares.
     pub(crate) fn claimed(&self) -> crate::relay::Claimed {
         Arc::clone(&self.inner.claimed)
+    }
+
+    /// A host that moves code in the projects it keeps with `code` (`take_code`, `give_code`,
+    /// 1.34, #2046). Set once, as the binary builds its host; a second is let go of. A host
+    /// given none refuses every transfer.
+    pub fn moving_code_with(self, code: impl crate::code::Code) -> Hosting {
+        let _ = self.inner.code.set(Arc::new(code));
+        self
+    }
+
+    /// A host that keeps its own projects in `folder` (1.34, #2046): a hold that names no place
+    /// holds the project in `folder/<project id>`, made there if it is not, and only a project
+    /// held so has code moved in it. Set once; a second is let go of.
+    pub fn keeping_projects_in(self, folder: PathBuf) -> Hosting {
+        let _ = self.inner.projects.set(folder);
+        self
+    }
+
+    /// The most bytes one bundle may be on this host.
+    pub(crate) fn most_bundle(&self) -> u64 {
+        self.inner
+            .most_bundle
+            .get()
+            .copied()
+            .unwrap_or(purlis_session_protocol::code::MOST_BUNDLE_BYTES)
+    }
+
+    /// A host that holds every bundle to `most` bytes: a test's, which cannot send a gibibyte.
+    #[cfg(test)]
+    pub(crate) fn holding_bundles_to(self, most: u64) -> Hosting {
+        let _ = self.inner.most_bundle.set(most);
+        self
+    }
+
+    /// What moves code in this host: the binary's, or nothing.
+    pub(crate) fn code(&self) -> Arc<dyn crate::code::Code> {
+        match self.inner.code.get() {
+            Some(code) => Arc::clone(code),
+            None => Arc::new(crate::code::MovesNoCode),
+        }
+    }
+
+    /// The folder this host keeps `project` in: `<projects>/<project id>`, for an id that is a
+    /// ULID; or why not.
+    fn kept_place(&self, project: &str) -> Result<PathBuf, Refusal> {
+        let Some(folder) = self.inner.projects.get() else {
+            return Err(Refusal {
+                code: session::NO_SUCH_PROJECT.into(),
+                why: format!(
+                    "this session host keeps no projects of its own, so project {project} is \
+                     held only at a place the hold names"
+                ),
+            });
+        };
+        if !a_ulid(project) {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: format!(
+                    "`{project}` is not a project's id, so no folder was made or held for it"
+                ),
+            });
+        }
+        let place = folder.join(project);
+        // A link in its place would send what the desktop holds there elsewhere on this machine.
+        if std::fs::symlink_metadata(&place).is_ok_and(|meta| !meta.is_dir()) {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: format!(
+                    "the folder for project {project} is a link or a file, so it is not held \
+                     and no code is moved there"
+                ),
+            });
+        }
+        Ok(place)
+    }
+
+    /// Where `peer` holds `project`, held where this host keeps it (#2046): the one place code
+    /// is moved. A project held at a place a client named, or not held, is refused.
+    pub(crate) fn kept_project_held(&self, project: &str, peer: &Peer) -> Result<PathBuf, Refusal> {
+        let kept = self.kept_place(project)?;
+        let at = held_at(&self.state(), project, link_of(peer))?;
+        let kept = std::fs::canonicalize(&kept).unwrap_or(kept);
+        if at.path != kept {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: format!(
+                    "project {project} is held at a place the hold named, not where this host \
+                     keeps it, so no code is moved there"
+                ),
+            });
+        }
+        Ok(at.path)
     }
 
     /// What writes this host's event log: the binary's, or nothing.
@@ -1181,7 +1285,17 @@ impl Hosting {
     }
 
     fn hold(&self, project: String, path: String, peer: &Peer) -> Result<Answer, Refusal> {
-        let given = PathBuf::from(path);
+        let given = if path.is_empty() {
+            // Where this host keeps it (1.34, #2046), made there if it is not.
+            let kept = self.kept_place(&project)?;
+            std::fs::create_dir_all(&kept).map_err(|why| Refusal {
+                code: session::NOT_STARTED.into(),
+                why: format!("the folder for project {project} could not be made: {why}"),
+            })?;
+            kept
+        } else {
+            PathBuf::from(path)
+        };
         // One folder is one place however its path is spelled.
         let path = match std::fs::canonicalize(&given) {
             Ok(path) if given.is_absolute() && path.is_dir() => path,
@@ -2733,6 +2847,31 @@ impl session::Host for Hosting {
                 project_path,
             } => self.hold(project, project_path, peer),
             Command::LetGoOfProject { project } => self.let_go(&project, peer),
+            Command::TakeCode {
+                project,
+                repo,
+                transfer,
+                refs,
+                checkout,
+            } => {
+                let way = crate::code::Way::In { refs, checkout };
+                self.move_code(&project, repo, transfer, way, peer).await
+            }
+            Command::GiveCode {
+                project,
+                repo,
+                transfer,
+                have,
+            } => {
+                self.move_code(
+                    &project,
+                    repo,
+                    transfer,
+                    crate::code::Way::Out { have },
+                    peer,
+                )
+                .await
+            }
             Command::StartProgram(start) => match start.kind {
                 ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
                 ProgramKind::Browser => self.start_browser(*start, peer).await,
@@ -3031,6 +3170,14 @@ fn no_such_program(program: &str) -> Refusal {
         code: session::NO_SUCH_CHAT.into(),
         why: format!("this session host holds no program {program}"),
     }
+}
+
+/// Whether `id` is a ULID as purlis writes one: twenty-six of Crockford's base32 digits, upper
+/// case, the first no more than `7`. A project's id names its folder, so nothing else does.
+fn a_ulid(id: &str) -> bool {
+    id.len() == 26
+        && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'A'..=b'H' | b'J' | b'K' | b'M' | b'N' | b'P'..=b'T' | b'V'..=b'Z'))
+        && id.as_bytes()[0] <= b'7'
 }
 
 fn no_such_project(project: &str) -> Refusal {

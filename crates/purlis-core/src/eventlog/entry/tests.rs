@@ -38,6 +38,7 @@ fn tool_call(chat: u32) -> crate::hookwire::ToolCall {
         hook_ms: 3,
         agent: None,
         at_ms: 0,
+        skill: None,
     }
 }
 

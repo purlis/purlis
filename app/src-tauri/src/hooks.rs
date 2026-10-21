@@ -322,6 +322,9 @@ pub struct Hooks {
     /// What each working chat is doing, for the one line under its name (#1493). **In memory
     /// only**, as a touched path is: nothing here writes it, and the event log is not told.
     doings: Arc<crate::doing::Doings>,
+    /// The skill run open in each chat, for the chip on its tab (SK-3). **In memory only**: the
+    /// event log records the run itself.
+    skill_runs: Arc<crate::skillrun::SkillRuns>,
     /// Told each sandbox block a chat's hook found (#1338), once it is kept for `purlis doctor`
     /// — a slot filled after the fact, for `answering`'s reason.
     blocked: Arc<Mutex<Option<HeardBlocks>>>,
@@ -1764,6 +1767,7 @@ impl Hooks {
     /// no state hook shows. The app runs perfectly well like this.
     pub fn deaf(plane: PlaneId) -> Self {
         let doings = crate::doing::Doings::new(plane.clone());
+        let skill_runs = crate::skillrun::SkillRuns::new(plane.clone());
         Self {
             plane,
             board: Arc::new(Mutex::new(Board::new())),
@@ -1780,6 +1784,7 @@ impl Hooks {
             asks: Arc::new(HookAsks::new(Arc::new(Asks::new()))),
             asks_told: Arc::new(Mutex::new(None)),
             doings,
+            skill_runs,
             touching: Arc::new(Mutex::new(None)),
             output: Arc::new(Mutex::new(None)),
             doing_heard: Arc::new(Mutex::new(None)),
@@ -1856,6 +1861,7 @@ impl Hooks {
         let output: Arc<Mutex<Option<Outputs>>> = Arc::new(Mutex::new(None));
         let doing_heard: Arc<Mutex<Option<Doings>>> = Arc::new(Mutex::new(None));
         let doings = crate::doing::Doings::new(plane.clone());
+        let skill_runs = crate::skillrun::SkillRuns::new(plane.clone());
         let blocked: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(None));
         let repeated: Arc<Mutex<Option<Repeats>>> = Arc::new(Mutex::new(None));
         let secret_exec: Arc<Mutex<Option<SecretExecs>>> = Arc::new(Mutex::new(None));
@@ -2007,6 +2013,7 @@ impl Hooks {
                 let moved = Arc::clone(&moved);
                 let events = Arc::clone(&events);
                 let doings = Arc::clone(&doings);
+                let skill_runs = Arc::clone(&skill_runs);
                 let throttle = Arc::clone(&throttle);
                 let repeated = Arc::clone(&repeated);
                 let spooled = spooled.clone();
@@ -2020,6 +2027,8 @@ impl Hooks {
                     // The chat's line follows the board (#1493): a turn that began starts
                     // it, and a chat that is no longer running loses it.
                     doings.reported(&board, report.chat);
+                    // The skill run on its tab ends with the turn (SK-3).
+                    skill_runs.reported(&report);
                     let followed = applied.followed();
                     // The run a `/clear` begins is the host's, minted here, so the record
                     // names it whether or not this machine keeps an event log (ADR 0066).
@@ -2154,7 +2163,11 @@ impl Hooks {
                 let events = Arc::clone(&events);
                 let board = Arc::clone(&board);
                 let plane = plane.clone();
+                let skill_runs = Arc::clone(&skill_runs);
                 Box::new(move |call| {
+                    // The skill run on the chat's tab: opened by a call that starts a skill,
+                    // and counted by every call inside it (SK-3).
+                    skill_runs.heard(&call);
                     let recorded = record(
                         &events,
                         Entry::Tool {
@@ -2211,6 +2224,7 @@ impl Hooks {
             output,
             doing_heard,
             doings,
+            skill_runs,
             blocked,
             repeated,
             throttle,
@@ -2559,6 +2573,11 @@ impl Hooks {
         self.doings.now(&self.board)
     }
 
+    /// The skill run open in each chat (SK-3).
+    pub fn skill_runs(&self) -> &Arc<crate::skillrun::SkillRuns> {
+        &self.skill_runs
+    }
+
     /// Who is told, from now on, the repeats of each block the throttle held back, once their
     /// minute is over (#1681): for the network record alone.
     pub fn when_repeated(&self, repeats: Repeats) {
@@ -2697,6 +2716,7 @@ impl ChatBoard for Hooks {
         // And what it was doing goes with it (#1493): the window is told its line is gone,
         // once the board is let go, as every telling is.
         self.doings.closed(session);
+        self.skill_runs.closed(session);
         moved
     }
 

@@ -22,7 +22,7 @@ pub mod opencode;
 #[cfg(test)]
 pub(crate) mod testing;
 
-pub use adapter::HarnessAdapter;
+pub use adapter::{HarnessAdapter, SkillStart};
 pub use claude::SMART_CLOSE_ALLOW;
 
 /// A harness session's id, held to a shape that cannot be read as a flag.

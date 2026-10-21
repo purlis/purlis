@@ -52,6 +52,12 @@
 //! other host hears only the digest. While a client link holds a name no other link takes it,
 //! and a link names itself before anything is sent on it, or not at all.
 //!
+//! **Code is relayed for the window alone** (1.34, #2046): `take_code` and `give_code` are sent
+//! on for a `local-ui` client, and the code stream the other host opens for one is joined to a
+//! stream on that client's link under the same header, byte for byte both ways, as it comes. A
+//! code stream is never parked or carried over: a transfer the link ended under is refused, and
+//! the window sends it again.
+//!
 //! **A login's values are never relayed** (#2016): `log_in` is refused at the relay for every
 //! client, so a vault's value never reaches another host this way; nor is a browser's start
 //! from kept logins (#2021), which stay on this device.
@@ -81,6 +87,7 @@ use std::time::Duration;
 use futures::future::BoxFuture;
 use purlis_session_protocol::auth::Scope;
 use purlis_session_protocol::browsing::Secret;
+use purlis_session_protocol::code;
 use purlis_session_protocol::grants::Power;
 use purlis_session_protocol::hostlink::{Down, Linked, Links};
 use purlis_session_protocol::link::{Acceptor, Link, Opener, Stream};
@@ -89,7 +96,7 @@ use purlis_session_protocol::session::{
     StartProgram, Told, ViewEnd, ViewKind, ViewRole,
 };
 use purlis_session_protocol::view::{Epoch, Header, ViewId};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
@@ -672,6 +679,22 @@ impl ClientLink {
         self.kept().cursor.insert(device, seq);
     }
 
+    /// Join `from`, a code stream the other host opened, after its header, to a new stream on the
+    /// client's link under the same header (1.34, #2046), byte for byte both ways. Only a
+    /// `local-ui` client asked for one: the relay sends no transfer on for any other.
+    async fn join_code(&self, mut from: Stream, header: code::Header) {
+        if self.scope != Scope::LocalUi {
+            return;
+        }
+        let Ok(mut to) = self.opener.open().await else {
+            return;
+        };
+        if to.write_all(&header.to_bytes()).await.is_err() {
+            return;
+        }
+        let _ = tokio::io::copy_bidirectional(&mut from, &mut to).await;
+    }
+
     /// Join `from`, a view's stream the other host opened, after its header, to a new stream on
     /// the client's link for its view `view`, at that view's next epoch.
     async fn join(&self, mut from: Stream, view: u32, snapshot: u32) {
@@ -1017,7 +1040,21 @@ async fn join_views(mut views: Acceptor, client: Arc<ClientLink>, joins: Arc<Mut
     while let Ok(mut from) = views.accept().await {
         let (client, joins) = (Arc::clone(&client), Arc::clone(&joins));
         tokio::spawn(async move {
-            let Ok(header) = Header::read_from(&mut from).await else {
+            // A code stream (1.34, #2046) is joined as it comes, under its own header: the
+            // transfer it names is the client's own number, which the command carried.
+            let Ok(kind) = from.read_u8().await else {
+                return;
+            };
+            if kind == code::CODE {
+                if let Ok(header) = code::Header::read_after_kind(&mut from).await {
+                    client.join_code(from, header).await;
+                }
+                return;
+            }
+            if kind != purlis_session_protocol::view::VIEW {
+                return;
+            }
+            let Ok(header) = Header::read_after_kind(&mut from).await else {
                 return;
             };
             let theirs = header.view.0;
@@ -1129,11 +1166,12 @@ fn ids_for_the_window_alone(command: Command, scope: Scope) -> Command {
 }
 
 /// Whether `power` is one only the window holds of those the relay meets in a command or a
-/// push: holding a project, replying to its hook lines, saving it, and confining a chat.
+/// push: holding a project, replying to its hook lines, saving it, confining a chat, and moving
+/// code (1.34, #2046).
 fn the_windows_power(power: Power) -> bool {
     matches!(
         power,
-        Power::Hold | Power::Heard | Power::Save | Power::Confine
+        Power::Hold | Power::Heard | Power::Save | Power::Confine | Power::Code
     )
 }
 
