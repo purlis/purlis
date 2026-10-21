@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792582763017,
+  "lastUpdate": 1792582778325,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -10020,6 +10020,42 @@ window.BENCHMARK_DATA = {
             "value": 663.8,
             "unit": "MB",
             "extra": "median of 6 samples: 627, 648.7, 661.1, 666.5, 667.6, 736.9 MB; window 393.1 MB, session host 270.7 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "948dd96e803c755469bd8746ff8dd573324a6b6a",
+          "message": "Runners: code crosses the link as git bundles (#2046, 1/4) (#2830)\n\n* Runners: code crosses the link as git bundles (#2046, 1/4)\n\n- Session protocol 1.34: `take_code` and `give_code`, each answered\n  `code`, move a git bundle on a code stream the host opens (kind 0x02,\n  the client's transfer number). A bundle is held to 1 GiB. `hold_project`\n  with no `project_path` is held where the host keeps its own projects.\n- The host moves code only in a project held where it keeps projects,\n  `<data>/projects/<project id>` on a runner, with a ULID id. The relay\n  sends code on, and joins its stream back, for the window alone.\n- purlis_core::codelink: the desktop bundles a branch and a snapshot of its\n  uncommitted work; the runner takes exactly the named branches and\n  snapshots, and checks out a fresh repository; the desktop takes the\n  runner's branches back into refs/remotes/<pool>/* only. Every fetch runs\n  with no hooks, fsck on, no submodules and only the file transport, and\n  no filter runs.\n- `purlis serve` keeps its projects in the data home and moves code there.\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a runner's checked-out branch is its own; snapshots leave a project's state out\n\n- A fresh repository is checked out on the branch the desktop names. A\n  branch a runner work tree has checked out is left as it is, whatever the\n  desktop sends of it.\n- No snapshot of a project's own repository carries purlis's state folder\n  or the local settings file.\n- codelink::send and fetch_back wrap one send and one fetch for the window;\n  codelink::Moves is the runner host's code mover, shared by purlis serve\n  and the window's tests.\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Name the host code tests' recorded take\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a real Docker pool's runner takes a branch with its work and gives its commits back\n\nThe end-to-end runs when DOCKER_POOL_TEST_IMAGE names a runner image of\nthis build: a branch and its uncommitted work reach the project the runner\nkeeps, checked out on the branch; a commit made there comes back under\nrefs/remotes/<pool>/ alone; and the runner holds no forge credential.\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Read a runner work tree's status untrimmed in its test\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a snapshot of a project that ignores its state folder is still made\n\ngit refuses an exclude pathspec that names an ignored path, so only what\nthe work tree does not ignore is left out by name.\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a pool named as a remote takes nothing back, and no secret is snapshotted\n\n- take_back refuses a pool whose name is a remote of the repository (remote.<pool>.*),\n  so that remote's refs are left as they are.\n- A bundle's fetch never prunes on the repository's config (fetch.prune=false,\n  fetch.pruneTags=false).\n- A snapshot carries no changed or new file named as credentials are, and no file with\n  more than one link: each goes as committed, or not at all (ADR 0078 §7).\n- A project's folder on the runner that is a link or a file is not held.\n- Tests: a planted remote.builds.url, fsck refusing a malformed commit, every transport\n  but file refused, credential files and hard links left out of a snapshot, and a\n  linked project folder refused.\n- ADR 0078 amendment 04: items numbered in order; D-2046-5 recorded as the operator's\n  ruling of 2026-10-21, with V16 (d) as it now reads.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Run the transport test through purlis's network entry, as a fetch of another repository is run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a send leaves out what a save to the forge refuses, and says which\n\n- keep_secrets_out runs the save's whole rule (reposave::refused_as, shared with\n  secret_files) on the snapshot's changed paths: credential names, a .npmrc or .pypirc\n  holding a token, a forge token or private key in any file's text. It also leaves out\n  a file with more than one link and one that cannot be read as staged.\n- Each path is reset as a literal pathspec, :(top,literal)<path>.\n- snapshot_leaving names what was left out, and Sent carries it for the window.\n- A remote is matched against a pool's name without regard to case.\n- pool_ok's doc comment is back on pool_ok.\n- Tests: a hard link named :linked, an untracked .npmrc with _authToken= and a notes.txt\n  holding a token, and a remote that differs from the pool in case alone.\n- ADR 0078 amendment 04 item 6 is the operator's ruling of 2026-10-25, which amends §7.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T14:36:55+04:00",
+          "tree_id": "b45d67f42e79771450b409091b9911f68b33eab9",
+          "url": "https://github.com/purlis/purlis/commit/948dd96e803c755469bd8746ff8dd573324a6b6a"
+        },
+        "date": 1792582776347,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1471.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1307.6, 1471.2, 1672.8 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 657.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 617.1, 643.7, 656.1, 659.8, 658.9, 739.4 MB; window 393.3 MB, session host 264.1 MB"
           }
         ]
       }
