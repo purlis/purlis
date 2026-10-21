@@ -10,7 +10,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { generate, NOTICES_FILE, render } from "../tools/third-party-notices.mjs";
-import { stories } from "./.storybook/vitest.project";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -77,7 +76,7 @@ function thirdPartyNotices(): Plugin {
 }
 
 // https://v2.tauri.app/start/frontend/vite/
-export default defineConfig(() => ({
+export default defineConfig(async () => ({
   plugins: [react(), tailwind(), ownLicence(), thirdPartyNotices()],
   // Keep Rust errors visible, and give Tauri the fixed port it expects.
   clearScreen: false,
@@ -110,7 +109,9 @@ export default defineConfig(() => ({
           setupFiles: ["./src/test-setup.ts"],
         },
       },
-      stories(),
+      // Loaded only when Vitest reads this file: `vite dev` and `vite build` never load
+      // Storybook.
+      ...(process.env.VITEST ? [(await import("./.storybook/vitest.project.ts")).stories()] : []),
     ],
   },
 }));

@@ -84,16 +84,23 @@ image by the `stories` workflow (`.github/workflows/stories.yml`).
 **A baseline changes only through the `update-baselines` label.** To add or change one:
 
 1. Push the change that adds the story or changes how it draws. Its `stories` check fails,
-   naming the picture that is new or differs; the pictures that differ are kept on the run as
+   naming the story, the browser and the picture that is new or differs; the pictures that differ are kept on the run as
    `story-pictures`.
-2. Put the `update-baselines` label on the pull request. `.github/workflows/stories-baselines.yml`
-   runs every story in the pinned image, writes each picture that is new or differs, pushes them
-   to the branch as one commit, takes the label off and comments which baselines changed.
+2. Bring the branch up to date with its base (`gh pr update-branch`), then put the
+   `update-baselines` label on the pull request. `.github/workflows/stories-baselines.yml`
+   refuses a branch behind its base, runs every story in the pinned image, writes each picture
+   that is new or differs, pushes them to the branch as one commit, takes the label off and
+   comments which baselines changed. What it commits is only whole PNG baselines within a size
+   and a count limit, checked by the base branch's own copy of `tools/story-baselines.mjs`.
 3. Review the pictures in the pull request's diff, which shows each one beside the one it
    replaces.
 4. The job starts the `stories` check on the new commit itself. The other checks of a push made
    with the workflow's token wait for a maintainer to approve them in the pull request's Checks,
    or run on the branch's next push (or `gh pr update-branch`).
+
+**Which `stories` run counts.** The pull request's own run, on the branch merged into its base,
+is the one branch protection reads. The run the label's job starts tests the branch itself; on a
+branch that is up to date with its base, which the job requires, the two test the same tree.
 
 The `stories` check also refuses a baseline the pinned image did not draw (one named for another
 platform), and a baseline whose story file is gone (`tools/story-baselines.mjs check`). When a

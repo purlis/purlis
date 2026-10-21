@@ -25,9 +25,9 @@ const REPORT = {
   ],
 };
 
-test("each failed story is one error, named, with the first line of why", () => {
-  assert.deepEqual(annotations(REPORT), [
-    "::error title=Gates Unnamed::src/settings/Choice.stories.tsx: Expected the HTML found at $('button') to have no violations:",
+test("each failed story is one error, named with its browser, with the first line of why", () => {
+  assert.deepEqual(annotations(REPORT, "webkit"), [
+    "::error title=Gates Unnamed in webkit::src/settings/Choice.stories.tsx: Expected the HTML found at $('button') to have no violations:",
   ]);
 });
 
@@ -50,8 +50,8 @@ test("colour codes and stack frames are left out, and the axe rules broken are n
       },
     ],
   };
-  assert.deepEqual(annotations(report), [
-    "::error title=Small Targets::src/Gates.stories.tsx: Error: expect(received).toHaveNoViolations() [axe: target-size]",
+  assert.deepEqual(annotations(report, "chromium"), [
+    "::error title=Small Targets in chromium::src/Gates.stories.tsx: Error: expect(received).toHaveNoViolations() [axe: target-size]",
   ]);
 });
 
@@ -70,11 +70,11 @@ test("a failure that is only a stack trace says so", () => {
       },
     ],
   };
-  assert.match(annotations(report)[0], /only a stack trace/);
+  assert.match(annotations(report, "webkit")[0], /only a stack trace/);
 });
 
 test("a report with nothing failed says nothing", () => {
-  assert.deepEqual(annotations({ testResults: [] }), []);
+  assert.deepEqual(annotations({ testResults: [] }, "chromium"), []);
 });
 
 test("a line that would end the annotation early is kept on one line", () => {
@@ -92,8 +92,8 @@ test("a line that would end the annotation early is kept on one line", () => {
       },
     ],
   };
-  const [one] = annotations(report);
+  const [one] = annotations(report, "chromium");
   assert.equal(one.includes("\n"), false);
   assert.ok(one.length < 400);
-  assert.match(one, /title=A%3A%3AB::/);
+  assert.match(one, /title=A%3A%3AB in chromium::/);
 });

@@ -5,7 +5,7 @@
 // line of why, read from Vitest's JSON report. The reporter's own annotations name a source
 // line, and a failure raised after the story ran (axe's, the screenshot's) has none to name.
 //
-//   node tools/story-failures.mjs <vitest json report>
+//   node tools/story-failures.mjs <browser> <vitest json report> [<browser> <report> ...]
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -28,9 +28,11 @@ const FRAME = /@https?:|@\[native code\]|^\s*at |^\s*❯/;
 /** Each axe rule a message names, as the a11y addon prints it: `"<help> (<rule id>)"`. */
 const RULE = /"[^"\n]*\(([a-z0-9-]+)\)"/g;
 
-/** One `::error` line per failed test in a Vitest JSON report: the story's name, its file, the
- *  first line of why that is not a stack frame, and the axe rules it broke. */
-export function annotations(report) {
+/** One `::error` line per failed test in a Vitest JSON report of one browser's run: the
+ *  story's name and that browser, its file, the first line of why that is not a stack frame,
+ *  and the axe rules it broke. The report does not say which browser ran it, so the job runs
+ *  each browser on its own and says which report is whose. */
+export function annotations(report, browser) {
   return report.testResults.flatMap((file) =>
     file.assertionResults
       .filter((one) => one.status === "failed")
@@ -46,14 +48,24 @@ export function annotations(report) {
         ];
         const where = file.name.replace(/^.*\/app\//, "");
         const broke = rules.length > 0 ? ` [axe: ${rules.join(", ")}]` : "";
-        return `::error title=${property(one.fullName)}::${where}: ${why.slice(0, 300)}${broke}`;
+        return `::error title=${property(`${one.fullName} in ${browser}`)}::${where}: ${why.slice(0, 300)}${broke}`;
       }),
   );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  for (const line of annotations(
-    JSON.parse(readFileSync(process.argv[2], "utf8")),
-  ))
-    console.log(line);
+  // `<browser> <report>`, once for each browser that ran.
+  const given = process.argv.slice(2);
+  for (let at = 0; at + 1 < given.length; at += 2) {
+    let report;
+    try {
+      report = JSON.parse(readFileSync(given[at + 1], "utf8"));
+    } catch {
+      console.log(
+        `::error title=stories in ${given[at]}::the run wrote no report; the job's log says why`,
+      );
+      continue;
+    }
+    for (const line of annotations(report, given[at])) console.log(line);
+  }
 }
