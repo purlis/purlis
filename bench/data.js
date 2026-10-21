@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792587989791,
+  "lastUpdate": 1792601718532,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20706,6 +20706,48 @@ window.BENCHMARK_DATA = {
             "value": 101.120637,
             "unit": "ms",
             "extra": "median of 5 runs: 100.693, 100.745, 101.121, 101.935, 102.081 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e19dbe4aed97f11f799ef75c251328bd0c007ec8",
+          "message": "Browsers: a browser's start waits as long as its engine's download may take (#3001)\n\nThe first browser start on a host downloads the pinned engine inside it,\nwhich can take past the 30 seconds the window gives any other answer. The\nwindow now waits for a browser's start alone up to the manifest read, the\narchive download and a minute (`browsers::A_START_TAKES_AT_MOST`). Every\nother answer keeps its 30 seconds.\n\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T20:53:25+04:00",
+          "tree_id": "09f01ca0adec80b1f2ce9d46f76d288b1af51705",
+          "url": "https://github.com/purlis/purlis/commit/e19dbe4aed97f11f799ef75c251328bd0c007ec8"
+        },
+        "date": 1792601716086,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6966545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.671, 0.678, 0.697, 0.699, 0.706 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.88746,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.454, 16.635, 16.887, 16.914, 16.935 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.205581,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.949, 103.549, 104.206, 104.497, 104.588 ms"
           }
         ]
       }
