@@ -1092,10 +1092,15 @@ fn an_image_this_machine_does_not_hold_is_pulled_by_its_digest_before_it_is_read
 #[test]
 fn every_run_of_docker_is_given_a_checked_copy_of_its_settings_and_no_context() {
     let dir = tempfile::tempdir().unwrap();
+    // The copy is kept aside to be read here, and never printed: it holds sign-ins.
+    let kept = dir.path().join("copy.json");
     stand_in::program(
         dir.path(),
         "docker",
-        "#!/bin/sh\necho \"$DOCKER_CONFIG\"\necho \"${DOCKER_CONTEXT-unset}\"\ncat \"$DOCKER_CONFIG/config.json\"\n",
+        &format!(
+            "#!/bin/sh\necho \"$DOCKER_CONFIG\"\necho \"${{DOCKER_CONTEXT-unset}}\"\ncp \"$DOCKER_CONFIG/config.json\" '{}'\n",
+            kept.display()
+        ),
     );
     let settings_in = dir.path().join("settings");
     let docker = Docker::at(dir.path().join("docker")).with_settings_in(&settings_in);
@@ -1104,11 +1109,13 @@ fn every_run_of_docker_is_given_a_checked_copy_of_its_settings_and_no_context() 
         .unwrap();
     let mut lines = said.lines();
     let folder = std::path::PathBuf::from(lines.next().unwrap());
-    assert!(folder.starts_with(&settings_in), "{said}");
-    assert_eq!(lines.next(), Some("unset"), "{said}");
-    let copy: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+    assert!(folder.starts_with(&settings_in), "{}", folder.display());
+    assert_eq!(lines.next(), Some("unset"));
+    let copy: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&kept).unwrap()).unwrap();
+    let keys: Vec<&String> = copy.as_object().unwrap().keys().collect();
     for gone in ["cliPluginsExtraDirs", "plugins", "currentContext"] {
-        assert!(copy.get(gone).is_none(), "{copy}");
+        assert!(copy.get(gone).is_none(), "{keys:?}");
     }
     // The run's folder went with it.
     assert!(!folder.exists());
