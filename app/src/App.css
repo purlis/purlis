@@ -1480,8 +1480,9 @@ button.show-more:focus-visible {
 
 /* **A chat's skills** (`SkillsChip`, #2775): how many it lists, and Use skill… for it. Quiet,
    as the harness beside it is; in the warning colour, with its mark, while the chat's set is
-   past its skill budget, which its tooltip says. */
-.pane-skills {
+   past its skill budget, which its tooltip says. Under the line's own class, so these win over
+   the button's (`primitives/controls.css`), which load after this sheet. */
+.pane-chips > .pane-skills {
   display: inline-flex;
   /* The first of the line to give way in a narrow pane: a breadcrumb's state is read whole
      before a count of skills is (\`pane-crumbs.e2e.ts\`). */
@@ -1498,15 +1499,16 @@ button.show-more:focus-visible {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   opacity: 0.92;
+  cursor: pointer;
 }
 
-.pane-skills:hover,
-.pane-skills:focus-visible {
+.pane-chips > .pane-skills:hover,
+.pane-chips > .pane-skills:focus-visible {
   color: var(--text-primary);
   opacity: 1;
 }
 
-.pane-skills.over {
+.pane-chips > .pane-skills.over {
   color: var(--state-waiting);
   border-color: var(--state-waiting);
   opacity: 1;
@@ -1521,12 +1523,12 @@ button.show-more:focus-visible {
 }
 
 @container pane-frame (max-width: 40rem) {
-  .pane-skills {
+  .pane-chips > .pane-skills {
     display: none;
   }
 }
 
-.pane-skills > svg {
+.pane-chips > .pane-skills > svg {
   flex: none;
   inline-size: 1em;
   block-size: 1em;
