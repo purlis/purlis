@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792605001752,
+  "lastUpdate": 1792606848254,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5028,6 +5028,42 @@ window.BENCHMARK_DATA = {
             "value": 350.7,
             "unit": "MB",
             "extra": "median of 6 samples: 310.1, 386.3, 348.7, 352.7, 353.7, 264.8 MB; window 166.4 MB, session host 184.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ab6f2fb3380d10a9888b6112d439448ba75a9ed",
+          "message": "Design-tokens import and export (#2961)\n\n* Design-tokens import and export (#2926)\n\nA theme folder exports to and imports from the W3C design-tokens format\n2025.10: `purlis theme export <theme> --kind design-tokens`, and\n`purlis theme import` of a .tokens.json file. Exporting then importing\ngives the same folder, component parts and grey tiers included. Every\nexport is held to the format's official schema, vendored with its test\nsuite and licence.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* CONTEXT: a design-tokens file (#2926)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Design tokens: bounded reading, key order kept, review fixes (#2926)\n\nImports are bounded in size and work: a file's JSON values are counted\nbefore it is read, the theme.json it makes is held to a theme folder's\nfile cap, a theme's appearance cap holds, and the file's own values are\nborrowed rather than copied. Each lookup is by map or set.\n\nA tokens file whose top group is colors is detected as design tokens; a\ncolour component of none leaves the colour to its hex; a token where an\nappearance goes is listed; a version that is not a whole number is\nrefused. Key order of the palette, tokens, motion and compact layer is\nkept. The test validator also checks the shape of each keyword it reads.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Design tokens: bounded token paths, counted import memory (#2926)\n\nA group's or a token's name is at most 64 bytes and a token's path at\nmost 256; each token borrows its path from the parsed file. A test binary\nof its own counts the heap with dhat (already in the tree) and holds\nevery shape that meets a bound to a peak. A JSON file larger than any\nother source, with no tokens in it, is told it is too large.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Design tokens: a value is read in place and copied only once taken (#2926)\n\nA token's value is borrowed from the parsed file; a number is taken only\nwhen its text is short, an easing only as four short numbers. A message\nnames a type the format has, never the file's own words, and a reference\nis at most a path long. The scan before parsing also bounds each number\nand the strings past 64 KiB. The memory test binary reads each shape in\nwhich many tokens reach one value, each held to a peak and a time.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Design tokens: the memory test sheds the shell's steering; a message names no command (#2926)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T21:48:44+04:00",
+          "tree_id": "cfc14419171e16cc14daacf9778ceac30217ce6d",
+          "url": "https://github.com/purlis/purlis/commit/2ab6f2fb3380d10a9888b6112d439448ba75a9ed"
+        },
+        "date": 1792606845193,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 968,
+            "unit": "MB",
+            "extra": "median of 3 samples: 830, 968, 1073 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 396.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 296.2, 395.4, 401.4, 398.5, 399.2, 275.2 MB; window 167.6 MB, session host 227.5 MB"
           }
         ]
       }
