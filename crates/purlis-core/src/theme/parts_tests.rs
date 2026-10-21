@@ -696,7 +696,10 @@ fn declared<'a>(body: &'a str, property: &str) -> Option<&'a str> {
 
 #[test]
 fn the_buttons_family_default_is_what_button_css_draws() {
-    let css = include_str!("../../../../app/src/ui/button/button.css");
+    // A selector prettier wraps (a long variant's `:not(…)`) read back onto one line.
+    let css = &include_str!("../../../../app/src/ui/button/button.css")
+        .replace("(\n    ", "(")
+        .replace("\n  ) {", ") {");
     let token = |var: &str| -> Value {
         if var == "transparent" {
             return Value::from(var);
