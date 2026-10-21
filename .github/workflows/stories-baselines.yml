@@ -68,11 +68,10 @@ jobs:
       group: stories-baselines-${{ github.event.pull_request.number }}
       cancel-in-progress: false
     container:
-      # The same image as `stories.yml`'s, by the same tag.
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      # The same image as `stories.yml`'s, by the same tag and digest (`tools/story-image.mjs`).
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
       options: --init --ipc=host
     env:
-      PLAYWRIGHT_IMAGE: "1.64.1"
       PURLIS_STORY_PICTURES: "1"
       HOME: /root
     defaults:
@@ -89,13 +88,8 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
-      - name: The image is the Playwright the lockfile names
-        run: |
-          locked=$(node -p 'require("playwright/package.json").version')
-          if [ "$locked" != "$PLAYWRIGHT_IMAGE" ]; then
-            echo "::error::app/package-lock.json locks Playwright $locked, and the stories image is $PLAYWRIGHT_IMAGE: move both workflows' image to v$locked-noble"
-            exit 1
-          fi
+      - name: The image is the Playwright the lockfile names, by its tag and its digest
+        run: node ../tools/story-image.mjs
       # Every story must still pass its keyboard test and axe: a baseline is drawn only of a
       # story that passes everything else.
       - name: The stories, writing each picture that is new or differs
