@@ -368,12 +368,9 @@ fn a_project_reaches_a_pools_runner_through_the_window() {
     let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
         return;
     };
-    let docker = Docker(
-        std::env::var_os("DOCKER_POOL_TEST_DOCKER")
-            .unwrap_or("docker".into())
-            .into(),
-    );
     let config = tempfile::tempdir().unwrap();
+    let docker = Docker::at(std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()))
+        .with_settings_in(config.path().join("docker-settings"));
     let machine = a_machine(config.path(), docker.clone());
     let name = format!(
         "test-{}",
@@ -489,14 +486,15 @@ fn a_project_reaches_a_pools_runner_through_the_window() {
         .unwrap()
         .made;
     let in_the_runner = |script: &str| {
-        let out = purlis_core::forklock::output(std::process::Command::new(&docker.0).args([
-            "exec",
-            made.container.as_str(),
-            "sh",
-            "-c",
-            script,
-        ]))
-        .unwrap();
+        let out =
+            purlis_core::forklock::output(std::process::Command::new(docker.program()).args([
+                "exec",
+                made.container.as_str(),
+                "sh",
+                "-c",
+                script,
+            ]))
+            .unwrap();
         String::from_utf8_lossy(&out.stdout).trim().to_owned()
     };
     let kept = format!("$(ls -d \"$HOME\"/.local/share/*/projects/{id})");
