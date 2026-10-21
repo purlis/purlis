@@ -283,6 +283,49 @@ impl Engine {
                 }
                 None => json!({}),
             }),
+            // The tree around one element (#2967): it, the nodes around it up to the root, its
+            // siblings and its children, as the engine answers with `fetchRelatives`.
+            "Accessibility.getPartialAXTree" => {
+                let frame = on.unwrap_or_default().trim_start_matches("S-");
+                let frame = if frame == "PAYMENT" {
+                    "PAYMENT-FRAME"
+                } else {
+                    frame
+                };
+                let model = super::lock(&self.model);
+                let nodes = model.ax.get(frame).cloned().unwrap_or(json!([]));
+                let nodes = nodes.as_array().cloned().unwrap_or_default();
+                let by_id = |id: &Value| nodes.iter().find(|n| n["nodeId"] == *id).cloned();
+                let Some(node) = nodes
+                    .iter()
+                    .find(|n| n["backendDOMNodeId"] == p["backendNodeId"])
+                    .cloned()
+                else {
+                    return Err(CallError::Engine {
+                        code: -32000,
+                        message: "Node not found".into(),
+                    });
+                };
+                let mut out = vec![node.clone()];
+                let mut up = node["parentId"].clone();
+                while let Some(parent) = by_id(&up) {
+                    up = parent["parentId"].clone();
+                    for sibling in parent["childIds"].as_array().into_iter().flatten() {
+                        if let Some(sibling) = by_id(sibling)
+                            && !out.iter().any(|n| n["nodeId"] == sibling["nodeId"])
+                        {
+                            out.push(sibling);
+                        }
+                    }
+                    out.push(parent);
+                }
+                for child in node["childIds"].as_array().into_iter().flatten() {
+                    if let Some(child) = by_id(child) {
+                        out.push(child);
+                    }
+                }
+                Ok(json!({ "nodes": out }))
+            }
             "Accessibility.getFullAXTree" => {
                 let frame = p["frameId"].as_str().unwrap_or_default();
                 let model = super::lock(&self.model);
@@ -2641,6 +2684,23 @@ fn a_snapshot_gives_no_more_lines_than_the_most_allowed() {
 
 /// Moves the focus in the stand-in's trees: off the Name field, and onto each of `onto`
 /// (frame, node id).
+/// The engine's id for the element the tree of `frame` marks focused.
+fn ax_backend_focused(engine: &Engine, frame: &str) -> i64 {
+    super::lock(&engine.model).ax[frame]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| {
+            n["properties"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|p| p["name"] == "focused" && p["value"]["value"] == true)
+        })
+        .and_then(|n| n["backendDOMNodeId"].as_i64())
+        .expect("an element the tree marks focused")
+}
+
 fn focus_on(engine: &Engine, onto: &[(&str, &str)]) {
     let mut model = super::lock(&engine.model);
     for nodes in model.ax.values_mut() {

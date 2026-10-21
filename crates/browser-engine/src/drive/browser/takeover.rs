@@ -187,6 +187,7 @@ impl Browser {
         };
         // A field blanked in an earlier turn is asked about again from the page itself.
         lock(&self.typing).focus = None;
+        self.ready_the_tree_around_the_focus();
         // Whatever waits for the page wakes now, and finds itself cut.
         self.inner.changed.notify_all();
         epoch
@@ -359,7 +360,10 @@ impl Browser {
                     // the document is asked what has the focus (#2295).
                     match landed_in.or_else(|| self.still_focused(&target)) {
                         Some(focused) => Some((focused.field, focused.read)),
-                        None => match self.blank_focus_in(&target, read.take()) {
+                        None => match self.blank_focus_in(
+                            &target,
+                            read.take().or_else(|| self.first_field_read(&target)),
+                        ) {
                             Ok((field, read)) => {
                                 let read = std::sync::Arc::new(read);
                                 let shows = lock(&self.inner.state)
@@ -775,6 +779,87 @@ impl Browser {
     /// Whether the document of `frame` on `session` has an element focused (or one inside a
     /// frame), though its tree shows none: then a key typed now would go where purlis cannot
     /// blank it.
+    /// The tree around the element that has the focus of the current page's own document, for
+    /// the person's first key into a field of the page (#2967): the element, the nodes around
+    /// it up to the root, its siblings and its children, never the whole page's tree. Only where
+    /// the person has typed into no field of the page yet, since a code typed one character a
+    /// box is kept out whole from the whole tree (#2144); and only where the element is in the
+    /// page's own document, the tree marks it focused, and it holds no frame. `None` otherwise.
+    fn first_field_read(&self, target: &str) -> Option<Vec<FrameAx>> {
+        if lock(&self.typing)
+            .touched
+            .iter()
+            .any(|(page, _)| page == target)
+        {
+            return None;
+        }
+        let (session, name, url) = {
+            let state = lock(&self.inner.state);
+            let page = state.page(target)?;
+            let frame = page.frames.get(target)?;
+            (page.session.clone()?, frame.name.clone(), frame.url.clone())
+        };
+        let backend = self.focused_in(&session, target)?;
+        let around = self
+            .devtools()
+            .call(
+                "Accessibility.getPartialAXTree",
+                json!({ "backendNodeId": backend, "fetchRelatives": true }),
+                Some(&session),
+            )
+            .ok()?;
+        let nodes = around.get("nodes")?.clone();
+        let own = nodes
+            .as_array()?
+            .iter()
+            .find(|node| node["backendDOMNodeId"] == backend)?;
+        let role = own
+            .pointer("/role/value")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let focused = own["properties"].as_array().into_iter().flatten().any(|p| {
+            p["name"] == "focused" && p.pointer("/value/value") == Some(&Value::Bool(true))
+        });
+        if !focused || role.starts_with("Iframe") {
+            return None;
+        }
+        Some(vec![FrameAx {
+            id: target.to_owned(),
+            name,
+            url,
+            parent: None,
+            owner: None,
+            nodes,
+        }])
+    }
+
+    /// Readies the engine's tree for the person's first key (#2967): the engine makes its
+    /// accessibility tree the first time it is asked, which on a large page is what a first key
+    /// would wait for. Asked once, now, on a thread of its own, for the tree's root.
+    fn ready_the_tree_around_the_focus(&self) {
+        let Ok(target) = self.target(None) else {
+            return;
+        };
+        let Some(session) = lock(&self.inner.state)
+            .page(&target)
+            .and_then(|page| page.session.clone())
+        else {
+            return;
+        };
+        let devtools = std::sync::Arc::clone(&self.inner.devtools);
+        let _ = std::thread::Builder::new()
+            .name("purlis-tree-ready".into())
+            .spawn(move || {
+                // Its root alone: nothing of the page's own world is run, and nothing is kept.
+                let _ = devtools.call_within(
+                    "Accessibility.getRootAXNode",
+                    json!({ "frameId": target }),
+                    Some(&session),
+                    Duration::from_secs(30),
+                );
+            });
+    }
+
     fn focus_unseen(&self, session: &str, frame: &str) -> bool {
         self.in_world(session, frame, |world| {
             self.devtools().call(
