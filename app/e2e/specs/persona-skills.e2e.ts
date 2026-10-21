@@ -13,9 +13,9 @@ import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
  * `skill-studio` flag on for the run (`wdio.conf.ts`).
  *
  * The spec gives `steward` a skill of its own and names a project skill granted to no workspace
- * in its `skills:` line, as a person would. `steward`'s tab lists both under Skills. Its Add
- * names one more skill, written into `persona.md`; Remove takes it out again. A row opens the
- * Skill studio on a chat as `steward`, where the project skill it names is on.
+ * in its `skills:` line, as a person would. `steward`'s tab counts both in one row, which opens
+ * the Skill studio on a chat as `steward`, where the project skill it names is on. The studio's
+ * Add names one more skill, written into `persona.md`; Remove takes it out again.
  *
  * **It leaves the window and the project as it found them**: `persona.md` is written back, the
  * skills are removed, and every tab it opened is closed.
@@ -61,7 +61,7 @@ describe("a persona's skills", function () {
     await showView("Personas");
     await untilSays('[data-testid="panel-personas"]', PERSONA);
     await press('[data-testid="panel-personas"]', PERSONA, "containing");
-    await untilSays(PANE, NAMED);
+    await untilSays(PANE, "into every workspace");
   });
 
   after(async () => {
@@ -71,15 +71,23 @@ describe("a persona's skills", function () {
     await showView("Inbox");
   });
 
-  it("lists its own skill and the project skill it names", async () => {
-    await untilSays(PANE, OWN);
-    await untilSays(PANE, "into every workspace");
+  it("counts them on its page and opens the Skill studio on a chat as it", async () => {
+    await untilSays(PANE, "Brings 2 skills into every workspace");
+    await press(PANE, "Brings 2 skills", "starting");
+
+    const named = await $(`[data-testid="skill-${NAMED}"]`);
+    await named.waitForExist({ timeout: 20_000 });
+    await expect(named).toHaveText(/On/);
+    const own = await $(`[data-testid="skill-${OWN}"]`);
+    await expect(own).toHaveText(/persona/);
+    expect(await tabNames()).toContain(`Skill studio · ${PERSONA}`);
   });
 
-  it("adds a skill by name, and removes it again", async () => {
-    await typeInto(`${PANE} [data-testid="persona-skill-name"]`, ADDED);
+  it("adds a skill by name in the studio, and removes it again", async () => {
+    const studio = '[data-testid="skill-studio"]';
+    await typeInto(`${studio} [data-testid="persona-skill-name"]`, ADDED);
     const add = await $(
-      `${PANE} form[aria-label="Add a skill to ${PERSONA}"] button[type="submit"]`,
+      `${studio} form[aria-label="Add a skill to ${PERSONA}"] button[type="submit"]`,
     );
     await add.waitForClickable({ timeout: 10_000 });
     await add.click();
@@ -89,23 +97,12 @@ describe("a persona's skills", function () {
     });
     expect(readFileSync(file, "utf8")).toMatch(new RegExp(`skills: ${NAMED}, ${ADDED}`));
 
-    const remove = await $(`${PANE} button[aria-label="Remove ${ADDED} from ${PERSONA}"]`);
+    const remove = await $(`${studio} button[aria-label="Remove ${ADDED} from ${PERSONA}"]`);
     await remove.waitForClickable({ timeout: 20_000 });
     await remove.click();
     await browser.waitUntil(async () => !readFileSync(file, "utf8").includes(ADDED), {
       timeout: 20_000,
       timeoutMsg: "Remove never took the skill out of persona.md",
     });
-  });
-
-  it("opens the Skill studio on a chat as the persona", async () => {
-    await press(PANE, NAMED, "starting");
-
-    const named = await $(`[data-testid="skill-${NAMED}"]`);
-    await named.waitForExist({ timeout: 20_000 });
-    await expect(named).toHaveText(/On/);
-    const own = await $(`[data-testid="skill-${OWN}"]`);
-    await expect(own).toHaveText(/persona/);
-    expect(await tabNames()).toContain(`Skill studio · ${PERSONA}`);
   });
 });

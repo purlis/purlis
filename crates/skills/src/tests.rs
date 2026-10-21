@@ -836,16 +836,19 @@ fn a_project_skill_the_persona_names_reaches_a_workspace_it_was_not_granted_to()
 }
 
 #[test]
-fn a_workspaces_turn_off_still_holds_for_a_skill_the_persona_names() {
+fn a_skill_the_persona_names_reaches_a_workspace_that_turned_it_off() {
+    // Dispatching a persona never strips its skills (spec story 17; ADR 0099 as amended
+    // 2026-10-21): the turn-off still holds for every other chat there.
     let plane = Plane::new();
     skill(&plane.project(), "deploy", &whole("deploy"));
     plane.grant("deploy", "grant = \"all\"\n");
     plane.turn_off("ops", &["deploy"]);
 
-    let set = plane.as_persona(Some("ops"), "steward", &["deploy"], None, None);
+    let named = plane.as_persona(Some("ops"), "steward", &["deploy"], None, None);
+    let other = plane.as_persona(Some("ops"), "steward", &[], None, None);
 
-    assert!(set.effective.is_empty());
-    assert_eq!(left_out(&set)[0].3, "turned off in this workspace");
+    assert_eq!(effective(&named), [("deploy", Origin::Project, false)]);
+    assert_eq!(left_out(&other)[0].3, "turned off in this workspace");
 }
 
 #[test]
@@ -923,7 +926,7 @@ fn a_built_in_skill_named_with_either_prefix_is_the_built_in_one_and_a_missing_o
             "purlis:gone",
             Origin::BuiltIn,
             false,
-            "its persona names it, and no built-in skill has this name".to_owned()
+            "its persona names it, and purlis has no built-in skill of this name".to_owned()
         )]
     );
 }
@@ -940,7 +943,7 @@ fn a_harness_skill_the_persona_names_is_left_out_only_where_this_machine_lacks_i
             plugin: None,
             name: "langfuse".to_owned(),
         },
-        OnMachine::Plugin("superpowers".to_owned()),
+        OnMachine::Unlisted("superpowers".to_owned()),
     ];
     let names = [
         "mattpocock-skills:grilling",
@@ -953,6 +956,20 @@ fn a_harness_skill_the_persona_names_is_left_out_only_where_this_machine_lacks_i
     let set = plane.as_persona(None, "steward", &names, None, Some(&here));
 
     assert!(set.effective.is_empty(), "the harness loads its own");
+    let harness: Vec<(String, bool)> = set
+        .from_the_harness
+        .iter()
+        .map(|h| (h.reference.to_string(), h.checked))
+        .collect();
+    assert_eq!(
+        harness,
+        [
+            ("mattpocock-skills:grilling".to_owned(), true),
+            ("superpowers:systematic-debugging".to_owned(), false),
+            ("langfuse".to_owned(), true),
+        ],
+        "a skill of a plugin it cannot list is never said to be there"
+    );
     let missing = "its persona names it, and it is not installed on this machine".to_owned();
     assert_eq!(
         left_out(&set),
@@ -969,12 +986,14 @@ fn a_harness_skill_the_persona_names_is_left_out_only_where_this_machine_lacks_i
 }
 
 #[test]
-fn where_nobody_looked_at_the_harness_no_named_skill_is_said_to_be_missing() {
+fn where_nobody_looked_at_the_harness_no_named_skill_is_missing_or_checked() {
     let plane = Plane::new();
 
     let set = plane.as_persona(None, "steward", &["superpowers:tdd", "nowhere"], None, None);
 
-    assert_eq!(set, SkillSet::default());
+    assert!(set.left_out.is_empty());
+    assert!(set.from_the_harness.iter().all(|h| !h.checked));
+    assert_eq!(set.from_the_harness.len(), 2);
 }
 
 #[test]

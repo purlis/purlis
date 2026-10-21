@@ -253,12 +253,11 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
     };
 
     assert_eq!(
-        said(Harness::ClaudeCode).as_deref(),
-        Some(
-            "This chat started without 1 skill ops names, because it is not installed on this \
-             machine: superpowers:test-driven-development. Install it, or take it out of ops's \
-             skills on its page."
-        )
+        said(Harness::ClaudeCode),
+        Some(purlis_core::skills::NotHere {
+            missing: vec!["superpowers:test-driven-development".to_owned()],
+            no_built_in: Vec::new(),
+        })
     );
 
     skill(
@@ -280,4 +279,56 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
     .unwrap();
 
     assert_eq!(said(Harness::ClaudeCode), None, "installed now");
+}
+
+#[test]
+fn on_codex_a_plugin_skill_is_found_in_its_cache_and_one_it_cannot_list_raises_nothing() {
+    purlis_core::unsteered!();
+    let here = here();
+    let codex = here.root.join("codex-home");
+    fs::create_dir_all(&codex).unwrap();
+    fs::write(
+        codex.join("config.toml"),
+        "[plugins.\"superpowers@market\"]\nenabled = true\n",
+    )
+    .unwrap();
+    let chat = [("CODEX_HOME".to_owned(), codex.display().to_string())];
+    let env = purlis_core::harness_plugin::Env {
+        chat: &chat,
+        home: Some(here.root.join("home")),
+        process: false,
+    };
+    let said = || {
+        purlis_core::skills::not_here(
+            &here.plane,
+            Some(WORKSPACE),
+            PERSONA,
+            Some(&here.plugin.join("skills")),
+            Harness::Codex,
+            &env,
+        )
+    };
+
+    assert_eq!(
+        said(),
+        None,
+        "its cache is not there: unchecked, never missing"
+    );
+
+    let version = codex.join("plugins/cache/market/superpowers/1.0.0");
+    fs::create_dir_all(version.join(".codex-plugin")).unwrap();
+    fs::write(
+        version.join(".codex-plugin/plugin.json"),
+        r#"{"name":"superpowers"}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(version.join("skills")).unwrap();
+    assert_eq!(
+        said().map(|not| not.missing),
+        Some(vec!["superpowers:test-driven-development".to_owned()]),
+        "listed, and not among them"
+    );
+
+    skill(&version.join("skills"), "test-driven-development");
+    assert_eq!(said(), None);
 }

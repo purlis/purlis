@@ -57,8 +57,16 @@ pub struct StudioSkill {
     pub left_out: Option<String>,
     /// What it does and when to use it: its frontmatter's `description`.
     pub description: String,
-    /// Its folder, relative to the project where it is inside it.
+    /// Its folder, relative to the project where it is inside it; empty for an installed skill.
     pub folder: String,
+    /// How a persona's skills name it: `purlis:<name>` for a built-in skill, `<plugin>:<name>`
+    /// for a plugin's, else its name (#2768). What Add and Remove send.
+    pub written: String,
+    /// Whether the persona the studio shows names it, so Remove can take it out.
+    pub named: bool,
+    /// What is said of an installed skill the persona names that purlis cannot check this
+    /// machine for, or `None`.
+    pub unchecked: Option<String>,
 }
 
 /// What the studio shows: whether it is on, whose chat it shows, and its skills by name.
@@ -102,7 +110,11 @@ pub(crate) fn studio(
         workspace.as_deref(),
         persona.as_deref(),
     );
-    let skills = purlis_core::skills::studio_rows(&set, root)
+    let names = persona
+        .as_deref()
+        .map(|persona| purlis_core::skills::names_of(root, persona))
+        .unwrap_or_default();
+    let skills = purlis_core::skills::studio_rows(&set, root, &names)
         .into_iter()
         .map(|row| StudioSkill {
             name: row.name,
@@ -114,6 +126,11 @@ pub(crate) fn studio(
             left_out: row.left_out,
             description: row.description,
             folder: row.folder,
+            written: row.written,
+            named: row.named,
+            unchecked: row
+                .unchecked
+                .then(|| purlis_core::skills::UNCHECKED.to_owned()),
         })
         .collect();
     let workspaces = purlis_core::workspaces::Plane::open(root)
@@ -317,10 +334,26 @@ pub(crate) async fn skill_share(
     .await
 }
 
-/// **Adds a skill to a persona's `skills:` list, or takes one out** (SK-5, #2768): the persona
-/// page's Skills section. `written` is the skill's name as the studio lists it, `plugin:name`
-/// for an installed one, or `purlis:name` for a built-in one. Answers whether the list changed.
-/// Refused while the studio's flag is off.
+/// What a change to a persona's skills does, as the studio asks it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum PersonaSkillChange {
+    Add,
+    Remove,
+}
+
+impl From<PersonaSkillChange> for purlis_core::skills::persona::Change {
+    fn from(change: PersonaSkillChange) -> Self {
+        match change {
+            PersonaSkillChange::Add => Self::Add,
+            PersonaSkillChange::Remove => Self::Remove,
+        }
+    }
+}
+
+/// **Adds a skill to a persona's skills, or takes one out** (SK-5, #2768): Add and Remove in the
+/// Skill studio filtered to the persona. `written` is the skill as the studio's row writes it.
+/// Answers whether the persona's definition changed. Refused while the studio's flag is off.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn persona_skill(
@@ -328,22 +361,47 @@ pub(crate) async fn persona_skill(
     plane: crate::planes::PlaneId,
     persona: String,
     written: String,
-    add: bool,
+    change: PersonaSkillChange,
 ) -> Result<bool, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("changing the persona's skills", move || {
         if !purlis_core::skills::studio_on_here() {
-            return Err("The Skill studio is not turned on on this machine.".to_owned());
+            return Err("The Skill studio is off on this machine.".to_owned());
         }
-        let changed = if add {
-            purlis_core::skills::persona::add(held.root(), &persona, &written)
-        } else {
-            purlis_core::skills::persona::remove(held.root(), &persona, &written)
-        };
-        held.wrote(&["personas".to_owned()]);
-        changed
+        let changed =
+            purlis_core::skills::persona::change(held.root(), &persona, &written, change.into())?;
+        if changed {
+            held.wrote(&["personas".to_owned()]);
+        }
+        Ok(changed)
     })
     .await
+}
+
+/// **The skills a chat's persona names that it started without** (SK-5, #2768): what its tab's
+/// Notice says, until it is put away. `None` for a chat that has every one.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chat_skills_missing(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+) -> Result<Option<crate::chats::SkillsMissing>, String> {
+    let held = planes.held(&plane)?;
+    Ok(held.chats().skills_missing(session))
+}
+
+/// Puts a chat's missing-skills Notice away.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn put_away_chat_skills_missing(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    held.chats().put_away_skills_missing(session);
+    Ok(())
 }
 
 #[cfg(test)]

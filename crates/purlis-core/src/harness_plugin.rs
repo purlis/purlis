@@ -144,11 +144,11 @@ pub trait Adapter: Sync {
     /// Everything it has installed on this machine, read from [`Self::record`] and never
     /// written, or why it could not be read.
     fn installed(&self, env: &Env<'_>) -> Result<Vec<Plugin>, String>;
-    /// The skills it brings on its own on this machine, under `env`: the person's skill folders
-    /// and its plugins' skills, read and never written (SK-5, #2768). What a skill a persona
-    /// names is checked against, so a chat that starts without one says so. A plugin whose skills
-    /// cannot be listed is there as a whole, so nothing it has is said to be missing.
-    fn skills(&self, env: &Env<'_>) -> Vec<purlis_skills::OnMachine>;
+    /// Where it finds the skills it brings on its own on this machine, under `env`: the person's
+    /// skill folders and each installed plugin's (SK-5, #2768). It reads only its own record of
+    /// what is installed, as [`Self::installed`] does; the host lists the skills in each folder
+    /// ([`crate::skills::on_machine`]). What a skill a persona names is checked against.
+    fn skills_at(&self, env: &Env<'_>) -> Vec<SkillsAt>;
     /// What the project at `root` holds of its own that the harness loads beside what this
     /// machine installed, read and never written: listed so a reader sees it, and never
     /// handed to a chat. Nothing, for a harness that loads nothing from a project.
@@ -320,7 +320,7 @@ impl Adapter for ClaudeCode {
         Ok(out)
     }
 
-    fn skills(&self, env: &Env<'_>) -> Vec<purlis_skills::OnMachine> {
+    fn skills_at(&self, env: &Env<'_>) -> Vec<SkillsAt> {
         skills::claude(self, env)
     }
 
@@ -396,6 +396,10 @@ impl Adapter for Codex {
         Ok(out)
     }
 
+    fn skills_at(&self, env: &Env<'_>) -> Vec<SkillsAt> {
+        skills::codex(self, env)
+    }
+
     /// Measured on codex-cli 0.147.0 (charter-app#274), in a throwaway `CODEX_HOME` holding a
     /// copy of a real config and plugin cache, with `codex debug prompt-input` showing which of
     /// the plugin's skills reached the model. `enabled = false` in `config.toml` took them out.
@@ -403,10 +407,6 @@ impl Adapter for Codex {
     /// `plugins.<id>={enabled=false}`, not `plugins={"<id>"={enabled=false}}`, and not the
     /// other way round over a file that says false. A per-session switch would have to be one
     /// of those. The only other switch is `--disable plugins`, which turns them all off.
-    fn skills(&self, env: &Env<'_>) -> Vec<purlis_skills::OnMachine> {
-        skills::codex(self, env)
-    }
-
     fn support(&self) -> Support {
         Support::NotYet(
             "Codex 0.147.0 turns a plugin on or off only in its own config.toml, and ignores \
@@ -626,7 +626,7 @@ impl Adapter for Opencode {
         out
     }
 
-    fn skills(&self, env: &Env<'_>) -> Vec<purlis_skills::OnMachine> {
+    fn skills_at(&self, env: &Env<'_>) -> Vec<SkillsAt> {
         skills::opencode(self, env)
     }
 
@@ -1565,6 +1565,8 @@ pub fn keyed_in(top: &toml::Table, file: &str, at: &str) -> Vec<Refusal> {
 }
 
 mod skills;
+
+pub use skills::SkillsAt;
 
 #[cfg(test)]
 mod tests;

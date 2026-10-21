@@ -203,6 +203,37 @@ describe("the Skill studio", () => {
             left_out: null,
             description: "Triages.",
             folder: "personas/ops/skills/triage",
+            written: "triage",
+            named: false,
+            unchecked: null,
+          },
+          {
+            name: "deploy",
+            level: "project",
+            label: "project",
+            local: false,
+            grant: "root",
+            on: true,
+            left_out: null,
+            description: "Deploys.",
+            folder: "skills/deploy",
+            written: "deploy",
+            named: true,
+            unchecked: null,
+          },
+          {
+            name: "superpowers:tdd",
+            level: "installed",
+            label: "installed",
+            local: false,
+            grant: null,
+            on: true,
+            left_out: null,
+            description: "",
+            folder: "",
+            written: "superpowers:tdd",
+            named: true,
+            unchecked: "purlis can't check whether this machine has it",
           },
         ],
       };
@@ -212,9 +243,17 @@ describe("the Skill studio", () => {
 
     const triage = await screen.findByTestId("skill-triage");
     expect(within(triage).getByText("persona")).toBeInTheDocument();
+    expect(within(triage).queryByRole("button", { name: /Remove/ })).toBeNull();
     expect(
-      screen.getByText(/Every skill a chat as ops gets, in any workspace/),
+      within(screen.getByTestId("skill-deploy")).getByRole("button", {
+        name: "Remove deploy from ops",
+      }),
     ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("skill-superpowers:tdd")).getByText(/purlis can't check/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("form", { name: "Add a skill to ops" })).toBeInTheDocument();
+    expect(screen.getByText(/Every skill a chat as ops gets/)).toBeInTheDocument();
     expect(asked[0]).toMatchObject({ plane: "p", workspace: null, persona: "ops" });
   });
 
@@ -222,6 +261,7 @@ describe("the Skill studio", () => {
     const view = skillStudioView(asPersona("ops"));
     expect(view.key).toBe("persona/ops");
     expect(scopeOf(view)).toEqual(asPersona("ops"));
+    expect(scopeOf(skillStudioView(AT_THE_ROOT))).toEqual(AT_THE_ROOT);
     expect(scopeOf(skillStudioView(inWorkspace("ops")))).toEqual(inWorkspace("ops"));
     expect(skillStudioTitle(asPersona("ops"))).toBe("Skill studio · ops");
   });

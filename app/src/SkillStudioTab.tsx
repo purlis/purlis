@@ -9,29 +9,19 @@ import { Notice } from "./Notice";
 import { Select } from "./primitives/Select";
 import {
   AT_THE_ROOT,
-  asPersona,
   inWorkspace,
-  personaOf,
+  scopeChat,
+  scopeKey,
+  scopeOfKey,
   skillStudioTitle,
   skillStudioView,
-  workspaceOf,
+  whoseChats,
   type StudioScope,
 } from "./skillStudio";
 import { skillView } from "./skillRuns";
+import { PersonaSkillAdd, PersonaSkillRemove } from "./personaSkills";
 import type { ViewRef } from "./tabs";
 
-/** A scope as the picker's value: the root, `in:<workspace>`, or `as:<persona>`. */
-function choiceOf(scope: StudioScope): string {
-  if (scope.at === "root") return "root";
-  return scope.at === "persona" ? `as:${scope.persona}` : `in:${scope.workspace}`;
-}
-
-/** The scope a picker's value names. */
-function scopeOfChoice(choice: string): StudioScope {
-  if (choice.startsWith("in:")) return inWorkspace(choice.slice(3));
-  if (choice.startsWith("as:")) return asPersona(choice.slice(3));
-  return AT_THE_ROOT;
-}
 /**
  * **The Skill studio's tab** (SK-2, #2765; SK-4, #2767): one chat's skill set, at the project's
  * root or in one workspace. Every skill the chat gets, with its level, and every one it does not
@@ -57,8 +47,8 @@ export function SkillStudioTab({
   const [refused, setRefused] = useState<string>();
   const [shareRefused, setShareRefused] = useState<string>();
   const [shared, setShared] = useState(0);
-  const workspace = workspaceOf(scope);
-  const persona = personaOf(scope);
+  const { workspace, persona } = whoseChats(scope);
+  const changedHere = () => setShared((n) => n + 1);
   useEffect(() => {
     let live = true;
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
@@ -112,22 +102,26 @@ export function SkillStudioTab({
       <Select
         className="search-scope"
         aria-label="Whose chats"
-        value={choiceOf(scope)}
+        value={scopeKey(scope)}
         options={[
-          { value: choiceOf(AT_THE_ROOT), label: "A chat at the project's root" },
-          ...studio.workspaces.map((name) => ({
-            value: choiceOf(inWorkspace(name)),
-            label: `A chat in ${name}`,
-          })),
-          ...(persona === null
-            ? []
-            : [{ value: choiceOf(asPersona(persona)), label: `A chat as ${persona}` }]),
-        ]}
+          AT_THE_ROOT,
+          ...studio.workspaces.map(inWorkspace),
+          ...(persona === null ? [] : [scope]),
+        ].map((one) => ({ value: scopeKey(one), label: scopeChat(one) }))}
         onValueChange={(to) => {
-          const next = scopeOfChoice(to);
+          const next = scopeOfKey(to);
           onOpenView?.(skillStudioView(next), skillStudioTitle(next));
         }}
       />
+      {persona !== null && (
+        /* The persona's own skills list (#2768): every skill choice is the studio's. */
+        <PersonaSkillAdd
+          plane={plane}
+          persona={persona}
+          known={studio.skills.filter((skill) => !skill.named).map((skill) => skill.written)}
+          onChanged={changedHere}
+        />
+      )}
     </div>
   );
   if (studio.skills.length === 0)
@@ -154,11 +148,8 @@ export function SkillStudioTab({
     <div className="skill-studio" data-testid="skill-studio">
       {picker}
       <p className="honest">
-        {persona !== null
-          ? `Every skill a chat as ${persona} gets, in any workspace, and why any other is left out.`
-          : workspace !== null
-            ? `Every skill a chat in ${workspace} gets, and why any other is left out.`
-            : "Every skill a chat at the project's root gets, and why any other is left out."}
+        {`Every skill ${lowerFirst(scopeChat(scope))} gets, and why any other is left out.`}
+        {persona !== null && " A persona brings its skills into every workspace."}
       </p>
       {shareRefused !== undefined && (
         <Notice
@@ -214,7 +205,20 @@ export function SkillStudioTab({
                 )}
               </td>
               <td>{skill.grant ?? ""}</td>
-              <td>{skill.on ? "On" : `Left out: ${skill.left_out ?? ""}`}</td>
+              <td>
+                {skill.on ? (skill.unchecked ?? "On") : `Left out: ${skill.left_out ?? ""}`}
+                {persona !== null && skill.named && (
+                  <>
+                    {" "}
+                    <PersonaSkillRemove
+                      plane={plane}
+                      persona={persona}
+                      written={skill.written}
+                      onChanged={changedHere}
+                    />
+                  </>
+                )}
+              </td>
               <td>{skill.description}</td>
             </tr>
           ))}
@@ -222,4 +226,9 @@ export function SkillStudioTab({
       </table>
     </div>
   );
+}
+
+/** `text` with its first letter lower-cased, to go inside a sentence. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }

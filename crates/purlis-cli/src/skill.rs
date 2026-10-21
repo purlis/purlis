@@ -108,7 +108,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
     let built_in = purlis_core::skills::built_in_here();
     let rows_for = |workspace: Option<&str>, persona: Option<&str>| {
         let set = purlis_core::skills::in_the_studio(built_in.as_deref(), root, workspace, persona);
-        purlis_core::skills::studio_rows(&set, root)
+        let names = persona
+            .map(|persona| purlis_core::skills::names_of(root, persona))
+            .unwrap_or_default();
+        purlis_core::skills::studio_rows(&set, root, &names)
     };
     match command {
         SkillCommand::List {
@@ -314,6 +317,7 @@ fn level(row: &StudioRow) -> String {
 /// `on`, or why it is left out.
 fn state(row: &StudioRow) -> String {
     match &row.left_out {
+        None if row.unchecked => format!("on: {}", purlis_core::skills::UNCHECKED),
         None => "on".to_owned(),
         Some(why) => format!("left out: {why}"),
     }
@@ -329,6 +333,9 @@ fn row_json(row: &StudioRow) -> Value {
         "folder": row.folder,
         "local": row.local,
         "grant": row.grant,
+        "written": row.written,
+        "named": row.named,
+        "unchecked": row.unchecked,
     })
 }
 

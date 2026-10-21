@@ -1,36 +1,54 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The skills each harness brings on its own on this machine (SK-5, #2768), for
-//! [`super::Adapter::skills`]: what a skill a persona names is checked against. Read, never
-//! written. Where each harness looks is the research of 2026-10-20
+//! Where each harness finds the skills it brings on its own on this machine (SK-5, #2768), for
+//! [`super::Adapter::skills_at`]. An adapter reads only its own record of what is installed, as
+//! [`super::Adapter::installed`] does, and names folders; the host lists what is in them
+//! ([`crate::skills::on_machine`]). Where each harness looks is the research of 2026-10-20
 //! (`refs/skills-research/harness-skill-mechanics.md` in the smart-ide workspace).
 
-use std::path::Path;
-
-use purlis_skills::OnMachine;
+use std::path::{Path, PathBuf};
 
 use super::{Adapter, Env, split};
+
+/// One place a harness finds skills.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillsAt {
+    /// A folder of skills, a folder per skill: the person's own (`plugin` `None`), or the ones a
+    /// harness names by a plugin's prefix.
+    Folder {
+        dir: PathBuf,
+        plugin: Option<String>,
+    },
+    /// An installed plugin's folder. Its skills are in its `skills/`, or wherever the open plugin
+    /// manifest at `manifest` inside it names under `skills`. With `versions`, the folder holds a
+    /// folder per installed version, each laid out so.
+    Plugin {
+        plugin: String,
+        dir: PathBuf,
+        manifest: &'static str,
+        versions: bool,
+    },
+    /// An installed plugin whose folder purlis cannot find: a skill named under it is said to be
+    /// unchecked, never missing.
+    Unlisted(String),
+}
 
 /// The prefix Claude Code names a skill synced from claude.ai by (`anthropic-skills:<name>`).
 const SYNCED_PLUGIN: &str = "anthropic-skills";
 
-/// Claude Code: the person's `skills/` under its config folder (each also by
-/// [`SYNCED_PLUGIN`] where it sits in `skills/synced/`), and each installed plugin's `skills/`,
-/// from its `installPath` in `installed_plugins.json`. A plugin with no path to read is there as a
-/// whole.
-pub(super) fn claude(adapter: &super::ClaudeCode, env: &Env<'_>) -> Vec<OnMachine> {
+/// Claude Code: the person's `skills/` under its config folder, the skills synced from claude.ai
+/// in its `skills/synced/` (by their own name and by [`SYNCED_PLUGIN`]'s), and each installed
+/// plugin at the `installPath` its `installed_plugins.json` records.
+pub(super) fn claude(adapter: &super::ClaudeCode, env: &Env<'_>) -> Vec<SkillsAt> {
     let mut out = Vec::new();
     if let Some(config) = env.dir("CLAUDE_CONFIG_DIR", ".claude") {
         let own = config.join("skills");
-        out.extend(in_folder(&own, None));
-        out.extend(in_folder(&own.join("synced"), None));
-        out.extend(in_folder(&own.join("synced"), Some(SYNCED_PLUGIN)));
+        out.push(folder(own.join("synced"), Some(SYNCED_PLUGIN)));
+        out.push(folder(own.join("synced"), None));
+        out.push(folder(own, None));
     }
-    let Some(record) = adapter.record(env) else {
-        return out;
-    };
-    let Ok(Some(text)) = super::read(&record) else {
+    let Some(Ok(Some(text))) = adapter.record(env).map(|record| super::read(&record)) else {
         return out;
     };
     let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else {
@@ -50,85 +68,72 @@ pub(super) fn claude(adapter: &super::ClaudeCode, env: &Env<'_>) -> Vec<OnMachin
             .filter_map(|one| one.get("installPath").and_then(serde_json::Value::as_str))
             .collect();
         if paths.is_empty() {
-            out.push(OnMachine::Plugin(name.to_owned()));
+            out.push(SkillsAt::Unlisted(name.to_owned()));
         }
-        for path in paths {
-            out.extend(in_folder(&Path::new(path).join("skills"), Some(name)));
-        }
+        out.extend(paths.into_iter().map(|path| SkillsAt::Plugin {
+            plugin: name.to_owned(),
+            dir: PathBuf::from(path),
+            manifest: ".claude-plugin/plugin.json",
+            versions: false,
+        }));
     }
     out
 }
 
 /// Codex: `$CODEX_HOME/skills` (else `~/.codex/skills`) and `~/.agents/skills`, and each plugin
-/// its `config.toml` records, there as a whole: where Codex keeps a plugin's files is not read.
-pub(super) fn codex(adapter: &super::Codex, env: &Env<'_>) -> Vec<OnMachine> {
+/// its `config.toml` records, in its cache at `plugins/cache/<marketplace>/<plugin>/<version>/`
+/// with the manifest `.codex-plugin/plugin.json` (the cache as Codex 0.163.0 lays it out on the
+/// operator's machine; the manifest's `skills` key is `core-plugins/src/manifest.rs`'s).
+pub(super) fn codex(adapter: &super::Codex, env: &Env<'_>) -> Vec<SkillsAt> {
     let mut out = Vec::new();
-    if let Some(home) = env.dir("CODEX_HOME", ".codex") {
-        out.extend(in_folder(&home.join("skills"), None));
+    let home = env.dir("CODEX_HOME", ".codex");
+    if let Some(home) = &home {
+        out.push(folder(home.join("skills"), None));
     }
     if let Some(home) = env.home.as_deref() {
-        out.extend(in_folder(&home.join(".agents/skills"), None));
+        out.push(folder(home.join(".agents/skills"), None));
     }
-    out.extend(
-        adapter
-            .installed(env)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|plugin| OnMachine::Plugin(plugin.name)),
-    );
+    for plugin in adapter.installed(env).unwrap_or_default() {
+        let (name, marketplace) = split(&plugin.id);
+        out.push(match &home {
+            Some(home) if !marketplace.is_empty() => SkillsAt::Plugin {
+                plugin: name.to_owned(),
+                dir: home.join("plugins/cache").join(marketplace).join(name),
+                manifest: ".codex-plugin/plugin.json",
+                versions: true,
+            },
+            _ => SkillsAt::Unlisted(name.to_owned()),
+        });
+    }
     out
 }
 
 /// opencode: `~/.claude/skills` and `~/.agents/skills`, which it reads too, and `skill/` and
-/// `skills/` in its global config folder, in `~/.opencode/` and in `$OPENCODE_CONFIG_DIR`. Its
-/// plugins name no skills.
-pub(super) fn opencode(adapter: &super::Opencode, env: &Env<'_>) -> Vec<OnMachine> {
+/// `skills/` in `~/.opencode/`, its global config folder and `$OPENCODE_CONFIG_DIR`. Its plugins
+/// name no skills.
+pub(super) fn opencode(adapter: &super::Opencode, env: &Env<'_>) -> Vec<SkillsAt> {
     let mut out = Vec::new();
     let mut configs = Vec::new();
     if let Some(home) = env.home.as_deref() {
-        out.extend(in_folder(&home.join(".claude/skills"), None));
-        out.extend(in_folder(&home.join(".agents/skills"), None));
+        out.push(folder(home.join(".claude/skills"), None));
+        out.push(folder(home.join(".agents/skills"), None));
         configs.push(home.join(".opencode"));
     }
     configs.extend(adapter.record(env));
-    configs.extend(env.var("OPENCODE_CONFIG_DIR").map(std::path::PathBuf::from));
+    configs.extend(env.var("OPENCODE_CONFIG_DIR").map(PathBuf::from));
     for config in configs {
-        for folder in ["skill", "skills"] {
-            out.extend(in_folder(&config.join(folder), None));
+        for name in ["skill", "skills"] {
+            out.push(folder(config.join(name), None));
         }
     }
     out
 }
 
-/// Every skill in `dir`, by its folder's name and by the name its `SKILL.md` gives where that
-/// differs, as `plugin`'s.
-fn in_folder(dir: &Path, plugin: Option<&str>) -> Vec<OnMachine> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for folder in entries.filter_map(Result::ok).map(|entry| entry.path()) {
-        let Ok(text) = std::fs::read_to_string(folder.join("SKILL.md")) else {
-            continue;
-        };
-        let mut names: Vec<String> = folder
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .into_iter()
-            .collect();
-        if let Some((_, name)) = purlis_skills::frontmatter(&text)
-            .into_iter()
-            .find(|(key, value)| key == "name" && !value.is_empty())
-            && !names.contains(&name)
-        {
-            names.push(name);
-        }
-        out.extend(names.into_iter().map(|name| OnMachine::Skill {
-            plugin: plugin.map(str::to_owned),
-            name,
-        }));
+fn folder(dir: impl AsRef<Path>, plugin: Option<&str>) -> SkillsAt {
+    SkillsAt::Folder {
+        dir: dir.as_ref().to_path_buf(),
+        plugin: plugin.map(str::to_owned),
     }
-    out
 }
 
 #[cfg(test)]

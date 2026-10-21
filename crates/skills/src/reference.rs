@@ -59,27 +59,42 @@ impl Reference {
         matches!(self, Self::Named(named) if named == name)
     }
 
-    /// Whether a machine with the harness skills `here` has it.
-    pub(crate) fn is_on(&self, here: &[OnMachine]) -> bool {
-        here.iter().any(|one| match (self, one) {
-            (
-                Self::Named(name),
-                OnMachine::Skill {
-                    plugin: None,
-                    name: has,
-                },
-            ) => name == has,
-            (
-                Self::Harness { plugin, name },
-                OnMachine::Skill {
-                    plugin: Some(from),
-                    name: has,
-                },
-            ) => plugin == from && name == has,
-            (Self::Harness { plugin, .. }, OnMachine::Plugin(from)) => plugin == from,
-            _ => false,
-        })
+    /// Whether a machine with the harness skills `here` has it, as far as it can tell.
+    pub(crate) fn on(&self, here: &[OnMachine]) -> Seen {
+        let mut seen = Seen::Missing;
+        for one in here {
+            match (self, one) {
+                (
+                    Self::Named(name),
+                    OnMachine::Skill {
+                        plugin: None,
+                        name: has,
+                    },
+                ) if name == has => return Seen::Here,
+                (
+                    Self::Harness { plugin, name },
+                    OnMachine::Skill {
+                        plugin: Some(from),
+                        name: has,
+                    },
+                ) if plugin == from && name == has => return Seen::Here,
+                (Self::Harness { plugin, .. }, OnMachine::Unlisted(from)) if plugin == from => {
+                    seen = Seen::Unknown;
+                }
+                _ => {}
+            }
+        }
+        seen
     }
+}
+
+/// What a machine's harness skills say of one reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Seen {
+    Here,
+    /// Its plugin is installed, and its skills cannot be listed.
+    Unknown,
+    Missing,
 }
 
 /// How a persona's `skills:` list says it: `purlis:<name>` for a built-in skill (whichever prefix
@@ -102,7 +117,7 @@ pub enum OnMachine {
         plugin: Option<String>,
         name: String,
     },
-    /// A plugin installed whose skills cannot be listed: every skill named under it is taken as
-    /// there, so a chat is never told one is missing that it has.
-    Plugin(String),
+    /// A plugin installed whose skills cannot be listed: a skill named under it is neither said to
+    /// be there nor said to be missing, only that purlis could not check it.
+    Unlisted(String),
 }

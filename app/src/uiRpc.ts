@@ -903,6 +903,18 @@ export const commands = {
 	setSkillStudioOn: __WINDOW_ONLY_RESULT,
 	skillShare: __WINDOW_ONLY_RESULT,
 	/**
+	 *  **The skills a chat's persona names that it started without** (SK-5, #2768): what its tab's
+	 *  Notice says, until it is put away. `None` for a chat that has every one.
+	 */
+	chatSkillsMissing: (plane: PlaneId, session: number) => typedError<{
+	persona: string,
+	/**  Installed skills this machine does not have for the chat's harness. */
+	missing: string[],
+	/**  Built-in skills purlis has none of: a typo, or a name from another version of purlis. */
+	no_built_in: string[],
+} | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
+	putAwayChatSkillsMissing: __WINDOW_ONLY_RESULT,
+	/**
 	 *  What discarding the folder of dispatch `id`'s own branch would take with it (#1453): every
 	 *  uncommitted file, every ignored one, and how many commits its branch holds that exist
 	 *  nowhere else, for the question the window asks before it discards. Refused while a chat is
@@ -6501,6 +6513,9 @@ export type PersonaProfile = {
 	offered: string[],
 };
 
+/**  What a change to a persona's skills does, as the studio asks it. */
+export type PersonaSkillChange = "add" | "remove";
+
 /**  Where a smart close stands. */
 export type Phase = 
 /**  Waiting for the chat's turn to end before the prompt is sent. */
@@ -8604,6 +8619,18 @@ export type SidebarWorkspace = {
 	live: boolean,
 };
 
+/**
+ *  The skills a chat's persona names that it started without (SK-5, #2768), each as the
+ *  persona's `skills:` list writes it: what its tab's Notice says.
+ */
+export type SkillsMissing = {
+	persona: string,
+	/**  Installed skills this machine does not have for the chat's harness. */
+	missing: string[],
+	/**  Built-in skills purlis has none of: a typo, or a name from another version of purlis. */
+	no_built_in: string[],
+};
+
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {
 	/**  The one line on screen. */
@@ -8842,8 +8869,20 @@ export type StudioSkill = {
 	left_out: string | null,
 	/**  What it does and when to use it: its frontmatter's `description`. */
 	description: string,
-	/**  Its folder, relative to the project where it is inside it. */
+	/**  Its folder, relative to the project where it is inside it; empty for an installed skill. */
 	folder: string,
+	/**
+	 *  How a persona's skills name it: `purlis:<name>` for a built-in skill, `<plugin>:<name>`
+	 *  for a plugin's, else its name (#2768). What Add and Remove send.
+	 */
+	written: string,
+	/**  Whether the persona the studio shows names it, so Remove can take it out. */
+	named: boolean,
+	/**
+	 *  What is said of an installed skill the persona names that purlis cannot check this
+	 *  machine for, or `None`.
+	 */
+	unchecked: string | null,
 };
 
 /**  What one subject is offered. */

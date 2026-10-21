@@ -157,10 +157,10 @@ pub fn plane_skills_laid_out(
     crate::skills::lay_out_for_chat(root, workspace, persona, built_in.as_deref(), sets)
 }
 
-/// **What a chat's tab says of the skills its persona names that it starts without** (SK-5,
-/// #2768), where the Skill studio's flag is `on`: the chat in `root` started in `cwd` on
-/// `harness` as `persona`, whose environment is `env`
-/// ([`crate::skills::not_here`]). `None` otherwise, and where it has every one.
+/// **The skills a chat's persona names that it starts without** (SK-5, #2768), where the Skill
+/// studio's flag is `on`: the chat in `root` started in `cwd` on `harness` as `persona`, whose
+/// environment is `env` ([`crate::skills::not_here`]). What its tab's Notice says. `None`
+/// otherwise, and where it has every one.
 pub fn skills_not_here(
     on: bool,
     root: &Path,
@@ -169,7 +169,7 @@ pub fn skills_not_here(
     cwd: Option<&Path>,
     persona: Option<&str>,
     env: &[(String, String)],
-) -> Option<String> {
+) -> Option<crate::skills::NotHere> {
     if !on {
         return None;
     }

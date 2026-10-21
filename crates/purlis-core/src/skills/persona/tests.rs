@@ -20,11 +20,9 @@ fn skill(dir: &Path, name: &str) {
 struct Plane {
     _tmp: tempfile::TempDir,
     root: PathBuf,
-    built_in: PathBuf,
 }
 
-/// A plane with the persona `ops`, whose definition says `frontmatter`, and one built-in skill,
-/// `handoff`.
+/// A plane with the persona `ops`, whose definition says `frontmatter`.
 fn plane(frontmatter: &str) -> Plane {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("plane");
@@ -34,13 +32,11 @@ fn plane(frontmatter: &str) -> Plane {
         format!("---\n{frontmatter}---\n\nThe body.\n"),
     )
     .unwrap();
-    let built_in = tmp.path().join("plugin/skills");
-    skill(&built_in, "handoff");
-    Plane {
-        _tmp: tmp,
-        root,
-        built_in,
-    }
+    Plane { _tmp: tmp, root }
+}
+
+fn change_to(plane: &Path, persona: &str, how: Change, written: &str) -> Result<bool, String> {
+    change(plane, persona, written, how)
 }
 
 fn definition(plane: &Plane) -> String {
@@ -48,52 +44,27 @@ fn definition(plane: &Plane) -> String {
 }
 
 #[test]
-fn the_page_lists_its_own_skills_then_each_name_its_list_gives() {
-    let plane = plane("skills: deploy, charter:handoff, superpowers:tdd, purlis:gone\n");
+fn it_brings_its_own_skills_and_each_other_one_its_list_names() {
+    let plane = plane("skills: deploy, charter:handoff, superpowers:tdd, triage, purlis:handoff\n");
     skill(&plane.root.join("personas/ops/skills"), "triage");
     skill(&plane.root.join("skills"), "deploy");
 
-    let listed = listed(&plane.root, "ops", Some(&plane.built_in));
-
-    let shown: Vec<(&str, Option<&str>, &str, Option<&str>)> = listed
-        .iter()
-        .map(|one| {
-            (
-                one.name.as_str(),
-                one.named_as.as_deref(),
-                one.level.as_str(),
-                one.left_out.as_deref(),
-            )
-        })
-        .collect();
-    assert_eq!(
-        shown,
-        [
-            ("triage", None, "persona", None),
-            ("deploy", Some("deploy"), "project", None),
-            ("purlis:handoff", Some("purlis:handoff"), "built-in", None),
-            (
-                "superpowers:tdd",
-                Some("superpowers:tdd"),
-                "installed",
-                None
-            ),
-            (
-                "purlis:gone",
-                Some("purlis:gone"),
-                "built-in",
-                Some("its persona names it, and no built-in skill has this name")
-            ),
-        ]
-    );
+    assert_eq!(brings(&plane.root, "ops"), 4, "triage once, handoff once");
+    assert_eq!(brings(&plane.root, "nobody"), 0);
 }
 
 #[test]
 fn adding_a_name_writes_the_skills_line_and_keeps_every_other_line() {
     let plane = plane("role: Ops\n");
 
-    assert_eq!(add(&plane.root, "ops", "deploy"), Ok(true));
-    assert_eq!(add(&plane.root, "ops", "charter:handoff"), Ok(true));
+    assert_eq!(
+        change_to(&plane.root, "ops", Change::Add, "deploy"),
+        Ok(true)
+    );
+    assert_eq!(
+        change_to(&plane.root, "ops", Change::Add, "charter:handoff"),
+        Ok(true)
+    );
 
     assert_eq!(
         definition(&plane),
@@ -106,7 +77,10 @@ fn adding_a_name_the_list_already_gives_writes_nothing() {
     let plane = plane("skills: charter:handoff\n");
     let before = definition(&plane);
 
-    assert_eq!(add(&plane.root, "ops", "purlis:handoff"), Ok(false));
+    assert_eq!(
+        change_to(&plane.root, "ops", Change::Add, "purlis:handoff"),
+        Ok(false)
+    );
     assert_eq!(
         definition(&plane),
         before,
@@ -117,21 +91,30 @@ fn adding_a_name_the_list_already_gives_writes_nothing() {
 #[test]
 fn an_entry_that_names_no_skill_is_refused() {
     let plane = plane("");
-    assert!(add(&plane.root, "ops", " : ").is_err());
+    assert!(change_to(&plane.root, "ops", Change::Add, " : ").is_err());
 }
 
 #[test]
 fn removing_a_name_takes_out_every_entry_of_it_and_the_line_when_it_empties() {
     let plane = plane("skills: deploy, charter:handoff\nrole: Ops\n");
 
-    assert_eq!(remove(&plane.root, "ops", "purlis:handoff"), Ok(true));
+    assert_eq!(
+        change_to(&plane.root, "ops", Change::Remove, "purlis:handoff"),
+        Ok(true)
+    );
     assert_eq!(
         definition(&plane),
         "---\nskills: deploy\nrole: Ops\n---\n\nThe body.\n"
     );
-    assert_eq!(remove(&plane.root, "ops", "deploy"), Ok(true));
+    assert_eq!(
+        change_to(&plane.root, "ops", Change::Remove, "deploy"),
+        Ok(true)
+    );
     assert_eq!(definition(&plane), "---\nrole: Ops\n---\n\nThe body.\n");
-    assert_eq!(remove(&plane.root, "ops", "deploy"), Ok(false));
+    assert_eq!(
+        change_to(&plane.root, "ops", Change::Remove, "deploy"),
+        Ok(false)
+    );
 }
 
 #[test]
@@ -139,7 +122,10 @@ fn removing_never_touches_a_personas_own_skill() {
     let plane = plane("skills: triage\n");
     skill(&plane.root.join("personas/ops/skills"), "triage");
 
-    assert_eq!(remove(&plane.root, "ops", "triage"), Ok(true));
+    assert_eq!(
+        change_to(&plane.root, "ops", Change::Remove, "triage"),
+        Ok(true)
+    );
 
     assert!(
         plane
@@ -153,5 +139,5 @@ fn removing_never_touches_a_personas_own_skill() {
 #[test]
 fn a_persona_that_is_not_one_is_refused_and_nothing_is_written() {
     let plane = plane("");
-    assert!(add(&plane.root, "../ops", "deploy").is_err());
+    assert!(change_to(&plane.root, "../ops", Change::Add, "deploy").is_err());
 }

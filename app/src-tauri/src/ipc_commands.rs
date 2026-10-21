@@ -283,6 +283,8 @@ macro_rules! app_commands {
                 skillstudio::set_skill_studio_on,
                 skillstudio::skill_share,
                 skillstudio::persona_skill,
+                skillstudio::chat_skills_missing,
+                skillstudio::put_away_chat_skills_missing,
                 dispatches::dispatch_worktree_loss,
                 dispatches::dispatch_worktree_discard,
                 taskchanges::task_changes,

@@ -19,7 +19,6 @@ import type {
   ExtensionView,
   LandQuestion,
   PanelBlock,
-  PanelRow,
   RowAction,
   ViewAnswer,
 } from "./bindings";
@@ -309,54 +308,6 @@ describe("the persona view", () => {
         ],
       },
     });
-  });
-
-  it("lends a persona's Skills list an Add, and each skill its list names a Remove", async () => {
-    // SK-5 (#2768): the core draws the section as blocks; the window lends what a block cannot
-    // carry, as it lends a change's Land.
-    const asked: unknown[] = [];
-    const studio = "skills.studio:persona/steward";
-    const skillRow = (key: string, text: string): PanelRow => ({
-      key,
-      text,
-      note: "project",
-      mark: "dot",
-      tone: "plain",
-      detail: null,
-      runs: studio,
-      actions: [],
-    });
-    const withSkills: ViewAnswer = {
-      ...PERSONA,
-      blocks: [
-        { kind: "note", text: "It brings 2 skills into every workspace.", tone: "plain" } as const,
-        {
-          kind: "list" as const,
-          rows: [skillRow("own:triage", "triage"), skillRow("named:deploy", "deploy")],
-          empty: { headline: "No skills go with it yet", body: null, offer: studio },
-        },
-        ...PERSONA.blocks,
-      ],
-    };
-    mockIPC((cmd, args) => {
-      if (cmd === "open_view") return withSkills;
-      if (cmd === "skill_studio")
-        return { on: true, workspace: null, persona: "steward", workspaces: [], skills: [] };
-      if (cmd === "persona_skill") {
-        asked.push(args);
-        return true;
-      }
-      return undefined;
-    });
-    draw(STEWARD);
-
-    expect(await screen.findByRole("form", { name: "Add a skill to steward" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Remove triage from steward" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Remove deploy from steward" }));
-
-    await waitFor(() => expect(asked).toHaveLength(1));
-    expect(asked[0]).toEqual({ plane: PLANE, persona: "steward", written: "deploy", add: false });
-    expect(screen.getAllByRole("form", { name: /Add a skill/ })).toHaveLength(1);
   });
 
   it("draws no dispatch limits on a view that is not a persona's", async () => {

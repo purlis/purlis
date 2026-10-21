@@ -40,6 +40,7 @@ mod share;
 
 pub use grant::{Grant, grant_of, set_grant};
 pub use read::{DIR_IN_BUNDLE, frontmatter, in_bundle, listing, read};
+use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
 pub use share::{named, share};
 
@@ -214,7 +215,8 @@ pub enum Reason {
     /// A skill the chat's persona names that this machine does not have for the chat's harness
     /// (SK-5): the chat starts without it, and its tab says so.
     NotOnThisMachine,
-    /// A built-in skill the chat's persona names, that no built-in skill is.
+    /// A built-in skill the chat's persona names, that no built-in skill is: a typo, or a name
+    /// from another version of purlis.
     NoSuchBuiltIn,
 }
 
@@ -272,7 +274,7 @@ impl std::fmt::Display for Reason {
                 f.write_str("its persona names it, and it is not installed on this machine")
             }
             Self::NoSuchBuiltIn => {
-                f.write_str("its persona names it, and no built-in skill has this name")
+                f.write_str("its persona names it, and purlis has no built-in skill of this name")
             }
         }
     }
@@ -286,6 +288,18 @@ pub struct SkillSet {
     /// Every skill left out, by name, and the copies of one name from the widest level to the
     /// narrowest.
     pub left_out: Vec<LeftOut>,
+    /// Every harness skill the chat's persona names that its harness loads by itself, in the
+    /// order its `skills:` list names them (SK-5). purlis never hands one over.
+    pub from_the_harness: Vec<FromHarness>,
+}
+
+/// A harness skill a chat's persona names, which the chat's harness loads by itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FromHarness {
+    pub reference: Reference,
+    /// Whether purlis saw it on this machine. `false` where it could not look: a plugin whose
+    /// skills it cannot list, or a set worked out without looking at the harness.
+    pub checked: bool,
 }
 
 impl SkillSet {
@@ -414,10 +428,13 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
                 if local && let Some(why) = kept_here(machine, folder) {
                     return Some(why);
                 }
-                let named = chat.names.iter().any(|one| one.names_plane(&skill.name));
+                // A persona brings what it names into every workspace, whatever the workspace
+                // was granted or turned off (ADR 0099 as amended 2026-10-21).
+                if chat.names.iter().any(|one| one.names_plane(&skill.name)) {
+                    return None;
+                }
                 chat.workspace
                     .and_then(|ws| reach(folder, ws, chat.turned_off, &skill.name))
-                    .filter(|reason| !named || *reason == Reason::TurnedOff)
             });
         }
     }
@@ -443,42 +460,57 @@ fn reach(folder: &Path, workspace: &str, off: &[String], name: &str) -> Option<R
         .then_some(Reason::TurnedOff)
 }
 
-/// Each skill `names` holds that the set neither gets nor leaves out already, left out with why:
-/// a built-in skill there is none of (where the built-in skills were read), and a harness skill
-/// `machine` does not have (where it looked). A plane skill named and found in no level is a
-/// harness skill to look for, since the harness may have it by that name.
+/// Each skill `names` holds that the set neither gets nor leaves out already: a built-in skill
+/// there is none of is left out (where the built-in skills were read); a harness skill is the
+/// harness's to load where `machine` has it or could not tell, and left out where it looked and
+/// found none. A plane skill named and found in no level is a harness skill to look for, since the
+/// harness may have it by that name.
 fn named_elsewhere(set: &mut SkillSet, machine: &Machine<'_>, names: &[Reference]) {
     for reference in names {
         let said = reference.to_string();
-        let held = |set: &SkillSet, name: &str| {
-            set.effective.iter().any(|e| e.skill.name == name)
-                || set.left_out.iter().any(|l| l.name == name)
+        let held = |set: &SkillSet| {
+            set.effective.iter().any(|e| e.skill.name == said)
+                || set.left_out.iter().any(|l| l.name == said)
+                || set
+                    .from_the_harness
+                    .iter()
+                    .any(|h| h.reference == *reference)
         };
-        if held(set, &said) {
+        if held(set) {
             continue;
         }
-        let missing = match reference {
-            Reference::BuiltIn(name) => machine.built_in.and_then(|dir| {
+        let (origin, folder, reason) = match reference {
+            Reference::BuiltIn(name) => {
+                let Some(dir) = machine.built_in else {
+                    continue;
+                };
                 let built_in = set
                     .effective
                     .iter()
                     .any(|e| e.origin == Origin::BuiltIn && e.skill.name == *name);
-                (!built_in).then(|| (Origin::BuiltIn, dir.join(name), Reason::NoSuchBuiltIn))
-            }),
-            _ => machine
-                .harness
-                .filter(|here| !reference.is_on(here))
-                .map(|_| (Origin::Harness, PathBuf::new(), Reason::NotOnThisMachine)),
+                if built_in {
+                    continue;
+                }
+                (Origin::BuiltIn, dir.join(name), Reason::NoSuchBuiltIn)
+            }
+            _ => match machine.harness.map(|here| reference.on(here)) {
+                Some(Seen::Missing) => (Origin::Harness, PathBuf::new(), Reason::NotOnThisMachine),
+                seen => {
+                    set.from_the_harness.push(FromHarness {
+                        reference: reference.clone(),
+                        checked: seen == Some(Seen::Here),
+                    });
+                    continue;
+                }
+            },
         };
-        if let Some((origin, folder, reason)) = missing {
-            set.left_out.push(LeftOut {
-                name: said,
-                origin,
-                local: false,
-                folder,
-                reason,
-            });
-        }
+        set.left_out.push(LeftOut {
+            name: said,
+            origin,
+            local: false,
+            folder,
+            reason,
+        });
     }
 }
 
