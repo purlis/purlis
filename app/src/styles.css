@@ -115,6 +115,8 @@
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-muted: var(--text-muted);
+  --color-text-quiet: var(--text-quiet);
+  --color-text-faint: var(--text-faint);
   --color-border-subtle: var(--border-subtle);
   --color-border-strong: var(--border-strong);
   --color-accent-base: var(--accent-base);

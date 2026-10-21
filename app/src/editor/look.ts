@@ -39,7 +39,7 @@ export const look = [
       backgroundColor: "var(--terminal-selection)",
     },
     ".cm-gutters": {
-      color: "var(--text-muted)",
+      color: "var(--text-quiet)",
       backgroundColor: "var(--surface-raised)",
       borderRight: "1px solid var(--border-subtle)",
     },

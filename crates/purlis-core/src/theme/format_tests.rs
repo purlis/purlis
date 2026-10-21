@@ -53,7 +53,8 @@ fn classic_light() -> &'static ResolvedTheme {
 }
 
 /// The tokens #2327 added after the digests below were taken: what Classic gives each is held
-/// to what the window drew before in `typed_tests.rs`.
+/// to what the window drew before in `typed_tests.rs`. The quiet and faint tiers (#2902) are
+/// Classic's muted, held in `tiers_tests.rs`.
 fn added_later(token: &str) -> bool {
     [
         "syntax.",
@@ -68,7 +69,7 @@ fn added_later(token: &str) -> bool {
     ]
     .iter()
     .any(|prefix| token.starts_with(prefix))
-        || ["caret", "placeholder"].contains(&token)
+        || ["caret", "placeholder", "text.quiet", "text.faint"].contains(&token)
 }
 
 /// Each value of `theme` in token order, as one string to digest: the tokens there were when

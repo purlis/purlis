@@ -64,7 +64,7 @@ use super::opened;
 use super::options::{self, MOST_COMBINATIONS};
 use super::tint;
 use super::typed::Typed;
-use super::vocabulary::{PLATFORM, TOKENS, is_colour, is_platform};
+use super::vocabulary::{PLATFORM, TOKENS, follow_muted, is_colour, is_platform};
 use super::{
     Appearance, CLASSIC, Complaint, PURLIS, Resolved, ResolvedTheme, Theme, built_in_for, classic,
     is_format_2, load_format_1, load_motion, purlis, stringify,
@@ -967,13 +967,14 @@ fn appearance(
         }
     };
     let base = parent.unwrap_or_else(|| built_in_for(appearance));
-    let given = tokens(
+    let mut given = tokens(
         one.get("tokens"),
         &format!("appearance {id}"),
         palette,
         complaints,
         notes,
     );
+    follow_muted(&mut given.colours, &base.values);
     let mut values = base.values.clone();
     values.extend(given.colours);
     let mut sizes = base.geometry.clone();
@@ -1021,11 +1022,9 @@ impl Tokens {
     /// These values over `theme`, one appearance drawn: what compact draws follows the
     /// geometry, as it does for an appearance's own.
     pub(super) fn onto(&self, theme: &mut ResolvedTheme) {
-        theme.values.extend(
-            self.colours
-                .iter()
-                .map(|(token, hex)| (*token, hex.clone())),
-        );
+        let mut colours = self.colours.clone();
+        follow_muted(&mut colours, &theme.values);
+        theme.values.extend(colours);
         self.typed.onto(&mut theme.typed);
         if !self.geometry.is_empty() {
             theme

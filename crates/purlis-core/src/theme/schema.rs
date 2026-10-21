@@ -245,7 +245,7 @@ pub fn schema() -> Value {
                 }
             },
             "tokens": {
-                "description": "Token values: a colour for a colour token; for a flag, the terminal cursor's shape or its line height, a value of that type; a number in its bound for a geometry token. A token not named is the parent's, or Purlis Classic's of the same appearance.",
+                "description": "Token values: a colour for a colour token; for a flag, the terminal cursor's shape or its line height, a value of that type; a number in its bound for a geometry token. A token not named is the parent's, or Purlis Classic's of the same appearance; text.quiet not named takes the text.muted named beside it while the layer below draws quiet in its muted, and text.faint not named takes the quiet while the layer below draws faint in its quiet.",
                 "type": "object",
                 "additionalProperties": false,
                 "properties": tokens

@@ -326,6 +326,8 @@
               "text.primary",
               "text.secondary",
               "text.muted",
+              "text.quiet",
+              "text.faint",
               "border.subtle",
               "border.strong",
               "accent.base",
@@ -343,7 +345,7 @@
               "layer.divider"
             ]
           },
-          "maxItems": 119
+          "maxItems": 121
         },
         "hues": {
           "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
@@ -416,7 +418,7 @@
       }
     },
     "tokens": {
-      "description": "Token values: a colour for a colour token; for a flag, the terminal cursor's shape or its line height, a value of that type; a number in its bound for a geometry token. A token not named is the parent's, or Purlis Classic's of the same appearance.",
+      "description": "Token values: a colour for a colour token; for a flag, the terminal cursor's shape or its line height, a value of that type; a number in its bound for a geometry token. A token not named is the parent's, or Purlis Classic's of the same appearance; text.quiet not named takes the text.muted named beside it while the layer below draws quiet in its muted, and text.faint not named takes the quiet while the layer below draws faint in its quiet.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -457,6 +459,12 @@
           "$ref": "#/$defs/colour"
         },
         "text.muted": {
+          "$ref": "#/$defs/colour"
+        },
+        "text.quiet": {
+          "$ref": "#/$defs/colour"
+        },
+        "text.faint": {
           "$ref": "#/$defs/colour"
         },
         "border.subtle": {

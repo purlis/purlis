@@ -49,7 +49,7 @@ export function inherited(element: Element, property: string): string | undefine
 export const ROLES = {
   body: { class: "ui-text-body", size: 13, weight: "400", colour: "--text-primary" },
   secondary: { class: "ui-text-secondary", size: 12, weight: "400", colour: "--text-secondary" },
-  meta: { class: "ui-text-meta", size: 11, weight: "400", colour: "--text-muted" },
+  meta: { class: "ui-text-meta", size: 11, weight: "400", colour: "--text-quiet" },
   label: { class: "ui-text-label", size: 11, weight: "600", colour: "--text-secondary" },
 } as const;
 

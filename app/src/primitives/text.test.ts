@@ -63,7 +63,7 @@ const ROLES: [role: string, size: number, weight: string, colour: string][] = [
   ["ui-text-heading", 14, "600", "--text-primary"],
   ["ui-text-body", 13, "400", "--text-primary"],
   ["ui-text-secondary", 12, "400", "--text-secondary"],
-  ["ui-text-meta", 11, "400", "--text-muted"],
+  ["ui-text-meta", 11, "400", "--text-quiet"],
   ["ui-text-label", 11, "600", "--text-secondary"],
 ];
 

@@ -226,7 +226,7 @@ textarea.ui-input.ui-list-field {
 }
 
 .ui-select[data-placeholder] {
-  color: var(--text-muted);
+  color: var(--text-quiet);
 }
 
 /* A value the field refuses (`aria-invalid`): the danger colour on its edge, beside the words
