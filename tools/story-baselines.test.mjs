@@ -1,0 +1,332 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+// The story baselines' own checks (#2901). Run with `node --test tools/`.
+import assert from "node:assert/strict";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { crc32 } from "node:zlib";
+import { join } from "node:path";
+import { test } from "node:test";
+
+import { gather, problems, take } from "./story-baselines.mjs";
+
+/** A chunk of a PNG: its length, type, data and CRC. */
+function chunk(type, data) {
+  const head = Buffer.alloc(4);
+  head.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([head, body, crc]);
+}
+
+const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** A whole PNG, `width` by `height`: signature, IHDR, an IDAT, IEND. */
+function png(width = 2, height = 2, extra = Buffer.alloc(0)) {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 6, 0, 0, 0], 8);
+  return Buffer.concat([
+    SIGNATURE,
+    chunk("IHDR", header),
+    chunk(
+      "IDAT",
+      Buffer.from([0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]),
+    ),
+    chunk("IEND", Buffer.alloc(0)),
+    extra,
+  ]);
+}
+
+const PNG = png();
+// Vitest names a picture by the story id with each run of dashes made one.
+const SHOT =
+  "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-radios";
+
+/** Storybook's index (`storybook index`) of the stories with these ids in these files. */
+function indexOf(stories) {
+  const entries = {};
+  for (const [id, file, tags = ["dev", "test"]] of stories)
+    entries[id] = { type: "story", id, importPath: `./${file}`, tags };
+  return { v: 5, entries };
+}
+
+const INDEX = indexOf([
+  ["settings-choice--radios", "src/settings/Choice.stories.tsx"],
+]);
+
+function tree(files) {
+  const root = mkdtempSync(join(tmpdir(), "story-baselines-"));
+  for (const [path, body] of Object.entries(files)) {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), body);
+  }
+  return root;
+}
+
+test("baselines drawn in the Linux image, beside their stories, pass", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-chromium-linux.png`]: PNG,
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  assert.deepEqual(problems(app, INDEX), []);
+});
+
+test("a baseline drawn on another platform is refused, naming it", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-chromium-darwin.png`]: PNG,
+  });
+  const found = problems(app, INDEX);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /chromium-darwin\.png/);
+  assert.match(found[0], /pinned image/);
+});
+
+test("a baseline whose story file is gone is refused", () => {
+  const app = tree({ [`${SHOT}-webkit-linux.png`]: PNG });
+  const found = problems(app, INDEX);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /Choice\.stories\.tsx/);
+});
+
+test("gather copies every baseline under its path, and nothing else", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "story",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  const out = mkdtempSync(join(tmpdir(), "story-baselines-out-"));
+  assert.deepEqual(gather(app, INDEX, out), [`${SHOT}-webkit-linux.png`]);
+  assert.deepEqual(readFileSync(join(out, `${SHOT}-webkit-linux.png`)), PNG);
+  assert.equal(existsSync(join(out, "src/settings/Choice.stories.tsx")), false);
+});
+
+test("take writes drawn baselines into the app", () => {
+  const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
+  const app = tree({ "src/settings/Choice.stories.tsx": "" });
+  assert.deepEqual(take(drawn, app), {
+    taken: [`${SHOT}-chromium-linux.png`],
+    removed: [],
+  });
+  assert.deepEqual(readFileSync(join(app, `${SHOT}-chromium-linux.png`)), PNG);
+});
+
+test("take refuses anything that is not a baseline, and writes nothing", () => {
+  for (const [path, body] of [
+    ["src/settings/Choice.stories.tsx", "export {}"],
+    [`${SHOT}-chromium-linux.png`, "not a picture"],
+    [
+      "src/settings/__screenshots__/Choice.stories.tsx/a-firefox-linux.png",
+      PNG,
+    ],
+    [".github/workflows/x.yml", "on: push"],
+  ]) {
+    const drawn = mkdtempSync(join(tmpdir(), "story-baselines-drawn-"));
+    const nested = join(drawn, "in");
+    mkdirSync(join(nested, path, ".."), { recursive: true });
+    writeFileSync(join(nested, path), body);
+    const app = tree({ "src/settings/Choice.stories.tsx": "" });
+    assert.throws(() => take(nested, app), /not a baseline/, path);
+    assert.equal(
+      existsSync(join(app, `${SHOT}-chromium-linux.png`)),
+      false,
+      path,
+    );
+  }
+});
+
+test("take refuses a link, even to a picture", () => {
+  const elsewhere = tree({ "picture.png": PNG });
+  const drawn = mkdtempSync(join(tmpdir(), "story-baselines-drawn-"));
+  mkdirSync(join(drawn, SHOT, ".."), { recursive: true });
+  symlinkSync(
+    join(elsewhere, "picture.png"),
+    join(drawn, `${SHOT}-chromium-linux.png`),
+  );
+  const app = tree({ "src/settings/Choice.stories.tsx": "" });
+  assert.throws(() => take(drawn, app), /not a baseline/);
+});
+
+test("take refuses a file that starts as a PNG and is not a whole one", () => {
+  const whole = png();
+  for (const [why, body] of [
+    ["the signature alone", SIGNATURE],
+    ["no IEND", whole.subarray(0, whole.length - 12)],
+    ["bytes after IEND", png(2, 2, Buffer.from("tail"))],
+    [
+      "a chunk with a wrong CRC",
+      Buffer.concat([
+        whole.subarray(0, 30),
+        Buffer.from([0, 0, 0, 0]),
+        whole.subarray(34),
+      ]),
+    ],
+    ["no width", png(0, 2)],
+    ["a width past the cap", png(100_000, 2)],
+  ]) {
+    const drawn = tree({ [`${SHOT}-chromium-linux.png`]: body });
+    const app = tree({ "src/settings/Choice.stories.tsx": "" });
+    assert.throws(() => take(drawn, app), /not a baseline/, why);
+  }
+});
+
+test("take refuses a file over the size cap, and more files than the count cap", () => {
+  const drawn = tree({
+    [`${SHOT}-chromium-linux.png`]: PNG,
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  const app = tree({ "src/settings/Choice.stories.tsx": "" });
+  assert.throws(
+    () => take(drawn, app, { bytes: PNG.length - 1 }),
+    /over the cap/,
+  );
+  assert.throws(() => take(drawn, app, { files: 1 }), /more than 1/);
+  assert.equal(
+    take(drawn, app, { bytes: PNG.length, files: 2 }).taken.length,
+    2,
+  );
+});
+
+test("take refuses to write through a link in the app, a file's or a directory's", () => {
+  const elsewhere = tree({ "target.png": "kept" });
+  const asFile = tree({ "src/settings/Choice.stories.tsx": "" });
+  mkdirSync(join(asFile, SHOT, ".."), { recursive: true });
+  symlinkSync(
+    join(elsewhere, "target.png"),
+    join(asFile, `${SHOT}-chromium-linux.png`),
+  );
+  const asDir = tree({ "src/settings/Choice.stories.tsx": "" });
+  symlinkSync(elsewhere, join(asDir, "src/settings/__screenshots__"));
+  for (const app of [asFile, asDir]) {
+    const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
+    assert.throws(() => take(drawn, app), /a link/);
+  }
+  assert.equal(readFileSync(join(elsewhere, "target.png"), "utf8"), "kept");
+});
+
+test("a baseline whose story is gone from its file is refused, naming the story", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-chromium-linux.png`]: PNG,
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-checkboxes-webkit-linux.png":
+      PNG,
+  });
+  const found = problems(app, INDEX);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /story settings-choice-checkboxes /);
+  assert.match(found[0], /Choice\.stories\.tsx/);
+});
+
+test("a baseline is its own story's: one named for a story of another file is refused", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    "src/settings/Other.stories.tsx": "",
+    "src/settings/__screenshots__/Other.stories.tsx/settings-choice-radios-webkit-linux.png":
+      PNG,
+  });
+  const found = problems(app, INDEX);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /story settings-choice-radios /);
+});
+
+test("a baseline of a story that is not run as a test is refused", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  const index = indexOf([
+    ["settings-choice--radios", "src/settings/Choice.stories.tsx", ["dev"]],
+  ]);
+  const found = problems(app, index);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /story settings-choice-radios /);
+});
+
+test("an index that is not Storybook's is refused", () => {
+  const app = tree({ "src/settings/Choice.stories.tsx": "" });
+  assert.throws(() => problems(app, {}), /not a story index/);
+  assert.throws(() => gather(app, null, app), /not a story index/);
+});
+
+test("gather leaves out the baselines of stories that are gone", () => {
+  const gone =
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-gone-webkit-linux.png";
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+    [gone]: PNG,
+  });
+  const out = mkdtempSync(join(tmpdir(), "story-baselines-out-"));
+  assert.deepEqual(gather(app, INDEX, out), [`${SHOT}-webkit-linux.png`]);
+  assert.equal(existsSync(join(out, gone)), false);
+});
+
+test("take deletes every baseline that was not drawn, and nothing else", () => {
+  const gone =
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-gone-webkit-linux.png";
+  const otherPlatform = `${SHOT}-webkit-darwin.png`;
+  const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "story",
+    "src/settings/picture.png": PNG,
+    [`${SHOT}-chromium-linux.png`]: PNG,
+    [gone]: PNG,
+    [otherPlatform]: PNG,
+  });
+  assert.deepEqual(take(drawn, app), {
+    taken: [`${SHOT}-chromium-linux.png`],
+    removed: [gone, otherPlatform].sort(),
+  });
+  assert.equal(existsSync(join(app, gone)), false);
+  assert.equal(existsSync(join(app, otherPlatform)), false);
+  assert.equal(existsSync(join(app, `${SHOT}-chromium-linux.png`)), true);
+  assert.equal(existsSync(join(app, "src/settings/picture.png")), true);
+  assert.equal(
+    readFileSync(join(app, "src/settings/Choice.stories.tsx"), "utf8"),
+    "story",
+  );
+});
+
+test("take deletes nothing through a link, and writes nothing when it would", () => {
+  const elsewhere = tree({
+    "__screenshots__/A.stories.tsx/a-webkit-linux.png": PNG,
+  });
+  const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
+  const app = tree({ "src/settings/Choice.stories.tsx": "" });
+  mkdirSync(join(app, "src/linked"), { recursive: true });
+  symlinkSync(
+    join(elsewhere, "__screenshots__"),
+    join(app, "src/linked/__screenshots__"),
+  );
+  assert.throws(() => take(drawn, app), /a link/);
+  assert.equal(
+    existsSync(
+      join(elsewhere, "__screenshots__/A.stories.tsx/a-webkit-linux.png"),
+    ),
+    true,
+  );
+  assert.equal(existsSync(join(app, `${SHOT}-chromium-linux.png`)), false);
+});
+
+test("take refuses an app that is itself a link", () => {
+  const real = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  const holder = mkdtempSync(join(tmpdir(), "story-baselines-holder-"));
+  symlinkSync(real, join(holder, "app"));
+  const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
+  assert.throws(() => take(drawn, join(holder, "app")), /a link/);
+  assert.equal(existsSync(join(real, `${SHOT}-webkit-linux.png`)), true);
+});

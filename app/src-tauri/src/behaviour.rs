@@ -370,15 +370,15 @@ fn in_a_host_process_at(home: &Path) -> Target {
 /// Where a session host process of a test's serves from, and what it is started with: its
 /// config home, data home and runtime directory in `home`, and a `PATH` that leads with a
 /// folder the test's own does not.
-struct HostHome {
-    place: purlis_host::Place,
-    inherited: Vec<(OsString, OsString)>,
+pub(crate) struct HostHome {
+    pub(crate) place: purlis_host::Place,
+    pub(crate) inherited: Vec<(OsString, OsString)>,
     /// Where it keeps the device's event log.
-    log: PathBuf,
+    pub(crate) log: PathBuf,
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn a_host_home(home: &Path) -> HostHome {
+pub(crate) fn a_host_home(home: &Path) -> HostHome {
     use std::os::unix::fs::PermissionsExt;
     let (run, config, data) = (home.join("run"), home.join("config"), home.join("data"));
     for folder in [&run, &config, &data] {
@@ -471,7 +471,7 @@ fn purlis() -> String {
 
 /// The binary `name` of package `package`, built beside this test's binary when it is not
 /// there yet.
-fn built_beside(name: &str, package: &str) -> PathBuf {
+pub(crate) fn built_beside(name: &str, package: &str) -> PathBuf {
     let deps = std::env::current_exe().expect("this test's path");
     let beside = deps
         .parent()

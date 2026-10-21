@@ -87,6 +87,7 @@ pub mod levels;
 mod native;
 mod opened;
 mod options;
+pub mod parts;
 mod person;
 mod placed;
 pub mod portable;
@@ -103,7 +104,7 @@ pub use archive::{
     MOST_FILE_BYTES, MOST_FILES, MOST_FOLDER_BYTES, MOST_ZIP_BYTES, NotWritten, Packed, Staged,
     export, gather, is_folder_id, is_reserved, pack, rename_no_replace, stage, unpack,
 };
-pub use check::{FITS, Finding, Fit, PAIRS, Pair, Report};
+pub use check::{FAINT, FITS, Finding, Fit, PAIRS, Pair, Report, TEXT_TIERS, TIER_GROUNDS};
 pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
 pub use fonts::{
     BOLD, CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES,
@@ -163,6 +164,8 @@ mod icons_tests;
 #[cfg(test)]
 mod import_tests;
 #[cfg(test)]
+mod import_tiers_tests;
+#[cfg(test)]
 mod levels_tests;
 #[cfg(test)]
 mod measured_tests;
@@ -170,6 +173,8 @@ mod measured_tests;
 mod native_tests;
 #[cfg(test)]
 mod options_tests;
+#[cfg(test)]
+mod parts_tests;
 #[cfg(test)]
 mod placed_tests;
 #[cfg(test)]
@@ -262,6 +267,10 @@ pub struct ResolvedTheme {
     /// How a workspace's colour tints the theme (#2329), the same in each of its appearances:
     /// Purlis Classic's recipe unless the theme says otherwise.
     pub tint: Tint,
+    /// Its component parts (#2903, [`parts`]), the same in each of its appearances: empty for a
+    /// theme that names none, which draws every family as its default.
+    #[serde(skip)]
+    pub parts: parts::Parts,
 }
 
 impl ResolvedTheme {
@@ -569,6 +578,7 @@ fn built_in_of(text: &str) -> Theme {
                 fonts: Fonts::classic(),
                 options: Vec::new(),
                 tint: Tint::default(),
+                parts: parts::Parts::new(),
             }
         })
         .collect();
@@ -863,14 +873,13 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
         }
     }
 
-    let mut values = BTreeMap::new();
+    let mut named = BTreeMap::new();
     for token in TOKENS {
         match tokens.get(*token) {
             Some(Value::String(given)) if is_colour(given) => {
-                values.insert(*token, given.clone());
+                named.insert(*token, given.clone());
             }
             given => {
-                values.insert(*token, base.value(token).to_owned());
                 if let Some(given) = given {
                     complaints.push(Complaint::about(
                         token,
@@ -883,6 +892,16 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             }
         }
     }
+    vocabulary::follow_muted(&mut named, &base.values);
+    let values: BTreeMap<&'static str, String> = TOKENS
+        .iter()
+        .map(|token| {
+            let value = named
+                .get(token)
+                .map_or_else(|| base.value(token), String::as_str);
+            (*token, value.to_owned())
+        })
+        .collect();
 
     // A theme that says nothing about motion moves the way the built-in of its appearance does,
     // exactly as a token it does not name is coloured by that built-in.
@@ -919,6 +938,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             fonts: base.fonts.clone(),
             options: Vec::new(),
             tint: Tint::default(),
+            parts: parts::Parts::new(),
         }),
         complaints: notes,
         refused: false,

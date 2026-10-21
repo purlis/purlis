@@ -60,7 +60,8 @@ use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{self, Browser, CallId, Limits, PageId, Ref};
 use purlis_browser_engine::ending::{Ending, EngineExit};
 use purlis_browser_engine::install::{
-    Age, EngineSettings, Engines, Fetch, Hop, Https, Manifest, Platform, Ready, Refused,
+    Age, EngineChoice, EngineSettings, Engines, Fetch, Hop, Https, Manifest, Platform, Ready,
+    Refused,
 };
 use purlis_browser_engine::launch::{self, Launch, PAGE_SIZE};
 use purlis_browser_engine::process::{Engine, Keeper};
@@ -72,7 +73,10 @@ use purlis_host::{Browsers, FrameSink, LoginEnded, NotActed, NotTaken, Screen, S
 use crate::sandbox::browser_reach::{Bound, Lane, NewSites, ReachProxy, Site};
 use crate::sandbox::reach::{Reach, Written};
 
+pub use purlis_browser_engine::machine::machine_chrome;
+
 pub mod judge;
+pub mod sandboxing;
 pub mod typed;
 
 /// The argument that starts this binary as an engine's keeper.
@@ -360,8 +364,15 @@ impl Browsers for EngineBrowsers {
             .transpose()?;
         let platform = Platform::current()
             .ok_or_else(|| "no browser engine is made for this platform".to_owned())?;
+        // Which engine (#2835): this machine's own Chrome where the person chose it, else the
+        // pinned one where it can make its sandbox, else none.
+        let choice = engine_for(&Chosen::here(&engines_in(&home)))?;
+        let settings = EngineSettings {
+            engine: choice,
+            ..EngineSettings::default()
+        };
         let engines = engines_here(&home, platform);
-        let ready = prepared(&engines).map_err(|why| why.to_string())?;
+        let ready = prepared(&engines, &settings).map_err(|why| why.to_string())?;
         // A chat's browser is judged (#2018); the person's own, given no reach, refuses every
         // site new to the project at its proxy.
         let sites = reach.map(judge::SiteJudge::of).transpose()?.map(Arc::new);
@@ -386,8 +397,17 @@ impl Browsers for EngineBrowsers {
         let log = engine_log_of(data);
         let launch =
             Launch::new(&ready, data, launch::ReachProxy(proxy.address())).logging_to(&log);
-        let engine =
-            Engine::start(&launch, &Self::keeper(program)).map_err(|why| why.to_string())?;
+        // An engine that ended for want of a sandbox is said as one (#2835), never its crash.
+        let no_sandbox_or = |why: String| {
+            let said = std::fs::read_to_string(&log).unwrap_or_default();
+            if sandboxing::said_no_usable_sandbox(&said) {
+                sandboxing::NO_ENGINE_SANDBOX.to_owned()
+            } else {
+                why
+            }
+        };
+        let engine = Engine::start(&launch, &Self::keeper(program))
+            .map_err(|why| no_sandbox_or(why.to_string()))?;
         let browser = match &sites {
             Some(sites) => {
                 let judge = Arc::clone(sites);
@@ -399,7 +419,7 @@ impl Browsers for EngineBrowsers {
             }
             None => Browser::new(engine, Limits::default()),
         }
-        .map_err(|why| why.to_string())?;
+        .map_err(|why| no_sandbox_or(why.to_string()))?;
         Ok(Arc::new(EngineScreen {
             process: browser.process(),
             log,
@@ -417,11 +437,10 @@ impl Browsers for EngineBrowsers {
 /// The engine a browser starts on: the trusted one, after reading the published manifest first
 /// when that engine is behind past its warning or refused for its age, so a machine whose
 /// background check has not run yet is not refused for an engine already superseded.
-fn prepared(engines: &Engines) -> Result<Ready, Refused> {
-    let settings = EngineSettings::default();
+fn prepared(engines: &Engines, settings: &EngineSettings) -> Result<Ready, Refused> {
     let archives = archive_reads();
     let now = chrono::Utc::now();
-    let first = engines.prepare(&settings, &archives, now);
+    let first = engines.prepare(settings, &archives, now);
     let behind = match &first {
         Ok(ready) => matches!(ready.age(), Age::Behind { .. }),
         Err(refused) => matches!(refused, Refused::Outdated { .. }),
@@ -429,9 +448,61 @@ fn prepared(engines: &Engines) -> Result<Ready, Refused> {
     if !behind {
         return first;
     }
-    let checked = update(engines, &settings, &manifest_reads(), &archives, now);
+    let checked = update(engines, settings, &manifest_reads(), &archives, now);
     report(&checked);
     checked.or(first)
+}
+
+/// **What decides which engine a browser starts on** (#2835).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chosen {
+    /// The person chose this machine's own Chrome (`machine.json` `browsers.engine`).
+    pub machine_chrome: bool,
+    /// This machine's own Chrome, where one is installed.
+    pub found: Option<PathBuf>,
+    /// The pinned engine can make its sandbox here ([`sandboxing::sandboxes`]).
+    pub sandboxes: bool,
+}
+
+impl Chosen {
+    /// This machine now, its pinned engines in `engines`. A fenced (test) build reads no
+    /// person's choice outside its fence: there, nothing is chosen.
+    pub fn here(engines: &Path) -> Chosen {
+        Chosen {
+            machine_chrome: chosen_here(),
+            found: purlis_browser_engine::machine::machine_chrome(),
+            sandboxes: sandboxing::sandboxes(&sandboxing::Machine::here(), engines),
+        }
+    }
+}
+
+/// Whether the person chose this machine's own Chrome, in this machine's store.
+fn chosen_here() -> bool {
+    let Some(config) = crate::machine::config_root_unheld() else {
+        return false;
+    };
+    #[cfg(feature = "fenced")]
+    if !crate::fence::inside(&config, &crate::fence::fence()) {
+        return false;
+    }
+    crate::machine::read(&config).store.browsers.machine_chrome
+}
+
+/// **The engine a browser starts on** (#2835, ruled 2026-10-20): this machine's own Chrome
+/// where the person chose it and it is installed; else the pinned engine where it can make its
+/// sandbox; else none, in [`sandboxing::NO_ENGINE_SANDBOX`]'s words. Never an engine without
+/// its sandbox.
+pub fn engine_for(chosen: &Chosen) -> Result<EngineChoice, String> {
+    if chosen.machine_chrome
+        && let Some(chrome) = &chosen.found
+    {
+        return Ok(EngineChoice::Machine(chrome.clone()));
+    }
+    if chosen.sandboxes {
+        Ok(EngineChoice::Pinned)
+    } else {
+        Err(sandboxing::NO_ENGINE_SANDBOX.to_owned())
+    }
 }
 
 /// The most bytes a screenshot's PNG is carried as: with its base64 and the answer around it,

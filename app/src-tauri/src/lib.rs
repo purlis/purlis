@@ -52,6 +52,8 @@ mod doing;
 #[cfg(feature = "e2e")]
 mod e2eforge;
 mod editortab;
+// When the browser engine cannot make its sandbox here (#2835).
+mod enginesandbox;
 mod extensions;
 mod filewatch;
 mod findfiles;
@@ -95,6 +97,7 @@ mod memories;
 mod nativewindow;
 mod navguard;
 mod network;
+mod notheld;
 mod off_the_main_thread;
 mod onboarding;
 mod opener;
@@ -2833,6 +2836,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<smartclose::SmartClosing>()
         // What `chats-reconnecting` carries (#2496).
         .typ::<reconnecting::ChatsReconnecting>()
+        // What `projects_not_held` answers, read again on `projects-not-held` (#2846).
+        .typ::<notheld::ProjectNotHeld>()
         // What `chat-stop` carries (#1448).
         .typ::<stopping::ChatStop>()
         // What `activity-line` carries (#1495).
@@ -2840,6 +2845,11 @@ fn commands() -> Builder<tauri::Wry> {
         // The event a launch without the session bus is told the bus answers on (`portal.rs`),
         // named once for both sides.
         .constant("SESSION_BUS_ANSWERS", portal::ANSWERS)
+        // The event a browser refused for the engine's sandbox raises its Notice on (#2835).
+        .constant(
+            "ENGINE_SANDBOX_NEEDED",
+            enginesandbox::ENGINE_SANDBOX_NEEDED,
+        )
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
         // window asks again later, matching it whole.
         .constant("SPECIMEN_BUSY", specimen::BUSY)
@@ -3496,6 +3506,13 @@ pub fn run() {
             forgeaccounts::hand_over_sign_ins();
             // And the window is told when a forge ends one of them (#729).
             forgeaccounts::tell_the_window_when_a_sign_in_ends(app.handle());
+            // A browser refused for the engine's sandbox raises its Notice (#2835).
+            {
+                let window = app.handle().clone();
+                enginesandbox::telling(Box::new(move || {
+                    let _ = window.emit(enginesandbox::ENGINE_SANDBOX_NEEDED, ());
+                }));
+            }
             // A finish leans on that lock, and is refused without it.
             app.manage(vaultswaiting::VaultsWaiting::of(
                 waiting,
@@ -4099,6 +4116,14 @@ pub fn run() {
             // A Docker pool's runner follows this version, side by side, after an update
             // (#2749): off where the updater is.
             poolfollow::watch(app.handle());
+            // A project a runner would not hold again is marked in the Pools group (#2846):
+            // the window is told each time those change.
+            notheld::telling({
+                let app = app.handle().clone();
+                move || {
+                    let _ = app.emit(notheld::EVENT, ());
+                }
+            });
             // This machine's sandbox policy, read again now and then (#1431): a policy that
             // lands is told to the window, which asks again which chats it leaves behind.
             sandboxing::watch_policy(app.handle().clone());

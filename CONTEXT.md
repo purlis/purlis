@@ -628,7 +628,7 @@ _Avoid_: masked, redacted, hidden (a page hides elements of its own)
 **Engine**:
 The program a browser runs on, one per browser: a pinned Chrome for Testing that purlis
 downloads on first use, checks against its manifest before it runs, and keeps current apart from
-purlis's own releases, or the machine's own Chrome when the person chooses it in Settings. The
+purlis's own releases, or the machine's own Chrome when the person chooses it (the Notice offers it where the pinned engine cannot make its sandbox, #2835). It always runs with its sandbox on. The
 session host drives it only over a pipe it holds, never a port, and it ends with its host.
 _Avoid_: Chromium (unless that project is meant), headless Chrome, driver (that is who acts on a
 browser)
@@ -1169,6 +1169,14 @@ A toggle or a choice a theme offers, such as an accent or borders on or off, tha
 when picked. Its values are the person's choice. An option never sets a free number.
 _Avoid_: setting (that is the person's, for every theme), variant, preference
 
+**Component part**:
+A named, stable element of a component family, such as the button's root, label or icon, that a
+theme may set on its own: its fill, border, corners or size, within bounds, keyed
+`<family>.<part>[.<variant>][.<state>].<property>`. Each family declares its parts once, in the
+window's wrapper and in the theme engine's closed, versioned manifest (ADR 0103). The button's
+`grants` variant is the look of an answer that grants (an Allow, an Accept), not a grant itself.
+_Avoid_: part (bare, which is plain composition here), slot, sub-component, element
+
 **Palette** (of a theme):
 A theme's named colours, which its tokens refer to by name, so one colour is changed once. The
 names belong to that theme alone.
@@ -1190,6 +1198,12 @@ What purlis says about a theme: format and bound errors, contrast findings by pa
 ratio, and hard-floor findings, for every appearance and option combination. A format error
 refuses the theme; a contrast finding is a warning.
 _Avoid_: theme lint, validation, audit
+
+**Grey tier**:
+One of the steps a theme draws its greys in: four for words (primary, secondary, muted and quiet,
+each held to 4.5:1) and faint for what is not words and for disabled words (held to 3:1), each
+measured on every ground a part draws it on. Quiet is informational text; it is never faint.
+_Avoid_: text colour (a tier is a rank, not a colour), dim, disabled colour
 
 **Theme draft**:
 A chat's unsaved changes to a theme, drawn only in that chat's workspace (the plane root for a

@@ -69,16 +69,41 @@ for one colour only; a second colour in the same role says **no token** and name
 
 ### Text
 
-The frame uses five greys for text; purlis has three text tokens.
+The frame uses six greys for text. Purlis draws them in four text tiers and faint, two of
+them adjusted (below).
 
-| colour    | uses | where it is used                                                                                         | proposed token (proposal)                                          |
-| --------- | ---- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `#e6e4ec` | 12   | panel titles, the workspace name, the file tab in front, the file name, chosen segment, buttons          | `text.primary`                                                     |
-| `#c9c7d2` | 11   | body text: todo rows, notice sentences, the repo row, status bar workspace                               | `text.secondary`                                                   |
-| `#a09eab` | 9    | chrome labels: title bar, pills, toolbar buttons, the `+` buttons; the rails' idle icons                 | **no token** between `text.secondary` and `text.muted`; nearest `text.muted` |
-| `#8a8896` | 18   | quieter labels: tabs behind, scope segments, counts, empty states, status bar items, a notice's detail   | `text.muted`                                                       |
-| `#6f6d7a` | 14   | placeholders, the × on tabs, heading counts ("Notices 3"), paths, "Earlier", the status bar's folder     | **no token** for placeholder or faint text; nearest `text.muted`   |
-| `#55535f` | 32   | line numbers in the editor (and the 6 todo checkbox rings, below)                                      | **no token** for a gutter; nearest `tree.guide` / `border.strong`  |
+| colour    | uses | where it is used                                                                                       | token (#2902; the frame's proposals were three text tokens)                            |
+| --------- | ---- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `#e6e4ec` | 12   | panel titles, the workspace name, the file tab in front, the file name, chosen segment, buttons        | `text.primary`                                                                         |
+| `#c9c7d2` | 11   | body text: todo rows, notice sentences, the repo row, status bar workspace                             | `text.secondary`                                                                       |
+| `#a09eab` | 9    | chrome labels: title bar, pills, toolbar buttons, the `+` buttons; the rails' idle icons               | `text.muted`                                                                           |
+| `#8a8896` | 18   | quieter labels: tabs behind, scope segments, counts, empty states, status bar items, a notice's detail | `text.quiet`, lifted to `#91909d`; labels that are not informational stay `text.muted` |
+| `#6f6d7a` | 14   | placeholders, the × on tabs, heading counts ("Notices 3"), paths, "Earlier", the status bar's folder   | words: `text.quiet` (`#91909d`); the ×: `text.faint` (`#74727f`)                       |
+| `#55535f` | 32   | line numbers in the editor (and the 6 todo checkbox rings, below)                                      | line numbers: `text.quiet`; checkbox rings: `text.faint`                               |
+
+### The adjusted greys, for the Figma file
+
+**Two of the frame's greys are adjusted in Purlis, and the Figma file is to take the same two
+values** (ruling #2803, #2902), so the next read of the frame matches the theme without a diff.
+On the frame's own grounds the quieter greys miss WCAG's floors: `#8a8896` measures 4.10 on the
+row under the pointer and 4.44 on a card, under 4.5; `#6f6d7a` measures 2.81 on the row under
+the pointer, under 3; `#55535f` is under 3 everywhere. Two quiet text tiers cannot both pass on
+these grounds, so the frame's three quietest greys become two tiers:
+
+| tier      | token            | value     | was                  | what it draws                                                                                                    | held to                           |
+| --------- | ---------------- | --------- | -------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| primary   | `text.primary`   | `#e6e4ec` | as drawn             | titles, names, the tab in front, buttons                                                                         | 4.5:1 on every ground             |
+| secondary | `text.secondary` | `#c9c7d2` | as drawn             | body text                                                                                                        | 4.5:1 on every ground             |
+| muted     | `text.muted`     | `#a09eab` | as drawn             | chrome labels, the rails' idle icons                                                                             | 4.5:1 on every ground             |
+| **quiet** | `text.quiet`     | `#91909d` | `#8a8896`            | informational text: line numbers, placeholders, counts, paths, group labels ("Earlier"), the status bar's folder | 4.5:1 on every ground             |
+| **faint** | `text.faint`     | `#74727f` | `#6f6d7a`, `#55535f` | what is not words: a tab's ×, separators ("/"), the pin, chevrons, checkbox rings; disabled words                | 3:1 on every ground (WCAG 1.4.11) |
+
+"Every ground" is the window `#17171b`, a panel `#1d1d22`, code `#202026`, a card `#24242a`,
+the row under the pointer `#2a2a31` and the selected row, which Purlis draws at `#2a2936`, one
+step under the frame's `#2b2a37`, so quiet and faint clear it. The theme check measures every
+tier on each of them, and on the strips, the status bar and a control, in every appearance.
+Informational text that the frame draws in `#6f6d7a` (placeholders, heading counts, paths,
+"Earlier", the status bar's folder) and the line numbers in `#55535f` take quiet, not faint.
 
 ### Accent: lavender
 

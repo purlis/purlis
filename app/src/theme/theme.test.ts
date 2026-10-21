@@ -9,6 +9,7 @@ import {
   BUILT_IN,
   CLASSIC as CLASSIC_ID,
   DEFAULT_THEME,
+  PARTS_STYLE,
   TOKENS,
   apply,
   cssVariables,
@@ -212,6 +213,30 @@ describe("putting a theme on the document", () => {
     // The syntax roles' faces, and what the window draws instead of the platform (#2327).
     expect(element.style.getPropertyValue("--syntax-comment-font-style")).toBe("italic");
     expect(element.dataset.themeDraws).toBe("");
+  });
+
+  it("draws a theme's component parts from the engine's stylesheet, and takes them away after", () => {
+    // What the engine writes for a theme that rounds the button's root to a pill (#2903,
+    // `purlis_core::theme::parts_tests`).
+    const pill =
+      "@layer parts {\n  :where(.ui-button-sm) { --purlis-part-height: var(--size-chrome); }\n" +
+      '  :where([data-scope="button"][data-part="root"], .ui-button) { border-radius: 9999px; }\n}\n';
+    const shaped: Theme = { ...BUILT_IN["purlis-dark"], parts: pill };
+    const element = document.createElement("div");
+    try {
+      apply(shaped, element);
+      const drawn = document.getElementById(PARTS_STYLE);
+      expect(drawn?.tagName).toBe("STYLE");
+      expect(drawn?.parentElement).toBe(document.head);
+      expect(drawn?.textContent).toBe(pill);
+      // Drawn again, it is still one stylesheet.
+      apply(shaped, element);
+      expect(document.querySelectorAll(`#${PARTS_STYLE}`)).toHaveLength(1);
+    } finally {
+      // A theme that names no parts draws every control as its family default.
+      apply(BUILT_IN["purlis-dark"], element);
+    }
+    expect(document.getElementById(PARTS_STYLE)).toBeNull();
   });
 
   it("leaves nothing of the theme before it behind", () => {

@@ -40,6 +40,10 @@ use super::{Density, ResolvedTheme, tint};
 #[path = "check_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "tiers_tests.rs"]
+mod tiers_tests;
+
 /// What a token of [`super::vocabulary::PLATFORM_DRAWN`] left to the platform is measured as
 /// when it is drawn on something: selected text the theme leaves alone keeps the words' own
 /// colour. One with no stand-in is the platform's, and a pair with it in is not measured.
@@ -154,6 +158,36 @@ const WINDOW_TEXT_PX: f64 = 14.0;
 /// Words at the window's text size.
 const TEXT: f64 = aa_text(WINDOW_TEXT_PX, false);
 
+/// **The window's text tiers** (#2902), loudest first: titles and the words in front, body
+/// text, labels, and quiet words — line numbers, placeholders, counts, paths, group labels and
+/// the status bar's folder. Every one is words, so every one is held to [`TEXT`] on each of
+/// [`TIER_GROUNDS`]; no informational text is exempt.
+pub const TEXT_TIERS: [&str; 4] = ["text.primary", "text.secondary", "text.muted", "text.quiet"];
+
+/// **The tier for what is not words** (#2902): a tab's ×, a separator, a pin, a chevron, a
+/// checkbox's ring, and disabled words, which WCAG exempts. A mark has to be told apart, so it
+/// is held to 3:1 (WCAG 1.4.11) on each of [`TIER_GROUNDS`]; words a person reads take a tier
+/// of [`TEXT_TIERS`].
+pub const FAINT: &str = "text.faint";
+
+/// **Every ground a part draws a tier on** (#2902): the window, a field, a strip, a panel, a
+/// card (a menu, a dialog, a Notice), the row under the pointer, the editor's code, the selected
+/// row, the tab in front, and a control at rest and under the pointer. [`PAIRS`] holds each tier
+/// on each of them, and a test keeps it so.
+pub const TIER_GROUNDS: [&str; 11] = [
+    "surface.base",
+    "surface.sunken",
+    "surface.deep",
+    "surface.raised",
+    "surface.overlay",
+    "surface.hover",
+    "terminal.background",
+    "list.selected",
+    "layer.selected",
+    "control.base",
+    "control.hover",
+];
+
 /// **Every pair that ends up as something drawn on something**, and the floor it has to clear.
 pub const PAIRS: &[Pair] = &[
     p("text.primary", "surface.base", 4.5),
@@ -200,7 +234,7 @@ pub const PAIRS: &[Pair] = &[
     p("needs-you.base", "surface.deep", 3.0),
     // The title bar's needs-you hand on its button under the pointer.
     p("needs-you.base", "control.hover", 3.0),
-    p("text.muted", "surface.hover", 3.0),
+    p("text.muted", "surface.hover", TEXT),
     p("state.running", "surface.hover", 3.0),
     p("state.waiting", "surface.hover", 3.0),
     p("state.failed", "surface.hover", 3.0),
@@ -254,8 +288,9 @@ pub const PAIRS: &[Pair] = &[
     p("text.muted", "layer.workspace", 4.5),
     p("text.muted", "layer.chat", 4.5),
     p("text.primary", "layer.selected", 4.5),
-    // A tab's pin is a muted mark, and a live workspace's dot one in the accent (qw337).
-    p("text.muted", "layer.selected", 3.0),
+    // A tab's label behind is muted words on it (#2902); its pin is a faint mark, held with the
+    // tiers below, and a live workspace's dot one in the accent (qw337).
+    p("text.muted", "layer.selected", TEXT),
     p("accent.base", "layer.selected", 3.0),
     // A workspace's colour (charter-app#281): its tab in its own shade with a mark in its own
     // accent, and the one in front primary text on its tinted `layer.selected`.
@@ -339,8 +374,9 @@ pub const PAIRS: &[Pair] = &[
     p("accent.base", "surface.hover", TEXT),
     // - A panel's view button under the pointer: secondary words on the control's hover.
     p("text.secondary", "control.hover", TEXT),
-    // - A vault's eye under the pointer: a muted mark on the control's hover.
-    p("text.muted", "control.hover", 3.0),
+    // - A vault's eye under the pointer: a muted mark on the control's hover, held as muted
+    //   words are (#2902).
+    p("text.muted", "control.hover", TEXT),
     // #2327: the tokens that are not the window's chrome.
     // - The editor's code (`editor/look.ts`): each syntax role on the editor's ground. Held as
     //   the ANSI colours they were drawn in before are held: a mark that has to be told apart, at
@@ -632,6 +668,46 @@ pub const PAIRS: &[Pair] = &[
     .over("terminal.background"),
     // - The terminal's scrollbar, a hairline on the terminal.
     p("terminal.scrollbar", "terminal.background", 1.2),
+    // **Every grey tier on every ground a part draws it on** (#2902, ruling #2803): the four text
+    // tiers at the window's text size, faint at the mark floor, on each of `TIER_GROUNDS`. The
+    // pairs above already hold the rest of them.
+    p("text.secondary", "surface.sunken", TEXT),
+    p("text.secondary", "surface.deep", TEXT),
+    p("text.secondary", "terminal.background", TEXT),
+    p("text.secondary", "layer.selected", TEXT),
+    p("text.muted", "surface.sunken", TEXT),
+    p("text.muted", "terminal.background", TEXT),
+    p("text.muted", "control.base", TEXT),
+    p("text.quiet", "surface.base", TEXT),
+    p("text.quiet", "surface.sunken", TEXT),
+    p("text.quiet", "surface.deep", TEXT),
+    p("text.quiet", "surface.raised", TEXT),
+    p("text.quiet", "surface.overlay", TEXT),
+    p("text.quiet", "surface.hover", TEXT),
+    p("text.quiet", "terminal.background", TEXT),
+    p("text.quiet", "list.selected", TEXT),
+    p("text.quiet", "layer.selected", TEXT),
+    p("text.quiet", "control.base", TEXT),
+    p("text.quiet", "control.hover", TEXT),
+    p("text.faint", "surface.base", 3.0),
+    p("text.faint", "surface.sunken", 3.0),
+    p("text.faint", "surface.deep", 3.0),
+    p("text.faint", "surface.raised", 3.0),
+    p("text.faint", "surface.overlay", 3.0),
+    p("text.faint", "surface.hover", 3.0),
+    p("text.faint", "terminal.background", 3.0),
+    p("text.faint", "list.selected", 3.0),
+    p("text.faint", "layer.selected", 3.0),
+    p("text.faint", "control.base", 3.0),
+    p("text.faint", "control.hover", 3.0),
+    // - A count or an age in the meta role is quiet words on each of the three strips, and a
+    //   tab's × and its pin are faint marks on them.
+    p("text.quiet", "layer.project", TEXT),
+    p("text.quiet", "layer.workspace", TEXT),
+    p("text.quiet", "layer.chat", TEXT),
+    p("text.faint", "layer.project", 3.0),
+    p("text.faint", "layer.workspace", 3.0),
+    p("text.faint", "layer.chat", 3.0),
     // An Allow (`.ui-button-grants`, ADR 0097 §6) is edged in the accent on the control's own
     // ground, at rest and under the pointer: the edge is a control's outline, held to 3:1.
     p("accent.base", "control.base", 3.0),
@@ -739,6 +815,13 @@ pub enum Finding {
         weight: u16,
         style: Style,
     },
+    /// A component part the theme sets that breaks a floor in a variant and state (#2903), so
+    /// the window draws its family default there: `part` is `<family>.<part>.<variant>[.<state>]`.
+    PartFallsBack {
+        part: String,
+        floor: String,
+        ratio: Option<f64>,
+    },
 }
 
 /// The check, as [`super::check`] describes it.
@@ -759,6 +842,16 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
                 slot: one.slot,
                 weight: one.weight,
                 style: one.style,
+            }),
+    );
+    // A component part that breaks a floor draws its family default there (#2903).
+    findings.extend(
+        super::parts::fallen(theme)
+            .into_iter()
+            .map(|one| Finding::PartFallsBack {
+                part: one.part,
+                floor: one.floor,
+                ratio: one.ratio,
             }),
     );
     // A theme a workspace's colour does not tint is only ever drawn as it is.
@@ -939,7 +1032,7 @@ pub(super) fn mix(top: &str, under: &str, opacity: f64) -> String {
 }
 
 /// `wash` laid over the opaque `under`, as the screen draws it. An opaque `wash` is itself.
-fn onto(wash: &str, under: &str) -> String {
+pub(super) fn onto(wash: &str, under: &str) -> String {
     let top = long(wash);
     if top.len() == 6 {
         return wash.to_owned();
