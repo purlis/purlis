@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792556921067,
+  "lastUpdate": 1792556937161,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -9232,6 +9232,42 @@ window.BENCHMARK_DATA = {
             "value": 672,
             "unit": "MB",
             "extra": "median of 6 samples: 626.8, 662.3, 667.8, 676.1, 676.3, 779.8 MB; window 410.6 MB, session host 261.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "43d59b96b83845c0652eacf31ea8b0b1c10b4200",
+          "message": "Runners: a project a re-link could not hold is marked on its pool's row (#2870)\n\nWhere the runner refuses to hold a project again after not_held, a\nrefusal that carries NOT_HELD, the window keeps it with the runner's\nwords as plain text, at most 300 characters (notheld,\nasknotify::plain_within), until a hold of it is taken, and tells the\nwindow each time that changes (projects_not_held, the\nprojects-not-held event). The Pools group draws a Notice on the row of\nthe pool the project's chats run on, by this machine's chatsRunOn, with\nthe runner's words in <bdi> and Dismiss. The mark goes once the\nproject is forgotten, its pool is removed or it runs its chats on no\npool.\n\nADR 0078 amended 2026-10-21 for #2846.\n\nCloses #2846\n\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T07:49:48+04:00",
+          "tree_id": "35fea6e048ea114c44cce69e3ca2925f89793b88",
+          "url": "https://github.com/purlis/purlis/commit/43d59b96b83845c0652eacf31ea8b0b1c10b4200"
+        },
+        "date": 1792556935644,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1493.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1353.3, 1504.3, 1493.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 647.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 616.4, 638.8, 645.9, 648.6, 649.1, 727.8 MB; window 384.7 MB, session host 262.6 MB"
           }
         ]
       }
