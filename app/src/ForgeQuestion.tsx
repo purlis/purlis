@@ -3,6 +3,7 @@
 
 import type { ForgeWord } from "./bindings";
 import { SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** What the core asked, and what to do with the answer. */
 export type ForgeAsk = {
@@ -35,12 +36,8 @@ export function ForgeQuestion({ ask }: { ask: ForgeAsk }) {
         control={() => (
           // `tabIndex={0}` on every button, per `docs/ui-primitives.md` (charter-app#189).
           <SettingActions>
-            <button type="button" tabIndex={0} onClick={() => ask.answer("github")}>
-              GitHub
-            </button>
-            <button type="button" tabIndex={0} onClick={() => ask.answer("gitlab")}>
-              GitLab
-            </button>
+            <Button onPress={() => ask.answer("github")}>GitHub</Button>
+            <Button onPress={() => ask.answer("gitlab")}>GitLab</Button>
           </SettingActions>
         )}
       />

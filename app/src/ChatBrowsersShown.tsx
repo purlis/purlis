@@ -9,6 +9,7 @@ import { chatBrowserTitle } from "./browsers";
 import { Menued } from "./Menus";
 import { THUMBNAIL_ACROSS, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { useProjectShown } from "./projectShown";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A chat's browsers, where the window draws them besides their view tab** (#2024, spec
@@ -84,17 +85,17 @@ export function TabBrowsers({
         </span>
       </span>
       {used.map((shown) => (
-        <button
+        <Button
+          variant="ghost"
           key={shown.browser.program}
-          type="button"
-          className="ui-button ui-button-ghost tab-browser"
-          tabIndex={-1}
+          excludeFromTabOrder
           aria-label={`Open browser ${shown.browser.name} of ${shown.chat}`}
           title={chatBrowserTitle(shown.chat, shown.browser.name)}
-          onClick={() => onOpen(shown)}
+          onPress={() => onOpen(shown)}
+          className="tab-browser"
         >
           <BrowserThumbnail program={shown.browser.program} />
-        </button>
+        </Button>
       ))}
     </span>
   );

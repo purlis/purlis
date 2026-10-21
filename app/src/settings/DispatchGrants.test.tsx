@@ -472,11 +472,17 @@ describe("any persona", () => {
         ).toBeInTheDocument();
     // A yes that grants is the grants style, here and on its confirmation (ADR 0097 §6).
     const mine = "Allow for me: steward may dispatch to any persona";
-    expect(screen.getByRole("button", { name: mine })).toHaveClass("ui-button-grants");
+    expect(screen.getByRole("button", { name: mine })).toHaveAttribute("data-variant", "grants");
     await userEvent.setup().click(screen.getByRole("button", { name: mine }));
     const confirm = within(screen.getByRole("group", { name: "Confirm" }));
-    expect(confirm.getByRole("button", { name: "Allow for me" })).toHaveClass("ui-button-grants");
-    expect(confirm.getByRole("button", { name: "Cancel" })).not.toHaveClass("ui-button-grants");
+    expect(confirm.getByRole("button", { name: "Allow for me" })).toHaveAttribute(
+      "data-variant",
+      "grants",
+    );
+    expect(confirm.getByRole("button", { name: "Cancel" })).not.toHaveAttribute(
+      "data-variant",
+      "grants",
+    );
     await userEvent.setup().click(confirm.getByRole("button", { name: "Cancel" }));
 
     const said = await press(mine, "Allow for me");
@@ -2029,12 +2035,12 @@ describe("the grants table's look (DS-9, #1841)", () => {
     const revoke = within(whole).getByRole("button", {
       name: "Revoke: my grant for steward to devops",
     });
-    expect(revoke).toHaveClass("ui-button");
+    expect(revoke).toHaveAttribute("data-scope", "button");
     expect(drawnWith(revoke, "block-size")).toBe("var(--size-control)");
     await userEvent.setup().click(revoke);
     const question = screen.getByRole("group", { name: "Confirm" });
     for (const button of within(question).getAllByRole("button")) {
-      expect(button).toHaveClass("ui-button");
+      expect(button).toHaveAttribute("data-scope", "button");
       expect(drawnWith(button, "block-size")).toBe("var(--size-control)");
     }
   });

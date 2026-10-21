@@ -7,6 +7,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { commands, type CreateProgress, type ForgeOwners, type TemplateRow } from "./bindings";
 import { REMEMBERED_PARENT } from "./GetProject";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** Where a project lives: on a forge, or only on this machine. */
 export type Where = "mac" | "github" | "gitlab";
@@ -112,10 +113,7 @@ export function OwnerAndVisibility({
       )}
       {owners.kind === "unread" && (
         <p className="trouble" role="alert">
-          {owners.sentence}{" "}
-          <button type="button" tabIndex={0} onClick={onRetry}>
-            Retry
-          </button>
+          {owners.sentence} <Button onPress={onRetry}>Retry</Button>
         </p>
       )}
       {listed && (
@@ -186,9 +184,7 @@ export function StagesShown({
           </li>
         ))}
       </ol>
-      <button type="button" tabIndex={0} onClick={onCancel}>
-        Cancel
-      </button>
+      <Button onPress={onCancel}>Cancel</Button>
     </>
   );
 }
@@ -327,9 +323,7 @@ export function CreateOnForge({
           you come back here after.
         </p>
         <SettingActions>
-          <button type="button" tabIndex={0} onClick={onNeedsSignIn}>
-            Sign in to {name}
-          </button>
+          <Button onPress={onNeedsSignIn}>Sign in to {name}</Button>
         </SettingActions>
       </div>
     );
@@ -409,14 +403,14 @@ export function CreateOnForge({
         )}
         <p className="get-project-folder">
           Goes into <code className="where">{folder?.folder ?? "—"}</code>{" "}
-          <button type="button" tabIndex={0} disabled={creating} onClick={choose}>
+          <Button isDisabled={creating} onPress={choose}>
             Choose a folder…
-          </button>
+          </Button>
         </p>
         <SettingActions>
-          <button type="submit" tabIndex={0} disabled={!ready}>
+          <Button type="submit" isDisabled={!ready}>
             Create project
-          </button>
+          </Button>
         </SettingActions>
       </form>
 
@@ -435,10 +429,7 @@ export function CreateOnForge({
 
       {doing.kind === "refused" && (
         <p className="trouble said-in-full" role="alert">
-          {doing.sentence}{" "}
-          <button type="button" tabIndex={0} onClick={() => withGit(create)}>
-            Retry
-          </button>
+          {doing.sentence} <Button onPress={() => withGit(create)}>Retry</Button>
         </p>
       )}
       {unpicked && (

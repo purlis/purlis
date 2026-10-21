@@ -1082,7 +1082,7 @@ describe("the limits table's look (DS-9, #1841)", () => {
       within(table).getByRole("button", { name: "Show devops" }),
       screen.getByRole("button", { name: "Add an override" }),
     ]) {
-      expect(button).toHaveClass("ui-button");
+      expect(button).toHaveAttribute("data-scope", "button");
       expect(drawnWith(button, "block-size")).toBe("var(--size-control)");
     }
     // Its buttons are a column as narrow as they are, at the row's end.
@@ -1107,6 +1107,6 @@ describe("the limits table's look (DS-9, #1841)", () => {
     typeInto(await screen.findByLabelText("Depth for this persona"), "2");
 
     const undo = await screen.findByRole("button", { name: "Undo" });
-    expect(undo).toHaveClass("ui-button");
+    expect(undo).toHaveAttribute("data-scope", "button");
   });
 });

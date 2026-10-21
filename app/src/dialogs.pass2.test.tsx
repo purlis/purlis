@@ -52,7 +52,10 @@ describe("Reopen your sessions", () => {
     const question = screen.getByRole("alertdialog");
     const answers = within(question).getAllByRole("button");
     for (const answer of answers) expect(answer).toHaveAttribute("type", "button");
-    expect(within(question).getByRole("button", { name: "Start fresh" })).toHaveClass("ends-it");
+    expect(within(question).getByRole("button", { name: "Start fresh" })).toHaveAttribute(
+      "data-variant",
+      "danger",
+    );
   });
 });
 
@@ -62,18 +65,27 @@ describe("closing a project", () => {
 
     expect(screen.getByRole("alertdialog", { name: "Close project one?" })).toBeInTheDocument();
     // It may end chats it has not heard of: that cannot be undone (D-1719-3).
-    expect(screen.getByRole("button", { name: "Close project" })).toHaveClass("ends-it");
+    expect(screen.getByRole("button", { name: "Close project" })).toHaveAttribute(
+      "data-variant",
+      "danger",
+    );
   });
 
   it("does not warn of an end where it has heard of nothing open, and says it where it has", () => {
     const { unmount } = render(
       <ClosingProject name="one" chats={[]} heard onClose={none} onCancel={none} />,
     );
-    expect(screen.getByRole("button", { name: "Close project" })).not.toHaveClass("ends-it");
+    expect(screen.getByRole("button", { name: "Close project" })).not.toHaveAttribute(
+      "data-variant",
+      "danger",
+    );
     unmount();
 
     render(<ClosingProject name="one" chats={[CHAT]} heard onClose={none} onCancel={none} />);
-    expect(screen.getByRole("button", { name: "Close and end 1 chat" })).toHaveClass("ends-it");
+    expect(screen.getByRole("button", { name: "Close and end 1 chat" })).toHaveAttribute(
+      "data-variant",
+      "danger",
+    );
   });
 
   it("lists the chats with the quit warning's own rows", () => {

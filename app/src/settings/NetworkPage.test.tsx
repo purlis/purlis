@@ -524,6 +524,11 @@ describe("Settings › Sandbox adds a service on this Mac by its port (#1970)", 
     portCore();
     render(<Row id="port" />);
     expect(screen.getByRole("button", { name: "Allow port" })).toBeDisabled();
+    // An answer that grants: the grant's look and lock (ADR 0097 §6).
+    expect(screen.getByRole("button", { name: "Allow port" })).toHaveAttribute(
+      "data-variant",
+      "grants",
+    );
   });
 
   it("names the name a Claude Code chat reaches it by as code", () => {

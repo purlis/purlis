@@ -4,12 +4,12 @@
 import { useId, useState } from "react";
 import { commands, type GrantLevel, type PlaneId, type SeenBlock, type Shown } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
-import { GrantsMark } from "./primitives/Grants";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { RestartEndsLine } from "./RestartEnds";
 import { asksOf, inertly } from "./sandboxBlocks";
 import { SETTLE_MS } from "./noticeSettle";
 import { listed, type Member, type TaskBlockGroup } from "./taskAsks";
+import { Button, ButtonRow } from "./ui/button/Button";
 
 // How long a press on a question just formed or changed does nothing: `noticeSettle.ts` holds
 // it, beside the Notice's own settle, so a Notice imports nothing of this file's.
@@ -204,22 +204,19 @@ export function TaskBlocksNotice({
         </ul>
       )}
       {alwaysOpen && (
-        <div className="block-allow-actions ui-button-row">
+        <ButtonRow size="sm" className="block-allow-actions">
           {others.map((level) => (
-            <button
+            <Button
+              size="sm"
+              variant="grants"
               key={level}
-              type="button"
-              // Each is an Allow, drawn as every Allow is (ADR 0097 §6).
-              className="ui-button ui-button-sm ui-button-grants"
-              tabIndex={0}
-              disabled={busy}
-              onClick={() => allow(level)}
+              isDisabled={busy}
+              onPress={() => allow(level)}
             >
-              <GrantsMark />
               {scope[level]}
-            </button>
+            </Button>
           ))}
-        </div>
+        </ButtonRow>
       )}
     </div>
   );

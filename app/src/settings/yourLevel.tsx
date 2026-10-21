@@ -14,6 +14,7 @@ import { inTheWindow } from "../personaHostsAllow";
 import type { RowIds } from "./components";
 import { key, textAt, type Control } from "./fileControls";
 import type { LiveSetting } from "./groups";
+import { Button } from "../ui/button/Button";
 
 /** The group: Settings › Project › Sandbox › Your level (#2071). */
 export const YOUR_LEVEL = "project.sandbox.yours";
@@ -126,14 +127,9 @@ function PlainFiles({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
                 {!one.movable ? (
                   <span>— registered in the team's file: the team moves it.</span>
                 ) : mayMove() ? (
-                  <button
-                    type="button"
-                    className="ui-button"
-                    disabled={busy}
-                    onClick={() => move(one.name)}
-                  >
+                  <Button isDisabled={busy} onPress={() => move(one.name)}>
                     {`Move ${one.name} to the keychain`}
-                  </button>
+                  </Button>
                 ) : null}
               </li>
             ))}
@@ -217,14 +213,9 @@ function Waiting({ plane, ids, text }: { plane: PlaneId; ids: RowIds; text: stri
             return (
               <li key={one.persona ?? ""}>
                 <span>{waitingSaid(one)}</span>{" "}
-                <button
-                  type="button"
-                  className="ui-button"
-                  disabled={busy}
-                  onClick={() => confirm(one.persona, one.level)}
-                >
+                <Button isDisabled={busy} onPress={() => confirm(one.persona, one.level)}>
                   {`Confirm ${level} ${whose}`}
-                </button>
+                </Button>
               </li>
             );
           })}

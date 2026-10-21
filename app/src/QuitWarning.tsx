@@ -6,6 +6,7 @@ import * as AlertDialog from "./overlays/alert-dialog";
 import { ChatState } from "./NeedsYou";
 import { type State } from "./chatState";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * One chat a quit is about to end, whichever project it is in.
@@ -104,23 +105,12 @@ export function QuitWarning({
           <AnswerBar>
             {/* Cancel first, and focused: the destructive answer is never the one a stray
               Return key finds. */}
-            <button
-              className="ui-button"
-              type="button"
-              ref={cancel}
-              tabIndex={0}
-              onClick={onCancel}
-            >
+            <Button ref={cancel} onPress={onCancel}>
               Cancel
-            </button>
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              onClick={onQuit}
-            >
+            </Button>
+            <Button variant="danger" onPress={onQuit}>
               Quit purlis
-            </button>
+            </Button>
           </AnswerBar>
         </AlertDialog.Content>
       </AlertDialog.Portal>
@@ -251,18 +241,11 @@ export function MidTurn({
           {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button className="ui-button" type="button" tabIndex={0}>
-                Wait
-              </button>
+              <Button>Wait</Button>
             </AlertDialog.Cancel>
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              onClick={onRestart}
-            >
+            <Button variant="danger" onPress={onRestart}>
               Restart now
-            </button>
+            </Button>
           </AnswerBar>
         </AlertDialog.Content>
       </AlertDialog.Portal>

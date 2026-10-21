@@ -655,7 +655,7 @@ describe("Repos not cloned here", () => {
 
     expect(
       await within(group).findByRole("button", { name: "Remove api from workspace…" }),
-    ).toHaveClass("ends-it");
+    ).toHaveAttribute("data-variant", "danger");
   });
 
   it("removes nothing when the question is cancelled", async () => {

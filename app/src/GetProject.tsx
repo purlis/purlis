@@ -7,6 +7,7 @@ import { commands, type GetProgress, type ProjectFolder } from "./bindings";
 import { DoorPage } from "./DoorPage";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { YourRepos } from "./YourRepos";
+import { Button } from "./ui/button/Button";
 
 /** Where the folder the person last picked to hold their projects is kept, on this machine. */
 export const REMEMBERED_PARENT = "purlis.getProject.parent";
@@ -198,14 +199,14 @@ export function GetProject({
         <p className="get-project-folder">
           {/* Before a URL names the project, the folder that will hold it, once one was picked. */}
           Goes into <code className="where">{folder?.folder ?? parent ?? "—"}</code>{" "}
-          <button type="button" tabIndex={0} disabled={getting} onClick={choose}>
+          <Button isDisabled={getting} onPress={choose}>
             Choose a folder…
-          </button>
+          </Button>
         </p>
         <SettingActions>
-          <button type="submit" tabIndex={0} disabled={!url.trim() || getting}>
+          <Button type="submit" isDisabled={!url.trim() || getting}>
             Get project
-          </button>
+          </Button>
         </SettingActions>
       </form>
 
@@ -221,9 +222,7 @@ export function GetProject({
               max={100}
               {...(doing.percent !== null ? { value: doing.percent } : {})}
             />{" "}
-            <button type="button" tabIndex={0} onClick={() => void commands.cancelGetProject()}>
-              Cancel
-            </button>
+            <Button onPress={() => void commands.cancelGetProject()}>Cancel</Button>
           </>
         )}
         {doing.kind === "called-off" && "Cancelled. Nothing was left behind."}
@@ -231,10 +230,7 @@ export function GetProject({
 
       {doing.kind === "refused" && (
         <p className="trouble" role="alert">
-          {doing.sentence}{" "}
-          <button type="button" tabIndex={0} onClick={() => void get()}>
-            Retry
-          </button>
+          {doing.sentence} <Button onPress={() => void get()}>Retry</Button>
         </p>
       )}
 
@@ -242,9 +238,9 @@ export function GetProject({
 
       <p className="get-project-local">
         Already on this machine?{" "}
-        <button type="button" tabIndex={0} className="welcome-link" onClick={onOpenFolder}>
+        <Button variant="link" onPress={onOpenFolder} className="welcome-link">
           Open a folder…
-        </button>
+        </Button>
       </p>
 
       {(unpicked ?? said) && (

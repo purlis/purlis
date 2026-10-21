@@ -572,10 +572,13 @@ function files(dir: string, keep: (name: string) => boolean): string[] {
 
 /** Every source file the window is drawn from: not tests, which name the classes to deny them. */
 const sources = () =>
-  files(SRC, (name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)).map((path) => ({
-    name: relative(SRC, path),
-    text: readFileSync(path, "utf8"),
-  }));
+  // A test and a story draw what they test, not a line of the window.
+  files(SRC, (name) => /\.tsx?$/.test(name) && !/\.(test|stories)\.tsx?$/.test(name)).map(
+    (path) => ({
+      name: relative(SRC, path),
+      text: readFileSync(path, "utf8"),
+    }),
+  );
 
 /**
  * Every JSX opening tag in `source` whose name `named` takes, as its tag name and its attribute

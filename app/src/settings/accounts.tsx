@@ -8,6 +8,7 @@ import { ACCOUNTS_CHANGED, forgeAccountsChanged } from "../ForgeSignInEnded";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { ImportCliLogin } from "../ImportCliLogin";
 import type { LiveSetting, SettingsGroup } from "./groups";
+import { Button } from "../ui/button/Button";
 
 /**
  * **You › Accounts** (#1814, ADR 0077 §6): this machine's forge accounts, each with Sign out;
@@ -179,16 +180,13 @@ const forgeAccounts: LiveSetting = {
                     <span className="ui-machine-name">{account.login}</span>
                     <span className="ui-machine-path">{account.host}</span>
                     <span className="ui-setting-badge">{note(account)}</span>
-                    <button
-                      type="button"
-                      className="ui-setting-reset"
-                      // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                      tabIndex={0}
+                    <Button
+                      size="sm"
                       aria-label={`Sign out of ${account.login} on ${account.host}`}
-                      onClick={() => void signOut(account)}
+                      onPress={() => void signOut(account)}
                     >
                       Sign out
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -205,9 +203,7 @@ const forgeAccounts: LiveSetting = {
               forgeAccountsChanged();
             }}
           />
-          <button type="button" tabIndex={0} onClick={openSignIn}>
-            Sign in with a token…
-          </button>
+          <Button onPress={openSignIn}>Sign in with a token…</Button>
           {/* An existing gh or glab login, offered and never taken (#1376, ADR 0077 §5). The
               list is read again once one is imported. */}
           <ImportCliLogin onImported={() => void reread()} />
