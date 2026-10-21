@@ -73,6 +73,12 @@ npm run storybook                        # the stories in Storybook, on http://l
 on any machine but the pinned image it would differ from its baseline without anything being
 wrong. A local run checks rendering, the keyboard and axe, and takes no picture.
 
+**What a failure says.** In CI, each story that fails is one annotation on the `stories` check,
+titled `<story> in <browser>`: its file, the gate it failed (`renders`, `keyboard`,
+`accessibility` or `screenshot`), the first line of why, and the axe rules it broke. It says the
+same in WebKit as in Chromium: `tools/story-failures.mjs` is the Vitest reporter that keeps each
+error's message, and the script that turns the reports into annotations.
+
 ## Baselines
 
 A baseline is a PNG at

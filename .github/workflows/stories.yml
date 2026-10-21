@@ -74,19 +74,21 @@ jobs:
           npx storybook index --disable-telemetry --quiet -c .storybook \
             -o "$RUNNER_TEMP/stories-index.json"
           node ../tools/story-baselines.mjs check "$RUNNER_TEMP/stories-index.json"
-      # Each browser on its own, so each failure can say which browser it failed in: Vitest's
-      # JSON report does not.
+      # Each browser on its own, so each failure can say which browser it failed in. The
+      # failures are kept by `tools/story-failures.mjs`'s reporter rather than Vitest's JSON
+      # one, which keeps an error's stack alone: WebKit's does not repeat the message.
       - name: The stories, in Chromium and in WebKit
         run: |
           failed=0
           for browser in chromium webkit; do
-            npx vitest run --project "stories ($browser)" --reporter=default --reporter=json \
-              --outputFile.json="$RUNNER_TEMP/stories-$browser.json" || failed=1
+            PURLIS_STORY_REPORT="$RUNNER_TEMP/stories-$browser.json" \
+              npx vitest run --project "stories ($browser)" \
+              --reporter=default --reporter=../tools/story-failures.mjs || failed=1
           done
           exit "$failed"
-      # One annotation per story that failed: its browser and the first line of why. The
-      # reporter's own annotations name a line, and a failure axe raises after the story has
-      # none.
+      # One annotation per story that failed, the same in both browsers: its browser, its gate,
+      # the first line of why and the axe rules it broke. The reporter's own annotations name a
+      # line, and a failure axe raises after the story has none.
       - name: The stories that failed, named
         if: failure()
         run: |
