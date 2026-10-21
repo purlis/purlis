@@ -1526,6 +1526,7 @@ fn a_claude_code_sub_agent_and_a_codex_child_show_under_their_chat_and_stopping_
             hook_ms: 1,
             agent: Some("thread-2".to_owned()),
             at_ms: 0,
+            skill: None,
         },
     )
     .expect("told");
@@ -6210,6 +6211,7 @@ fn a_call_by(chat: u32, agent: &str) -> purlis_core::hookwire::ToolCall {
         hook_ms: 1,
         agent: Some(agent.to_owned()),
         at_ms: 0,
+        skill: None,
     }
 }
 

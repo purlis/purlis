@@ -2255,6 +2255,26 @@ pub struct ToolCall {
     /// call's pre and post hooks into a duration whichever the host hears first. 0 is unknown.
     #[serde(default)]
     pub at_ms: u64,
+    /// The skill run this call starts, where the hook found it starts one (SK-3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill: Option<Box<SkillStarted>>,
+}
+
+/// **A skill run a tool call starts** (SK-3, #2766), as the hook found it from the harness's
+/// own words ([`crate::harness::HarnessAdapter::skill_start`]): the Skill tool's skill, or the
+/// skill whose `SKILL.md` a briefed chat read. The host opens the run under the id the hook
+/// minted, where its turn has not started that skill already ([`crate::skillspan`]).
+///
+/// It comes from a chat's side of the channel, so the host reads it as a claim: a name is
+/// contained before it is recorded, and an id that is not a ULID or a start it does not know
+/// opens no run.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SkillStarted {
+    /// The skill, by the name the harness started it by.
+    pub skill: String,
+    /// The run's id: a ULID the hook minted.
+    pub run: String,
+    pub started_by: purlis_skills::runs::StartedBy,
 }
 
 impl ToolCall {
@@ -7606,6 +7626,7 @@ mod tests {
             hook_ms: 2,
             agent: None,
             at_ms: 0,
+            skill: None,
         };
         let line = serde_json::to_string(&call).unwrap();
         assert!(

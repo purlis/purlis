@@ -2491,6 +2491,7 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
             hook_ms: 1,
             agent: Some("agent-1".into()),
             at_ms: 0,
+            skill: None,
         },
     });
     let dispatched = dispatchrecord::open(

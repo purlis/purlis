@@ -16,6 +16,7 @@ publish = false
 toml = { version = "1.1", features = ["preserve_order"] }
 # ... and written keeping every other key and comment in it.
 toml_edit = "0.25"
+serde.workspace = true
 # A grant is written beside the file and renamed over it, never half-written.
 tempfile.workspace = true
 
