@@ -1216,6 +1216,9 @@ impl Browser {
                 );
             }
         }
+        // One element the tree lists twice is still one.
+        found.sort_by(|a, b| (&a.frame, a.backend).cmp(&(&b.frame, b.backend)));
+        found.dedup();
         match found.as_slice() {
             [one] => Some(one.clone()),
             _ => None,

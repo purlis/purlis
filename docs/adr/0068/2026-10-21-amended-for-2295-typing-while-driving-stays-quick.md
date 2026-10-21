@@ -16,3 +16,8 @@
    purlis's world, which element has the focus; the one element both name is blanked, and a page
    where no one element is named still holds the key back (`FocusUnclear`). *D-2295-3, decided
    in implementation, to be confirmed.*
+3. **What is measured, and what is held to the bound.** The time from a key to the page is said
+   on CI for the first key into the field and for each key after it. The median of the keys
+   after the first is held under the spec's 50 ms; the first key, which reads the whole tree,
+   and the worst key, which moves with a shared runner's neighbours, are said and not held.
+   *D-2295-2, decided in implementation, to be confirmed.*

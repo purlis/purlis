@@ -2670,6 +2670,28 @@ fn of_two_elements_the_tree_marks_focused_the_one_its_document_says_has_the_focu
 }
 
 #[test]
+fn one_element_the_tree_lists_twice_as_focused_is_blanked() {
+    // A real engine may give one element two nodes of its tree (a field and its inner editor
+    // share the field's id): it is still one element (#2295).
+    let (browser, engine) = browser();
+    focus_on(&engine, &[("PAGE-1", "8"), ("PAGE-1", "4")]);
+    let backend = {
+        let mut model = super::lock(&engine.model);
+        let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+        let backend = nodes
+            .iter()
+            .find(|n| n["nodeId"] == "8")
+            .and_then(|n| n["backendDOMNodeId"].as_i64())
+            .unwrap();
+        let other = nodes.iter_mut().find(|n| n["nodeId"] == "4").unwrap();
+        other["backendDOMNodeId"] = json!(backend);
+        backend
+    };
+    super::lock(&engine.model).focused_backend = Some(backend);
+    assert!(browser.blank_focused(None).is_ok());
+}
+
+#[test]
 fn blanking_the_focus_is_refused_when_more_than_one_element_says_it_has_it() {
     let (browser, engine) = browser();
     focus_on(&engine, &[("PAGE-1", "8"), ("PAYMENT-FRAME", "3")]);
