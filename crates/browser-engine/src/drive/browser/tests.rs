@@ -13,7 +13,9 @@ use std::time::Duration;
 use base64::Engine as _;
 use serde_json::{Value, json};
 
-use super::{ACTIVE_ELEMENT, Browser, DevTools, READ_VALUE, READY_STATE, SELECT_OPTIONS, TITLE};
+use super::{
+    ACTIVE_ELEMENT, Browser, DevTools, FOCUSED_HERE, READ_VALUE, READY_STATE, SELECT_OPTIONS, TITLE,
+};
 use crate::WebAddress;
 use crate::cdp::{CallError, Closed, Event};
 use crate::drive::{
@@ -49,6 +51,9 @@ struct Model {
     /// The title each page's document has now, by target: what the engine last told of, unless
     /// a test sets it with no word from the engine (#2753).
     titles: HashMap<String, String>,
+    /// The element that has the focus, by its engine id, where the document has the focus
+    /// (#2295).
+    focused_backend: Option<i64>,
     history: Value,
     screenshot: Vec<u8>,
     select: Value,
@@ -327,6 +332,20 @@ impl Engine {
                 };
                 Ok(json!({"result":{"type":"string","value":lie}}))
             }
+            "Runtime.evaluate" if p["expression"] == FOCUSED_HERE => {
+                Ok(match super::lock(&self.model).focused_backend {
+                    Some(_) => {
+                        json!({"result":{"type":"object","subtype":"node","objectId":"FOCUSED"}})
+                    }
+                    None => json!({"result":{"type":"object","subtype":"null","value":null}}),
+                })
+            }
+            "DOM.describeNode" if p["objectId"] == "FOCUSED" => {
+                let backend = super::lock(&self.model).focused_backend;
+                Ok(
+                    json!({"node":{"nodeId":0,"backendNodeId":backend,"nodeType":1,"nodeName":"INPUT"}}),
+                )
+            }
             "Runtime.evaluate" if p["expression"] == TITLE => {
                 let target = on.unwrap_or_default().trim_start_matches("S-");
                 let title = super::lock(&self.model)
@@ -563,6 +582,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             ]),
             ready: "complete".into(),
             titles: HashMap::new(),
+            focused_backend: None,
             history: json!({"currentIndex":0,"entries":[{"id":1,"url":"http://fixture.test/frames.html","userTypedURL":"","title":"","transitionType":"typed"}]}),
             screenshot: white_png(),
             select: json!({"picked":["Blue"]}),
@@ -2615,6 +2635,60 @@ fn the_focused_element_in_shadow_content_is_blanked() {
     let text = snapshot(&browser, 1);
     assert!(!text.contains("Inside the shadow"), "{text}");
     assert!(text.contains("- textbox \"Name\""), "{text}");
+}
+
+#[test]
+fn of_two_elements_the_tree_marks_focused_the_one_its_document_says_has_the_focus_is_blanked() {
+    // #2295: a real engine may mark a field's inner editor, or its document, focused with it.
+    let (browser, engine) = browser();
+    focus_on(&engine, &[("PAGE-1", "8"), ("PAYMENT-FRAME", "3")]);
+    let backend = {
+        let model = super::lock(&engine.model);
+        model.ax["PAGE-1"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["nodeId"] == "8")
+            .and_then(|n| n["backendDOMNodeId"].as_i64())
+            .unwrap()
+    };
+    // Only the page's own document is asked here; the payment frame's says nothing.
+    engine.on(move |sent, _| {
+        (sent.method == "Runtime.evaluate"
+            && sent.params["expression"] == FOCUSED_HERE
+            && sent.session.as_deref() == Some("S-PAYMENT"))
+        .then(|| Ok(json!({"result":{"type":"object","subtype":"null","value":null}})))
+    });
+    super::lock(&engine.model).focused_backend = Some(backend);
+    assert!(browser.blank_focused(None).is_ok());
+    assert!(
+        engine
+            .sent("DOM.describeNode")
+            .iter()
+            .any(|s| s.params["objectId"] == "FOCUSED")
+    );
+}
+
+#[test]
+fn one_element_the_tree_lists_twice_as_focused_is_blanked() {
+    // A real engine may give one element two nodes of its tree (a field and its inner editor
+    // share the field's id): it is still one element (#2295).
+    let (browser, engine) = browser();
+    focus_on(&engine, &[("PAGE-1", "8"), ("PAGE-1", "4")]);
+    let backend = {
+        let mut model = super::lock(&engine.model);
+        let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+        let backend = nodes
+            .iter()
+            .find(|n| n["nodeId"] == "8")
+            .and_then(|n| n["backendDOMNodeId"].as_i64())
+            .unwrap();
+        let other = nodes.iter_mut().find(|n| n["nodeId"] == "4").unwrap();
+        other["backendDOMNodeId"] = json!(backend);
+        backend
+    };
+    super::lock(&engine.model).focused_backend = Some(backend);
+    assert!(browser.blank_focused(None).is_ok());
 }
 
 #[test]

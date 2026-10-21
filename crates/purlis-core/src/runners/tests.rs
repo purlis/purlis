@@ -303,7 +303,7 @@ fn a_removal_that_fails_says_what_is_left_and_keeps_the_runner_to_remove_again()
     assert!(left.contains("removed again"), "{left}");
     assert_eq!(read(config.path()).unwrap().len(), 1);
 
-    std::fs::remove_file(fake.docker().0.with_file_name("rm-fails-volume")).unwrap();
+    std::fs::remove_file(fake.docker().program().with_file_name("rm-fails-volume")).unwrap();
     let removed = remove(config.path(), &fake.docker(), "first", None).unwrap();
     assert!(removed.forgotten, "{removed:?}");
 }

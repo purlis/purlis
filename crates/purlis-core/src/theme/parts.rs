@@ -61,8 +61,9 @@
 //! that is not consent never reaches a control that carries a consent variant's class too, and
 //! a size never reaches the small or wrapping controls, whose size their own classes keep.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write as _;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::{Map, Value, json};
 
@@ -1578,7 +1579,76 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
 /// **The parts of `theme` drawn as their family default because they broke a floor**, each with
 /// the floor: empty for a theme whose parts clear them all, and for one that names no parts.
 pub fn fallen(theme: &ResolvedTheme) -> Vec<Fell> {
-    held(theme).1
+    held_once(theme).1.clone()
+}
+
+/// The rules with the floors held, and what fell.
+type Measured = (Vec<Rule>, Vec<Fell>);
+
+/// How many themes' measures are kept: every appearance and option of a gallery's worth of
+/// parts themes.
+const KEPT: usize = 64;
+
+/// The themes measured last, the latest first, each with its measure.
+type Kept = VecDeque<(ResolvedTheme, Arc<Measured>)>;
+
+#[cfg(not(test))]
+static MEASURED: Mutex<Kept> = Mutex::new(VecDeque::new());
+
+#[cfg(test)]
+thread_local! {
+    /// Each test thread keeps its own, so what one test measures is never another's.
+    static MEASURED: &'static Mutex<Kept> = Box::leak(Box::new(Mutex::new(VecDeque::new())));
+}
+
+fn measured() -> std::sync::MutexGuard<'static, Kept> {
+    #[cfg(not(test))]
+    let kept: &'static Mutex<Kept> = &MEASURED;
+    #[cfg(test)]
+    let kept: &'static Mutex<Kept> = MEASURED.with(|kept| *kept);
+    kept.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// **A theme's parts are measured once** (#2954): [`held`] passes over every workspace tint, and
+/// writing the stylesheet, reporting what fell and the gallery's cards all ask for the same
+/// theme. The measure is a function of the whole theme, so a theme equal in every value is the
+/// same theme, and the last [`KEPT`] are kept. A theme that names no parts costs nothing.
+fn held_once(theme: &ResolvedTheme) -> Arc<Measured> {
+    if theme.parts.is_empty() {
+        return Arc::new((Vec::new(), Vec::new()));
+    }
+    let kept = |measured: &mut Kept| {
+        let at = measured.iter().position(|(one, _)| one == theme)?;
+        let hit = measured.remove(at)?;
+        let held = Arc::clone(&hit.1);
+        measured.push_front(hit);
+        Some(held)
+    };
+    if let Some(held) = kept(&mut measured()) {
+        return held;
+    }
+    #[cfg(test)]
+    PASSES.with(|passes| passes.set(passes.get() + 1));
+    let held = Arc::new(held(theme));
+    let mut kept_now = measured();
+    if let Some(already) = kept(&mut kept_now) {
+        return already;
+    }
+    kept_now.push_front((theme.clone(), Arc::clone(&held)));
+    kept_now.truncate(KEPT);
+    held
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The passes [`held`] made on this thread, for the tests that hold the sharing.
+    static PASSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The passes over a theme's tints made on this thread so far.
+#[cfg(test)]
+pub(super) fn passes() -> usize {
+    PASSES.with(std::cell::Cell::get)
 }
 
 // --- The stylesheet --------------------------------------------------------------------------
@@ -1754,7 +1824,7 @@ fn sizes(property: Prop) -> bool {
 /// the `parts` layer above the family defaults, every value written from its parsed form. Empty
 /// for a theme that names no parts, which draws exactly as the family defaults do.
 pub fn stylesheet(theme: &ResolvedTheme) -> String {
-    let (mut rules, _) = held(theme);
+    let mut rules = held_once(theme).0.clone();
     if rules.is_empty() {
         return String::new();
     }
