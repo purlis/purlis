@@ -661,7 +661,8 @@ impl FakeDocker {
     }
 
     pub(crate) fn docker(&self) -> Docker {
-        Docker(self.dir.path().join("docker"))
+        Docker::at(self.dir.path().join("docker"))
+            .with_settings_in(self.dir.path().join("settings"))
     }
 
     pub(crate) fn file(&self, name: &str) -> String {
@@ -997,16 +998,16 @@ fn docker_is_found_where_its_installers_put_it_before_the_path() {
     // Docker where an installer puts it, which a test cannot take away.
     match Docker::on_this_machine(Some(&path), Some(home.path())) {
         Err(refused) => assert!(refused.0.contains("install Docker"), "{refused}"),
-        Ok(found) => assert_eq!(Some(found.0), installed),
+        Ok(found) => assert_eq!(Some(found.program().to_path_buf()), installed),
     }
     stand_in::program(on_path.path(), "docker", "#!/bin/sh\n");
     std::fs::create_dir_all(home.path().join(".orbstack/bin")).unwrap();
     stand_in::program(&home.path().join(".orbstack/bin"), "docker", "#!/bin/sh\n");
     // The path comes last: an installer's place is taken before it.
     let found = Docker::on_this_machine(Some(&path), Some(home.path())).unwrap();
-    assert_ne!(found.0, on_path.path().join("docker"));
+    assert_ne!(found.program(), on_path.path().join("docker"));
     assert_eq!(
-        found.0,
+        found.program(),
         installed.unwrap_or_else(|| home.path().join(".orbstack/bin/docker"))
     );
 }
@@ -1030,7 +1031,7 @@ fn docker_looks_for_a_credential_helper_where_docker_itself_is_found() {
     for holder in [".docker", ".orbstack", ".rd"] {
         std::fs::create_dir_all(home.path().join(holder)).unwrap();
     }
-    let docker = Docker(found.path().join("docker"));
+    let docker = Docker::at(found.path().join("docker"));
     let searched =
         docker.helpers_searched(Some("relative:/usr/bin:/opt/tools/bin"), Some(home.path()));
     let real = |path: &std::path::Path| path.canonicalize().unwrap();
@@ -1050,27 +1051,19 @@ fn docker_looks_for_a_credential_helper_where_docker_itself_is_found() {
     assert_eq!(searched, expected);
 }
 
-/// A helper beside `docker` answers, whatever `PATH` the window was opened with (#2752).
+/// A run of `docker` is given Docker's own folders and the system's as its `PATH` (#2752),
+/// whatever `PATH` the window was opened with: where every helper it is handed was found, so a
+/// window opened from the Finder finds them too.
 #[test]
-fn a_credential_helper_beside_docker_is_run_from_a_window_opened_from_the_finder() {
+fn a_run_of_docker_is_given_dockers_own_folders_as_its_path() {
     let dir = tempfile::tempdir().unwrap();
-    stand_in::program(
-        dir.path(),
-        "docker-credential-stand-in",
-        "#!/bin/sh\necho '[{\"Config\":{\"User\":\"10001:10001\",\"Env\":[\"HOME=/home/purlis\"]}}]'\n",
-    );
-    // As Docker does, by its name alone.
-    stand_in::program(
-        dir.path(),
-        "docker",
-        "#!/bin/sh\nexec docker-credential-stand-in\n",
-    );
-    assert_eq!(
-        Docker(dir.path().join("docker"))
-            .declared(&image())
-            .unwrap(),
-        (User::new(10001, 10001).unwrap(), "/home/purlis".to_owned())
-    );
+    stand_in::program(dir.path(), "docker", "#!/bin/sh\necho \"$PATH\"\n");
+    let said = Docker::at(dir.path().join("docker"))
+        .with_settings_in(dir.path().join("settings"))
+        .run(&["version".into()], None, MOST_INSPECTED)
+        .unwrap();
+    let expected = std::env::join_paths(settings::run_path()).unwrap();
+    assert_eq!(said.trim(), expected.to_str().unwrap());
 }
 
 #[test]
@@ -1094,6 +1087,33 @@ fn an_image_this_machine_does_not_hold_is_pulled_by_its_digest_before_it_is_read
     assert!(!fake.file("log").contains("pull"), "{}", fake.file("log"));
 }
 
+/// Every run of `docker` is given purlis's checked copy of Docker's settings, in a folder made
+/// for it that goes once it has run, and no context (#2752, the person's ruling of 2026-10-20).
+#[test]
+fn every_run_of_docker_is_given_a_checked_copy_of_its_settings_and_no_context() {
+    let dir = tempfile::tempdir().unwrap();
+    stand_in::program(
+        dir.path(),
+        "docker",
+        "#!/bin/sh\necho \"$DOCKER_CONFIG\"\necho \"${DOCKER_CONTEXT-unset}\"\ncat \"$DOCKER_CONFIG/config.json\"\n",
+    );
+    let settings_in = dir.path().join("settings");
+    let docker = Docker::at(dir.path().join("docker")).with_settings_in(&settings_in);
+    let said = docker
+        .run(&["version".into()], None, MOST_INSPECTED)
+        .unwrap();
+    let mut lines = said.lines();
+    let folder = std::path::PathBuf::from(lines.next().unwrap());
+    assert!(folder.starts_with(&settings_in), "{said}");
+    assert_eq!(lines.next(), Some("unset"), "{said}");
+    let copy: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
+    for gone in ["cliPluginsExtraDirs", "plugins", "currentContext"] {
+        assert!(copy.get(gone).is_none(), "{copy}");
+    }
+    // The run's folder went with it.
+    assert!(!folder.exists());
+}
+
 /// A `docker`, or a helper's folder, in the home is taken only where the installer's folder
 /// that holds it is there as itself (#2752): not a link to somewhere else, and not another
 /// spelling of its name, which a chat could have made before its sandbox held the name.
@@ -1104,7 +1124,7 @@ fn a_home_candidate_is_taken_only_from_the_installers_own_folder() {
     let found = |home: &std::path::Path| {
         Docker::found_in(&[], Some("relative:"), Some(home))
             .ok()
-            .map(|docker| docker.0)
+            .map(|docker| docker.program().to_path_buf())
     };
     // The installer's own folder, as itself: taken.
     let own = tempfile::tempdir().unwrap();
@@ -1139,7 +1159,7 @@ fn a_home_candidate_is_taken_only_from_the_installers_own_folder() {
             home.display()
         );
         assert_eq!(found(home), installed, "{}", home.display());
-        let searched = Docker("/nonexistent/docker".into()).helpers_searched(None, Some(home));
+        let searched = Docker::at("/nonexistent/docker").helpers_searched(None, Some(home));
         assert!(
             !searched.contains(&home.join(".orbstack/bin")),
             "{}: {searched:?}",

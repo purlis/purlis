@@ -76,7 +76,7 @@ pub use browsers::{
 #[cfg(unix)]
 pub use confining::{Askable, Confine, ConfinesNothing, Confining, Planned, Tell, ToConfine};
 #[cfg(unix)]
-pub use connector::{BeforeEach, CommandConnector, Connected};
+pub use connector::{BeforeEach, CommandConnector, Connected, Prepare, Prepared};
 #[cfg(unix)]
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
