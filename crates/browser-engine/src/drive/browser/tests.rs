@@ -2638,6 +2638,38 @@ fn the_focused_element_in_shadow_content_is_blanked() {
 }
 
 #[test]
+fn of_two_elements_the_tree_marks_focused_the_one_its_document_says_has_the_focus_is_blanked() {
+    // #2295: a real engine may mark a field's inner editor, or its document, focused with it.
+    let (browser, engine) = browser();
+    focus_on(&engine, &[("PAGE-1", "8"), ("PAYMENT-FRAME", "3")]);
+    let backend = {
+        let model = super::lock(&engine.model);
+        model.ax["PAGE-1"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["nodeId"] == "8")
+            .and_then(|n| n["backendDOMNodeId"].as_i64())
+            .unwrap()
+    };
+    // Only the page's own document is asked here; the payment frame's says nothing.
+    engine.on(move |sent, _| {
+        (sent.method == "Runtime.evaluate"
+            && sent.params["expression"] == FOCUSED_HERE
+            && sent.session.as_deref() == Some("S-PAYMENT"))
+        .then(|| Ok(json!({"result":{"type":"object","subtype":"null","value":null}})))
+    });
+    super::lock(&engine.model).focused_backend = Some(backend);
+    assert!(browser.blank_focused(None).is_ok());
+    assert!(
+        engine
+            .sent("DOM.describeNode")
+            .iter()
+            .any(|s| s.params["objectId"] == "FOCUSED")
+    );
+}
+
+#[test]
 fn blanking_the_focus_is_refused_when_more_than_one_element_says_it_has_it() {
     let (browser, engine) = browser();
     focus_on(&engine, &[("PAGE-1", "8"), ("PAYMENT-FRAME", "3")]);

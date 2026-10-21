@@ -10,3 +10,9 @@
    field holds is still read from the field after every key and kept out. The time from a key
    to the page on a large page is measured on CI. *D-2295-1, decided in implementation, to be
    confirmed.*
+2. **Of several elements the tree marks focused, the document's own is the one.** A real engine
+   may mark more than one element of a page focused in its accessibility tree (a field's inner
+   editor, or the document, with the field). Then each of their documents is asked, in
+   purlis's world, which element has the focus; the one element both name is blanked, and a page
+   where no one element is named still holds the key back (`FocusUnclear`). *D-2295-3, decided
+   in implementation, to be confirmed.*

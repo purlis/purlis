@@ -1183,10 +1183,43 @@ impl Browser {
         let key = match snapshot.focused() {
             [] => return Err(Refusal::NothingFocused),
             [one] => one.clone(),
-            _ => return Err(Refusal::FocusUnclear),
+            // The tree marks more than one element focused (a real engine may mark a field's
+            // inner editor, or its document, with it): the one its document says has the
+            // focus is the one (#2295).
+            many => self
+                .the_one_focused(&target, many)
+                .ok_or(Refusal::FocusUnclear)?,
         };
         let read = self.blank_node(&target, key.clone())?;
         Ok(((target, key), read))
+    }
+
+    /// Of `many`, the elements the tree marks focused on `target`'s page, the one its own
+    /// document says has the focus, where exactly one is.
+    fn the_one_focused(&self, target: &str, many: &[NodeKey]) -> Option<NodeKey> {
+        let mut frames: Vec<&str> = many.iter().map(|key| key.frame.as_str()).collect();
+        frames.sort_unstable();
+        frames.dedup();
+        let mut found = Vec::new();
+        for frame in frames {
+            let session = lock(&self.inner.state)
+                .page(target)?
+                .frames
+                .get(frame)?
+                .session
+                .clone();
+            if let Some(backend) = self.focused_in(&session, frame) {
+                found.extend(
+                    many.iter()
+                        .filter(|key| key.frame == frame && key.backend == backend)
+                        .cloned(),
+                );
+            }
+        }
+        match found.as_slice() {
+            [one] => Some(one.clone()),
+            _ => None,
+        }
     }
 
     fn blank_node(&self, target: &str, key: NodeKey) -> Result<Snapshot, Refusal> {

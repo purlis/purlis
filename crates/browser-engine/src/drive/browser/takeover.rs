@@ -586,34 +586,39 @@ impl Browser {
             }
             page.frames.get(&focused.field.1.frame)?.session.clone()
         };
-        let on = Some(session.as_str());
         let key = &focused.field.1;
-        let now = self
-            .in_world(&session, &key.frame, |world| {
-                let found = self.devtools().call(
-                    "Runtime.evaluate",
-                    json!({ "expression": FOCUSED_HERE, "uniqueContextId": world.unique }),
-                    on,
-                )?;
-                let Some(object) = found.pointer("/result/objectId").and_then(Value::as_str) else {
-                    return Ok(Value::Null);
-                };
-                let described =
-                    self.devtools()
-                        .call("DOM.describeNode", json!({ "objectId": object }), on);
-                let _ = self.devtools().call(
-                    "Runtime.releaseObject",
-                    json!({ "objectId": object }),
-                    on,
-                );
-                described
-            })
-            .ok()?;
-        let still = now.pointer("/node/backendNodeId").and_then(Value::as_i64) == Some(key.backend);
+        let still = self.focused_in(&session, &key.frame) == Some(key.backend);
         if !still {
             lock(&self.typing).focus = None;
         }
         still.then_some(focused)
+    }
+
+    /// The engine's id for the element that has the focus in `frame`'s document (held by
+    /// `session`), where that document has the focus; `None` where it has not, or cannot say.
+    /// Asked in purlis's own world (#2295).
+    pub(super) fn focused_in(&self, session: &str, frame: &str) -> Option<i64> {
+        let on = Some(session);
+        self.in_world(session, frame, |world| {
+            let found = self.devtools().call(
+                "Runtime.evaluate",
+                json!({ "expression": FOCUSED_HERE, "uniqueContextId": world.unique }),
+                on,
+            )?;
+            let Some(object) = found.pointer("/result/objectId").and_then(Value::as_str) else {
+                return Ok(Value::Null);
+            };
+            let described =
+                self.devtools()
+                    .call("DOM.describeNode", json!({ "objectId": object }), on);
+            let _ =
+                self.devtools()
+                    .call("Runtime.releaseObject", json!({ "objectId": object }), on);
+            described
+        })
+        .ok()?
+        .pointer("/node/backendNodeId")
+        .and_then(Value::as_i64)
     }
 
     fn focus_unseen(&self, session: &str, frame: &str) -> bool {
