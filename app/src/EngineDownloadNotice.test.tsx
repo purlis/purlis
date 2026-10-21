@@ -42,6 +42,15 @@ describe("the notice of the browser engine's download", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
+  it("is not drawn, and does not fail, where the core answers nothing", async () => {
+    const { asked } = core(() => null as unknown as EngineDownloadShown[]);
+
+    render(<EngineDownloadNotice />);
+
+    await waitFor(() => expect(asked.map(([cmd]) => cmd)).toContain("engine_downloads"));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("follows the download as it goes, and leaves once its start answers", async () => {
     let now: EngineDownloadShown[] = [];
     core(() => now);

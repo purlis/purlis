@@ -28,7 +28,8 @@ export function EngineDownloadNotice() {
         .engineDownloads()
         .then((answer) => {
           if (gone || answer.status !== "ok") return;
-          setShown(answer.data);
+          // A window whose core answers nothing (a test's, an older build's) shows none.
+          setShown(Array.isArray(answer.data) ? answer.data : []);
         })
         .catch(() => undefined);
     read();
