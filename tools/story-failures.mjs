@@ -40,7 +40,7 @@ export function annotations(report) {
         const why =
           lines.find(
             (line) => line && !FRAME.test(line) && !/^Error:?$/.test(line),
-          ) ?? "";
+          ) ?? "the browser reported only a stack trace; the job's log has it";
         const rules = [
           ...new Set([...message.matchAll(RULE)].map((found) => found[1])),
         ];

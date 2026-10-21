@@ -14,8 +14,9 @@ name: stories-baselines
 # files that are baselines (`tools/story-baselines.mjs take`). A pull request from a fork gets no
 # token that can push, so `commit` says so and stops.
 #
-# A push made with the workflow's own token starts no `pull_request` run, so the rest of the
-# pull request's checks wait for its next push (or `gh pr update-branch`).
+# The `pull_request` runs a push made with the workflow's own token starts wait for a maintainer
+# to approve them, so the rest of the pull request's checks run once approved, or on its next push
+# (or `gh pr update-branch`).
 
 on:
   pull_request:
@@ -150,7 +151,7 @@ jobs:
               # A baseline's path has no space in it (tools/story-baselines.mjs).
               for path in $CHANGED; do echo "- \`$path\`"; done
               echo
-              echo "The push starts no \`pull_request\` run of its own: the other checks run on the branch's next push."
+              echo "The \`stories\` check runs on the new commit now. Its other checks wait for a maintainer to approve them, or run on the branch's next push."
             } > "$RUNNER_TEMP/comment.md"
             gh pr comment "$PR" --body-file "$RUNNER_TEMP/comment.md"
           fi

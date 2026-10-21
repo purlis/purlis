@@ -78,8 +78,9 @@ image by the `stories` workflow (`.github/workflows/stories.yml`).
    to the branch as one commit, takes the label off and comments which baselines changed.
 3. Review the pictures in the pull request's diff, which shows each one beside the one it
    replaces.
-4. The push starts the `stories` check on the new commit. The other checks run on the branch's
-   next push (or `gh pr update-branch`).
+4. The job starts the `stories` check on the new commit itself. The other checks of a push made
+   with the workflow's token wait for a maintainer to approve them in the pull request's Checks,
+   or run on the branch's next push (or `gh pr update-branch`).
 
 The `stories` check also refuses a baseline the pinned image did not draw (one named for another
 platform), and a baseline whose story file is gone (`tools/story-baselines.mjs check`). When a

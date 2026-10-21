@@ -55,6 +55,24 @@ test("colour codes and stack frames are left out, and the axe rules broken are n
   ]);
 });
 
+test("a failure that is only a stack trace says so", () => {
+  const report = {
+    testResults: [
+      {
+        name: "/w/app/src/A.stories.tsx",
+        assertionResults: [
+          {
+            status: "failed",
+            fullName: "A",
+            failureMessages: ["@[native code]\nf@http://x/y.js:1:2"],
+          },
+        ],
+      },
+    ],
+  };
+  assert.match(annotations(report)[0], /only a stack trace/);
+});
+
 test("a report with nothing failed says nothing", () => {
   assert.deepEqual(annotations({ testResults: [] }), []);
 });

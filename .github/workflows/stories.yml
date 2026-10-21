@@ -16,7 +16,7 @@ name: stories
 #
 # A baseline changes only through `stories-baselines.yml`, which a pull request's
 # `update-baselines` label starts. `workflow_dispatch` is how that job starts this one on the
-# commit it pushed: a push made with the workflow's own token starts no run by itself.
+# commit it pushed: the `pull_request` run that push starts waits for a maintainer's approval.
 
 on:
   pull_request:
