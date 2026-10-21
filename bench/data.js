@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792605064864,
+  "lastUpdate": 1792607158276,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20832,6 +20832,48 @@ window.BENCHMARK_DATA = {
             "value": 101.735519,
             "unit": "ms",
             "extra": "median of 5 runs: 100.994, 101.295, 101.736, 101.917, 102.273 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "759caacbd48e792d3584c4c33215bee313c56521",
+          "message": "Runners: the window holds a project on a pool's runner with its code (#2046, 2/4) (#2834)\n\n* Runners: the window holds a project on a pool's runner with its code (#2046, 2/4)\n\n- HostedSessions::on_a_pools_runner: the project is held where the runner\n  keeps it (a hold with no place, 1.34), and the window sends it the\n  project's own repository, less purlis's state folder and the local\n  settings file, to check out there.\n- Before a chat starts in a workspace there, each of the workspace's clones\n  is sent on its branch with its uncommitted work; fetch_back takes the\n  runner's branches back into each clone's refs/remotes/<pool>/*.\n- The window's link takes code streams (1.34) and hands each to the\n  transfer that asked for it.\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Name a fixture commit by its file, since a file may be empty\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The held project's fixture keeps its workspace memory, as a live workspace does\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a refused move of code is said at once, and a lost repository is sent whole\n\n- HostLink::send_code and fetch_code answer as soon as the host does: a refusal that comes\n  before any code stream is said at once.\n- A host before session protocol 1.34 is refused in purlis's words, by the link's version\n  and by a host's unknown_command.\n- The window holds every bundle it moves to the link's bound (MOST_BUNDLE_BYTES).\n- A send that fails is made again whole, and what the runner held is forgotten after a\n  send that failed and whenever the project is held again.\n- Tests: a host that refuses before it opens a stream, a bundle past the window's bound,\n  the older host's words, and a runner that lost a repository.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Test that a file gone from disk after it was staged is left out of a send\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T22:24:27+04:00",
+          "tree_id": "abd189e25584660ef990c403dbb6cf7c583dc521",
+          "url": "https://github.com/purlis/purlis/commit/759caacbd48e792d3584c4c33215bee313c56521"
+        },
+        "date": 1792607156265,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3502755000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.326, 0.348, 0.350, 0.354, 0.361 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.627419000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.393, 16.512, 16.627, 16.648, 16.718 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.992801,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.350, 100.738, 100.993, 101.030, 101.777 ms"
           }
         ]
       }
