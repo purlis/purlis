@@ -294,8 +294,9 @@ mod hosted {
 
     /// **Why a browser's start was refused**, from the host's refusal: the device's budget,
     /// `budget` here, where the host said `device_full` (1.32, #2611); the engine's sandbox
-    /// where it said `no_engine_sandbox` (1.36, #2899), or, from a host before 1.36, its words
-    /// for it; else in the host's words, as for any code this window does not know.
+    /// where it said `no_engine_sandbox` (1.36, #2899), or its words for it from any host (one
+    /// before 1.36, or a relaying host that passed the words on without the code); else in the
+    /// host's words, as for any code this window does not know.
     pub(super) fn not_started(refused: session::Refusal, budget: usize) -> NotStarted {
         if refused.code == session::DEVICE_FULL {
             NotStarted::Full { most: budget }
