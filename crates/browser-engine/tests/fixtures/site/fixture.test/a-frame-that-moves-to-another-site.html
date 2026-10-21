@@ -8,11 +8,9 @@
   <p>The page's own text</p>
   <iframe title="Moving frame" src="/opened.html"></iframe>
   <script>
-    // Half a second after the load, the frame goes to another site: a process of its own.
-    addEventListener('load', () => {
-      setTimeout(() => {
-        document.querySelector('iframe').src = 'http://other.test/advert.html';
-      }, 500);
-    });
+    // At the person's first key, the frame goes to another site: a process of its own.
+    addEventListener('keydown', () => {
+      document.querySelector('iframe').src = 'http://other.test/advert.html';
+    }, { once: true });
   </script>
 </body></html>

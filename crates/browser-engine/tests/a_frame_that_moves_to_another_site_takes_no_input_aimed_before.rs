@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! Through a real engine (#2973): a frame of the page moves from the page's own site to another,
-//! so the engine puts it in a process of its own. A move of the person's pointer aimed at what the
+//! Through a real engine (#2973): at the person's first key, a frame of the page moves from the
+//! page's own site to another, so the engine puts it in a process of its own. A move of the person's pointer aimed at what the
 //! frame showed before is dropped; one on the page's own document still goes on.
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
@@ -16,7 +16,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use common::drive::open;
+use common::drive::{open, snapshot};
 use common::site::started;
 use purlis_browser_engine::drive::{MouseButton, MouseKind, PersonInput, Refusal};
 
@@ -40,8 +40,24 @@ fn a_move_aimed_at_a_frame_from_before_it_moved_to_another_site_is_dropped() {
         return;
     };
     open(&browser, "a-frame-that-moves-to-another-site.html");
+    // The frame is on the page's own site until the person's first key.
+    assert!(
+        snapshot(&browser).contains("The opened page"),
+        "the frame shows the page's own site's document: {}",
+        snapshot(&browser)
+    );
     browser.take_over();
     let aim = browser.aim().expect("a page is shown");
+    browser
+        .person_input(&PersonInput::Key {
+            aim: aim.clone(),
+            down: true,
+            key: "Escape".into(),
+            code: "Escape".into(),
+            key_code: 27,
+            modifiers: 0,
+        })
+        .expect("the key reaches the page");
     let until = Instant::now() + Duration::from_secs(10);
     while browser.aim().as_ref() == Some(&aim) {
         assert!(Instant::now() < until, "the frame's move was never known");
