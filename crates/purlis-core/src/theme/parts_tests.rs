@@ -46,8 +46,9 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
     let sheet = sheet_of(json!({ "button.root.corner-radius": "full" }));
     assert_eq!(
         sheet,
-        "@layer parts {\n  :where([data-scope=\"button\"][data-part=\"root\"], .ui-button) { \
-         border-radius: calc(var(--size-control) / 2); }\n}\n"
+        "@layer parts {\n  :where(.ui-button-sm) { --purlis-part-height: var(--size-chrome); }\n  \
+         :where([data-scope=\"button\"][data-part=\"root\"], .ui-button) { border-radius: \
+         9999px; }\n}\n"
     );
 }
 
@@ -77,7 +78,7 @@ fn a_key_names_a_variant_and_a_state_and_is_keyed_on_their_attributes() {
     ));
     assert!(
         sheet.contains(
-            ".ui-button.ui-button-primary:hover:not(:disabled, [aria-disabled=\"true\"])"
+            ".ui-button.ui-button-primary:not(.ui-button-danger, .ui-button-grants):hover:not(:disabled, [aria-disabled=\"true\"])"
         )
     );
     assert!(sheet.contains("background-color: var(--accent-base);"));
@@ -186,33 +187,99 @@ fn a_size_is_a_number_in_its_bound_or_a_geometry_token() {
     assert!(said[0].contains("a space.* token"), "{said:?}");
 }
 
+#[test]
+fn a_geometry_token_is_held_to_the_parts_bound_at_the_value_it_draws() {
+    // space.8 is 32 comfortable and 24 compact, past a gap's 16.
+    let refused = refusal(json!({ "button.root.gap": "space.8" }));
+    assert_eq!(
+        refused,
+        [
+            "parts.button.root.gap is space.8, 32 in comfortable, outside its bound: from 0 to 16",
+            "parts.button.root.gap is space.8, 24 in compact, outside its bound: from 0 to 16",
+        ]
+    );
+    for (key, token) in [
+        ("button.root.font-size", "font-size.xl"),
+        ("button.root.padding", "space.6"),
+    ] {
+        let refused = refusal(json!({ key: token }));
+        assert!(
+            refused.iter().any(|one| one.contains("outside its bound")),
+            "{key}: {refused:?}"
+        );
+    }
+    // The value a theme gives the token is the one held: Classic's strong is 600, inside.
+    let strong = load(&with_parts(
+        json!({ "button.root.font-weight": "font-weight.strong" }),
+    ));
+    assert!(!strong.refused, "{:?}", said(&strong));
+    let heavy = load(&json!({
+        "name": "Heavy", "extends": "purlis-classic",
+        "appearances": [{ "id": "dark", "tokens": { "font-weight.strong": 800 } }],
+        "parts": { "button.root.font-weight": "font-weight.strong" }
+    }));
+    assert!(heavy.refused);
+    assert!(
+        said(&heavy)[0].contains("800 in comfortable"),
+        "{:?}",
+        said(&heavy)
+    );
+}
+
+#[test]
+fn a_size_never_reaches_todays_small_or_wrapping_buttons() {
+    let sheet = sheet_of(json!({
+        "button.root.height": 32,
+        "button.root.fill": "control.hover",
+    }));
+    let sized = sheet
+        .lines()
+        .find(|line| line.contains("block-size"))
+        .expect("the height's rule");
+    assert!(
+        sized.contains(".ui-button:not(.ui-button-sm, .ui-button-row > .ui-button)"),
+        "{sized}"
+    );
+    assert!(!sized.contains("background-color"), "{sized}");
+    let coloured = sheet
+        .lines()
+        .find(|line| line.contains("background-color: var(--control-hover)"))
+        .expect("the fill's rule");
+    assert!(!coloured.contains(":not(.ui-button-sm"), "{coloured}");
+}
+
 // ---------------------------------------------------------------------------------------
 // Corners, heights and the room for words
 // ---------------------------------------------------------------------------------------
 
 #[test]
 fn a_corner_is_clamped_to_half_the_parts_height_as_it_is_drawn() {
+    let half = "calc(var(--purlis-part-height, var(--size-control)) / 2)";
     let sheet = sheet_of(json!({ "button.root.corner-radius": 12 }));
-    assert!(sheet.contains("border-radius: min(12px, calc(var(--size-control) / 2));"));
+    assert!(
+        sheet.contains(&format!("border-radius: min(12px, {half});")),
+        "{sheet}"
+    );
+    // Today's small button is clamped to its own height.
+    assert!(sheet.contains(":where(.ui-button-sm) { --purlis-part-height: var(--size-chrome); }"));
     let four = sheet_of(json!({ "button.root.corner-radius": ["full", 0, "radius.md", 4] }));
-    assert!(four.contains(
-        "border-radius: calc(var(--size-control) / 2) min(0px, calc(var(--size-control) / 2)) \
-         min(var(--radius-md), calc(var(--size-control) / 2)) \
-         min(4px, calc(var(--size-control) / 2));"
-    ));
+    assert!(four.contains(&format!(
+        "border-radius: 9999px min(0px, {half}) min(var(--radius-md), {half}) min(4px, {half});"
+    )));
+    // A variant's own height is the one a corner set for every variant is clamped to: the rule
+    // that sets the height sets the property the clamp reads.
     let tall = sheet_of(json!({
+        "button.root.primary.height": 32,
+        "button.root.corner-radius": 20,
+    }));
+    assert!(tall.contains(&format!("border-radius: min(20px, {half});")));
+    assert!(tall.contains("block-size: calc(32rem / 14); --purlis-part-height: calc(32rem / 14);"));
+    // `full` is the largest corner, a pill at any height.
+    let pill = sheet_of(json!({
         "button.root.primary.height": 32,
         "button.root.corner-radius": "full",
     }));
-    // The plain rule reaches every variant, at the family's height; the primary's own height is
-    // the one its corner is clamped to only where a rule names the primary.
-    assert!(tall.contains("border-radius: calc(var(--size-control) / 2);"));
-    assert!(tall.contains("block-size: calc(32rem / 14);"));
-    let own = sheet_of(json!({
-        "button.root.primary.height": 32,
-        "button.root.primary.corner-radius": "full",
-    }));
-    assert!(own.contains("border-radius: calc(calc(32rem / 14) / 2);"));
+    assert!(pill.contains("border-radius: 9999px;"));
     assert!(
         refusal(json!({ "button.root.corner-radius": [1, 2] }))[0].contains("one value or four")
     );
@@ -300,7 +367,7 @@ fn a_size_inside_a_state_is_refused_with_a_sentence_that_says_why() {
 fn a_property_left_unset_is_the_family_default() {
     // Only what the theme names is written: everything else is the window's own stylesheet.
     let sheet = sheet_of(json!({ "button.root.ghost.corner-radius": 4 }));
-    assert_eq!(sheet.lines().count(), 3);
+    assert_eq!(sheet.lines().count(), 4, "{sheet}");
     assert!(!sheet.contains("background-color") && !sheet.contains("color:"));
 }
 
@@ -316,7 +383,7 @@ fn a_child_theme_layers_its_parts_over_its_parents() {
     );
     assert!(!child.refused, "{:?}", said(&child));
     let sheet = parts::stylesheet(child.theme.first());
-    assert!(sheet.contains("border-radius: calc(var(--size-control) / 2);"));
+    assert!(sheet.contains("border-radius: 9999px;"));
     assert!(sheet.contains("gap: calc(2rem / 14);"));
 }
 
@@ -428,19 +495,152 @@ fn allow_never_takes_the_primary_look() {
         last_grants.contains("background-color: var(--control-base);"),
         "{last_grants}"
     );
-    // A theme that draws every button alike falls back for Allow, and for the primary when
-    // Allow's own default would still be its look.
-    let alike = load(&with_parts(json!({
-        "button.root.fill": "control.base",
-        "button.root.border-colour": "accent.base",
+    // Two looks are compared as they are drawn, not by the tokens' names: a token that draws
+    // the accent's colour is the accent.
+    let aliased = load(&with_parts(json!({
+        "button.root.primary.fill": "control.base",
+        "button.root.primary.border-colour": "focus.ring",
+        "button.root.primary.hover.fill": "control.hover",
     })));
-    let fallen = parts::fallen(alike.theme.first());
+    let fallen = parts::fallen(aliased.theme.first());
     assert!(
-        fallen.iter().any(|one| one.part == "button.root.grants"),
+        fallen.iter().any(|one| one.part == "button.root.primary"
+            && one.floor == "Allow never takes the primary look"),
         "{fallen:?}"
     );
-    let sheet = parts::stylesheet(alike.theme.first());
-    assert!(sheet.contains("[data-variant=\"primary\"]"), "{sheet}");
+}
+
+#[test]
+fn keep_blocked_never_takes_allows_edge() {
+    for parts in [
+        json!({ "button.root.border-colour": "accent.base" }),
+        json!({ "button.root.secondary.border-colour": "accent.base" }),
+        json!({ "button.root.fill": "control.base", "button.root.border-colour": "accent.base" }),
+    ] {
+        let loaded = load(&with_parts(parts.clone()));
+        let theme = loaded.theme.first();
+        let fallen = parts::fallen(theme);
+        assert!(
+            fallen.iter().any(|one| one.part == "button.root.secondary"
+                && one.floor == "Allow is distinguishable from Keep blocked by its edge"),
+            "{parts}: {fallen:?}"
+        );
+        // Keep blocked draws its own edge again, last, so it wins.
+        let sheet = parts::stylesheet(theme);
+        let keep_blocked = sheet
+            .lines()
+            .rfind(|line| line.contains("[data-variant=\"secondary\"], "))
+            .expect("Keep blocked's rule");
+        assert!(
+            keep_blocked.contains("border-color: var(--border-strong);"),
+            "{keep_blocked}"
+        );
+    }
+}
+
+#[test]
+fn allows_edge_is_drawn_whatever_else_the_theme_sets_on_it() {
+    let sheet = sheet_of(json!({
+        "button.root.border-width": 0,
+        "button.root.grants.fill": "control.hover",
+    }));
+    let edge = sheet
+        .lines()
+        .rfind(|line| line.contains("[data-variant=\"grants\"], ") && line.contains("border-width"))
+        .expect("Allow's edge is drawn back");
+    assert!(edge.contains("border-width: 1px;"), "{edge}");
+    assert!(sheet.find("border-width: 0px").unwrap() < sheet.find("border-width: 1px").unwrap());
+}
+
+#[test]
+fn danger_never_takes_the_primary_look() {
+    let loaded = load(&with_parts(json!({
+        "button.root.danger.fill": "accent.surface",
+        "button.root.danger.border-colour": "accent.base",
+        "button.root.danger.text": "text.primary",
+    })));
+    let theme = loaded.theme.first();
+    let fallen = parts::fallen(theme);
+    assert!(
+        fallen.iter().any(|one| one.part == "button.root.danger"
+            && one.floor == "danger is distinguishable from primary"),
+        "{fallen:?}"
+    );
+    let sheet = parts::stylesheet(theme);
+    let danger = sheet
+        .lines()
+        .rfind(|line| line.contains("[data-variant=\"danger\"], "))
+        .expect("danger's rule");
+    assert!(danger.contains("color: var(--danger-base);"), "{danger}");
+    // Its words are held apart from the accent too.
+    let accented = load(&with_parts(
+        json!({ "button.root.danger.text": "accent.base" }),
+    ));
+    let fallen = parts::fallen(accented.theme.first());
+    assert!(
+        fallen.iter().any(|one| one.part == "button.root.danger"),
+        "{fallen:?}"
+    );
+}
+
+#[test]
+fn the_consent_floors_hold_in_every_workspace_tint() {
+    // Keep blocked's edge is the accent at the opposite hue: apart from Allow's as written, and
+    // drawn alike in a workspace whose colour turns both to its own hue.
+    let accent = built_in("purlis-dark")
+        .unwrap()
+        .value("accent.base")
+        .to_owned();
+    let opposite = tint_hex(&accent, (hue_of(&accent).unwrap() + 180.0) % 360.0);
+    let loaded = load(&json!({
+        "name": "Tinted", "extends": "purlis-classic",
+        "appearances": [{ "id": "dark", "tokens": { "tab.active": opposite } }],
+        "tint": { "tokens": ["accent.base", "tab.active"] },
+        "parts": { "button.root.secondary.border-colour": "tab.active" }
+    }));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let theme = loaded.theme.first();
+    let as_written = tint::distance(
+        tint::oklab_of(theme.value("accent.base")).unwrap(),
+        tint::oklab_of(theme.value("tab.active")).unwrap(),
+    );
+    assert!(as_written >= ALLOW_APART, "{as_written}");
+    let fallen = parts::fallen(theme);
+    assert!(
+        fallen.iter().any(|one| one.part == "button.root.secondary"
+            && one.floor == "Allow is distinguishable from Keep blocked by its edge"),
+        "{fallen:?}"
+    );
+}
+
+#[test]
+fn a_button_with_a_consent_variants_class_draws_as_that_variant() {
+    let sheet = sheet_of(json!({ "button.root.primary.text": "text.secondary" }));
+    assert!(
+        sheet.contains(".ui-button.ui-button-primary:not(.ui-button-danger, .ui-button-grants)"),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn a_border_that_is_a_parts_only_edge_contrasts_3_to_1() {
+    let loaded = load(&with_parts(json!({
+        "button.root.ghost.border-colour": "surface.raised",
+    })));
+    let fallen = parts::fallen(loaded.theme.first());
+    assert!(
+        fallen.iter().any(|one| one.part == "button.root.ghost"
+            && one.floor == "the root's border contrasts 3:1 with its fill"),
+        "{fallen:?}"
+    );
+}
+
+#[test]
+fn a_disabled_control_is_not_held_to_the_floors() {
+    let loaded = load(&with_parts(
+        json!({ "button.root.disabled.text": "surface.base" }),
+    ));
+    assert!(parts::fallen(loaded.theme.first()).is_empty());
 }
 
 // ---------------------------------------------------------------------------------------
@@ -534,6 +734,11 @@ fn the_buttons_family_default_is_what_controls_css_draws() {
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
     assert_eq!(manifest["version"], 1);
+    for list in ["states", "properties"] {
+        for one in manifest[list].as_array().unwrap() {
+            assert_eq!(one["since"], 1, "{one}");
+        }
+    }
     assert_eq!(
         manifest["grammar"],
         "<family>.<part>[.<variant>][.<state>].<property>"
@@ -647,4 +852,40 @@ fn the_schema_completes_every_part_key_and_no_size_inside_a_state() {
             "{key}"
         );
     }
+}
+
+/// The digest of `purlis theme parts`' manifest at each version: a change to the manifest is a
+/// new version, with its digest added here.
+const MANIFEST_DIGESTS: &[(u32, &str)] = &[(
+    1,
+    "3c186a1690df39a4e8c20ad43f3713cb7e0149ab681e00970c0c21ac4daa8769",
+)];
+
+#[test]
+fn the_manifest_version_changes_with_the_manifest() {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(parts::manifest_json().to_string().as_bytes());
+    let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    let pinned = MANIFEST_DIGESTS
+        .iter()
+        .find(|(version, _)| *version == parts::VERSION)
+        .map(|(_, digest)| *digest);
+    assert_eq!(
+        pinned,
+        Some(hex.as_str()),
+        "the manifest changed: raise parts::VERSION, give what is new `since` that version, and \
+         add the new digest to MANIFEST_DIGESTS"
+    );
+}
+
+#[test]
+fn a_css_spelling_of_a_property_is_told_its_name() {
+    let loaded = load(&with_parts(
+        json!({ "button.root.border-color": "accent.base" }),
+    ));
+    assert!(
+        said(&loaded)[0].ends_with("so it was left out; did you mean `border-colour`?"),
+        "{:?}",
+        said(&loaded)
+    );
 }

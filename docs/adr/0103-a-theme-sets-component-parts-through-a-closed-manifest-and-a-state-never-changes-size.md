@@ -49,11 +49,13 @@ or bound refuses the theme, with a sentence that names the bound.
 
 ### 3. The bounds keep a control a control
 
-- **Corners** go from 0 to `full` on every part, and are clamped as they are drawn to half the
-  part's height, so `full` is a pill at any height. This lifts the `radius.*` caps for a part.
+- **Corners** go from 0 to `full` on every part that draws a box, and are clamped as they are
+  drawn to half the part's height, its variant's own where the theme sets one. `full` is the
+  largest corner, a pill at any height. This lifts the `radius.*` caps for a part.
 - **Padding, gap, font size and height** are bounded so a control stays at least 24px tall and
-  its words, padding and border fit in it, in both densities. A theme that breaks either is
-  refused with the density named.
+  its words, padding and border fit in it, in both densities. A geometry token is held to the
+  same bound at the value the theme draws it at. A theme that breaks any is refused with the
+  density named.
 
 ### 4. A state never changes size
 
@@ -81,19 +83,32 @@ properties keep their names, and parts are not Tailwind utilities.
 
 Until a family moves to its React Aria wrapper, its rules also reach today's control class (the
 button's `.ui-button`, each variant's class, and the native state), so a theme's parts draw on
-the window as it is. The family's ticket takes that interim selector away when it moves.
+the window as it is. On the class, a variant that is not consent never reaches a control that
+also carries a consent variant's class, and a size never reaches the small and wrapping
+controls, whose size their own classes keep. The family's ticket takes that interim selector
+away when it moves.
 
-### 7. Floors hold per part and per state, and the consent marks stay
+### 7. Floors hold per part and per state, and the consent floors hold for parts unchanged
 
 In every variant and state a theme's parts change, the engine measures each part's words on its
-fill at 4.5:1, and an icon at 3:1, on every surface the family is drawn on. A part that breaks one
+fill at 4.5:1, an icon at 3:1, and a border that is the part's only edge at 3:1, on every surface
+the family is drawn on. A disabled control is exempt, as WCAG has it. A part that breaks one
 draws its family default there, and the theme check says so.
 
-The consent parts keep their marks whatever a theme says. An answer that grants keeps its accent
-edge: a border width of 0 on it is refused, a theme that turns every border off still draws it,
-and its edge is held at 3:1 on its fill and apart from Keep blocked's. **Allow never takes the
-primary look**: where a theme would draw it as the primary, it draws its own default. Its lock is
-the window's markup, and no property reaches it.
+**ADR 0097 §6 holds for parts unchanged.** The consent floors are held whatever part of a family
+the theme changes, as the theme is written and in every workspace tint, custom colours included,
+and two looks are compared by the colours they draw, never by the tokens' names:
+
+- an answer that grants keeps its accent edge: a border width of 0 on it is refused, a theme
+  that turns every border off still draws it, and its edge contrasts 3:1 with its fill;
+- Allow is distinguishable from Keep blocked by its edge;
+- **Allow never takes the primary look**;
+- danger is distinguishable from primary: its words stay apart from the accent, and its look
+  is never the primary's.
+
+A consent variant that breaks one draws its own default there; where that is not enough, so
+does the variant it is held apart from. Allow's lock is the window's markup, and no property
+reaches it.
 
 ## What was rejected
 

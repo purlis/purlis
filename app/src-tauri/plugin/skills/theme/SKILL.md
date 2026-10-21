@@ -147,9 +147,12 @@ tabs', the closer's and the gear's among them, is 2px whatever `focus-ring.*` sa
 you write one. A part's colour names a semantic token (`accent.base`), never a hex or a palette
 name. Inside a state (`hover`, `pressed`, `selected`, `focused`, `disabled`, `open`) only `fill`,
 `text`, `border-colour` and `shadow` may be set: a state never changes size, and the theme is
-refused if it tries. A button stays at least 24px tall with its words fitting, in both densities.
-Allow (`grants`) keeps its accent edge and never takes the primary look. Only the button has parts
-so far; the note above still holds for tabs and rows.
+refused if it tries. A button stays at least 24px tall with its words fitting, in both densities,
+and a geometry token is held to the same bounds at the value the theme draws it at. Whatever the
+theme changes, Allow (`grants`) keeps its accent edge, stays apart from Keep blocked and never
+takes the primary look, and danger never takes the primary look: a look that would is drawn as
+the family default. Only the button has parts so far; the note above still holds for tabs and
+rows.
 
 Done when the file is JSON with every value hex, a palette name, or a token's own type, and
 every shape and size inside its bounds.

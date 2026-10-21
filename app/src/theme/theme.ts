@@ -874,6 +874,8 @@ function drawParts(theme: Theme, document: Document): void {
     if (drawn.textContent !== sheet) drawn.textContent = sheet;
     return;
   }
+  // Appended after the bundled `styles.css`, whose `@layer` statement already named `parts`
+  // between `components` and `utilities`: the order is the first statement's, not this one's.
   const style = document.createElement("style");
   style.id = PARTS_STYLE;
   style.textContent = sheet;

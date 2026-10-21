@@ -1173,7 +1173,8 @@ _Avoid_: setting (that is the person's, for every theme), variant, preference
 A named, stable element of a component family, such as the button's root, label or icon, that a
 theme may set on its own: its fill, border, corners or size, within bounds, keyed
 `<family>.<part>[.<variant>][.<state>].<property>`. Each family declares its parts once, in the
-window's wrapper and in the theme engine's closed, versioned manifest (ADR 0103).
+window's wrapper and in the theme engine's closed, versioned manifest (ADR 0103). The button's
+`grants` variant is the look of an answer that grants (an Allow, an Accept), not a grant itself.
 _Avoid_: part (bare, which is plain composition here), slot, sub-component, element
 
 **Palette** (of a theme):
