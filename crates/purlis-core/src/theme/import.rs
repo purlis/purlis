@@ -471,8 +471,10 @@ const VSCODE: Table = &[
     ("text.secondary", &["descriptionForeground"]),
     (
         "text.muted",
-        &["disabledForeground", "editorLineNumber.foreground"],
+        &["editorLineNumber.foreground", "disabledForeground"],
     ),
+    ("text.quiet", &["editorLineNumber.foreground"]),
+    ("text.faint", &["disabledForeground"]),
     (
         "border.subtle",
         &["panel.border", "sideBar.border", "editorGroup.border"],
@@ -666,6 +668,7 @@ macro_rules! base16_rows {
             ("text.primary", &["base05"]),
             ("text.secondary", &["base04"]),
             ("text.muted", &["base03"]),
+            ("text.faint", &["base03"]),
             ("border.subtle", &["base02"]),
             ("border.strong", &["base03"]),
             ("accent.base", &["base0d"]),
@@ -1014,6 +1017,8 @@ const BASE16_ANSI_HUES: &[&str] = &[
 ///   scale that the terminal shows;
 /// - the muted words, comments and bright black (`base03`) and the secondary words and
 ///   placeholder (`base04`) take the nearest step toward `base05` that reads;
+/// - faint, the marks (`base03`, the styling guide's invisibles), takes the nearest step toward
+///   `base05` that reads as a mark, so it stays fainter than the muted words;
 /// - each hue ([`HUES`], and the ANSI colours it fills) takes the nearest step toward `base05`
 ///   that reads, and stays as the scheme wrote it when it reads already.
 const BASE16_RECIPES: Recipes = &[
@@ -1030,6 +1035,7 @@ const BASE16_RECIPES: Recipes = &[
         Recipe::Toward(&["base01", "base02", "base03"]),
     ),
     ("text.muted", Recipe::Toward(&["base04", "base05"])),
+    ("text.faint", Recipe::Toward(&["base04", "base05"])),
     ("syntax.comment", Recipe::Toward(&["base04", "base05"])),
     (
         "terminal.ansi.bright-black",
