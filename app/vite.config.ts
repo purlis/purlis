@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { generate, NOTICES_FILE, render } from "../tools/third-party-notices.mjs";
+import { stories } from "./.storybook/vitest.project";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -96,8 +97,20 @@ export default defineConfig(() => ({
       },
     },
   },
+  // Two kinds of test (#2901): `unit`, every `*.test.ts(x)` in jsdom (`npm test`), and
+  // `stories`, every story run in real Chromium and WebKit (`npm run test:stories`,
+  // `.storybook/vitest.project.ts`, `docs/component-stories.md`).
   test: {
-    environment: "jsdom",
-    setupFiles: ["./src/test-setup.ts"],
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          environment: "jsdom",
+          setupFiles: ["./src/test-setup.ts"],
+        },
+      },
+      stories(),
+    ],
   },
 }));

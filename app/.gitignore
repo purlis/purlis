@@ -21,3 +21,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Storybook and the stories project (docs/component-stories.md): a static build, and the
+# pictures a failed screenshot comparison keeps.
+storybook-static
+.vitest-attachments
