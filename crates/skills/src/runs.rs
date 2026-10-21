@@ -32,17 +32,21 @@ pub enum StartedBy {
     /// The chat read a known `SKILL.md`: how a chat briefed on its skills starts one, as the
     /// chat's adapter reads it.
     Read,
+    /// The person picked it in Use skill…, which typed it into the chat, and sent that prompt
+    /// (SK-12): the run opens as the prompt does.
+    UseSkill,
     /// A start a newer purlis wrote, which this one does not know. It never opens a run.
     #[serde(other)]
     Unknown,
 }
 
 impl StartedBy {
-    /// The word a run records: `skill-tool`, `read` or `unknown`.
+    /// The word a run records: `skill-tool`, `read`, `use-skill` or `unknown`.
     pub fn word(self) -> &'static str {
         match self {
             Self::SkillTool => "skill-tool",
             Self::Read => "read",
+            Self::UseSkill => "use-skill",
             Self::Unknown => "unknown",
         }
     }
@@ -52,6 +56,7 @@ impl StartedBy {
         Some(match word {
             "skill-tool" => Self::SkillTool,
             "read" => Self::Read,
+            "use-skill" => Self::UseSkill,
             _ => return None,
         })
     }

@@ -5,7 +5,9 @@
 //! the whole config opencode reads from `OPENCODE_CONFIG_CONTENT` ([`crate::opencode`] has the
 //! measurements).
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
+use super::adapter::{
+    HarnessAdapter, RuleFile, Sandbox, SkillInvoked, SkillStart, input_text, slash_with_words,
+};
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
@@ -130,6 +132,21 @@ impl HarnessAdapter for Opencode {
             .then(|| input_text(input, "name"))
             .flatten()
             .map(|skill| SkillStart::Named(skill.to_owned()))
+    }
+
+    /// **opencode 1.18.33** (research of 2026-10-20, `session/prompt.ts`): every skill is also
+    /// a slash command, `/<name>`, by its own name; what follows is split into words, a quoted
+    /// run being one (`"[^"]*"|'[^']*'|[^\s"']+`), for `$1..$n`, and `$ARGUMENTS` is the raw line.
+    /// So each value is one quoted word, in the declared order. opencode cannot be typed into
+    /// ([`Harness::ready_to_type`]): Use skill… copies this for the person to paste.
+    fn skill_invocation(&self, skill: &SkillInvoked<'_>) -> String {
+        slash_with_words(&format!("/{}", skill.name), skill.given)
+    }
+
+    /// opencode 1.18.33 puts every skill in its system prompt with no limit at all, so purlis's
+    /// budget is the only one its chats have (ADR 0102 §1), and no description is cut.
+    fn skill_budget(&self) -> crate::skills::Budget {
+        super::SKILL_BUDGET
     }
 
     /// `permission.bash` of the project's `opencode.json`, which holds command globs: a

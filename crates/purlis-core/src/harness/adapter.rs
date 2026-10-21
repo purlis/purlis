@@ -138,6 +138,70 @@ pub trait HarnessAdapter: Sync {
         let _ = (tool, input);
         None
     }
+
+    /// **The name this harness knows a skill of the chat's set by** (SK-12): what its own Skill
+    /// tool and its picker call it, and what a run of it records. The default is the skill's
+    /// own name, for a harness that does not namespace them.
+    fn skill_name(&self, name: &str, origin: crate::skills::Origin) -> String {
+        let _ = origin;
+        name.to_owned()
+    }
+
+    /// **The text that starts `skill` in this harness's own syntax** (SK-12, decision 40), with
+    /// the arguments the person gave in its own syntax too (decision 61): what Use skill… types
+    /// into the chat, unsent. Pure, and one line: nothing here may hold a line break. Each
+    /// adapter says which version it measured and how.
+    fn skill_invocation(&self, skill: &SkillInvoked<'_>) -> String;
+
+    /// **This harness's skill budget** (SK-12, ADR 0102 §1): how many skills, and how many
+    /// characters of their descriptions, one chat's listing may hold, set below the harness's
+    /// own limit so it never has to cut anything itself. No default: each adapter says its
+    /// harness's limit.
+    fn skill_budget(&self) -> crate::skills::Budget;
+}
+
+/// A skill of a chat's set, as Use skill… starts it: by its own name, from its level, with what
+/// the person gave its arguments ([`HarnessAdapter::skill_invocation`]).
+#[derive(Debug, Clone, Copy)]
+pub struct SkillInvoked<'a> {
+    /// Its frontmatter's `name`.
+    pub name: &'a str,
+    pub origin: crate::skills::Origin,
+    pub given: &'a crate::skills::Given,
+}
+
+/// **`value` as one shell-style word**, as Claude Code's `$N` and opencode's `$1..$n` split a
+/// skill's arguments: as it is where it holds no space or quote, in double quotes where it holds
+/// a space or a single quote, in single quotes where it holds a double quote, and empty as `""`
+/// so it keeps its place. A value with both quotes has its double quotes made single, the one
+/// change made to what was typed.
+pub(crate) fn shell_word(value: &str) -> String {
+    let plain = |c: char| !(c.is_whitespace() || c == '"' || c == '\'');
+    if value.is_empty() {
+        "\"\"".to_owned()
+    } else if value.chars().all(plain) {
+        value.to_owned()
+    } else if !value.contains('"') {
+        format!("\"{value}\"")
+    } else if !value.contains('\'') {
+        format!("'{value}'")
+    } else {
+        format!("\"{}\"", value.replace('"', "'"))
+    }
+}
+
+/// `head` and what `given` gives, as shell-style words after it: what Claude Code's and
+/// opencode's slash commands take. A one-line value is handed over as it was typed.
+pub(crate) fn slash_with_words(head: &str, given: &crate::skills::Given) -> String {
+    use crate::skills::Given;
+    match given {
+        Given::Nothing => head.to_owned(),
+        Given::Raw(line) => format!("{head} {line}"),
+        Given::Named(values) => std::iter::once(head.to_owned())
+            .chain(values.iter().map(|(_, value)| shell_word(value)))
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
 }
 
 /// What a finished tool call says about a skill starting, in a harness's own words (SK-3): the
@@ -224,3 +288,6 @@ pub(super) fn not_compiled_for(harness: Harness) -> String {
         harness.title()
     )
 }
+
+#[cfg(test)]
+mod tests;

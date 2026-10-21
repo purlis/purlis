@@ -4,7 +4,9 @@
 //! Claude Code's adapter (ADR 0073, FD-13): the bundled plugin, loaded for one chat alone, with
 //! the session's own `--settings`.
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
+use super::adapter::{
+    HarnessAdapter, RuleFile, Sandbox, SkillInvoked, SkillStart, input_text, slash_with_words,
+};
 use super::{Harness, Kit, StateHooks, words};
 use crate::sandbox::Form;
 
@@ -166,6 +168,38 @@ impl HarnessAdapter for ClaudeCode {
             .then(|| input_text(input, "skill"))
             .flatten()
             .map(|skill| SkillStart::Named(skill.to_owned()))
+    }
+
+    /// Every skill of a chat's set reaches Claude Code as a plugin's (ADR 0063 as amended
+    /// 2026-10-20): a built-in one as purlis's plugin's, `purlis:<name>`, and one of the plane's
+    /// as the folder of links' plugin's, `skills:<name>` ([`crate::skills::LINKED_PLUGIN`]). The
+    /// namespaced name is the one that cannot be taken by a person's own skill of that name.
+    fn skill_name(&self, name: &str, origin: crate::skills::Origin) -> String {
+        match origin {
+            crate::skills::Origin::BuiltIn => {
+                format!("{}{name}", crate::names::SKILL_NAMESPACE.write)
+            }
+            _ => format!("{}:{name}", crate::skills::LINKED_PLUGIN),
+        }
+    }
+
+    /// **Claude Code 2.1.304** (research of 2026-10-20, `skills.md` "Invoke a skill" and a
+    /// measured `-p` run): `/<plugin>:<name>` at the start of the message runs the skill, and
+    /// what follows is its arguments, `$ARGUMENTS` raw and `$N` (and each `arguments:` name) split
+    /// as shell words, quotes kept. So each value is one shell word, in the declared order.
+    fn skill_invocation(&self, skill: &SkillInvoked<'_>) -> String {
+        let head = format!("/{}", self.skill_name(skill.name, skill.origin));
+        slash_with_words(&head, skill.given)
+    }
+
+    /// Claude Code lists skills within 1% of the context window (`skillListingBudgetFraction`),
+    /// about 8,000 characters on a 200k-token window, cutting each description at 1,536
+    /// characters and dropping descriptions past the budget (2.1.304, `settings-reference.md`).
+    fn skill_budget(&self) -> crate::skills::Budget {
+        crate::skills::Budget {
+            per_description: Some(1_536),
+            ..super::SKILL_BUDGET
+        }
     }
 
     /// `permissions.<bucket>` of `.claude/settings.json`, or with `local` of

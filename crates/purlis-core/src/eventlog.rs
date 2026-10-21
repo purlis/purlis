@@ -1710,8 +1710,9 @@ impl Recorder {
         {
             who.attributes.conversation = Some(id.to_owned());
         }
+        let persona = top.attributes.persona.clone();
         let under = self.under(top, report.agent.as_deref())?;
-        self.skills_heard_of_a_report(plane, &under, report)?;
+        self.skills_heard_of_a_report(plane, &under, persona.as_deref(), report)?;
         let mut body = serde_json::json!({});
         if report.event == crate::state::Event::SessionStart {
             body["started"] = started(report.detail.started).into();
@@ -2317,6 +2318,18 @@ impl Recorder {
         else {
             return Ok(());
         };
+        self.skill_started(plane, under, persona, &opened)
+    }
+
+    /// Says that skill run `opened` began, with a `skill.started`, and logs it in the plane's
+    /// skill log as it opens ([`crate::skilluse::started`]).
+    fn skill_started(
+        &mut self,
+        plane: &Path,
+        under: &Under,
+        persona: Option<&str>,
+        opened: &purlis_skills::runs::Open,
+    ) -> io::Result<()> {
         let mut body = serde_json::json!({ "started_by": opened.started_by });
         if let Some(parent) = &opened.parent {
             body["parent_skill_run"] = parent.as_str().into();
@@ -2324,7 +2337,7 @@ impl Recorder {
         self.append(under, "skill.started", body)?;
         crate::skilluse::started(
             plane,
-            &(&opened).into(),
+            &opened.into(),
             persona.filter(|persona| *persona != NONE && *persona != UNKNOWN),
             chrono::Utc::now(),
             &self.log.device,
@@ -2334,18 +2347,45 @@ impl Recorder {
 
     /// What a state hook does to the skill runs of its chat's run (SK-3): the turn's end, a new
     /// prompt and the session's end close them, each before the hook's own event, which is
-    /// outside them; a question put to the person is counted.
+    /// outside them; a question put to the person is counted. A new prompt then opens the run
+    /// of a skill Use skill… typed into it (SK-12), said before the prompt's own event, which is
+    /// inside it.
     fn skills_heard_of_a_report(
         &mut self,
         plane: &Path,
         under: &Under,
+        persona: Option<&str>,
         report: &crate::hookwire::Report,
     ) -> io::Result<()> {
         if under.parent.is_some() {
             return Ok(());
         }
-        let closed = self.skills.report(&under.run, report, now_ms());
-        self.skills_closed(plane, under, closed)
+        let chat = under.chat.clone();
+        let reported = self
+            .skills
+            .report(&under.run, report, now_ms(), || tokens_of(plane, &chat));
+        self.skills_closed(plane, under, reported.closed)?;
+        match reported.opened {
+            Some(opened) => self.skill_started(plane, under, persona, &opened),
+            None => Ok(()),
+        }
+    }
+
+    /// **Use skill… typed `skill` into chat `number` of `plane`**, unsent (SK-12): its run, `run`,
+    /// opens as the chat's next prompt does ([`crate::skillspan::Tracker::typed`]). Nothing is
+    /// written now; a chat this writer knows no run of holds nothing.
+    pub fn skill_typed(&mut self, plane: &Path, number: u32, skill: &str, run: &str) {
+        let Some(who) = self.chats.get(&(plane.to_path_buf(), number)) else {
+            return;
+        };
+        let key = who.run.clone();
+        self.skills.typed(
+            &key,
+            crate::skillspan::Typed {
+                skill: skill.to_owned(),
+                run: run.to_owned(),
+            },
+        );
     }
 
     /// Closes every skill run open in `under`'s chat run as `ended`.

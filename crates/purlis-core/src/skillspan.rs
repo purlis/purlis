@@ -11,6 +11,13 @@
 //! the session's end closes them ([`purlis_skills::runs::Spans`]). A sub-agent's own stop closes
 //! nothing. Runs are kept by a key the caller chooses: the event log's writer keys them by the
 //! chat's run, the window by the chat's number.
+//!
+//! **A skill Use skill… typed** (SK-12, #2775) is held for its chat ([`Tracker::typed`]) and its
+//! run opens as the chat's next prompt does, started by [`StartedBy::UseSkill`]: what the person
+//! sends is the prompt the skill was typed into. The window types it without sending it, so a
+//! prompt is the only moment it can start; a typed skill no prompt follows goes with its chat.
+
+use std::collections::HashMap;
 
 use purlis_skills::runs::{Call, Closed, Ended, Heard, Open, Spans, Start, StartedBy};
 
@@ -21,6 +28,27 @@ const FAILED: &str = "posttoolusefailure";
 #[derive(Debug, Default)]
 pub struct Tracker {
     spans: Spans,
+    /// The skill Use skill… typed into each chat, by the same key, until its prompt is sent.
+    typed: HashMap<String, Typed>,
+}
+
+/// A skill Use skill… typed into a chat, unsent: the run its prompt opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Typed {
+    /// The skill, by the name the chat's harness knows it by.
+    pub skill: String,
+    /// The run's id: a ULID the window minted as it typed it, so the event log and the window
+    /// name one run.
+    pub run: String,
+}
+
+/// What a state hook did to a chat's skill runs ([`Tracker::report`]).
+#[derive(Debug, Default)]
+pub struct Reported {
+    /// Every run it closed, innermost first.
+    pub closed: Vec<Closed>,
+    /// The run a prompt opened, for the skill Use skill… typed into it.
+    pub opened: Option<Open>,
 }
 
 impl Tracker {
@@ -54,25 +82,48 @@ impl Tracker {
         opened
     }
 
+    /// **Use skill… typed `typed` into the chat keyed `key`**, unsent: its run opens at the chat's
+    /// next prompt ([`Self::report`]). A second typing before that prompt replaces the first,
+    /// as its text did; one with no name, or an id that is no ULID, holds nothing.
+    pub fn typed(&mut self, key: &str, typed: Typed) {
+        let named = typed.skill.trim();
+        if named.is_empty() || ulid::Ulid::from_string(&typed.run).is_err() {
+            return;
+        }
+        let skill = crate::shown::readable(named, crate::shown::DISPLAY_LIMIT);
+        self.typed.insert(
+            key.to_owned(),
+            Typed {
+                skill,
+                run: typed.run,
+            },
+        );
+    }
+
     /// **State hook `report` was heard** in the chat keyed `key`, at `at_ms`: the turn's end, a
     /// new prompt and the session's end close every run open there, innermost first, and are
-    /// answered; a question the chat put to the person is counted. A sub-agent's report moves
-    /// nothing.
+    /// answered; a question the chat put to the person is counted. A new prompt then opens the
+    /// run of the skill Use skill… typed into it, where one was, with `tokens` asked only then;
+    /// the session's end drops it. A sub-agent's report moves nothing.
     pub fn report(
         &mut self,
         key: &str,
         report: &crate::hookwire::Report,
         at_ms: u64,
-    ) -> Vec<Closed> {
+        tokens: impl FnOnce() -> Option<u64>,
+    ) -> Reported {
         use crate::harness::model::Said;
         use crate::state::Event;
         if report.agent.is_some() {
-            return Vec::new();
+            return Reported::default();
         }
         let ended = match report.event {
             Event::Stop => Ended::Turn,
             Event::UserPromptSubmit => Ended::Interrupted,
-            Event::SessionEnd => Ended::Session,
+            Event::SessionEnd => {
+                self.typed.remove(key);
+                Ended::Session
+            }
             _ => {
                 if matches!(report.event.said(report.detail), Said::Ask(_)) {
                     self.spans.heard(
@@ -83,15 +134,34 @@ impl Tracker {
                         },
                     );
                 }
-                return Vec::new();
+                return Reported::default();
             }
         };
-        self.spans.close(key, ended, at_ms)
+        let closed = self.spans.close(key, ended, at_ms);
+        let opened = match report.event {
+            Event::UserPromptSubmit => self.typed.remove(key).and_then(|typed| {
+                self.spans
+                    .open(
+                        key,
+                        Start {
+                            skill: &typed.skill,
+                            id: &typed.run,
+                            started_by: StartedBy::UseSkill,
+                            at_ms,
+                            tokens: tokens(),
+                        },
+                    )
+                    .cloned()
+            }),
+            _ => None,
+        };
+        Reported { closed, opened }
     }
 
     /// Closes every run open in the chat keyed `key`, as `ended` at `at_ms`: its run or its
-    /// window went away under them.
+    /// window went away under them, and a skill typed into it with them.
     pub fn close(&mut self, key: &str, ended: Ended, at_ms: u64) -> Vec<Closed> {
+        self.typed.remove(key);
         self.spans.close(key, ended, at_ms)
     }
 
@@ -131,3 +201,6 @@ impl Tracker {
             .cloned()
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -3420,3 +3420,68 @@ fn a_refused_skill_call_or_a_claim_that_does_not_check_opens_no_run() {
             .all(|e| e.kind != "skill.started")
     );
 }
+
+#[test]
+fn a_skill_use_skill_typed_opens_its_run_as_the_prompt_is_sent_and_a_codex_read_of_it_is_the_same_run()
+ {
+    use crate::state::Event::{Stop, UserPromptSubmit};
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    // The chat is at its prompt: its run is known, and its last turn ended.
+    host.report(plane.path(), &report(3, Stop), Followed::No)
+        .unwrap();
+    let typed = crate::reopen::mint();
+    let written = host
+        .apply(super::Entry::SkillTyped {
+            plane: plane.path().to_path_buf(),
+            number: 3,
+            skill: "deploy".to_owned(),
+            run: typed.clone(),
+        })
+        .unwrap();
+    assert!(written.is_empty(), "nothing is written while it is unsent");
+
+    host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    // Codex reads the skill it was asked for: inside the same run, never a second one.
+    host.tool(
+        plane.path(),
+        &codex_read(3, "call_1", &crate::reopen::mint()),
+        Instant::now(),
+    )
+    .unwrap();
+    host.report(plane.path(), &report(3, Stop), Followed::No)
+        .unwrap();
+
+    let events = read(dir.path()).unwrap();
+    let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            "run.started",
+            "hook.stop",
+            "skill.started",
+            "hook.userpromptsubmit",
+            "hook.posttooluse-blocked",
+            "skill.ended",
+            "hook.stop",
+        ],
+        "{events:#?}"
+    );
+    assert_eq!(events[2].body["started_by"], "use-skill");
+    assert_eq!(
+        events[3].body["skill_run"],
+        typed.as_str(),
+        "the prompt is inside it"
+    );
+    let runs = crate::skilluse::runs(plane.path());
+    assert_eq!(runs.len(), 1, "{runs:#?}");
+    assert_eq!(runs[0].id.as_deref(), Some(typed.as_str()));
+    assert_eq!(
+        runs[0].started_by,
+        Some(purlis_skills::runs::StartedBy::UseSkill)
+    );
+    assert_eq!(runs[0].end.as_ref().map(|end| end.tool_calls), Some(1));
+}

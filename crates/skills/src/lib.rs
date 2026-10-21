@@ -27,11 +27,15 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod budget;
+mod declared;
 mod grant;
 mod read;
 pub mod runs;
 mod share;
 
+pub use budget::{Budget, Over, Spent};
+pub use declared::{Declared, Given, declared, declared_at, declared_in};
 pub use grant::{Grant, grant_of, set_grant};
 pub use read::{DIR_IN_BUNDLE, frontmatter, in_bundle, listing, read};
 pub use share::{named, share};

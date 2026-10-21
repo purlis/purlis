@@ -14,9 +14,9 @@
 use std::path::{Path, PathBuf};
 
 pub use purlis_skills::{
-    Chat, DIR_IN_BUNDLE, Effective, Grant, HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing,
-    Origin, PROJECT_DIR, Reason, Route, Skill, SkillSet, grant_of, in_bundle, level_dir,
-    level_shown, listing, named, read, set_grant, share,
+    Budget, Chat, DIR_IN_BUNDLE, Declared, Effective, Given, Grant, HarnessSkills, LOCAL_DIR,
+    LeftOut, Machine, Missing, Origin, Over, PROJECT_DIR, Reason, Route, Skill, SkillSet, Spent,
+    declared, grant_of, in_bundle, level_dir, level_shown, listing, named, read, set_grant, share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -611,6 +611,111 @@ pub fn readable_by_a_briefed_chat(root: &Path, env: &dyn Fn(&str) -> Option<Stri
         skills.extend(read(&root.join(purlis_skills::PROJECT_DIR)));
     }
     skills
+}
+
+/// **A running chat, as Use skill… asks for its skills** (SK-12, #2775): where it works, as whom,
+/// on which harness, and whether the `skill-studio` flag lets the plane's skills into its set.
+#[derive(Debug, Clone, Copy)]
+pub struct Running<'a> {
+    /// The plane's root.
+    pub plane: &'a Path,
+    /// The workspace it works in, or `None` at the plane root.
+    pub workspace: Option<&'a str>,
+    /// The persona it was started as.
+    pub persona: Option<&'a str>,
+    pub harness: Harness,
+    /// The built-in skills' directory, where the app found it.
+    pub built_in: Option<&'a Path>,
+    /// Whether its set holds the plane's skills: the flag, as at a chat's start.
+    pub plane_skills: bool,
+}
+
+/// One skill Use skill… offers a chat: one of its set, with what it declares and the name its
+/// harness knows it by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Offered {
+    pub effective: Effective,
+    pub declared: Declared,
+    /// The name the chat's harness knows it by, which a run of it records
+    /// ([`Harness::skill_name`]).
+    pub known_as: String,
+}
+
+/// **What Use skill… offers a chat, and its skill budget** (SK-12): every skill of its set, the
+/// manual-only ones among them, by name, and what the set spends of its harness's budget.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatSkills {
+    pub offered: Vec<Offered>,
+    pub spent: Spent,
+}
+
+/// **The skills of chat `chat`, as Use skill… offers them** (SK-12): exactly its set, worked out
+/// as its start worked it out ([`for_chat`]), each with what it declares, and the budget the set
+/// spends on its harness, manual-only skills costing nothing.
+pub fn of_a_chat(chat: &Running<'_>) -> ChatSkills {
+    let at = PlaneSkills {
+        plane: chat.plane,
+        workspace: chat.workspace,
+        linked: None,
+    };
+    let set = ask(
+        chat.built_in,
+        chat.plane_skills.then_some(at),
+        chat.persona,
+        chat.harness.skills(),
+    );
+    let offered: Vec<Offered> = set
+        .effective
+        .into_iter()
+        .map(|effective| Offered {
+            declared: declared(&effective.skill),
+            known_as: chat
+                .harness
+                .skill_name(&effective.skill.name, effective.origin),
+            effective,
+        })
+        .collect();
+    let spent = purlis_skills::budget::spent(
+        offered
+            .iter()
+            .map(|one| (&one.effective.skill, &one.declared)),
+        chat.harness.skill_budget(),
+    );
+    ChatSkills { offered, spent }
+}
+
+/// What Use skill… types into a chat to start one of its skills ([`ChatSkills::typed`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Typing {
+    /// The text, in the chat's harness's syntax, on one line.
+    pub text: String,
+    /// The skill, by the name the harness knows it by: what its run records.
+    pub known_as: String,
+}
+
+impl ChatSkills {
+    /// **The text that starts skill `name` of this chat's set** on `harness`, with `values` for
+    /// its arguments in the order it declares them ([`Given::of`]), or why there is none: a
+    /// skill that is not in the chat's set is never typed.
+    pub fn typed(&self, harness: Harness, name: &str, values: &[String]) -> Result<Typing, String> {
+        let offered = self
+            .offered
+            .iter()
+            .find(|one| one.effective.skill.name == name)
+            .ok_or_else(|| {
+                format!("{name} is not one of this chat's skills, so nothing was typed")
+            })?;
+        let given = Given::of(&offered.declared, values);
+        let text = harness.skill_invocation(&crate::harness::SkillInvoked {
+            name: &offered.effective.skill.name,
+            origin: offered.effective.origin,
+            given: &given,
+        });
+        Ok(Typing {
+            text,
+            known_as: offered.known_as.clone(),
+        })
+    }
 }
 
 /// One ask of purlis-skills, from a directory of built-in skills, the plane with the workspace
