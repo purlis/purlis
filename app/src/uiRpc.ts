@@ -1251,6 +1251,7 @@ export const commands = {
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
+	projectsNotHeld: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	installUpdate: __WINDOW_ONLY,
@@ -7082,6 +7083,21 @@ export type ProjectFolder = {
 export type ProjectHarnesses = {
 	declared: DeclaredHarness[],
 	refused: RefusedHarness[],
+};
+
+/**  One project the runner its chats run on would not hold, as the Pools group draws it. */
+export type ProjectNotHeld = {
+	/**  Where it is on this machine. */
+	root: string,
+	/**  What the window calls it: its folder's name. */
+	name: string,
+	/**  What the runner said, as plain text, at most [`MOST_SAID`] characters. */
+	why: string,
+	/**
+	 *  The pools its workspaces run their chats on, as this machine keeps them: the row the
+	 *  mark is drawn on where there is one.
+	 */
+	pools: string[],
 };
 
 /**  Both files. */

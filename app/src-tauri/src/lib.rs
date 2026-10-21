@@ -95,6 +95,7 @@ mod memories;
 mod nativewindow;
 mod navguard;
 mod network;
+mod notheld;
 mod off_the_main_thread;
 mod onboarding;
 mod opener;
@@ -2833,6 +2834,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<smartclose::SmartClosing>()
         // What `chats-reconnecting` carries (#2496).
         .typ::<reconnecting::ChatsReconnecting>()
+        // What `projects_not_held` answers, read again on `projects-not-held` (#2846).
+        .typ::<notheld::ProjectNotHeld>()
         // What `chat-stop` carries (#1448).
         .typ::<stopping::ChatStop>()
         // What `activity-line` carries (#1495).
@@ -4095,6 +4098,14 @@ pub fn run() {
             // A Docker pool's runner follows this version, side by side, after an update
             // (#2749): off where the updater is.
             poolfollow::watch(app.handle());
+            // A project a runner would not hold again is marked in the Pools group (#2846):
+            // the window is told each time those change.
+            notheld::telling({
+                let app = app.handle().clone();
+                move || {
+                    let _ = app.emit(notheld::EVENT, ());
+                }
+            });
             // This machine's sandbox policy, read again now and then (#1431): a policy that
             // lands is told to the window, which asks again which chats it leaves behind.
             sandboxing::watch_policy(app.handle().clone());
