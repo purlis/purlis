@@ -20,7 +20,9 @@
 //! folder, and puts in place only a theme it draws: one theme folder, in the machine level's
 //! `themes/` unless `--into` names another, never over one that is there without `--force`.
 //! `export` writes one zip of a theme folder that `import` gives back file for file; a level's
-//! folder is named by its id (#2612) and found by the engine at that level alone. A staged import
+//! folder is named by its id (#2612) and found by the engine at that level alone. With
+//! `--kind design-tokens` (#2926) both speak the W3C design-tokens format 2025.10 instead, which
+//! `import` reads back to the same folder. A staged import
 //! is read only to check (#2587): none of its fonts is left registered once it moves or goes.
 //!
 //! **Where a theme comes from, and its level** (#2518): built in (Purlis Classic, `purlis-classic`,
@@ -136,16 +138,18 @@ pub enum ThemeCommand {
     },
     /// Make a theme folder from a theme you already have: a VS Code colour theme (JSON with
     /// comments), a base16 or base24 scheme (YAML or JSON), an iTerm2 colour preset
-    /// (.itermcolors), a Ghostty theme, or a theme folder's zip from `purlis theme export`.
-    /// Each kind goes through a fixed mapping table (`purlis docs show themes`); every key of
-    /// the source no token takes is listed, and the new theme's check is shown. It never
+    /// (.itermcolors), a Ghostty theme, a theme folder's zip from `purlis theme export`, or a
+    /// W3C design-tokens file (format 2025.10, `.tokens.json`) from `purlis theme export --kind
+    /// design-tokens` or a design tool. Each kind goes through a fixed mapping table (`purlis
+    /// docs show themes`); every key of the source no token takes is listed, and the new
+    /// theme's check is shown. It never
     /// replaces a theme folder that is there without --force. Exits 0 when the folder is
     /// written, 1 when it is not, 2 when there is no such file.
     Import {
         /// The file to import.
         source: String,
         /// What the file is, when its name and its first words do not say.
-        #[arg(long, value_parser = ["vscode", "base16", "base24", "iterm", "ghostty", "zip"])]
+        #[arg(long, value_parser = ["vscode", "base16", "base24", "iterm", "ghostty", "zip", "design-tokens"])]
         kind: Option<String>,
         /// The folder the new theme folder goes in: a `themes/` folder. Your own themes'
         /// folder (`themes/` in purlis's config folder) when not given.
@@ -160,18 +164,25 @@ pub enum ThemeCommand {
     },
     /// Write a theme folder as a zip to hand to someone: its theme.json, the files beside it
     /// (a licence, a preview) and its fonts/ and icons/, under one folder of its name, so
-    /// `purlis theme import` (or unzip) gives the folder back. What it does not carry is
-    /// listed. A theme folder's id (`project:dusk`) exports that level's own folder, never a
-    /// farther level's of the same name. Exits 0 when the zip is written, 1 when it is not, 2
-    /// when there is no such theme.
+    /// `purlis theme import` (or unzip) gives the folder back. `--kind design-tokens` writes
+    /// it as one W3C design-tokens file (format 2025.10) for a design tool instead, which
+    /// `purlis theme import` gives back the same. What it does not carry is listed. A theme
+    /// folder's id (`project:dusk`) exports that level's own folder, never a farther level's of
+    /// the same name. Exits 0 when the file is written, 1 when it is not, 2 when there is no
+    /// such theme.
     Export {
         /// A theme folder's id from `purlis theme list` (`machine:<folder>`,
         /// `project:<folder>`, `workspace:<workspace>:<folder>`), the path of a theme folder,
         /// or `purlis-classic`.
         theme: String,
-        /// The zip to write: `<theme folder's name>.zip` here when not given.
+        /// The file to write: `<theme folder's name>.zip` here when not given, or
+        /// `<theme folder's name>.tokens.json` for design tokens.
         #[arg(long)]
         to: Option<String>,
+        /// What to write: a zip (`zip`, when not given), or a W3C design-tokens file
+        /// (`design-tokens`).
+        #[arg(long, value_parser = ["zip", "design-tokens"])]
+        kind: Option<String>,
         /// Replace a file that is there.
         #[arg(long)]
         force: bool,
@@ -535,7 +546,19 @@ pub fn run(command: &ThemeCommand) -> ExitCode {
             *force,
             *json,
         ),
-        ThemeCommand::Export { theme, to, force } => export(here, theme, to.as_deref(), *force),
+        ThemeCommand::Export {
+            theme,
+            to,
+            kind,
+            force,
+        } => {
+            let wrapping = if kind.as_deref() == Some("design-tokens") {
+                theme::Wrapping::DesignTokens
+            } else {
+                theme::Wrapping::Zip
+            };
+            export(here, theme, to.as_deref(), wrapping, *force)
+        }
         ThemeCommand::Parts => {
             println!("{}", parts_json());
             ExitCode::SUCCESS
@@ -596,7 +619,7 @@ fn import(
             None => {
                 return not_written(&format!(
                     "purlis cannot tell what {} is: say which with --kind (vscode, base16, \
-                     base24, iterm, ghostty or zip)",
+                     base24, iterm, ghostty, zip or design-tokens)",
                     shown::short(&file_name)
                 ));
             }
@@ -653,7 +676,9 @@ fn import(
 /// A source file, read under the cap every import reads under (a zip's own is larger).
 fn read_source(path: &Path) -> Result<Vec<u8>, String> {
     use std::io::Read;
-    let most = theme::MOST_ZIP_BYTES.max(theme::MOST_SOURCE_BYTES);
+    let most = theme::MOST_ZIP_BYTES
+        .max(theme::MOST_SOURCE_BYTES)
+        .max(theme::design_tokens::MOST_BYTES);
     let mut bytes = Vec::new();
     std::fs::File::open(path)
         .and_then(|file| file.take(most + 1).read_to_end(&mut bytes))
@@ -755,31 +780,41 @@ const CLASSIC_COPY: &str = "purlis-classic-copy";
 const PURLIS_COPY: &str = "purlis-copy";
 
 /// `purlis theme export`: a built-in theme as its copy, a level's theme folder by its id, or a
-/// theme folder by its path.
-fn export(here: Here<'_>, asked: &str, to: Option<&str>, force: bool) -> ExitCode {
+/// theme folder by its path, as a zip or as design tokens (`wrapping`).
+fn export(
+    here: Here<'_>,
+    asked: &str,
+    to: Option<&str>,
+    wrapping: theme::Wrapping,
+    force: bool,
+) -> ExitCode {
     let packed = if asked == theme::PURLIS {
         let files = theme::purlis_files();
-        theme::pack(PURLIS_COPY, &files).map(|bytes| theme::Packed {
-            name: PURLIS_COPY.to_owned(),
-            bytes,
-            files: files.len(),
-            left_out: Vec::new(),
-        })
+        wrapping
+            .pack(PURLIS_COPY, &files)
+            .map(|bytes| theme::Packed {
+                name: PURLIS_COPY.to_owned(),
+                bytes,
+                files: files.len(),
+                left_out: Vec::new(),
+            })
     } else if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
         let files = theme::Files::from([(
             theme::THEME_JSON.to_owned(),
             theme::CLASSIC_THEME_JSON.as_bytes().to_vec(),
         )]);
-        theme::pack(CLASSIC_COPY, &files).map(|bytes| theme::Packed {
-            name: CLASSIC_COPY.to_owned(),
-            bytes,
-            files: 1,
-            left_out: Vec::new(),
-        })
+        wrapping
+            .pack(CLASSIC_COPY, &files)
+            .map(|bytes| theme::Packed {
+                name: CLASSIC_COPY.to_owned(),
+                bytes,
+                files: 1,
+                left_out: Vec::new(),
+            })
     } else if let Some((level, folder)) = Level::of_id(asked) {
         // Packed from the handle the level's folder was found through.
         match folders(here, &level).folder_at(folder, level.reach()) {
-            Ok(found) => found.export(),
+            Ok(found) => found.export_as(wrapping),
             Err(said) => {
                 eprintln!(
                     "purlis: there is no theme folder '{}' at the {} level — `{}` exports a \
@@ -809,17 +844,17 @@ fn export(here: Here<'_>, asked: &str, to: Option<&str>, force: bool) -> ExitCod
             );
             return ExitCode::from(2);
         }
-        theme::export(path)
+        theme::export_as(path, wrapping)
     };
     let packed = match packed {
         Ok(packed) => packed,
         Err(why) => return not_written(&why),
     };
     let to = to.map_or_else(
-        || std::path::PathBuf::from(format!("{}.zip", packed.name)),
+        || std::path::PathBuf::from(format!("{}{}", packed.name, wrapping.ending())),
         std::path::PathBuf::from,
     );
-    if let Err(why) = write_zip(&to, &packed.bytes, force) {
+    if let Err(why) = write_whole(&to, &packed.bytes, force) {
         return not_written(&why);
     }
     let mut out = format!(
@@ -845,7 +880,7 @@ fn export(here: Here<'_>, asked: &str, to: Option<&str>, force: bool) -> ExitCod
 
 /// Writes `bytes` to `to` whole or not at all: beside it first, then moved in. A file there is
 /// replaced only with `force`, and never a link or a folder.
-fn write_zip(to: &Path, bytes: &[u8], force: bool) -> Result<(), String> {
+fn write_whole(to: &Path, bytes: &[u8], force: bool) -> Result<(), String> {
     use std::io::Write;
     match std::fs::symlink_metadata(to) {
         Ok(meta) if !meta.file_type().is_file() => {
