@@ -293,6 +293,9 @@ export type Does =
   /** Opens the dialog that asks a persona for something from a chat's tab. It starts nothing
    *  by itself: the dialog's answer does, through `ask_persona_chat`. */
   | { verb: "askPersona"; tab: number; persona: string }
+  /** Opens **Use skill…** for a chat's tab (#2775): its skills, to type one into it unsent. It
+   *  types nothing by itself: the pick does, through `use_skill`. */
+  | { verb: "useSkill"; tab: number }
   /** Pins or unpins a chat, a workspace or a project (ADR 0039).
    *
    *  Three verbs and not one, because they are three stores: a project's pin and a
@@ -888,6 +891,8 @@ export type Doing = {
   restartListed: (session: number) => void;
   /** Opens the dialog that asks `persona` for something from the tab's chat. */
   askPersona: (tab: number, persona: string) => void;
+  /** Opens Use skill… for the tab's chat (#2775). */
+  useSkill: (tab: number) => void;
   /** Ends the chat's work link, through `chat_work_unlink`; a refusal is the core's sentence. */
   unlinkWorkItem: (tab: number) => Promise<Ran>;
   /** Each answers a `Ran`, because a pin can be refused: the stores are bounded, and
@@ -1328,6 +1333,8 @@ export const activityId = (tab: number) => `tab.activity:${tab}`;
 
 /** The catalogue's id for the row that opens the Network view of `tab`'s chat (#1662). */
 export const networkId = (tab: number) => `tab.network:${tab}`;
+/** The id of the row that opens Use skill… for chat tab `tab` (#2775). */
+export const usingSkillId = (tab: number) => `tab.useskill:${tab}`;
 
 /** The catalogue's id for the row that opens the project's Dispatches tab (#1452). */
 export const DISPATCHES_SHOW = "dispatches.show";
@@ -1884,6 +1891,23 @@ export function catalogue(now: Now): Offer[] {
       }),
       note: `Chat ${name}: what it can reach now and what it was refused, in a tab of its own.`,
     });
+  }
+
+  // **Use skill… on a chat's tab** (#2775): one row per chat, behind the Skill studio's flag.
+  // The palette lists the chat in front's alone (`menuOnly`, as Ask's); each tab's menu has its
+  // own. It opens a picker and types nothing until a skill is picked, so it sits above the line.
+  if (now.skillStudio) {
+    for (const tab of now.tabs.order) {
+      const chat = chatOf(now.tabs, tab);
+      // A shell runs no tool with skills, as it has no profile to ask a persona on.
+      if (chat === undefined || !(now.askable?.(chat) ?? false)) continue;
+      const name = now.tabs.byId[tab].name;
+      offers.push({
+        ...can(usingSkillId(tab), "Use skill…", { verb: "useSkill", tab }),
+        note: `Chat ${name}: one of its skills, typed into it for you to send.`,
+        ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
+      });
+    }
   }
 
   // **Ask a persona from a chat's tab**: one row per chat per persona the project has
@@ -3100,6 +3124,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "askPersona":
       doing.askPersona(does.tab, does.persona);
+      return DID;
+    case "useSkill":
+      doing.useSkill(does.tab);
       return DID;
     case "unlinkWorkItem":
       return doing.unlinkWorkItem(does.tab);
@@ -4664,6 +4691,7 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           ...(what.session === undefined ? [] : [answerId(what.session)]),
           activityId(what.tab),
           networkId(what.tab),
+          usingSkillId(what.tab),
         ],
         below: [
           `tab.restart:${what.tab}`,

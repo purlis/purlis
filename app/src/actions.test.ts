@@ -61,7 +61,7 @@ import {
   ownTabId,
   besideId,
 } from "./actions";
-import { ASK_LOCKED_ID, askId, askRows, inPalette } from "./actions";
+import { ASK_LOCKED_ID, askId, askRows, inPalette, usingSkillId } from "./actions";
 import { NO_LINK_FOLLOWED, listedMemoryOffers, memoryMoveId, moveRows } from "./actions";
 import { PUBLISHED_WITH_THE_PROJECT } from "./memoryMoves";
 import { sessionOffers } from "./actions";
@@ -116,6 +116,7 @@ function doing(): Doing & { calls: string[] } {
     restartChat: note("restartChat"),
     restartListed: note("restartListed"),
     askPersona: note("askPersona"),
+    useSkill: note("useSkill"),
     unlinkWorkItem: async (...args: unknown[]) => {
       note("unlinkWorkItem")(...args);
       return { ok: true };
@@ -2458,18 +2459,19 @@ describe("the palette at fifty chats", () => {
       return offers.lookups;
     }
 
-    it("asks for eleven rows per tab and never walks the list", () => {
+    it("asks for twelve rows per tab and never walks the list", () => {
       const offers = new Counting(loaded().map((offer) => [offer.id, offer]));
 
-      // 50 tabs × the eleven ids a chat menu lists (the two work link rows are V60's, Start
-      // fresh is NO-3's, Restart chat is #1428's, Activity is #1495's, Network is #1662's).
+      // 50 tabs × the twelve ids a chat menu lists (the two work link rows are V60's, Start
+      // fresh is NO-3's, Restart chat is #1428's, Activity is #1495's, Network is #1662's, Use
+      // skill… is #2775's).
       // **Not fifty scans of 291 rows**, which is
       // what this cost before the lookup was built once for the window — and the number that
       // does not move when the catalogue grows again.
-      expect(strip(offers)).toBe(550);
+      expect(strip(offers)).toBe(600);
     });
 
-    it("is the same 550 whether the catalogue carries the pieces or not", () => {
+    it("is the same 600 whether the catalogue carries the pieces or not", () => {
       // The property, not the timing: the cost of a menu is flat in the length of the list it
       // reads. A scan is not, which is why #174's hundred rows needed this first.
       const small = new Counting(
@@ -2478,7 +2480,7 @@ describe("the palette at fifty chats", () => {
         ),
       );
 
-      expect(strip(small)).toBe(550);
+      expect(strip(small)).toBe(600);
     });
   });
 });
@@ -4273,5 +4275,42 @@ describe("where each view lives, in the palette (#1752)", () => {
     );
 
     expect(by(offers, "view.toggle:navigation")?.note).toMatch(/^No views on the left/);
+  });
+});
+
+describe("Use skill… on a chat's tab (#2775)", () => {
+  const tabs = openTab(openTab(noTabs(), 7, "3", "steward"), 8, "sh");
+  const [chat, shell] = tabs.order;
+  const notAShell = (session: number) => session === 7;
+
+  it("is offered only while the Skill studio is on, on a chat and never a shell", () => {
+    const offers = catalogue(now({ tabs, askable: notAShell, skillStudio: true }));
+    expect(by(offers, usingSkillId(chat))).toMatchObject({
+      title: "Use skill…",
+      available: true,
+      note: "Chat steward 3: one of its skills, typed into it for you to send.",
+      does: { verb: "useSkill", tab: chat },
+    });
+    expect(by(offers, usingSkillId(shell))).toBeUndefined();
+    const off = catalogue(now({ tabs, askable: notAShell }));
+    expect(by(off, usingSkillId(chat))).toBeUndefined();
+  });
+
+  it("is in the palette for the chat in front alone, and on every chat tab's menu", () => {
+    const two = openTab(openTab(noTabs(), 7, "3", "steward"), 9, "5", "steward");
+    const [first, second] = two.order;
+    const offers = catalogue(
+      now({ tabs: two, askable: (s) => s === 7 || s === 9, skillStudio: true }),
+    );
+    const rows = inPalette(offers).filter((offer) => offer.title === "Use skill…");
+    expect(rows.map((offer) => offer.does)).toEqual([{ verb: "useSkill", tab: second }]);
+    expect(menuOn({ on: "chat", tab: first }).above).toContain(usingSkillId(first));
+  });
+
+  it("opens the picker through the window's hands, and types nothing by itself", async () => {
+    const hands = doing();
+    const offers = catalogue(now({ tabs, askable: notAShell, skillStudio: true }));
+    await run(offers, usingSkillId(chat), hands);
+    expect(hands.calls).toEqual([`useSkill:${chat}`]);
   });
 });

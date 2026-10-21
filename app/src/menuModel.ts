@@ -203,6 +203,7 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.answer": { said: SAID.answer, slot: "open" },
   "tab.activity": { said: SAID.activity, slot: "open", under: "open" },
   "tab.network": { said: SAID.network, slot: "open", under: "open" },
+  "tab.useskill": { said: SAID.useSkill, slot: "open" },
   "tab.restart": { said: SAID.restart, midTurn: SAID.restartMidTurn, slot: "run" },
   "chat.restart": { said: SAID.restart, midTurn: SAID.restartMidTurn, slot: "run" },
   "chat.stop": stopped(WARNS.stops),

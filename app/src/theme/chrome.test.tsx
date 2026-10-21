@@ -39,6 +39,7 @@ import { AnswerPanel } from "../AnswerPanel";
 import { ApproveExtension } from "../ApproveExtension";
 import { ApprovePlane } from "../ApprovePlane";
 import { AskPersona } from "../AskPersona";
+import { UseSkill } from "../UseSkill";
 import type { LandQuestion, PlaneId, VaultContents } from "../bindings";
 import { BriefPanel } from "../Brief";
 import { LandAsk, PushAsk } from "../ChangeActions";
@@ -569,6 +570,52 @@ const DIALOGS: Opened[] = [
           trouble="devops could not start: no profile"
           asking={false}
           onAsk={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "Use skill",
+    file: "UseSkill.tsx",
+    open: async () =>
+      render(
+        <UseSkill
+          chat="claude 4"
+          skills={{
+            on: true,
+            harness: "Claude Code",
+            skills: [
+              {
+                name: "review",
+                level: "project",
+                label: "project",
+                description: "Reviews a pull request.",
+                manual: false,
+                arguments: ["pr"],
+                hint: null,
+              },
+              {
+                name: "release",
+                level: "workspace",
+                label: "workspace",
+                description: "Cuts a release.",
+                manual: true,
+                arguments: [],
+                hint: null,
+              },
+            ],
+            budget: {
+              skills: 31,
+              chars: 6100,
+              manual: 1,
+              most_skills: 30,
+              most_chars: 6000,
+              over: "both",
+            },
+          }}
+          trouble="the chat is in the middle of a turn"
+          busy={false}
+          onUse={nothing}
           onCancel={nothing}
         />,
       ),

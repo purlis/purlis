@@ -109,3 +109,31 @@ fn a_refused_skill_call_or_a_sub_agents_stop_changes_nothing() {
     assert_eq!(runs.now([4]).len(), 1);
     assert_eq!(told.try_iter().count(), 1);
 }
+
+#[test]
+fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into() {
+    let (runs, told) = listening();
+    runs.typed(
+        4,
+        purlis_core::skillspan::Typed {
+            skill: "skills:deploy".to_owned(),
+            run: RUN.to_owned(),
+        },
+    );
+    assert!(runs.now([4]).is_empty(), "nothing runs until it is sent");
+    assert_eq!(told.try_iter().count(), 0);
+
+    runs.reported(&report(4, Event::UserPromptSubmit));
+    runs.heard(&call(4, "toolu_1", None));
+    runs.reported(&report(4, Event::Stop));
+
+    let said: Vec<_> = told.try_iter().map(|t| t.run).collect();
+    let open = |tool_calls| {
+        Some(OpenRun {
+            skill: "skills:deploy".to_owned(),
+            id: RUN.to_owned(),
+            tool_calls,
+        })
+    };
+    assert_eq!(said, vec![open(0), open(1), None]);
+}

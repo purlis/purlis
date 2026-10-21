@@ -176,10 +176,38 @@ fn handed(
     copy: &dyn Fn(&str) -> Result<(), String>,
 ) -> Result<Handed, String> {
     // What the reason says went on the clipboard: one reference, or the several of one paste.
-    let (on, it) = match several {
-        Some(n) if n > 1 => ("the references are", "they are"),
-        _ => ("the reference is", "it is"),
+    let said = match several {
+        Some(n) if n > 1 => Copied {
+            on: "the references are",
+            it: "they are",
+        },
+        _ => Copied {
+            on: "the reference is",
+            it: "it is",
+        },
     };
+    typed_or_copied(held, session, text, said, copy)
+}
+
+/// What a reason says went on the clipboard, in [`typed_or_copied`]'s two sentences: `on` ("the
+/// reference is") once the chat was found, `it` ("it is") where its harness is not known.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Copied {
+    pub on: &'static str,
+    pub it: &'static str,
+}
+
+/// **`text` typed into chat `session` unsent, as the person**, or copied with the reason where it
+/// cannot be typed now: the one way the window types a line into a running chat, a reference's
+/// (FM-9) or a skill's (SK-12, Use skill…), with `said` naming what went on the clipboard.
+pub(crate) fn typed_or_copied(
+    held: &Arc<Held>,
+    session: u32,
+    text: String,
+    said: Copied,
+    copy: &dyn Fn(&str) -> Result<(), String>,
+) -> Result<Handed, String> {
+    let Copied { on, it } = said;
     let chats = held.chats();
     let harness = chats.harness(session);
     let copied = |why: String| -> Result<Handed, String> {

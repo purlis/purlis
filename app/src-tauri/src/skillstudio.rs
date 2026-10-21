@@ -118,6 +118,8 @@ pub enum RunStart {
     SkillTool,
     /// The chat read the skill's `SKILL.md`.
     Read,
+    /// The person picked it in Use skill… and sent the prompt it was typed into.
+    UseSkill,
     /// A start a newer purlis wrote.
     Unknown,
 }
@@ -128,6 +130,7 @@ impl From<purlis_core::skills::runs::StartedBy> for RunStart {
         match started_by {
             StartedBy::SkillTool => RunStart::SkillTool,
             StartedBy::Read => RunStart::Read,
+            StartedBy::UseSkill => RunStart::UseSkill,
             _ => RunStart::Unknown,
         }
     }

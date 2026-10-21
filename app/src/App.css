@@ -1240,7 +1240,15 @@ button.show-more:focus-visible {
    centred in it (`align-items` or `align-content` in the chip's own rule). The heights guard
    holds every chip here (`PANE_LINE_CHIPS`). */
 .pane-chips
-  > :is(.pane-crumbs, .pane-brief, .chat-gauge, .pane-harness, .pane-from, .pane-work-item) {
+  > :is(
+    .pane-crumbs,
+    .pane-brief,
+    .chat-gauge,
+    .pane-harness,
+    .pane-from,
+    .pane-work-item,
+    .pane-skills
+  ) {
   height: var(--size-chrome);
 }
 
@@ -1468,6 +1476,106 @@ button.show-more:focus-visible {
 .pane-harness:focus-visible {
   color: var(--text-primary);
   opacity: 1;
+}
+
+/* **A chat's skills** (`SkillsChip`, #2775): how many it lists, and Use skill… for it. Quiet,
+   as the harness beside it is; in the warning colour, with its mark, while the chat's set is
+   past its skill budget, which its tooltip says. */
+.pane-skills {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  opacity: 0.92;
+}
+
+.pane-skills:hover,
+.pane-skills:focus-visible {
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+.pane-skills.over {
+  color: var(--state-waiting);
+  border-color: var(--state-waiting);
+  opacity: 1;
+}
+
+.pane-skills > svg {
+  inline-size: 1em;
+  block-size: 1em;
+}
+
+/* **Use skill…** (`UseSkill.tsx`, #2775): the chat's skills to pick from, then the boxes of the
+   one picked. It fits the window and its list scrolls inside it; each row says the skill's
+   name, its level, whether it is manual-only, and what it does. */
+.ui-dialog.use-skill {
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+}
+
+.use-skill-budget {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.use-skill-over {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  color: var(--state-waiting);
+}
+
+.use-skill-over > svg {
+  flex: none;
+  inline-size: 1em;
+  block-size: 1em;
+  margin-block-start: 0.2em;
+}
+
+.use-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 22rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.use-skill-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 0 var(--space-2);
+  width: 100%;
+  height: auto;
+  padding: var(--space-2);
+  text-align: start;
+}
+
+.use-skill-name {
+  font-weight: 600;
+}
+
+.use-skill-level,
+.use-skill-manual {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.use-skill-description {
+  grid-column: 1 / -1;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: normal;
 }
 
 /* **The work item a chat works on** (V60, ADR 0088): `Work item: <key>`, in the same corner and

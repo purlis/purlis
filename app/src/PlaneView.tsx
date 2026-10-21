@@ -35,6 +35,7 @@ import {
   type AtRisk,
   type AwayRefusal,
   type ByHand,
+  type ChatSkills,
   type ChatWorktree,
   type HarnessGlance,
   type HarnessSetupFound,
@@ -107,11 +108,13 @@ import { RenameWorkspace } from "./RenameWorkspace";
 import { cloneRepos, settleRepoClones, useRepoClones } from "./repoClones";
 import { StartChat } from "./StartChat";
 import {
+  handedSaid,
   handReference,
   ReferenceChats,
   type ChatsForReferences,
   type Referenced,
 } from "./references";
+import { UseSkill, UseSkillOpener, type OpenUseSkill } from "./UseSkill";
 import { Explorer, type Spot } from "./Explorer";
 import {
   pieceFileTitle,
@@ -817,6 +820,13 @@ export const PlaneView = memo(function PlaneView({
     persona: string;
     prefill?: AskPrefill;
     from?: AskFrom;
+    trouble?: string;
+    busy: boolean;
+  }>();
+  /** The chat Use skill… is open for (#2775), with its skills once they are read. */
+  const [usingSkill, setUsingSkill] = useState<{
+    session: number;
+    skills?: ChatSkills;
     trouble?: string;
     busy: boolean;
   }>();
@@ -6043,6 +6053,63 @@ export const PlaneView = memo(function PlaneView({
   const openAskPersona = useCallback<OpenAskPersona>((session, persona, prefill, from) => {
     setAskingPersona({ session, persona, prefill, from, busy: false });
   }, []);
+  /**
+   * Opens **Use skill…** for chat `session` (#2775): the one way in, for the catalogue's rows and
+   * a pane's Skills chip ({@link OpenUseSkill}). It reads the chat's skills as it opens; nothing
+   * is typed until one is picked.
+   */
+  const openUseSkill = useCallback<OpenUseSkill>(
+    (session) => {
+      setUsingSkill({ session, busy: false });
+      void commands
+        .chatSkills(plane, session)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+        .then((said) =>
+          setUsingSkill((was) =>
+            was?.session !== session
+              ? was
+              : said.status === "ok"
+                ? { ...was, skills: said.data }
+                : { ...was, trouble: said.error },
+          ),
+        );
+    },
+    [plane],
+  );
+  /** Use skill…, from a chat tab's menu or the palette. */
+  const useSkill = useCallback(
+    (id: number) => {
+      const session = chatOf(now.current, id);
+      if (session !== undefined) openUseSkill(session);
+    },
+    [openUseSkill],
+  );
+  /**
+   * A skill picked in Use skill…: the core types it into the chat in its tool's own syntax and
+   * sends nothing (`use_skill`), or copies it with why. Either way the dialog closes and the
+   * window says what became of it; a refusal stays in the dialog.
+   */
+  const sendUseSkill = useCallback(
+    async (skill: string, values: string[]) => {
+      const using = usingSkill;
+      if (using === undefined || using.busy) return;
+      setUsingSkill({ ...using, trouble: undefined, busy: true });
+      const said = await commands
+        .useSkill(plane, using.session, skill, values)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      if (said.status === "error") {
+        setUsingSkill({ ...using, trouble: said.error, busy: false });
+        return;
+      }
+      setUsingSkill(undefined);
+      setReport({
+        from: "use-skill",
+        refused: false,
+        words: handedSaid(said.data, nameOf(using.session)),
+      });
+    },
+    [nameOf, plane, usingSkill],
+  );
   /** Ask {persona}…, from a chat tab's menu or the palette. */
   const askPersona = useCallback(
     (id: number, persona: string) => {
@@ -6152,6 +6219,7 @@ export const PlaneView = memo(function PlaneView({
       restartChat: restartTab,
       restartListed,
       askPersona,
+      useSkill,
       pinTab,
       pinWorkspace,
       pinProject: windowDoes.pinProject,
@@ -6270,6 +6338,7 @@ export const PlaneView = memo(function PlaneView({
       unlinkWorkItem,
       askStartFresh,
       askPersona,
+      useSkill,
       askToStop,
       askToStopAll,
       askToEndTask,
@@ -8473,6 +8542,7 @@ export const PlaneView = memo(function PlaneView({
       mendable={readOnly?.mendable === true}
       personas={personaMarks}
       askPersona={openAskPersona}
+      useSkill={openUseSkill}
       brief={openBrief}
       answer={openAnswer}
     >
@@ -9208,6 +9278,19 @@ export const PlaneView = memo(function PlaneView({
             />
           )}
 
+          {usingSkill && (
+            <UseSkill
+              // Another chat's Use skill… is a new dialog: its filter and boxes start empty.
+              key={usingSkill.session}
+              chat={nameOf(usingSkill.session)}
+              skills={usingSkill.skills}
+              trouble={usingSkill.trouble}
+              busy={usingSkill.busy}
+              onUse={(skill, values) => void sendUseSkill(skill, values)}
+              onCancel={() => setUsingSkill(undefined)}
+            />
+          )}
+
           {askingAction && (
             <AskFirst
               extension={askingAction.extension}
@@ -9528,6 +9611,7 @@ function Lent({
   mendable,
   personas,
   askPersona,
+  useSkill,
   brief,
   answer,
   children,
@@ -9551,6 +9635,8 @@ function Lent({
   /** Every persona's mark here, and how to read them again (#1449). */
   personas: ReturnType<typeof usePersonaMarks>;
   askPersona: OpenAskPersona;
+  /** Opens Use skill… for a chat (`useOpenUseSkill`, #2775). */
+  useSkill: OpenUseSkill;
   /** Opens the Brief panel for a task (`useOpenBrief`, #1494). */
   brief: OpenBrief;
   /** Opens the Answer dialog for a task's question (`useOpenAnswer`, #1551). */
@@ -9569,9 +9655,11 @@ function Lent({
                     <PersonaMarks.Provider value={personas.marks}>
                       <ReloadPersonaMarks.Provider value={personas.reload}>
                         <AskPersonaOpener value={askPersona}>
-                          <BriefOpener value={brief}>
-                            <AnswerOpener value={answer}>{children}</AnswerOpener>
-                          </BriefOpener>
+                          <UseSkillOpener value={useSkill}>
+                            <BriefOpener value={brief}>
+                              <AnswerOpener value={answer}>{children}</AnswerOpener>
+                            </BriefOpener>
+                          </UseSkillOpener>
                         </AskPersonaOpener>
                       </ReloadPersonaMarks.Provider>
                     </PersonaMarks.Provider>

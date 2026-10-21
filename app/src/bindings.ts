@@ -1751,6 +1751,18 @@ export const commands = {
 	 */
 	skillShare: (plane: PlaneId, workspace: string | null, name: string) => typedError<null, string>(__TAURI_INVOKE("skill_share", { plane, workspace, name })),
 	/**
+	 *  **The skills chat `session` has, as Use skill… offers them, and its skill budget**: nothing
+	 *  while the Skill studio is off. On a blocking thread, as it reads the project's skill folders.
+	 */
+	chatSkills: (plane: PlaneId, session: number) => typedError<ChatSkills, string>(__TAURI_INVOKE("chat_skills", { plane, session })),
+	/**
+	 *  **Types skill `skill` of chat `session`'s set into it, in its harness's syntax, with `values`
+	 *  for the arguments it declares in their order, and never sends it** — or copies it, with the
+	 *  reason, where it cannot be typed now. A skill that was typed has its run start, by Use
+	 *  skill…, as the chat's next prompt does.
+	 */
+	useSkill: (plane: PlaneId, session: number, skill: string, values: string[]) => typedError<Handed, string>(__TAURI_INVOKE("use_skill", { plane, session, skill, values })),
+	/**
 	 *  What discarding the folder of dispatch `id`'s own branch would take with it (#1453): every
 	 *  uncommitted file, every ignored one, and how many commits its branch holds that exist
 	 *  nowhere else, for the question the window asks before it discards. Refused while a chat is
@@ -4471,6 +4483,9 @@ export type BrowsersListed = {
 	plane: PlaneId,
 };
 
+/**  Which part of a chat's skill budget its set is over. */
+export type BudgetOver = "skills" | "chars" | "both";
+
 /**  What kind of build this is, which decides which section is shown. */
 export type Build = 
 /**  The changelog has a section for this version. */
@@ -4773,6 +4788,23 @@ export type ChatRestart = {
 	not_yet: string | null,
 };
 
+/**  One skill Use skill… offers a chat. */
+export type ChatSkill = {
+	/**  Its name, which [`use_skill`] is handed back. */
+	name: string,
+	level: Level,
+	/**  Its level as a person reads it: `project`, `local workspace`. */
+	label: string,
+	/**  What it does and when to use it. */
+	description: string,
+	/**  Whether it is manual-only: run only when asked for by name, and free in the budget. */
+	manual: boolean,
+	/**  The arguments it takes, by name, in order: one box each in the dialog. */
+	arguments: string[],
+	/**  What to pass it, in one line, where it says: the one box of a skill that names none. */
+	hint: string | null,
+};
+
 /**
  *  What `chat-skill-run` carries, and what `chat_skill_runs` answers a list of: one chat's open
  *  run, or that it has none.
@@ -4782,6 +4814,21 @@ export type ChatSkillRun = {
 	session: number,
 	/**  The innermost run open, or null: none is, or the turn it was in ended. */
 	run: OpenRun | null,
+};
+
+/**  What Use skill… offers a chat, and its budget. */
+export type ChatSkills = {
+	/**  Whether the Skill studio is on: nothing is offered while it is off. */
+	on: boolean,
+	/**
+	 *  The chat's harness, as a person calls it, or null for a chat on none purlis knows: such a
+	 *  chat is offered nothing.
+	 */
+	harness: string | null,
+	/**  Every skill of its set, by name. */
+	skills: ChatSkill[],
+	/**  Its budget, where it has a harness. */
+	budget: SkillBudget | null,
 };
 
 /**  One step of one chat's stop, as the window is told it. */
@@ -9519,6 +9566,8 @@ export type RunStart =
 "skill-tool" | 
 /**  The chat read the skill's `SKILL.md`. */
 "read" | 
+/**  The person picked it in Use skill… and sent the prompt it was typed into. */
+"use-skill" | 
 /**  A start a newer purlis wrote. */
 "unknown";
 
@@ -10305,6 +10354,22 @@ export type SidebarWorkspace = {
 	 *  (charter-app#301). Every place a workspace is drawn marks it.
 	 */
 	live: boolean,
+};
+
+/**  A chat's skill budget on its harness, and what its set spends of it. */
+export type SkillBudget = {
+	/**  Skills its listing holds: every one but the manual-only ones. */
+	skills: number,
+	/**  Characters of their descriptions. */
+	chars: number,
+	/**  Manual-only skills, which cost nothing. */
+	manual: number,
+	/**  The most skills the budget lists. */
+	most_skills: number,
+	/**  The most description characters it holds. */
+	most_chars: number,
+	/**  What the chat warns of: the part it is over, or null within it. */
+	over: BudgetOver | null,
 };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */

@@ -31,6 +31,7 @@ import { droppedReference, overChat, useReferenceChats } from "./references";
 import { NoticeOf, NoticePaneRow } from "./Notice";
 import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
+import { SkillsChip } from "./UseSkill";
 import { harnessCardView, type Layout, type ViewRef } from "./tabs";
 import { type Crumbs } from "./tabChats";
 import { BriefButton, type BriefAsk } from "./Brief";
@@ -213,6 +214,8 @@ export function PaneFrame({
             {crumbs && <BriefButton of={briefOfShown(crumbs)} />}
             {crumbs && ending}
             <ChatGauge usage={usage} />
+            {/* The chat's skills and its skill budget, and Use skill… for it (#2775). */}
+            <SkillsChip plane={plane} session={session} />
             {harness && <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />}
             {from && <span className="pane-from">{from}</span>}
             {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}
