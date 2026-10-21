@@ -15,6 +15,7 @@ import { SandboxBlockNotice } from "./SandboxBlockNotice";
 import { PolicyRequiresNotice } from "./SandboxChanged";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { McpFailedNotice } from "./McpFailedNotice";
+import { SkillsMissingNotice } from "./SkillsMissingNotice";
 import { HostLostNotice } from "./HostLostNotice";
 import { TaskQuietNotice } from "./TaskQuietNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
@@ -431,6 +432,8 @@ export function ChatNotices({
         onShowInbox={onShowInbox}
       />
       <McpFailedNotice plane={plane} session={session} onRestart={onRestart} />
+      {/* A skill its persona names that it started without (#2768). */}
+      <SkillsMissingNotice plane={plane} session={session} />
       <HostLostNotice plane={plane} session={session} onRestart={onRestart} />
       <TaskQuietNotice plane={plane} session={session} />
       {off > 0 && onShowInbox !== undefined && (

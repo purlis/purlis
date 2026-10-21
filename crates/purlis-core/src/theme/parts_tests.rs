@@ -1004,3 +1004,80 @@ fn a_see_through_fill_is_measured_as_it_shows_on_each_ground() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// What an apply costs
+// ---------------------------------------------------------------------------------------
+
+/// A parts theme with states, over a theme a workspace's colour tints, named apart by `radius`
+/// so no other test has drawn it.
+fn costed(radius: u32) -> ResolvedTheme {
+    let loaded = load(&with_parts(json!({
+        "button.root.corner-radius": radius,
+        "button.root.primary.hover.fill": "tab.active",
+        "button.root.ghost.text": "text.secondary",
+        "button.root.grants.focused.border-colour": "accent.base",
+    })));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    loaded.theme.first().clone()
+}
+
+#[test]
+fn a_parts_theme_is_measured_once_for_its_stylesheet_and_what_fell() {
+    let theme = costed(40);
+    let before = parts::passes();
+    let sheet = parts::stylesheet(&theme);
+    let fallen = parts::fallen(&theme);
+    assert_eq!(parts::passes() - before, 1);
+    // An equal theme is the same theme; the measure is the one a fresh pass gives.
+    let again = theme.clone();
+    assert_eq!(parts::stylesheet(&again), sheet);
+    assert_eq!(parts::fallen(&again), fallen);
+    assert_eq!(parts::passes() - before, 1);
+}
+
+#[test]
+fn a_gallery_of_parts_themes_is_measured_once_per_theme_however_often_it_is_drawn() {
+    let themes: Vec<ResolvedTheme> = (60..68).map(costed).collect();
+    let before = parts::passes();
+    for _ in 0..3 {
+        for theme in &themes {
+            parts::stylesheet(theme);
+            parts::fallen(theme);
+        }
+    }
+    assert_eq!(parts::passes() - before, themes.len());
+}
+
+#[test]
+fn a_theme_whose_values_differ_is_measured_again() {
+    let theme = costed(41);
+    let mut tinted = theme.clone();
+    tinted.values.insert("accent.base", "#c97474".to_owned());
+    let before = parts::passes();
+    parts::fallen(&theme);
+    parts::fallen(&tinted);
+    assert_eq!(parts::passes() - before, 2);
+}
+
+#[test]
+#[ignore = "a bench: `cargo test --release -p purlis-core --lib parts_apply_bench -- --ignored --nocapture`"]
+fn parts_apply_bench() {
+    const RUNS: u32 = 20;
+    let themes: Vec<ResolvedTheme> = (0..RUNS).map(|at| costed(100 + at)).collect();
+    let started = std::time::Instant::now();
+    let drawn: Vec<(String, Vec<parts::Fell>)> = themes
+        .iter()
+        .map(|theme| (parts::stylesheet(theme), parts::fallen(theme)))
+        .collect();
+    let each = started.elapsed() / RUNS;
+    // What was drawn, folded to one number, so two builds can be told to draw the same.
+    let digest = format!("{drawn:?}")
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+        });
+    println!(
+        "parts apply (stylesheet and fallen of one theme): {each:?} per theme, drawn {digest:016x}"
+    );
+}
