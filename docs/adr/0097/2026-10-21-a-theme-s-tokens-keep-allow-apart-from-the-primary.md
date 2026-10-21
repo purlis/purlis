@@ -19,4 +19,8 @@ on a theme's tokens, not only on its component parts.
 - **The rule** is `Floor::AllowNotPrimary` in `purlis_core::theme::floors`, measured by
   `theme::parts`. `theme/allow_primary_tests.rs` holds each case.
 
-The built-in themes clear it in every appearance and tint, and are drawn unchanged.
+**The operator's ruling of 2026-10-21 sets how far apart.** The token floor holds the two looks
+at the distance a person can see, the scale the component parts check holds Allow's fill to Keep
+blocked's by. Allow's lock and its accent edge carry the rest of the difference. The built-in
+themes clear the floor in every appearance and tint and are drawn unchanged. The ruling is
+revisited when Purlis becomes the default theme (#2924).
