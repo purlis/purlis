@@ -542,6 +542,21 @@ pub fn write_pinned(
     base: Option<&str>,
     after: &str,
 ) -> Result<(), NotMade> {
+    write_pinned_making(root, rel, base, after, &below_skills_at)
+}
+
+/// [`write_pinned`], making a folder of `rel` that is not there where `may_make` says so of its
+/// place in `rel`'s folders (their names, and its index): a new file only, as [`write_pinned`]
+/// makes one below `.claude/skills`. The Skill studio makes a new skill's folder this way
+/// (#2770).
+#[cfg(unix)]
+pub fn write_pinned_making(
+    root: &Path,
+    rel: &Path,
+    base: Option<&str>,
+    after: &str,
+    may_make: &dyn Fn(&[&str], usize) -> bool,
+) -> Result<(), NotMade> {
     use rustix::fs::{
         AtFlags, CWD, FileType, Mode, OFlags, fstat, mkdirat, openat, renameat, unlinkat,
     };
@@ -564,7 +579,7 @@ pub fn write_pinned(
     for (index, name) in folders.iter().enumerate() {
         at = match openat(&at, *name, folder | OFlags::NOFOLLOW, Mode::empty()) {
             Ok(next) => next,
-            Err(rustix::io::Errno::NOENT) if base.is_none() && below_skills_at(&names, index) => {
+            Err(rustix::io::Errno::NOENT) if base.is_none() && may_make(&names, index) => {
                 mkdirat(&at, *name, Mode::from_raw_mode(0o755)).map_err(unprepared)?;
                 openat(&at, *name, folder | OFlags::NOFOLLOW, Mode::empty()).map_err(unprepared)?
             }
@@ -646,6 +661,18 @@ const TEMP_TRIES: usize = 8;
 /// [`write_pinned`] where no folder can be opened without following a link: never.
 #[cfg(not(unix))]
 pub fn write_pinned(_: &Path, _: &Path, _: Option<&str>, _: &str) -> Result<(), NotMade> {
+    Err(NotMade::Unprepared)
+}
+
+/// [`write_pinned_making`] where no folder can be opened without following a link: never.
+#[cfg(not(unix))]
+pub fn write_pinned_making(
+    _: &Path,
+    _: &Path,
+    _: Option<&str>,
+    _: &str,
+    _: &dyn Fn(&[&str], usize) -> bool,
+) -> Result<(), NotMade> {
     Err(NotMade::Unprepared)
 }
 

@@ -13,15 +13,17 @@
 
 use std::path::{Path, PathBuf};
 
+pub use purlis_skills::change::{Problem, Template, check};
 pub use purlis_skills::{
     BUILT_IN_PREFIXES, Chat, DIR_IN_BUNDLE, Effective, FromHarness, Grant, HarnessSkills,
     LOCAL_DIR, LeftOut, Machine, Missing, Narrowing, OnMachine, Origin, POINTER, PROJECT_DIR,
-    Reason, Reference, Route, Skill, SkillSet, grant_of, in_bundle, level_dir, level_shown,
-    listing, named, persona_dir, read, set_grant, share,
+    Reason, Reference, Reload, Route, Skill, SkillSet, Stamp, beside, grant_of, in_bundle,
+    level_dir, level_shown, listing, named, persona_dir, read, set_grant, share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
 pub use purlis_skills::runs;
+pub mod verbs;
 
 use crate::harness::{Harness, Kit};
 
@@ -621,6 +623,39 @@ pub fn readable_by_a_briefed_chat(root: &Path, env: &dyn Fn(&str) -> Option<Stri
     skills
 }
 
+/// **The stamp of the plane skills a chat has now** (#2770): a chat in the plane at `plane`, at
+/// its root or in `workspace`, running as `persona`, on `harness`. The window takes one as a chat
+/// starts and again when the project's skills change; where they differ, the chat's harness does
+/// not take the change in by itself ([`Harness::skills_reload`]) and its tab offers a restart.
+/// An empty stamp while the `skill-studio` flag is off, which keeps the plane's skills out.
+pub fn stamp_now(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    harness: Harness,
+) -> Stamp {
+    if !studio_on_here() {
+        return Stamp::default();
+    }
+    stamp_of(plane, workspace, persona, harness)
+}
+
+/// [`stamp_now`] whatever the flag says: for a caller that asked the flag once for many chats.
+pub fn stamp_of(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    harness: Harness,
+) -> Stamp {
+    let at = PlaneSkills {
+        plane,
+        workspace,
+        linked: None,
+    };
+    let set = ask(None, Some(at), persona, harness.skills(), None);
+    Stamp::of(&set, harness.skills_reload())
+}
+
 /// One ask of purlis-skills, from a directory of built-in skills, the plane with the workspace
 /// the chat works in (where the plane's skills are let in), the persona a chat runs as (whose
 /// `skills:` list is read where the plane's skills are let in), the chat's route, and the
@@ -776,17 +811,9 @@ pub fn switch(plane: &Path, workspace: &str, name: &str, on: bool) -> Result<boo
         ));
     }
     let folder = project_folder(plane, name).ok_or_else(|| no_project_skill(name))?;
-    let reaches = grant_of(&folder).is_ok_and(|grant| grant.reaches(workspace));
-    if !reaches {
-        let what = if on {
-            "cannot be turned on there: a workspace only turns off what the project granted it"
-        } else {
-            "has nothing to turn off there"
-        };
-        return Err(format!(
-            "{name} is not granted to {workspace}, so it {what}. The project grants it at its \
-             root: purlis skill grant {name} {workspace}"
-        ));
+    let grant = grant_of(&folder).unwrap_or(Grant::Root);
+    if !grant.reaches(workspace) {
+        return Err(not_granted(name, workspace, &grant, on));
     }
     let mut off = turned_off(plane, workspace);
     let was = off.iter().any(|one| one == name);
@@ -798,6 +825,32 @@ pub fn switch(plane: &Path, workspace: &str, name: &str, on: bool) -> Result<boo
     } else {
         off.push(name.to_owned());
     }
+    set_turned_off(plane, workspace, off)?;
+    Ok(true)
+}
+
+/// **Why the project skill `name`, granted `grant`, cannot be turned on (`on`) or off in
+/// `workspace`**, which the grant does not reach: the grant that would. What `purlis skill grant
+/// --on` and the Skill studio's switch both say (#2767, #2770).
+pub fn not_granted(name: &str, workspace: &str, grant: &Grant, on: bool) -> String {
+    let what = if on {
+        "cannot be turned on there: a workspace only turns off what the project granted it"
+    } else {
+        "has nothing to turn off there"
+    };
+    format!(
+        "{name} is not granted to {workspace}, so it {what}. Its grant is {grant}: a grant to \
+         {workspace}, or to all, would reach it"
+    )
+}
+
+/// Writes `off` as the project skills `workspace` turned off, through the Workspace level's own
+/// save: none removes the list.
+pub(crate) fn set_turned_off(
+    plane: &Path,
+    workspace: &str,
+    off: Vec<String>,
+) -> Result<(), String> {
     let read = crate::settings::workspace::read_file(plane, workspace)?;
     let base = read.exists.then_some(read.text.as_str());
     let path = vec![
@@ -811,8 +864,8 @@ pub fn switch(plane: &Path, workspace: &str, name: &str, on: bool) -> Result<boo
         base,
         &[crate::settings::Edit { path, value }],
     )
-    .map_err(|why| why.join(" "))?;
-    Ok(true)
+    .map(|_| ())
+    .map_err(|why| why.join(" "))
 }
 
 fn no_project_skill(name: &str) -> String {

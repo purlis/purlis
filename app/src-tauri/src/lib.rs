@@ -74,6 +74,7 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
+mod skillchange;
 mod skillrun;
 mod skillstudio;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.

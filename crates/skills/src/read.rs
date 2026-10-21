@@ -69,13 +69,10 @@ pub fn read(dir: &Path) -> Vec<Skill> {
 /// lines as Python's `str.splitlines` splits them, each line at its first `:`, key and value
 /// stripped as Python's `str.strip` strips, and a line with an empty key dropped.
 pub fn frontmatter(text: &str) -> Vec<(String, String)> {
-    let Some(rest) = text.strip_prefix("---") else {
+    let Some((start, end)) = frontmatter_block(text) else {
         return Vec::new();
     };
-    let Some(end) = rest.find("---") else {
-        return Vec::new();
-    };
-    lines(py_strip(&rest[..end]))
+    lines(py_strip(&text[start..end]))
         .into_iter()
         .filter_map(|line| {
             let (key, value) = line.split_once(':')?;
@@ -83,6 +80,16 @@ pub fn frontmatter(text: &str) -> Vec<(String, String)> {
             (!key.is_empty()).then(|| (key.to_owned(), py_strip(value).to_owned()))
         })
         .collect()
+}
+
+/// **Where a frontmatter is**, as byte offsets into `text`: from just after the opening `---`
+/// to the start of the next `---`, or `None` where it has none. The one rule every reader and
+/// writer of a frontmatter keeps ([`frontmatter`], and the rename of a skill's text in
+/// [`crate::change`]).
+pub(crate) fn frontmatter_block(text: &str) -> Option<(usize, usize)> {
+    let rest = text.strip_prefix("---")?;
+    let end = rest.find("---")?;
+    Some((3, 3 + end))
 }
 
 /// `str.strip()`: Python's whitespace is Rust's and the four separator controls U+001C-U+001F.

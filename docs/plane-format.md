@@ -333,6 +333,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`plane-push.json`](#plane-pushjson)
   - [`save-branch.json`](#save-branchjson)
   - [`save-journal.jsonl`](#save-journaljsonl)
+  - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
   - [`ws-edit-nudge/<sid>-<workspace>`](#ws-edit-nudgesid-workspace)
   - [`ws-autosave/<workspace>`](#ws-autosaveworkspace)
   - [`workspace-tab-order`](#workspace-tab-order)
@@ -1333,8 +1334,14 @@ outside the project and removes it when the flow ends, so it adds none of them (
 - **Tier:** Plane — committed by `purlis save`, so the team gets the project's skills.
 - **Written by:** the person; `purlis skill grant` (#2767), which writes a skill's
   `<name>.toml`; and Share (`purlis skill share`, and Share in the Skill studio, #2767), which
-  moves a folder in from [`skills.local/`](#skillslocal--the-projects-local-skills). The Skill
-  studio's create, edit, move and delete do from #2770.
+  moves a folder in from [`skills.local/`](#skillslocal--the-projects-local-skills); and the
+  Skill studio's and `purlis skill`'s new, edit, rename, move, delete and restore (#2770,
+  `purlis_core::skills::verbs`). Each of those is **one commit of exactly its own paths**
+  (`planegit::save_paths`): a skill's folder and the file beside it, and for a rename each
+  persona definition, skill and `workspace.json` that named it. Deleting a committed skill
+  removes it from git, and Restore brings it back from that commit. A skill git does not track
+  is kept in [`skills-deleted/`](#skills-deletedstamp-name) instead. When a chat runs
+  `purlis skill` to write, it is refused: a chat's change becomes a draft the person accepts (SK-9).
 - **Read by:** `purlis-skills`' `skill_set` (`crates/skills/src/lib.rs`), the one place a
   chat's skills are worked out, for every chat purlis starts and for `purlis skill list` and
   `show` and the Skill studio. A project skill is in the set of a chat at the plane root; a chat
@@ -6778,6 +6785,24 @@ rewritten.
   - `held`: `true` only while a request this clone forgot without seeing it end may still be
     open on a save branch from before the rename (V93j)
 
+### `skills-deleted/<stamp>-<name>/`
+- **Format:** one folder per deleted skill whose delete could not be a commit: one git does not
+  track (a local skill, or one in a workspace that is not LIVE), or a committed one in a project
+  that could not commit it then (no save mode yet, saving off, or something else staged). It
+  holds the skill's folder as it was, the `<folder>.toml` beside it where there was one, and `from`: one line naming the level it came from, relative to the
+  plane (`skills.local`, `workspaces/ops/skills`). `<stamp>` is when it was deleted, in
+  milliseconds since the epoch. Folders are `0700` and `from` is `0600`.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2770).
+- **Tier:** Clone state — this machine's, as the skill was.
+- **Written by:** `purlis_core::skills::verbs::delete`, which moves the folder in with
+  `renameat` and never over anything. Restore (`verbs::restore`) moves it back and removes the
+  emptied folder.
+- **Read by:** `verbs::deleted`, for the Skill studio's Deleted skills and `purlis skill restore`.
+  Deleted ⇒ those skills cannot be restored. A committed skill whose delete was committed is
+  never kept here: git keeps it. Every read, write and removal here goes through folders held
+  open with `O_NOFOLLOW`.
+- **Git:** gitignored, under the state directory.
+
 ### `save-journal.jsonl`
 - **Format:** JSON Lines, one object per save attempt, appended. Capped at the newest 500
   lines.
@@ -6793,7 +6818,7 @@ rewritten.
   - `at`: epoch seconds
   - `target`: `plane`, or `repo:<workspace>/<name>`
   - `trigger`: one of `manual`, `quiet`, `session-end`, `quit`, `launch`, `cli`, `live`,
-    `rename`; and, on a repo's line that no save wrote, `look` (purlis looked again at the
+    `rename`, `skill` (a skill changed in the Skill studio or by `purlis skill`, #2770); and, on a repo's line that no save wrote, `look` (purlis looked again at the
     repo's open request and found it changed) or `merge` (the person merged it as it stands)
   - `mode`
   - `files`: a count

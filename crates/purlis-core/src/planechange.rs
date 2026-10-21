@@ -213,6 +213,17 @@ fn answers_of(change: &Change) -> Vec<Answer> {
             Answer::Git,
             Answer::Views,
         ],
+        // A workspace's skills are part of what its chats started with (#2770): the window asks
+        // again which chats run on skills that changed since.
+        Kind::Workspace if is_workspace_skill(&change.path) => vec![
+            Answer::Sidebar,
+            panels(),
+            Answer::Instructions,
+            Answer::Curations,
+            Answer::Settings,
+            Answer::Git,
+            Answer::Views,
+        ],
         Kind::Workspace => vec![
             Answer::Sidebar,
             panels(),
@@ -238,9 +249,32 @@ fn answers_of(change: &Change) -> Vec<Answer> {
     }
 }
 
+/// Whether `path` (plane-relative, `/` between its parts) is in a workspace's skills, shared or
+/// local: `workspaces/<ws>/skills/…` or `workspaces/<ws>/skills.local/…`.
+fn is_workspace_skill(path: &str) -> bool {
+    // Its first three parts, read by the one rule of where a level's skills are.
+    let first: Vec<&str> = path.splitn(4, '/').take(3).collect();
+    purlis_skills::level_of_rel(&first.join("/")).is_some_and(|(workspace, _)| workspace.is_some())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_workspaces_skill_concerns_what_its_chats_started_with_and_its_todo_does_not() {
+        assert!(
+            answers_of(&at("workspaces/ops/skills/deploy/SKILL.md"))
+                .contains(&Answer::Instructions)
+        );
+        assert!(
+            answers_of(&at("workspaces/ops/skills.local/x/SKILL.md"))
+                .contains(&Answer::Instructions)
+        );
+        assert!(answers_of(&at("skills/deploy/SKILL.md")).contains(&Answer::Instructions));
+        assert!(!answers_of(&at("workspaces/ops/todos/a.md")).contains(&Answer::Instructions));
+        assert!(!answers_of(&at("workspaces/ops/skillset.md")).contains(&Answer::Instructions));
+    }
 
     const ROOT: &str = "/home/dev/plane";
 

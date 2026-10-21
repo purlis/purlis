@@ -25,6 +25,7 @@ afterEach(() => {
 function answering(studio: unknown) {
   mockIPC((cmd) => {
     if (cmd === "skill_studio") return studio;
+    if (cmd === "skills_deleted") return [];
     throw new Error(`unexpected ${cmd}`);
   });
 }
@@ -35,6 +36,7 @@ describe("the Skill studio", () => {
       on: true,
       workspace: null,
       workspaces: [],
+      levels: [],
       skills: [
         {
           name: "deploy",
@@ -42,9 +44,15 @@ describe("the Skill studio", () => {
           label: "project",
           local: false,
           grant: "root",
+          granted: { to: "root" },
+          turned_off: false,
           on: true,
           left_out: null,
           description: "Deploys the site.",
+          not_granted: null,
+          written: "deploy",
+          named: false,
+          unchecked: null,
           folder: "skills/deploy",
         },
         {
@@ -53,9 +61,15 @@ describe("the Skill studio", () => {
           label: "built-in",
           local: false,
           grant: null,
+          granted: null,
+          turned_off: false,
           on: true,
           left_out: null,
           description: "Keeps secrets.",
+          not_granted: null,
+          written: "secrets",
+          named: false,
+          unchecked: null,
           folder: "/app/plugin/skills/secrets",
         },
         {
@@ -64,9 +78,15 @@ describe("the Skill studio", () => {
           label: "project",
           local: false,
           grant: "root",
+          granted: { to: "root" },
+          turned_off: false,
           on: false,
           left_out: "a built-in skill has this name, and a built-in skill is never replaced",
           description: "",
+          not_granted: null,
+          written: "review",
+          named: false,
+          unchecked: null,
           folder: "skills/review",
         },
       ],
@@ -88,12 +108,14 @@ describe("the Skill studio", () => {
   it("shows a workspace's chats, its own copy over the project's, and both copies", async () => {
     const asked: unknown[] = [];
     mockIPC((cmd, args) => {
+      if (cmd === "skills_deleted") return [];
       if (cmd !== "skill_studio") throw new Error(`unexpected ${cmd}`);
       asked.push(args);
       return {
         on: true,
         workspace: "alpha",
         workspaces: ["alpha", "beta"],
+        levels: [],
         skills: [
           {
             name: "lint",
@@ -101,9 +123,15 @@ describe("the Skill studio", () => {
             label: "workspace",
             local: false,
             grant: null,
+            granted: null,
+            turned_off: false,
             on: true,
             left_out: null,
             description: "Lints here.",
+            not_granted: null,
+            written: "lint",
+            named: false,
+            unchecked: null,
             folder: "workspaces/alpha/skills/lint",
           },
           {
@@ -112,9 +140,15 @@ describe("the Skill studio", () => {
             label: "project",
             local: false,
             grant: "all",
+            granted: { to: "all" },
+            turned_off: false,
             on: false,
             left_out: "hidden by the workspace skill of this name",
             description: "",
+            not_granted: null,
+            written: "lint",
+            named: false,
+            unchecked: null,
             folder: "skills/lint",
           },
         ],
@@ -126,7 +160,7 @@ describe("the Skill studio", () => {
     const mine = await screen.findByTestId("skill-lint");
     expect(within(mine).getByText("workspace")).toBeInTheDocument();
     const hidden = screen.getByTestId("skill-lint-hidden-1");
-    expect(within(hidden).getByText("all")).toBeInTheDocument();
+    expect(within(hidden).getByText("Every workspace")).toBeInTheDocument();
     expect(
       within(hidden).getByText("Left out: hidden by the workspace skill of this name"),
     ).toBeInTheDocument();
@@ -144,11 +178,13 @@ describe("the Skill studio", () => {
         shared = true;
         return null;
       }
+      if (cmd === "skills_deleted") return [];
       if (cmd !== "skill_studio") throw new Error(`unexpected ${cmd}`);
       return {
         on: true,
         workspace: null,
         workspaces: [],
+        levels: [],
         skills: [
           {
             name: "scratch",
@@ -156,9 +192,15 @@ describe("the Skill studio", () => {
             label: shared ? "project" : "local project",
             local: !shared,
             grant: "root",
+            granted: { to: "root" },
+            turned_off: false,
             on: true,
             left_out: null,
             description: "Tries it.",
+            not_granted: null,
+            written: "scratch",
+            named: false,
+            unchecked: null,
             folder: shared ? "skills/scratch" : "skills.local/scratch",
           },
         ],
@@ -171,7 +213,9 @@ describe("the Skill studio", () => {
     within(row).getByRole("button", { name: "Share" }).click();
 
     await waitFor(() =>
-      expect(within(screen.getByTestId("skill-scratch")).queryByRole("button")).toBeNull(),
+      expect(
+        within(screen.getByTestId("skill-scratch")).queryByRole("button", { name: "Share" }),
+      ).toBeNull(),
     );
     expect(calls.filter((cmd) => cmd === "skill_studio")).toHaveLength(2);
   });
@@ -192,6 +236,7 @@ describe("the Skill studio", () => {
         workspace: null,
         persona: "ops",
         workspaces: ["alpha"],
+        levels: [],
         skills: [
           {
             name: "triage",
@@ -202,6 +247,9 @@ describe("the Skill studio", () => {
             on: true,
             left_out: null,
             description: "Triages.",
+            granted: null,
+            turned_off: false,
+            not_granted: null,
             folder: "personas/ops/skills/triage",
             written: "triage",
             named: false,
@@ -216,6 +264,9 @@ describe("the Skill studio", () => {
             on: true,
             left_out: null,
             description: "Deploys.",
+            granted: null,
+            turned_off: false,
+            not_granted: null,
             folder: "skills/deploy",
             written: "deploy",
             named: true,
@@ -230,6 +281,9 @@ describe("the Skill studio", () => {
             on: true,
             left_out: null,
             description: "",
+            granted: null,
+            turned_off: false,
+            not_granted: null,
             folder: "",
             written: "superpowers:tdd",
             named: true,

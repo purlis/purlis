@@ -64,6 +64,15 @@ pub struct StudioSkill {
     /// Where a project skill reaches: `root`, `all`, or the workspaces' names. `None` for a
     /// skill of another level.
     pub grant: Option<String>,
+    /// The same, for the studio's grant control to start from (#2770).
+    pub granted: Option<crate::skillchange::SkillGrant>,
+    /// Whether the workspace the studio shows turned this project skill off (#2770): its switch
+    /// turns it back on. `false` at the project's root.
+    pub turned_off: bool,
+    /// Where the studio shows a workspace's chats and this project skill's grant does not reach
+    /// it: why it cannot be turned on there, and the grant that would reach it (#2770), the
+    /// core's own sentence. `None` otherwise.
+    pub not_granted: Option<String>,
     /// Whether the chat the studio shows gets it.
     pub on: bool,
     /// Why it is left out, in one line, where it is.
@@ -93,6 +102,8 @@ pub struct Studio {
     pub persona: Option<String>,
     /// Every workspace of the project, which it can be shown for.
     pub workspaces: Vec<String>,
+    /// Every level a skill can be made at or moved to, with its words (#2770).
+    pub levels: Vec<crate::skillchange::StudioLevel>,
     pub skills: Vec<StudioSkill>,
 }
 
@@ -114,6 +125,7 @@ pub(crate) fn studio(
             workspace,
             persona,
             workspaces: Vec::new(),
+            levels: Vec::new(),
             skills: Vec::new(),
         };
     }
@@ -127,9 +139,30 @@ pub(crate) fn studio(
         .as_deref()
         .map(|persona| purlis_core::skills::names_of(root, persona))
         .unwrap_or_default();
+    let off = workspace
+        .as_deref()
+        .map(|ws| purlis_core::skills::turned_off(root, ws))
+        .unwrap_or_default();
     let skills = purlis_core::skills::studio_rows(&set, root, &names)
         .into_iter()
-        .map(|row| StudioSkill {
+        .map(|row| {
+            let grant = (row.origin == purlis_core::skills::Origin::Project).then(|| {
+                purlis_core::skills::grant_of(&root.join(&row.folder))
+                    .unwrap_or(purlis_core::skills::Grant::Root)
+            });
+            let not_granted = match (&grant, workspace.as_deref()) {
+                (Some(grant), Some(ws)) if !grant.reaches(ws) => {
+                    Some(purlis_core::skills::not_granted(&row.name, ws, grant, true))
+                }
+                _ => None,
+            };
+            (row, grant, not_granted)
+        })
+        .map(|(row, grant, not_granted)| StudioSkill {
+            granted: grant.map(Into::into),
+            not_granted,
+            turned_off: row.origin == purlis_core::skills::Origin::Project
+                && off.contains(&row.name),
             name: row.name,
             level: row.origin.into(),
             label: purlis_core::skills::level_shown(row.origin, row.local),
@@ -154,6 +187,7 @@ pub(crate) fn studio(
         workspace,
         persona,
         workspaces,
+        levels: crate::skillchange::levels(root),
         skills,
     }
 }
@@ -331,7 +365,7 @@ pub(crate) async fn skill_studio(
 }
 
 /// **Share** (#2767): moves the local skill `name` of the project's root (`workspace` `None`) or
-/// of `workspace` into that level's `skills/`, so the project's save commits it, or says why not.
+/// of `workspace` into that level's `skills/`, committed (#2770), or says why not.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_share(
@@ -345,7 +379,7 @@ pub(crate) async fn skill_share(
         if !purlis_core::skills::studio_on_here() {
             return Err("The Skill studio is not turned on on this machine.".to_owned());
         }
-        purlis_core::skills::share_here(held.root(), workspace.as_deref(), &name).map(|_| ())
+        crate::skillchange::share(held.root(), workspace.as_deref(), &name)
     })
     .await
 }

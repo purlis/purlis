@@ -6854,6 +6854,7 @@ fn a_chat_is_marked_when_the_instructions_it_started_on_change_under_it() {
         vec![PlaneUpdated {
             session,
             files: vec!["CLAUDE.md".to_owned()],
+            skills: false,
         }]
     );
     held.close_chat(session).expect("it closes");
