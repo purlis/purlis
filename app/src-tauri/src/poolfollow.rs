@@ -60,8 +60,11 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
     {
         return;
     }
-    let image = match runner_image(app).await {
-        Ok(image) => image,
+    let found = runner_image(app).await;
+    note_named(&found);
+    let image = match found {
+        Ok(Found::Named(image)) => Some(image),
+        Ok(Found::NoneNamed | Found::OtherVersion) => None,
         Err(why) => {
             tracing::warn!("purlis: this version's runner image could not be read: {why}");
             None
@@ -85,11 +88,78 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
     }
 }
 
+/// Whether the last look found a runner image named for this version: `None` until a look
+/// answered.
+#[cfg(unix)]
+static NAMED: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+
+/// **What a look found of this version's runner image** (#2880).
+#[cfg(unix)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Found {
+    /// The channel's manifest is of another version than this desktop's: one behind or ahead
+    /// of its channel. Nothing is said of this version's release.
+    OtherVersion,
+    /// This version's manifest names no runner image, as a release whose image failed does.
+    NoneNamed,
+    /// This version's manifest names it.
+    Named(Image),
+}
+
+/// **What `manifest`, the channel's update manifest as the updater read it, says of the runner
+/// image of `version`** (#2880), checked with the updater key `pubkey`: none read, or one of
+/// another version, says nothing of it.
+#[cfg(unix)]
+pub fn found_in(
+    manifest: Option<&serde_json::Value>,
+    pubkey: &str,
+    version: &str,
+) -> Result<Found, String> {
+    let Some(manifest) = manifest else {
+        return Ok(Found::OtherVersion);
+    };
+    if manifest.get("version").and_then(serde_json::Value::as_str) != Some(version) {
+        return Ok(Found::OtherVersion);
+    }
+    Ok(
+        match purlis_core::runnerimage::of_this_version(manifest, pubkey, version)? {
+            Some(image) => Found::Named(image),
+            None => Found::NoneNamed,
+        },
+    )
+}
+
+/// **Notes whether this version's manifest named a runner image** (#2880), from a look's
+/// answer: only a manifest of this very version says so. One that names none, as a release
+/// whose runner image failed does, leaves the pools where they are, and the Pools group says they
+/// do not move to this version. A manifest of another version, or a look that could not be made,
+/// notes nothing.
+#[cfg(unix)]
+pub fn note_named(found: &Result<Found, String>) {
+    let named = match found {
+        Ok(Found::Named(_)) => true,
+        Ok(Found::NoneNamed) => false,
+        Ok(Found::OtherVersion) | Err(_) => return,
+    };
+    *NAMED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(named);
+}
+
+/// **Whether this version's release named a runner image**, as the last look found it: `None`
+/// until a look answered (#2880).
+#[cfg(unix)]
+pub fn this_versions_image_named() -> Option<bool> {
+    *NAMED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// **The runner image the update manifest names for this version**, or none where the
 /// channel's manifest is of another version or names none (a release from before #2749).
 /// One updater read, listed in the network log as every read is.
 #[cfg(unix)]
-async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Option<Image>, String> {
+async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Found, String> {
     use tauri_plugin_updater::UpdaterExt;
     let endpoint = crate::updates::channel_now().endpoint();
     let url = endpoint
@@ -108,7 +178,7 @@ async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Option<Im
     let found = updater.check().await;
     purlis_core::netlog::updater_read(&endpoint, found.is_ok(), started.elapsed());
     let Some(update) = found.map_err(|why| why.to_string())? else {
-        return Ok(None);
+        return Ok(Found::OtherVersion);
     };
     let pubkey = app
         .config()
@@ -119,7 +189,7 @@ async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Option<Im
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    purlis_core::runnerimage::of_this_version(&update.raw_json, &pubkey, &ours.to_string())
+    found_in(Some(&update.raw_json), &pubkey, &ours.to_string())
 }
 
 /// **Moves each pool of purlis's own image on `machine` to `image`, and removes each draining

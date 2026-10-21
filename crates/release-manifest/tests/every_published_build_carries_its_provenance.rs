@@ -78,10 +78,13 @@ fn the_provenance_job_attests_what_the_build_made_whenever_the_run_publishes() {
         "provenance needs {:?}; it attests the build's output, so it needs `build`",
         provenance.needs()
     );
-    assert_eq!(
-        provenance.condition(),
-        Some("needs.plan.outputs.publish == 'true'"),
-        "a published build is attested, and one published nowhere is not"
+    // Whatever became of the runner image (#2880).
+    assert!(
+        provenance
+            .condition()
+            .is_some_and(|said| said.contains("needs.plan.outputs.publish == 'true'")),
+        "a published build is attested, and one published nowhere is not: {:?}",
+        provenance.condition()
     );
 
     let steps = provenance.steps();
