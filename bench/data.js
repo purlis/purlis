@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792556285676,
+  "lastUpdate": 1792558103444,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20118,6 +20118,48 @@ window.BENCHMARK_DATA = {
             "value": 102.51230050000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.641, 102.139, 102.512, 102.766, 103.036 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2f87c7e3731d3c221d41064b36b5b87b2aae095f",
+          "message": "Browsers: the engine sandboxes under a profile, or the machine's Chrome (#2835) (#2873)\n\n* Browsers: the engine sandboxes under a profile, or the machine's Chrome (#2835)\n\nRuled 2026-10-20: the sandbox always on. On Ubuntu 23.10 and later the\npinned engine makes its sandbox only under an AppArmor profile that\nnames it, so every browser ended at its start.\n\n- The .deb installs a profile for the pinned engine in the default data\n  folder alone, allowing it userns and nothing more, where the kernel\n  restricts user namespaces.\n- The session host checks before the engine starts, through\n  kernel.apparmor_restrict_unprivileged_userns and the profiles\n  installed, and reads the engine's log for \"No usable sandbox\": either\n  way it refuses the start in one sentence.\n- The chat is told a browser is not available on this machine. The\n  person gets a Notice with the command that adds a profile for this\n  machine's engine, and this machine's own Chrome where one is\n  installed (browsers.engine = \"machine\" in machine.json).\n- CI installs what the .deb installs, and tells AppArmor its test homes\n  are under the temporary folder.\n\nCloses #2835\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: no chat writes the engines the profile names; the profile writes its path as itself (#2835)\n\nThe AppArmor profile lets a program at the pinned engine's path make user\nnamespaces, so the sandbox denies writing the engines folder of the data\nhome in use and of the default data folder under either name. The\ncommand's profile escapes every character AppArmor reads as a pattern,\nand a data folder with a control character in its path is offered none.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T08:46:56+04:00",
+          "tree_id": "b90b1856269ad89a8781e12426b033825d26ae54",
+          "url": "https://github.com/purlis/purlis/commit/2f87c7e3731d3c221d41064b36b5b87b2aae095f"
+        },
+        "date": 1792558101558,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3329065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.322, 0.328, 0.333, 0.339, 0.349 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.517557500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.465, 16.493, 16.518, 16.531, 16.551 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.479259,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.607, 100.809, 101.479, 101.524, 102.235 ms"
           }
         ]
       }
