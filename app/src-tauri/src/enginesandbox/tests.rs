@@ -130,8 +130,8 @@ fn a_remove_takes_the_packages_profile_and_only_a_purge_takes_the_one_the_person
     std::fs::set_permissions(&parser, std::fs::Permissions::from_mode(0o755)).expect("runs");
     let shipped = apparmor.join("purlis-engine");
     let here = apparmor.join("purlis-engine-here");
-    let theirs = purlis_core::browsers::sandboxing::profile_for(Path::new(ENGINES))
-        .expect("a profile");
+    let theirs =
+        purlis_core::browsers::sandboxing::profile_for(Path::new(ENGINES)).expect("a profile");
     let put_back = || {
         std::fs::write(&shipped, purlis_core::browsers::sandboxing::SHIPPED).expect("shipped");
         std::fs::write(&here, &theirs).expect("theirs");
@@ -141,16 +141,30 @@ fn a_remove_takes_the_packages_profile_and_only_a_purge_takes_the_one_the_person
     assert!(postrm("remove", &apparmor, &bin).success());
     assert!(!shipped.exists(), "the package's own profile goes with it");
     assert!(here.exists(), "a remove keeps what the person added");
+    let said = std::fs::read_to_string(&asked).unwrap_or_default();
+    assert!(
+        !said.contains("purlis-engine-here"),
+        "a remove never unloads what the person added: {said}"
+    );
 
     put_back();
     assert!(postrm("purge", &apparmor, &bin).success());
     assert!(!shipped.exists());
-    assert!(!here.exists(), "a purge takes the profile the Notice's command wrote");
+    assert!(
+        !here.exists(),
+        "a purge takes the profile the Notice's command wrote"
+    );
     let said = std::fs::read_to_string(&asked).expect("the parser was asked");
     assert!(said.contains(&format!("-R {}", here.display())), "{said}");
 
-    // A file by that name that is not purlis's profile is not purlis's to remove.
-    std::fs::write(&here, "# someone else's\n").expect("another file");
-    assert!(postrm("purge", &apparmor, &bin).success());
-    assert!(here.exists(), "left as it was");
+    // A file by that name that is not purlis's profile, whole, is not purlis's to remove: one
+    // of the person's own, one that starts with purlis's line and allows more, and one naming
+    // another program.
+    let more = theirs.replace("  userns,\n", "  userns,\n  capability sys_admin,\n");
+    let elsewhere = theirs.replace("/chrome-linux64/chrome", "/chrome-linux64/other");
+    for other in ["# someone else's\n".to_owned(), more, elsewhere] {
+        std::fs::write(&here, &other).expect("another file");
+        assert!(postrm("purge", &apparmor, &bin).success());
+        assert!(here.exists(), "left as it was: {other}");
+    }
 }
