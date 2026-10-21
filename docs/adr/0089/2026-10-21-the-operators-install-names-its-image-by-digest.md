@@ -9,8 +9,8 @@ are **decided in implementation, to be confirmed** (D-2281-1 to D-2281-3).
 1. **One tool replaces the placeholders.** `tools/operator-install.mjs <out> <image>@sha256:<digest>`
    writes this checkout's plain manifests and chart into `<out>`. It sets `operator.yaml`'s image
    and the chart's default `image.repository` and `image.digest` to the image. It refuses an
-   image not named by a whole sha256 digest, and a placeholder missing or written twice, and in
-   either case writes nothing. *D-2281-1.*
+   image not named by a whole sha256 digest, a placeholder missing or written twice, and an
+   `<out>` that is not empty, and in each case writes nothing. *D-2281-1.*
 2. **Where the downloadable install is.** `operator-image.yml` runs it for every image it
    publishes, and the run's `operator-image` artifact holds `install/` beside the digest: the
    manifests and the chart of that image's own commit. The checked-in files keep their

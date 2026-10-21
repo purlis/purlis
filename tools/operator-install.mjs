@@ -12,9 +12,11 @@
 // the image: so what is installed names the image built from the same commit as the manifests.
 // `operator-image.yml` records it for every image it publishes, and `operator/e2e/kind.sh`
 // installs it, so both replace the same placeholders the same way. Fails closed: an image not
-// named by a whole digest, or a placeholder missing or written twice, writes nothing.
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// named by a whole digest, a placeholder missing or written twice, or an `<out dir>` that is not
+// empty, writes nothing.
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** The one line of `operator/deploy/operator.yaml` that names its image. */
 export const MANIFEST_PLACEHOLDER = `          image: ghcr.io/purlis/purlis-cluster-operator@sha256:${"0".repeat(64)}`;
@@ -68,7 +70,11 @@ export function pinnedInstall(repo, out, image) {
   const manifest = pinManifest(readFileSync(join(deploy, "operator.yaml"), "utf8"), image);
   const valuesPath = join(repo, CHART, "values.yaml");
   const values = pinChartValues(readFileSync(valuesPath, "utf8"), image);
-  // Everything is read and checked before anything is written.
+  // Everything is read and checked before anything is written, and nothing is written over:
+  // an install is the one thing in its folder.
+  if (existsSync(out) && readdirSync(out).length > 0) {
+    throw new Error(`${out} is not empty: an install is written only into an empty folder`);
+  }
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "operator.yaml"), manifest);
   for (const plain of ["crds.yaml", "policy.yaml"]) {
@@ -79,14 +85,15 @@ export function pinnedInstall(repo, out, image) {
   writeFileSync(join(chart, "values.yaml"), values);
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+const here = fileURLToPath(import.meta.url);
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(here)) {
   const [out, image] = process.argv.slice(2);
   if (!out || !image) {
     console.error("usage: node tools/operator-install.mjs <out dir> <image>@sha256:<digest>");
     process.exit(2);
   }
   try {
-    pinnedInstall(new URL("..", import.meta.url).pathname, out, image);
+    pinnedInstall(fileURLToPath(new URL("..", pathToFileURL(realpathSync(here)))), out, image);
   } catch (why) {
     console.error(`purlis: the operator's install was not pinned: ${why.message}`);
     process.exit(1);

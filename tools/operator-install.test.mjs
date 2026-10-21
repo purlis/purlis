@@ -5,7 +5,7 @@
 // `operator-image.yml` records for each image it publishes and what `operator/e2e/kind.sh`
 // installs, made by the one tool from the same placeholders. Run with `node --test tools/`.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -95,4 +95,24 @@ test("the kind run and the publishing run pin their install with this tool, and 
   const workflow = read(".github/workflows/operator-image.yml");
   assert.match(workflow, /node tools\/operator-install\.mjs "\$RUNNER_TEMP\/record\/install" "\$IMAGE@\$DIGEST"/);
   assert.doesNotMatch(workflow, /sha256:0{64}/, "the placeholder is the tool's alone");
+});
+
+test("an install is written only into a folder that is empty", () => {
+  const out = mkdtempSync(join(tmpdir(), "purlis-operator-install-"));
+  writeFileSync(join(out, "operator.yaml"), "left from before\n");
+  assert.throws(() => pinnedInstall(repo, out, IMAGE), /empty/);
+  assert.equal(readFileSync(join(out, "operator.yaml"), "utf8"), "left from before\n");
+});
+
+test("the kind run follows a change to the tool, and has node to run it", () => {
+  const workflow = read(".github/workflows/operator.yml");
+  const paths = workflow.match(/^ {4}paths:\n((?: {6}- .*\n)+)/gm);
+  assert.equal(paths?.length, 2, "pull_request and push each list their paths");
+  for (const list of paths) assert.match(list, /^ {6}- tools\/operator-install\*$/m);
+
+  const kind = workflow.slice(workflow.indexOf("\n  kind:\n"));
+  const node = kind.indexOf("uses: actions/setup-node@");
+  const run = kind.indexOf("operator/e2e/kind.sh");
+  assert.ok(node > 0 && node < run, "node is set up before kind.sh runs");
+  assert.match(kind.slice(node, run), /node-version-file: \.nvmrc/);
 });
