@@ -130,7 +130,7 @@ impl State {
         }
     }
 
-    /// The same state on today's control classes, until a family moves to its wrapper.
+    /// The same state on today's control classes.
     fn on_a_class(self) -> &'static str {
         match self {
             Self::Hover => ":hover:not(:disabled, [aria-disabled=\"true\"])",
@@ -331,7 +331,7 @@ pub struct Variant {
     pub since: u32,
     pub description: &'static str,
     pub consent: Option<Consent>,
-    /// The class today's markup draws it with, until the family moves to its wrapper; `None`
+    /// The class today's markup draws it with; `None`
     /// for the variant a class without one draws.
     class: Option<&'static str>,
 }
@@ -519,15 +519,35 @@ const SEEN: f64 = 0.02;
 /// beyond what rounding a colour moves.
 const NO_NEARER: f64 = 0.005;
 
-/// How far apart two looks are drawn: the farthest of their fills, their edges and, with
-/// `words`, their words, in OKLab. A colour against none (transparent) is as far as can be.
-fn look_apart(theme: &ResolvedTheme, a: &Drawn, b: &Drawn, words: bool) -> f64 {
+/// **How far apart two looks are drawn**, in OKLab, on what a person reads as the look: the
+/// fills as each shows on every ground the family is drawn on, the nearest ground counting; the
+/// edges only where they stand out at a glance ([`super::ALLOW_APART`]), since a hairline that
+/// differs less reads as the same edge; and, with `words`, the words.
+fn look_apart(theme: &ResolvedTheme, family: &Family, a: &Drawn, b: &Drawn, words: bool) -> f64 {
     let one = |x: &str, y: &str| match (hex(theme, x), hex(theme, y)) {
         (None, None) => 0.0,
         (Some(_), Some(_)) => apart(theme, x, y).unwrap_or(1.0),
         _ => 1.0,
     };
-    let mut far = one(a.fill, b.fill).max(one(a.border, b.border));
+    let shown = |fill: &str, ground: &str| {
+        hex(theme, fill).map_or_else(|| ground.to_owned(), |fill| onto(fill, ground))
+    };
+    let fills = family
+        .grounds
+        .iter()
+        .filter_map(|ground| hex(theme, ground))
+        .filter_map(|ground| {
+            let (x, y) = (shown(a.fill, ground), shown(b.fill, ground));
+            Some(tint::distance(tint::oklab_of(&x)?, tint::oklab_of(&y)?))
+        })
+        .reduce(f64::min)
+        .unwrap_or_else(|| one(a.fill, b.fill));
+    let edges = one(a.border, b.border);
+    let mut far = if edges >= super::ALLOW_APART {
+        fills.max(edges)
+    } else {
+        fills
+    };
     if words {
         far = far.max(one(a.words[0], b.words[0]));
     }
@@ -1326,8 +1346,8 @@ fn consent_broken(
     // Parts never bring a consent variant nearer the primary than the family's defaults are, in
     // this same drawn theme: the farthest of its fill, its edge and (for danger) its words.
     let words = variant.consent == Some(Consent::Danger);
-    let nearer = look_apart(theme, &look, &primary, words)
-        < look_apart(theme, &default_look, &default_primary, words) - NO_NEARER;
+    let nearer = look_apart(theme, family, &look, &primary, words)
+        < look_apart(theme, family, &default_look, &default_primary, words) - NO_NEARER;
     match variant.consent? {
         Consent::Grants => {
             let own = edge(rules, family, variant.name, &look);

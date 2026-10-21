@@ -968,3 +968,39 @@ fn a_border_width_never_reaches_todays_small_buttons() {
         "{line}"
     );
 }
+
+#[test]
+fn the_primarys_look_is_its_fill_and_an_edge_that_stands_out() {
+    for near in ["#5ed0b2", "#63d5b7"] {
+        let fallen = fallen_parts(&with_tokens_and_parts(
+            json!({ "chart.5": near }),
+            json!({
+                "button.root.primary.fill": "control.base",
+                "button.root.primary.border-colour": "chart.5",
+                "button.root.primary.hover.fill": "control.hover",
+            }),
+        ));
+        assert!(
+            fallen.contains(&"button.root.primary".to_owned()),
+            "{near}: {fallen:?}"
+        );
+    }
+}
+
+#[test]
+fn a_see_through_fill_is_measured_as_it_shows_on_each_ground() {
+    for tokens in [json!({}), json!({ "surface.raised": "#262623" })] {
+        let fallen = fallen_parts(&with_tokens_and_parts(
+            tokens.clone(),
+            json!({
+                "button.root.primary.fill": "transparent",
+                "button.root.primary.border-colour": "focus.ring",
+                "button.root.primary.hover.fill": "control.hover",
+            }),
+        ));
+        assert!(
+            fallen.contains(&"button.root.primary".to_owned()),
+            "{tokens}: {fallen:?}"
+        );
+    }
+}

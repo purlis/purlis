@@ -339,8 +339,7 @@ small button (`.ui-button-sm`) or a button in a wrapping row, whose size their o
 and a small button's corners are clamped to its own height.
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
-families with parts yet: they stay as the note under [Geometry](#geometry) says until each family
-joins the manifest.
+families with parts today: they are drawn as the note under [Geometry](#geometry) says.
 
 ## The theme check
 
