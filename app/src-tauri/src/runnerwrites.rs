@@ -17,9 +17,8 @@
 //! The chat is told which on its next turn, and told where an Apply could not be made. There is
 //! no "always apply". A write that carries what looks like a credential is never held.
 //!
-//! In memory only, as proposed changes are: a relaunch starts with none, and a runner chat taken
-//! back after one is told that what it asked for before waits no more. A chat's held writes end
-//! with it.
+//! In memory only, as proposed changes are: a relaunch starts with none, which the chat is told
+//! as its write is held ([`HELD_SAID`]). A chat's held writes end with it.
 
 use std::sync::{Mutex, PoisonError};
 
@@ -35,8 +34,8 @@ pub const AT_MOST_PER_CHAT: usize = 16;
 /// What the chat is told once its write is held.
 pub const HELD_SAID: &str = "this chat runs on a pool's runner, so its change to the project \
      was shown to the person as a proposal: only they apply it, in the window. Wait for their \
-     answer, which comes back to this chat as applied or dismissed. A restart of purlis drops \
-     it, and this chat is told so.";
+     answer, which comes back to this chat as applied or dismissed. A restart of the window \
+     drops it, and nothing of it is written then: ask again for what is still wanted.";
 
 /// Why an answer found nothing to answer.
 const WAITS_NO_MORE: &str = "That proposal waits no more: it was answered already, or its chat \
@@ -270,7 +269,8 @@ pub struct RunnerWriteWhole {
     pub session: u32,
     /// The pool it runs on.
     pub pool: String,
-    /// What it would do, every text whole, drawn safely.
+    /// What it would do, every text whole: as it would be written where it [`Self::applies`],
+    /// and drawn safely, its escapes written out, where it does not.
     pub said: String,
     /// Whether Apply is offered: every text it carries is drawn as it is.
     pub applies: bool,
@@ -289,7 +289,13 @@ pub fn whole_of(one: &HeldWrite) -> RunnerWriteWhole {
     RunnerWriteWhole {
         session: one.session,
         pool: purlis_core::dispatchgrant::inert(&one.pool),
-        said: purlis_core::dispatchgrant::inert(&one.whole),
+        // Unescaped only where every character draws as itself, so a backslash reads as the one
+        // backslash that is written.
+        said: if applies {
+            one.whole.clone()
+        } else {
+            purlis_core::dispatchgrant::inert(&one.whole)
+        },
         applies,
         why: (!applies).then(|| DRAWN_OTHERWISE.to_owned()),
     }
@@ -314,12 +320,6 @@ pub async fn runner_write(
             .ok_or_else(|| WAITS_NO_MORE.to_owned())
     })
     .await
-}
-
-/// **Runner chat `session` was taken back after purlis restarted**: what it asked for before
-/// was held in memory and waits no more, and it is told so on its next turn.
-pub fn restarted(held: &Held, session: u32) {
-    tell(held, session, ProposalWord::Restarted);
 }
 
 /// **Dismiss** on a held write: nothing is made. Window-only.

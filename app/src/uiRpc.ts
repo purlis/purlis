@@ -8126,7 +8126,10 @@ export type RunnerWriteWhole = {
 	session: number,
 	/**  The pool it runs on. */
 	pool: string,
-	/**  What it would do, every text whole, drawn safely. */
+	/**
+	 *  What it would do, every text whole: as it would be written where it [`Self::applies`],
+	 *  and drawn safely, its escapes written out, where it does not.
+	 */
 	said: string,
 	/**  Whether Apply is offered: every text it carries is drawn as it is. */
 	applies: boolean,

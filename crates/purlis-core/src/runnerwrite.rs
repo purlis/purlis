@@ -166,18 +166,23 @@ pub fn refusal(write: &Write) -> Option<&'static str> {
     })
 }
 
-/// Whether every text `write` carries is drawn as it is: none holds a character that draws as
-/// nothing or as something else, so what the person reads is what is written.
+/// Whether every text `write` carries is drawn as it is, character for character: none holds a
+/// carriage return or a character that draws as nothing or as something else, so a held write's
+/// own tab shows it unescaped, and what the person reads there is what is written.
 pub fn drawn_as_it_is(write: &Write) -> bool {
     use crate::harness::asked::edit::unshown;
     use crate::harness::model::{Unshown, Written};
     texts(write).into_iter().all(|text| {
-        matches!(
-            unshown(&[Written::File {
-                content: text.to_owned(),
-            }]),
-            None | Some(Unshown::TooBig)
-        )
+        !text.contains('\r')
+            && !text
+                .chars()
+                .any(|c| c != '\n' && c != '\t' && crate::shown::invisible(c))
+            && matches!(
+                unshown(&[Written::File {
+                    content: text.to_owned(),
+                }]),
+                None | Some(Unshown::TooBig)
+            )
     })
 }
 

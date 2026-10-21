@@ -305,20 +305,16 @@ pub enum ProposalWord {
     /// The person applied it, and it could not be made, for `why`, purlis's own sentence:
     /// nothing was written (#2046).
     NotMade { path: String, why: String },
-    /// purlis restarted, and every change this chat asked for before waits no more: nothing of
-    /// them was written (#2046). It names no change.
-    Restarted,
 }
 
 impl ProposalWord {
-    /// The file it is about: none for [`Self::Restarted`].
+    /// The file it is about.
     pub fn path(&self) -> &str {
         match self {
             Self::Applied { path }
             | Self::Dismissed { path }
             | Self::Stale { path }
             | Self::NotMade { path, .. } => path,
-            Self::Restarted => "",
         }
     }
 }
@@ -684,7 +680,7 @@ impl Talk {
     /// file**: a later word about the same file takes the place of one not handed yet.
     pub fn proposal_word(&mut self, chat: u32, word: ProposalWord) {
         let path = word.path();
-        if (path.is_empty() && word != ProposalWord::Restarted)
+        if path.is_empty()
             || path.len() > crate::proposed::MOST_PATH_BYTES
             || path.chars().any(|c| c.is_control() || c == '`')
         {
@@ -1360,10 +1356,6 @@ pub fn proposal_said(word: &ProposalWord) -> String {
              be made: nothing was written. purlis said: {}. This line is purlis's own.",
             why.trim_end_matches('.')
         ),
-        ProposalWord::Restarted => "⬢ purlis: purlis restarted, so every change to the project \
-             this chat asked for before waits no more: none of them was written. Ask again for \
-             any still wanted. This line is purlis's own."
-            .to_owned(),
     }
 }
 

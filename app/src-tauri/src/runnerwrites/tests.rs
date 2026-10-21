@@ -234,3 +234,59 @@ fn an_apply_the_project_refuses_is_said_and_waits_no_more() {
     assert!(matches!(refused, Err(NotMade::Refused(..))), "{refused:?}");
     assert!(writes.every().is_empty());
 }
+
+#[test]
+fn a_backslash_is_shown_in_the_tab_as_the_one_that_is_written() {
+    let (_dir, root) = a_project();
+    let writes = RunnerWrites::default();
+    let text = (1..=30)
+        .map(|n| format!("line {n}: C:\\builds\\out and a\\nb\n"))
+        .collect::<String>();
+    let id = writes
+        .note(
+            "builds",
+            chat(4),
+            purlis_core::runnerwrite::held_as(Write::WorkspaceRemember {
+                text: text.clone(),
+                title: None,
+            }),
+            100,
+        )
+        .unwrap();
+    let whole = whole_of(&writes.every()[0]);
+    assert!(whole.applies);
+    assert!(
+        whole.said.contains("line 1: C:\\builds\\out and a\\nb\n"),
+        "{}",
+        whole.said
+    );
+    assert!(
+        !whole.said.contains("\\\\"),
+        "no backslash doubled: {}",
+        whole.said
+    );
+
+    apply_in(&root, &writes, id, crate::proposals::From::Tab, now()).expect("applied");
+    let made = memories(&root);
+    let written =
+        std::fs::read_to_string(root.join("workspaces/alpha/memory").join(&made[0])).unwrap();
+    assert!(written.contains(text.trim()), "{written}");
+}
+
+#[test]
+fn a_carriage_return_is_applied_nowhere_and_shown_escaped() {
+    let writes = RunnerWrites::default();
+    writes
+        .note(
+            "builds",
+            chat(4),
+            Write::Todo {
+                text: "one\r\ntwo".into(),
+            },
+            100,
+        )
+        .unwrap();
+    let whole = whole_of(&writes.every()[0]);
+    assert!(!whole.applies);
+    assert!(!crate::asking::runner_write_shown_whole(&writes.every()[0]));
+}

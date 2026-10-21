@@ -20,14 +20,18 @@ note says how. *Decided in implementation, to be confirmed* (D-2046-17 to D-2046
    (`purlis_core::runnerwrite::said`). **Apply** is offered there only where that line is the
    whole write as it would be written: nothing cut, collapsed, masked or escaped. Otherwise
    **Open** shows it whole in its own tab, with Apply where every text it carries is drawn as it
-   is. The app judges Apply again by the rules of where it was pressed. Apply makes it, as the
+   is, character for character: no carriage return and nothing that draws as something else, so
+   the tab shows the text unescaped, a backslash as the one backslash written. The app judges
+   Apply again by the rules of where it was pressed. Apply makes it, as the
    window makes a chat's brokered write here, for the chat as the app records it (its workspace
    and persona, never the line's). **Dismiss** makes nothing. The chat is told which on its next
    turn, and told why where an Apply could not be made. There is no "always apply", and a chat
    has at most 16 waiting. *(D-2046-18)*
 3. **Held in memory only, as proposed changes are** (PC rulings of 2026-10-14). A relaunch
-   starts with none, and a chat's proposals end with it. A runner chat taken back after a
-   restart is told that what it asked for before waits no more. *(D-2046-19)*
+   starts with none, and a chat's proposals end with it. The chat is told so as its write is
+   held: a restart of the window drops it, and it asks again for what is still wanted. Nothing
+   on disk says which chat had a change held, so none is told again after the restart.
+   *(D-2046-19)*
 4. **What the chat is told names no text of its own.** Applied, dismissed and not made are said
    in purlis's words around what the change is (`purlis_core::runnerwrite::subject`), never the
    text the chat sent. *(D-2046-23)*
