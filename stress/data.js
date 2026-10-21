@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792580605259,
+  "lastUpdate": 1792580626341,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -9948,6 +9948,42 @@ window.BENCHMARK_DATA = {
             "value": 658.3,
             "unit": "MB",
             "extra": "median of 6 samples: 615.8, 637.5, 653.9, 662.6, 663.7, 756.7 MB; window 393.3 MB, session host 265 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6eee131abdaf021736ba6503c3989a4908d2bf57",
+          "message": "Runners: a pool's follow leaves no runner container or volume behind (#2869) (#2887)\n\n* Runners: a pool's follow leaves no runner container or volume behind\n\nBefore a follow makes the runner <pool>-<8 hex>, under the lock of\nrunners.json, it removes a container of exactly that name carrying the\nrunner label of that name, and the home volume of that name, where no\nkept runner and no pool holds the name (pools::clear_leftovers_of,\nDocker::remove_leftovers_of).\n\nADR 0078 amended 2026-10-21 for #2869.\n\nCloses #2869\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a leftover is removed only where this desktop made it, by its id\n\nEach runner container is labelled purlis.desktop=<a hash of the config\nhome>; a follow takes a container for its leftover only with this\ndesktop's label, removes it by the id Docker listed, and removes the\nhome volume only once no container of its name is left.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a leftover's id is listed whole\n\ncontainer ls takes --no-trunc, so the id it lists is the 64 digits a\ncontainer is removed by; the stand-in Docker prints 12 without it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T14:23:10+04:00",
+          "tree_id": "ac062c2092d1a5776d6777d4da7e8726c1633355",
+          "url": "https://github.com/purlis/purlis/commit/6eee131abdaf021736ba6503c3989a4908d2bf57"
+        },
+        "date": 1792580624372,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1477.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1395.1, 1477.1, 1553.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 663.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 627, 648.7, 661.1, 666.5, 667.6, 736.9 MB; window 393.1 MB, session host 270.7 MB"
           }
         ]
       }
