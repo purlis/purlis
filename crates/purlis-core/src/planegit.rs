@@ -1375,6 +1375,11 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
             "--porcelain=v1",
             "-z",
             "--untracked-files=all",
+            // What a save stages ([`SAVE_STAGES`]): never a level's local skills.
+            "--",
+            ".",
+            SAVE_STAGES[4],
+            SAVE_STAGES[5],
         ],
         git::READ,
     ) else {
@@ -2079,6 +2084,18 @@ const WHOLE_TREE_PATHSPECS: [&str; 4] = [".", "./", ":/", ":/:"];
 /// operator's mid-edit `charter.toml`.
 const WHOLE_TREE_FLAGS: [&str; 5] = ["-A", "--all", "--no-ignore-removal", "-u", "--update"];
 
+/// **What a plane save stages**: the whole tree, but never a level's local skills (ADR 0099 §1,
+/// #2767), whatever the plane's `.gitignore` says. `skills.local/` is this machine's own, and
+/// a plane whose `.gitignore` lost its line would otherwise commit it to the team.
+pub const SAVE_STAGES: [&str; 6] = [
+    "add",
+    "-A",
+    "--",
+    ".",
+    ":(exclude,glob)skills.local/**",
+    ":(exclude,glob)workspaces/*/skills.local/**",
+];
+
 /// Would `add_cmd` stage EVERYTHING under the root it is run in?
 ///
 /// The property that makes a call dangerous is not which command issued it — it is that it
@@ -2593,7 +2610,7 @@ pub fn save_claimed(request: &Request, trigger: Trigger, _claim: &Claim, say: Si
         commit_push(
             request,
             &plane,
-            &["add", "-A"],
+            &SAVE_STAGES,
             &trigger.caller(),
             &mut attempt,
             say,

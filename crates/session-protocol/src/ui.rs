@@ -592,6 +592,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "set_browser_limit",
     // This machine's Skill studio preview (#2765): the person's to turn on, in their window.
     "set_skill_studio_on",
+    // Share in the Skill studio (#2767): moves a local skill into the shared folder, so the next
+    // save commits it to the team. The person's own press in their window.
+    "skill_share",
     // This machine's Docker pools (#2679): adding one runs a container on the person's machine
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.
