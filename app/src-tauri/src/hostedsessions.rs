@@ -1583,6 +1583,8 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         project: project.clone(),
         on: link.id,
     });
+    // Held: a mark that a runner would not hold it goes (#2846).
+    crate::notheld::held(root);
     Ok((link, project))
 }
 
@@ -1643,6 +1645,11 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
         };
         if let Err(again) = held_on(&holding) {
             tracing::warn!("purlis: project {project} is not held where its chats run: {again}");
+            // Marked in the Pools group until a hold is taken (#2846), in the runner's words:
+            // only a refusal of the hold, never what purlis itself could not do.
+            if let Some(words) = again.strip_prefix(NOT_HELD) {
+                crate::notheld::not_held(&holding.root, words.trim_start());
+            }
         }
     })
 }

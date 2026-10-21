@@ -21,6 +21,8 @@
         "text.primary": "#dddcd6",
         "text.secondary": "#c9c8c0",
         "text.muted": "#9e9d94",
+        "text.quiet": "#9e9d94",
+        "text.faint": "#9e9d94",
 
         "border.subtle": "#2f2f2b",
         "border.strong": "#41403b",
@@ -210,6 +212,8 @@
         "text.primary": "#1f1e1a",
         "text.secondary": "#403e37",
         "text.muted": "#605d54",
+        "text.quiet": "#605d54",
+        "text.faint": "#605d54",
 
         "border.subtle": "#d8d5cc",
         "border.strong": "#b8b4a8",

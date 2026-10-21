@@ -370,7 +370,7 @@ fn range(step: &Step) -> String {
 }
 
 /// A number as a sentence or a declaration writes it: no trailing `.0`.
-fn show(number: f64) -> String {
+pub(super) fn show(number: f64) -> String {
     if number.fract() == 0.0 {
         format!("{}", number as i64)
     } else {
@@ -380,7 +380,7 @@ fn show(number: f64) -> String {
 
 /// A length at the default text size, in rem: a whole share of 14 written plainly (`1rem`,
 /// `1.5rem`, `2rem`), every other one as `calc(Nrem / 14)`, as `geometry.css` writes them.
-fn text_length(px: f64) -> String {
+pub(super) fn text_length(px: f64) -> String {
     if px == 0.0 {
         return "0".to_owned();
     }

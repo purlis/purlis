@@ -26,6 +26,8 @@ pub const TOKENS: &[&str] = &[
     "text.primary",
     "text.secondary",
     "text.muted",
+    "text.quiet",
+    "text.faint",
     "border.subtle",
     "border.strong",
     "accent.base",
@@ -201,6 +203,8 @@ pub const TINTABLE: &[&str] = &[
     "text.primary",
     "text.secondary",
     "text.muted",
+    "text.quiet",
+    "text.faint",
     "border.subtle",
     "border.strong",
     "accent.base",
@@ -294,6 +298,39 @@ pub const RAIL_VIEWS: &[&str] = &[
     "chats", "explorer", "search", "changes", "repos", "inbox", "todos", "memory", "personas",
     "sessions", "vaults",
 ];
+
+/// **The quiet tiers a theme leaves out follow the muted it names** (#2902, ADR 0097's
+/// amendment of 2026-10-21). `given` is what one place gives (an appearance, a layer of an
+/// option, a format 1 file) and `below` the values it is laid over (its parent, the appearance
+/// an option is drawn on, or Purlis Classic's). A tier `below` draws in the grey of the tier
+/// above it is following that tier, as Purlis Classic's quiet and faint follow its muted:
+///
+/// - `text.quiet` not given takes the `text.muted` given, while `below`'s quiet is its muted;
+/// - `text.faint` not given takes the `text.quiet` given (or just followed), while `below`'s
+///   faint is its quiet.
+///
+/// So a theme written before the tiers draws its quiet words and its marks in its own muted,
+/// as legibly as before, and a theme that changes only its muted over a parent with tiers of
+/// its own (Purlis's) keeps the parent's quiet and faint: it holds only its differences.
+pub fn follow_muted(
+    given: &mut std::collections::BTreeMap<&'static str, String>,
+    below: &std::collections::BTreeMap<&'static str, String>,
+) {
+    let under = |token: &str| below.get(token).map(String::as_str);
+    let follows = |tier: &str, above: &str| under(tier) == under(above);
+    if let Some(muted) = given.get("text.muted").cloned()
+        && !given.contains_key("text.quiet")
+        && follows("text.quiet", "text.muted")
+    {
+        given.insert("text.quiet", muted);
+    }
+    if let Some(quiet) = given.get("text.quiet").cloned()
+        && !given.contains_key("text.faint")
+        && follows("text.faint", "text.quiet")
+    {
+        given.insert("text.faint", quiet);
+    }
+}
 
 /// Whether `token` is one of [`TOKENS`].
 pub fn is_token(token: &str) -> bool {

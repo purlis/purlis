@@ -1084,10 +1084,14 @@ fn a_chat_never_writes_the_approvals_a_person_gave() {
     assert_eq!(
         paths(&denied, Class::HumanPowers, Access::Write),
         // Under both names, there or not: whichever is there is the config home (RN-5).
+        // The browser engines purlis downloads, in the data home in use and under the default
+        // data folder's other name (#2835).
         // …and this machine's policy (#1343), as the kernel names it.
         [
             std::path::PathBuf::from("/home/op/.config/purlis"),
             std::path::PathBuf::from("/home/op/.config/charter"),
+            std::path::PathBuf::from("/home/op/.local/share/charter/engines/chrome-for-testing"),
+            std::path::PathBuf::from("/home/op/.local/share/purlis/engines/chrome-for-testing"),
             super::real(&super::policy::machine_folder()),
         ]
     );
@@ -1178,6 +1182,29 @@ fn no_chat_reads_or_writes_the_folders_of_this_machines_profiles() {
                 .iter()
                 .any(|it| it.path == profiles && it.access == Access::ReadWrite),
             "{harness}: {wrapped:?}"
+        );
+    }
+}
+
+#[test]
+fn no_chat_writes_the_browser_engines_purlis_downloads_under_either_name_of_the_data_home() {
+    // The AppArmor profile the `.deb` installs lets a program at the pinned engine's path make
+    // user namespaces (#2835), so no chat may put a program there: not under the data home in
+    // use, nor under its other name, which the profile names too.
+    let linux = machine(Os::Linux);
+    let data = Homes::charter_data(&linux).expect("a data home");
+    let share = linux.home.as_ref().expect("a home").join(".local/share");
+    let (_plane, denied) = denied_with(None, Os::Linux);
+    let written = paths(&denied, Class::HumanPowers, Access::Write);
+    for engines in [
+        crate::browsers::engines_in(&data),
+        crate::browsers::engines_in(&share.join("purlis")),
+        crate::browsers::engines_in(&share.join("charter")),
+    ] {
+        assert!(
+            written.contains(&engines),
+            "{engines:?}: {:?}",
+            denied.paths
         );
     }
 }

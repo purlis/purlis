@@ -55,7 +55,7 @@ function px(token: string | undefined): number {
 const ROLES = {
   body: { class: "ui-text-body", size: 13, weight: "400", colour: "--text-primary" },
   secondary: { class: "ui-text-secondary", size: 12, weight: "400", colour: "--text-secondary" },
-  meta: { class: "ui-text-meta", size: 11, weight: "400", colour: "--text-muted" },
+  meta: { class: "ui-text-meta", size: 11, weight: "400", colour: "--text-quiet" },
   label: { class: "ui-text-label", size: 11, weight: "600", colour: "--text-secondary" },
 } as const;
 
@@ -268,7 +268,7 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     expect([...count.classList]).toEqual(["task-count", "ui-text-meta", "ui-text-strong"]);
     expect(px(named(drawnWith(count, "font-size")))).toBe(11);
     expect(core.get(named(drawnWith(count, "font-weight")) ?? "")).toBe("600");
-    expect(named(drawnWith(count, "color"))).toBe("--text-muted");
+    expect(named(drawnWith(count, "color"))).toBe("--text-quiet");
     expect(named(drawnWith(count, "line-height"))).toBe("--line-height-tight");
   });
 

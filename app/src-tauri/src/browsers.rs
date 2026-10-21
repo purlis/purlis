@@ -285,6 +285,8 @@ mod hosted {
     pub(super) fn not_started(refused: session::Refusal, budget: usize) -> NotStarted {
         if refused.code == session::DEVICE_FULL {
             NotStarted::Full { most: budget }
+        } else if crate::enginesandbox::is_no_sandbox(&refused.why) {
+            NotStarted::NoSandbox
         } else {
             NotStarted::Failed(refused.why)
         }
@@ -638,6 +640,10 @@ mod hosted {
             self.open_reaching(root, reach, None)
                 .map_err(|not| match not {
                     NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
+                    NotStarted::NoSandbox => {
+                        crate::enginesandbox::refused();
+                        crate::enginesandbox::NOT_STARTED_FOR_THE_PERSON.to_owned()
+                    }
                     NotStarted::Failed(why) => why,
                 })
         }
@@ -1460,3 +1466,7 @@ pub fn stop_every_browser(app: &tauri::AppHandle) -> usize {
         0
     }
 }
+
+// A chat's browser end to end on a real engine (#2243).
+#[cfg(all(test, unix))]
+mod tests;

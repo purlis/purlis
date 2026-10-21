@@ -1,11 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
-import type { PoolLink, PoolRow, PoolVersion } from "../bindings";
+import { useEffect, useState, type ReactNode } from "react";
+import type { PoolLink, PoolRow, PoolVersion, ProjectNotHeld } from "../bindings";
 import * as AlertDialog from "../overlays/alert-dialog";
 import { AnswerBar } from "../AnswerBar";
 import { Notice } from "../Notice";
+import { useProjectsNotHeld } from "../notheld";
 import { askLink, askVersion, removePool, startAddingAPool, usePools } from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
 
@@ -24,6 +25,12 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  * a pool of purlis's own image moves its new chats to a runner of this version on its own, and
  * its older runner keeps its chats until they end; a pool of your own image does not, so its
  * row says what to do.
+ *
+ * **A project a runner would not hold again is marked here** (#2846): a Notice on the row of
+ * each pool its chats run on, in the runner's own words (`<bdi>`, so they cannot turn the
+ * sentence around them), until a hold of it is taken. One whose pool this machine cannot name
+ * is marked under the list. Every command that needs the hold asks again and says why it was
+ * refused; Dismiss puts the Notice away until the runner says otherwise.
  *
  * **Every Remove asks first** ({@link RemovePool}): it says what goes and that there is no undo,
  * and Remove pool removes it.
@@ -138,6 +145,7 @@ function PoolEntry({
   version,
   removing,
   onAsk,
+  notHeld,
 }: {
   pool: PoolRow;
   link: PoolLink | "asking" | undefined;
@@ -145,6 +153,8 @@ function PoolEntry({
   removing: boolean;
   /** Asks whether to remove it. */
   onAsk: () => void;
+  /** The marks of projects whose chats run on it, drawn on its row. */
+  notHeld: ReactNode;
 }) {
   const remove = onAsk;
   return (
@@ -181,7 +191,29 @@ function PoolEntry({
       {versionSaid(version) !== undefined && (
         <p className="ui-setting-help">{versionSaid(version)}</p>
       )}
+      {notHeld}
     </li>
+  );
+}
+
+/** The Notice of a project the runner its chats run on would not hold. */
+export function NotHeldNotice({
+  name,
+  root,
+  why,
+  onDismiss,
+}: {
+  name: string;
+  root: string;
+  why: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <Notice cause={`project-not-held:${root}`} tone="trouble" onDismiss={onDismiss}>
+      The runner that {name}&apos;s chats run on does not hold {name}, so no chat starts or answers
+      there. purlis asks it again the next time you start or use a chat in {name}. The runner said:{" "}
+      <bdi>{why}</bdi>
+    </Notice>
   );
 }
 
@@ -191,7 +223,24 @@ const poolsList: LiveSetting = {
   help: "Remove takes this machine out of the runner's peers while it answers, then removes its container and home. There is no undo.",
   useControl: function usePoolsList() {
     const now = usePools();
+    const notHeld = useProjectsNotHeld();
+    // Put away until the runner says something else of the project.
+    const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
     const [asking, setAsking] = useState<string | undefined>();
+    const shown = notHeld.filter((one) => !dismissed.has(`${one.root}\u0000${one.why}`));
+    const pools = now.read.state === "read" ? now.read.shown.pools.map((one) => one.name) : [];
+    // Drawn once, on the row of the first pool it runs on that is listed here.
+    const rowOf = (one: ProjectNotHeld) => one.pools.find((pool) => pools.includes(pool));
+    const marks = (of: readonly ProjectNotHeld[]) =>
+      of.map((one) => (
+        <NotHeldNotice
+          key={one.root}
+          name={one.name}
+          root={one.root}
+          why={one.why}
+          onDismiss={() => setDismissed((was) => new Set([...was, `${one.root}\u0000${one.why}`]))}
+        />
+      ));
     const names = now.read.state === "read" ? now.read.shown.pools.map((one) => one.name) : [];
     const asked = names.join("\u0000");
     // Each runner is asked once, as the group comes on screen or a pool is added.
@@ -225,6 +274,7 @@ const poolsList: LiveSetting = {
                     version={now.versions[pool.name]}
                     removing={now.removing === pool.name}
                     onAsk={() => setAsking(pool.name)}
+                    notHeld={marks(shown.filter((one) => rowOf(one) === pool.name))}
                   />
                 ))}
               </ul>
@@ -239,6 +289,8 @@ const poolsList: LiveSetting = {
               }}
             />
           )}
+          {/* A project whose pool this machine cannot name is marked under the list. */}
+          {marks(shown.filter((one) => rowOf(one) === undefined))}
           <button type="button" className="ui-button" tabIndex={0} onClick={startAddingAPool}>
             Add a Docker pool…
           </button>

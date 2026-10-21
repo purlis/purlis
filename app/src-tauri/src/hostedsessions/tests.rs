@@ -2423,6 +2423,48 @@ fn a_project_the_runner_will_not_hold_again_is_said_to_be_not_held_in_the_runner
     assert!(refused.contains(NOT_THERE), "{refused}");
 }
 
+/// **A project the runner would not hold again is marked until a hold of it is taken** (#2846):
+/// the Pools group draws the mark, in the runner's words.
+#[test]
+fn a_project_the_runner_will_not_hold_again_is_marked_until_it_is_held() {
+    let (hosted, holds, between, project) = hosted_holding();
+    a_drawn_chat(&hosted);
+    let held = holds.tried();
+    holds.refusing.store(true, Ordering::Relaxed);
+    let marked = || {
+        crate::notheld::now(None)
+            .into_iter()
+            .find(|one| std::path::Path::new(&one.root) == hosted.root)
+    };
+    assert_eq!(marked(), None);
+
+    between
+        .pushes
+        .send(session::Pushed::NotHeld {
+            project,
+            why: NOT_THERE.into(),
+        })
+        .unwrap();
+    until("the window tries to hold the project again", || {
+        holds.tried() > held
+    });
+    until("the project is marked not held", || marked().is_some());
+    let mark = marked().unwrap();
+    assert!(mark.why.contains(NOT_THERE), "{mark:?}");
+    assert!(
+        !mark.why.starts_with(NOT_HELD),
+        "the runner's words alone: {mark:?}"
+    );
+
+    // The runner holds it again: a chat starts, and the mark goes.
+    holds.refusing.store(false, Ordering::Relaxed);
+    hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("a chat starts in the project held again");
+    assert_eq!(marked(), None);
+}
+
 #[test]
 fn a_project_another_project_was_not_held_for_is_left_held() {
     let (hosted, holds, between, _project) = hosted_holding();

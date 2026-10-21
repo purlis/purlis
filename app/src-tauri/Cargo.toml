@@ -156,5 +156,8 @@ purlis-session-protocol = { path = "../../crates/session-protocol", features = [
 # A program that stands in for a terminal's, behind the session host (#1998).
 purlis-host = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
+# A screenshot's pixels, read to tell a value kept out was painted over (#2243): the version
+# purlis-browser-engine's tests read them with.
+png = "0.18"
 # A vault's clipboard clear is tested on tokio's paused clock, not a real minute.
 tokio = { version = "1", features = ["macros", "rt", "test-util", "time"] }

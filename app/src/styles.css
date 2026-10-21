@@ -68,6 +68,11 @@
  * border, corner and elevation, and the scrim behind a modal question; a view only places and
  * sizes its overlay.
  *
+ * **A theme's component parts are drawn over the controls** (#2903). The engine writes one
+ * stylesheet for the parts a theme sets (`purlis_core::theme::parts`), which `theme.ts` puts in
+ * the `parts` layer: above `components`, so a part a theme names wins over the family default,
+ * and below `forced`. A theme that names no parts writes nothing there.
+ *
  * **Forced colours are drawn over all of it** (#2328). `theme/forced-colors.css` says again, in
  * the system's palette and with a shape, what the window says with a background or a shadow
  * alone, for a platform that forces its contrast colours. It is the last layer, `forced`, so it is
@@ -83,7 +88,7 @@
  * vocabulary is the defect this whole layer exists to remove.
  */
 
-@layer theme, base, vendor, charter, components, utilities, forced;
+@layer theme, base, vendor, charter, components, parts, utilities, forced;
 
 @import "tailwindcss/theme.css" layer(theme);
 @import "./theme/geometry.css" layer(theme);
@@ -115,6 +120,8 @@
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-muted: var(--text-muted);
+  --color-text-quiet: var(--text-quiet);
+  --color-text-faint: var(--text-faint);
   --color-border-subtle: var(--border-subtle);
   --color-border-strong: var(--border-strong);
   --color-accent-base: var(--accent-base);

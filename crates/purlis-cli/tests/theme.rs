@@ -2046,6 +2046,78 @@ fn the_check_names_each_level_that_chose_the_theme_with_its_values() {
     );
 }
 
+// ---------------------------------------------------------------------------------------
+// Component parts (#2903)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn theme_parts_prints_every_family_part_state_and_property_as_json() {
+    let rig = Rig::new();
+
+    let ran = rig.run(&["parts"]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    let json = ran.json();
+    assert_eq!(json["schema"], 1);
+    assert_eq!(json["version"], 1);
+    assert_eq!(
+        json["theme_schema"]
+            .as_str()
+            .map(|url| url.ends_with("theme.v2.schema.json")),
+        Some(true)
+    );
+    assert_eq!(
+        json["grammar"],
+        "<family>.<part>[.<variant>][.<state>].<property>"
+    );
+    assert_eq!(json["families"][0]["name"], "button");
+    let corner = json["properties"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "corner-radius")
+        .expect("corner-radius");
+    assert_eq!(corner["in_state"], false);
+    assert_eq!(corner["bounds"]["or"][0], "full");
+}
+
+#[test]
+fn a_theme_that_rounds_the_button_is_drawn_and_a_size_inside_a_state_is_refused() {
+    let rig = Rig::new();
+    let themes = rig.machine_themes();
+    let pill = rig.folder(
+        &themes,
+        "pill",
+        &serde_json::json!({
+            "name": "Pill",
+            "extends": "purlis-classic",
+            "parts": { "button.root.corner-radius": "full" }
+        }),
+    );
+    let shifty = rig.folder(
+        &themes,
+        "shifty",
+        &serde_json::json!({
+            "name": "Shifty",
+            "extends": "purlis-classic",
+            "parts": { "button.root.selected.font-weight": 600 }
+        }),
+    );
+
+    let drawn = rig.run(&["check", pill.to_str().unwrap()]);
+    assert_eq!(drawn.code, 0, "{}{}", drawn.out, drawn.err);
+
+    let refused = rig.run(&["check", shifty.to_str().unwrap()]);
+    assert_eq!(refused.code, 1, "{}{}", refused.out, refused.err);
+    assert!(
+        refused
+            .out
+            .contains("parts.button.root.selected.font-weight is refused: a state never changes"),
+        "{}",
+        refused.out
+    );
+}
+
 // ---- the theme skill (#2333) ------------------------------------------------------------- //
 
 /// The theme skill purlis's plugin ships: a chat runs what it says.
@@ -2098,7 +2170,7 @@ fn every_theme_command_the_theme_skill_names_is_one_purlis_has_with_its_flags_an
         named.iter().map(|(command, _)| command.as_str()).collect();
     assert_eq!(
         commands.into_iter().collect::<Vec<_>>(),
-        ["check", "draft", "export", "import", "list"],
+        ["check", "draft", "export", "import", "list", "parts"],
         "the skill's create, edit, check and share paths each name their command: {named:?}"
     );
     let rig = Rig::new();

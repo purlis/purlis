@@ -84,14 +84,17 @@ npm run typecheck && npm run lint && npm run format:check && npm test
 A change to recorded behaviour or the command line also runs
 `cargo test -p purlis-cli --test recorded_behaviour`. The website and docs are checked with
 `cd site && npm ci && npm test && npm run build`.
+A change to a component also runs its stories, `npm run test:stories` in `app` after
+`npx playwright install chromium webkit` once; their screenshots are compared only in CI
+([`docs/component-stories.md`](docs/component-stories.md)).
 
 CI runs all of these on every pull request: formatting, clippy with `-D warnings` on every
 crate (the app crate included), the Rust tests, the licence and advisory check (`cargo deny`
 and `tools/npm-licences.mjs`, against the one allow-list in `deny.toml`, and
 `tools/third-party-notices.mjs`, which fails when a crate or npm package the app ships has no
 licence text for the notices a build generates), the app's typecheck,
-lint, formatting and tests, the scenario tests against a built app, and the docs site's build
-and link check.
+lint, formatting and tests, the component stories in Chromium and WebKit, the scenario tests
+against a built app, and the docs site's build and link check.
 
 The scenario tests (`app/e2e`, run with `npm run build:e2e` and then `npm run e2e`) are
 reliable on CI. On a busy machine they are not, and CI is the reference. With the load around

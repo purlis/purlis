@@ -140,6 +140,20 @@ Tell the person when they ask for rounder tabs or rows: the theme cannot round t
 focus ring tokens reach the shared controls and list rows; every other focus ring, the strip
 tabs', the closer's and the gear's among them, is 2px whatever `focus-ring.*` says.
 
+**One part of one control** is a component part, in a top-level `parts` object:
+`"button.root.corner-radius": "full"` rounds every button to a pill, and
+`"button.root.primary.hover.fill": "accent.base"` changes only the primary under the pointer. Run
+`purlis theme parts` for every family, part, variant, state and property with its bounds before
+you write one. A part's colour names a semantic token (`accent.base`), never a hex or a palette
+name. Inside a state (`hover`, `pressed`, `selected`, `focused`, `disabled`, `open`) only `fill`,
+`text`, `border-colour` and `shadow` may be set: a state never changes size, and the theme is
+refused if it tries. A button stays at least 24px tall with its words fitting, in both densities,
+and a geometry token is held to the same bounds at the value the theme draws it at. Whatever the
+theme changes, Allow (`grants`) keeps its accent edge and Keep blocked's fill, and no part draws
+Allow or danger nearer the primary than the family does: a look that would is drawn as the
+family default. Only the button has parts so far; the note above still holds for tabs and
+rows.
+
 Done when the file is JSON with every value hex, a palette name, or a token's own type, and
 every shape and size inside its bounds.
 

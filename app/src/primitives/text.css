@@ -11,7 +11,8 @@
 
    **Only tokens.** A size, a weight and the monospace family are core (`theme/geometry.css`),
    so they are the same in every theme; a colour is the theme's (`theme.ts`). Colour follows the
-   role: `muted` is the meta's and nothing else's.
+   role: `quiet` is the meta's, since a count, an age and a shortcut are informational text
+   (#2902), and no other role's.
 
    **It is in the `components` layer, above `App.css`** (`styles.css`), as the controls are: a
    view's rule cannot re-rank a word that wears a role. A view still places it (grid area,
@@ -47,7 +48,7 @@
 .ui-text-meta {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
-  color: var(--text-muted);
+  color: var(--text-quiet);
 }
 
 /* A section label over a group. Its capitals and their spacing are the label's own and have

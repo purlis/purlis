@@ -1,0 +1,21 @@
+#!/bin/sh
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+#
+# purlis's browser engine (#2835): the profile postinst installed goes with the package.
+set -e
+
+PROFILE=/etc/apparmor.d/purlis-engine
+
+case "$1" in
+  remove | purge)
+    if [ -e "$PROFILE" ]; then
+      if command -v apparmor_parser >/dev/null 2>&1; then
+        apparmor_parser -R "$PROFILE" 2>/dev/null || true
+      fi
+      rm -f "$PROFILE"
+    fi
+    ;;
+esac
+
+exit 0
