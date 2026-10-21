@@ -372,6 +372,7 @@ import {
 } from "./AskPersona";
 import { SandboxOffer } from "./SandboxOffer";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
+import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
@@ -8289,6 +8290,12 @@ export const PlaneView = memo(function PlaneView({
       <ProjectHostsNotice
         plane={plane}
         onReview={() => openSettingsAt({ group: "project.sandbox" })}
+      />
+      {/* **The runner this project's chats run on answered with another key** (#2752): said
+          once for the project, where its pool is removed. */}
+      <RunnerKeyChangedNotice
+        plane={plane}
+        onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
       />
       {/* **The project's Internet access presets changed** (#1385): told once to each
           teammate, so a preset that widens never widens unseen. */}

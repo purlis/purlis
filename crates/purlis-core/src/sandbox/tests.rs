@@ -1577,6 +1577,8 @@ fn one(class: Class, path: &str, access: Access) -> Denial {
         path: std::path::PathBuf::from(path),
         access,
         named: None,
+        reach: Reach::AndBelow,
+        any_case: false,
     }
 }
 
