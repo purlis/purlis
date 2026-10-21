@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792565460948,
+  "lastUpdate": 1792568052501,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4670,6 +4670,42 @@ window.BENCHMARK_DATA = {
             "value": 379.7,
             "unit": "MB",
             "extra": "median of 6 samples: 428.3, 432.7, 381.7, 376.8, 377.7, 269.3 MB; window 200.4 MB, session host 179.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f99e2a1829d2f9b194fba39dbded50d99cca5ea4",
+          "message": "Grey tiers and contrast on every ground (#2938)\n\n* Grey tiers and contrast on every ground (#2902)\n\nAdds the quiet and faint grey tiers (`text.quiet`, `text.faint`) to the\ntheme vocabulary, the window's tokens and the format 2 schema. The theme\ncheck measures the four text tiers at 4.5:1 and faint at 3:1 on every\nground a part draws them on, and a test holds every tier and ground pair\nin PAIRS. Purlis draws quiet #91909d and faint #74727f (ruling #2803),\nits selected row one step darker so both clear it; Purlis Classic's\nquiet and faint are its muted, so it looks as it did. A theme that names\ntext.muted and not the new tiers draws them in its muted.\n\nInformational text (line numbers, placeholders, counts, paths, group\nlabels) takes quiet; a tab's x, separators, pins and tree chevrons take\nfaint. The foundation record notes the adjusted greys for the Figma file.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Quiet tiers keep a parent's own, guard faint, meta in quiet (#2902)\n\nReview round. A tier follows the muted a place names only while the\nlayer below draws it in the grey of the tier above it, so a child of\nPurlis or an option that changes only text.muted keeps the parent's\nquiet and faint (ADR 0097 §4). The operator's ruling of 2026-10-21 is\nrecorded as an ADR 0097 amendment.\n\nA stylesheet guard holds --text-faint to the mark rules and the\ninformational selectors to quiet. The meta text role, the search\nsummary, activity times and a memory's meta move to quiet, and quiet\nis held on the three strips. The foundation record's text table,\nhigh contrast's edges and the tint recipe are documented.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T10:23:05+04:00",
+          "tree_id": "0ac40125b6eb39ff68df8d740df0fc70bc200f3c",
+          "url": "https://github.com/purlis/purlis/commit/f99e2a1829d2f9b194fba39dbded50d99cca5ea4"
+        },
+        "date": 1792568050126,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 925,
+            "unit": "MB",
+            "extra": "median of 3 samples: 628, 925, 1088 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 399.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 447, 388.9, 399.2, 399.5, 400.4, 289.8 MB; window 201 MB, session host 198.8 MB"
           }
         ]
       }
