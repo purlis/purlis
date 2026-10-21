@@ -403,8 +403,10 @@ it so (`purlis_tests.rs`). Where its values come from:
   lightness away from its ground by 0.01 until it clears: the comment and punctuation grey, on
   the editor's current line (`#7c7a84`), and the quiet and faint tiers on the row under the
   pointer (`#61606c`, the placeholder too, and `#7c7a87`).
-- **High-contrast dark** moves each text step up one (primary to white), each edge up to a text
-  grey, and the accent to the record's lighter lavender `#c3baf5`.
+- **High-contrast dark** moves each text step up one (primary to white, quiet to the muted
+  `#a09eab`, faint to quiet's `#91909d`), each edge up to a text grey, and the accent to the
+  record's lighter lavender `#c3baf5`. Its strong border and tree guides are the palette's
+  quiet, so they moved with it from `#8a8896` to `#91909d` (#2902): a lighter edge on dark.
 
 **The fonts are bundled as their projects publish them**, unmodified: IBM Plex Sans 3.005
 Regular, Medium and SemiBold, each upright and italic (IBM's complete woff2, which covers Latin,
@@ -1674,7 +1676,7 @@ fixed size, weight and colour from the tokens, and a surface wears it instead.
 | heading   | `ui-text-heading`   | a section inside a view; a card's heading                 | `--font-size-base`, 14px | strong  | `text.primary`   |
 | body      | `ui-text-body`      | what the surface is about: a row's name, an ask's words   | `--font-size-md`, 13px   | regular | `text.primary`   |
 | secondary | `ui-text-secondary` | where, who, a help line under a field                     | `--font-size-sm`, 12px   | regular | `text.secondary` |
-| meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                   | `--font-size-xs`, 11px   | regular | `text.muted`     |
+| meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                   | `--font-size-xs`, 11px   | regular | `text.quiet`     |
 | label     | `ui-text-label`     | a section label over a group, in capitals spaced `0.06em` | `--font-size-xs`, 11px   | strong  | `text.secondary` |
 | code      | `ui-text-code`      | a command, a path, a host: `--font-mono`                  | the role it sits in      | regular | inherited        |
 

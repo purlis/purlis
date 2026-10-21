@@ -6550,7 +6550,7 @@ h2.sidebar-title .node-icon {
 }
 
 .activity-at {
-  color: var(--text-muted);
+  color: var(--text-quiet);
   font-variant-numeric: tabular-nums;
 }
 
@@ -7512,7 +7512,7 @@ h2.sidebar-title .node-icon {
   gap: var(--space-3);
   align-items: center;
   margin: 0 0 var(--space-5);
-  color: var(--text-muted);
+  color: var(--text-quiet);
   font-size: var(--font-size-sm);
 }
 
@@ -7670,7 +7670,7 @@ h2.sidebar-title .node-icon {
   gap: var(--space-4);
   margin: 0;
   padding: var(--space-2) var(--space-5);
-  color: var(--text-muted);
+  color: var(--text-quiet);
   font-size: var(--font-size-xs);
 }
 

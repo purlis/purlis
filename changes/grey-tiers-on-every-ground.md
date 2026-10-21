@@ -5,5 +5,6 @@
   new `text.faint`. The theme check measures every text tier at 4.5:1 and faint at 3:1 on every
   ground a part draws them on. Line numbers, placeholders, counts, paths and group labels take
   quiet; a tab's ×, separators, the pin and tree chevrons take faint. Purlis draws quiet in
-  `#91909d` and faint in `#74727f`; Purlis Classic looks as it did. A theme that names
-  `text.muted` and not the new tiers draws them in its muted (#2902).
+  `#91909d` and faint in `#74727f`; Purlis Classic looks as it did. A theme over Purlis Classic
+  that names `text.muted` and not the new tiers draws them in its muted; one over a theme with
+  tiers of its own keeps them (#2902).

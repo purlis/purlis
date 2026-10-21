@@ -246,9 +246,13 @@ numbers, placeholders, counts, paths and group labels; none of it is exempt, and
 takes faint. The check measures every text tier at 4.5:1 and faint at 3:1 on every ground a
 part draws them on: the window, a field, the status bar, a panel, a card, the row under the
 pointer, the editor's code, the selected row, the tab in front and a control, at rest and
-under the pointer. A place that names `text.muted` and not `text.quiet` draws quiet in its
-muted, and one that names no `text.faint` draws faint in its quiet, so a theme written before
-the tiers draws them as legibly as its muted words.
+under the pointer. **A tier the layer below draws in the grey of the tier above it follows
+that tier** (ADR 0097's amendment of 2026-10-21): over Purlis Classic, whose quiet and faint are
+its muted, a theme that names `text.muted` and not `text.quiet` draws quiet in its muted, and one
+that names no `text.faint` draws faint in its quiet. So a theme written before the tiers draws
+them as legibly as its muted words. Over a parent with tiers of its own (Purlis), a theme that
+changes only `text.muted` keeps the parent's quiet and faint; it names them to change them. A
+tint recipe names each token it tints, the tiers included.
 
 `purlis theme check <theme>` checks one theme, named by its id, by the path of a theme file, or
 by the path of a theme folder (a folder holding `theme.json`; the folders beside it are the

@@ -625,7 +625,7 @@ describe("the menu", () => {
     const keys = within(row).getByText("F2");
     expect(keys).toHaveClass("ui-menu-keys", "ui-text-meta");
     expect(drawnWith(keys, "font-size")).toBe("var(--font-size-xs)");
-    expect(drawnWith(keys, "color")).toBe("var(--text-muted)");
+    expect(drawnWith(keys, "color")).toBe("var(--text-quiet)");
     // At the row's end, and never squeezed by the words.
     expect(drawnWith(keys, "margin-inline-start")).toBe("auto");
     expect(drawnWith(keys, "flex")).toBe("none");

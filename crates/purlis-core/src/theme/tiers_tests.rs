@@ -228,26 +228,96 @@ fn a_theme_that_names_no_grey_tier_draws_purlis_classic_s() {
     }
 }
 
-#[test]
-fn a_child_that_names_muted_draws_its_quiet_tiers_in_it_over_its_parent_s() {
-    let parent = json!({
-        "name": "Parent",
-        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
-            "text.muted": "#a0a0a8", "text.quiet": "#909098", "text.faint": "#707078"
-        } }]
-    });
+/// A child of `parent` whose dark appearance gives `tokens`, as read.
+fn child_of(parent: Value, tokens: Value) -> ResolvedTheme {
     let child = json!({
         "name": "Child",
         "extends": "parent",
-        "appearances": [{ "id": "dark", "tokens": { "text.muted": "#b0b0b8" } }]
+        "appearances": [{ "id": "dark", "tokens": tokens }]
     });
     let resolved = super::super::Library::new()
         .with("parent", parent)
         .load(None, &child);
     assert!(!resolved.refused, "{:?}", resolved.complaints);
+    resolved.theme.first().clone()
+}
+
+/// A parent theme whose dark appearance names its own three greys.
+fn parent_with_tiers() -> Value {
+    json!({
+        "name": "Parent",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
+            "text.muted": "#a0a0a8", "text.quiet": "#909098", "text.faint": "#707078"
+        } }]
+    })
+}
+
+#[test]
+fn a_child_that_changes_only_muted_keeps_its_parent_s_quiet_and_faint() {
+    // It holds only its differences (ADR 0097 §4): the parent's tiers are its own, not muted's.
+    let dark = child_of(parent_with_tiers(), json!({ "text.muted": "#b0b0b8" }));
+    assert_eq!(dark.value("text.muted"), "#b0b0b8");
+    assert_eq!(dark.value("text.quiet"), "#909098");
+    assert_eq!(dark.value("text.faint"), "#707078");
+}
+
+#[test]
+fn a_child_of_purlis_that_changes_only_muted_keeps_the_ruled_greys() {
+    let child = json!({
+        "name": "Brighter",
+        "extends": "purlis",
+        "appearances": [{ "id": "dark", "tokens": { "text.muted": "#a4a2af" } }]
+    });
+    let resolved = load(&child);
+    assert!(!resolved.refused, "{:?}", resolved.complaints);
     let dark = resolved.theme.first();
+    assert_eq!(dark.value("text.muted"), "#a4a2af");
+    assert_eq!(dark.value("text.quiet"), "#91909d");
+    assert_eq!(dark.value("text.faint"), "#74727f");
+}
+
+#[test]
+fn a_child_changes_quiet_and_faint_by_naming_them() {
+    let dark = child_of(
+        parent_with_tiers(),
+        json!({ "text.quiet": "#989aa0", "text.faint": "#78787f" }),
+    );
+    assert_eq!(dark.value("text.quiet"), "#989aa0");
+    assert_eq!(dark.value("text.faint"), "#78787f");
+}
+
+#[test]
+fn a_child_of_a_theme_whose_tiers_follow_muted_follows_its_own_muted() {
+    // The parent named only muted, so its tiers are following it; the child's muted leads them.
+    let parent = json!({
+        "name": "Parent",
+        "appearances": [{ "id": "dark", "appearance": "dark", "tokens": {
+            "text.muted": "#a0a0a8"
+        } }]
+    });
+    let dark = child_of(parent, json!({ "text.muted": "#b0b0b8" }));
     assert_eq!(dark.value("text.quiet"), "#b0b0b8");
     assert_eq!(dark.value("text.faint"), "#b0b0b8");
+}
+
+#[test]
+fn an_option_that_changes_only_muted_keeps_the_appearance_s_quiet_and_faint() {
+    let resolved = load(&json!({
+        "name": "Dusk",
+        "appearances": [{ "id": "night", "appearance": "dark", "tokens": {
+            "text.muted": "#a0a0a8", "text.quiet": "#909098", "text.faint": "#707078"
+        } }],
+        "options": [{
+            "id": "soft", "kind": "toggle", "label": "Soft", "description": "Softer words.",
+            "default": true,
+            "on": { "tokens": { "text.muted": "#8f8f99" } }
+        }]
+    }));
+    assert!(!resolved.refused, "{:?}", resolved.complaints);
+    let night = resolved.theme.first();
+    assert_eq!(night.value("text.muted"), "#8f8f99");
+    assert_eq!(night.value("text.quiet"), "#909098");
+    assert_eq!(night.value("text.faint"), "#707078");
 }
 
 #[test]

@@ -700,7 +700,11 @@ pub const PAIRS: &[Pair] = &[
     p("text.faint", "layer.selected", 3.0),
     p("text.faint", "control.base", 3.0),
     p("text.faint", "control.hover", 3.0),
-    // - A tab's × and its pin are faint marks on each of the three strips too.
+    // - A count or an age in the meta role is quiet words on each of the three strips, and a
+    //   tab's × and its pin are faint marks on them.
+    p("text.quiet", "layer.project", TEXT),
+    p("text.quiet", "layer.workspace", TEXT),
+    p("text.quiet", "layer.chat", TEXT),
     p("text.faint", "layer.project", 3.0),
     p("text.faint", "layer.workspace", 3.0),
     p("text.faint", "layer.chat", 3.0),
