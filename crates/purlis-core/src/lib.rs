@@ -24,6 +24,7 @@ pub mod cistate;
 pub mod cliname;
 pub mod clipath;
 pub mod cloneupdate;
+pub mod codelink;
 pub mod commitgate;
 pub mod commitguard;
 pub mod committedby;
