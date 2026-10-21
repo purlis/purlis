@@ -100,6 +100,8 @@ jobs:
         if: always()
         run: |
           for file in "$OUT"/*; do
+            # The folder each run's copy of Docker's settings was made in, and nothing to show.
+            [ -f "$file" ] || continue
             echo "::group::$(basename "$file")"
             cat "$file"
             echo
