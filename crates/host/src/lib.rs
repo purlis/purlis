@@ -44,6 +44,8 @@
 #[cfg(unix)]
 mod browsers;
 #[cfg(unix)]
+mod code;
+#[cfg(unix)]
 mod confining;
 #[cfg(unix)]
 mod connector;
@@ -73,6 +75,8 @@ pub use browsers::{
     A_BROWSER_THE_PERSON_DRIVES, AN_ENDED_BROWSER, Browsers, FrameSink, INPUT_MISSED, LoginEnded,
     NOT_DRIVING, NoBrowsers, NotActed, NotTaken, Screen, ScreenEnded, THUMBNAIL_EVERY,
 };
+#[cfg(unix)]
+pub use code::{Code, MovesNoCode, TRANSFER_WITHIN};
 #[cfg(unix)]
 pub use confining::{Askable, Confine, ConfinesNothing, Confining, Planned, Tell, ToConfine};
 #[cfg(unix)]

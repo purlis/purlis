@@ -21,6 +21,11 @@ pub const HOME_VAR: &str = "PURLIS_DATA_HOME";
 /// engine's profile, which no chat reads or writes (`sandbox`).
 pub const BROWSERS: &str = "browsers";
 
+/// The folder under `<data>` a runner's session host keeps each project it holds for its
+/// desktop in, as `<data>/projects/<project id>` (#2046): the code the desktop sent, checked
+/// out where the runner's chats work in it.
+pub const PROJECTS: &str = "projects";
+
 /// `<data>`, from this process's environment.
 ///
 /// A fenced build is held here (charter-app#129): a test run that pins no data home of its own

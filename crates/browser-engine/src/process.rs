@@ -267,13 +267,15 @@ impl Engine {
         self.reaped
     }
 
-    /// Asks the engine to close, waits up to `grace` for it, then ends its whole group.
-    /// Answers how its process ended, where the system said.
+    /// Asks the engine to close, waits up to `grace` for it, then ends its whole group: within
+    /// `grace` in all, whatever the engine does, its pipe full or not (#2123). Answers how its
+    /// process ended, where the system said.
     pub fn stop(mut self, grace: Duration) -> Option<EngineExit> {
+        let by = Instant::now() + grace;
         let _ = self
             .devtools()
             .call_within("Browser.close", json!({}), None, grace);
-        self.wait_up_to(grace);
+        self.wait_up_to(by.saturating_duration_since(Instant::now()));
         self.end_now();
         self.exit.clone()
     }

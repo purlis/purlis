@@ -361,6 +361,23 @@ fn every_command() -> Vec<Command> {
         Command::RelayTo {
             runner: "builds".into(),
         },
+        // A repository's history moved over the link as a git bundle (1.34, #2046).
+        Command::TakeCode {
+            project: "01J9PRJCT00000000000000000".into(),
+            repo: "workspaces/app/web".into(),
+            transfer: 1,
+            refs: vec![session::CodeRef {
+                name: "refs/heads/fix-login".into(),
+                oid: "0123456789abcdef0123456789abcdef01234567".into(),
+            }],
+            checkout: Some("refs/heads/fix-login".into()),
+        },
+        Command::GiveCode {
+            project: "01J9PRJCT00000000000000000".into(),
+            repo: "workspaces/app/web".into(),
+            transfer: 2,
+            have: Vec::new(),
+        },
     ]
 }
 
@@ -418,6 +435,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "start_program", // a browser opened from kept logins
             "name_window",
             "relay_to",
+            "take_code",
+            "give_code",
         ],
         Scope::Terminal => &[
             "list",
@@ -472,6 +491,9 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             // The desktop removing the runner (1.25, #2525).
             "unpair",
             "take_back",
+            // Code moved for the desktop's window (1.34, #2046).
+            "take_code",
+            "give_code",
         ],
         Scope::FleetMcp => &[
             "list",
