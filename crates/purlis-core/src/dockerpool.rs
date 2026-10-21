@@ -770,10 +770,18 @@ fn is_no_new_privileges(option: &str) -> bool {
 }
 
 /// The `docker` command this machine runs (or a command that answers as it does, such as
-/// Podman's), by its path. purlis runs it directly, never through a shell; `DOCKER_HOST` and
-/// Docker's own configuration are the command's to read.
+/// Podman's), by its path. purlis runs it directly, never through a shell, and never with the
+/// person's own Docker settings: each run is given a checked copy of them and the engine pinned
+/// ([`settings`], #2752).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Docker(pub std::path::PathBuf);
+pub struct Docker {
+    program: std::path::PathBuf,
+    /// Where each run's copy of Docker's settings is made: `<data>/docker-settings`, unless
+    /// another folder is named (a test's).
+    settings_in: Option<std::path::PathBuf>,
+}
+
+pub mod settings;
 
 /// Where a `docker` command is looked for first: where Docker's installers put it, Docker
 /// Desktop's own, `/usr/local`'s, Homebrew's and the system's.
@@ -810,6 +818,55 @@ const DOCKER_IN_HOME: &[&str] = &[
 ];
 
 impl Docker {
+    /// The `docker` command at `program`.
+    pub fn at(program: impl Into<std::path::PathBuf>) -> Docker {
+        Docker {
+            program: program.into(),
+            settings_in: None,
+        }
+    }
+
+    /// This `docker`, with each run's copy of Docker's settings made in `folder`.
+    #[must_use]
+    pub fn with_settings_in(mut self, folder: impl Into<std::path::PathBuf>) -> Docker {
+        self.settings_in = Some(folder.into());
+        self
+    }
+
+    /// The command, by its path.
+    pub fn program(&self) -> &std::path::Path {
+        &self.program
+    }
+
+    /// **What one run of this `docker` is given** ([`settings::prepare`]): a checked copy of
+    /// Docker's settings, held until the returned value is dropped, the engine pinned and the
+    /// `PATH` its helpers are found on, with [`settings::CLEARED`] not handed on.
+    pub fn prepared(&self) -> Result<settings::Prepared, Refused> {
+        let settings_in = match &self.settings_in {
+            Some(folder) => folder.clone(),
+            None => crate::datahome::root()
+                .ok_or_else(|| refused("purlis has no data folder to keep docker's settings in"))?
+                .join(settings::DIR),
+        };
+        let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
+        // Docker's own folders, where every helper it is handed was found, and the system's.
+        let path = std::env::join_paths(settings::run_path()).unwrap_or_default();
+        let docker_config = crate::envvar::var_os("DOCKER_CONFIG").map(std::path::PathBuf::from);
+        let docker_host = crate::envvar::var("DOCKER_HOST");
+        let tmp = crate::envvar::var_os("TMPDIR").map(std::path::PathBuf::from);
+        let runtime = crate::envvar::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from);
+        settings::prepare(&settings::Source {
+            settings_in: &settings_in,
+            path,
+            home: home.as_deref(),
+            docker_config: docker_config.as_deref(),
+            docker_host: docker_host.as_deref(),
+            tmp: tmp.as_deref(),
+            runtime: runtime.as_deref(),
+            system: std::path::Path::new(settings::SYSTEM_SOCKET),
+        })
+    }
+
     /// **The `docker` command on this machine** (#2679): the first of the places Docker's
     /// installers put it (`DOCKER_INSTALLED`, then under `home`), else the first on `path`, of
     /// its absolute folders alone. A window started from the Finder has a `PATH` that names
@@ -845,7 +902,7 @@ impl Docker {
             .find(|candidate| {
                 crate::secrets::run::which(&candidate.display().to_string(), None).is_some()
             })
-            .map(Docker)
+            .map(Docker::at)
             .ok_or_else(|| {
                 refused(
                     "purlis found no docker command on this machine; install Docker Desktop, or \
@@ -868,9 +925,19 @@ impl Docker {
         home: Option<&std::path::Path>,
     ) -> Vec<std::path::PathBuf> {
         use std::path::{Path, PathBuf};
-        let folder_of = |file: &Path| file.parent().map(Path::to_path_buf);
-        let own = folder_of(&self.0);
-        let linked = self.0.canonicalize().ok().as_deref().and_then(folder_of);
+        // A folder named by a relative path is no folder Docker's installers put it in.
+        let folder_of = |file: &Path| {
+            file.parent()
+                .filter(|folder| folder.is_absolute())
+                .map(Path::to_path_buf)
+        };
+        let own = folder_of(&self.program);
+        let linked = self
+            .program
+            .canonicalize()
+            .ok()
+            .as_deref()
+            .and_then(folder_of);
         let installed = DOCKER_INSTALLED
             .iter()
             .filter_map(|at| folder_of(Path::new(at)));
@@ -905,13 +972,13 @@ impl Docker {
     /// is kept only to be shown, up to [`MOST_SAID`], and never read to decide anything.
     fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
         use std::io::{Read, Write};
-        let mut command = std::process::Command::new(&self.0);
-        // Its credential helpers are found where it is (#2752), whatever `PATH` the window has.
-        let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
-        let searched =
-            self.helpers_searched(crate::envvar::var("PATH").as_deref(), home.as_deref());
-        if let Ok(joined) = std::env::join_paths(searched) {
-            command.env("PATH", joined);
+        let mut command = std::process::Command::new(&self.program);
+        // A checked copy of Docker's settings, the engine pinned, and its helpers found where it
+        // is (#2752), whatever the window's environment and Docker's own settings say.
+        let prepared = self.prepared()?;
+        command.envs(prepared.env.iter().map(|(name, value)| (name, value)));
+        for name in settings::CLEARED {
+            command.env_remove(name);
         }
         command
             .args(args)
@@ -922,8 +989,12 @@ impl Docker {
             })
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
-        let mut child = crate::forklock::spawn(&mut command)
-            .map_err(|why| refused(format!("{} could not be run: {why}", self.0.display())))?;
+        let mut child = crate::forklock::spawn(&mut command).map_err(|why| {
+            refused(format!(
+                "{} could not be run: {why}",
+                self.program.display()
+            ))
+        })?;
         if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
             let _ = stdin.write_all(input.as_bytes());
         }
@@ -951,7 +1022,7 @@ impl Docker {
         }
         let status = child
             .wait()
-            .map_err(|why| refused(format!("{} did not finish: {why}", self.0.display())))?;
+            .map_err(|why| refused(format!("{} did not finish: {why}", self.program.display())))?;
         let said = said.and_then(|said| said.join().ok()).unwrap_or_default();
         if !status.success() {
             // Docker's own words say why (ADR 0078 §2: a connector's stderr is shown in full).

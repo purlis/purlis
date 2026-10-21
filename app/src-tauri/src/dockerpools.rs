@@ -86,6 +86,12 @@ pub struct PoolVersion {
     /// How many of its older runners drain: each keeps its chats until they end, then is
     /// removed.
     pub draining: u32,
+    /// Whether this version's release named a runner image, as purlis last found it (#2880):
+    /// one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
+    /// looked.
+    pub named: Option<bool>,
+    /// How many chats those older runners still keep, as purlis last found them (#2865).
+    pub waiting: u32,
 }
 
 #[cfg(unix)]
@@ -250,6 +256,8 @@ pub fn remove_on(machine: &Machine, name: &str) -> Result<Option<String>, String
         .map_err(|why| why.to_string())?;
     // The projects that ran their chats on it run them on no pool now: their marks go (#2846).
     crate::notheld::recheck(&machine.config);
+    // Nothing of it waits on chats any more (#2865).
+    crate::poolfollow::forget_waiting(&machine.config, name);
     Ok(removed.and_then(|removed| removed.left()))
 }
 
@@ -314,6 +322,8 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         desktop: crate::runnerlinks::desktop_version().to_owned(),
         follows: pool.image().is_purlis_own(),
         draining: u32::try_from(draining).unwrap_or(u32::MAX),
+        named: crate::poolfollow::this_versions_image_named(),
+        waiting: crate::poolfollow::waiting_on(&machine.config, name),
     })
 }
 

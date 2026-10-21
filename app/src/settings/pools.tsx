@@ -74,9 +74,12 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
     );
   } else if (version.runner !== version.desktop) {
     lines.push(
-      version.follows
-        ? `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. New chats start on a runner of ${version.desktop} once that version's runner image is published.`
-        : `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. Build your image from purlis ${version.desktop}, then add the pool again.`,
+      !version.follows
+        ? `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. Build your image from purlis ${version.desktop}, then add the pool again.`
+        : version.named === false
+          ? // The release came out without its runner image (#2880): the pool stays put.
+            `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. The release of ${version.desktop} has no runner image, so the pool does not move to ${version.desktop} and stays on its runner.`
+          : `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. New chats start on a runner of ${version.desktop} once that version's runner image is published.`,
     );
   }
   if (version.draining > 0) {
@@ -85,6 +88,14 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
         ? "1 older runner keeps its chats until they end, then purlis removes it."
         : `${version.draining} older runners keep their chats until they end, then purlis removes them.`,
     );
+    // What they still wait on, as purlis last found it (#2865).
+    if (version.waiting > 0) {
+      lines.push(
+        version.waiting === 1
+          ? "1 chat still runs there: end it to let purlis remove the older runner."
+          : `${version.waiting} chats still run there: end them to let purlis remove the older runners.`,
+      );
+    }
   }
   return lines.length === 0 ? undefined : lines.join(" ");
 }

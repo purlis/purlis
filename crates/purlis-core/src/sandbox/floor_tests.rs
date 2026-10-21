@@ -440,11 +440,26 @@ fn the_homes_docker_folders_are_held_in_every_spelling_and_their_holders_as_entr
                 "{harness:?}: {not} is writable"
             );
         }
+        // The engine's socket each installer keeps in the home, which a run of `docker` is
+        // pointed at where the system has none (#2752).
+        for not in [
+            ".docker/run/docker.sock",
+            ".Docker/Run/docker.sock",
+            ".orbstack/run/docker.sock",
+            ".rd/docker.sock",
+            ".colima/default/docker.sock",
+            ".Lima/default/sock/docker.sock",
+        ] {
+            assert!(
+                !writes(&profile, &home.join(not)),
+                "{harness:?}: {not} is writable"
+            );
+        }
         for still in [
             ".docker/config.json",
             ".Docker/config.json",
-            ".orbstack/run/docker.sock",
-            ".rd/docker.sock",
+            ".docker/buildx/activity/default",
+            ".rd/other",
         ] {
             assert!(
                 writes(&profile, &home.join(still)),
@@ -465,6 +480,65 @@ fn the_homes_docker_folders_are_held_in_every_spelling_and_their_holders_as_entr
     // not given to it: what is beside each `bin` stays written.
     let holder = home.join(".docker").display().to_string();
     assert!(!deny_write.contains(&holder), "{deny_write:?}");
+}
+
+/// The checked copies of Docker's settings purlis makes for each run of `docker` hold the
+/// person's registry sign-ins: no chat reads or writes them (#2752).
+#[test]
+fn no_chat_reads_or_writes_the_copies_of_dockers_settings() {
+    let (_dir, root) = project();
+    let data = tempfile::tempdir().expect("a data home");
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[(
+            crate::datahome::HOME_VAR,
+            &data.path().display().to_string(),
+        )]),
+        home: Some(PathBuf::from("/home/op")),
+        os: Os::MacOs,
+    };
+    let held = Denied::of(&root, &machine)
+        .paths
+        .into_iter()
+        .find(|denial| denial.path.ends_with(crate::dockerpool::settings::DIR))
+        .expect("the copies are denied");
+    assert_eq!(held.access, Access::ReadWrite);
+    assert_eq!(
+        held.path,
+        data.path().join(crate::dockerpool::settings::DIR)
+    );
+}
+
+/// Where a Podman machine's helper and a rootless engine keep their socket, in the temporary
+/// and the runtime folder, no chat writes either (D-2752-7).
+#[test]
+fn no_chat_writes_where_a_podman_machine_or_a_rootless_engine_keeps_its_socket() {
+    let (_dir, root) = project();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[
+            ("TMPDIR", "/var/folders/xy/T"),
+            ("XDG_RUNTIME_DIR", "/run/user/1000"),
+        ]),
+        home: Some(PathBuf::from("/home/op")),
+        os: Os::Linux,
+    };
+    let denied: Vec<PathBuf> = Denied::of(&root, &machine)
+        .paths
+        .into_iter()
+        .filter(|denial| denial.access == Access::Write)
+        .map(|denial| denial.path)
+        .collect();
+    for held in [
+        "/var/folders/xy/T/podman",
+        "/run/user/1000/docker.sock",
+        "/run/user/1000/podman",
+        "/home/op/.colima",
+        "/home/op/.lima",
+    ] {
+        assert!(
+            denied.contains(&PathBuf::from(held)),
+            "{held} in {denied:?}"
+        );
+    }
 }
 
 /// The floor holds what reaches outside it (#2071 review): the profile applied for real, where

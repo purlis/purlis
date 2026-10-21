@@ -44,7 +44,15 @@ beforeEach(() => {
   };
   pools = [];
   link = { state: "linked" };
-  version = { runner: "0.4.2", why: null, desktop: "0.4.2", follows: true, draining: 0 };
+  version = {
+    runner: "0.4.2",
+    why: null,
+    desktop: "0.4.2",
+    follows: true,
+    draining: 0,
+    named: null,
+    waiting: 0,
+  };
   added = [];
   removed = [];
   notHeld = [];
@@ -195,6 +203,8 @@ describe("You › This machine › Pools", () => {
       desktop: "0.4.2-dev.17",
       follows: true,
       draining: 1,
+      named: null,
+      waiting: 2,
     };
     render(<App />);
     const nav = await yourSettings();
@@ -205,11 +215,24 @@ describe("You › This machine › Pools", () => {
         /Its runner runs purlis 0\.4\.2-dev\.16, and this machine runs 0\.4\.2-dev\.17\. New chats start on a runner of 0\.4\.2-dev\.17 once that version's runner image is published\./,
       ),
     ).toHaveTextContent(/1 older runner keeps its chats until they end, then purlis removes it\./);
+    expect(
+      within(group).getByText(
+        /2 chats still run there: end them to let purlis remove the older runners\./,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("tells you to build your own image again when its runner is behind", async () => {
     pools = [a_pool("builds")];
-    version = { runner: "0.4.1", why: null, desktop: "0.4.2", follows: false, draining: 0 };
+    version = {
+      runner: "0.4.1",
+      why: null,
+      desktop: "0.4.2",
+      follows: false,
+      draining: 0,
+      named: null,
+      waiting: 0,
+    };
     render(<App />);
     const nav = await yourSettings();
     await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
@@ -251,5 +274,50 @@ describe("You › This machine › Pools", () => {
     await waitFor(() =>
       expect(group.querySelector('[data-cause="project-not-held:/projects/alpha"]')).toBeNull(),
     );
+  });
+
+  it("says a pool does not move to this version when its release has no runner image", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      runner: "0.4.2-dev.16",
+      why: null,
+      desktop: "0.4.2-dev.17",
+      follows: true,
+      draining: 0,
+      named: false,
+      waiting: 0,
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        /The release of 0\.4\.2-dev\.17 has no runner image, so the pool does not move to 0\.4\.2-dev\.17 and stays on its runner\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the old wording when purlis has said nothing of this version's release", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      runner: "0.4.2-dev.16",
+      why: null,
+      desktop: "0.4.2-dev.17",
+      follows: true,
+      draining: 0,
+      named: null,
+      waiting: 0,
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        /New chats start on a runner of 0\.4\.2-dev\.17 once that version's runner image is published\./,
+      ),
+    ).toBeInTheDocument();
+    expect(group).not.toHaveTextContent(/has no runner image/);
   });
 });
