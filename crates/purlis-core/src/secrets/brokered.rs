@@ -1550,12 +1550,27 @@ pub(crate) fn serve_recorded(
     told: Told,
     reached: Option<crate::sandbox::egress::Reached>,
 ) {
+    // A runner's journal names the program, never a vault (#2838): the refusal's words name
+    // vaults, so a service logs neither.
+    let program = wanted
+        .command
+        .iter()
+        .find(|word| *word != "--")
+        .cloned()
+        .unwrap_or_default();
     let refuse = |writer: &mut dyn Write, code: i32, why: String| {
-        tracing::warn!(
-            "purlis: chat {} was refused `secret exec` on vault '{}': {why}",
-            asker.chat,
-            wanted.vault
-        );
+        if crate::applog::is_a_service() {
+            tracing::warn!(
+                "purlis: chat {} was refused `secret exec` of `{program}`",
+                asker.chat
+            );
+        } else {
+            tracing::warn!(
+                "purlis: chat {} was refused `secret exec` on vault '{}': {why}",
+                asker.chat,
+                wanted.vault
+            );
+        }
         let _ = send(writer, &Frame::Refused { why, code });
     };
     let ctx = Ctx::new(&asker.root, asker.env.clone());
@@ -1946,13 +1961,23 @@ pub(crate) fn serve_recorded(
             ),
         ],
     );
-    tracing::info!(
-        "purlis: chat {} (persona {}) ran `{}` with vault '{}' through the app",
-        asker.chat,
-        asker.persona.as_deref().unwrap_or("none"),
-        command[0],
-        wanted.vault
-    );
+    if crate::applog::is_a_service() {
+        // A runner's journal names the program, never the vault (#2838).
+        tracing::info!(
+            "purlis: chat {} (persona {}) ran `{}` with a vault through its host",
+            asker.chat,
+            asker.persona.as_deref().unwrap_or("none"),
+            command[0]
+        );
+    } else {
+        tracing::info!(
+            "purlis: chat {} (persona {}) ran `{}` with vault '{}' through the app",
+            asker.chat,
+            asker.persona.as_deref().unwrap_or("none"),
+            command[0],
+            wanted.vault
+        );
+    }
 
     let mut spawned = match crate::forklock::spawn(&mut child) {
         Ok(spawned) => spawned,

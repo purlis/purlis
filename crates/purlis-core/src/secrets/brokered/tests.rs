@@ -4281,3 +4281,73 @@ fn a_login_allowed_now_answers_the_identity_its_values_are_read_by() {
     let declared_otherwise = login_allowed(&asker, "shop-login", false).expect("allowed");
     assert_ne!(declared_otherwise, read_by);
 }
+
+/// What is logged at `info` and up while `during` runs on this thread, as a host that is a
+/// service (`purlis serve`) logs it.
+fn logged_as_a_service(during: impl FnOnce()) -> String {
+    #[derive(Clone, Default)]
+    struct Kept(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Kept {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let kept = Kept::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer({
+            let kept = kept.clone();
+            move || kept.clone()
+        })
+        .finish();
+    crate::applog::as_a_service_on_this_thread(true);
+    tracing::subscriber::with_default(subscriber, during);
+    crate::applog::as_a_service_on_this_thread(false);
+    String::from_utf8(kept.0.lock().unwrap().clone()).unwrap()
+}
+
+/// **A runner's journal never names a vault** (#2838): under `purlis serve`, a brokered
+/// `secret exec` that is refused is logged by its program alone, though the refusal names the
+/// vaults.
+#[test]
+fn under_a_service_a_refused_brokered_run_is_logged_by_its_program_and_never_a_vault() {
+    let project = project();
+    let logged = logged_as_a_service(|| {
+        let mut refused = wanted(project.path(), "other", sh("echo no"));
+        refused.env = vec!["X=TOKEN".into()];
+        let frames = served(&asker(project.path(), Some("devops")), refused);
+        assert!(
+            matches!(frames.as_slice(), [Frame::Refused { .. }]),
+            "{frames:?}"
+        );
+    });
+    assert!(logged.contains("/bin/sh"), "the program is said: {logged}");
+    for vault in ["team", "other"] {
+        assert!(
+            !logged.contains(vault),
+            "vault {vault} was logged: {logged}"
+        );
+    }
+}
+
+/// [`under_a_service_a_refused_brokered_run_is_logged_by_its_program_and_never_a_vault`], for a
+/// run that is answered: the line of what ran names its program, never its vault.
+#[test]
+fn under_a_service_a_brokered_run_is_logged_by_its_program_and_never_its_vault() {
+    let project = project();
+    let logged = logged_as_a_service(|| {
+        let mut ran = wanted(project.path(), "team", sh("echo ok"));
+        ran.env = vec!["X=TOKEN".into()];
+        let frames = served(&asker(project.path(), Some("devops")), ran);
+        assert_eq!(frames.first(), Some(&Frame::Started), "{frames:?}");
+    });
+    assert!(
+        logged.contains("ran `/bin/sh`"),
+        "the program is said: {logged}"
+    );
+    assert!(!logged.contains("team"), "the vault was logged: {logged}");
+}
