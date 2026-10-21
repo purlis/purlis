@@ -247,7 +247,8 @@ fn the_release_grants_its_runner_image_call_the_attestation_scope() {
 }
 
 /// The step that checks each architecture's digest file holds a digest and nothing else.
-const DIGESTS_CHECKED: &str = "[[ \"$(cat \"$RUNNER_TEMP/digests/$arch\")\" =~ ^sha256:[0-9a-f]{64}$ ]] \\";
+const DIGESTS_CHECKED: &str =
+    "[[ \"$(cat \"$RUNNER_TEMP/digests/$arch\")\" =~ ^sha256:[0-9a-f]{64}$ ]] \\";
 
 #[test]
 fn each_job_that_reads_the_digests_checks_each_is_a_digest_before_using_it() {
@@ -267,6 +268,9 @@ fn each_job_that_reads_the_digests_checks_each_is_a_digest_before_using_it() {
                     .any(|l| l.contains("$(cat \"$RUNNER_TEMP/digests/") && l != DIGESTS_CHECKED)
             })
             .unwrap_or_else(|| panic!("`{name}` reads no digest file"));
-        assert!(check < first_use, "`{name}` checks the digests before it uses them");
+        assert!(
+            check < first_use,
+            "`{name}` checks the digests before it uses them"
+        );
     }
 }
