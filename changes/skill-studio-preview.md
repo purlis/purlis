@@ -8,3 +8,8 @@
   so far until the turn ends, and the skill's own tab lists every run with what happened inside
   it: tool calls, errors, refusals, asks, tokens and time (#2766). `purlis skill runs` prints
   them.
+  *Use skill…*, in the palette and on the Skills chip of each chat's pane, lists exactly that
+  chat's skills, asks for the arguments a skill declares, and types the skill into the chat
+  for you to send, in the way that chat's tool expects it. The chip also shows how many skills
+  and how many characters of their descriptions the chat lists, and warns when that is past
+  purlis's budget; a manual-only skill costs nothing (#2775).
