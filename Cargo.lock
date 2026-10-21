@@ -5645,6 +5645,7 @@ dependencies = [
  "bytes",
  "changelog",
  "chrono",
+ "dhat",
  "dirs",
  "flate2",
  "futures",

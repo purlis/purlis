@@ -528,6 +528,11 @@ fn a_design_tokens_file_is_told_apart_from_the_other_kinds() {
         super::detect("tokens.json", colors),
         Some(SourceKind::DesignTokens)
     );
+    // A JSON file larger than any other source may be, with no tokens in it, is told it is.
+    let big = format!("{{\"name\":\"{}\"}}", "a".repeat(1100 * 1024));
+    let kind = super::detect("big.json", big.as_bytes()).unwrap();
+    let why = super::import(kind, "big.json", big.as_bytes()).unwrap_err();
+    assert!(why.contains("larger than"), "{why}");
     let vscode = br##"{ "type": "dark", "colors": { "editor.background": "#101010" } }"##;
     assert_eq!(
         super::detect("theme.json", vscode),
@@ -573,30 +578,6 @@ fn a_token_where_an_appearance_goes_is_listed_not_made_an_appearance() {
     );
 }
 
-/// What `run` answers, and the most this process's memory grew while it ran, sampled every
-/// millisecond.
-fn peak_growth<T>(run: impl FnOnce() -> T) -> (T, usize) {
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    let now = || memory_stats::memory_stats().map_or(0, |it| it.physical_mem);
-    let before = now();
-    let done = std::sync::Arc::new(AtomicBool::new(false));
-    let most = std::sync::Arc::new(AtomicUsize::new(before));
-    let sampler = {
-        let (done, most) = (done.clone(), most.clone());
-        std::thread::spawn(move || {
-            while !done.load(Ordering::Relaxed) {
-                most.fetch_max(now(), Ordering::Relaxed);
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
-        })
-    };
-    let answer = run();
-    most.fetch_max(now(), Ordering::Relaxed);
-    done.store(true, Ordering::Relaxed);
-    sampler.join().unwrap();
-    (answer, most.load(Ordering::Relaxed).saturating_sub(before))
-}
-
 /// A file of about `len` bytes: purlis's mark, and `filler` repeated in a list in its theme.
 fn crafted(filler: &str, len: usize) -> Vec<u8> {
     let mut text = format!("{{\"$extensions\":{{\"{VENDOR}\":{{\"version\":1,\"theme\":{{\"x\":[");
@@ -623,15 +604,8 @@ fn imports_are_bounded_in_size_and_work() {
         &filler,
         usize::try_from(design_tokens::MOST_BYTES).unwrap() - 16,
     );
-    let (said, grew) = peak_growth(|| design_tokens::unpack("x.tokens.json", &most));
-    let why = said.unwrap_err();
+    let why = design_tokens::unpack("x.tokens.json", &most).unwrap_err();
     assert!(why.contains("MiB"), "{why}");
-    // The file is 24 MiB: reading it holds it parsed once, and a little more.
-    assert!(
-        grew < 128 * 1024 * 1024,
-        "reading it took {} MiB more",
-        grew / 1024 / 1024
-    );
     // Within the count, but a theme.json past a theme folder's file cap.
     let long = format!("\"{}\",", "a".repeat(1024));
     let wide = crafted(&long, 3 * 1024 * 1024);
@@ -642,6 +616,19 @@ fn imports_are_bounded_in_size_and_work() {
     let ordered = json!({ "$extensions": { VENDOR: { "version": 1, "appearances": many } } });
     let why = design_tokens::unpack("x.tokens.json", ordered.to_string().as_bytes()).unwrap_err();
     assert!(why.contains("appearances"), "{why}");
+    // Long names, nested, over many tokens; and a path longer than a path may be.
+    let mut nested = json!({ "t": { "$type": "number", "$value": 1 } });
+    for _ in 0..20 {
+        nested = json!({ "n".repeat(64 * 1024): nested });
+    }
+    let why = design_tokens::unpack("x.tokens.json", nested.to_string().as_bytes()).unwrap_err();
+    assert!(why.contains("bytes long"), "{why}");
+    let mut deep = json!({ "t": { "$type": "number", "$value": 1 } });
+    for _ in 0..8 {
+        deep = json!({ "n".repeat(design_tokens::MOST_NAME_BYTES): deep });
+    }
+    let why = design_tokens::unpack("x.tokens.json", deep.to_string().as_bytes()).unwrap_err();
+    assert!(why.contains("path"), "{why}");
     // Many top-level keys, each read once.
     let keys: Vec<Value> = (0..100_000).map(|at| json!(format!("k{at}"))).collect();
     let listed = json!({ "$extensions": { VENDOR: { "version": 1, "keys": keys } } });

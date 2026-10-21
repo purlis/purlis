@@ -50,12 +50,16 @@
 //! reference to its `palette` keeps the palette name, and any other reference is followed to
 //! the colour it ends at. Every token no purlis token takes is listed with why.
 //!
-//! **Bounds**: a file is at most [`MOST_BYTES`] and holds at most [`MOST_VALUES`] JSON values,
-//! counted before it is parsed, so reading one takes little memory and time; the `theme.json` it
-//! makes is held to a theme folder's file cap; the files it carries are held to a theme
-//! folder's zip's bounds (`super::archive`); its groups nest at most [`MOST_DEPTH`] deep, it
-//! holds at most [`MOST_NODES`] groups and tokens, and a reference is followed at most
-//! [`MOST_HOPS`] times.
+//! **Imports are bounded**, each bound checked before the work it limits: a file is at most
+//! [`MOST_BYTES`] and holds at most [`MOST_VALUES`] JSON values, counted before it is parsed; a
+//! group's or a token's name is at most [`MOST_NAME_BYTES`] and a token's path at most
+//! [`MOST_PATH_BYTES`]; its groups nest at most [`MOST_DEPTH`] deep and it holds at most
+//! [`MOST_NODES`] groups and tokens; it has at most a theme's [`MOST_APPEARANCES`]; a reference is
+//! followed at most [`MOST_HOPS`] times; the `theme.json` it makes is held to a theme folder's
+//! file cap, and the files it carries to a theme folder's zip's bounds (`super::archive`), each
+//! file's size checked before it is decoded. Paths and values are borrowed from the parsed file,
+//! so reading one holds it once and what purlis makes of it, as `design_tokens_memory.rs`
+//! measures.
 
 use std::collections::BTreeSet;
 
@@ -100,7 +104,13 @@ const _: () = assert!(MOST_BYTES >= MOST_FOLDER_BYTES.div_ceil(3) * 4 + 1024 * 1
 pub const MOST_DEPTH: usize = 32;
 
 /// The most groups and tokens a file holds.
-pub const MOST_NODES: usize = 100_000;
+pub const MOST_NODES: usize = 50_000;
+
+/// The longest name a group or a token may have, in bytes: a theme's own are at most 32.
+pub const MOST_NAME_BYTES: usize = 64;
+
+/// The longest path a token may have, its groups' names and its own joined by dots, in bytes.
+pub const MOST_PATH_BYTES: usize = 256;
 
 /// The most JSON values a file holds (every object, array, string, number, flag and null, in
 /// `$extensions` too), counted in its text before it is parsed: a theme with every appearance a
@@ -563,8 +573,9 @@ pub(super) struct Read {
 /// One token of the file, found by its path.
 #[derive(Debug, Clone)]
 struct Found<'a> {
-    /// Its path, the names of its groups and its own (a `$root` is its group's path).
-    path: Vec<String>,
+    /// Its path, the names of its groups and its own (a `$root` is its group's path), borrowed
+    /// from the document.
+    path: Vec<&'a str>,
     /// The token's object, in the document.
     token: &'a Map<String, Value>,
     /// The type it has: its own, or its nearest group's.
@@ -587,14 +598,15 @@ impl<'a> Tokens<'a> {
             notes: Vec::new(),
         };
         let mut nodes = 0;
-        tokens.walk(document, &mut Vec::new(), None, &mut nodes)?;
+        tokens.walk(document, &mut Vec::new(), 0, None, &mut nodes)?;
         Ok(tokens)
     }
 
     fn walk(
         &mut self,
         group: &'a Map<String, Value>,
-        at: &mut Vec<String>,
+        at: &mut Vec<&'a str>,
+        length: usize,
         kind: Option<&'a str>,
         nodes: &mut usize,
     ) -> Result<(), String> {
@@ -627,25 +639,43 @@ impl<'a> Tokens<'a> {
             if name.starts_with('$') {
                 continue;
             }
-            let Value::Object(object) = value else {
-                at.push(name.clone());
-                self.notes
-                    .push(LeftOut::new(shown(at), "is neither a token nor a group"));
-                at.pop();
-                continue;
-            };
-            at.push(name.clone());
-            if is_token(object) {
-                self.found(at.clone(), object, kind);
+            if name.len() > MOST_NAME_BYTES {
+                return Err(format!(
+                    "the design tokens name a group or token {} bytes long, more than the \
+                     {MOST_NAME_BYTES} a name may be",
+                    name.len()
+                ));
+            }
+            let longer = length + usize::from(length > 0) + name.len();
+            if longer > MOST_PATH_BYTES {
+                return Err(format!(
+                    "the design tokens name a token whose path is longer than the \
+                     {MOST_PATH_BYTES} bytes a path may be"
+                ));
+            }
+            at.push(name);
+            if !is_segment(name) {
+                self.notes.push(LeftOut::new(
+                    shown(at),
+                    "is not a name the format allows: it has a dot or a brace in it",
+                ));
             } else {
-                self.walk(object, at, kind, nodes)?;
+                match value {
+                    Value::Object(object) if is_token(object) => {
+                        self.found(at.clone(), object, kind);
+                    }
+                    Value::Object(object) => self.walk(object, at, longer, kind, nodes)?,
+                    _ => self
+                        .notes
+                        .push(LeftOut::new(shown(at), "is neither a token nor a group")),
+                }
             }
             at.pop();
         }
         Ok(())
     }
 
-    fn found(&mut self, path: Vec<String>, token: &'a Map<String, Value>, kind: Option<&'a str>) {
+    fn found(&mut self, path: Vec<&'a str>, token: &'a Map<String, Value>, kind: Option<&'a str>) {
         let kind = token.get("$type").and_then(Value::as_str).or(kind);
         self.index.insert(path.join("."), self.all.len());
         self.all.push(Found { path, token, kind });
@@ -657,7 +687,7 @@ impl<'a> Tokens<'a> {
 }
 
 /// A path as a sentence names it.
-fn shown(at: &[String]) -> String {
+fn shown(at: &[&str]) -> String {
     if at.is_empty() {
         "the document".to_owned()
     } else {
@@ -741,7 +771,7 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
     for found in tokens
         .all
         .iter()
-        .filter(|one| one.path.first().map(String::as_str) == Some(PALETTE))
+        .filter(|one| one.path.first().copied() == Some(PALETTE))
     {
         let name = found.path[1..].join(".");
         if found.path.len() != 2 || !super::format::is_name(&name) {
@@ -792,10 +822,7 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
         std::collections::HashMap::new();
     for found in &tokens.all {
         if found.path.len() > 2 && found.path[0] == APPEARANCE {
-            of_group
-                .entry(found.path[1].as_str())
-                .or_default()
-                .push(found);
+            of_group.entry(found.path[1]).or_default().push(found);
         }
     }
     let mut appearances = Vec::new();
@@ -833,7 +860,7 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
         }
     } else {
         for found in &tokens.all {
-            let first = found.path.first().map(String::as_str);
+            let first = found.path.first().copied();
             if !matches!(first, Some(PALETTE | APPEARANCE | COMPACT)) {
                 left_out.push(LeftOut::new(
                     found.path.join("."),
@@ -848,7 +875,7 @@ pub(super) fn unpack(file_name: &str, bytes: &[u8]) -> Result<Read, String> {
     for found in tokens
         .all
         .iter()
-        .filter(|one| one.path.first().map(String::as_str) == Some(COMPACT))
+        .filter(|one| one.path.first().copied() == Some(COMPACT))
     {
         let name = found.path[1..].join(".");
         match number_value(found, &tokens, &name)? {
@@ -1165,10 +1192,7 @@ fn top_level(
     let mut values = Map::new();
     let mut motion = Map::new();
     for found in &tokens.all {
-        if matches!(
-            found.path.first().map(String::as_str),
-            Some(PALETTE | COMPACT)
-        ) {
+        if matches!(found.path.first().copied(), Some(PALETTE | COMPACT)) {
             continue;
         }
         let name = found.path.join(".");

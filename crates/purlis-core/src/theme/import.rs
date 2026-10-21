@@ -182,9 +182,16 @@ pub fn detect(file_name: &str, bytes: &[u8]) -> Option<SourceKind> {
         "json" | "jsonc" => {
             return text.and_then(|text| {
                 // Only a design-tokens file may be larger than any other source: it is read,
-                // within its own bounds, by its import, never parsed whole here.
+                // within its own bounds, by its import, never parsed whole here. Any other
+                // file that large is a VS Code theme's shape, whose import says it is too large.
                 if text.len() as u64 > MOST_SOURCE_BYTES {
-                    return Some(SourceKind::DesignTokens);
+                    let tokens =
+                        text.contains("\"$value\"") || text.contains(super::design_tokens::VENDOR);
+                    return Some(if tokens {
+                        SourceKind::DesignTokens
+                    } else {
+                        SourceKind::Vscode
+                    });
                 }
                 let document = jsonc(text).ok()?;
                 // Design tokens first: a tokens file's `colors` group holds tokens, where a

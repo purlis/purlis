@@ -198,6 +198,9 @@ fenced = []
 test-support = []
 
 [dev-dependencies]
+# The heap of a design-tokens import, counted, so its memory bound is a measured one (#2926).
+# The version purlis-session-protocol's tests already use, so it adds no crate to the tree.
+dhat = "0.3"
 # Signs a runner image's line as the release does, for the check of it (#2749): the version
 # release-manifest's tests already use.
 minisign = "0.10"
