@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792613605979,
+  "lastUpdate": 1792615190576,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5172,6 +5172,42 @@ window.BENCHMARK_DATA = {
             "value": 323.9,
             "unit": "MB",
             "extra": "median of 6 samples: 254.5, 340.5, 329.2, 323.5, 324.4, 252.8 MB; window 155.8 MB, session host 171 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "126c9fb23f091fce7fc8db85fa6adf77907416a3",
+          "message": "Runners: the operator's downloadable install names its image by digest (#2281) (#2986)\n\n* Runners: the operator's downloadable install names its image by digest (#2281)\n\ntools/operator-install.mjs writes this checkout's plain manifests and\nchart with the operator.yaml placeholder and the chart's default digest\nset to one image by digest. operator-image.yml records that install for\nevery image it publishes, and the kind end-to-end run installs from it,\nso both replace the same placeholders; a test holds both to the tool.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: the kind run follows the install tool and has node for it; an install goes only into an empty folder (#2281)\n\noperator.yml runs on a change to tools/operator-install*, and its kind\njob sets up node from .nvmrc. The tool resolves its own path with\nfileURLToPath and realpathSync, and refuses an out folder that is not\nempty.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T00:00:02+04:00",
+          "tree_id": "46b1b04e788c5fa9310adf56536b6f8830eca535",
+          "url": "https://github.com/purlis/purlis/commit/126c9fb23f091fce7fc8db85fa6adf77907416a3"
+        },
+        "date": 1792615187702,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 605,
+            "unit": "MB",
+            "extra": "median of 3 samples: 546, 605, 738 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 520.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 508.8, 511.9, 517, 524.3, 525.2, 782 MB; window 235.8 MB, session host 284.2 MB"
           }
         ]
       }
