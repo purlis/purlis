@@ -73,8 +73,8 @@ mod hooks;
 mod host;
 mod inboxupdates;
 mod machineprofiles;
-mod skillrun;
 mod personaskills;
+mod skillrun;
 mod skillstudio;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg(all(test, unix))]

@@ -888,11 +888,11 @@ export const commands = {
 	 */
 	dispatches: (plane: PlaneId) => typedError<Dispatches, string>(__TAURI_INVOKE("dispatches", { plane })),
 	/**
-	 *  The Skill studio of the project, for a chat at its root or in `workspace`: every skill with
-	 *  its level, and why each left out is left out. On a blocking thread, as it reads the project's
-	 *  skill folders.
+	 *  The Skill studio of the project, for a chat at its root or in `workspace`, as `persona` or on
+	 *  none: every skill with its level, and why each left out is left out. On a blocking thread, as
+	 *  it reads the project's skill folders.
 	 */
-	skillStudio: (plane: PlaneId, workspace: string | null) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane, workspace })),
+	skillStudio: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane, workspace, persona })),
 	/**
 	 *  The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
 	 *  flag is off. On a blocking thread, as it reads the project's skill log.
@@ -902,6 +902,7 @@ export const commands = {
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	setSkillStudioOn: __WINDOW_ONLY_RESULT,
 	skillShare: __WINDOW_ONLY_RESULT,
+	personaSkill: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The skills a chat's persona names that it started without** (SK-5, #2768): what its tab's
 	 *  Notice says, until it is put away. `None` for a chat that has every one.
@@ -5383,7 +5384,9 @@ export type LeftOut = {
 };
 
 /**  The level a skill comes from, as the studio draws it. */
-export type Level = "built-in" | "project" | "workspace";
+export type Level = "built-in" | "project" | "workspace" | "persona" | 
+/**  A harness skill: the harness's own, which purlis never hands over. */
+"installed";
 
 /**  A level the file says that waits for your Confirm. */
 export type LevelWaiting = {
@@ -8814,6 +8817,11 @@ export type Studio = {
 	on: boolean,
 	/**  The workspace whose chats it shows, or `None` for a chat at the project's root. */
 	workspace: string | null,
+	/**
+	 *  The persona whose chats it shows, which brings its skills into every workspace, or
+	 *  `None` for a chat on no persona (SK-5).
+	 */
+	persona: string | null,
 	/**  Every workspace of the project, which it can be shown for. */
 	workspaces: string[],
 	skills: StudioSkill[],
