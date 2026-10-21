@@ -153,25 +153,25 @@ fn an_oid(oid: &str) -> bool {
     oid.len() == 40 && oid.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// Whether `name` is a pool's name a remote ref may be kept under, `refs/remotes/<pool>/`.
-/// Whether `repo` configures a remote of `name` (`remote.<name>.*`): a pool of that name would
-/// write over that remote's refs.
+/// Whether `repo` configures a remote of `name` (`remote.<name>.*`), told apart without regard
+/// to case: a pool of that name would write over that remote's refs, and on a file system that
+/// ignores case, over one whose name differs from it in case alone.
 fn a_remote_of(repo: &Path, name: &str) -> bool {
-    let pattern = format!("^remote\\.{}\\.", regex_escaped(name));
-    run(repo, &["config", "--get-regexp", &pattern])
-        .is_ok_and(|ran| ran.ok() && !ran.out.trim().is_empty())
+    let Ok(listed) = run(
+        repo,
+        &["config", "--name-only", "--get-regexp", "^remote\\."],
+    ) else {
+        // What the repository configures cannot be read: it is taken to have such a remote.
+        return true;
+    };
+    listed.out.lines().any(|key| {
+        key.strip_prefix("remote.")
+            .and_then(|rest| rest.rsplit_once('.'))
+            .is_some_and(|(remote, _)| remote.eq_ignore_ascii_case(name))
+    })
 }
 
-/// `name` with every character a regular expression gives a meaning escaped.
-fn regex_escaped(name: &str) -> String {
-    name.chars()
-        .flat_map(|c| {
-            let special = !c.is_ascii_alphanumeric() && c != '_' && c != '-';
-            special.then_some('\\').into_iter().chain([c])
-        })
-        .collect()
-}
-
+/// Whether `pool` is a pool's name a remote ref may be kept under, `refs/remotes/<pool>/`.
 fn pool_ok(pool: &str) -> bool {
     crate::contain::workspace_name_ok(pool) && ref_format_ok(&format!("refs/remotes/{pool}/x"))
 }
@@ -221,10 +221,24 @@ pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
 /// `leave_out` names folders and files, relative to the top of `tree`, that no snapshot carries,
 /// changed or new: as they are committed, or not at all ([`plane_leaves_out`]). A snapshot of
 /// nothing but those is none.
+///
+/// Nor does it carry a changed or new file a save to the forge would refuse, one with more than
+/// one link, or one that cannot be read ([`keep_secrets_out`]).
 pub fn snapshot(
     tree: &Path,
     scratch: &Path,
     leave_out: &[String],
+) -> Result<Option<String>, Refused> {
+    snapshot_leaving(tree, scratch, leave_out, &mut Vec::new())
+}
+
+/// [`snapshot`], telling `left` each changed or new file it left out as a save to the forge
+/// would refuse it, as the window names them.
+pub fn snapshot_leaving(
+    tree: &Path,
+    scratch: &Path,
+    leave_out: &[String],
+    left: &mut Vec<String>,
 ) -> Result<Option<String>, Refused> {
     let status = run(tree, &["status", "--porcelain", "--untracked-files=all"])?;
     if !status.ok() {
@@ -268,12 +282,15 @@ pub fn snapshot(
             return Err(git_failed("stage the uncommitted work", &ran));
         }
     }
-    // Nothing secret is kept on a runner (ADR 0078 §7, ruled): a file named as credentials
-    // are, and one with more than one link (it may be another file's, reached through the tree),
-    // goes as it is committed, or not at all.
-    if let Err(why) = keep_secrets_out(tree, &index) {
-        let _ = std::fs::remove_file(&index);
-        return Err(why);
+    // What a save to the forge refuses is never sent (ADR 0078 §7, the operator's ruling of
+    // 2026-10-25), nor a file with more than one link (it may be another file's, reached through
+    // the tree), nor one that cannot be read: each goes as it is committed, or not at all.
+    match keep_secrets_out(tree, &index) {
+        Ok(kept_out) => left.extend(kept_out),
+        Err(why) => {
+            let _ = std::fs::remove_file(&index);
+            return Err(why);
+        }
     }
     let written = git::run_with_index(tree, &index, &["write-tree"]).map_err(git_missing)?;
     let _ = std::fs::remove_file(&index);
@@ -307,17 +324,20 @@ pub fn snapshot(
     Ok(Some(commit.line().to_owned()))
 }
 
-/// **Takes out of the snapshot staged in `index` of `tree`** every changed or new file whose name
-/// a credential file goes by ([`crate::reposave::secret_name`]), and every one with more than one
-/// link: each is staged as it is committed, or not at all where it is not.
-fn keep_secrets_out(tree: &Path, index: &Path) -> Result<(), Refused> {
+/// **Takes out of the snapshot staged in `index` of `tree`** every changed or new file a save to
+/// the forge refuses ([`crate::reposave::refused_as`]: a credential's name, a registry file
+/// holding a token, a token or a private key in its text), every one with more than one link,
+/// and every one that cannot be read as it was staged: each is staged as it is committed, or not
+/// at all where it is not (ADR 0078 §7, the operator's ruling of 2026-10-25). Answers the paths
+/// it left out.
+fn keep_secrets_out(tree: &Path, index: &Path) -> Result<Vec<String>, Refused> {
     let changed = git::run_with_index(
         tree,
         index,
         &[
             "diff-index",
             "--cached",
-            "--name-only",
+            "--name-status",
             "-z",
             "--no-renames",
             "HEAD",
@@ -328,25 +348,44 @@ fn keep_secrets_out(tree: &Path, index: &Path) -> Result<(), Refused> {
     if !changed.ok() {
         return Err(git_failed("read the uncommitted work", &changed));
     }
-    let secret: Vec<&str> = changed
-        .out
-        .split('\0')
-        .filter(|path| !path.is_empty())
-        .filter(|path| {
-            let name = path.rsplit('/').next().unwrap_or(path);
-            crate::reposave::secret_name(name).is_some() || more_than_one_link(&tree.join(path))
-        })
-        .collect();
-    if secret.is_empty() {
-        return Ok(());
+    let mut fields = changed.out.split('\0');
+    let mut left = Vec::new();
+    while let (Some(status), Some(path)) = (fields.next(), fields.next()) {
+        // A file taken out is no file sent.
+        if path.is_empty() || status == "D" {
+            continue;
+        }
+        if leaves_out(tree, index, path) {
+            left.push(path.to_owned());
+        }
     }
+    if left.is_empty() {
+        return Ok(left);
+    }
+    let pathspecs: Vec<String> = left
+        .iter()
+        .map(|path| format!(":(top,literal){path}"))
+        .collect();
     let mut args = vec!["reset", "--quiet", "HEAD", "--"];
-    args.extend(secret.iter().copied());
+    args.extend(pathspecs.iter().map(String::as_str));
     let ran = git::run_with_index(tree, index, &args).map_err(git_missing)?;
     if !ran.ok() {
         return Err(git_failed("leave the credential files out", &ran));
     }
-    Ok(())
+    Ok(left)
+}
+
+/// Whether the changed or new file `path`, staged in `index` of `tree`, is left out of a
+/// snapshot: one a save refuses, one with more than one link, or one whose staged text or whose
+/// file cannot be read, which may have been one of those a moment ago.
+fn leaves_out(tree: &Path, index: &Path, path: &str) -> bool {
+    let staged = match git::run_with_index(tree, index, &["show", &format!(":0:{path}")]) {
+        Ok(ran) if ran.ok() => ran,
+        _ => return true,
+    };
+    std::fs::symlink_metadata(tree.join(path)).is_err()
+        || more_than_one_link(&tree.join(path))
+        || crate::reposave::refused_as(path, &staged.out).is_some()
 }
 
 /// Whether the file at `path` (not followed) has more than one link.
@@ -437,6 +476,9 @@ pub fn bundle(
 pub struct Sent {
     pub refs: Vec<Ref>,
     pub bundled: Bundled,
+    /// The changed or new files the snapshot left out, as a save to the forge would refuse them
+    /// ([`snapshot_leaving`]): what the window names.
+    pub left_out: Vec<String>,
 }
 
 /// **The desktop bundles `branch` of `repo` for a runner**, into `into`: the branch as it is
@@ -472,8 +514,9 @@ pub fn bundle_branch(
         name: head.clone(),
         oid: at.line().to_owned(),
     }];
+    let mut left_out = Vec::new();
     let snapshot = match tree {
-        Some((tree, leave_out)) => snapshot(tree, scratch, leave_out)?,
+        Some((tree, leave_out)) => snapshot_leaving(tree, scratch, leave_out, &mut left_out)?,
         None => None,
     };
     let kept = format!("{SNAPSHOTS}{branch}");
@@ -495,6 +538,7 @@ pub fn bundle_branch(
     Ok(Sent {
         refs,
         bundled: bundled?,
+        left_out,
     })
 }
 

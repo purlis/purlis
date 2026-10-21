@@ -3,8 +3,8 @@
 **Built by #2046** on §7 (RR-16) and §8. This note says how code first crosses to a pool's
 runner and back. The protocol's part is ADR 0068's amendment of the same day. Item 1 was
 accepted by the steward on 2026-10-20 (D-2046-1). Item 2 is the operator's ruling of 2026-10-21,
-which amends §8 and V16 (d). What item 6 says of credential files is §7's own rule. The rest is
-*decided in implementation, to be confirmed* (D-2046-6 to D-2046-9).
+which amends §8 and V16 (d). Item 6 is the operator's ruling of 2026-10-25, which amends §7.
+The rest is *decided in implementation, to be confirmed* (D-2046-6 to D-2046-9).
 
 1. **A git bundle, not a remote helper.** §7 named `git-remote-purlis` as git's standard way for
    git on the desktop to reach the link. A bundle is git's own file of a pack and the refs it
@@ -50,12 +50,17 @@ which amends §8 and V16 (d). What item 6 says of credential files is §7's own 
    runs (`purlis_core::codelink::snapshot`). The runner holds no forge credential: saves and pull
    requests happen on the desktop (FI3). *Decided in implementation, to be confirmed
    (D-2046-8).*
-6. **What a snapshot leaves out.** A snapshot of the project's own repository never carries
-   purlis's state folder (its vaults and this machine's sessions) or the local settings file,
-   ignored by the project or not (`purlis_core::codelink::plane_leaves_out`). No snapshot carries
-   a changed or new file named as credentials are (`.env` and `.env.*` but for an example's, an
-   SSH private key, `*.pem`, `*.p12`, `*.pfx`, `*.key`, `credentials.json`), or a file with more
-   than one link: each goes as it is committed, or not at all. Nothing secret is kept on a
-   runner (§7). Otherwise a clone's snapshot carries its uncommitted work whole, and what its own
-   `.gitignore` ignores stays here. *Credential files: §7's rule. The rest is decided in
-   implementation, to be confirmed (D-2046-9).*
+6. **What a snapshot leaves out.** A snapshot carries the uncommitted work, less everything a
+   save to the forge refuses to push (ADR 0051): no changed or new file named as credentials are
+   (`.env` and `.env.*` but for an example's, an SSH private key, `*.pem`, `*.p12`, `*.pfx`,
+   `*.key`, `credentials.json`), no `.npmrc` or `.pypirc` holding a token or a password, no file
+   whose text holds a forge's token or a private key, no file with more than one link, and no
+   file that cannot be read as it was staged (`purlis_core::reposave::refused_as`,
+   `purlis_core::codelink::snapshot_leaving`). Each goes as it is committed, or not at all. The
+   window names what a send left out, and the person may name more to leave out in the
+   workspace's settings. A snapshot of the project's own repository never carries purlis's state
+   folder (its vaults and this machine's sessions) or the local settings file, ignored by the
+   project or not (`purlis_core::codelink::plane_leaves_out`). Otherwise a clone's snapshot
+   carries its uncommitted work whole, and what its own `.gitignore` ignores stays here. **§7 now
+   reads, of what crosses to a runner:** a vault's secrets are never sent, and a project's files
+   follow the rule a save to the forge follows. *Ruled by the operator on 2026-10-25 (D-2046-9).*

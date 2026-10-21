@@ -859,3 +859,64 @@ fn a_committed_credential_file_changed_here_goes_as_it_is_committed() {
         "TOKEN=committed"
     );
 }
+
+#[test]
+fn a_hard_link_whose_name_spells_pathspec_magic_is_left_out_all_the_same() {
+    let world = World::new();
+    let outside = world.top.join("outside.txt");
+    std::fs::write(&outside, "not the tree's\n").unwrap();
+    std::fs::hard_link(&outside, world.desktop.join(":linked")).unwrap();
+    std::fs::write(world.desktop.join("fix.txt"), "the work\n").unwrap();
+
+    let mut left = Vec::new();
+    let snapshot = snapshot_leaving(&world.desktop, &world.scratch(), &[], &mut left)
+        .unwrap()
+        .expect("the work is carried");
+    let listed = git(&world.desktop, &["ls-tree", "-r", "--name-only", &snapshot]);
+    assert!(!listed.lines().any(|one| one == ":linked"), "{listed}");
+    assert_eq!(left, vec![":linked".to_owned()]);
+}
+
+#[test]
+fn a_snapshot_leaves_out_what_a_save_to_the_forge_refuses_and_says_which() {
+    let world = World::new();
+    // A token by its forge's own prefix, spelled in two halves so no scanner here reads one.
+    let token = format!("ghp_{}", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8");
+    std::fs::write(
+        world.desktop.join(".npmrc"),
+        "//registry.example.invalid/:_authToken=abc123\n",
+    )
+    .unwrap();
+    std::fs::write(world.desktop.join("notes.txt"), format!("use {token}\n")).unwrap();
+    std::fs::write(world.desktop.join("plain.txt"), "nothing secret\n").unwrap();
+
+    let mut left = Vec::new();
+    let snapshot = snapshot_leaving(&world.desktop, &world.scratch(), &[], &mut left)
+        .unwrap()
+        .expect("the work is carried");
+    let listed = git(&world.desktop, &["ls-tree", "-r", "--name-only", &snapshot]);
+    for gone in [".npmrc", "notes.txt"] {
+        assert!(!listed.lines().any(|one| one == gone), "{gone}: {listed}");
+    }
+    assert!(listed.lines().any(|one| one == "plain.txt"), "{listed}");
+    left.sort();
+    assert_eq!(left, vec![".npmrc".to_owned(), "notes.txt".to_owned()]);
+}
+
+#[test]
+fn a_remote_that_differs_from_the_pool_in_case_alone_is_refused_too() {
+    let world = World::new();
+    git(
+        &world.desktop,
+        &[
+            "config",
+            "remote.Builds.url",
+            "https://example.invalid/acme/web.git",
+        ],
+    );
+    let refused = take_back(&world.desktop, "builds", None, &[]).unwrap_err();
+    assert!(
+        matches!(&refused, Refused::NotAllowed(why) if why.contains("remote named builds")),
+        "{refused:?}"
+    );
+}
