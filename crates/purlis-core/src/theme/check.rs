@@ -1015,7 +1015,7 @@ pub(super) fn mix(top: &str, under: &str, opacity: f64) -> String {
 }
 
 /// `wash` laid over the opaque `under`, as the screen draws it. An opaque `wash` is itself.
-fn onto(wash: &str, under: &str) -> String {
+pub(super) fn onto(wash: &str, under: &str) -> String {
     let top = long(wash);
     if top.len() == 6 {
         return wash.to_owned();

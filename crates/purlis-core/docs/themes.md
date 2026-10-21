@@ -533,6 +533,15 @@ the theme is in /home/me/.config/purlis/themes/harbor: `purlis theme check /home
 - **Each kind goes through a fixed table** (below): each token takes the first of its source
   keys that the source has. A token no row fills is Purlis Classic's of the same appearance, as
   in any theme that leaves a token out.
+- **A source's own quiet and disabled greys take the grey tiers** (#2941), and no tier reads
+  louder than the one above it. A VS Code theme's line numbers are `text.quiet` and its
+  disabled words `text.faint`; its muted words take the louder of the two greys. A base16 or
+  base24 scheme's invisibles (`base03`) are `text.faint`, walked to the mark floor. A tier the
+  source has no grey for, or whose grey would read louder than the tier above it, is left out
+  and follows that tier (see [The theme check](#the-theme-check)): a VS Code theme's faint
+  follows its quiet, which follows its muted when it has no line numbers; a base16 or base24
+  scheme's quiet follows its muted, and so does its faint when the walk would take it past
+  muted; an iTerm2 preset's and a Ghostty theme's quiet and faint are their muted.
 - **Then each kind's recipes tune the tokens the table filled** (below each table), so the
   theme reads where the source's own colours allow it. A base16 scheme makes some roles one
   colour (ANSI black is the background; the selected row is the row under the pointer) and
@@ -586,7 +595,9 @@ A VS Code theme's `colors`:
 | `control.hover` | `toolbar.hoverBackground` |
 | `text.primary` | `editor.foreground`, `foreground` |
 | `text.secondary` | `descriptionForeground` |
-| `text.muted` | `disabledForeground`, `editorLineNumber.foreground` |
+| `text.muted` | `editorLineNumber.foreground`, `disabledForeground` |
+| `text.quiet` | `editorLineNumber.foreground` |
+| `text.faint` | `disabledForeground` |
 | `border.subtle` | `panel.border`, `sideBar.border`, `editorGroup.border` |
 | `border.strong` | `input.border`, `contrastBorder` |
 | `accent.base` | `button.background`, `focusBorder` |
@@ -656,11 +667,13 @@ A VS Code theme's `colors`:
 | `chart.8` | `terminal.ansiMagenta` |
 | `window.background` | `titleBar.activeBackground`, `editor.background` |
 
-Tuned after the table (#2589): a VS Code theme names a colour for nearly every role, and those are taken as they are. Selected text it leaves to the selection is the editor's words.
+Tuned after the table (#2589): a VS Code theme names a colour for nearly every role, and those are taken as they are. Selected text it leaves to the selection is the editor's words. Its muted words take the louder of its line numbers' grey and its disabled grey, and its faint follows quiet when the disabled grey reads louder than the line numbers.
 
 | Token | Tuned |
 |---|---|
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `editor.foreground`, `foreground` |
+| `text.muted` | the one of `editorLineNumber.foreground`, `disabledForeground` that reads most on `surface.base` |
+| `text.faint` | left out when it reads louder than `text.quiet` on `surface.base` |
 
 Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
 token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
@@ -700,6 +713,7 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `text.primary` | `base05` |
 | `text.secondary` | `base04` |
 | `text.muted` | `base03` |
+| `text.faint` | `base03` |
 | `border.subtle` | `base02` |
 | `border.strong` | `base03` |
 | `accent.base` | `base0d` |
@@ -784,6 +798,8 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
 | `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
 | `text.muted` | toward `base04`, then `base05` |
+| `text.faint` | toward `base04`, then `base05` |
+| `text.faint` | left out when it reads louder than `text.muted` on `surface.base` |
 | `syntax.comment` | toward `base04`, then `base05` |
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
@@ -857,6 +873,7 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `text.primary` | `base05` |
 | `text.secondary` | `base04` |
 | `text.muted` | `base03` |
+| `text.faint` | `base03` |
 | `border.subtle` | `base02` |
 | `border.strong` | `base03` |
 | `accent.base` | `base0d` |
@@ -941,6 +958,8 @@ Tuned as a base16 scheme is, after the table (#2589):
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
 | `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
 | `text.muted` | toward `base04`, then `base05` |
+| `text.faint` | toward `base04`, then `base05` |
+| `text.faint` | left out when it reads louder than `text.muted` on `surface.base` |
 | `syntax.comment` | toward `base04`, then `base05` |
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
