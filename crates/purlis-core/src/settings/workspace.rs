@@ -42,7 +42,16 @@ pub const READ: &[&str] = &[
     project::TABLE,
     crate::harness_plugin::TABLE,
     project::theme::TABLE,
+    SKILLS,
 ];
+
+/// The table that holds what a workspace turned off of the project skills granted to it
+/// (ADR 0099 §2, #2767): `settings.skills.off`, a list of skill names, read by
+/// `purlis_skills::turned_off`. A workspace's alone: the project's two files hold no `[skills]`.
+pub const SKILLS: &str = "skills";
+
+/// The key in [`SKILLS`] that lists the names turned off.
+pub const SKILLS_OFF: &str = "off";
 
 /// The file as a sentence names it: `workspaces/<ws>/workspace.json`.
 pub fn named(workspace: &str) -> String {
@@ -145,8 +154,44 @@ pub fn standing(text: &str, workspace: &str) -> Vec<Refusal> {
         out.extend(crate::harness_plugin::keyed_in(&table, &file, "settings."));
         // And `theme` (charter-app#281), by the one reader of a theme.
         out.extend(project::theme::keyed_in_workspace(&table, &file));
+        out.extend(skills_refused(&table, &file));
     }
     out
+}
+
+/// What a workspace's `settings.skills` holds that `purlis_skills::turned_off` would not read
+/// (#2767): anything but `off`, and an `off` that is not a list of names. The reader then turns
+/// nothing off, so a save that would write it is refused.
+pub fn skills_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
+    let Some(table) = top.get(SKILLS) else {
+        return Vec::new();
+    };
+    let shape = format!("a workspace's {SKILLS} are {{\"{SKILLS_OFF}\": [\"<skill>\", …]}}");
+    let Some(table) = table.as_table() else {
+        return vec![Refusal::at(
+            format!("{KEY}.{SKILLS} in {file} is not an object — {shape}"),
+            &[SKILLS],
+        )];
+    };
+    table
+        .iter()
+        .filter_map(|(key, value)| {
+            let why = if key != SKILLS_OFF {
+                format!("{KEY}.{SKILLS}.{key} in {file} is not read — {shape}")
+            } else if !value
+                .as_array()
+                .is_some_and(|names| names.iter().all(toml::Value::is_str))
+            {
+                format!(
+                    "{KEY}.{SKILLS}.{SKILLS_OFF} in {file} is not a list of skill names, so it \
+                     turns nothing off — {shape}"
+                )
+            } else {
+                return None;
+            };
+            Some(Refusal::at(why, &[SKILLS, key.as_str()]))
+        })
+        .collect()
 }
 
 /// What the manifest's own readers would take leniently from the manifest whose text this is,

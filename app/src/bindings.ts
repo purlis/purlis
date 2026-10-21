@@ -1721,10 +1721,11 @@ export const commands = {
 	 */
 	dispatches: (plane: PlaneId) => typedError<Dispatches, string>(__TAURI_INVOKE("dispatches", { plane })),
 	/**
-	 *  The Skill studio of the project: every built-in and project skill, with its level, and why
-	 *  each left out is left out. On a blocking thread, as it reads the project's skill folders.
+	 *  The Skill studio of the project, for a chat at its root or in `workspace`: every skill with
+	 *  its level, and why each left out is left out. On a blocking thread, as it reads the project's
+	 *  skill folders.
 	 */
-	skillStudio: (plane: PlaneId) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane })),
+	skillStudio: (plane: PlaneId, workspace: string | null) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane, workspace })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	/**
@@ -1732,6 +1733,11 @@ export const commands = {
 	 *  whether it is on, which `PURLIS_SKILL_STUDIO` still decides where it is set.
 	 */
 	setSkillStudioOn: (on: boolean) => typedError<boolean, string>(__TAURI_INVOKE("set_skill_studio_on", { on })),
+	/**
+	 *  **Share** (#2767): moves the local skill `name` of the project's root (`workspace` `None`) or
+	 *  of `workspace` into that level's `skills/`, so the project's save commits it, or says why not.
+	 */
+	skillShare: (plane: PlaneId, workspace: string | null, name: string) => typedError<null, string>(__TAURI_INVOKE("skill_share", { plane, workspace, name })),
 	/**
 	 *  What discarding the folder of dispatch `id`'s own branch would take with it (#1453): every
 	 *  uncommitted file, every ignored one, and how many commits its branch holds that exist
@@ -7008,7 +7014,7 @@ export type LeftOut = {
 };
 
 /**  The level a skill comes from, as the studio draws it. */
-export type Level = "built-in" | "project";
+export type Level = "built-in" | "project" | "workspace";
 
 /**  A level the file says that waits for your Confirm. */
 export type LevelWaiting = {
@@ -10368,9 +10374,13 @@ export type StopPhase =
 /**  It has ended, and its tab goes. */
 "stopped";
 
-/**  What the studio shows: whether it is on, and its skills by name. */
+/**  What the studio shows: whether it is on, whose chat it shows, and its skills by name. */
 export type Studio = {
 	on: boolean,
+	/**  The workspace whose chats it shows, or `None` for a chat at the project's root. */
+	workspace: string | null,
+	/**  Every workspace of the project, which it can be shown for. */
+	workspaces: string[],
 	skills: StudioSkill[],
 };
 
@@ -10379,7 +10389,22 @@ export type StudioSkill = {
 	/**  Its name, or its folder's where it names none. */
 	name: string,
 	level: Level,
-	/**  Whether a chat at the project's root gets it. */
+	/**
+	 *  Its level as a person reads it: `project`, `local workspace`, the words the command line
+	 *  shows (`purlis_core::skills::level_shown`).
+	 */
+	label: string,
+	/**
+	 *  Whether it is a local skill, kept on this machine in its level's `skills.local/`, which
+	 *  Share makes shared.
+	 */
+	local: boolean,
+	/**
+	 *  Where a project skill reaches: `root`, `all`, or the workspaces' names. `None` for a
+	 *  skill of another level.
+	 */
+	grant: string | null,
+	/**  Whether the chat the studio shows gets it. */
 	on: boolean,
 	/**  Why it is left out, in one line, where it is. */
 	left_out: string | null,

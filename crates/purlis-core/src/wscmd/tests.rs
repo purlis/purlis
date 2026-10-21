@@ -46,6 +46,35 @@ fn the_block_publishes_a_live_workspaces_session_records_with_it() {
 }
 
 #[test]
+fn the_block_shares_a_live_workspaces_skills_and_never_its_local_ones() {
+    // ADR 0099, #2767: `skills/` follows the workspace, `skills.local/` stays ignored under
+    // `/workspaces/*/*`, which nothing in the block re-includes.
+    let block = live_block(unmigrated(), ["beta"]);
+    assert!(
+        block.contains("!/workspaces/beta/skills\n!/workspaces/beta/skills/**\n"),
+        "{block}"
+    );
+    assert!(!block.contains("skills.local"), "{block}");
+}
+
+#[test]
+fn a_live_workspaces_skills_are_among_its_shareable_paths() {
+    let dir = plane();
+    let skill = dir.path().join("workspaces/beta/skills/review");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: review\ndescription: x\n---\n",
+    )
+    .unwrap();
+    assert!(
+        meta_paths(dir.path(), "beta").contains(&"workspaces/beta/skills".to_owned()),
+        "{:?}",
+        meta_paths(dir.path(), "beta")
+    );
+}
+
+#[test]
 fn a_live_workspaces_session_records_are_among_its_shareable_paths() {
     let dir = plane();
     let ws = dir.path().join("workspaces").join("beta");
