@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792567268251,
+  "lastUpdate": 1792568582493,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20286,6 +20286,48 @@ window.BENCHMARK_DATA = {
             "value": 104.454262,
             "unit": "ms",
             "extra": "median of 5 runs: 103.253, 103.280, 104.454, 106.321, 107.576 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "639b9399d24f90af945891cb21f379406a242787",
+          "message": "Import tables map quiet and disabled greys to the grey tiers (#2941) (#2952)\n\n* Import tables map quiet and disabled greys to the grey tiers (#2941)\n\nA VS Code theme's line numbers take text.quiet and its disabled words\ntext.faint; its muted takes the line numbers' grey first. A base16 or\nbase24 scheme's invisibles (base03) take text.faint, walked to the mark\nfloor. Where a source has no such grey the tier is left out and follows\nthe imported muted (ADR 0097, 2026-10-21 amendment). One import test per\ntable.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Imported grey tiers never read louder than the tier above (#2941)\n\nA VS Code theme's muted takes the louder of its line-number and disabled\ngreys, and its faint is left out, following quiet, when the disabled\ngrey reads louder than the line numbers. A base16 or base24 scheme's\nwalked faint is left out, following muted, when it would read louder\nthan the walked muted. Tests hold the tier order on every table.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T11:35:06+04:00",
+          "tree_id": "b705d37e54f308fac561be31edfb93241d45efe3",
+          "url": "https://github.com/purlis/purlis/commit/639b9399d24f90af945891cb21f379406a242787"
+        },
+        "date": 1792568581055,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.32975600000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.321, 0.328, 0.330, 0.333, 0.342 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.515118,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.381, 16.496, 16.515, 16.524, 16.684 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.723882,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.133, 101.694, 101.724, 101.735, 102.863 ms"
           }
         ]
       }
