@@ -204,3 +204,41 @@ fn the_floor_holds_on_the_final_token_set_whatever_layer_set_it() {
         }
     }
 }
+
+#[test]
+fn a_hue_no_named_tint_takes_is_measured_too() {
+    // Clears the floor as written and in every named tint, and falls under it at a hue a
+    // workspace's own colour can take: the two fills are drawn untinted there.
+    let theme = dark(json!({ "accent.surface": "#222b1f", "tab.active": "#222b1f" }));
+    let one = theme.first();
+    assert!(nearest(one) >= ALLOW_FROM_PRIMARY);
+    for hue in &one.tint.hues {
+        assert!(
+            nearest(&super::super::tint::tinted(one, hue.name)) >= ALLOW_FROM_PRIMARY,
+            "{}",
+            hue.name
+        );
+    }
+    let held = draw(one).held.expect("held at some hue");
+    assert!(held.floors.contains(&Floor::AllowNotPrimary), "{held:?}");
+    assert!(held.tokens.is_empty(), "{held:?}");
+    assert!(!held.untinted.is_empty(), "{held:?}");
+}
+
+#[test]
+fn every_built_in_clears_the_floor_at_every_whole_degree() {
+    for theme in built_ins().iter().chain(&purlis().appearances) {
+        if theme.tint.tabs().is_empty() {
+            continue;
+        }
+        for degree in 0..360 {
+            let tinted = super::super::tint::tinted_at(theme, f64::from(degree));
+            assert!(
+                nearest(&tinted) >= ALLOW_FROM_PRIMARY,
+                "{} ({}) at {degree}",
+                theme.name,
+                theme.id
+            );
+        }
+    }
+}

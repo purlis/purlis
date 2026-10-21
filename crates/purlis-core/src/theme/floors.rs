@@ -31,9 +31,11 @@
 //!   answer, at rest and in each state, measured as the component parts check measures two
 //!   looks ([`super::parts`]): the fills as each shows on the grounds the family is drawn on,
 //!   the nearest ground counting, and the edges where they stand out. It holds as the theme
-//!   writes them and under each of its own tints. Like every floor here it is measured on the
-//!   final token set the window draws, so a layer laid over a theme after it is read passes
-//!   through it too. Where it fails, the primary's fill is drawn as purlis's own first, and
+//!   writes them, under each of its own tints, and at every whole degree a workspace's own
+//!   colour can take. Like every floor here it is measured on the token set [`super::draw`] is
+//!   handed, so a layer laid over a theme after it is read (the person's own colours) passes
+//!   through it only when it is laid before the theme is drawn, never in the window after.
+//!   Where it fails, the primary's fill is drawn as purlis's own first, and
 //!   Allow's only when that is not enough.
 //!
 //! The contrast floors are pairs of the check's own [`PAIRS`], held to the floor the check holds
@@ -293,6 +295,19 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
             }
         }
         found.extend(allow_near_primary(&drawn, tinted));
+    }
+    // Allow against the primary at every whole degree a workspace's own colour can take, as the
+    // contrast floors below are: only the fills and the grounds they are measured on are turned.
+    if !theme.tint.tabs().is_empty() {
+        let only: Vec<&'static str> = super::parts::allow_from_primary(theme)
+            .iter()
+            .flat_map(|look| look.fills)
+            .chain(super::parts::allow_grounds())
+            .collect();
+        for (degree, most) in (0_u32..).zip(chromas.of(theme).to_vec()) {
+            let drawn = tint::turned_at(theme, f64::from(degree), most, &only);
+            found.extend(allow_near_primary(&drawn, true));
+        }
     }
     // A workspace's own colour can take any hue. A tint keeps each shade's luminance on its own
     // side of the middle, so a pair of a dark shade and a light one holds at every hue as it does

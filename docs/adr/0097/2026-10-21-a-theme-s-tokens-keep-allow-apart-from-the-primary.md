@@ -10,7 +10,11 @@ on a theme's tokens, not only on its component parts.
   surface counting, and the edges count where they stand out. This holds at rest and in each
   state the two are drawn in.
 - **Where.** In every appearance and every combination of option values, as the theme is written
-  and in each of its own workspace tints.
+  and in every workspace tint, custom colours included, as §6 holds the other consent floors.
+- **On the token set the window draws.** The floor measures the tokens `theme::draw` is handed.
+  A layer laid over a theme after it is read, such as the person's own colours, is laid before
+  the theme is drawn, so the floor holds over it too. A layer applied in the window afterwards
+  would not be measured, so none is.
 - **What a theme that breaks it draws.** Purlis's own fill for the primary first, so Allow stays
   as plain as Keep blocked. Allow's own fill is drawn as purlis's only when that is not enough. A
   theme that clears it as written and would fall under it only in a tinted workspace keeps its

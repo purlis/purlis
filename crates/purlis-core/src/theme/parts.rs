@@ -570,6 +570,20 @@ pub(super) struct AllowLook {
     pub fills: [&'static str; 2],
 }
 
+/// The grounds every family with an answer that grants is drawn on: what its fills are measured
+/// over.
+pub(super) fn allow_grounds() -> impl Iterator<Item = &'static str> {
+    MANIFEST
+        .iter()
+        .filter(|family| {
+            family
+                .variants
+                .iter()
+                .any(|variant| variant.consent == Some(Consent::Grants))
+        })
+        .flat_map(|family| family.grounds.iter().copied())
+}
+
 /// **How far Allow is drawn from the primary by the family defaults alone**, in `theme`: for
 /// every family with an answer that grants, at rest and in each state whose look differs from
 /// it, measured as the parts check measures looks ([`look_apart`]): the fills as each shows on
