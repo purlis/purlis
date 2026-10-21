@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792568068338,
+  "lastUpdate": 1792570613743,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -4706,6 +4706,42 @@ window.BENCHMARK_DATA = {
             "value": 399.4,
             "unit": "MB",
             "extra": "median of 6 samples: 447, 388.9, 399.2, 399.5, 400.4, 289.8 MB; window 201 MB, session host 198.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3a9b426870223486f688f503cba33b1ba23b382a",
+          "message": "stories: fail on an obsolete baseline, and delete it by the label (#2943) (#2950)\n\nThe stories check reads Storybook's own index (`storybook index`) and refuses a\nbaseline whose story is gone from its file, or no longer runs as a test, naming\nthe story. The update-baselines job gathers only the baselines of live stories,\nand `take` deletes every other file in the pull request's `__screenshots__`\ndirectories in the same commit, through no link and with the app root itself\nno link. The job's comment lists the baselines drawn and those deleted.\n\nCloses #2943\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T11:09:49+04:00",
+          "tree_id": "e023fdcd7c1371350ad3d7093579e453440e2bf6",
+          "url": "https://github.com/purlis/purlis/commit/3a9b426870223486f688f503cba33b1ba23b382a"
+        },
+        "date": 1792570612261,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 908,
+            "unit": "MB",
+            "extra": "median of 3 samples: 777, 908, 1087 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 348.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 320.4, 393.3, 344.4, 353.2, 354.1, 240.7 MB; window 151.2 MB, session host 198 MB"
           }
         ]
       }
