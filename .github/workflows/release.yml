@@ -1106,13 +1106,16 @@ jobs:
   # **The runner image of this release** (#2749, ruled 2026-10-20): `runner-image.yml`, called
   # for the commit and the version this run publishes, so purlis's runner image says the
   # version its desktop does. Built, checked, pushed, signed keyless and verified there; its
-  # line (`<image>@sha256:<digest>`) comes back as `image`. The permissions are the most the
-  # called workflow's jobs ask for; each of its jobs holds only its own.
+  # line (`<image>@sha256:<digest>`) comes back as `image`. Its build provenance and an SBOM
+  # of each architecture's image are attested to the image and verified there too (#2191). The
+  # permissions are the most the called workflow's jobs ask for; each of its jobs holds only
+  # its own.
   runner-image:
     name: runner image
     needs: plan
     if: needs.plan.outputs.publish == 'true'
     permissions:
+      attestations: write
       contents: read
       packages: write
       id-token: write

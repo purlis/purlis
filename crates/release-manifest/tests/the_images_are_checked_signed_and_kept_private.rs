@@ -284,7 +284,14 @@ fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
         let file = image.file;
         assert!(text.lines().any(|l| l == "permissions: {}"), "{file}");
         let names: Vec<&str> = jobs.iter().map(|j| j.name.as_str()).collect();
-        assert_eq!(names, ["plan", "binary", "image", "index"], "{file}");
+        // The runner image's SBOM and attestations (#2191) are held to their own test,
+        // `the_runner_image_carries_its_sbom_and_provenance.rs`.
+        let attested: &[&str] = if image.released { &["sbom", "attest"] } else { &[] };
+        let made: Vec<&str> = ["plan", "binary", "image", "index"]
+            .into_iter()
+            .chain(attested.iter().copied())
+            .collect();
+        assert_eq!(names, made, "{file}");
         assert_eq!(job_named(&jobs, "plan", file).permissions(), None);
         assert_eq!(
             job_named(&jobs, "binary", file).permissions(),
@@ -308,7 +315,8 @@ fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
             .filter(|j| j.can_mint_an_oidc_token())
             .map(|j| j.name.as_str())
             .collect();
-        assert_eq!(minting, ["index"], "{file}");
+        let signers: &[&str] = if image.released { &["index", "attest"] } else { &["index"] };
+        assert_eq!(minting, signers, "{file}");
     }
 }
 
@@ -355,7 +363,19 @@ fn every_checkout_is_the_planned_commit_without_credentials() {
                 .into_iter()
                 .filter(|s| action(s) == Some("actions/checkout"))
                 .collect();
-            assert_eq!(checkouts.len(), 1, "{}: job `{}`", image.file, job.name);
+            // The runner image's SBOM and attestations read the pushed image and run nothing
+            // of the commit's, so they check nothing out (#2191).
+            let checks_out = !matches!(job.name.as_str(), "sbom" | "attest");
+            assert_eq!(
+                checkouts.len(),
+                usize::from(checks_out),
+                "{}: job `{}`",
+                image.file,
+                job.name
+            );
+            if !checks_out {
+                continue;
+            }
             assert_eq!(
                 step_value(&checkouts[0], "with", "ref"),
                 Some("${{ needs.plan.outputs.sha }}"),
