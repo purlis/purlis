@@ -230,11 +230,17 @@ pub fn sweep_homes(data_home: &Path, now: SystemTime) -> Vec<std::path::PathBuf>
 /// Whether `name` is a name [`crate::sandbox::Homes::project_key`] gives: 32 lowercase hex
 /// digits.
 fn is_project_key(name: &str) -> bool {
-    name.len() == 32 && name.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    is_lowercase_hex(name, 32)
+}
+
+/// Whether `name` is `len` lowercase hex digits: a digest's spelling, as purlis names a folder by
+/// one ([`is_project_key`], [`crate::skills`]' sets' folders).
+pub(crate) fn is_lowercase_hex(name: &str, len: usize) -> bool {
+    name.len() == len && name.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Whether `path` is a folder, itself and not through a link.
-fn is_plain_dir(path: &Path) -> bool {
+pub(crate) fn is_plain_dir(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir())
 }
 
