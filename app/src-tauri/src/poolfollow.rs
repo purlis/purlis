@@ -60,8 +60,11 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
     {
         return;
     }
-    let image = match runner_image(app).await {
-        Ok(image) => image,
+    let found = runner_image(app).await;
+    note_named(&found);
+    let image = match found {
+        Ok(Found::Named(image)) => Some(image),
+        Ok(Found::NoneNamed | Found::OtherVersion) => None,
         Err(why) => {
             tracing::warn!("purlis: this version's runner image could not be read: {why}");
             None
@@ -71,7 +74,7 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
     let done = crate::off_the_window("moving pools to this version", move || {
         let machine = Machine::here(&config)?;
         Ok::<_, String>(follow_and_drain(&machine, image.as_ref(), &|to| {
-            crate::runnerlinks::runs_a_chat(to)
+            crate::runnerlinks::chats_on(to)
         }))
     })
     .await;
@@ -85,11 +88,78 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
     }
 }
 
+/// Whether the last look found a runner image named for this version: `None` until a look
+/// answered.
+#[cfg(unix)]
+static NAMED: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
+
+/// **What a look found of this version's runner image** (#2880).
+#[cfg(unix)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Found {
+    /// The channel's manifest is of another version than this desktop's: one behind or ahead
+    /// of its channel. Nothing is said of this version's release.
+    OtherVersion,
+    /// This version's manifest names no runner image, as a release whose image failed does.
+    NoneNamed,
+    /// This version's manifest names it.
+    Named(Image),
+}
+
+/// **What `manifest`, the channel's update manifest as the updater read it, says of the runner
+/// image of `version`** (#2880), checked with the updater key `pubkey`: none read, or one of
+/// another version, says nothing of it.
+#[cfg(unix)]
+pub fn found_in(
+    manifest: Option<&serde_json::Value>,
+    pubkey: &str,
+    version: &str,
+) -> Result<Found, String> {
+    let Some(manifest) = manifest else {
+        return Ok(Found::OtherVersion);
+    };
+    if manifest.get("version").and_then(serde_json::Value::as_str) != Some(version) {
+        return Ok(Found::OtherVersion);
+    }
+    Ok(
+        match purlis_core::runnerimage::of_this_version(manifest, pubkey, version)? {
+            Some(image) => Found::Named(image),
+            None => Found::NoneNamed,
+        },
+    )
+}
+
+/// **Notes whether this version's manifest named a runner image** (#2880), from a look's
+/// answer: only a manifest of this very version says so. One that names none, as a release
+/// whose runner image failed does, leaves the pools where they are, and the Pools group says they
+/// do not move to this version. A manifest of another version, or a look that could not be made,
+/// notes nothing.
+#[cfg(unix)]
+pub fn note_named(found: &Result<Found, String>) {
+    let named = match found {
+        Ok(Found::Named(_)) => true,
+        Ok(Found::NoneNamed) => false,
+        Ok(Found::OtherVersion) | Err(_) => return,
+    };
+    *NAMED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(named);
+}
+
+/// **Whether this version's release named a runner image**, as the last look found it: `None`
+/// until a look answered (#2880).
+#[cfg(unix)]
+pub fn this_versions_image_named() -> Option<bool> {
+    *NAMED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// **The runner image the update manifest names for this version**, or none where the
 /// channel's manifest is of another version or names none (a release from before #2749).
 /// One updater read, listed in the network log as every read is.
 #[cfg(unix)]
-async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Option<Image>, String> {
+async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Found, String> {
     use tauri_plugin_updater::UpdaterExt;
     let endpoint = crate::updates::channel_now().endpoint();
     let url = endpoint
@@ -108,7 +178,7 @@ async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Option<Im
     let found = updater.check().await;
     purlis_core::netlog::updater_read(&endpoint, found.is_ok(), started.elapsed());
     let Some(update) = found.map_err(|why| why.to_string())? else {
-        return Ok(None);
+        return Ok(Found::OtherVersion);
     };
     let pubkey = app
         .config()
@@ -119,17 +189,49 @@ async fn runner_image<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Option<Im
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    purlis_core::runnerimage::of_this_version(&update.raw_json, &pubkey, &ours.to_string())
+    found_in(Some(&update.raw_json), &pubkey, &ours.to_string())
+}
+
+/// **How many chats each pool's draining runners still keep, as the last look found them**
+/// (#2865): what the Pools group says a pool's older runner waits on.
+#[cfg(unix)]
+pub fn waiting_on(config: &std::path::Path, pool: &str) -> u32 {
+    lock_waiting()
+        .iter()
+        .filter(|((home, of, _), _)| home == config && of == pool)
+        .map(|(_, chats)| *chats)
+        .sum()
+}
+
+/// **What pool `pool`'s draining runners waited on is let go of** (#2865): the pool is removed,
+/// its runners with it.
+#[cfg(unix)]
+pub fn forget_waiting(config: &std::path::Path, pool: &str) {
+    lock_waiting().retain(|(home, of, _), _| !(home == config && of == pool));
+}
+
+/// A draining runner, by its config home, its pool and its name.
+#[cfg(unix)]
+type Waiting = (std::path::PathBuf, String, String);
+
+#[cfg(unix)]
+fn lock_waiting() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<Waiting, u32>> {
+    static WAITING: std::sync::Mutex<std::collections::BTreeMap<Waiting, u32>> =
+        std::sync::Mutex::new(std::collections::BTreeMap::new());
+    WAITING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// **Moves each pool of purlis's own image on `machine` to `image`, and removes each draining
-/// runner `runs_a_chat` says no chat is left on**: what was done, and what failed, a line each.
-/// With no `image`, only the draining runners.
+/// runner `chats_on` says no chat is left on**: what was done, and what failed, a line each.
+/// With no `image`, only the draining runners. How many chats each one still keeps is noted for
+/// the Pools group ([`waiting_on`]).
 #[cfg(unix)]
 pub fn follow_and_drain(
     machine: &Machine,
     image: Option<&Image>,
-    runs_a_chat: &dyn Fn(&ToARunner) -> Result<bool, String>,
+    chats_on: &dyn Fn(&ToARunner) -> Result<u32, String>,
 ) -> Vec<String> {
     let mut said = Vec::new();
     if let Some(image) = image {
@@ -175,9 +277,19 @@ pub fn follow_and_drain(
                 continue;
             }
         };
-        match runs_a_chat(&to) {
-            Ok(true) => continue,
-            Ok(false) => {}
+        let at = (
+            machine.config.clone(),
+            kept.pool().to_owned(),
+            kept.name().to_owned(),
+        );
+        match chats_on(&to) {
+            Ok(0) => {
+                lock_waiting().remove(&at);
+            }
+            Ok(chats) => {
+                lock_waiting().insert(at, chats);
+                continue;
+            }
             // Not known to be idle, so it stays until the next look.
             Err(why) => {
                 said.push(format!(
