@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792609558081,
+  "lastUpdate": 1792609577115,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -10308,6 +10308,42 @@ window.BENCHMARK_DATA = {
             "value": 659,
             "unit": "MB",
             "extra": "median of 6 samples: 627.4, 651.5, 656.9, 661.2, 662.1, 734.1 MB; window 399.5 MB, session host 259.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "759caacbd48e792d3584c4c33215bee313c56521",
+          "message": "Runners: the window holds a project on a pool's runner with its code (#2046, 2/4) (#2834)\n\n* Runners: the window holds a project on a pool's runner with its code (#2046, 2/4)\n\n- HostedSessions::on_a_pools_runner: the project is held where the runner\n  keeps it (a hold with no place, 1.34), and the window sends it the\n  project's own repository, less purlis's state folder and the local\n  settings file, to check out there.\n- Before a chat starts in a workspace there, each of the workspace's clones\n  is sent on its branch with its uncommitted work; fetch_back takes the\n  runner's branches back into each clone's refs/remotes/<pool>/*.\n- The window's link takes code streams (1.34) and hands each to the\n  transfer that asked for it.\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Name a fixture commit by its file, since a file may be empty\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* The held project's fixture keeps its workspace memory, as a live workspace does\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a refused move of code is said at once, and a lost repository is sent whole\n\n- HostLink::send_code and fetch_code answer as soon as the host does: a refusal that comes\n  before any code stream is said at once.\n- A host before session protocol 1.34 is refused in purlis's words, by the link's version\n  and by a host's unknown_command.\n- The window holds every bundle it moves to the link's bound (MOST_BUNDLE_BYTES).\n- A send that fails is made again whole, and what the runner held is forgotten after a\n  send that failed and whenever the project is held again.\n- Tests: a host that refuses before it opens a stream, a bundle past the window's bound,\n  the older host's words, and a runner that lost a repository.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Test that a file gone from disk after it was staged is left out of a send\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T22:24:27+04:00",
+          "tree_id": "abd189e25584660ef990c403dbb6cf7c583dc521",
+          "url": "https://github.com/purlis/purlis/commit/759caacbd48e792d3584c4c33215bee313c56521"
+        },
+        "date": 1792609575155,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1590.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1395.1, 1590.2, 1738 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 675.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 635, 665.1, 673.2, 677.3, 678.7, 769.6 MB; window 406.2 MB, session host 269.1 MB"
           }
         ]
       }
