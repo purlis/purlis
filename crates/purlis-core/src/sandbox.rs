@@ -1337,6 +1337,20 @@ impl Denied {
                 any_case: machine.os == Os::MacOs,
             });
         }
+        // …and Podman's own folders (#2680, the person's ruling of 2026-10-20): its settings,
+        // which name the programs it runs and the engine it talks to, and its storage and run
+        // state, which are a rootless Podman's engine itself. A chat writes none of them, under
+        // every spelling on macOS's case-folding disk.
+        for (folder, reach) in podman_folders(machine) {
+            paths.push(Denial {
+                class: Class::LaterCode,
+                path: folder,
+                access: Access::Write,
+                named: None,
+                reach,
+                any_case: machine.os == Os::MacOs,
+            });
+        }
         // …and what a protected config points at elsewhere, resolved now (V73d).
         let xdg_config = machine
             .env
@@ -1788,6 +1802,43 @@ fn scope_has(half: &serde_json::Map<String, serde_json::Value>, name: &str) -> b
     half.get("vaults")
         .and_then(serde_json::Value::as_object)
         .is_some_and(|vaults| vaults.contains_key(name))
+}
+
+/// **Podman's own folders on `machine`** (#2680): its settings (`containers/` in
+/// `$XDG_CONFIG_HOME` and `~/.config`), its storage (`containers/` in `$XDG_DATA_HOME` and
+/// `~/.local/share`) and its run state (`containers/` and `libpod/` in `$XDG_RUNTIME_DIR`),
+/// each with everything below it. A variable that names no absolute folder names nothing.
+fn podman_folders(machine: &Machine) -> Vec<(PathBuf, Reach)> {
+    let named = |name: &str| {
+        machine
+            .env
+            .get(name)
+            .map(PathBuf::from)
+            .filter(|folder| folder.is_absolute())
+    };
+    let mut folders: Vec<PathBuf> = Vec::new();
+    let homes = machine
+        .home
+        .iter()
+        .flat_map(|home| [home.join(".config"), home.join(".local/share")]);
+    for base in named("XDG_CONFIG_HOME")
+        .into_iter()
+        .chain(named("XDG_DATA_HOME"))
+        .chain(homes)
+    {
+        folders.push(base.join("containers"));
+    }
+    if let Some(runtime) = named("XDG_RUNTIME_DIR") {
+        folders.push(runtime.join("containers"));
+        folders.push(runtime.join("libpod"));
+    }
+    let mut out: Vec<(PathBuf, Reach)> = Vec::new();
+    for folder in folders {
+        if !out.iter().any(|(one, _)| *one == folder) {
+            out.push((folder, Reach::AndBelow));
+        }
+    }
+    out
 }
 
 /// What [`kept_by_purlis`] answers.
