@@ -570,9 +570,6 @@ impl Browser {
         }
     }
 
-    /// Whether the document of `frame` on `session` has an element focused (or one inside a
-    /// frame), though its tree shows none: then a key typed now would go where purlis cannot
-    /// blank it.
     /// The field the person's last key went to, where it still has the focus of a document
     /// that has the focus, on `target`'s page as it was when the field was blanked (#2295); asked
     /// of the field's own document in purlis's world, never of the page's tree.
@@ -621,6 +618,9 @@ impl Browser {
         .and_then(Value::as_i64)
     }
 
+    /// Whether the document of `frame` on `session` has an element focused (or one inside a
+    /// frame), though its tree shows none: then a key typed now would go where purlis cannot
+    /// blank it.
     fn focus_unseen(&self, session: &str, frame: &str) -> bool {
         self.in_world(session, frame, |world| {
             self.devtools().call(
