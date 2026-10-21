@@ -290,6 +290,19 @@ pub fn runner_for(config_root: &Path, pool: &str) -> Result<Kept, Refused> {
         })
 }
 
+/// **This desktop's label on the runner containers it makes** (#2869,
+/// [`crate::dockerpool::DESKTOP_LABEL`]): the first 16 hex digits of a SHA-256 of the config
+/// home's path, so two config homes on one Docker daemon never take each other's runners for
+/// their own leftovers.
+pub fn desktop_label(config_root: &Path) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(config_root.as_os_str().as_encoded_bytes())
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 /// The lock every change of the file is made under, held for as long as this is: what
 /// [`crate::pools`] holds across adding or removing a pool, so another add or removal of it
 /// waits for this one.

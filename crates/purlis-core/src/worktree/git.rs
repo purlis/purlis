@@ -1664,6 +1664,32 @@ pub fn run_untimed(dir: &Path, args: &[&str]) -> Result<Run, GitUnavailable> {
     })
 }
 
+/// [`run_untimed`], git reading and writing the index at `index` in place of the repository's
+/// own (`GIT_INDEX_FILE`): a snapshot of a work tree's uncommitted work is staged in an index of
+/// its own, so what the work tree has staged is never touched (`crate::codelink`, #2046).
+pub(crate) fn run_with_index(
+    dir: &Path,
+    index: &Path,
+    args: &[&str],
+) -> Result<Run, GitUnavailable> {
+    let extra = Extra {
+        pass: vec![("GIT_INDEX_FILE".to_owned(), index.as_os_str().to_owned())],
+        ..Extra::default()
+    };
+    let extra = match held(dir, args, extra)? {
+        Ok(extra) => extra,
+        Err(answer) => return Ok(as_text(answer)),
+    };
+    counted(dir, args, || {
+        let out = spawn_with(dir, args, &extra)?.wait_with_output()?;
+        Ok(Run {
+            code: out.status.code(),
+            out: String::from_utf8_lossy(&out.stdout).into_owned(),
+            err: String::from_utf8_lossy(&out.stderr).into_owned(),
+        })
+    })
+}
+
 /// Run `git -C <dir> <args>` with a deadline.
 ///
 /// **The pipes are drained on their own threads** ([`wait`]). Waiting on the child while its
