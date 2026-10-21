@@ -930,16 +930,17 @@ pub struct Sending<'a> {
 /// uncommitted work less `leave_out`, leaving out what `have` (the runner's refs the last send
 /// answered) reaches, through `through`: the link's `take_code`, which answers the refs the
 /// runner holds after. A repository on no branch is refused in a sentence, and one that is not a
-/// repository sends nothing.
+/// repository sends nothing. Answers those refs, and the changed or new files the snapshot left
+/// out as a save to the forge would refuse them ([`Sent::left_out`]).
 pub fn send(
     repo: &Path,
     leave_out: &[String],
     have: &[String],
     scratch: &Path,
     through: impl FnOnce(Sending<'_>) -> Result<Vec<Ref>, String>,
-) -> Result<Vec<Ref>, Refused> {
+) -> Result<(Vec<Ref>, Vec<String>), Refused> {
     if !a_repository(repo) {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let branch = current_branch(repo).ok_or_else(|| {
         not_allowed(format!(
@@ -957,7 +958,7 @@ pub fn send(
     })
     .map_err(Refused::Git);
     let _ = std::fs::remove_file(&into);
-    held
+    Ok((held?, sent.left_out))
 }
 
 /// **The desktop fetches a runner's branches back into `repo`** ([`take_back`]), as

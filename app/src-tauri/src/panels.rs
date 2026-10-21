@@ -21,7 +21,7 @@
 //! the window and hold that window for as long as `gh` takes.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use purlis_core::active::Place;
 use purlis_core::cistate::{self, Reading};
@@ -419,6 +419,41 @@ pub(crate) struct RepoState {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[specta(optional)]
     on_a_runner: Vec<RunnerBranch>,
+    /// The changed or new files the last send of this clone to its pool's runner left out, as a
+    /// save to the forge would refuse them (#2046, the operator's ruling of 2026-10-25), by their
+    /// paths in the clone. Left out where none was.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[specta(optional)]
+    left_out_of_send: Vec<String>,
+}
+
+/// What the last send of each clone to a runner left out, by the clone's folder (#2046): in this
+/// window's memory alone, as Changes names it.
+static LEFT_OUT_OF_SEND: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, Vec<String>>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// **The send of the clone at `clone` to a runner left out `paths`** (#2046): what Changes says
+/// under the clone, until the next send of it says otherwise.
+pub(crate) fn sent_leaving(clone: &Path, paths: Vec<String>) {
+    let mut left = LEFT_OUT_OF_SEND
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if paths.is_empty() {
+        left.remove(clone);
+    } else {
+        left.insert(clone.to_path_buf(), paths);
+    }
+}
+
+/// What the last send of the clone at `clone` left out, as [`sent_leaving`] was told.
+pub(crate) fn left_out_of_send(clone: &Path) -> Vec<String> {
+    LEFT_OUT_OF_SEND
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(clone)
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// One branch of a pool's runner, as this machine last fetched it (#2046).
@@ -1306,6 +1341,7 @@ fn on_its_runner(states: &mut RepoStates, root: &Path, workspace: &str, pool: &s
                 ahead: branch.ahead,
             })
             .collect();
+        row.left_out_of_send = left_out_of_send(&clone);
     }
 }
 

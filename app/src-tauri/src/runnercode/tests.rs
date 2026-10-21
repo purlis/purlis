@@ -264,3 +264,52 @@ fn no_credential_file_of_a_clone_reaches_the_runner() {
     );
     assert!(!there.join("id_ed25519").exists());
 }
+
+#[test]
+fn a_clones_send_leaves_out_the_persons_list_and_names_what_a_save_refuses() {
+    let world = World::new();
+    purlis_core::settings::workspace::set_send_leaves_out(
+        &world.root,
+        "app",
+        &["local/".to_owned()],
+    )
+    .expect("the list is saved");
+    let web = world.root.join("workspaces/app/web");
+    std::fs::create_dir_all(web.join("local")).unwrap();
+    std::fs::write(web.join("local/notes.txt"), "mine alone\n").unwrap();
+    std::fs::write(
+        web.join(".npmrc"),
+        "//registry.example.invalid/:_authToken=abc123\n",
+    )
+    .unwrap();
+    std::fs::write(web.join("login.rs"), "fn log_in() {}\n").unwrap();
+
+    let _ = world.sessions.open_named(
+        None,
+        &Named {
+            workspace: Some("app".into()),
+            ..crate::hostedsessions::tests::by_its_names()
+        },
+        Default::default(),
+        &|_| {},
+    );
+
+    let there = world.kept().join("workspaces/app/web");
+    assert!(
+        there.join("login.rs").is_file(),
+        "the work reached the runner"
+    );
+    assert!(
+        !there.join("local").exists(),
+        "what the person named stays here"
+    );
+    assert!(
+        !there.join(".npmrc").exists(),
+        "what a save refuses stays here"
+    );
+    // Named in Changes; the person's own list is theirs to know.
+    assert_eq!(
+        crate::panels::left_out_of_send(&web),
+        vec![".npmrc".to_owned()]
+    );
+}

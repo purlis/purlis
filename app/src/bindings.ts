@@ -2559,6 +2559,17 @@ export const commands = {
 	dismissRunnerWrite: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_runner_write", { plane, id })),
 	/**  **Sets where a workspace's chats run** (#2046): the person's choice in its settings. */
 	setChatsRunOn: (plane: PlaneId, workspace: string, pool: string | null) => typedError<ChatsRunOn, string>(__TAURI_INVOKE("set_chats_run_on", { plane, workspace, pool })),
+	/**
+	 *  **What a workspace's sends to a pool's runner leave out** besides what a save to the forge
+	 *  refuses (#2046, the operator's ruling of 2026-10-25): `settings.runners.leave_out` in its
+	 *  `workspace.json`, as its settings show it.
+	 */
+	sendLeavesOut: (plane: PlaneId, workspace: string) => typedError<string[], string>(__TAURI_INVOKE("send_leaves_out", { plane, workspace })),
+	/**
+	 *  **Sets what a workspace's sends to a pool's runner leave out** (#2046): the person's list in
+	 *  its settings, one file or folder in a clone per entry. Answers what it holds after.
+	 */
+	setSendLeavesOut: (plane: PlaneId, workspace: string, entries: string[]) => typedError<string[], string>(__TAURI_INVOKE("set_send_leaves_out", { plane, workspace, entries })),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	/**
@@ -9674,6 +9685,12 @@ export type RepoState_Deserialize = {
 	 *  there is none.
 	 */
 	on_a_runner?: RunnerBranch[],
+	/**
+	 *  The changed or new files the last send of this clone to its pool's runner left out, as a
+	 *  save to the forge would refuse them (#2046, the operator's ruling of 2026-10-25), by their
+	 *  paths in the clone. Left out where none was.
+	 */
+	left_out_of_send?: string[],
 };
 
 /**  One clone's git state, and what the forge cache last recorded for its branch. */
@@ -9714,6 +9731,12 @@ export type RepoState_Serialize = {
 	 *  there is none.
 	 */
 	on_a_runner?: RunnerBranch[],
+	/**
+	 *  The changed or new files the last send of this clone to its pool's runner left out, as a
+	 *  save to the forge would refuse them (#2046, the operator's ruling of 2026-10-25), by their
+	 *  paths in the clone. Left out where none was.
+	 */
+	left_out_of_send?: string[],
 };
 
 /**  Every clone of one workspace, as the panels draw them. */

@@ -173,6 +173,34 @@ describe("the Changes view", () => {
     expect(there.textContent).not.toContain("\u202e");
   });
 
+  it("names what the last send to the runner left out, inertly (#2046)", () => {
+    render(
+      <ChangesView
+        offers={NO_MENUS}
+        onPress={() => {}}
+        workspace="alpha"
+        state={state({
+          repos: {
+            workspace: "alpha",
+            cache_refused: null,
+            repos: [
+              repo("svc", {
+                on_a_runner: [{ pool: "builds", branch: "fix-login", ahead: 0 }],
+                left_out_of_send: [".env", "notes\u202e.txt"],
+              }),
+              repo("tool"),
+            ],
+          },
+        })}
+      />,
+    );
+    const left = screen.getByTestId("left-out-svc");
+    expect(left).toHaveTextContent("Not sent to the runner");
+    expect(left).toHaveTextContent(".env, notes\\u202e.txt");
+    expect(left).toHaveAttribute("role", "treeitem");
+    expect(screen.queryByTestId("left-out-tool")).toBeNull();
+  });
+
   it("never draws a tree purlis could not read as clean", () => {
     // The whole reason the core has a third state. "Clean" here is a lie that reads as
     // "nothing to do", which is exactly the wrong thing to tell someone in a hurry.

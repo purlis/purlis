@@ -17,6 +17,7 @@ import {
   LoaderCircle,
   Puzzle,
   Server,
+  ShieldOff,
   SkipForward,
   TriangleAlert,
 } from "lucide-react";
@@ -133,7 +134,11 @@ export function ChangesView({
   const onRunners = Object.fromEntries(
     (repos?.repos ?? []).map((repo) => [repo.name, repo.on_a_runner ?? []]),
   );
-  const rows = workspace === undefined ? [] : treeRows(names, absent, pieces, columns, onRunners);
+  const leftOut = Object.fromEntries(
+    (repos?.repos ?? []).map((repo) => [repo.name, repo.left_out_of_send ?? []]),
+  );
+  const rows =
+    workspace === undefined ? [] : treeRows(names, absent, pieces, columns, onRunners, leftOut);
   const stop = useTabStop(
     undefined,
     rows.map((one) => one.id),
@@ -311,6 +316,7 @@ const pieceRow = (repo: string, piece: string) => `piece:${repo}/${piece}`;
 const ciRow = (repo: string) => `ci:${repo}`;
 const runnerRow = (repo: string, pool: string, branch: string) =>
   `runner:${repo}:${pool}:${branch}`;
+const leftOutRow = (repo: string) => `left-out:${repo}`;
 const factRow = (repo: string, column: FactColumn) =>
   `fact:${repo}/${column.extension}/${column.id}`;
 
@@ -325,6 +331,7 @@ export function treeRows(
   pieces: Record<string, Piece[]>,
   columns: readonly FactColumn[],
   onRunners: Record<string, readonly RunnerBranch[]> = {},
+  leftOut: Record<string, readonly string[]> = {},
 ): Row[] {
   const rows: Row[] = [];
   const tops = names.length + absent.length;
@@ -333,7 +340,8 @@ export function treeRows(
     const facts = columns.filter((column) => column.cells.some((cell) => cell.repo === repo));
     const cut = pieces[repo] ?? [];
     const there = onRunners[repo] ?? [];
-    const size = 3 + there.length + facts.length;
+    const left = (leftOut[repo] ?? []).length > 0 ? 1 : 0;
+    const size = 3 + there.length + left + facts.length;
     add({
       id: repoRow(repo),
       name: repo,
@@ -362,8 +370,12 @@ export function treeRows(
     there.forEach((one, m) =>
       under(runnerRow(repo, one.pool, one.branch), `${one.branch} on ${one.pool}`, 3 + m),
     );
-    under(ciRow(repo), "pipeline", 3 + there.length);
-    facts.forEach((column, m) => under(factRow(repo, column), column.title, 4 + there.length + m));
+    // What the last send to that runner left out, as a save to the forge would refuse it.
+    if (left > 0) under(leftOutRow(repo), "not sent", 3 + there.length);
+    under(ciRow(repo), "pipeline", 3 + there.length + left);
+    facts.forEach((column, m) =>
+      under(factRow(repo, column), column.title, 4 + there.length + left + m),
+    );
   });
   absent.forEach((repo, n) =>
     add({
@@ -607,6 +619,22 @@ function RepoRows({
               )}
             </CloneRow>
           ))}
+          {(state?.left_out_of_send ?? []).length > 0 && (
+            // What the last send to the runner left out (#2046, the operator's ruling of
+            // 2026-10-25): named by path, drawn inertly, so the person knows what stayed here.
+            <CloneRow
+              id={leftOutRow(name)}
+              at={at}
+              className="runner-left-out"
+              testId={`left-out-${name}`}
+            >
+              <ShieldOff className="node-icon" />
+              <span className="upstream">
+                Not sent to the runner, as a save would refuse them:{" "}
+                {(state?.left_out_of_send ?? []).map(inertly).join(", ")}
+              </span>
+            </CloneRow>
+          )}
           <CloneRow id={ciRow(name)} at={at} className="ci" testId={`ci-${name}`}>
             {state === undefined ? (
               <span className="pending">{unread}</span>

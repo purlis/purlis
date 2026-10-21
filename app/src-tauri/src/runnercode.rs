@@ -81,13 +81,24 @@ pub(crate) fn send(
     } else {
         root.join(rel)
     };
+    // The project's own leaves out purlis's state; a workspace's clone, what the person named
+    // in the workspace's settings (`settings.runners.leave_out`).
     let leave_out = if rel.is_empty() {
         codelink::plane_leaves_out()
     } else {
-        Vec::new()
+        rel.strip_prefix("workspaces/")
+            .and_then(|rest| rest.split('/').next())
+            .map(|workspace| {
+                // A folder is named by its path: git's pathspec takes it without the slash.
+                purlis_core::settings::workspace::send_leaves_out(root, workspace)
+                    .into_iter()
+                    .map(|entry| entry.trim_end_matches('/').to_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
     };
     let have = lock(sent).get(rel).cloned().unwrap_or_default();
-    let once = |have: &[String]| -> Result<Vec<Ref>, String> {
+    let once = |have: &[String]| -> Result<(Vec<Ref>, Vec<String>), String> {
         let scratch = scratch()?;
         codelink::send(&repo, &leave_out, have, scratch.path(), |sending| {
             link.send_code(
@@ -104,12 +115,22 @@ pub(crate) fn send(
     // A send that leaves out what the runner held last may fail where the runner no longer holds
     // it: that send is made again whole, and what the runner held is not known after a send that
     // failed, so the next one is whole too.
-    let held = once(&have)
+    let (held, left_out) = once(&have)
         .or_else(|why| if have.is_empty() { Err(why) } else { once(&[]) })
         .map_err(|why| {
             lock(sent).remove(rel);
             format!("the code of {} did not reach the runner: {why}", shown(rel))
         })?;
+    // Named where the person looks: Changes, under the clone (`panels::left_out_of_send`).
+    if !left_out.is_empty() {
+        tracing::info!(
+            "purlis: {} file(s) of {} were not sent to the runner, as a save to the forge would \
+             refuse them",
+            left_out.len(),
+            shown(rel)
+        );
+    }
+    crate::panels::sent_leaving(&repo, left_out);
     lock(sent).insert(
         rel.to_owned(),
         held.into_iter().map(|one| one.oid).collect(),

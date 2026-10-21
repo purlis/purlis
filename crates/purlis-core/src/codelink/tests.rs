@@ -627,7 +627,9 @@ fn a_clone_is_sent_on_its_branch_with_its_work_and_its_runner_commits_come_back(
     std::fs::write(world.desktop.join("fix.txt"), "half done\n").unwrap();
     let runner = world.runner_repo();
 
-    let held = send(&world.desktop, &[], &[], &world.scratch(), sent_to(&runner)).unwrap();
+    let (held, left_out) =
+        send(&world.desktop, &[], &[], &world.scratch(), sent_to(&runner)).unwrap();
+    assert_eq!(left_out, Vec::<String>::new());
     assert!(named(&held, "refs/heads/fix").is_some());
     assert_eq!(
         std::fs::read_to_string(runner.join("fix.txt")).unwrap(),
@@ -676,7 +678,7 @@ fn a_folder_that_is_not_a_repository_sends_and_fetches_nothing_and_one_on_no_bra
             "nothing is sent"
         ))
         .unwrap(),
-        Vec::new()
+        (Vec::new(), Vec::new())
     );
     assert_eq!(
         fetch_back(&plain, "builds", &world.scratch(), |_, _| panic!(
