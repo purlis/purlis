@@ -682,8 +682,10 @@ mod hosted {
                 kept,
                 ..StartProgram::of(project, ProgramKind::Browser)
             }));
+            // The host's first start downloads the engine inside it: waited for as long as that
+            // may take, not the 30 seconds any other answer gets.
             match link
-                .call_refused(start)
+                .call_refused_within(start, purlis_core::browsers::A_START_TAKES_AT_MOST)
                 .map_err(|refused| not_started(refused, budget))?
             {
                 Answer::ProgramStarted { program, .. } => {

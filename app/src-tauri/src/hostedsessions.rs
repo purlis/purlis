@@ -135,7 +135,7 @@ pub const SANDBOXED_ON_A_RUNNER: &str = "a chat on a runner starts in its sandbo
 const LINK_WITHIN: Duration = Duration::from_secs(30);
 
 /// How long a command waits for the host's answer.
-const ANSWER_WITHIN: Duration = Duration::from_secs(30);
+pub(crate) const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
 /// How a chat whose program ended with its session host is said to have ended: by the hang-up
 /// its terminal's close gives it (#2007).
@@ -704,15 +704,6 @@ impl HostLink {
     /// Send `command` and wait for the host's answer, from any thread.
     pub(crate) fn call(&self, command: Command) -> Result<Answer, String> {
         self.call_within(command, ANSWER_WITHIN)
-    }
-
-    /// [`Self::call`], refused with the host's code where it gave one: what a browser's start
-    /// is asked with, since the host may refuse it `device_full` (#2611).
-    pub(crate) fn call_refused(
-        &self,
-        command: Command,
-    ) -> Result<Answer, purlis_session_protocol::session::Refusal> {
-        self.call_refused_within(command, ANSWER_WITHIN)
     }
 
     /// [`Self::call`], waiting at most `within`.
