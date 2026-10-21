@@ -216,6 +216,13 @@ pub fn manifest_reads() -> Https {
     Https::within(MANIFEST_READ).listening(listed_as(crate::netlog::Feature::Updater))
 }
 
+/// **The longest a browser's start may take** on a host: its first start reads the engines'
+/// manifest and downloads the engine inside it, each within its own limit, and a minute more to
+/// start the engine. A window waits this long for a browser's start, never the shorter wait it
+/// gives any other answer.
+pub const A_START_TAKES_AT_MOST: Duration =
+    Duration::from_secs(MANIFEST_READ.as_secs() + Https::ARCHIVE.as_secs() + 60);
+
 /// An engine's archive is read within [`Https::ARCHIVE`], each request listed in the network
 /// log as the browser engine's.
 pub fn archive_reads() -> Https {
