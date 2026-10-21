@@ -87,3 +87,70 @@ fn the_deb_installs_the_profile_the_core_reads_where_the_core_reads_it() {
     .expect("the postrm");
     assert!(postrm.contains("apparmor_parser -R"), "{postrm}");
 }
+
+/// The package's postrm, its profiles' folder `apparmor` and `apparmor_parser` a stand-in that
+/// writes down what it was asked, run with `action`.
+#[cfg(unix)]
+fn postrm(action: &str, apparmor: &Path, bin: &Path) -> std::process::ExitStatus {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script = std::fs::read_to_string(manifest.join("packaging/deb/postrm"))
+        .expect("the postrm")
+        .replace("/etc/apparmor.d", &apparmor.display().to_string());
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    std::process::Command::new("/bin/sh")
+        .args(["-c", &script, "postrm", action])
+        .env("PATH", path)
+        .status()
+        .expect("the postrm runs")
+}
+
+/// #2900: removing the package takes the profile it installed; purging it also takes the
+/// profile the Notice's command wrote for this machine's engine, which nothing else removes.
+/// A file by that name that is not that profile is left alone.
+#[cfg(unix)]
+#[test]
+fn a_remove_takes_the_packages_profile_and_only_a_purge_takes_the_one_the_person_added() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().expect("a folder");
+    let apparmor = dir.path().join("apparmor.d");
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&apparmor).expect("its profiles");
+    std::fs::create_dir_all(&bin).expect("its programs");
+    let asked = dir.path().join("asked");
+    let parser = bin.join("apparmor_parser");
+    std::fs::write(
+        &parser,
+        format!("#!/bin/sh\necho \"$@\" >> '{}'\n", asked.display()),
+    )
+    .expect("the stand-in");
+    std::fs::set_permissions(&parser, std::fs::Permissions::from_mode(0o755)).expect("runs");
+    let shipped = apparmor.join("purlis-engine");
+    let here = apparmor.join("purlis-engine-here");
+    let theirs = purlis_core::browsers::sandboxing::profile_for(Path::new(ENGINES))
+        .expect("a profile");
+    let put_back = || {
+        std::fs::write(&shipped, purlis_core::browsers::sandboxing::SHIPPED).expect("shipped");
+        std::fs::write(&here, &theirs).expect("theirs");
+    };
+
+    put_back();
+    assert!(postrm("remove", &apparmor, &bin).success());
+    assert!(!shipped.exists(), "the package's own profile goes with it");
+    assert!(here.exists(), "a remove keeps what the person added");
+
+    put_back();
+    assert!(postrm("purge", &apparmor, &bin).success());
+    assert!(!shipped.exists());
+    assert!(!here.exists(), "a purge takes the profile the Notice's command wrote");
+    let said = std::fs::read_to_string(&asked).expect("the parser was asked");
+    assert!(said.contains(&format!("-R {}", here.display())), "{said}");
+
+    // A file by that name that is not purlis's profile is not purlis's to remove.
+    std::fs::write(&here, "# someone else's\n").expect("another file");
+    assert!(postrm("purge", &apparmor, &bin).success());
+    assert!(here.exists(), "left as it was");
+}

@@ -2,20 +2,37 @@
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 #
-# purlis's browser engine (#2835): the profile postinst installed goes with the package.
+# purlis's browser engine (#2835): the profile postinst installed goes with the package, on a
+# remove and on a purge.
+#
+# A purge also takes the profile the Notice about the browser engine's sandbox offers to add
+# (#2900): the person wrote it with purlis's own command, for purlis's engine, and nothing else
+# removes it. A remove keeps it, as a remove keeps a package's configuration. A file by that name
+# that is not that profile is left alone.
 set -e
 
 PROFILE=/etc/apparmor.d/purlis-engine
+HERE_PROFILE=/etc/apparmor.d/purlis-engine-here
+
+unload() {
+  if command -v apparmor_parser >/dev/null 2>&1; then
+    apparmor_parser -R "$1" 2>/dev/null || true
+  fi
+}
 
 case "$1" in
   remove | purge)
     if [ -e "$PROFILE" ]; then
-      if command -v apparmor_parser >/dev/null 2>&1; then
-        apparmor_parser -R "$PROFILE" 2>/dev/null || true
-      fi
+      unload "$PROFILE"
       rm -f "$PROFILE"
     fi
     ;;
 esac
+
+if [ "$1" = purge ] && [ -f "$HERE_PROFILE" ] \
+  && grep -q '^profile purlis-engine-here ' "$HERE_PROFILE"; then
+  unload "$HERE_PROFILE"
+  rm -f "$HERE_PROFILE"
+fi
 
 exit 0
