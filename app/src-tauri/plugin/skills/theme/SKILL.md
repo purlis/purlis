@@ -78,8 +78,8 @@ Start from what the person gave you:
 - **A Figma frame**: read the frame's variables and colours with the Figma tools this chat has;
   without them, ask the person for a screenshot of the frame and work from that.
 - **An imported theme** (a VS Code colour theme, a base16 or base24 scheme, an iTerm2 or a
-  Ghostty palette, a theme folder's zip): import it into a folder of your own, then make that
-  folder the working copy:
+  Ghostty palette, a theme folder's zip, a W3C design-tokens file from a design tool): import
+  it into a folder of your own, then make that folder the working copy:
 
   ```bash
   purlis theme import <file> --into "$TMPDIR/purlis-theme-import"
@@ -217,6 +217,13 @@ Any id from the list, or the path of a theme file or folder. It writes nothing. 
 
   ```bash
   purlis theme export <id> --to "$TMPDIR/<folder>.zip"
+  ```
+
+- **To a design tool**: `--kind design-tokens` writes the folder as one W3C design-tokens file
+  (format 2025.10) instead, which `purlis theme import` also gives back the same:
+
+  ```bash
+  purlis theme export <id> --kind design-tokens --to "$TMPDIR/<folder>.tokens.json"
   ```
 
 - **With the team**: a project's theme is committed by the plane's next save.
