@@ -779,7 +779,7 @@ fn lays_read_more_out_below_a_list(engine: &Engine) {
     super::lock(&engine.model).drawn.insert(
         "S-PAGE-1".to_owned(),
         json!({
-            "strings": ["#document", "HTML", "BODY", "DIV", "A", "visible", "static", "auto", "block", "0px", "inline"],
+            "strings": ["#document", "HTML", "BODY", "DIV", "A", "visible", "static", "auto", "block", "0px", "inline", "none"],
             "documents": [{
                 "nodes": {
                     "parentIndex": [-1, 0, 1, 2, 3],
@@ -789,7 +789,7 @@ fn lays_read_more_out_below_a_list(engine: &Engine) {
                 "layout": {
                     "nodeIndex": [1, 2, 3, 4],
                     "bounds": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 100, 30], [40, 40, 20, 10]],
-                    "styles": [[5, 5, 6, 8, 9], [5, 5, 6, 8, 9], [7, 7, 6, 8, 9], [5, 5, 6, 10, 9]],
+                    "styles": [[5, 5, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 11, 11, 11, 11], [5, 5, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 11, 11, 11, 11], [7, 7, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 11, 11, 11, 11], [5, 5, 6, 10, 9, 9, 9, 9, 9, 9, 9, 9, 9, 11, 11, 11, 11]],
                 },
             }],
         }),
@@ -805,7 +805,7 @@ fn boxes_in_the_payment_frame_down_to(engine: &Engine, box_bottom: f64) {
     model.drawn.insert(
         "S-PAGE-1".to_owned(),
         json!({
-            "strings": ["#document", "HTML", "BODY", "DIV", "IFRAME", "visible", "static", "hidden", "block", "0px"],
+            "strings": ["#document", "HTML", "BODY", "DIV", "IFRAME", "visible", "static", "hidden", "block", "0px", "none"],
             "documents": [{
                 "nodes": {
                     "parentIndex": [-1, 0, 1, 2, 3],
@@ -815,7 +815,7 @@ fn boxes_in_the_payment_frame_down_to(engine: &Engine, box_bottom: f64) {
                 "layout": {
                     "nodeIndex": [1, 2, 3, 4],
                     "bounds": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 800, box_bottom], [100, 200, 200, 60]],
-                    "styles": [[5, 5, 6, 8, 9], [5, 5, 6, 8, 9], [7, 7, 6, 8, 9], [5, 5, 6, 8, 9]],
+                    "styles": [[5, 5, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10], [5, 5, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10], [7, 7, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10], [5, 5, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10]],
                     "clientRects": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 800, box_bottom], [0, 0, 200, 60]],
                 },
             }],
@@ -824,7 +824,7 @@ fn boxes_in_the_payment_frame_down_to(engine: &Engine, box_bottom: f64) {
     model.drawn.insert(
         "S-PAYMENT".to_owned(),
         json!({
-            "strings": ["#document", "HTML", "BODY", "BUTTON", "visible", "static", "block", "0px", "inline-block"],
+            "strings": ["#document", "HTML", "BODY", "BUTTON", "visible", "static", "block", "0px", "inline-block", "none"],
             "documents": [{
                 "nodes": {
                     "parentIndex": [-1, 0, 1, 2],
@@ -834,7 +834,7 @@ fn boxes_in_the_payment_frame_down_to(engine: &Engine, box_bottom: f64) {
                 "layout": {
                     "nodeIndex": [1, 2, 3],
                     "bounds": [[0, 0, 200, 60], [0, 0, 200, 60], [10, 10, 20, 10]],
-                    "styles": [[4, 4, 5, 6, 7], [4, 4, 5, 6, 7], [4, 4, 5, 8, 7]],
+                    "styles": [[4, 4, 5, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 9, 9, 9, 9], [4, 4, 5, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 9, 9, 9, 9], [4, 4, 5, 8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 9, 9, 9, 9]],
                     "clientRects": [[0, 0, 200, 60], [0, 0, 200, 60], [0, 0, 20, 10]],
                 },
             }],
