@@ -28,6 +28,7 @@ fn chat(route: Route) -> Chat<'static> {
     Chat {
         workspace: Some("smart-ide"),
         persona: Some("steward"),
+        names: &[],
         turned_off: &[],
         harness: HarnessSkills { route },
     }
@@ -153,17 +154,15 @@ fn a_machine_without_the_bundle_gives_a_chat_no_skills_and_leaves_none_out() {
 }
 
 #[test]
-fn the_planes_harness_folders_and_the_levels_not_read_yet_do_not_change_the_set() {
-    // Built-in, project and workspace skills are purlis's to hand over until the persona level
-    // arrives (#2768): the plane's `.claude/skills`, and the folder where that level will be,
-    // change nothing. The project's `skills/` is `a_project_skill_reaches_chats_at_the_
-    // plane_root.rs`'s, and the workspace's is `src/tests.rs`'s (#2767).
+fn the_planes_harness_folders_do_not_change_the_set() {
+    // The plane's `.claude/skills` is the harness's to read, never purlis's to hand over. The
+    // project's `skills/` is `a_project_skill_reaches_chats_at_the_plane_root.rs`'s, and the
+    // workspace's and the persona's are `src/tests.rs`'s (#2767, #2768).
     let tmp = tempfile::tempdir().unwrap();
     let plugin = bundle(tmp.path());
     skill(&plugin.join("skills"), "secrets", &whole("secrets"));
     let plane = tmp.path().join("plane");
     skill(&plane.join(".claude/skills"), "house", &whole("house"));
-    skill(&plane.join("personas/steward/skills"), "own", &whole("own"));
 
     let with_plane = set_for(&plane, &plugin, Route::Briefing);
     let without = skill_set(
@@ -175,6 +174,7 @@ fn the_planes_harness_folders_and_the_levels_not_read_yet_do_not_change_the_set(
         &Chat {
             workspace: None,
             persona: None,
+            names: &[],
             turned_off: &[],
             harness: HarnessSkills {
                 route: Route::Briefing,

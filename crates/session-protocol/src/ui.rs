@@ -600,6 +600,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // to choose, in their window.
     "engine_sandbox",
     "use_this_machines_chrome",
+    // A persona's Skills section (#2768): adds a skill to the persona's definition or takes one
+    // out, as its profile is set. The person's own press in their window.
+    "persona_skill",
+    // Putting a chat's missing-skills Notice away (#2768), on the chat's pane in the person's
+    // window, as an MCP failure's is.
+    "put_away_chat_skills_missing",
     // This machine's Docker pools (#2679): adding one runs a container on the person's machine
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.
@@ -871,6 +877,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "installed_extensions",
     "locate_project",
     "mcp_failures",
+    // What a chat's missing-skills Notice says (#2768), read as an MCP failure is.
+    "chat_skills_missing",
     "memory_archive",
     "memory_archived",
     "memory_create",

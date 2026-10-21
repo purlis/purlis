@@ -181,4 +181,45 @@ fn a_memory_blind_role_is_never_dormant() {
     assert_eq!(row(dir.path(), "router", 14, today).status, "orchestrator");
 }
 
+#[test]
+fn drift_reads_the_loaded_list_its_own_skills_and_what_its_skills_line_names() {
+    // SK-5 (#2768): a persona loads its own skills beside what its `skills:` line names, so one
+    // used is never "undeclared", and one unused is "unused".
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("personas/ops");
+    std::fs::create_dir_all(&p).unwrap();
+    std::fs::write(
+        p.join("persona.md"),
+        "---\nskills: charter:working-in-a-clone, superpowers:tdd\n---\n",
+    )
+    .unwrap();
+    for own in ["triage", "notes"] {
+        std::fs::create_dir_all(p.join("skills").join(own)).unwrap();
+        std::fs::write(
+            p.join("skills").join(own).join("SKILL.md"),
+            format!("---\nname: {own}\ndescription: Does it.\n---\n"),
+        )
+        .unwrap();
+    }
+    let log = dir.path().join("personas").join(crate::skilluse::DIR_NAME);
+    std::fs::create_dir_all(&log).unwrap();
+    std::fs::write(
+        log.join("2026-10.mac.jsonl"),
+        concat!(
+            r#"{"persona": "ops", "skill": "triage", "ts": "2026-10-20T10:00:00"}"#,
+            "\n",
+            r#"{"persona": "ops", "skill": "purlis:working-in-a-clone", "ts": "2026-10-20T10:00:00"}"#,
+            "\n",
+            r#"{"persona": "ops", "skill": "langfuse", "ts": "2026-10-20T10:00:00"}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+
+    let (unused, undeclared) = drift(dir.path(), "ops");
+
+    assert_eq!(unused, ["notes", "tdd"]);
+    assert_eq!(undeclared, ["langfuse"]);
+}
+
 mod recorded;

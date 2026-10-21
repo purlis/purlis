@@ -83,10 +83,12 @@ impl Plane {
             &Machine {
                 built_in: None,
                 kept_local: Some(kept),
+                harness: None,
             },
             &Chat {
                 workspace,
                 persona: None,
+                names: &[],
                 turned_off: &off,
                 harness: HarnessSkills {
                     route: Route::Plugin,
@@ -468,6 +470,7 @@ fn without_a_way_to_ask_git_no_local_skill_is_read() {
         &Chat {
             workspace: None,
             persona: None,
+            names: &[],
             turned_off: &[],
             harness: HarnessSkills {
                 route: Route::Config,
@@ -615,10 +618,12 @@ fn a_workspace_or_local_skill_never_takes_a_built_in_skills_name() {
         &Machine {
             built_in: Some(&built_in),
             kept_local: Some(&|_| Ok(())),
+            harness: None,
         },
         &Chat {
             workspace: Some("smart-ide"),
             persona: None,
+            names: &[],
             turned_off: &[],
             harness: HarnessSkills {
                 route: Route::Plugin,
@@ -734,4 +739,320 @@ fn the_words_of_a_grant_are_read_by_the_grant_files_rule() {
     assert!(Grant::from_words(&[]).is_err());
     assert!(Grant::from_words(&words(&["all", "ops"])).is_err());
     assert!(Grant::from_words(&words(&["../x"])).is_err());
+}
+
+// ---- persona skills (SK-5, #2768) ----------------------------------------------------------
+
+impl Plane {
+    fn persona(&self, persona: &str) -> PathBuf {
+        self.root.join("personas").join(persona).join(PROJECT_DIR)
+    }
+
+    fn persona_local(&self, persona: &str) -> PathBuf {
+        self.root.join("personas").join(persona).join(LOCAL_DIR)
+    }
+
+    /// The set of a chat as `persona`, whose `skills:` list says `names`, in `workspace`, with
+    /// the built-in skills in `built_in` and the harness skills `harness` on this machine.
+    fn as_persona(
+        &self,
+        workspace: Option<&str>,
+        persona: &str,
+        names: &[&str],
+        built_in: Option<&Path>,
+        harness: Option<&[OnMachine]>,
+    ) -> SkillSet {
+        let names: Vec<Reference> = names.iter().filter_map(|n| Reference::parse(n)).collect();
+        let off = workspace
+            .and_then(|ws| self.off.borrow().get(ws).cloned())
+            .unwrap_or_default();
+        skill_set(
+            Some(&self.root),
+            &Machine {
+                built_in,
+                kept_local: Some(&|_| Ok(())),
+                harness,
+            },
+            &Chat {
+                workspace,
+                persona: Some(persona),
+                names: &names,
+                turned_off: &off,
+                harness: HarnessSkills {
+                    route: Route::Plugin,
+                },
+            },
+        )
+    }
+}
+
+#[test]
+fn a_personas_own_skills_reach_its_chats_in_every_workspace_and_at_the_root() {
+    let plane = Plane::new();
+    skill(&plane.persona("steward"), "triage", &whole("triage"));
+    skill(&plane.persona_local("steward"), "notes", &whole("notes"));
+
+    for workspace in [None, Some("smart-ide"), Some("ops")] {
+        let set = plane.as_persona(workspace, "steward", &[], None, None);
+        assert_eq!(
+            effective(&set),
+            [
+                ("notes", Origin::Persona, true),
+                ("triage", Origin::Persona, false)
+            ],
+            "{workspace:?}"
+        );
+    }
+}
+
+#[test]
+fn another_personas_skills_and_a_chat_on_no_persona_get_none_of_them() {
+    let plane = Plane::new();
+    skill(&plane.persona("steward"), "triage", &whole("triage"));
+
+    assert!(
+        plane
+            .as_persona(None, "ops", &[], None, None)
+            .effective
+            .is_empty()
+    );
+    assert!(plane.set(Some("smart-ide")).effective.is_empty());
+}
+
+#[test]
+fn a_project_skill_the_persona_names_reaches_a_workspace_it_was_not_granted_to() {
+    let plane = Plane::new();
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    skill(&plane.project(), "review", &whole("review"));
+
+    let set = plane.as_persona(Some("smart-ide"), "steward", &["deploy"], None, None);
+
+    assert_eq!(effective(&set), [("deploy", Origin::Project, false)]);
+    assert_eq!(
+        left_out(&set),
+        [("review", Origin::Project, false, NOT_GRANTED.to_owned())],
+        "a skill it does not name is still held to its grant"
+    );
+}
+
+#[test]
+fn a_skill_the_persona_names_reaches_a_workspace_that_turned_it_off() {
+    // Dispatching a persona never strips its skills (spec story 17; ADR 0099 as amended
+    // 2026-10-21): the turn-off still holds for every other chat there.
+    let plane = Plane::new();
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    plane.grant("deploy", "grant = \"all\"\n");
+    plane.turn_off("ops", &["deploy"]);
+
+    let named = plane.as_persona(Some("ops"), "steward", &["deploy"], None, None);
+    let other = plane.as_persona(Some("ops"), "steward", &[], None, None);
+
+    assert_eq!(effective(&named), [("deploy", Origin::Project, false)]);
+    assert_eq!(left_out(&other)[0].3, "turned off in this workspace");
+}
+
+#[test]
+fn the_persona_copy_beats_the_workspace_copy_which_beats_the_project_copy() {
+    let plane = Plane::new();
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    plane.grant("deploy", "grant = \"all\"\n");
+    skill(&plane.workspace("smart-ide"), "deploy", &whole("deploy"));
+    skill(&plane.persona("steward"), "deploy", &whole("deploy"));
+
+    let set = plane.as_persona(Some("smart-ide"), "steward", &["deploy"], None, None);
+
+    assert_eq!(effective(&set), [("deploy", Origin::Persona, false)]);
+    assert_eq!(
+        left_out(&set),
+        [
+            (
+                "deploy",
+                Origin::Project,
+                false,
+                "hidden by the persona skill of this name".to_owned()
+            ),
+            (
+                "deploy",
+                Origin::Workspace,
+                false,
+                "hidden by the persona skill of this name".to_owned()
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_persona_skill_never_takes_a_built_in_skills_name() {
+    let plane = Plane::new();
+    let built_in = plane.root.join("../plugin/skills");
+    skill(&built_in, "handoff", &whole("handoff"));
+    skill(&plane.persona("steward"), "handoff", &whole("handoff"));
+
+    let set = plane.as_persona(None, "steward", &[], Some(&built_in), None);
+
+    assert_eq!(effective(&set), [("handoff", Origin::BuiltIn, false)]);
+    assert_eq!(left_out(&set)[0].1, Origin::Persona);
+}
+
+#[test]
+fn a_built_in_skill_named_with_either_prefix_is_the_built_in_one_and_a_missing_one_says_so() {
+    let plane = Plane::new();
+    let built_in = plane.root.join("../plugin/skills");
+    skill(
+        &built_in,
+        "working-in-a-clone",
+        &whole("working-in-a-clone"),
+    );
+
+    let set = plane.as_persona(
+        None,
+        "steward",
+        &[
+            "charter:working-in-a-clone",
+            "purlis:working-in-a-clone",
+            "purlis:gone",
+        ],
+        Some(&built_in),
+        Some(&[]),
+    );
+
+    assert_eq!(
+        effective(&set),
+        [("working-in-a-clone", Origin::BuiltIn, false)]
+    );
+    assert_eq!(
+        left_out(&set),
+        [(
+            "purlis:gone",
+            Origin::BuiltIn,
+            false,
+            "its persona names it, and purlis has no built-in skill of this name".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_harness_skill_the_persona_names_is_left_out_only_where_this_machine_lacks_it() {
+    let plane = Plane::new();
+    let here = [
+        OnMachine::Skill {
+            plugin: Some("mattpocock-skills".to_owned()),
+            name: "grilling".to_owned(),
+        },
+        OnMachine::Skill {
+            plugin: None,
+            name: "langfuse".to_owned(),
+        },
+        OnMachine::Unlisted("superpowers".to_owned()),
+    ];
+    let names = [
+        "mattpocock-skills:grilling",
+        "mattpocock-skills:tdd",
+        "superpowers:systematic-debugging",
+        "langfuse",
+        "nowhere",
+    ];
+
+    let set = plane.as_persona(None, "steward", &names, None, Some(&here));
+
+    assert!(set.effective.is_empty(), "the harness loads its own");
+    let harness: Vec<(String, bool)> = set
+        .from_the_harness
+        .iter()
+        .map(|h| (h.reference.to_string(), h.checked))
+        .collect();
+    assert_eq!(
+        harness,
+        [
+            ("mattpocock-skills:grilling".to_owned(), true),
+            ("superpowers:systematic-debugging".to_owned(), false),
+            ("langfuse".to_owned(), true),
+        ],
+        "a skill of a plugin it cannot list is never said to be there"
+    );
+    let missing = "its persona names it, and it is not installed on this machine".to_owned();
+    assert_eq!(
+        left_out(&set),
+        [
+            (
+                "mattpocock-skills:tdd",
+                Origin::Harness,
+                false,
+                missing.clone()
+            ),
+            ("nowhere", Origin::Harness, false, missing),
+        ]
+    );
+}
+
+#[test]
+fn where_nobody_looked_at_the_harness_no_named_skill_is_missing_or_checked() {
+    let plane = Plane::new();
+
+    let set = plane.as_persona(None, "steward", &["superpowers:tdd", "nowhere"], None, None);
+
+    assert!(set.left_out.is_empty());
+    assert!(set.from_the_harness.iter().all(|h| !h.checked));
+    assert_eq!(set.from_the_harness.len(), 2);
+}
+
+#[test]
+fn a_plane_skill_the_persona_names_is_never_also_looked_for_on_the_machine() {
+    let plane = Plane::new();
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    skill(&plane.project(), "broken", "no frontmatter\n");
+
+    let set = plane.as_persona(
+        Some("ops"),
+        "steward",
+        &["deploy", "broken"],
+        None,
+        Some(&[]),
+    );
+
+    assert_eq!(effective(&set), [("deploy", Origin::Project, false)]);
+    assert_eq!(left_out(&set).len(), 1, "{:?}", left_out(&set));
+    assert_eq!(left_out(&set)[0].0, "broken");
+    assert_eq!(left_out(&set)[0].1, Origin::Project);
+}
+
+#[test]
+fn a_reference_is_read_by_its_prefix() {
+    assert_eq!(
+        Reference::parse(" charter:handoff "),
+        Some(Reference::BuiltIn("handoff".to_owned()))
+    );
+    assert_eq!(
+        Reference::parse("purlis:handoff").map(|r| r.to_string()),
+        Some("purlis:handoff".to_owned())
+    );
+    assert_eq!(
+        Reference::parse("charter:handoff").map(|r| r.to_string()),
+        Some("purlis:handoff".to_owned()),
+        "the old prefix is said as the new one"
+    );
+    assert_eq!(
+        Reference::parse("superpowers:tdd"),
+        Some(Reference::Harness {
+            plugin: "superpowers".to_owned(),
+            name: "tdd".to_owned()
+        })
+    );
+    assert_eq!(
+        Reference::parse("deploy"),
+        Some(Reference::Named("deploy".to_owned()))
+    );
+    for nothing in ["", "  ", ":tdd", "superpowers:", ":"] {
+        assert_eq!(Reference::parse(nothing), None, "{nothing:?}");
+    }
+}
+
+#[test]
+fn a_persona_name_that_is_not_one_plain_name_has_no_folder() {
+    let plane = Plane::new();
+    assert_eq!(persona_dir(&plane.root, "../x", false), None);
+    assert_eq!(
+        persona_dir(&plane.root, "steward", true),
+        Some(plane.root.join("personas/steward/skills.local"))
+    );
 }
