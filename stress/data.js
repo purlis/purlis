@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792604981028,
+  "lastUpdate": 1792605001752,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -10164,6 +10164,42 @@ window.BENCHMARK_DATA = {
             "value": 663.8,
             "unit": "MB",
             "extra": "median of 6 samples: 618, 647, 661.4, 666.3, 667.2, 750.5 MB; window 397 MB, session host 266.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e19dbe4aed97f11f799ef75c251328bd0c007ec8",
+          "message": "Browsers: a browser's start waits as long as its engine's download may take (#3001)\n\nThe first browser start on a host downloads the pinned engine inside it,\nwhich can take past the 30 seconds the window gives any other answer. The\nwindow now waits for a browser's start alone up to the manifest read, the\narchive download and a minute (`browsers::A_START_TAKES_AT_MOST`). Every\nother answer keeps its 30 seconds.\n\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T20:53:25+04:00",
+          "tree_id": "09f01ca0adec80b1f2ce9d46f76d288b1af51705",
+          "url": "https://github.com/purlis/purlis/commit/e19dbe4aed97f11f799ef75c251328bd0c007ec8"
+        },
+        "date": 1792604999037,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1480,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1362.7, 1480, 1502.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 676.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 638.1, 661.1, 674.6, 678.7, 679.5, 751.3 MB; window 392.1 MB, session host 284.5 MB"
           }
         ]
       }
