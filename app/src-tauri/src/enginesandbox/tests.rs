@@ -101,11 +101,12 @@ fn postrm(action: &str, apparmor: &Path, bin: &Path) -> std::process::ExitStatus
         bin.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    std::process::Command::new("/bin/sh")
-        .args(["-c", &script, "postrm", action])
-        .env("PATH", path)
-        .status()
-        .expect("the postrm runs")
+    purlis_core::forklock::status(
+        std::process::Command::new("/bin/sh")
+            .args(["-c", &script, "postrm", action])
+            .env("PATH", path),
+    )
+    .expect("the postrm runs")
 }
 
 /// #2900: removing the package takes the profile it installed; purging it also takes the
