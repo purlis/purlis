@@ -202,6 +202,7 @@ fn each_attestation_is_verified_in_the_run_that_pushed_it() {
     for pin in [
         "--repo \"$GITHUB_REPOSITORY\"",
         "--signer-workflow \"$GITHUB_REPOSITORY/.github/workflows/runner-image.yml\"",
+        "--signer-digest \"$GITHUB_WORKFLOW_SHA\"",
         "--source-digest \"$GITHUB_SHA\"",
         "--deny-self-hosted-runners",
         "--predicate-type https://cyclonedx.org/bom",
@@ -243,4 +244,29 @@ fn the_release_grants_its_runner_image_call_the_attestation_scope() {
         ])),
         "the most the called workflow's jobs ask for"
     );
+}
+
+/// The step that checks each architecture's digest file holds a digest and nothing else.
+const DIGESTS_CHECKED: &str = "[[ \"$(cat \"$RUNNER_TEMP/digests/$arch\")\" =~ ^sha256:[0-9a-f]{64}$ ]] \\";
+
+#[test]
+fn each_job_that_reads_the_digests_checks_each_is_a_digest_before_using_it() {
+    let jobs = runner_jobs();
+    for name in ["index", "sbom", "attest"] {
+        let job = job_named(&jobs, name, FILE);
+        let steps = job.steps();
+        let check = steps
+            .iter()
+            .position(|s| run_lines(s).iter().any(|l| l == DIGESTS_CHECKED))
+            .unwrap_or_else(|| panic!("`{name}` checks no digest file"));
+        let first_use = steps
+            .iter()
+            .position(|s| {
+                run_lines(s)
+                    .iter()
+                    .any(|l| l.contains("$(cat \"$RUNNER_TEMP/digests/") && l != DIGESTS_CHECKED)
+            })
+            .unwrap_or_else(|| panic!("`{name}` reads no digest file"));
+        assert!(check < first_use, "`{name}` checks the digests before it uses them");
+    }
 }

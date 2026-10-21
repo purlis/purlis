@@ -338,6 +338,14 @@ jobs:
         with:
           name: digest-arm64
           path: ${{ runner.temp }}/digests
+      # Each is a digest and nothing else, before anything names an image by it.
+      - name: Each architecture's digest is a sha256 digest
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            [[ "$(cat "$RUNNER_TEMP/digests/$arch")" =~ ^sha256:[0-9a-f]{64}$ ]] \
+              || { echo "::error::digests/$arch holds no sha256 digest"; exit 1; }
+          done
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -465,6 +473,14 @@ jobs:
         with:
           name: digest-arm64
           path: ${{ runner.temp }}/digests
+      # Each is a digest and nothing else, before anything names an image by it.
+      - name: Each architecture's digest is a sha256 digest
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            [[ "$(cat "$RUNNER_TEMP/digests/$arch")" =~ ^sha256:[0-9a-f]{64}$ ]] \
+              || { echo "::error::digests/$arch holds no sha256 digest"; exit 1; }
+          done
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -535,6 +551,14 @@ jobs:
         with:
           name: digest-arm64
           path: ${{ runner.temp }}/digests
+      # Each is a digest and nothing else, before anything names an image by it.
+      - name: Each architecture's digest is a sha256 digest
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            [[ "$(cat "$RUNNER_TEMP/digests/$arch")" =~ ^sha256:[0-9a-f]{64}$ ]] \
+              || { echo "::error::digests/$arch holds no sha256 digest"; exit 1; }
+          done
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: runner-image-sbom
@@ -590,6 +614,7 @@ jobs:
           set -euo pipefail
           pinned=(--repo "$GITHUB_REPOSITORY"
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/runner-image.yml"
+            --signer-digest "$GITHUB_WORKFLOW_SHA"
             --source-digest "$GITHUB_SHA"
             --deny-self-hosted-runners)
           gh attestation verify "oci://$IMAGE@$INDEX" "${pinned[@]}"

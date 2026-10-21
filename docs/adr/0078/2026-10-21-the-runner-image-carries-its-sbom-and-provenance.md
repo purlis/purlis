@@ -20,7 +20,8 @@ Items 1 to 4 are **decided in implementation, to be confirmed** (D-2191-1 to D-2
    commit's. `release.yml`'s call grants `attestations: write` because the called workflow's
    jobs need it. *D-2191-3.*
 4. **Verified in the same run.** `attest` verifies the provenance and each SBOM with
-   `gh attestation verify`, pinned to `runner-image.yml` in this repository, this commit and a
-   GitHub-hosted runner, before the run can succeed. A release's call fails when they do not
-   verify, so no release names an image that lacks them. `sbom` reads the images beside
+   `gh attestation verify`, pinned to `runner-image.yml` in this repository at this run's own
+   workflow commit, this commit and a GitHub-hosted runner, before the run can succeed. A release's call fails when they do not
+   verify, so no release names an image that lacks them. Each job that names an image by an
+   architecture's digest first checks the digest file holds a sha256 digest and nothing else. `sbom` reads the images beside
    `index`, so the release waits on `attest` alone (ten minutes at most). *D-2191-4.*
