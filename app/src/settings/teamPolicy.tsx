@@ -76,7 +76,8 @@ export function TeamPolicy({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
           </p>
           <ButtonRow>
             {off.answer !== true && (
-              <Button isDisabled={busy} onPress={() => answer(true)}>
+              // Accepting runs chats with no sandbox: an answer that grants (ADR 0097 §6).
+              <Button variant="grants" isDisabled={busy} onPress={() => answer(true)}>
                 Accept
               </Button>
             )}
