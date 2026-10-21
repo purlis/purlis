@@ -30,8 +30,9 @@ futures-channel = "0.3"
 futures-core = "0.3"
 
 [target."cfg(unix)".dependencies]
-# A session's program group: whether it still runs, and ending it (`waitid`, `killpg`).
-rustix = { version = "1", features = ["process"] }
+# A session's program group: whether it still runs, and ending it (`waitid`, `killpg`); and
+# its notes, made and removed through a handle on their folder (`fs`: `openat`, `unlinkat`).
+rustix = { version = "1", features = ["fs", "process"] }
 # `ICANON`, to read whether the terminal's line discipline is in canonical mode
 # (`Session::edits_lines`). Already in this workspace's lockfile.
 libc = "0.2"
