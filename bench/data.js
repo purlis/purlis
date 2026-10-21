@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792575368381,
+  "lastUpdate": 1792576748725,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20538,6 +20538,48 @@ window.BENCHMARK_DATA = {
             "value": 102.86192349999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.990, 102.639, 102.862, 103.646, 105.853 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "234932bf7237032c3dadbf6f8e7cb0a7592e6c36",
+          "message": "SK-3: every use of a skill is a run, live on the chat tab (#2862)\n\n* SK-3: move the skill log's tests to their own file\n\nA move alone, as CONTRIBUTING.md asks when a module is next changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-3: every use of a skill is a span to the end of the turn\n\nA skill run opens where the skill is invoked: the harness's Skill tool on\nClaude Code and opencode, and on a briefed chat (Codex) a shell command or\nfile read that names a known SKILL.md of the chat's. The hook mints the\nrun's id, logs its start in the plane's skill log and tells the host the\nsame id on the tool call's line.\n\nThe event log's writer keeps the span: skill.started before the invoking\ncall, skill and skill_run on every entry inside it, and skill.ended with\nits signals (tool calls, errors, refusals, asks, tokens, time; never a\nverdict) before the turn's end, a new prompt or the session's end. A run\ninside a run is its child. The end row goes into the skill log too.\n\nThe skill log's rows written before runs read as runs of their own, so\nnothing is rewritten. `purlis skill runs` lists them; the window keeps the\nopen run of each chat in memory for the chip on its tab, and the studio\ngets a skill_runs command for a skill's Runs panel.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-3: the skill run on a chat's tab, and a skill's Runs panel\n\nThe window keeps the run open in each chat (chat-skill-run, and\nchat_skill_runs for a window that opens) and draws a chip beside the tab:\nthe skill and its tool calls so far. Pressed, it opens the skill's own\ntab on that run, whose Runs panel lists every run with what started it\nand its signals, never a verdict. A skill's name in the Skill studio\nopens its tab too. All behind the skill-studio flag.\n\nThe reporting harness of the scenario run can use a skill and hold its\nturn (USES_A_SKILL), and a state spec follows a run from the hook to the\nchip, the Runs panel and the chat's end.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-3: one list of runs for the studio and the command line\n\nskills::studio_runs sits beside skills::studio_rows, and both the Runs\npanel and `purlis skill runs` draw it. The chip and a skill's name in the\nstudio wear the shared button class.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-3: record the skill log's run rows, the run id masked\n\nA skill run's start row now holds its run and what started it, so the\nrecorded scenario of a Skill call says so. Its id is minted afresh each\nrun, so the recorded fact keeps its place and never its value.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-3: answer the review: one reading of runs, harness words in adapters\n\n- A run's start row is written by the event log's writer as the run\n  opens, after its turn's dedupe and the claim's checks: two reads of a\n  skill in one turn are one run with one row, and the hook writes none.\n- One reading of the hook lines, skillspan::Tracker, which the Recorder\n  and the window's chip both use.\n- Each harness adapter reads its own words (HarnessAdapter::skill_start):\n  Claude Code's Skill tool, opencode's `name`, and Codex's shell read,\n  which must only read (no git, editor, rm, cp, mv, tee, in-place sed or\n  perl, or a redirection into a file).\n- Every event the writer writes goes through one place that adds the\n  skill, audits and trust events included.\n- StartedBy and Ended are serialized enums with parse, the skill log is\n  read into a struct, a call is Call::Id or Call::Unnamed; the window has\n  RunStart and RunEnd.\n- Start and run words in place of invocation ones (SkillStarted,\n  skill_started, started_by_a_read).\n- Shared plurals (counts::counted, the window's counted), plain words for\n  rows from before runs were recorded, the run a tab opens on in its key,\n  and the Runs panel's tests in SkillTab.test.tsx.\n- Close tests on Codex and opencode, a test that an edit starts nothing,\n  the changelog fragment, and the state spec's screenshots kept by CI.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-3: the scenario's stand-in starts a skill as the Codex it is declared as\n\nIts harness is declared codex, whose adapter reads a start only from a\nshell read of a skill the chat was briefed on: the stand-in now reads a\nbuilt-in skill's SKILL.md from PURLIS_SKILLS_DIR and runs Codex's block\nword for it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-3: a test's event is named for what it is, and not printed whole\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-3: on SK-4, the recorded record left to CI's bless, no screenshot step\n\n- `purlis skill` keeps SK-4's grant and share beside runs.\n- The recorded scenario of a Skill call goes back to main's record: the\n  hook no longer logs it, and CI's bless rewrites the row, never a hand.\n- The scenario run uploads no screenshots: SK-23 attaches them (#2892).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-3: take CI's bless of the Skill call's recorded scenario\n\nThe row is CI's `recorded-behaviour-blessed` line, taken alone: the\nhook no longer logs a skill's use, the event log's writer logs the run\nas it opens, so the scenario's logged facts hold the dispatch row only.\nrecorded-bless-check refuses a facts change by design; this one is the\nbehaviour SK-3 changes on purpose. The bless's other rows, which moved\nonly in how they were written, are not taken.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-3: a hook with no host records the run's start itself\n\nA terminal's own harness has no app to open a run, so its skill uses\nwent unrecorded and persona stats lost them. Where no hook socket is\nset, toolhooks::skill_started now logs the run's start (its id, what\nstarted it, the active persona) under this device; nothing counts its\nsignals, so it has no end row. The harness is read through its twinned\nname. The recorded scenario becomes\nposttooluse-skill-records-its-run-where-no-host-listens, its run id\nmasked in the logged facts, with a #2766 note.\n\nAlso: start words in place of invocation ones in the comments, and no\nharness names in purlis-skills' StartedBy.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T13:42:54+04:00",
+          "tree_id": "67c997cd1d9dd139b434568ff6ea6e85c68870e3",
+          "url": "https://github.com/purlis/purlis/commit/234932bf7237032c3dadbf6f8e7cb0a7592e6c36"
+        },
+        "date": 1792576746582,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4751525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.469, 0.471, 0.475, 0.491, 0.499 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.433022,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.253, 16.278, 16.433, 16.449, 16.464 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.22835749999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.034, 101.213, 101.228, 101.500, 101.834 ms"
           }
         ]
       }
