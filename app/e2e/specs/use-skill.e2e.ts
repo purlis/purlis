@@ -99,7 +99,18 @@ describe("Use skill…", function () {
     await boxes[0].setValue("42");
     await boxes[1].setValue("the tests");
     await (await $("button=Type it")).click();
-    await dialog.waitForDisplayed({ timeout: 20_000, reverse: true });
+    // Closed once the core answered; a refusal stays in the dialog, and is what a red run says.
+    await browser
+      .waitUntil(async () => !(await dialog.isDisplayed().catch(() => false)), {
+        timeout: 20_000,
+        timeoutMsg: "",
+      })
+      .catch(async () => {
+        const said = await browser.execute(
+          () => document.querySelector<HTMLElement>('[data-testid="use-skill"]')?.innerText ?? "",
+        );
+        throw new Error(`Use skill… never closed; it says: ${said}`);
+      });
 
     const said = await $('p[role="status"]');
     await said.waitForExist({ timeout: 20_000 });
@@ -107,6 +118,8 @@ describe("Use skill…", function () {
   });
 
   it("opens the same picker from the Skills chip on the chat's pane", async () => {
+    // Whatever the step before left open goes first, so this one opens its own.
+    await browser.keys(["Escape"]);
     const chip = await $('[data-testid="pane-skills"]');
     await chip.waitForDisplayed({ timeout: 20_000 });
     await expect(chip).toHaveText(/skills?$/);

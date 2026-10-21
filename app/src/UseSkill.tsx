@@ -317,6 +317,7 @@ export const SkillsChip = memo(function SkillsChip({
   return (
     <button
       type="button"
+      tabIndex={0}
       className={`ui-button ui-button-ghost ui-button-sm pane-skills${warning === undefined ? "" : " over"}`}
       data-testid="pane-skills"
       title={warning === undefined ? said : `${warning} ${said}`}
