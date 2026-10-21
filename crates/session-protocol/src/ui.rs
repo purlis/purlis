@@ -603,6 +603,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // The projects a runner would not hold again (#2846): what this window was refused.
+    "projects_not_held",
     // Taking a browser over, driving it and handing it back (#2014): what the person types into
     // a page is theirs, and only the window, where they see it, sends it.
     "take_over_browser",

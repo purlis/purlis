@@ -34,6 +34,7 @@ let link: PoolLink;
 let version: PoolVersion;
 let added: unknown[];
 let removed: unknown[];
+let notHeld: { root: string; name: string; why: string; pools: string[] }[];
 
 beforeEach(() => {
   forgetThisLaunch();
@@ -46,6 +47,7 @@ beforeEach(() => {
   version = { runner: "0.4.2", why: null, desktop: "0.4.2", follows: true, draining: 0 };
   added = [];
   removed = [];
+  notHeld = [];
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -58,6 +60,7 @@ beforeEach(() => {
         return { pools: structuredClone(pools), defaults: { ...DEFAULTS } } satisfies PoolsShown;
       if (cmd === "docker_pool_link") return link;
       if (cmd === "docker_pool_version") return version;
+      if (cmd === "projects_not_held") return structuredClone(notHeld);
       if (cmd === "add_docker_pool") {
         added.push(a.adding);
         const row = a_pool((a.adding as { name: string }).name);
@@ -216,5 +219,37 @@ describe("You › This machine › Pools", () => {
         /Build your image from purlis 0\.4\.2, then add the pool again\./,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("marks a project the runner would not hold on its pool's row, in the runner's words", async () => {
+    pools = [a_pool("builds")];
+    notHeld = [
+      {
+        root: "/projects/alpha",
+        name: "alpha",
+        why: "that folder is not there",
+        pools: ["builds"],
+      },
+    ];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    const notice = await waitFor(() => {
+      const found = group.querySelector('[data-cause="project-not-held:/projects/alpha"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(notice).toHaveTextContent(
+      "The runner that alpha's chats run on does not hold alpha, so no chat starts or answers there.",
+    );
+    // On the row of the pool its chats run on, the runner's words set apart.
+    expect(notice.closest("li")).toHaveTextContent("builds");
+    expect(notice.querySelector("bdi")).toHaveTextContent("that folder is not there");
+
+    await userEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() =>
+      expect(group.querySelector('[data-cause="project-not-held:/projects/alpha"]')).toBeNull(),
+    );
   });
 });

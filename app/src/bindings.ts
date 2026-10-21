@@ -2425,6 +2425,11 @@ export const commands = {
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
+	/**
+	 *  **The projects a runner would not hold again after a re-link**, each with the runner's words
+	 *  and the pools its chats run on.
+	 */
+	projectsNotHeld: () => typedError<ProjectNotHeld[], string>(__TAURI_INVOKE("projects_not_held")),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	/**
@@ -8766,6 +8771,21 @@ export type ProjectFolder = {
 export type ProjectHarnesses = {
 	declared: DeclaredHarness[],
 	refused: RefusedHarness[],
+};
+
+/**  One project the runner its chats run on would not hold, as the Pools group draws it. */
+export type ProjectNotHeld = {
+	/**  Where it is on this machine. */
+	root: string,
+	/**  What the window calls it: its folder's name. */
+	name: string,
+	/**  What the runner said, as plain text, at most [`MOST_SAID`] characters. */
+	why: string,
+	/**
+	 *  The pools its workspaces run their chats on, as this machine keeps them: the row the
+	 *  mark is drawn on where there is one.
+	 */
+	pools: string[],
 };
 
 /**  Both files. */

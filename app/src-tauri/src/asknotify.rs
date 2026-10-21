@@ -324,6 +324,7 @@ fn notice(plane: &PlaneId, chats: &[u32], asks: &[Shown], fresh: &[&Shown]) -> N
                     .map(|name| plain(name))
                     .collect::<Vec<_>>()
                     .join(" › "),
+                MOST_NAME,
             )
         };
         let kind = kind_said(first);
@@ -367,6 +368,12 @@ fn name_of(session: u32, asks: &[Shown]) -> String {
 /// **A name a chat chose, as plain text** for a notification: every control and direction
 /// mark dropped, each run of white space one space, and at most [`MOST_NAME`] characters.
 pub fn plain(name: &str) -> String {
+    plain_within(name, MOST_NAME)
+}
+
+/// [`plain`], at most `most` characters: for words a host or a runner wrote, which the window
+/// shows as text (#2846).
+pub fn plain_within(name: &str, most: usize) -> String {
     let mut out = String::new();
     let mut gap = false;
     for one in name.chars() {
@@ -383,15 +390,15 @@ pub fn plain(name: &str) -> String {
         }
         out.push(one);
     }
-    capped(&out)
+    capped(&out, most)
 }
 
-/// `text` at most [`MOST_NAME`] characters, ending in `…` where it was cut.
-fn capped(text: &str) -> String {
-    if text.chars().count() <= MOST_NAME {
+/// `text` at most `most` characters, ending in `…` where it was cut.
+fn capped(text: &str, most: usize) -> String {
+    if text.chars().count() <= most {
         return text.to_owned();
     }
-    let mut cut: String = text.chars().take(MOST_NAME - 1).collect();
+    let mut cut: String = text.chars().take(most.saturating_sub(1)).collect();
     cut.push('…');
     cut
 }
