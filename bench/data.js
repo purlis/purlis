@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792614444429,
+  "lastUpdate": 1792618425114,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21042,6 +21042,48 @@ window.BENCHMARK_DATA = {
             "value": 105.780314,
             "unit": "ms",
             "extra": "median of 5 runs: 103.889, 105.163, 105.780, 106.471, 106.890 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5f0affbba278bc20ed28f5a507cad8b08ee03d1d",
+          "message": "Runners: the runner image carries its SBOM and build provenance (#2191) (#2982)\n\n* Runners: the runner image carries its SBOM and build provenance (#2191)\n\nEvery runner image a release publishes gets SLSA build provenance on its\nindex and a CycloneDX SBOM of each architecture's image, attested to the\nimage in the registry and verified in the run that pushed it.\ndocs/runner-image.md says how to check them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: rustfmt the runner image's attestation tests (#2191)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: the runner image's attestations verify against this workflow's commit, and every digest is checked (#2191)\n\nThe verify step pins the signer's workflow commit. index, sbom and\nattest each check every architecture's digest file holds a sha256 digest\nbefore naming an image by it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: rustfmt the digest check test (#2191)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T01:32:04+04:00",
+          "tree_id": "447143376d63f30b18a03c9fce7aa1b5e6e5cbd0",
+          "url": "https://github.com/purlis/purlis/commit/5f0affbba278bc20ed28f5a507cad8b08ee03d1d"
+        },
+        "date": 1792618422410,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.465762,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.451, 0.463, 0.466, 0.477, 0.484 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2773155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.138, 16.194, 16.277, 16.592, 16.929 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9949545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.990, 101.182, 101.995, 102.044, 102.133 ms"
           }
         ]
       }
