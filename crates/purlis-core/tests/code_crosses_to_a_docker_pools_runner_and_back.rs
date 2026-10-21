@@ -72,7 +72,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
 
 /// A command in the runner's container, as its own user, its output as text.
 fn in_the_runner(docker: &Docker, made: &Made, script: &str) -> String {
-    let out = purlis_core::forklock::output(Command::new(&docker.0).args([
+    let out = purlis_core::forklock::output(Command::new(docker.program()).args([
         "exec",
         made.container.as_str(),
         "sh",
@@ -90,9 +90,19 @@ async fn linked(
     ours: Identity,
     runner: Pinned,
 ) -> (Client, Acceptor) {
-    let connector = CommandConnector::new(&docker.0, made.connect_args(), {
+    let connector = CommandConnector::new(docker.program(), made.connect_args(), {
         let (docker, made) = (docker.clone(), made.clone());
         Arc::new(move || docker.check(&made).map_err(|why| why.to_string()))
+    })
+    .preparing({
+        let docker = docker.clone();
+        Arc::new(move || {
+            let (env, cleared, held) = docker
+                .prepared()
+                .map_err(|why| why.to_string())?
+                .into_parts();
+            Ok(purlis_host::Prepared { env, cleared, held })
+        })
     });
     let mut links = hostlink::keep_linked(
         connector,
@@ -146,11 +156,9 @@ fn a_branch_and_its_uncommitted_work_reach_a_pools_runner_and_its_commits_come_b
     let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
         return;
     };
-    let docker = Docker(
-        std::env::var_os("DOCKER_POOL_TEST_DOCKER")
-            .unwrap_or("docker".into())
-            .into(),
-    );
+    let settings = tempfile::tempdir().unwrap();
+    let docker = Docker::at(std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()))
+        .with_settings_in(settings.path().join("docker-settings"));
     let image = Image::pinned(&image).expect("the image is named by digest");
     let (user, home) = docker
         .declared(&image)
