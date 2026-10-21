@@ -70,7 +70,13 @@ jobs:
       - name: Every baseline was drawn in this image
         run: node ../tools/story-baselines.mjs check
       - name: The stories
-        run: npm run test:stories
+        run: npm run test:stories -- --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/stories.json"
+      # One annotation per story that failed, in which browser and the first line of why: the
+      # reporter's own annotations name a line, and a failure axe raises after the story has
+      # none.
+      - name: The stories that failed, named
+        if: failure()
+        run: node ../tools/story-failures.mjs "$RUNNER_TEMP/stories.json"
       - name: The pictures that differ, kept
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
