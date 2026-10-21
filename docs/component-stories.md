@@ -86,8 +86,11 @@ naming anything says so.
 A baseline is a PNG at
 `app/src/<dir>/__screenshots__/<Component>.stories.tsx/<story id>-<chromium|webkit>-linux.png`.
 Every baseline is drawn by one image, Playwright's own Docker image for the Playwright version
-the lockfile names (`mcr.microsoft.com/playwright:v<version>-noble`), and compared in the same
-image by the `stories` workflow (`.github/workflows/stories.yml`).
+the lockfile names, and compared in the same image by the `stories` workflow
+(`.github/workflows/stories.yml`). Both workflows name it by its tag and its digest,
+`mcr.microsoft.com/playwright:v<version>-noble@sha256:<digest>`, so a tag pushed again never
+changes a picture; the `stories` check fails unless both name the lockfile's version and one
+digest (`tools/story-image.mjs`).
 
 **A baseline changes only through the `update-baselines` label.** To add or change one:
 
@@ -123,4 +126,6 @@ Only a pull request from a branch of this repository can be labelled this way: t
 token cannot push to a fork.
 
 When the lockfile's Playwright moves, the `stories` check fails until both workflows name the
-image of the new version, and every baseline is drawn again with the label.
+image of the new version, by its tag and the digest
+`docker buildx imagetools inspect mcr.microsoft.com/playwright:v<version>-noble` prints, and every
+baseline is drawn again with the label.

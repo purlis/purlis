@@ -3688,6 +3688,10 @@ pub fn run() {
             if let (Some(binary), Some(plugin)) = (binary.clone(), plugin.clone()) {
                 refresh_installed_plugin(binary, plugin);
             }
+            // The folders of links to the plane's skills no running chat uses any more (SK-24),
+            // removed off the main thread: one a chat still running in the session host uses
+            // is kept, and nothing waits for it.
+            purlis_core::skills::tidy_here_later(std::time::Duration::ZERO);
             // A dispatch that needs the person: the window shows it as a Notice on the asking
             // chat's tab (#1437).
             dispatchgrants::telling({

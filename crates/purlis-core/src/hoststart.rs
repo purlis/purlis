@@ -554,6 +554,44 @@ pub fn armed(
     sandbox: Option<&crate::sandbox::Applied>,
     persona: Option<&str>,
 ) -> Result<Armed, String> {
+    armed_as(
+        crate::skills::studio_on_here(),
+        &Arming {
+            root,
+            kit,
+            harness,
+            cwd,
+            plugins,
+            sandbox,
+            persona,
+        },
+    )
+}
+
+/// What [`armed`] arms a chat from, as one value.
+#[derive(Clone, Copy)]
+pub(crate) struct Arming<'a> {
+    pub(crate) root: &'a Path,
+    pub(crate) kit: &'a Kit,
+    pub(crate) harness: Option<Harness>,
+    pub(crate) cwd: Option<&'a Path>,
+    pub(crate) plugins: &'a crate::harness_plugin::Chosen,
+    pub(crate) sandbox: Option<&'a crate::sandbox::Applied>,
+    pub(crate) persona: Option<&'a str>,
+}
+
+/// [`armed`], with the Skill studio's flag `studio` as given rather than as this machine and
+/// this process say it.
+pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, String> {
+    let Arming {
+        root,
+        kit,
+        harness,
+        cwd,
+        plugins,
+        sandbox,
+        persona,
+    } = *arming;
     let not_carried = |then: &str| {
         crate::sandbox::under_policy(
             &crate::sandbox::policy::Locks::of(root),
@@ -579,7 +617,7 @@ pub fn armed(
     // folder of links laid out here, by the host, as the git hooks are, so the adapter only
     // turns the set into words (ADR 0063 as amended 2026-10-20).
     let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
-    let on = crate::skills::studio_on_here();
+    let on = studio;
     let linked = plane_skills_laid_out(on, root, workspace.as_deref(), persona, kit);
     let skills = on.then_some(crate::skills::PlaneSkills {
         plane: root,
@@ -592,8 +630,18 @@ pub fn armed(
         persona: persona.map(|persona| crate::harness::As { root, persona }),
         skills,
     };
+    // Which folder the chat is handed, for its terminal to note while it runs (SK-24).
+    let held = linked.as_ref().map(|folder| {
+        (
+            crate::skills::SET_ENV.to_owned(),
+            folder.display().to_string(),
+        )
+    });
     match harness.state_hooks(armed, cwd, plugins, sandbox) {
-        StateHooks::ThisSessionOnly { args, env, .. } => Ok((args, env)),
+        StateHooks::ThisSessionOnly { args, mut env, .. } => {
+            env.extend(held);
+            Ok((args, env))
+        }
         StateHooks::None if sandbox.is_some() => Err(not_carried(
             ": purlis's plugin, which carries it, was not found.",
         )),
