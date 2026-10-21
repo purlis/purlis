@@ -22,12 +22,16 @@ use crate::voice;
 #[derive(Subcommand)]
 pub enum SkillCommand {
     /// Every skill a chat at the plane root gets, with its level (`built-in`, `project`,
-    /// `workspace`, and `local` for a local skill), and
-    /// every skill left out of it with why. With `-w`, a chat in that workspace's.
+    /// `workspace`, `persona`, and `local` for a local skill), and
+    /// every skill left out of it with why. With `-w`, a chat in that workspace's; with `-p`, a
+    /// chat as that persona, which brings its skills into every workspace.
     List {
         /// The workspace whose chats' skills to list (default: a chat at the plane root).
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
+        /// The persona the chat runs as (default: none).
+        #[arg(short = 'p', long = "persona")]
+        persona: Option<String>,
         /// Answer as JSON, for a chat or a script.
         #[arg(long)]
         json: bool,
@@ -41,6 +45,9 @@ pub enum SkillCommand {
         /// The workspace whose chats to answer for (default: a chat at the plane root).
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
+        /// The persona the chat runs as (default: none).
+        #[arg(short = 'p', long = "persona")]
+        persona: Option<String>,
         /// Answer as JSON, for a chat or a script.
         #[arg(long)]
         json: bool,
@@ -99,13 +106,20 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         return Ok(1);
     }
     let built_in = purlis_core::skills::built_in_here();
-    let rows_for = |workspace: Option<&str>| {
-        let set = purlis_core::skills::in_the_studio(built_in.as_deref(), root, workspace);
-        purlis_core::skills::studio_rows(&set, root)
+    let rows_for = |workspace: Option<&str>, persona: Option<&str>| {
+        let set = purlis_core::skills::in_the_studio(built_in.as_deref(), root, workspace, persona);
+        let names = persona
+            .map(|persona| purlis_core::skills::names_of(root, persona))
+            .unwrap_or_default();
+        purlis_core::skills::studio_rows(&set, root, &names)
     };
     match command {
-        SkillCommand::List { workspace, json } => {
-            let rows = rows_for(workspace.as_deref());
+        SkillCommand::List {
+            workspace,
+            persona,
+            json,
+        } => {
+            let rows = rows_for(workspace.as_deref(), persona.as_deref());
             if json {
                 println!(
                     "{}",
@@ -119,11 +133,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         SkillCommand::Show {
             name,
             workspace,
+            persona,
             json,
         } => {
             // Every copy of the name: the one a chat gets, and each left out with why, as the list
             // and the studio show them.
-            let copies: Vec<StudioRow> = rows_for(workspace.as_deref())
+            let copies: Vec<StudioRow> = rows_for(workspace.as_deref(), persona.as_deref())
                 .into_iter()
                 .filter(|row| row.name == name)
                 .collect();
@@ -302,6 +317,7 @@ fn level(row: &StudioRow) -> String {
 /// `on`, or why it is left out.
 fn state(row: &StudioRow) -> String {
     match &row.left_out {
+        None if row.unchecked => format!("on: {}", purlis_core::skills::UNCHECKED),
         None => "on".to_owned(),
         Some(why) => format!("left out: {why}"),
     }
@@ -317,6 +333,9 @@ fn row_json(row: &StudioRow) -> Value {
         "folder": row.folder,
         "local": row.local,
         "grant": row.grant,
+        "written": row.written,
+        "named": row.named,
+        "unchecked": row.unchecked,
     })
 }
 
