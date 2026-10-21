@@ -26,6 +26,8 @@ pub const TOKENS: &[&str] = &[
     "text.primary",
     "text.secondary",
     "text.muted",
+    "text.quiet",
+    "text.faint",
     "border.subtle",
     "border.strong",
     "accent.base",
@@ -201,6 +203,8 @@ pub const TINTABLE: &[&str] = &[
     "text.primary",
     "text.secondary",
     "text.muted",
+    "text.quiet",
+    "text.faint",
     "border.subtle",
     "border.strong",
     "accent.base",
@@ -294,6 +298,20 @@ pub const RAIL_VIEWS: &[&str] = &[
     "chats", "explorer", "search", "changes", "repos", "inbox", "todos", "memory", "personas",
     "sessions", "vaults",
 ];
+
+/// **The quiet tiers a theme leaves out follow the muted it names** (#2902): in one place a
+/// theme gives tokens (an appearance, a layer of an option, a format 1 file), `text.quiet` not
+/// named there is that place's `text.muted`, and `text.faint` not named is its quiet. A theme
+/// written before the tiers draws its quiet words and its marks as legibly as its muted words,
+/// in its own grey. A place that names no `text.muted` leaves them to the parent, or to Purlis
+/// Classic's of the same appearance, as any token.
+pub fn follow_muted(colours: &mut std::collections::BTreeMap<&'static str, String>) {
+    let Some(muted) = colours.get("text.muted").cloned() else {
+        return;
+    };
+    let quiet = colours.entry("text.quiet").or_insert(muted).clone();
+    colours.entry("text.faint").or_insert(quiet);
+}
 
 /// Whether `token` is one of [`TOKENS`].
 pub fn is_token(token: &str) -> bool {

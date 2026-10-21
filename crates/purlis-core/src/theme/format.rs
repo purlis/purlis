@@ -64,7 +64,7 @@ use super::opened;
 use super::options::{self, MOST_COMBINATIONS};
 use super::tint;
 use super::typed::Typed;
-use super::vocabulary::{PLATFORM, TOKENS, is_colour, is_platform};
+use super::vocabulary::{PLATFORM, TOKENS, follow_muted, is_colour, is_platform};
 use super::{
     Appearance, CLASSIC, Complaint, PURLIS, Resolved, ResolvedTheme, Theme, built_in_for, classic,
     is_format_2, load_format_1, load_motion, purlis, stringify,
@@ -1103,6 +1103,7 @@ pub(super) fn tokens(
             )),
         }
     }
+    follow_muted(&mut out.colours);
     out
 }
 

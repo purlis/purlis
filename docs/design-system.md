@@ -49,14 +49,14 @@ Zed's, and it is the only one that can colour the terminal at all.
 ## The vocabulary
 
 `TOKENS` in `app/src/theme/theme.ts` is the list, with a comment on each group saying what it
-means. A hundred and nineteen colour names in twenty-three groups, and the typed tokens below
+means. A hundred and twenty-one colour names in twenty-three groups, and the typed tokens below
 them:
 
 | group                                  | tokens                                                                                          | what it is                                                                                        |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `surface.*`                            | `base` `sunken` `deep` `raised` `overlay` `hover`                                               | the layers of the window, deepest first                                                           |
 | `control.*`                            | `base` `hover` `aimed` `count`                                                                  | things that are pressed; `aimed` is where the keyboard is, which is not where the pointer is      |
-| `text.*`                               | `primary` `secondary` `muted`                                                                   |                                                                                                   |
+| `text.*`                               | `primary` `secondary` `muted` `quiet` `faint`                                                   | the grey tiers: four for words, and `faint` for marks and disabled words (#2902)                  |
 | `border.*`                             | `subtle` `strong`                                                                               |                                                                                                   |
 | `accent.*`, `focus.ring`, `tab.active` | `base` `surface`                                                                                | what purlis is drawing attention to                                                              |
 | `layer.*`                              | `project` `workspace` `chat` `selected`                                                         | which of the three strips of the axis a row is, and the tab you are on                            |
@@ -375,7 +375,8 @@ it so (`purlis_tests.rs`). Where its values come from:
 - **Dark is the foundation's.** Each colour the record proposes for a token is that token's.
   Where the record lacks a value, one rule derives it from the record's palette:
   - a wash the record gives with alpha is laid over the surface the record draws it on, so the
-    selected row is `#2b2a37`, the colour the record read off the frame;
+    selected row is `#2a2936`, one step under `#2b2a37`, the colour the record read off the
+    frame, so the quiet and faint tiers clear their floors on it (#2902);
   - a colour the record has no role for (running, failed, unreadable, danger, needs-you, the
     file icons' hues, most of the terminal's sixteen) is Purlis Classic's hue for that role at
     the lightness and chroma of the record's two state colours, `#e5c08a` and `#8fc79a`
@@ -384,8 +385,13 @@ it so (`purlis_tests.rs`). Where its values come from:
   - the needs-you count is the window's base on its chip, which is light;
   - the code colours the record names are the syntax roles they draw (keys, strings, literals,
     punctuation), and the other roles take Classic's ANSI colour for them.
-  `text.muted` is the record's `#a09eab`, the grey it names as the nearest, because its
-  quieter `#8a8896` measures 4.44 on a card; `#8a8896` is the placeholder.
+  **The grey tiers** (#2902, ruling #2803) are primary `#e6e4ec`, secondary `#c9c7d2`, muted
+  `#a09eab` and quiet `#91909d` for words, and faint `#74727f` for what is not words. Quiet is
+  the record's `#8a8896` lifted until it clears 4.5:1 on every ground, the row under the pointer
+  included; faint merges the record's `#6f6d7a` and `#55535f` and clears 3:1. Quiet is
+  informational text, and none of it is exempt: line numbers, placeholders (`placeholder` is
+  quiet), counts, paths and group labels. Faint is a tab's ×, a separator, a pin, a chevron and
+  disabled words; informational text never takes it.
 - **Geometry is the foundation's where a core token draws the same thing**: controls' corners
   7, menus' and dialogs' 10, a control 26 high and a chrome row 24, body text at a line height
   of 1.55, and no shadow under a raised surface. `radius.xl` is 12, the record's largest card
@@ -394,8 +400,9 @@ it so (`purlis_tests.rs`). Where its values come from:
 - **Light is derived from dark by one rule**: each colour's OKLCH lightness is reflected about
   the record's deepest colour (`#121215`, L 0.184), so L becomes 1 − (L − 0.184), keeping its
   hue, chroma and alpha. A reflected colour that misses a floor of the check steps its
-  lightness away from its ground by 0.01 until it clears: today only the comment and punctuation
-  grey, on the editor's current line (`#7c7a84`).
+  lightness away from its ground by 0.01 until it clears: the comment and punctuation grey, on
+  the editor's current line (`#7c7a84`), and the quiet and faint tiers on the row under the
+  pointer (`#61606c`, the placeholder too, and `#7c7a87`).
 - **High-contrast dark** moves each text step up one (primary to white), each edge up to a text
   grey, and the accent to the record's lighter lavender `#c3baf5`.
 

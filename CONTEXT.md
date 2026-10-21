@@ -1191,6 +1191,12 @@ ratio, and hard-floor findings, for every appearance and option combination. A f
 refuses the theme; a contrast finding is a warning.
 _Avoid_: theme lint, validation, audit
 
+**Grey tier**:
+One of the steps a theme draws its greys in: four for words (primary, secondary, muted and quiet,
+each held to 4.5:1) and faint for what is not words and for disabled words (held to 3:1), each
+measured on every ground a part draws it on. Quiet is informational text; it is never faint.
+_Avoid_: text colour (a tier is a rank, not a colour), dim, disabled colour
+
 **Theme draft**:
 A chat's unsaved changes to a theme, drawn only in that chat's workspace (the plane root for a
 root chat) until the person keeps or reverts them. A strip on the workspace says it is live and by

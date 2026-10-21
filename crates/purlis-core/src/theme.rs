@@ -103,7 +103,7 @@ pub use archive::{
     MOST_FILE_BYTES, MOST_FILES, MOST_FOLDER_BYTES, MOST_ZIP_BYTES, NotWritten, Packed, Staged,
     export, gather, is_folder_id, is_reserved, pack, rename_no_replace, stage, unpack,
 };
-pub use check::{FITS, Finding, Fit, PAIRS, Pair, Report};
+pub use check::{FAINT, FITS, Finding, Fit, PAIRS, Pair, Report, TEXT_TIERS, TIER_GROUNDS};
 pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
 pub use fonts::{
     BOLD, CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES,
@@ -863,14 +863,13 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
         }
     }
 
-    let mut values = BTreeMap::new();
+    let mut named = BTreeMap::new();
     for token in TOKENS {
         match tokens.get(*token) {
             Some(Value::String(given)) if is_colour(given) => {
-                values.insert(*token, given.clone());
+                named.insert(*token, given.clone());
             }
             given => {
-                values.insert(*token, base.value(token).to_owned());
                 if let Some(given) = given {
                     complaints.push(Complaint::about(
                         token,
@@ -883,6 +882,16 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             }
         }
     }
+    vocabulary::follow_muted(&mut named);
+    let values: BTreeMap<&'static str, String> = TOKENS
+        .iter()
+        .map(|token| {
+            let value = named
+                .get(token)
+                .map_or_else(|| base.value(token), String::as_str);
+            (*token, value.to_owned())
+        })
+        .collect();
 
     // A theme that says nothing about motion moves the way the built-in of its appearance does,
     // exactly as a token it does not name is coloured by that built-in.

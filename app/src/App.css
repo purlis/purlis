@@ -516,7 +516,7 @@ body {
   border: 0;
   border-radius: 0;
   background: none;
-  color: var(--text-muted);
+  color: var(--text-faint);
   line-height: 1;
   cursor: pointer;
 }
@@ -882,15 +882,15 @@ body {
 
    **Small, neutral, and in the tab's top corner** (qw337, the operator on 2026-10-13: a tab
    that was live, pinned, counted and asking for you drew four marks in a row). A pin is how
-   the strip is arranged and says nothing about the work, so it is the muted text colour and
-   not the accent, and it is out of the row: on a tab it sits in the top corner at the end,
-   leaving the row to the name, the live dot and the pill. On all three strips, so a pin is one
-   look. In a row of a show-more menu, which has no corner, it stays in the line. */
+   the strip is arranged and says nothing about the work, so it is a mark in the faint tier
+   (#2902) and not the accent, and it is out of the row: on a tab it sits in the top corner at
+   the end, leaving the row to the name, the live dot and the pill. On all three strips, so a
+   pin is one look. In a row of a show-more menu, which has no corner, it stays in the line. */
 .pinned {
   display: inline-flex;
   flex: none;
   line-height: 1;
-  color: var(--text-muted);
+  color: var(--text-faint);
 }
 
 .pinned .lucide {
@@ -1368,7 +1368,7 @@ button.show-more:focus-visible {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  color: var(--text-muted);
+  color: var(--text-quiet);
 }
 
 .pane-find button {
@@ -1788,7 +1788,7 @@ button.show-more:focus-visible {
 .pane-crumbs .crumb-sep {
   flex: none;
   white-space: pre;
-  color: var(--text-muted);
+  color: var(--text-faint);
 }
 
 /* `in <workspace>`: beside the task's name, and the first thing to go. */
@@ -1920,7 +1920,7 @@ button.show-more:focus-visible {
 .tab-task-sep {
   flex: none;
   white-space: pre;
-  color: var(--text-muted);
+  color: var(--text-faint);
 }
 
 /* **A task's own tab** (#1489, V100-38): the task mark before its name, whose task it is after
@@ -2926,7 +2926,7 @@ button.show-more:focus-visible {
 }
 .ui-level-count {
   flex: none;
-  color: var(--text-muted);
+  color: var(--text-quiet);
   font-variant-numeric: tabular-nums;
 }
 .ui-level[data-state="checked"] .ui-level-count {
@@ -5368,7 +5368,7 @@ h2.sidebar-title .node-icon {
 /* A count's label. Quiet, because the number is the thing being read and the label only says
    what it counts. */
 .status-label {
-  color: var(--text-muted);
+  color: var(--text-quiet);
 }
 
 .status-cell {
@@ -5997,7 +5997,7 @@ h2.sidebar-title .node-icon {
   margin: var(--space-3) 0 var(--space-1);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  color: var(--text-muted);
+  color: var(--text-quiet);
 }
 
 .panel-day:first-child {
@@ -7721,7 +7721,7 @@ h2.sidebar-title .node-icon {
 
 .search-file-folder,
 .search-file-rest {
-  color: var(--text-muted);
+  color: var(--text-quiet);
   font-size: var(--font-size-xs);
 }
 
@@ -7757,7 +7757,7 @@ h2.sidebar-title .node-icon {
 .search-line-number {
   justify-content: flex-end;
   min-inline-size: var(--space-8);
-  color: var(--text-muted);
+  color: var(--text-quiet);
 }
 
 .search-line-text {
@@ -8345,7 +8345,7 @@ h2.sidebar-title .node-icon {
   min-width: 0;
   overflow-wrap: anywhere;
   font-size: var(--font-size-xs);
-  color: var(--text-muted);
+  color: var(--text-quiet);
 }
 
 .ui-machine-entry .ui-setting-reset {

@@ -239,6 +239,17 @@ size alike, so what fits at the default text size fits at every one.
 
 ## The theme check
 
+**The grey tiers** (#2902). A theme draws words in four tiers, `text.primary`,
+`text.secondary`, `text.muted` and `text.quiet`, and what is not words (a tab's ×, a separator,
+a pin, a chevron, and disabled words) in `text.faint`. Quiet is informational text: line
+numbers, placeholders, counts, paths and group labels; none of it is exempt, and none of it
+takes faint. The check measures every text tier at 4.5:1 and faint at 3:1 on every ground a
+part draws them on: the window, a field, the status bar, a panel, a card, the row under the
+pointer, the editor's code, the selected row, the tab in front and a control, at rest and
+under the pointer. A place that names `text.muted` and not `text.quiet` draws quiet in its
+muted, and one that names no `text.faint` draws faint in its quiet, so a theme written before
+the tiers draws them as legibly as its muted words.
+
 `purlis theme check <theme>` checks one theme, named by its id, by the path of a theme file, or
 by the path of a theme folder (a folder holding `theme.json`; the folders beside it are the
 themes it may `extend`). A level's theme folder is named by its level and folder
@@ -253,7 +264,7 @@ left out (1):
   text.primry is not a purlis token, so it is left out
 warnings (2):
   text.muted on surface.base: 2.38, under 4.5; in every workspace tint too, down to 2.38
-  text.muted on surface.hover, in the red, blue tints: down to 2.07, under 3
+  text.muted on surface.hover, in the red, blue tints: down to 2.07, under 4.5
 ```
 
 Then `consent floors:`, what the window draws of the theme. Every combination of appearance

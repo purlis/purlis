@@ -75,9 +75,15 @@ export const TOKENS = [
   "control.aimed",
   "control.count",
 
+  // **The grey tiers** (#2902): four for words, loudest first, each held to 4.5:1 on every
+  // ground it is drawn on, and `faint` for what is not words (a tab's ×, a separator, a pin, a
+  // chevron) and disabled words, held to 3:1. Quiet is informational text: line numbers,
+  // placeholders, counts, paths, group labels. Informational text never takes faint.
   "text.primary",
   "text.secondary",
   "text.muted",
+  "text.quiet",
+  "text.faint",
 
   "border.subtle",
   "border.strong",
