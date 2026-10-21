@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792573951735,
+  "lastUpdate": 1792575368381,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20496,6 +20496,48 @@ window.BENCHMARK_DATA = {
             "value": 105.1577495,
             "unit": "ms",
             "extra": "median of 5 runs: 103.547, 104.127, 105.158, 105.180, 105.968 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b3c381cd00acaf7ba42a18f51ee1d751b39af01a",
+          "message": "Runners: a changed key is a window Notice, private-registry pulls, Docker folders closed to chats (#2752) (#2832)\n\n* Runners: a changed key is a window Notice; Docker's helpers are found where it is; its home folders are closed to chats (#2752)\n\n- A relayed link's key_changed tells the window, which says so once for\n  the project in a Notice with Open Pools, and keeps the chats dimmed.\n- docker is run with a PATH that looks for its credential helpers where\n  docker itself is found, so a private-registry pull works from a window\n  opened from the Finder.\n- ~/.docker/bin, ~/.orbstack/bin and ~/.rd/bin are denied to every\n  chat's writes, as paths of the home.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runner key Notice: no state set in an effect; its link reads Open Pools settings (#2752)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Sandbox: the home's Docker folders are held in every spelling, and their holders as entries (#2752)\n\nA denial says how much of its path it holds (Reach) and whether under\nevery spelling a case-folding disk takes. ~/.docker/bin, ~/.orbstack/bin\nand ~/.rd/bin are held below in either case, and ~/.docker, ~/.orbstack\nand ~/.rd as entries alone, per the person's ruling of 2026-10-20.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Sandbox test: each denial's own first rule comes after the write allow (#2752)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Docker pool: a home candidate is taken only from the installer's own folder (#2752)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T13:33:18+04:00",
+          "tree_id": "d8d41785916fc8c94795ba2b0078d931db97cdb2",
+          "url": "https://github.com/purlis/purlis/commit/b3c381cd00acaf7ba42a18f51ee1d751b39af01a"
+        },
+        "date": 1792575365784,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.534687,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.532, 0.535, 0.546, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.891262,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.549, 16.636, 16.891, 16.925, 17.212 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.86192349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.990, 102.639, 102.862, 103.646, 105.853 ms"
           }
         ]
       }
