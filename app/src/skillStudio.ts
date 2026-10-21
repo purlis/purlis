@@ -18,6 +18,46 @@ export const SKILL_STUDIO_VIEW: ViewRef = { from: null, view: "skill-studio", ke
 /** What the Skill studio's tab is called. */
 export const SKILL_STUDIO_TITLE = "Skill studio";
 
+/**
+ * **Whose chats the studio shows** (#2767): a chat at the project's root, or a chat in one
+ * workspace.
+ */
+export type StudioScope = { at: "root" } | { at: "workspace"; workspace: string };
+
+/** A chat at the project's root. */
+export const AT_THE_ROOT: StudioScope = { at: "root" };
+
+/** A chat in `workspace`. */
+export function inWorkspace(workspace: string): StudioScope {
+  return { at: "workspace", workspace };
+}
+
+/** The workspace a scope names, for the core, which takes none for the project's root. */
+export function workspaceOf(scope: StudioScope): string | null {
+  return scope.at === "workspace" ? scope.workspace : null;
+}
+
+/** The scope a studio view shows: its key is the workspace, and the view's own key the root. */
+export function scopeOf(view: ViewRef): StudioScope {
+  return view.key === SKILL_STUDIO_VIEW.key ? AT_THE_ROOT : inWorkspace(view.key);
+}
+
+/**
+ * **The Skill studio on one scope's chats** (#2767): the same view, keyed by the workspace, so
+ * a Skills summary row opens it on that workspace and the studio's own picker can show another.
+ */
+export function skillStudioView(scope: StudioScope): ViewRef {
+  return scope.at === "root" ? SKILL_STUDIO_VIEW : { ...SKILL_STUDIO_VIEW, key: scope.workspace };
+}
+
+/** What the studio's tab is called while it shows `scope`'s chats. */
+export function skillStudioTitle(scope: StudioScope): string {
+  return scope.at === "root" ? SKILL_STUDIO_TITLE : `${SKILL_STUDIO_TITLE} · ${scope.workspace}`;
+}
+
+/** The catalogue row that opens the studio on `workspace`'s chats (#2767). */
+export const SKILL_STUDIO_IN = "skills.studio:";
+
 /** Whether `view` is the Skill studio. */
 export function isSkillStudio(view: ViewRef): boolean {
   return view.from === null && view.view === SKILL_STUDIO_VIEW.view;

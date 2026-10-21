@@ -200,6 +200,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`README.md` — the generated persona roster block](#readmemd--the-generated-persona-roster-block)
   - [`themes/` — the project's theme folders](#themes--the-projects-theme-folders)
   - [`skills/` — the project's skills](#skills--the-projects-skills)
+  - [`skills.local/` — the project's local skills](#skillslocal--the-projects-local-skills)
   - [`workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills](#workspaceswsskills-and-personasnameskills--workspace-and-persona-skills)
   - [Plane-root files that exist but are **not** this area](#plane-root-files-that-exist-but-are-not-this-area)
 - [Workspaces](#workspaces)
@@ -1096,6 +1097,10 @@ key refuses.
     this machine. In the baseline under its own comment, added by `init` when missing, and by
     `reinit` under ``added by `purlis reinit` — the plane root's session records stay on this
     machine``. Deleting the line shares them.
+  - `/skills.local/` and `/workspaces/*/skills.local/` — **purlis only** (ADR 0099 §1, #2874): every
+    level's local skills stay on this machine. In the baseline under its own comment, added by
+    `init` when missing, and by `reinit` under ``added by `purlis reinit` — local skills stay on
+    this machine``. A save excludes them as well, whatever this file says.
   - `__pycache__/`, `*.py[cod]`, `.venv/`, `.DS_Store` (`charter/commands.py:1107`–`:1112`)
   - Presence detection is **whole-line, stripped**, except `.charter/` which is a substring
     test on the body (`charter/commands.py:1136`) — both quirks are deliberate and recorded.
@@ -1326,13 +1331,17 @@ outside the project and removes it when the flow ends, so it adds none of them (
   A reserved name at the plane root: purlis reads only skill folders and their `.toml` files
   under it. **experimental** while the `skill-studio` flag is on (#2786).
 - **Tier:** Plane — committed by `purlis save`, so the team gets the project's skills.
-- **Written by:** the person. purlis writes nothing here yet; the Skill studio's create, edit,
-  move and delete do from #2770.
+- **Written by:** the person; `purlis skill grant` (#2767), which writes a skill's
+  `<name>.toml`; and Share (`purlis skill share`, and Share in the Skill studio, #2767), which
+  moves a folder in from [`skills.local/`](#skillslocal--the-projects-local-skills). The Skill
+  studio's create, edit, move and delete do from #2770.
 - **Read by:** `purlis-skills`' `skill_set` (`crates/skills/src/lib.rs`), the one place a
   chat's skills are worked out, for every chat purlis starts and for `purlis skill list` and
   `show` and the Skill studio. A project skill is in the set of a chat at the plane root; a chat
   in a workspace gets it only through its grant, and is otherwise told "not granted to this
-  workspace". A folder whose `SKILL.md` is missing or names no `name` or `description` is left
+  workspace". A workspace that turns a granted skill off (`settings.skills.off` in its
+  [`workspace.json`](#workspaceswsworkspacejson--the-committed-manifest)) is told "turned off in this workspace". A
+  grant that cannot be read is read as `"root"`, and a workspace's chat is told why. A folder whose `SKILL.md` is missing or names no `name` or `description` is left
   out with that reason. A plane skill whose `name` is a built-in skill's is left out with "a
   built-in skill has this name". Each harness is handed the set by its route
   ([ADR 0063](adr/0063-every-harness-a-chat-runs-on-is-handed-charters-skills-by-its-own-route.md)
@@ -1343,20 +1352,49 @@ outside the project and removes it when the flow ends, so it adds none of them (
 
 | Key of `skills/<name>.toml` | Type | Required / default | Meaning | Status | Source |
 |---|---|---|---|---|---|
-| `grant` | `"root"`, `"all"`, or a list of workspace names | optional, default `"root"` (also what a missing file says) | Where the project skill may be used: chats at the project's root only (`"root"`), every workspace's chats too (`"all"`), or the named workspaces' chats too. A workspace may turn a granted skill off, never on one it was not granted. **Decided by ADR 0099; read from #2767.** Until then every project skill has the default. | experimental | ADR 0099 §2 |
+| `grant` | `"root"`, `"all"`, or a list of workspace names | optional, default `"root"` (also what a missing file says) | Where the project skill may be used: chats at the project's root only (`"root"`), every workspace's chats too (`"all"`), or the named workspaces' chats too. A workspace may turn a granted skill off, never on one it was not granted. Written by `purlis skill grant`; writing `"root"` removes the key, and the file when nothing else is left in it. Every other key in the file is kept as it is by a write. Any other value, or a file that is not TOML, is read as `"root"`, and the left-out line of a workspace's chat says why. A local project skill's is `skills.local/<name>.toml`, which Share moves with its folder. | experimental | ADR 0099 §2; `purlis_skills::grant_of`, `set_grant` |
+
+### `skills.local/` — the project's local skills
+
+- **Format:** as [`skills/`](#skills--the-projects-skills): `skills.local/<name>/SKILL.md`.
+- **Status:** **purlis only** (ADR 0099 §1, read from #2767), **experimental** while the
+  `skill-studio` flag is on. A local skill wins a same-name tie with a shared one at the same
+  level, and a local project skill reaches workspaces by its grant, as a shared one does.
+  **Share** (`purlis skill share <name>`, or Share in the Skill studio) moves its folder, and its
+  `<name>.toml` where it has one, into `skills/`. It refuses when `skills/` already holds that
+  folder name, and moves nothing.
+- **Tier:** Clone state — kept on this machine and never committed: read only while git ignores
+  it, as `charter.local.toml` is (ADR 0048).
+- **Written by:** the person, and the Skill studio from #2770.
+- **Read by:** `purlis_skills::skill_set`, for every chat and for the studio. A folder is read
+  only where git says its `SKILL.md` is ignored (`git check-ignore`, through
+  `purlis_core::profiles::kept_local`), or where the plane is no git repository. A folder git
+  would commit, or one git could not answer for, is left out with git's answer and the fix.
+- **Git:** must be ignored; a `skills.local/` git would carry is not read. `purlis init` writes
+  `/skills.local/` and `/workspaces/*/skills.local/` into the plane's `.gitignore`, and
+  `purlis reinit` adds them, under their own header, to a plane made before them
+  (`scaffold::SKILLS_LOCAL_IGNORES`, #2874). **A save never stages one** whatever the
+  `.gitignore` says: its stage and the standing's status both exclude `skills.local/**` and
+  `workspaces/*/skills.local/**` (`planegit::SAVE_STAGES`).
 
 ### `workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills
 
-- **Format:** as [`skills/`](#skills--the-projects-skills), one folder per skill. Where each
-  level's local skills live is settled by #2767 (ADR 0099 §1).
-- **Status:** **purlis only**, **decided, not yet read** (ADR 0099 §1). A workspace skill is
-  usable only in that workspace's chats (#2767). A persona skill goes with the persona into every
-  workspace, whatever that workspace was granted (#2768). On a same-name tie the narrowest copy
-  wins: persona over workspace over project.
+- **Format:** as [`skills/`](#skills--the-projects-skills), one folder per skill, with a
+  `skills.local/` beside each for that level's local skills.
+- **Status:** **purlis only** (ADR 0099 §1), **experimental** while the `skill-studio` flag
+  is on. A workspace skill is usable only in that workspace's chats, read from #2767. The
+  workspace's turn-off list does not reach it: the workspace owns it. A persona skill goes with
+  the persona into every workspace, whatever that workspace was granted (#2768, not read yet).
+  On a same-name tie the narrowest copy wins: persona over workspace over project, and local
+  over shared at one level. The copy left out says which copy hid it, and the studio lists both.
 - **Tier:** Plane when LIVE, Clone state when LOCAL — a workspace's, as its other files are; a persona's is committed with the persona, in the Plane tier
-- **Written by:** the person, and the Skill studio from #2770.
-- **Read by:** nothing yet.
-- **Git:** a workspace's follows its LIVE block; a persona's is committed.
+- **Written by:** the person, Share (as at the plane root), and the Skill studio from #2770.
+- **Read by:** `purlis_skills::skill_set`: a workspace's `skills/` and `skills.local/`, for a
+  chat in that workspace and for the studio filtered to it. Its `skills.local/` is read under
+  the same git rule as the plane root's. A persona's: nothing yet (#2768).
+- **Git:** a workspace's `skills/` follows its LIVE block, which un-ignores
+  `workspaces/<ws>/skills` with the workspace's other shared paths (#2767). Its `skills.local/`
+  is never un-ignored. A persona's is committed.
 
 ### Plane-root files that exist but are **not** this area
 
@@ -1634,6 +1672,8 @@ next layer down answers.
 | `settings.theme.icons` | str | The icon theme the file trees draw while this workspace is in front (FM-3, #1106): the same values as `charter.toml`'s `[theme].icons`, over it and under `charter.local.toml`'s. | `crates/purlis-core/src/extension/project/theme.rs` `resolve_icons` |
 | `settings.theme.colour` | str | The workspace's colour (purlis#281): one of `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, or `#rrggbb`, whose hue is taken. **A workspace's alone**: the project's files cannot set one, and no other layer overrides it. It picks no theme; the window tints the accent, the focus ring and this workspace's tab and chat strip shades of the theme it draws with the hue, at the same luminance, and leaves text and the terminal as they are. Any other value is ignored with a sentence, and the workspace has no colour. | `crates/purlis-core/src/extension/project/theme.rs` `resolve`, `colour_of`; the tint, `app/src/theme/tint.ts` |
 | any other key in `settings.theme`, or `settings.theme` that is not an object | — | Refused by the Workspace level's save, and ignored by the reader: a workspace's theme holds `use`, `appearance`, `icons` and `colour`. | `crates/purlis-core/src/extension/project/theme.rs` `refusals_in_workspace` |
+| `settings.skills.off` | list of str | **ADR 0099 §2, #2767; experimental** behind the `skill-studio` flag. The names of project skills this workspace's chats do not get, though their grant reaches it: each is left out "turned off in this workspace". It only narrows: a skill not granted here stays "not granted to this workspace", and a workspace skill, a built-in skill or a name of no skill is not affected. Written by `purlis skill grant <name> -w <ws> --off` and `--on`; `--on` for a skill not granted here is refused, saying the grant that would reach it. A workspace's setting only: `charter.toml` and `charter.local.toml` hold no `[skills]`. | `purlis_core::skills::turned_off`, through the Workspace settings layer, and handed to `purlis_skills::skill_set` as the chat's `turned_off`; written through `purlis_core::settings::workspace::save` |
+| any other key in `settings.skills`, or `settings.skills.off` that is not a list of strings | — | Refused by the Workspace level's save, and ignored by the reader, which then turns nothing off. | `crates/purlis-core/src/settings/workspace.rs` `skills_refused` |
 | any other key in `settings`, or `settings` that is not an object | — | Refused by the save, and ignored by the reader: a workspace's settings hold `extensions`, `harness_plugins` and `theme` and nothing else. | `crates/purlis-core/src/settings/workspace.rs` `refusals` |
 
 **Written by** Settings at the Workspace level (`settings::workspace::save`, SE-20), which changes only
@@ -2670,16 +2710,20 @@ beside a purlis one is removed when the record is published (V93i).
     `# >>> purlis live workspaces (managed by \`purlis workspace live\`) >>>` and
     `# <<< purlis live workspaces <<<`. Either pair is read, and the block is rewritten in
     place under the project's pair the next time it is written (V93g, V93i).
-  - Eleven lines per LIVE workspace, workspaces sorted by name
+  - Fifteen lines per LIVE workspace, workspaces sorted by name
     (`charter/workspace.py:1396`–`1401`):
     `!/workspaces/<n>/workspace.json`, `!/workspaces/<n>/workspace.md`,
     `!/workspaces/<n>/memory`, `!/workspaces/<n>/memory/**`,
     `!/workspaces/<n>/todos`, `!/workspaces/<n>/todos/**`,
+    `!/workspaces/<n>/work`, `!/workspaces/<n>/work/**`,
     `!/workspaces/<n>/sessions`, `!/workspaces/<n>/sessions/**`,
+    `!/workspaces/<n>/skills`, `!/workspaces/<n>/skills/**`,
     `!/workspaces/<n>/changes`, `!/workspaces/<n>/changes/**`,
-    `/workspaces/<n>/changes/log/`. The `sessions` pair is purlis's (ADR 0064): a
-    workspace's session records follow it, LIVE or LOCAL. A block written before it is brought
-    up to date by `reinit`, as any older block is.
+    `/workspaces/<n>/changes/log/`. The `work` pair (ADR 0088 §3), the `sessions` pair
+    (ADR 0064) and the `skills` pair (ADR 0099, #2767) are purlis's: a workspace's work links,
+    session records and skills follow it, LIVE or LOCAL, and its `skills.local/` stays ignored
+    either way. A block written before them is brought up to date by `reinit`, as any older
+    block is.
   - Lines are joined with `\n` and the block has no trailing newline of its own; the rewrite
     is `re.sub(BEGIN .*? END, block, flags=DOTALL)` (`charter/workspace.py:1412`). A first
     write is inserted directly after the literal line `!/workspaces/.gitkeep\n`
@@ -2694,7 +2738,7 @@ beside a purlis one is removed when the record is published (V93i).
     (`charter/workspace.py:1360`).
   - What a LIVE workspace actually stages is `_ws_meta_paths`
     (`charter/commands_workspace.py:1094`, list built at `charter/commands_workspace.py:1116`): `workspace.json`, `workspace.md`, `memory`,
-    `todos`, `sessions` (purlis; each only if it exists) and `changes` only when `change.has_records`
+    `todos`, `sessions` and `skills` (purlis; each only if it exists) and `changes` only when `change.has_records`
     (`charter/commands_workspace.py:1119`). The two lists must agree and only a test holds
     them together.
   - **In purlis, going LOCAL also untracks** what the block had published

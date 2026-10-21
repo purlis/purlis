@@ -1037,7 +1037,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             WorkspaceCommand::List | WorkspaceCommand::Current | WorkspaceCommand::Recall { .. },
         )
         | Command::Persona(memory::PersonaCommand::List)
-        | Command::Skill(_)
+        | Command::Skill(skill::SkillCommand::List { .. } | skill::SkillCommand::Show { .. })
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
         | Command::Harness(HarnessCommand::List | HarnessCommand::Show { .. })

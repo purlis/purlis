@@ -43,10 +43,12 @@ fn set_in(here: &Here, workspace: Option<&str>, route: Route) -> SkillSet {
         Some(&here.plane),
         &Machine {
             built_in: Some(&here.built_in),
+            ..Machine::default()
         },
         &Chat {
             workspace,
             persona: None,
+            turned_off: &[],
             harness: HarnessSkills { route },
         },
     )
@@ -172,10 +174,12 @@ fn a_chat_with_no_plane_gets_the_built_in_skills_alone() {
         None,
         &Machine {
             built_in: Some(&here.built_in),
+            ..Machine::default()
         },
         &Chat {
             workspace: None,
             persona: None,
+            turned_off: &[],
             harness: HarnessSkills {
                 route: Route::Plugin,
             },
@@ -191,10 +195,11 @@ fn a_plane_without_skills_and_a_machine_without_built_in_skills_give_an_empty_se
 
     let set = skill_set(
         Some(tmp.path()),
-        &Machine { built_in: None },
+        &Machine::default(),
         &Chat {
             workspace: None,
             persona: None,
+            turned_off: &[],
             harness: HarnessSkills {
                 route: Route::Briefing,
             },

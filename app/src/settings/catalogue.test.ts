@@ -38,6 +38,7 @@ const BUILDERS = [
   "accounts.tsx",
   "profiles.tsx",
   "yourLevel.tsx",
+  "skillsSummary.tsx",
 ];
 
 /** A group's address at any depth: a level, then one or more parts. */

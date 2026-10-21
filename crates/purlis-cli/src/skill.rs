@@ -1,14 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis skill list | show` (SK-2, #2765): the skills a chat in this project gets, and why each
-//! other one is left out, as the Skill studio shows them. Read only, and behind the
-//! `skill-studio` flag until its finish line (#2786).
+//! `purlis skill list | show | grant | share` (SK-2, #2765; SK-4, #2767): the skills a chat in
+//! this project gets, and why each other one is left out, as the Skill studio shows them; where a
+//! project skill reaches and what a workspace turned off; and Share. Behind the `skill-studio`
+//! flag until its finish line (#2786).
 
 use std::path::Path;
 
 use clap::Subcommand;
-use purlis_core::skills::StudioRow;
+use purlis_core::skills::{Grant, StudioRow};
 use serde_json::{Value, json};
 
 use crate::memory::Code;
@@ -17,7 +18,8 @@ use crate::voice;
 /// `purlis skill …`.
 #[derive(Subcommand)]
 pub enum SkillCommand {
-    /// Every skill a chat at the plane root gets, with its level (`built-in`, `project`), and
+    /// Every skill a chat at the plane root gets, with its level (`built-in`, `project`,
+    /// `workspace`, and `local` for a local skill), and
     /// every skill left out of it with why. With `-w`, a chat in that workspace's.
     List {
         /// The workspace whose chats' skills to list (default: a chat at the plane root).
@@ -39,6 +41,35 @@ pub enum SkillCommand {
         /// Answer as JSON, for a chat or a script.
         #[arg(long)]
         json: bool,
+    },
+    /// Where a project skill reaches: `root` (chats at the project's root only, the default),
+    /// `all` (every workspace too), or the workspaces named. With `-w <ws> --off` or `--on`, that
+    /// workspace turns a skill granted to it off, or back on: it can never turn on one it was not
+    /// granted.
+    Grant {
+        /// The project skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// `root`, `all`, or one or more workspace names.
+        #[arg(conflicts_with = "workspace")]
+        grant: Vec<String>,
+        /// The workspace that turns the skill off or on (with `--off` or `--on`).
+        #[arg(short = 'w', long = "workspace", requires = "switch")]
+        workspace: Option<String>,
+        /// Turn the skill off in that workspace.
+        #[arg(long, group = "switch", requires = "workspace")]
+        off: bool,
+        /// Turn it back on in that workspace, where the project granted it.
+        #[arg(long, group = "switch", requires = "workspace")]
+        on: bool,
+    },
+    /// Share a local skill: move it from `skills.local/` into `skills/` at its level, so the
+    /// next save commits it and the team gets it. With `-w`, that workspace's local skill.
+    Share {
+        /// The local skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// The workspace whose local skill to share (default: the project's root).
+        #[arg(short = 'w', long = "workspace")]
+        workspace: Option<String>,
     },
 }
 
@@ -97,7 +128,75 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
             Ok(0)
         }
+        SkillCommand::Grant {
+            name,
+            workspace: Some(workspace),
+            on,
+            ..
+        } => match purlis_core::skills::switch(root, &workspace, &name, on) {
+            Ok(changed) => {
+                let state = if on { "on" } else { "off" };
+                if changed {
+                    voice::ok(&format!(
+                        "{name} is {state} in {workspace}. purlis save commits it where \
+                         {workspace} is LIVE."
+                    ));
+                } else {
+                    voice::ok(&format!("{name} was already {state} in {workspace}."));
+                }
+                Ok(0)
+            }
+            Err(why) => {
+                voice::err(&why);
+                Ok(1)
+            }
+        },
+        SkillCommand::Grant { name, grant, .. } => {
+            let grant = match Grant::from_words(&grant) {
+                Ok(grant) => grant,
+                Err(why) => {
+                    voice::err(&format!(
+                        "{why}. Say where it reaches: root (the project's root only), all (every \
+                         workspace), or the workspaces' names. To turn it off in a workspace: \
+                         purlis skill grant <name> -w <workspace> --off"
+                    ));
+                    return Ok(2);
+                }
+            };
+            match purlis_core::skills::grant(root, &name, &grant) {
+                Ok(_) => {
+                    voice::ok(&format!(
+                        "{name} is granted to {grant}. purlis save commits it."
+                    ));
+                    Ok(0)
+                }
+                Err(why) => {
+                    voice::err(&why);
+                    Ok(1)
+                }
+            }
+        }
+        SkillCommand::Share { name, workspace } => {
+            match purlis_core::skills::share_here(root, workspace.as_deref(), &name) {
+                Ok(folder) => {
+                    voice::ok(&format!(
+                        "{name} is shared: it is in {} now, and purlis save commits it.",
+                        voice::rel(root, &folder)
+                    ));
+                    Ok(0)
+                }
+                Err(why) => {
+                    voice::err(&why);
+                    Ok(1)
+                }
+            }
+        }
     }
+}
+
+/// The level a row is shown at, as the studio shows it: `project`, `local project`.
+fn level(row: &StudioRow) -> String {
+    purlis_core::skills::level_shown(row.origin, row.local)
 }
 
 /// `on`, or why it is left out.
@@ -116,6 +215,8 @@ fn row_json(row: &StudioRow) -> Value {
         "left_out": row.left_out,
         "description": row.description,
         "folder": row.folder,
+        "local": row.local,
+        "grant": row.grant,
     })
 }
 
@@ -123,11 +224,14 @@ fn detail(row: &StudioRow) -> String {
     let mut text = format!(
         "{}\n  level: {}\n  folder: {}\n",
         row.name,
-        row.origin.level(),
+        level(row),
         row.folder
     );
     if !row.description.is_empty() {
         text.push_str(&format!("  description: {}\n", row.description));
+    }
+    if let Some(grant) = &row.grant {
+        text.push_str(&format!("  grant: {grant}\n"));
     }
     text.push_str(&format!("  in this chat's skills: {}\n", state(row)));
     text
@@ -141,17 +245,18 @@ fn table(rows: &[StudioRow]) -> String {
     }
     let states: Vec<String> = rows.iter().map(state).collect();
     let name_w = voice::column(rows.iter().map(|row| row.name.as_str()).chain(["SKILL"]));
-    let level_w = voice::column(rows.iter().map(|row| row.origin.level()).chain(["LEVEL"]));
+    let levels: Vec<String> = rows.iter().map(level).collect();
+    let level_w = voice::column(levels.iter().map(String::as_str).chain(["LEVEL"]));
     let mut text = format!(
         "{}  {}  STATE\n",
         voice::pad("SKILL", name_w),
         voice::pad("LEVEL", level_w)
     );
-    for (row, state) in rows.iter().zip(&states) {
+    for ((row, state), level) in rows.iter().zip(&states).zip(&levels) {
         text.push_str(&format!(
             "{}  {}  {}\n",
             voice::pad(&row.name, name_w),
-            voice::pad(row.origin.level(), level_w),
+            voice::pad(level, level_w),
             state
         ));
     }

@@ -29,6 +29,7 @@ import { asked, fileSetting, useSettingsDriver, type Driven, type Wrote } from "
 import type { FileSetting, LiveSetting, SettingsGroup } from "./groups";
 import { THEME_GROUP, themeRows } from "./themeGallery";
 import { workspaceDispatchGroup } from "./dispatch";
+import { workspaceSkillsGroup } from "./skillsSummary";
 
 /**
  * **The Workspace level** (SE-20, #1170; V89b, V89e, V89h): one workspace's settings in the
@@ -150,7 +151,11 @@ function absentSetting(read: WorkspaceRead): LiveSetting {
  * `workspace.json` that is not a JSON object has no file settings to show until it is mended:
  * its standing refusals say why, above the groups.
  */
-export function workspaceGroups(read: WorkspaceRead, switched: () => void): SettingsGroup[] {
+export function workspaceGroups(
+  read: WorkspaceRead,
+  switched: () => void,
+  skillStudio = false,
+): SettingsGroup[] {
   const file: Shown = read.settings;
   const fromFile = (group: string, controls: Control[]): FileSetting[] =>
     file.parsed
@@ -212,6 +217,8 @@ export function workspaceGroups(read: WorkspaceRead, switched: () => void): Sett
         ),
       ],
     },
+    // Its chats' skills (#2767): a summary and the way into the Skill studio, behind its flag.
+    ...(skillStudio ? [workspaceSkillsGroup(read.plane, read.workspace)] : []),
     {
       id: "workspace.plugins",
       label: "Plugins",

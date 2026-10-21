@@ -14,8 +14,9 @@
 use std::path::{Path, PathBuf};
 
 pub use purlis_skills::{
-    Chat, DIR_IN_BUNDLE, Effective, HarnessSkills, LeftOut, Machine, Missing, Origin, Reason,
-    Route, Skill, SkillSet, in_bundle, listing, read,
+    Chat, DIR_IN_BUNDLE, Effective, Grant, HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing,
+    Origin, PROJECT_DIR, Reason, Route, Skill, SkillSet, grant_of, in_bundle, level_dir,
+    level_shown, listing, named, read, set_grant, share,
 };
 
 use crate::harness::{Harness, Kit};
@@ -253,15 +254,142 @@ fn ask(
     persona: Option<&str>,
     route: Route,
 ) -> SkillSet {
+    let kept = |folder: &Path| match plane {
+        Some(at) => crate::profiles::kept_local(at.plane, folder),
+        None => Err("there is no plane to ask git about".to_owned()),
+    };
+    let off = plane
+        .and_then(|at| Some(turned_off(at.plane, at.workspace?)))
+        .unwrap_or_default();
     purlis_skills::skill_set(
         plane.map(|at| at.plane),
-        &Machine { built_in },
+        &Machine {
+            built_in,
+            kept_local: Some(&kept),
+        },
         &Chat {
             workspace: plane.and_then(|at| at.workspace),
             persona,
+            turned_off: &off,
             harness: HarnessSkills { route },
         },
     )
+}
+
+/// **The project skills the workspace `workspace` turned off** (#2767): `settings.skills.off`,
+/// as the Workspace settings layer reads its `workspace.json`. Empty where it names none, or
+/// holds something other than a list of names, which that layer's save refuses to write.
+pub fn turned_off(plane: &Path, workspace: &str) -> Vec<String> {
+    use crate::settings::workspace::{SKILLS, SKILLS_OFF};
+    crate::settings::workspace::read(plane, workspace)
+        .and_then(|table| {
+            let names = table.get(SKILLS)?.get(SKILLS_OFF)?.as_array()?;
+            names
+                .iter()
+                .map(|name| name.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()
+        })
+        .unwrap_or_default()
+}
+
+/// The folder of the project skill named `name` in the plane at `plane`: in its `skills/`, else
+/// in its `skills.local/`, or `None` where neither holds one.
+pub fn project_folder(plane: &Path, name: &str) -> Option<PathBuf> {
+    [false, true]
+        .into_iter()
+        .filter_map(|local| level_dir(plane, None, local))
+        .find_map(|dir| named(&dir, name))
+}
+
+/// **`purlis skill grant <name> <grant>`** (#2767): writes `grant` as where the project skill
+/// `name` reaches, and says its folder. Refused, writing nothing, on a project purlis opens
+/// read-only, for a name no project skill has, and for a workspace the plane does not have, so a
+/// typo never grants a name nobody has.
+pub fn grant(plane: &Path, name: &str, grant: &Grant) -> Result<PathBuf, String> {
+    crate::settings::writable(plane)?;
+    if let Grant::Only(names) = grant {
+        let held = crate::workspaces::Plane::open(plane);
+        for ws in names {
+            if !held.workspace(ws).is_ok_and(|one| one.dir().is_dir()) {
+                return Err(format!(
+                    "this project has no workspace {ws:?}, so nothing was granted: \
+                     `purlis workspace list` lists them"
+                ));
+            }
+        }
+    }
+    let folder = project_folder(plane, name).ok_or_else(|| no_project_skill(name))?;
+    set_grant(&folder, grant)?;
+    Ok(folder)
+}
+
+/// **Turns the project skill `name` off (`on` false) or back on in `workspace`** (#2767): its
+/// `settings.skills.off`, through the Workspace level's own save. A workspace can only take
+/// away what a grant gave, so a skill whose grant does not reach `workspace` is refused either
+/// way, saying the grant that would. `Ok(false)` where it already was so, and nothing is written.
+pub fn switch(plane: &Path, workspace: &str, name: &str, on: bool) -> Result<bool, String> {
+    let held = crate::workspaces::Plane::open(plane);
+    if !held
+        .workspace(workspace)
+        .is_ok_and(|one| one.dir().is_dir())
+    {
+        return Err(format!(
+            "this project has no workspace {workspace:?}: `purlis workspace list` lists them"
+        ));
+    }
+    let folder = project_folder(plane, name).ok_or_else(|| no_project_skill(name))?;
+    let reaches = grant_of(&folder).is_ok_and(|grant| grant.reaches(workspace));
+    if !reaches {
+        let what = if on {
+            "cannot be turned on there: a workspace only turns off what the project granted it"
+        } else {
+            "has nothing to turn off there"
+        };
+        return Err(format!(
+            "{name} is not granted to {workspace}, so it {what}. The project grants it at its \
+             root: purlis skill grant {name} {workspace}"
+        ));
+    }
+    let mut off = turned_off(plane, workspace);
+    let was = off.iter().any(|one| one == name);
+    if was != on {
+        return Ok(false);
+    }
+    if on {
+        off.retain(|one| one != name);
+    } else {
+        off.push(name.to_owned());
+    }
+    let read = crate::settings::workspace::read_file(plane, workspace)?;
+    let base = read.exists.then_some(read.text.as_str());
+    let path = vec![
+        crate::settings::Step::Key(crate::settings::workspace::SKILLS.to_owned()),
+        crate::settings::Step::Key(crate::settings::workspace::SKILLS_OFF.to_owned()),
+    ];
+    let value = (!off.is_empty()).then_some(crate::settings::Value::List(off));
+    crate::settings::workspace::save(
+        plane,
+        workspace,
+        base,
+        &[crate::settings::Edit { path, value }],
+    )
+    .map_err(|why| why.join(" "))?;
+    Ok(true)
+}
+
+fn no_project_skill(name: &str) -> String {
+    format!(
+        "no project skill is named {name:?}: a project skill is a folder in skills/ or \
+         skills.local/ at the project's root, and `purlis skill list` lists them"
+    )
+}
+
+/// **Share** (#2767): moves the local skill `name` of the plane root (`workspace` `None`) or of
+/// `workspace` into that level's shared `skills/`, so the plane's save commits it. Refused on a
+/// project purlis opens read-only, whose committed files it does not write.
+pub fn share_here(plane: &Path, workspace: Option<&str>, name: &str) -> Result<PathBuf, String> {
+    crate::settings::writable(plane)?;
+    share(plane, workspace, name)
 }
 
 /// The flag the Skill studio's slices land behind until its finish line (#2762, SK-23), and is
@@ -303,6 +431,12 @@ pub struct StudioRow {
     /// Its name, or its folder's where it names none.
     pub name: String,
     pub origin: Origin,
+    /// Whether it is a local skill, kept on this machine in its level's `skills.local/` (#2767).
+    pub local: bool,
+    /// Where a project skill reaches (`root`, `all`, or the workspaces' names), or `None` for a
+    /// skill of another level. A grant that cannot be read reaches the root alone, and says so
+    /// in the left-out line of a workspace's chat.
+    pub grant: Option<String>,
     /// Why a chat does not get it, in one line, or `None` where it does.
     pub left_out: Option<String>,
     /// What it does: its `description`, empty for a copy left out.
@@ -312,8 +446,9 @@ pub struct StudioRow {
 }
 
 /// **The studio's rows of `set`**, a set of a chat in the plane at `plane`: every skill it gets
-/// and every one left out, by name and then level, each folder relative to the plane. The one
-/// list the window and the command line draw.
+/// and every one left out, by name, each folder relative to the plane. Of the copies of one name,
+/// the one the chat gets comes first, then each copy left out from the widest level to the
+/// narrowest, as the set lists them (#2767). The one list the window and the command line draw.
 pub fn studio_rows(set: &SkillSet, plane: &Path) -> Vec<StudioRow> {
     let relative = |path: &Path| {
         path.strip_prefix(plane)
@@ -321,29 +456,39 @@ pub fn studio_rows(set: &SkillSet, plane: &Path) -> Vec<StudioRow> {
             .to_string_lossy()
             .into_owned()
     };
+    let grant = |origin: Origin, folder: &Path| {
+        (origin == Origin::Project).then(|| grant_of(folder).unwrap_or(Grant::Root).to_string())
+    };
     let mut rows: Vec<StudioRow> = set
         .effective
         .iter()
-        .map(|e| StudioRow {
-            name: e.skill.name.clone(),
-            origin: e.origin,
-            left_out: None,
-            description: e.skill.description.clone(),
-            folder: relative(e.skill.path.parent().unwrap_or(&e.skill.path)),
+        .map(|e| {
+            let folder = e.skill.path.parent().unwrap_or(&e.skill.path);
+            StudioRow {
+                name: e.skill.name.clone(),
+                origin: e.origin,
+                local: e.local,
+                grant: grant(e.origin, folder),
+                left_out: None,
+                description: e.skill.description.clone(),
+                folder: relative(folder),
+            }
         })
         .chain(set.left_out.iter().map(|l| StudioRow {
             name: l.name.clone(),
             origin: l.origin,
+            local: l.local,
+            grant: grant(l.origin, &l.folder),
             left_out: Some(l.reason.to_string()),
             description: String::new(),
             folder: relative(&l.folder),
         }))
         .collect();
+    // Stable: the set already lists each name's left-out copies widest first.
     rows.sort_by(|a, b| {
         a.name
             .cmp(&b.name)
-            .then(a.origin.level().cmp(b.origin.level()))
-            .then(a.folder.cmp(&b.folder))
+            .then(a.left_out.is_some().cmp(&b.left_out.is_some()))
     });
     rows
 }
