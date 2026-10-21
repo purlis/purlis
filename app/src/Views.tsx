@@ -102,6 +102,8 @@ import { ProposedChangeTab } from "./ProposedChangeTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
+import { SKILL_VIEW, isSkillTab, skillOfView } from "./skillRuns";
+import { SkillTab } from "./SkillTab";
 import {
   SAVING_VIEW,
   LICENCES_VIEW,
@@ -277,6 +279,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [DISPATCHES_VIEW.view]: Send,
   /** Every skill a chat in the project gets, and why (#2765), behind its flag. */
   [SKILL_STUDIO_VIEW.view]: Sparkles,
+  /** One skill's tab, with its runs (SK-3). */
+  [SKILL_VIEW]: Sparkles,
   /** One chat's Activity (#1495). */
   [ACTIVITY_VIEW]: Activity,
   /** One chat's Network (#1662). */
@@ -604,6 +608,15 @@ export function ViewPane({
             scope={scopeOf(view)}
             changed={changed + onDisk}
             onOpenView={onOpenView}
+          />
+        ) : isSkillTab(view) ? (
+          /* One skill's tab (SK-3): its runs, read again when the project changes on disk, and
+             the run its key names marked. */
+          <SkillTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            {...skillOfView(view)}
+            changed={changed + onDisk}
           />
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its

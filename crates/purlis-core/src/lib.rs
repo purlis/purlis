@@ -218,6 +218,7 @@ pub mod shellwrap;
 pub mod shown;
 pub mod silence;
 pub mod skills;
+pub mod skillspan;
 pub mod skilluse;
 pub mod staleclone;
 pub mod standings;

@@ -704,11 +704,11 @@ fn judged(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
     {
         return Err(Refused::Never(brokered_route(Class::Integrity).to_owned()));
     }
-    if let Some(denial) = place
-        .denied
-        .iter()
-        .find(|denial| inside_any(&resolved, &denial.path, place))
-    {
+    if let Some(denial) = place.denied.iter().find(|denial| match denial.reach {
+        super::Reach::AndBelow => inside_any(&resolved, &denial.path, place),
+        // An entry held alone holds nothing below it (#2752).
+        super::Reach::Itself => resolved == denial.path || resolved == super::real(&denial.path),
+    }) {
         return Err(Refused::Never(brokered_route(denial.class).to_owned()));
     }
     // A project manifest too, wherever it is: a granted folder is written past what the chat's
