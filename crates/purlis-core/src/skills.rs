@@ -139,10 +139,26 @@ pub fn lay_out(set: &SkillSet, sets: &Path) -> std::io::Result<Option<PathBuf>> 
             .collect::<String>()
     };
     let folder = sets.join(&digest);
-    if laid_out(&folder, &links) {
+    std::fs::create_dir_all(sets)?;
+    // The sets' folder, opened as a folder itself once: its lock and the removal of an
+    // incomplete folder go through this handle, never back through the path.
+    #[cfg(unix)]
+    let sets_dir = at::folder(sets).map_err(|why| {
+        if at::not_a_folder(&why) {
+            std::io::Error::other(format!("{} is a link, not a folder", sets.display()))
+        } else {
+            why
+        }
+    })?;
+    // Held against [`tidy`] while it is laid out and found: a folder this returns has just been
+    // made or touched, so a tidy after it keeps it for [`TIDY_GRACE`].
+    #[cfg(unix)]
+    let _laying_out = lock_shared_in(&sets_dir)?;
+    #[cfg(not(unix))]
+    let _laying_out = lock_shared(sets)?;
+    if laid_out(&folder, &links) && touched(&folder) {
         return Ok(Some(folder));
     }
-    std::fs::create_dir_all(sets)?;
     let building = tempfile::Builder::new()
         .prefix(&format!(".{digest}."))
         .tempdir_in(sets)?;
@@ -154,8 +170,11 @@ pub fn lay_out(set: &SkillSet, sets: &Path) -> std::io::Result<Option<PathBuf>> 
     for (name, target) in &links {
         link(target, &skills.join(name))?;
     }
-    if folder.exists() {
+    if std::fs::symlink_metadata(&folder).is_ok() {
         // Not complete, so not a set's folder any chat was started with: made again.
+        #[cfg(unix)]
+        at::remove_tree_in(&sets_dir, &digest)?;
+        #[cfg(not(unix))]
         std::fs::remove_dir_all(&folder)?;
     }
     let built = building.keep();
@@ -171,6 +190,337 @@ pub fn lay_out(set: &SkillSet, sets: &Path) -> std::io::Result<Option<PathBuf>> 
             Err(why)
         }
     }
+}
+
+/// Marks `folder` as used now, by its modification time, which [`tidy`] keeps a folder for.
+fn touched(folder: &Path) -> bool {
+    std::fs::File::open(folder)
+        .and_then(|dir| dir.set_modified(std::time::SystemTime::now()))
+        .is_ok()
+}
+
+/// The variable a chat's start carries the folder of links it is handed by (SK-24): set by the
+/// host as it arms the chat ([`crate::hoststart::armed`]), and taken out of the chat's
+/// environment again by [`take_hold`] where its terminal is started, so its program never sees
+/// it and the terminal notes, while the program runs, that it uses the folder.
+pub const SET_ENV: &str = "PURLIS_SKILL_SET";
+
+/// The folder of a set's folder's notes, beside the sets: `<sets>/.held/<digest>/<pid>`, one
+/// file for each running program that was handed it ([`crate::session::Spec::holds`]).
+pub(crate) const HELD: &str = ".held";
+
+/// The file [`lay_out`] and [`tidy`] take turns on, in the folder of the sets.
+const LOCK: &str = ".lock";
+
+/// How long a set's folder is kept after it was last laid out or found, whether or not a
+/// running program is noted as using it: the time between a host laying it out and the chat's
+/// terminal noting it, with room to spare.
+#[cfg_attr(not(unix), allow(dead_code))]
+pub(crate) const TIDY_GRACE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// **Where a program handed the set's folder `linked` is noted as using it**: `<sets>/.held/
+/// <digest>`, or `None` for a folder that is not a set's folder of links ([`lay_out`]'s
+/// `<sets>/<digest>`, a real folder).
+pub(crate) fn hold_of(linked: &Path) -> Option<PathBuf> {
+    let digest = linked.file_name()?.to_str()?;
+    let sets = linked.parent()?;
+    (is_digest(digest)
+        && sets.file_name() == Some(std::ffi::OsStr::new(crate::hoststart::SKILL_SETS))
+        && crate::leftovers::is_plain_dir(linked))
+    .then(|| sets.join(HELD).join(digest))
+}
+
+/// **Takes [`SET_ENV`] out of a chat's `env`**, and answers where its program is noted as using
+/// the folder it names ([`hold_of`]), where it names a set's folder.
+pub fn take_hold(env: &mut Vec<(std::ffi::OsString, std::ffi::OsString)>) -> Option<PathBuf> {
+    // Under every name it goes by (V93k), as the chat's environment twins it.
+    let names = crate::envvar::spellings(SET_ENV);
+    let mut handed = None;
+    env.retain(|(key, value)| {
+        if !names.iter().any(|name| key == name.as_str()) {
+            return true;
+        }
+        handed.get_or_insert_with(|| PathBuf::from(value));
+        false
+    });
+    handed.as_deref().and_then(hold_of)
+}
+
+/// What one [`tidy`] did: the sets' folders it removed, by digest, and each it could not, with
+/// why.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Tidied {
+    pub removed: Vec<String>,
+    pub failed: Vec<(String, String)>,
+    /// Nothing was looked at: a chat's start was laying its folder out, and a tidy never makes
+    /// one wait. The next tidy looks.
+    pub busy: bool,
+}
+
+/// **Removes every set's folder under `sets` no running program uses** (SK-24): one no live
+/// program is noted in ([`HELD`]) and that was not laid out or found within [`TIDY_GRACE`],
+/// with its notes, and what a lay-out that never finished left. A tidy never makes a chat's
+/// start wait: while one is laying a folder out ([`lay_out`]), it looks at nothing (`busy`).
+///
+/// **Only `sets`' own entries are removed, by the names purlis gives them**: a folder named by
+/// a digest, a lay-out's leftover beside it, and the notes in [`HELD`] named by a process id.
+/// **Nothing is read, removed or written through a link**, even one put in place after a check:
+/// `sets`, [`HELD`], each folder of notes and each folder removed are opened as folders
+/// themselves and worked through their handles (`skills::at`). A link at [`HELD`] or at a
+/// folder of notes keeps the folders it may speak for. The links inside a set's folder are
+/// removed as links. Off unix nothing is removed: whether a program still runs cannot be
+/// asked there ([`crate::process::alive`]).
+pub fn tidy(sets: &Path) -> std::io::Result<Tidied> {
+    #[cfg(unix)]
+    {
+        tidy_through_handles(sets)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = sets;
+        Ok(Tidied::default())
+    }
+}
+
+/// What a folder of notes says of its set's folder.
+#[cfg(unix)]
+#[derive(PartialEq)]
+enum Notes {
+    /// None of a running program, or none at all.
+    None,
+    /// One of a running program, or notes that cannot be read for a link in their place.
+    Kept,
+}
+
+#[cfg(unix)]
+fn tidy_through_handles(sets: &Path) -> std::io::Result<Tidied> {
+    use rustix::fs::FileType;
+    let mut tidied = Tidied::default();
+    let sets_dir = match at::folder(sets) {
+        Ok(dir) => dir,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound || at::not_a_folder(&why) => {
+            return Ok(tidied);
+        }
+        Err(why) => return Err(why),
+    };
+    let Some(_tidying) = try_lock_in(&sets_dir)? else {
+        tidied.busy = true;
+        return Ok(tidied);
+    };
+    let now = std::time::SystemTime::now();
+    let fresh = |entry: &at::Entry| {
+        entry.modified.is_some_and(|modified| {
+            now.duration_since(modified)
+                .is_ok_and(|age| age < TIDY_GRACE)
+        })
+    };
+    // `None` where there are no notes at all; `Err` where something not a folder is in their
+    // place, which keeps every set's folder.
+    let held_dir = match at::folder_in(&sets_dir, HELD) {
+        Ok(dir) => Ok(Some(dir)),
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(why) => Err(why),
+    };
+    let notes_of = |digest: &str| match &held_dir {
+        Err(_) => Notes::Kept,
+        Ok(None) => Notes::None,
+        Ok(Some(held)) => match at::folder_in(held, digest) {
+            Ok(notes) => still_held(&notes),
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => Notes::None,
+            Err(_) => Notes::Kept,
+        },
+    };
+    for entry in at::entries(&sets_dir)? {
+        let name = entry.name.clone();
+        let digest = is_digest(&name);
+        if entry.kind != FileType::Directory || !(digest || leftover(&name)) || fresh(&entry) {
+            continue;
+        }
+        if digest && notes_of(&name) == Notes::Kept {
+            continue;
+        }
+        match at::remove_tree_in(&sets_dir, &name) {
+            Ok(()) => {
+                if digest {
+                    if let Ok(Some(held)) = &held_dir {
+                        let _ = at::remove_empty_folder_in(held, &name);
+                    }
+                    tidied.removed.push(name);
+                }
+            }
+            Err(why) => tidied.failed.push((name, why.to_string())),
+        }
+    }
+    // Notes of a folder that has gone, of programs that have gone too.
+    if let Ok(Some(held)) = &held_dir {
+        for entry in at::entries(held)? {
+            let gone = at::entry_in(&sets_dir, &entry.name)?.is_none();
+            if entry.kind == FileType::Directory
+                && is_digest(&entry.name)
+                && gone
+                && notes_of(&entry.name) == Notes::None
+            {
+                let _ = at::remove_empty_folder_in(held, &entry.name);
+            }
+        }
+    }
+    Ok(tidied)
+}
+
+/// **What the folder of notes `notes` (one set's folder in [`HELD`], opened as a folder itself)
+/// says**: [`Notes::Kept`] where a file in it is named by the id of a process that runs and
+/// that had started by the time the file was written ([`crate::process::could_be_recorded`]).
+/// Every other file named by a process id is removed, through the folder's handle. Anything
+/// not named by one is never removed, only said in the log. A process whose start cannot be
+/// read is taken as the one noted.
+#[cfg(unix)]
+fn still_held(notes: &std::os::fd::OwnedFd) -> Notes {
+    use rustix::fs::FileType;
+    let Ok(entries) = at::entries(notes) else {
+        return Notes::Kept;
+    };
+    let mut held = Notes::None;
+    for entry in entries {
+        let Ok(pid) = entry.name.parse::<u32>() else {
+            tracing::warn!(
+                "purlis: {:?} among a skills folder's notes is not one purlis wrote, so it was \
+                 left as it is",
+                entry.name
+            );
+            continue;
+        };
+        if entry.kind != FileType::RegularFile {
+            continue;
+        }
+        let runs = crate::process::alive(pid)
+            && match (started_at(pid), entry.modified) {
+                (Some(started), Some(written)) => {
+                    crate::process::could_be_recorded(started, written)
+                }
+                _ => true,
+            };
+        if runs {
+            held = Notes::Kept;
+        } else {
+            let _ = at::remove_file_in(notes, &entry.name);
+        }
+    }
+    held
+}
+
+#[cfg(unix)]
+mod at;
+
+#[cfg(unix)]
+fn started_at(pid: u32) -> Option<std::time::SystemTime> {
+    purlis_same_user::Parents::started_at(pid)
+}
+
+/// **[`tidy`] of this user's sets' folders, said in the log**, on a thread of its own after
+/// `wait`, so nothing waits on it: what the app does as it starts and after a chat closes.
+///
+/// A fenced test build tidies nothing outside its fence, as it reads no store there
+/// ([`studio_on_here`]).
+pub fn tidy_here_later(wait: std::time::Duration) {
+    let Some(sets) = crate::hoststart::skill_sets_here()
+        .filter(|sets| !crate::fence::FENCED || crate::fence::inside(sets, &crate::fence::fence()))
+    else {
+        return;
+    };
+    let _ = std::thread::Builder::new()
+        .name("purlis-skill-sets-tidy".into())
+        .spawn(move || {
+            std::thread::sleep(wait);
+            said_in_the_log(&sets, tidy(&sets));
+        });
+}
+
+/// How long after a chat closes its sets are tidied ([`tidy_here_later`]): time for its program
+/// to be ended and its note to go, so the folder it used goes in the same tidy.
+pub const TIDY_AFTER_A_CLOSE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// What a [`tidy`] of `sets` did, in the log.
+pub fn said_in_the_log(sets: &Path, tidied: std::io::Result<Tidied>) {
+    match tidied {
+        Ok(tidied) => {
+            if tidied.busy {
+                tracing::debug!(
+                    "purlis: a chat was starting, so unused skills folders in {} are looked \
+                     for after the next chat closes",
+                    sets.display()
+                );
+            }
+            for digest in &tidied.removed {
+                tracing::info!(
+                    "purlis: removed the skills folder {digest} in {}: no running chat uses it",
+                    sets.display()
+                );
+            }
+            for (digest, why) in &tidied.failed {
+                tracing::warn!(
+                    "purlis: the skills folder {digest} in {} could not be removed ({why}); \
+                     it is tried again after the next chat closes",
+                    sets.display()
+                );
+            }
+        }
+        Err(why) => tracing::warn!(
+            "purlis: unused skills folders in {} could not be looked for ({why}); they are \
+             looked for again after the next chat closes",
+            sets.display()
+        ),
+    }
+}
+
+/// Whether `name` is a set's folder's: a SHA-256, in lowercase hex.
+fn is_digest(name: &str) -> bool {
+    crate::leftovers::is_lowercase_hex(name, 64)
+}
+
+/// Whether `name` is what a lay-out that never finished left: `.<digest>.<suffix>`.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn leftover(name: &str) -> bool {
+    name.strip_prefix('.')
+        .and_then(|rest| rest.split_once('.'))
+        .is_some_and(|(digest, suffix)| {
+            is_digest(digest)
+                && !suffix.is_empty()
+                && suffix.bytes().all(|b| b.is_ascii_alphanumeric())
+        })
+}
+
+/// The sets' lock ([`LOCK`]) in the folder `sets`, opened through its handle and never through
+/// a link, taken only where nothing holds it: `None` while a lay-out does.
+#[cfg(unix)]
+fn try_lock_in(sets: &std::os::fd::OwnedFd) -> std::io::Result<Option<std::fs::File>> {
+    let file = at::file_in(sets, LOCK)?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(why)) => Err(why),
+    }
+}
+
+/// The sets' lock ([`LOCK`]) in the folder `sets`, opened through its handle and never through
+/// a link, taken shared as a lay-out takes it, until the file is dropped: waiting for a tidy to
+/// finish, which never takes long.
+#[cfg(unix)]
+fn lock_shared_in(sets: &std::os::fd::OwnedFd) -> std::io::Result<std::fs::File> {
+    let file = at::file_in(sets, LOCK)?;
+    file.lock_shared()?;
+    Ok(file)
+}
+
+/// [`lock_shared_in`] where there are no handles to open a folder by.
+#[cfg(not(unix))]
+fn lock_shared(sets: &Path) -> std::io::Result<std::fs::File> {
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(sets.join(LOCK))?;
+    file.lock_shared()?;
+    Ok(file)
 }
 
 /// The plugin manifest a set's folder holds.
