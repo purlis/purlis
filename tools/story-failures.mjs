@@ -18,18 +18,35 @@ const property = (text) =>
     .replace(/:/g, "%3A")
     .replace(/,/g, "%2C");
 
-/** One `::error` line per failed test in a Vitest JSON report. */
+/** Colour codes a terminal reporter leaves in a message. */
+// eslint-disable-next-line no-control-regex
+const ANSI = /\u001b\[[0-9;]*m/g;
+
+/** A line of a stack trace, which says where, not why. */
+const FRAME = /@https?:|^\s*at |^\s*❯/;
+
+/** Each axe rule a message names, as the a11y addon prints it: `"<help> (<rule id>)"`. */
+const RULE = /"[^"\n]*\(([a-z0-9-]+)\)"/g;
+
+/** One `::error` line per failed test in a Vitest JSON report: the story's name, its file, the
+ *  first line of why that is not a stack frame, and the axe rules it broke. */
 export function annotations(report) {
   return report.testResults.flatMap((file) =>
     file.assertionResults
       .filter((one) => one.status === "failed")
       .map((one) => {
+        const message = (one.failureMessages[0] ?? "").replace(ANSI, "");
+        const lines = message.split("\n").map((line) => line.trim());
         const why =
-          (one.failureMessages[0] ?? "")
-            .split("\n")
-            .find((line) => line.trim()) ?? "";
+          lines.find(
+            (line) => line && !FRAME.test(line) && !/^Error:?$/.test(line),
+          ) ?? "";
+        const rules = [
+          ...new Set([...message.matchAll(RULE)].map((found) => found[1])),
+        ];
         const where = file.name.replace(/^.*\/app\//, "");
-        return `::error title=${property(one.fullName)}::${where}: ${why.trim().slice(0, 300)}`;
+        const broke = rules.length > 0 ? ` [axe: ${rules.join(", ")}]` : "";
+        return `::error title=${property(one.fullName)}::${where}: ${why.slice(0, 300)}${broke}`;
       }),
   );
 }

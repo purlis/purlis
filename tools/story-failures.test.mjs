@@ -31,6 +31,30 @@ test("each failed story is one error, named, with the first line of why", () => 
   ]);
 });
 
+test("colour codes and stack frames are left out, and the axe rules broken are named", () => {
+  const report = {
+    testResults: [
+      {
+        name: "/w/app/src/Gates.stories.tsx",
+        assertionResults: [
+          {
+            status: "failed",
+            fullName: "Small Targets",
+            failureMessages: [
+              "expectWrapper@http://localhost:1/deps/test.js:1:2\nError: \u001b[2mexpect(\u001b[22mreceived).toHaveNoViolations()\n" +
+                'Received:\n  "All touch targets must be 24px large, or leave sufficient space (target-size)"\n' +
+                'Received:\n  "All touch targets must be 24px large, or leave sufficient space (target-size)"',
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(annotations(report), [
+    "::error title=Small Targets::src/Gates.stories.tsx: Error: expect(received).toHaveNoViolations() [axe: target-size]",
+  ]);
+});
+
 test("a report with nothing failed says nothing", () => {
   assert.deepEqual(annotations({ testResults: [] }), []);
 });
