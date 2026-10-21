@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792572537307,
+  "lastUpdate": 1792573951735,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20454,6 +20454,48 @@ window.BENCHMARK_DATA = {
             "value": 101.527163,
             "unit": "ms",
             "extra": "median of 5 runs: 100.329, 101.027, 101.527, 101.684, 101.798 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "524e1aeb6d379b1b4306cd816acd6e79fa2eb72f",
+          "message": "SK-24: old skill-set link folders are cleaned up (#2878)\n\n* SK-24: old skill-set link folders are cleaned up\n\nA chat's terminal notes, while its program runs, which skills folder it\nwas handed (<data>/skill-sets/.held/<digest>/<pid>), and skills::tidy\nremoves every set's folder no live note names and that was not laid out\nor found within the hour. The app tidies as it starts and after a chat\ncloses, off the main thread, never making a start wait, and says what it\nremoved in the log. A tidy and the notes work through handles opened\nO_DIRECTORY|O_NOFOLLOW, never back through a path, and only files named\nby a process id are removed from a folder of notes.\n\nCloses #2856\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-24: lay-out, lock and hold go through the sets' handle; a tree too deep is left\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T13:04:33+04:00",
+          "tree_id": "a8e45fd025dd7a46b1d75d68155e2e59aed9568c",
+          "url": "https://github.com/purlis/purlis/commit/524e1aeb6d379b1b4306cd816acd6e79fa2eb72f"
+        },
+        "date": 1792573949382,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5204905,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.516, 0.520, 0.555, 0.565 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.984962000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.508, 16.919, 16.985, 17.031, 17.082 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.1577495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.547, 104.127, 105.158, 105.180, 105.968 ms"
           }
         ]
       }
