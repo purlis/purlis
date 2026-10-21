@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792601718532,
+  "lastUpdate": 1792603539823,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20748,6 +20748,48 @@ window.BENCHMARK_DATA = {
             "value": 104.205581,
             "unit": "ms",
             "extra": "median of 5 runs: 102.949, 103.549, 104.206, 104.497, 104.588 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "63cc8e5bd6d492a5a161e881f141d923892881ee",
+          "message": "Theme parts: one tint pass per theme for the stylesheet and what fell (#2954) (#2976)\n\nstylesheet() and fallen() read one measure of a theme's parts, kept\nfor the last 64 themes drawn and matched by the whole theme, so writing\nthe stylesheet, the theme check and the gallery's cards pass over the\nworkspace tints once per theme. A theme that names no parts costs\nnothing, as before.\n\nA release-build bench (parts_apply_bench, ignored by default) draws the\nsame output in about half the time.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T21:23:10+04:00",
+          "tree_id": "6002786e26db22c203bbd10f18843e36b5f6e71a",
+          "url": "https://github.com/purlis/purlis/commit/63cc8e5bd6d492a5a161e881f141d923892881ee"
+        },
+        "date": 1792603537113,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5173055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.511, 0.517, 0.541, 0.544 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.003991999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.202, 16.832, 17.004, 17.155, 17.179 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.8791315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.472, 103.847, 103.879, 103.996, 104.100 ms"
           }
         ]
       }
