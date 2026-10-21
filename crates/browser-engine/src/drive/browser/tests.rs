@@ -2682,8 +2682,6 @@ fn a_snapshot_gives_no_more_lines_than_the_most_allowed() {
     );
 }
 
-/// Moves the focus in the stand-in's trees: off the Name field, and onto each of `onto`
-/// (frame, node id).
 /// The engine's id for the element the tree of `frame` marks focused.
 fn ax_backend_focused(engine: &Engine, frame: &str) -> i64 {
     super::lock(&engine.model).ax[frame]
@@ -2701,6 +2699,8 @@ fn ax_backend_focused(engine: &Engine, frame: &str) -> i64 {
         .expect("an element the tree marks focused")
 }
 
+/// Moves the focus in the stand-in's trees: off the Name field, and onto each of `onto`
+/// (frame, node id).
 fn focus_on(engine: &Engine, onto: &[(&str, &str)]) {
     let mut model = super::lock(&engine.model);
     for nodes in model.ax.values_mut() {

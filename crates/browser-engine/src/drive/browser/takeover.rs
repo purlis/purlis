@@ -87,6 +87,9 @@ pub(crate) struct Typing {
     /// document number it was blanked under (#2295): a key into it while it keeps the focus
     /// needs no new read of the page.
     focus: Option<Focused>,
+    /// The session whose engine was asked to keep its accessibility tree while the person drives
+    /// (#2967), until the hand-back.
+    tree_kept_on: Option<String>,
 }
 
 /// Whether input lands on what the person saw (#2638), with what judging it read: the page's
@@ -203,6 +206,15 @@ impl Browser {
         }
         self.keep_typing_out();
         lock(&self.typing).focus = None;
+        // The engine keeps its tree no longer than the person drives (#2967).
+        if let Some(session) = lock(&self.typing).tree_kept_on.take() {
+            let _ = self.devtools().call_within(
+                "Accessibility.disable",
+                json!({}),
+                Some(&session),
+                Duration::from_secs(5),
+            );
+        }
         // What a login the person cut had filled is emptied before the agent has the page.
         self.clear_cut_logins();
         let mut lease = lock(&self.lease);
@@ -776,9 +788,6 @@ impl Browser {
         }
     }
 
-    /// Whether the document of `frame` on `session` has an element focused (or one inside a
-    /// frame), though its tree shows none: then a key typed now would go where purlis cannot
-    /// blank it.
     /// The tree around the element that has the focus of the current page's own document, for
     /// the person's first key into a field of the page (#2967): the element, the nodes around
     /// it up to the root, its siblings and its children, never the whole page's tree. Only where
@@ -820,7 +829,7 @@ impl Browser {
         let focused = own["properties"].as_array().into_iter().flatten().any(|p| {
             p["name"] == "focused" && p.pointer("/value/value") == Some(&Value::Bool(true))
         });
-        if !focused || role.starts_with("Iframe") {
+        if !focused || !self.is_a_field(&session, backend, role) {
             return None;
         }
         Some(vec![FrameAx {
@@ -833,9 +842,42 @@ impl Browser {
         }])
     }
 
+    /// Whether the element `backend` of `session`'s document is a field a person types into
+    /// (#2967): a text box, search box, combo box or spin button by its role, or an input, a text
+    /// area or an editable element by its tag; and never an element that holds a document of its
+    /// own (a frame, an object, an embed).
+    fn is_a_field(&self, session: &str, backend: i64, role: &str) -> bool {
+        let Ok(described) = self.devtools().call(
+            "DOM.describeNode",
+            json!({ "backendNodeId": backend }),
+            Some(session),
+        ) else {
+            return false;
+        };
+        let node = &described["node"];
+        if !node["frameId"].is_null() || !node["contentDocument"].is_null() {
+            return false;
+        }
+        let name = node["nodeName"]
+            .as_str()
+            .unwrap_or_default()
+            .to_ascii_uppercase();
+        let editable = node["attributes"]
+            .as_array()
+            .into_iter()
+            .flat_map(|pairs| pairs.chunks(2))
+            .any(|pair| {
+                pair[0] == "contenteditable" && pair.get(1).and_then(Value::as_str) != Some("false")
+            });
+        ["textbox", "searchbox", "combobox", "spinbutton"].contains(&role)
+            || ["INPUT", "TEXTAREA"].contains(&name.as_str())
+            || editable
+    }
+
     /// Readies the engine's tree for the person's first key (#2967): the engine makes its
     /// accessibility tree the first time it is asked, which on a large page is what a first key
-    /// would wait for. Asked once, now, on a thread of its own, for the tree's root.
+    /// would wait for. Its accessibility domain is enabled on the page's session, on a thread of
+    /// its own, so the engine keeps its tree while the person drives; the hand-back disables it.
     fn ready_the_tree_around_the_focus(&self) {
         let Ok(target) = self.target(None) else {
             return;
@@ -846,20 +888,24 @@ impl Browser {
         else {
             return;
         };
+        lock(&self.typing).tree_kept_on = Some(session.clone());
         let devtools = std::sync::Arc::clone(&self.inner.devtools);
         let _ = std::thread::Builder::new()
             .name("purlis-tree-ready".into())
             .spawn(move || {
-                // Its root alone: nothing of the page's own world is run, and nothing is kept.
+                // Nothing of the page's own world is run, and nothing is kept.
                 let _ = devtools.call_within(
-                    "Accessibility.getRootAXNode",
-                    json!({ "frameId": target }),
+                    "Accessibility.enable",
+                    json!({}),
                     Some(&session),
                     Duration::from_secs(30),
                 );
             });
     }
 
+    /// Whether the document of `frame` on `session` has an element focused (or one inside a
+    /// frame), though its tree shows none: then a key typed now would go where purlis cannot
+    /// blank it.
     fn focus_unseen(&self, session: &str, frame: &str) -> bool {
         self.in_world(session, frame, |world| {
             self.devtools().call(

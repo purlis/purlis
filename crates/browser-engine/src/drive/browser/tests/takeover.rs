@@ -1007,6 +1007,46 @@ fn the_first_key_into_the_first_field_reads_only_the_tree_around_it() {
 }
 
 #[test]
+fn a_first_key_on_an_element_that_is_no_field_reads_the_whole_tree() {
+    // Only a field the person types into is read from the tree around it: a link, or a frame's
+    // element, is not (#2967).
+    for backend in [12, 50] {
+        let (browser, engine) = browser();
+        let node = super::super::lock(&engine.model).ax["PAGE-1"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["backendDOMNodeId"] == backend)
+            .and_then(|n| n["nodeId"].as_str().map(str::to_owned))
+            .unwrap();
+        super::focus_on(&engine, &[("PAGE-1", node.as_str())]);
+        super::super::lock(&engine.model).focused_backend = Some(backend);
+        browser.take_over();
+        let aim = aim_now(&browser);
+        let reads = page_reads(&engine);
+
+        let _ = browser.person_input(&key(&aim, "x", true));
+
+        assert!(
+            page_reads(&engine) > reads,
+            "{backend}: the whole tree was not read"
+        );
+    }
+}
+
+#[test]
+fn the_engines_tree_is_kept_ready_while_the_person_drives() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    wait_for("the tree is readied", || {
+        !engine.sent("Accessibility.enable").is_empty()
+    });
+    assert!(engine.sent("Accessibility.disable").is_empty());
+    browser.hand_back();
+    assert_eq!(engine.sent("Accessibility.disable").len(), 1);
+}
+
+#[test]
 fn a_key_into_a_second_field_reads_the_whole_tree() {
     // A code typed one box at a time is kept out whole from the whole page's tree (#2144).
     let (browser, engine) = browser();
