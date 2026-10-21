@@ -179,14 +179,14 @@ export function SkillStudioTab({
                 {onOpenView === undefined ? (
                   <code>{skill.name}</code>
                 ) : (
-                  <button
-                    type="button"
-                    className="ui-button ui-button-ghost ui-button-sm"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     aria-label={`Open ${skill.name}`}
-                    onClick={() => onOpenView(skillView(skill.name), skill.name)}
+                    onPress={() => onOpenView(skillView(skill.name), skill.name)}
                   >
                     <code>{skill.name}</code>
-                  </button>
+                  </Button>
                 )}
               </td>
               <td>

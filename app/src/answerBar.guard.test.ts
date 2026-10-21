@@ -137,7 +137,7 @@ describe("a question dialog's answer bar", () => {
   it("tints a destructive answer with the danger surface under the pointer", () => {
     const family = readFileSync(join(SRC, "ui/button/button.css"), "utf8");
     const hover =
-      /\n\[data-scope="button"\]\[data-part="root"\]\[data-variant="danger"\]\[data-hovered\] \{([^}]*)\}/.exec(
+      /\n\[data-scope="button"\]\[data-part="root"\]\[data-variant="danger"\]\[data-hovered\]:not\(\[data-disabled\]\) \{([^}]*)\}/.exec(
         family,
       )?.[1] ?? "";
     expect(hover).toMatch(/background-color:\s*var\(--danger-surface\)/);
