@@ -2918,6 +2918,8 @@ fn a_window_that_restarts_quickly_is_relayed_with_its_name_on_a_second_try() {
     again
         .call(reach())
         .expect("the window that came back takes its chat back");
+}
+
 #[test]
 fn a_hosts_origin_is_taken_only_as_an_origin_and_anything_else_is_none() {
     // #2300: a runner's host could send any text; the chip is purlis's own words.

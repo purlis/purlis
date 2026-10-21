@@ -1042,6 +1042,10 @@ fn a_window_started_again_says_nothing_of_a_login_the_host_refuses_as_the_person
     assert!(
         said.lock().unwrap().is_empty(),
         "the person drives it: no driver of purlis's or the agent's is said"
+    );
+}
+
+#[test]
 fn a_browser_view_is_told_its_pages_origin_alone_as_the_page_moves() {
     // #2300: what the view's chip names, its origin and nothing else of its address.
     let window = window();
