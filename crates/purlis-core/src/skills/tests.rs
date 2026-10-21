@@ -640,7 +640,7 @@ fn a_tidy_never_waits_on_a_chat_being_started() {
     let sets = tmp.path().join("skill-sets");
     let old = a_set_folder(&sets, A, tmp.path());
     last_laid_out_long_ago(&old);
-    let _starting = lock_shared(&sets).unwrap();
+    let _starting = lock_shared_in(&at::folder(&sets).unwrap()).unwrap();
 
     let tidied = tidy(&sets).unwrap();
 
@@ -701,4 +701,49 @@ fn a_set_folder_that_became_a_link_after_it_was_checked_is_not_removed_through_i
     at::remove_tree_in(&sets_dir, B).unwrap();
     assert!(!folder.exists());
     assert_eq!(everything_in(&outside), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_tree_too_deep_to_be_a_set_folder_is_left_in_place_and_said() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sets = tmp.path().join("skill-sets");
+    let mut deepest = sets.join(A);
+    for _ in 0..at::DEEPEST + 4 {
+        deepest = deepest.join("d");
+    }
+    std::fs::create_dir_all(&deepest).unwrap();
+    std::fs::write(deepest.join("bottom"), "").unwrap();
+    last_laid_out_long_ago(&sets.join(A));
+
+    let tidied = tidy(&sets).unwrap();
+
+    assert!(tidied.removed.is_empty(), "{tidied:?}");
+    assert_eq!(tidied.failed.len(), 1, "{tidied:?}");
+    assert_eq!(tidied.failed[0].0, A);
+    assert!(tidied.failed[0].1.contains("64 folders deep"), "{tidied:?}");
+    assert!(
+        deepest.join("bottom").is_file(),
+        "what is below the limit stays"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_lay_out_into_sets_that_are_a_link_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, mut kit) = a_host_on(tmp.path());
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let sets = tmp.path().join("linked").join(crate::hoststart::SKILL_SETS);
+    std::fs::create_dir_all(sets.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&outside, &sets).unwrap();
+    kit.skill_sets = Some(sets);
+
+    assert!(crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit).is_none());
+    assert_eq!(
+        std::fs::read_dir(&outside).unwrap().count(),
+        0,
+        "nothing written there"
+    );
 }

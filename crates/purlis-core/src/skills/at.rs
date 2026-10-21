@@ -88,14 +88,28 @@ pub(super) fn remove_empty_folder_in(dir: impl AsFd, name: &str) -> std::io::Res
     Ok(rustix::fs::unlinkat(dir, name, AtFlags::REMOVEDIR)?)
 }
 
+/// How many folders deep [`remove_tree_in`] goes: a set's folder is two (`skills/<name>`), so a
+/// tree deeper than this is not one purlis made, and it is left in place.
+pub(super) const DEEPEST: usize = 64;
+
 /// **Removes the folder `name` in `dir` and all it holds**, each folder in it opened as a folder
 /// itself before anything in it is removed: a link anywhere in it is removed as a link, and a
-/// folder that has become a link is refused, never followed.
+/// folder that has become a link is refused, never followed. A tree more than [`DEEPEST`]
+/// folders deep is refused, and what is below that depth is left in place.
 pub(super) fn remove_tree_in(dir: impl AsFd, name: &str) -> std::io::Result<()> {
+    remove_tree_below(dir, name, 0)
+}
+
+fn remove_tree_below(dir: impl AsFd, name: &str, depth: usize) -> std::io::Result<()> {
+    if depth >= DEEPEST {
+        return Err(std::io::Error::other(format!(
+            "it is more than {DEEPEST} folders deep, so what is below that was left in place"
+        )));
+    }
     let folder = folder_in(&dir, name)?;
     for entry in entries(&folder)? {
         if entry.kind == FileType::Directory {
-            remove_tree_in(&folder, &entry.name)?;
+            remove_tree_below(&folder, &entry.name, depth + 1)?;
         } else {
             remove_file_in(&folder, &entry.name)?;
         }

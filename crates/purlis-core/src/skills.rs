@@ -140,14 +140,21 @@ pub fn lay_out(set: &SkillSet, sets: &Path) -> std::io::Result<Option<PathBuf>> 
     };
     let folder = sets.join(&digest);
     std::fs::create_dir_all(sets)?;
-    if !crate::leftovers::is_plain_dir(sets) {
-        return Err(std::io::Error::other(format!(
-            "{} is a link, not a folder",
-            sets.display()
-        )));
-    }
+    // The sets' folder, opened as a folder itself once: its lock and the removal of an
+    // incomplete folder go through this handle, never back through the path.
+    #[cfg(unix)]
+    let sets_dir = at::folder(sets).map_err(|why| {
+        if at::not_a_folder(&why) {
+            std::io::Error::other(format!("{} is a link, not a folder", sets.display()))
+        } else {
+            why
+        }
+    })?;
     // Held against [`tidy`] while it is laid out and found: a folder this returns has just been
     // made or touched, so a tidy after it keeps it for [`TIDY_GRACE`].
+    #[cfg(unix)]
+    let _laying_out = lock_shared_in(&sets_dir)?;
+    #[cfg(not(unix))]
     let _laying_out = lock_shared(sets)?;
     if laid_out(&folder, &links) && touched(&folder) {
         return Ok(Some(folder));
@@ -163,8 +170,11 @@ pub fn lay_out(set: &SkillSet, sets: &Path) -> std::io::Result<Option<PathBuf>> 
     for (name, target) in &links {
         link(target, &skills.join(name))?;
     }
-    if folder.exists() {
+    if std::fs::symlink_metadata(&folder).is_ok() {
         // Not complete, so not a set's folder any chat was started with: made again.
+        #[cfg(unix)]
+        at::remove_tree_in(&sets_dir, &digest)?;
+        #[cfg(not(unix))]
         std::fs::remove_dir_all(&folder)?;
     }
     let built = building.keep();
@@ -491,14 +501,24 @@ fn try_lock_in(sets: &std::os::fd::OwnedFd) -> std::io::Result<Option<std::fs::F
     }
 }
 
-/// The sets' lock ([`LOCK`]), taken shared as a lay-out takes it, until the file is dropped:
-/// waiting for a tidy to finish, which never takes long. Never opened through a link.
+/// The sets' lock ([`LOCK`]) in the folder `sets`, opened through its handle and never through
+/// a link, taken shared as a lay-out takes it, until the file is dropped: waiting for a tidy to
+/// finish, which never takes long.
+#[cfg(unix)]
+fn lock_shared_in(sets: &std::os::fd::OwnedFd) -> std::io::Result<std::fs::File> {
+    let file = at::file_in(sets, LOCK)?;
+    file.lock_shared()?;
+    Ok(file)
+}
+
+/// [`lock_shared_in`] where there are no handles to open a folder by.
+#[cfg(not(unix))]
 fn lock_shared(sets: &Path) -> std::io::Result<std::fs::File> {
-    let mut open = std::fs::OpenOptions::new();
-    open.create(true).truncate(false).write(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut open, libc::O_NOFOLLOW);
-    let file = open.open(sets.join(LOCK))?;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(sets.join(LOCK))?;
     file.lock_shared()?;
     Ok(file)
 }

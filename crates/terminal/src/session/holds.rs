@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The folders that say a session's program runs** ([`super::Spec::holds`]), worked through
-//! handles. Each folder, and the folder it is in, is opened as a folder itself (`O_DIRECTORY |
-//! O_NOFOLLOW`) before the program starts. Its note is then made and removed relative to that
+//! handles. The folder two above a hold is opened by its path, as a folder itself (`O_DIRECTORY
+//! | O_NOFOLLOW`), once; the folder between and the hold are made and opened relative to it,
+//! before the program starts. Its note is then made and removed relative to that
 //! handle. A link put in either place afterwards changes nothing: what was checked is what is
 //! written. Off unix nothing is noted: whether a noted process runs cannot be asked there, so
 //! no caller reads a note.
@@ -75,9 +76,9 @@ mod at {
         )?)
     }
 
-    /// `at`, opened as a folder itself, made first where it is not there.
-    pub(super) fn folder(at: &Path) -> std::io::Result<OwnedFd> {
-        folder_in(CWD, at)
+    /// `at`, an existing folder, opened as a folder itself.
+    pub(super) fn open(at: &Path) -> std::io::Result<OwnedFd> {
+        Ok(rustix::fs::openat(CWD, at, folder_flags(), Mode::empty())?)
     }
 
     /// Makes `name` new in `dir`: never through a link, and never one already there.
@@ -99,10 +100,19 @@ mod at {
 impl Hold {
     #[cfg(unix)]
     fn open(hold: &std::path::Path) -> std::io::Result<Hold> {
-        let (Some(parent), Some(name)) = (hold.parent(), hold.file_name()) else {
+        // The folder the hold's folder is in, opened by its path once; the hold's folder and
+        // the hold below it are made and opened through handles, never back through a path.
+        let parent = hold.parent();
+        let (Some(above), Some(parent_name), Some(name)) = (
+            parent.and_then(std::path::Path::parent),
+            parent.and_then(std::path::Path::file_name),
+            hold.file_name(),
+        ) else {
             return Err(std::io::Error::other("it is in no folder"));
         };
-        let parent = at::folder(parent).map_err(not_a_folder)?;
+        let above = at::open(above).map_err(not_a_folder)?;
+        let parent =
+            at::folder_in(&above, std::path::Path::new(parent_name)).map_err(not_a_folder)?;
         let dir = at::folder_in(&parent, std::path::Path::new(name)).map_err(not_a_folder)?;
         Ok(Hold { dir })
     }
