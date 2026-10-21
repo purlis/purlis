@@ -50,6 +50,7 @@ describe("Use skill…", function () {
   let folder = "";
   let grant = "";
   let wereRunning: Running = {};
+  let size = { width: 0, height: 0 };
 
   before(async () => {
     const root = await projectRoot();
@@ -63,10 +64,12 @@ describe("Use skill…", function () {
     writeFileSync(grant, 'grant = "all"\n');
     await focusWorkspace("alpha");
     wereRunning = await chatsRunning();
+    size = await browser.getWindowSize();
   });
 
   after(async () => {
     await browser.keys(["Escape"]);
+    await browser.setWindowSize(size.width, size.height);
     await endTheChatsStartedSince(wereRunning);
     rmSync(folder, { recursive: true, force: true });
     rmSync(grant, { force: true });
@@ -135,6 +138,8 @@ describe("Use skill…", function () {
   it("opens the same picker from the Skills chip on the chat's pane", async () => {
     // Whatever the step before left open goes first, so this one opens its own.
     await browser.keys(["Escape"]);
+    // The chip is left out of a narrow pane (`App.css`), so the window is wide enough for one.
+    await browser.setWindowSize(1440, 900);
     const chip = await $('[data-testid="pane-skills"]');
     await chip.waitForDisplayed({ timeout: 20_000 });
     await expect(chip).toHaveText(/skills?$/);

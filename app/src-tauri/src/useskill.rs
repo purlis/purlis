@@ -195,11 +195,14 @@ pub(crate) async fn chat_skills(
 /// for the arguments it declares in their order, and never sends it** — or copies it, with the
 /// reason, where it cannot be typed now. A skill that was typed has its run start, by Use
 /// skill…, as the chat's next prompt does.
-// Refused, in the core's sentence, for a skill that is not the chat's. Not a doc comment past
-// here, because the generated bindings carry those.
+// On the window's thread, as every command that types into a chat is (`INPUT_ORDER`): what is
+// typed lands in the order it was sent, and the chat's session is reached as a reference's is.
+// The set is read from the skill folders here, as a reference reads its branch. Refused, in the
+// core's sentence, for a skill that is not the chat's. Not a doc comment past here, because the
+// generated bindings carry those.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn use_skill(
+pub(crate) fn use_skill(
     planes: tauri::State<'_, Planes>,
     clipboard: tauri::State<'_, crate::vaults::SystemClipboard>,
     plane: PlaneId,
@@ -208,17 +211,12 @@ pub(crate) async fn use_skill(
     values: Vec<String>,
 ) -> Result<Handed, String> {
     let held = planes.held(&plane)?;
-    let reading = std::sync::Arc::clone(&held);
-    let typing = crate::off_the_window("reading the chat's skills", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Err("The Skill studio is not turned on on this machine.".to_owned());
-        }
-        let (harness, skills) = of_the_chat(&reading, session).ok_or_else(|| {
-            "purlis types a skill only into a chat on a harness it knows".to_owned()
-        })?;
-        skills.typed(harness, &skill, &values)
-    })
-    .await?;
+    if !purlis_core::skills::studio_on_here() {
+        return Err("The Skill studio is not turned on on this machine.".to_owned());
+    }
+    let (harness, skills) = of_the_chat(&held, session)
+        .ok_or_else(|| "purlis types a skill only into a chat on a harness it knows".to_owned())?;
+    let typing = skills.typed(harness, &skill, &values)?;
     typed_and_held(&held, session, typing, &|text| clipboard.put_text(text))
 }
 
