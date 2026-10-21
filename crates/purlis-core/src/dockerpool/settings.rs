@@ -240,6 +240,8 @@ pub fn only_root_writes(folder: &Path) -> bool {
 pub struct Prepared {
     /// The run's folder, removed once this is dropped.
     folder: tempfile::TempDir,
+    /// Its lock, held until then.
+    lock: std::fs::File,
     /// Each variable and its value.
     pub env: Vec<(&'static str, OsString)>,
 }
@@ -292,6 +294,7 @@ pub fn prepare(from: &Source<'_>) -> Result<Prepared, Refused> {
         })
     };
     private(from.settings_in)?;
+    sweep(from.settings_in, std::time::SystemTime::now());
     let folder = tempfile::Builder::new()
         .prefix("run-")
         .tempdir_in(from.settings_in)
@@ -301,8 +304,19 @@ pub fn prepare(from: &Source<'_>) -> Result<Prepared, Refused> {
                 from.settings_in.display()
             ))
         })?;
-    private(folder.path())?
-        .replace_file("config.json", settings.to_string().as_bytes())
+    let held = private(folder.path())?;
+    // Held for as long as the run goes, so no sweep takes its copy (#2893).
+    let lock = held
+        .replace_file(HELD, b"")
+        .and_then(|()| std::fs::File::open(folder.path().join(HELD)))
+        .and_then(|file| file.lock().map(|()| file))
+        .map_err(|why| {
+            refused(format!(
+                "purlis could not hold the folder for docker's settings in {}: {why}",
+                folder.path().display()
+            ))
+        })?;
+    held.replace_file("config.json", settings.to_string().as_bytes())
         .map_err(|why| {
             refused(format!(
                 "purlis could not write docker's settings in {}: {why}",
@@ -323,7 +337,7 @@ pub fn prepare(from: &Source<'_>) -> Result<Prepared, Refused> {
     if let Some(host) = engine(from.docker_host, &places)? {
         env.push(("DOCKER_HOST", host.into()));
     }
-    Ok(Prepared { folder, env })
+    Ok(Prepared { folder, lock, env })
 }
 
 /// A run's variables, those it is not handed, and what is held until it ends.
@@ -343,8 +357,64 @@ impl Prepared {
             .map(|(name, value)| (OsString::from(name), value))
             .collect();
         let cleared = CLEARED.iter().map(OsString::from).collect();
-        (env, cleared, Box::new(self.folder))
+        (env, cleared, Box::new((self.folder, self.lock)))
     }
+}
+
+/// How old a run's copy must be before it is taken as left behind (#2893).
+pub const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// The file in each run's folder the run holds locked for as long as it goes: a copy whose
+/// lock can be taken belongs to no run.
+const HELD: &str = "run.lock";
+
+/// **Removes the copies runs left behind in `settings_in`** (#2893): each `run-*` folder not
+/// changed in [`STALE_AFTER`] before `now` whose run is not going, which is a run that ended
+/// outright. A run still going holds its folder's lock, and its copy stays however old. Nothing
+/// but a run's folder is touched, nothing is followed through a link, and a `settings_in` that
+/// is not a folder of its own sweeps nothing. How many went.
+pub fn sweep(settings_in: &Path, now: std::time::SystemTime) -> usize {
+    if !std::fs::symlink_metadata(settings_in).is_ok_and(|meta| meta.is_dir()) {
+        return 0;
+    }
+    let Ok(entries) = std::fs::read_dir(settings_in) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let a_run = entry.file_name().to_string_lossy().starts_with("run-");
+        let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
+        let stale = meta
+            .modified()
+            .ok()
+            .and_then(|changed| now.duration_since(changed).ok())
+            .is_some_and(|age| age >= STALE_AFTER);
+        if !a_run || !meta.is_dir() || !stale || still_going(&entry.path()) {
+            continue;
+        }
+        if std::fs::remove_dir_all(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
+/// Whether a run still holds the lock in `folder`.
+fn still_going(folder: &Path) -> bool {
+    let Ok(file) = std::fs::File::open(folder.join(HELD)) else {
+        return false;
+    };
+    matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock))
+}
+
+/// The copies left behind in this machine's `<data>/docker-settings`, swept as the app starts
+/// ([`sweep`]).
+pub fn sweep_at_start() -> usize {
+    crate::datahome::root().map_or(0, |data| {
+        sweep(&data.join(DIR), std::time::SystemTime::now())
+    })
 }
 
 /// Docker's settings at `path`, read up to [`MOST_READ`]: an empty object where there are none,
