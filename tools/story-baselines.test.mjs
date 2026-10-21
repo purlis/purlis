@@ -49,8 +49,21 @@ function png(width = 2, height = 2, extra = Buffer.alloc(0)) {
 }
 
 const PNG = png();
+// Vitest names a picture by the story id with each run of dashes made one.
 const SHOT =
-  "src/settings/__screenshots__/Choice.stories.tsx/settings-choice--radios";
+  "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-radios";
+
+/** Storybook's index (`storybook index`) of the stories with these ids in these files. */
+function indexOf(stories) {
+  const entries = {};
+  for (const [id, file, tags = ["dev", "test"]] of stories)
+    entries[id] = { type: "story", id, importPath: `./${file}`, tags };
+  return { v: 5, entries };
+}
+
+const INDEX = indexOf([
+  ["settings-choice--radios", "src/settings/Choice.stories.tsx"],
+]);
 
 function tree(files) {
   const root = mkdtempSync(join(tmpdir(), "story-baselines-"));
@@ -67,7 +80,7 @@ test("baselines drawn in the Linux image, beside their stories, pass", () => {
     [`${SHOT}-chromium-linux.png`]: PNG,
     [`${SHOT}-webkit-linux.png`]: PNG,
   });
-  assert.deepEqual(problems(app), []);
+  assert.deepEqual(problems(app, INDEX), []);
 });
 
 test("a baseline drawn on another platform is refused, naming it", () => {
@@ -75,7 +88,7 @@ test("a baseline drawn on another platform is refused, naming it", () => {
     "src/settings/Choice.stories.tsx": "",
     [`${SHOT}-chromium-darwin.png`]: PNG,
   });
-  const found = problems(app);
+  const found = problems(app, INDEX);
   assert.equal(found.length, 1);
   assert.match(found[0], /chromium-darwin\.png/);
   assert.match(found[0], /pinned image/);
@@ -83,7 +96,7 @@ test("a baseline drawn on another platform is refused, naming it", () => {
 
 test("a baseline whose story file is gone is refused", () => {
   const app = tree({ [`${SHOT}-webkit-linux.png`]: PNG });
-  const found = problems(app);
+  const found = problems(app, INDEX);
   assert.equal(found.length, 1);
   assert.match(found[0], /Choice\.stories\.tsx/);
 });
@@ -94,7 +107,7 @@ test("gather copies every baseline under its path, and nothing else", () => {
     [`${SHOT}-webkit-linux.png`]: PNG,
   });
   const out = mkdtempSync(join(tmpdir(), "story-baselines-out-"));
-  assert.deepEqual(gather(app, out), [`${SHOT}-webkit-linux.png`]);
+  assert.deepEqual(gather(app, INDEX, out), [`${SHOT}-webkit-linux.png`]);
   assert.deepEqual(readFileSync(join(out, `${SHOT}-webkit-linux.png`)), PNG);
   assert.equal(existsSync(join(out, "src/settings/Choice.stories.tsx")), false);
 });
@@ -102,7 +115,10 @@ test("gather copies every baseline under its path, and nothing else", () => {
 test("take writes drawn baselines into the app", () => {
   const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
   const app = tree({ "src/settings/Choice.stories.tsx": "" });
-  assert.deepEqual(take(drawn, app), [`${SHOT}-chromium-linux.png`]);
+  assert.deepEqual(take(drawn, app), {
+    taken: [`${SHOT}-chromium-linux.png`],
+    removed: [],
+  });
   assert.deepEqual(readFileSync(join(app, `${SHOT}-chromium-linux.png`)), PNG);
 });
 
@@ -176,7 +192,10 @@ test("take refuses a file over the size cap, and more files than the count cap",
     /over the cap/,
   );
   assert.throws(() => take(drawn, app, { files: 1 }), /more than 1/);
-  assert.deepEqual(take(drawn, app, { bytes: PNG.length, files: 2 }).length, 2);
+  assert.equal(
+    take(drawn, app, { bytes: PNG.length, files: 2 }).taken.length,
+    2,
+  );
 });
 
 test("take refuses to write through a link in the app, a file's or a directory's", () => {
@@ -194,4 +213,120 @@ test("take refuses to write through a link in the app, a file's or a directory's
     assert.throws(() => take(drawn, app), /a link/);
   }
   assert.equal(readFileSync(join(elsewhere, "target.png"), "utf8"), "kept");
+});
+
+test("a baseline whose story is gone from its file is refused, naming the story", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-chromium-linux.png`]: PNG,
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-checkboxes-webkit-linux.png":
+      PNG,
+  });
+  const found = problems(app, INDEX);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /story settings-choice-checkboxes /);
+  assert.match(found[0], /Choice\.stories\.tsx/);
+});
+
+test("a baseline is its own story's: one named for a story of another file is refused", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    "src/settings/Other.stories.tsx": "",
+    "src/settings/__screenshots__/Other.stories.tsx/settings-choice-radios-webkit-linux.png":
+      PNG,
+  });
+  const found = problems(app, INDEX);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /story settings-choice-radios /);
+});
+
+test("a baseline of a story that is not run as a test is refused", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  const index = indexOf([
+    ["settings-choice--radios", "src/settings/Choice.stories.tsx", ["dev"]],
+  ]);
+  const found = problems(app, index);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /story settings-choice-radios /);
+});
+
+test("an index that is not Storybook's is refused", () => {
+  const app = tree({ "src/settings/Choice.stories.tsx": "" });
+  assert.throws(() => problems(app, {}), /not a story index/);
+  assert.throws(() => gather(app, null, app), /not a story index/);
+});
+
+test("gather leaves out the baselines of stories that are gone", () => {
+  const gone =
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-gone-webkit-linux.png";
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+    [gone]: PNG,
+  });
+  const out = mkdtempSync(join(tmpdir(), "story-baselines-out-"));
+  assert.deepEqual(gather(app, INDEX, out), [`${SHOT}-webkit-linux.png`]);
+  assert.equal(existsSync(join(out, gone)), false);
+});
+
+test("take deletes every baseline that was not drawn, and nothing else", () => {
+  const gone =
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-gone-webkit-linux.png";
+  const otherPlatform = `${SHOT}-webkit-darwin.png`;
+  const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "story",
+    "src/settings/picture.png": PNG,
+    [`${SHOT}-chromium-linux.png`]: PNG,
+    [gone]: PNG,
+    [otherPlatform]: PNG,
+  });
+  assert.deepEqual(take(drawn, app), {
+    taken: [`${SHOT}-chromium-linux.png`],
+    removed: [gone, otherPlatform].sort(),
+  });
+  assert.equal(existsSync(join(app, gone)), false);
+  assert.equal(existsSync(join(app, otherPlatform)), false);
+  assert.equal(existsSync(join(app, `${SHOT}-chromium-linux.png`)), true);
+  assert.equal(existsSync(join(app, "src/settings/picture.png")), true);
+  assert.equal(
+    readFileSync(join(app, "src/settings/Choice.stories.tsx"), "utf8"),
+    "story",
+  );
+});
+
+test("take deletes nothing through a link, and writes nothing when it would", () => {
+  const elsewhere = tree({
+    "__screenshots__/A.stories.tsx/a-webkit-linux.png": PNG,
+  });
+  const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
+  const app = tree({ "src/settings/Choice.stories.tsx": "" });
+  mkdirSync(join(app, "src/linked"), { recursive: true });
+  symlinkSync(
+    join(elsewhere, "__screenshots__"),
+    join(app, "src/linked/__screenshots__"),
+  );
+  assert.throws(() => take(drawn, app), /a link/);
+  assert.equal(
+    existsSync(
+      join(elsewhere, "__screenshots__/A.stories.tsx/a-webkit-linux.png"),
+    ),
+    true,
+  );
+  assert.equal(existsSync(join(app, `${SHOT}-chromium-linux.png`)), false);
+});
+
+test("take refuses an app that is itself a link", () => {
+  const real = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  const holder = mkdtempSync(join(tmpdir(), "story-baselines-holder-"));
+  symlinkSync(real, join(holder, "app"));
+  const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
+  assert.throws(() => take(drawn, join(holder, "app")), /a link/);
+  assert.equal(existsSync(join(real, `${SHOT}-webkit-linux.png`)), true);
 });

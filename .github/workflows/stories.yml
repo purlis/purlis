@@ -6,7 +6,8 @@ name: stories
 # Every component story run as a test (#2901, `docs/component-stories.md`): in real Chromium and
 # real WebKit, failing on a story that does not render, on a `play` function that fails (its
 # keyboard path), on any axe violation at WCAG 2.2 AA with `target-size` on, and on a picture
-# that is not its baseline.
+# that is not its baseline. A baseline whose story is gone, or no longer runs as a test, fails it
+# too, naming the story: `stories-baselines.yml` deletes it.
 #
 # **One pinned image draws and compares every picture.** A picture differs by its machine's
 # fonts and rasteriser, so it is taken nowhere but in Playwright's own image for the Playwright
@@ -67,8 +68,12 @@ jobs:
             echo "::error::app/package-lock.json locks Playwright $locked, and the stories image is $PLAYWRIGHT_IMAGE: move both workflows' image to v$locked-noble"
             exit 1
           fi
-      - name: Every baseline was drawn in this image
-        run: node ../tools/story-baselines.mjs check
+      # Storybook's own index says which stories there are; a baseline of any other is obsolete.
+      - name: Every baseline was drawn in this image, of a story there is
+        run: |
+          npx storybook index --disable-telemetry --quiet -c .storybook \
+            -o "$RUNNER_TEMP/stories-index.json"
+          node ../tools/story-baselines.mjs check "$RUNNER_TEMP/stories-index.json"
       # Each browser on its own, so each failure can say which browser it failed in: Vitest's
       # JSON report does not.
       - name: The stories, in Chromium and in WebKit
