@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792568582493,
+  "lastUpdate": 1792570031048,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20328,6 +20328,48 @@ window.BENCHMARK_DATA = {
             "value": 101.723882,
             "unit": "ms",
             "extra": "median of 5 runs: 101.133, 101.694, 101.724, 101.735, 102.863 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f6396f859f694c1b6ce063cf9076c0a1777fc572",
+          "message": "Stories check: readable WebKit failures (story, gate, reason) (#2949)\n\n* Probe: one deliberate story failure per gate, raw messages shown (reverted)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Stories check: WebKit failures name the story, gate and reason (#2944)\n\nVitest's JSON report keeps an error's stack alone, and WebKit's stack\ndoes not repeat the message, so every WebKit failure read as a bare\nstack trace. tools/story-failures.mjs is now also the Vitest reporter\nthe job runs: it keeps each failed story's message apart from its\nstack, and each annotation names the gate it failed (renders,\nkeyboard, accessibility, screenshot), told the same way for both\nengines.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Stories check: leave Storybook's debug link out of the reason (#2944)\n\nStorybook's Vitest addon puts a link to the story before the message\nof each story that failed; the reason is the line after it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Revert the deliberate story failures (#2944)\n\nTheir run (39556589493) gave each gate the same annotation in WebKit as\nin Chromium. The probe's raw-message dump went with the reporter's\nrewrite.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Stories check: escaped annotation text, errors outside a story kept (#2944)\n\n- Annotation text is escaped as workflow command data, and a reason is\n  read from the message's first line, whatever ends it. The reason is\n  cut by characters before it is escaped.\n- The reporter keeps a story file's and a suite's own errors, with the\n  file, and whether the run failed; a run that failed naming nothing\n  gets one annotation saying so.\n- The report is written only to an absolute PURLIS_STORY_REPORT.\n- A loader or beforeEach that throws is the renders gate's, and only a\n  frame named play counts as the play function.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T12:03:01+04:00",
+          "tree_id": "a4a537ee0ee151e561cf448617ac2697fbde5fd1",
+          "url": "https://github.com/purlis/purlis/commit/f6396f859f694c1b6ce063cf9076c0a1777fc572"
+        },
+        "date": 1792570028698,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6694435000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.669, 0.669, 0.670, 0.689 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.52822,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.474, 16.483, 16.528, 16.681, 16.814 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.5216135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.970, 102.450, 102.522, 102.798, 103.708 ms"
           }
         ]
       }
