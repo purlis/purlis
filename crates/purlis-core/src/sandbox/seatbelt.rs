@@ -584,7 +584,22 @@ pub fn every_project_rules() -> Result<Vec<String>, &'static str> {
         let regex = format!("^/(.*/)?{}$", either_case(&escaped(manifest)));
         rules.push(format!("(deny file-write* (regex {}))", string(&regex)?));
     }
+    // And every workspace's manifest (#2046), in any case.
+    rules.push(format!(
+        "(deny file-write* (regex {}))",
+        string(&workspace_manifests_regex())?
+    ));
     Ok(rules)
+}
+
+/// The pattern every project's workspace manifests match, `…/workspaces/<workspace>/workspace.json`,
+/// in any case (#2046).
+pub fn workspace_manifests_regex() -> String {
+    format!(
+        "^/(.*/)?{}/[^/]+/{}$",
+        either_case(&escaped(super::WORKSPACES)),
+        either_case(&escaped(super::WORKSPACE_MANIFEST))
+    )
 }
 
 /// **No project's vaults are read, at either level** (#2071): the vaults and the fingerprint key

@@ -1591,3 +1591,69 @@ fn on_linux_no_compiled_profile_reaches_the_system_s_name_lookup() {
         }
     }
 }
+
+#[test]
+fn no_chat_writes_a_workspaces_manifest_at_the_floor_or_in_the_full_sandbox() {
+    let (_dir, root) = project();
+    for workspace in ["alpha", "Beta"] {
+        std::fs::create_dir_all(root.join("workspaces").join(workspace)).expect("a workspace");
+    }
+    let machine = machine_with(Path::new("/opt/none"));
+
+    // The floor, for Codex and opencode: `…/workspaces/<any>/workspace.json`, in any case.
+    let profile = wrapped_floor(Harness::Codex, &root, &machine, &[], None);
+    let rule = format!(
+        "(deny file-write* (regex {}))",
+        seatbelt::string(&seatbelt::workspace_manifests_regex()).expect("a string")
+    );
+    assert!(
+        profile.contains(&rule),
+        "{rule} is not in the floor's profile"
+    );
+    let pattern = regex::Regex::new(&seatbelt::workspace_manifests_regex()).expect("a regex");
+    for held in [
+        "/p/workspaces/alpha/workspace.json",
+        "/p/Workspaces/alpha/Workspace.JSON",
+        "/elsewhere/workspaces/new/workspace.json",
+    ] {
+        assert!(pattern.is_match(held), "{held}");
+    }
+    for free in [
+        "/p/workspaces/alpha/web/workspace.json",
+        "/p/workspaces/workspace.json",
+        "/p/workspaces/alpha/workspace.json.bak",
+    ] {
+        assert!(!pattern.is_match(free), "{free}");
+    }
+
+    // The floor, for Claude Code: its commands and its own tools.
+    let settings = settings_of(&floor_of(decided(Harness::ClaudeCode, &root, &machine)));
+    let deny_write: Vec<String> = strings(&settings.sandbox["filesystem"]["denyWrite"])
+        .iter()
+        .map(|it| claude::uncased(it))
+        .collect();
+    assert!(
+        deny_write.contains(&"/**/workspaces/*/workspace.json".to_owned()),
+        "{deny_write:?}"
+    );
+
+    // The full sandbox: each of the project's workspaces' by its path, in any case.
+    std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("on");
+    let compiled = match decided(Harness::Codex, &root, &machine) {
+        Some(Decided::Sandboxed(applied)) => applied,
+        other => panic!("not sandboxed: {other:?}"),
+    };
+    for workspace in ["alpha", "Beta"] {
+        let path = root
+            .join("workspaces")
+            .join(workspace)
+            .join("workspace.json");
+        assert!(
+            compiled.denied.iter().any(|denial| denial.path == path
+                && denial.any_case
+                && denial.access == Access::Write),
+            "{} is not held",
+            path.display()
+        );
+    }
+}

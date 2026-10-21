@@ -994,6 +994,44 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
     out
 }
 
+/// A workspace's own manifest, `workspaces/<workspace>/workspace.json` (#2046): what the app
+/// reads of the workspace (its repos, its settings, what its sends to a runner leave out). A
+/// chat's sandbox never writes it, as it never writes the project's manifests; the app writes
+/// it for the chat's asks that need it (ADR 0067 §2), and the person changes the rest.
+pub const WORKSPACE_MANIFEST: &str = crate::settings::workspace::FILE;
+
+/// The folder the project's workspaces are in.
+pub const WORKSPACES: &str = "workspaces";
+
+/// **Every workspace's manifest of the project at `root`** a chat is denied writing (#2046):
+/// [`WORKSPACE_MANIFEST`] in each folder of `workspaces/`, as the folder is spelled and as the
+/// kernel names it, under every spelling of the name a case-folding disk takes for it.
+pub fn workspace_manifests_held(root: &Path) -> Vec<Denial> {
+    let mut out: Vec<Denial> = Vec::new();
+    for spelled in [real(root), root.to_path_buf()] {
+        let Ok(entries) = std::fs::read_dir(spelled.join(WORKSPACES)) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                continue;
+            }
+            let denial = Denial {
+                class: Class::LaterCode,
+                path: entry.path().join(WORKSPACE_MANIFEST),
+                access: Access::Write,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: true,
+            };
+            if !out.contains(&denial) {
+                out.push(denial);
+            }
+        }
+    }
+    out
+}
+
 /// Whether this process runs in a chat the app started under a sandbox
 /// ([`crate::hookwire::SANDBOXED_ENV`] is `1`): a tool hook of that chat inherits it.
 pub fn chat_is_sandboxed() -> bool {
@@ -1262,6 +1300,9 @@ impl Denied {
         // the root and the chat's folder are added where the folder is known
         // ([`Applied::form_in`]).
         paths.extend(manifests_held(root, None));
+        // …and every workspace's manifest (#2046): the app reads a workspace's repos and
+        // settings from it, so only the app and the person write it.
+        paths.extend(workspace_manifests_held(root));
         // …and the project's harness declarations (#1458): the app starts a declared harness's
         // program from them, outside any sandbox, once the person approved what they say.
         paths.push(Denial {

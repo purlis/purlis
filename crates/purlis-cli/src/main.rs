@@ -2813,6 +2813,16 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
     ) {
         return None;
     }
+    // The verbs that rewrite a workspace's `workspace.json` are not a sandboxed chat's (#2046).
+    let rewrites = match verb {
+        WorkspaceCommand::Rename { .. } => Some("workspace rename"),
+        WorkspaceCommand::Fork { .. } => Some("workspace fork"),
+        WorkspaceCommand::Snapshot { .. } => Some("workspace snapshot"),
+        _ => None,
+    };
+    if let Some(why) = rewrites.and_then(brokered::manifest_refused) {
+        return Some(refused(&why));
+    }
     let here = match Here::read() {
         Ok(here) => here,
         Err(why) => {

@@ -338,6 +338,19 @@ fn a_sandboxed_chats_clone_and_worktree_are_made_by_the_app_and_say_what_the_ter
             "{written} is not in the clone"
         );
     }
+    // And the workspace's own manifest records it, written by the app: a chat writes no
+    // workspace's `workspace.json` itself.
+    let manifest: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(brokered.join("workspaces/alpha/workspace.json"))
+            .expect("the workspace's manifest"),
+    )
+    .expect("JSON");
+    assert!(
+        manifest["repos"]
+            .as_array()
+            .is_some_and(|repos| repos.iter().any(|repo| repo["name"] == "widget")),
+        "{manifest}"
+    );
 
     // The worktree: the same.
     let args = ["worktree", "add", "widget", "p1", "-w", "alpha"];

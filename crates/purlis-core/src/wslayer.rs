@@ -1376,7 +1376,8 @@ pub fn scaffold(
     if is_clear("workspace.md") {
         let _ = workspace.scaffold_charter();
     }
-    if is_clear("workspace.json") {
+    // A sandboxed chat writes no workspace's manifest (#2046): the app scaffolds it.
+    if is_clear("workspace.json") && !crate::sandbox::chat_is_sandboxed() {
         let _ = workspace.scaffold_manifest(now, author);
     }
     let layer = wire(plane.root(), &dir);

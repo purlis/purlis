@@ -1278,3 +1278,39 @@ fn the_session_record_tool_refuses_a_title_that_is_not_one_line_before_asking_an
     assert!(app.asked.try_recv().is_err(), "the app was asked");
     assert!(records_in_alpha(&tmp).is_empty());
 }
+
+#[test]
+fn a_sandboxed_chat_rewrites_no_workspaces_manifest_and_says_who_does() {
+    let tmp = a_project();
+    let manifest = root(&tmp).join("workspaces/alpha/workspace.json");
+    let held = "{\"name\": \"alpha\", \"repos\": []}\n";
+    std::fs::write(&manifest, held).unwrap();
+    let mut chat = sandboxed_chat(Some("alpha"));
+    // The Skill studio's grant is behind its flag (#2762).
+    chat.push((purlis_core::skills::STUDIO_ENV.to_owned(), "1".to_owned()));
+    for args in [
+        &["workspace", "rename", "alpha", "gamma"][..],
+        &["workspace", "fork", "alpha", "delta"][..],
+        &["workspace", "snapshot", "alpha"][..],
+        &["skill", "grant", "lint", "-w", "alpha", "--off"][..],
+    ] {
+        let out = purlis(&tmp, args, &chat);
+        assert!(!out.status.success(), "{args:?}: {}", said(&out));
+        assert!(
+            said(&out).contains("a sandboxed chat does not write"),
+            "{args:?}: {}",
+            said(&out)
+        );
+    }
+    assert_eq!(std::fs::read_to_string(&manifest).unwrap(), held);
+    for made in ["gamma", "delta"] {
+        assert!(!root(&tmp).join("workspaces").join(made).exists(), "{made}");
+    }
+    // Outside a chat, the same command is the person's, and runs.
+    let out = purlis(&tmp, &["workspace", "rename", "alpha", "gamma"], &[]);
+    assert!(
+        !said(&out).contains("a sandboxed chat does not write"),
+        "{}",
+        said(&out)
+    );
+}
