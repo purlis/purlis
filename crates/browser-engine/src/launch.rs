@@ -90,6 +90,21 @@ impl Launch {
         }
     }
 
+    /// A start of `program` that no install has checked: a test's stand-in engine.
+    #[cfg(test)]
+    pub(crate) fn for_a_test(
+        program: &std::path::Path,
+        data_dir: impl Into<PathBuf>,
+        reach_proxy: ReachProxy,
+    ) -> Self {
+        Self {
+            program: program.to_owned(),
+            data_dir: data_dir.into(),
+            reach_proxy,
+            log: None,
+        }
+    }
+
     /// The same start, the engine's standard output and error written to `log` (#2745): a
     /// file outside the data folder outlives the folder's removal.
     pub fn logging_to(self, log: impl Into<PathBuf>) -> Self {

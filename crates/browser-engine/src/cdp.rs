@@ -23,6 +23,13 @@
 //! half, and any byte that is not UTF-8, is read as U+FFFD. A message that still does not read
 //! as JSON ends the connection.
 //!
+//! **Every call ends within its limit, writing included** (#2123). A call's message is handed to
+//! a writer of its own, on a thread of its own, and the call waits for its answer only as long
+//! as its limit: an engine that stops reading fills the pipe and holds the writer, never the
+//! call, and never another call. At most [`MAX_QUEUED_CALLS`] wait to be written; past that a
+//! call fails at once, as one not answered in time. A call whose limit passed before its turn
+//! is not written at all: what its caller was told failed never reaches the engine.
+//!
 //! **Why it closed is kept** ([`Connection::closed`], [`Closed`]): the end of the pipe, a read
 //! that failed, or the message that ended it, named by its method and never by what it held.
 
@@ -45,6 +52,9 @@ const HEAD_BYTES: usize = 64;
 
 /// How many events wait for the broker before more are dropped (and counted).
 pub const MAX_QUEUED_EVENTS: usize = 1024;
+
+/// How many calls wait to be written before another fails at once (#2123).
+pub const MAX_QUEUED_CALLS: usize = 256;
 
 /// How long [`Connection::call`] waits for an answer.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -157,9 +167,15 @@ struct Shared {
     closed: Mutex<Option<Closed>>,
 }
 
+/// A call's message on its way to the engine's pipe, by the call's id.
+struct Outgoing {
+    id: u64,
+    bytes: Vec<u8>,
+}
+
 /// One DevTools connection over the engine's pipe.
 pub struct Connection {
-    to_engine: Mutex<Box<dyn Write + Send>>,
+    to_engine: SyncSender<Outgoing>,
     next_id: AtomicU64,
     shared: Arc<Shared>,
 }
@@ -185,9 +201,15 @@ impl Connection {
             .name("engine-devtools-reader".to_owned())
             .spawn(move || read_until_ended(from_engine, &reading, &events))
             .expect("a thread to read the engine's pipe");
+        let (outgoing, to_write) = mpsc::sync_channel(MAX_QUEUED_CALLS);
+        let writing = shared.clone();
+        thread::Builder::new()
+            .name("engine-devtools-writer".to_owned())
+            .spawn(move || write_until_dropped(to_engine, &to_write, &writing))
+            .expect("a thread to write to the engine's pipe");
         (
             Self {
-                to_engine: Mutex::new(Box::new(to_engine)),
+                to_engine: outgoing,
                 next_id: AtomicU64::new(1),
                 shared,
             },
@@ -244,13 +266,18 @@ impl Connection {
         }
         let mut bytes = serde_json::to_vec(&message).expect("a JSON value serialises");
         bytes.push(0);
-        let written = {
-            let mut to_engine = lock(&self.to_engine);
-            to_engine.write_all(&bytes).and_then(|()| to_engine.flush())
-        };
-        if let Err(why) = written {
-            self.forget(id);
-            return Err(CallError::Write(why));
+        // Written by the writer; this call waits only for its answer, within its limit, however
+        // long the writing takes (#2123).
+        match self.to_engine.try_send(Outgoing { id, bytes }) {
+            Ok(()) => {}
+            Err(mpsc::TrySendError::Full(_)) => {
+                self.forget(id);
+                return Err(CallError::TimedOut);
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                self.forget(id);
+                return Err(CallError::Ended);
+            }
         }
         match waiting.recv_timeout(timeout) {
             Ok(answer) => answer,
@@ -275,6 +302,39 @@ impl Connection {
     fn forget(&self, id: u64) {
         if let Some(pending) = lock(&self.shared.pending).as_mut() {
             pending.remove(&id);
+        }
+    }
+}
+
+/// Writes each call's message to the engine, in the order they were made, until the connection
+/// is dropped; a call that failed before its turn is not written. A write that fails fails its call, and every later one, with why (#2123): what
+/// follows a broken write would reach the engine cut.
+fn write_until_dropped(mut to_engine: impl Write, calls: &Receiver<Outgoing>, shared: &Shared) {
+    let mut broken: Option<io::ErrorKind> = None;
+    for call in calls {
+        // A call that already failed (its limit passed while it waited) is never written: what
+        // its caller was told failed never reaches the engine (#2123).
+        let waiting = lock(&shared.pending)
+            .as_ref()
+            .is_some_and(|pending| pending.contains_key(&call.id));
+        if !waiting {
+            continue;
+        }
+        let failed = match broken {
+            Some(kind) => Some(io::Error::from(kind)),
+            None => to_engine
+                .write_all(&call.bytes)
+                .and_then(|()| to_engine.flush())
+                .err(),
+        };
+        if let Some(why) = failed {
+            broken.get_or_insert(why.kind());
+            let waiting = lock(&shared.pending)
+                .as_mut()
+                .and_then(|pending| pending.remove(&call.id));
+            if let Some(waiting) = waiting {
+                let _ = waiting.answer.try_send(Err(CallError::Write(why)));
+            }
         }
     }
 }
