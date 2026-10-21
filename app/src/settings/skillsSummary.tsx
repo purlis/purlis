@@ -44,7 +44,7 @@ function summarySetting(plane: PlaneId, workspace: string): LiveSetting {
       const changed = usePlaneChanged([plane], undefined);
       useEffect(() => {
         let live = true;
-        void commands.skillStudio(plane, workspace).then((answer) => {
+        void commands.skillStudio(plane, workspace, null).then((answer) => {
           if (!live) return;
           if (answer.status === "error") setSaid(answer.error);
           else {
