@@ -12,6 +12,7 @@ import {
   type SetupTested,
 } from "./bindings";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** A command's answer, with a call that never reached the core answered as its refusal. */
 function settled<T>(
@@ -271,9 +272,9 @@ export function VaultSignIn({
                   }
                 }}
               />
-              <button type="button" tabIndex={0} disabled={busy} onClick={give}>
+              <Button isDisabled={busy} onPress={give}>
                 Use this token
-              </button>
+              </Button>
             </>
           )}
         />
@@ -326,14 +327,12 @@ export function VaultSignIn({
             />
           )}
           <SettingActions>
-            <button
-              type="button"
-              tabIndex={0}
-              disabled={busy}
-              onClick={() => void begin(null, pinned === "" ? null : pinned)}
+            <Button
+              isDisabled={busy}
+              onPress={() => void begin(null, pinned === "" ? null : pinned)}
             >
               Use this account
-            </button>
+            </Button>
           </SettingActions>
         </>
       )}
@@ -343,9 +342,9 @@ export function VaultSignIn({
           {how === "token"
             ? "purlis has the token for this set-up, and it is not on this page."
             : "purlis signs in through the 1Password app for this set-up."}{" "}
-          <button type="button" className="panel-view" tabIndex={0} disabled={busy} onClick={again}>
+          <Button size="sm" isDisabled={busy} onPress={again}>
             {how === "token" ? "Give another token" : "Choose another account"}
-          </button>
+          </Button>
         </p>
       )}
 
@@ -475,12 +474,12 @@ export function VaultSignIn({
       {/* Each act names what it acts on, the sign-in (`docs/ui-copy.md`, #630). */}
       <SettingActions>
         {begun !== undefined && !refusedAtSignIn && (
-          <button type="button" tabIndex={0} disabled={!ready} onClick={() => void test()}>
+          <Button isDisabled={!ready} onPress={() => void test()}>
             {tested === undefined ? "Test sign-in" : "Test sign-in again"}
-          </button>
+          </Button>
         )}
         {begun !== undefined && tested !== undefined && (
-          <button type="button" tabIndex={0} disabled={!ready} onClick={() => void store()}>
+          <Button isDisabled={!ready} onPress={() => void store()}>
             {existing
               ? tested.failed
                 ? "Store sign-in anyway"
@@ -488,11 +487,11 @@ export function VaultSignIn({
               : tested.failed
                 ? "Create anyway"
                 : "Create vault"}
-          </button>
+          </Button>
         )}
-        <button type="button" tabIndex={0} disabled={busy} onClick={onCancel}>
+        <Button isDisabled={busy} onPress={onCancel}>
           Cancel
-        </button>
+        </Button>
       </SettingActions>
     </>
   );

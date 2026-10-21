@@ -20,6 +20,7 @@ import * as Tooltip from "../overlays/tooltip";
 import { Check, Info, ListFilter } from "lucide-react";
 import { Select } from "../primitives/Select";
 import { useTabStop } from "../roving";
+import { Button } from "../ui/button/Button";
 
 /**
  * **The house settings set** (SE-16, #1166; DS-3 #626; V89f, V89j): the six pieces every
@@ -198,7 +199,9 @@ export function SettingsLayout({
               <RovingFocusGroup.Item key={one.id} asChild tabStopId={one.id}>
                 <button
                   type="button"
-                  className={one.sub ? "ui-settings-sub" : undefined}
+                  className={
+                    one.sub ? "ui-settings-nav-item ui-settings-sub" : "ui-settings-nav-item"
+                  }
                   aria-current={one.id === group ? "true" : undefined}
                   onClick={() => onGroupChange(one.id)}
                 >
@@ -374,35 +377,29 @@ export function SettingRow({
         <div className="ui-setting-control">
           {control({ id, labelledBy, describedBy })}
           {reset && (
-            <button
-              type="button"
-              className="ui-setting-reset ui-button"
-              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-              tabIndex={0}
-              disabled={reset.disabled}
-              onClick={() => {
+            <Button
+              isDisabled={reset.disabled}
+              onPress={() => {
                 reset.onReset();
                 // The button goes once the value is gone; the focus goes back to the control.
                 document.getElementById(id)?.focus();
               }}
+              className="ui-setting-reset"
             >
               {reset.label}
-            </button>
+            </Button>
           )}
           {undo && (
-            <button
-              type="button"
-              className="ui-setting-reset ui-button"
-              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-              tabIndex={0}
-              onClick={() => {
+            <Button
+              onPress={() => {
                 undo();
                 // The button goes once it is pressed; the focus goes back to what it undid.
                 document.getElementById(id)?.focus();
               }}
+              className="ui-setting-reset"
             >
               Undo
-            </button>
+            </Button>
           )}
           {place}
         </div>

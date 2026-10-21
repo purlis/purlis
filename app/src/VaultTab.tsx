@@ -24,6 +24,7 @@ import { counted } from "./Vaults";
 import { saidOfTheOldExport, saidOfTheOthers, VaultSignIn } from "./VaultSignIn";
 import { AnswerBar } from "./AnswerBar";
 import { providerName } from "./vaultProviders";
+import { Button, ButtonRow, ToggleButton } from "./ui/button/Button";
 
 /**
  * **One vault, in a tab of its own** (charter-app#235): its name, its provider and how many
@@ -362,15 +363,14 @@ export function VaultTab({
   /** The way to the set-up, under what the tab says of the token: a 1Password vault's alone. */
   const changeSignIn = contents?.provider === "1password" && (
     <p className="vault-identity-change">
-      <button
-        type="button"
-        className="ui-button ui-button-sm panel-view"
-        tabIndex={0}
-        disabled={moving}
-        onClick={() => setChanging(true)}
+      <Button
+        size="sm"
+        isDisabled={moving}
+        onPress={() => setChanging(true)}
+        className="panel-view"
       >
         Change how this vault signs in
-      </button>
+      </Button>
     </p>
   );
 
@@ -378,14 +378,9 @@ export function VaultTab({
    *  #1296): a provider signed in or unlocked meanwhile is read without reopening the tab. */
   const readAgain = (
     <p>
-      <button
-        type="button"
-        className="ui-button ui-button-sm panel-view"
-        tabIndex={0}
-        onClick={() => setAgain((was) => was + 1)}
-      >
+      <Button size="sm" onPress={() => setAgain((was) => was + 1)} className="panel-view">
         Read again
-      </button>
+      </Button>
     </p>
   );
 
@@ -486,15 +481,14 @@ export function VaultTab({
                   onChange={(e) => setQuery(e.target.value)}
                 />
               </div>
-              <button
-                type="button"
-                className="ui-button ui-button-sm panel-view"
-                tabIndex={0}
-                onClick={add}
+              <Button
+                size="sm"
+                onPress={add}
+                icon={<Plus className="node-icon" aria-hidden="true" />}
+                className="panel-view"
               >
-                <Plus className="node-icon" aria-hidden="true" />
                 Add
-              </button>
+              </Button>
             </div>
 
             {noted}
@@ -505,14 +499,9 @@ export function VaultTab({
                 headline={`${vault} holds no secrets yet`}
                 body="A secret's value goes into the vault and is never shown here."
                 action={
-                  <button
-                    type="button"
-                    className="ui-button ui-button-primary"
-                    tabIndex={0}
-                    onClick={add}
-                  >
+                  <Button variant="primary" onPress={add}>
                     Add a secret
-                  </button>
+                  </Button>
                 }
                 testid="vault-empty"
               />
@@ -739,14 +728,9 @@ function IdentityPanel({
         {elsewhere.map((other) => (
           <p key={other}>
             {onOpenVault ? (
-              <button
-                type="button"
-                className="ui-button ui-button-sm panel-view"
-                tabIndex={0}
-                onClick={() => onOpenVault(other)}
-              >
+              <Button size="sm" onPress={() => onOpenVault(other)} className="panel-view">
                 {other}
-              </button>
+              </Button>
             ) : (
               other
             )}
@@ -779,7 +763,8 @@ function IdentityPanel({
         {say}
         {stillExported}
       </p>
-      <div className="vault-identity-put">
+      {/* One size for the row, the field's (#2897): the token box and its ways out line up. */}
+      <ButtonRow className="vault-identity-put">
         {!several && (
           <>
             <input
@@ -795,34 +780,22 @@ function IdentityPanel({
                 if (e.key === "Enter") put();
               }}
             />
-            <button type="button" className="ui-button" tabIndex={0} disabled={busy} onClick={put}>
+            <Button isDisabled={busy} onPress={put}>
               Put this vault's token in your system keychain
-            </button>
+            </Button>
           </>
         )}
         {inEnv && (
-          <button
-            type="button"
-            className="ui-button ui-button-sm panel-view"
-            tabIndex={0}
-            disabled={busy}
-            onClick={onMove}
-          >
+          <Button isDisabled={busy} onPress={onMove} className="panel-view">
             Move the token from purlis's environment
-          </button>
+          </Button>
         )}
         {unread !== undefined && onAgain && (
-          <button
-            type="button"
-            className="ui-button ui-button-sm panel-view"
-            tabIndex={0}
-            disabled={busy}
-            onClick={onAgain}
-          >
+          <Button isDisabled={busy} onPress={onAgain} className="panel-view">
             Read again
-          </button>
+          </Button>
         )}
-      </div>
+      </ButtonRow>
     </div>
   );
 }
@@ -866,9 +839,9 @@ function Waiting({ vault, onAsk }: { vault: string; onAsk?: () => void }) {
       headline={`${vault} was open when purlis last quit`}
       body={`Reading it uses its token, which macOS may ask you about, so purlis reads it only when you press Read ${vault}.`}
       action={
-        <button type="button" className="ui-button ui-button-primary" tabIndex={0} onClick={onAsk}>
+        <Button variant="primary" onPress={onAsk}>
           {`Read ${vault}`}
-        </button>
+        </Button>
       }
       testid="vault-waits"
     />
@@ -952,26 +925,27 @@ function SecretRow({
         )}
       </td>
       <td>
-        <button
-          type="button"
+        <ToggleButton
+          size="sm"
+          variant="ghost"
           ref={eye}
-          className="ui-button ui-button-ghost ui-button-sm vault-reveal"
-          tabIndex={-1}
+          excludeFromTabOrder
           aria-label={`Reveal ${key}`}
-          aria-pressed={value !== undefined}
-          onClick={onReveal}
+          isSelected={value !== undefined}
+          onPress={onReveal}
           onKeyDown={(event) => {
             if (event.key !== "ArrowLeft") return;
             event.preventDefault();
             name.current?.focus();
           }}
+          className="vault-reveal"
         >
           {value === undefined ? (
             <Eye className="node-icon" aria-hidden="true" />
           ) : (
             <EyeOff className="node-icon" aria-hidden="true" />
           )}
-        </button>
+        </ToggleButton>
       </td>
     </tr>
   );
@@ -1161,23 +1135,12 @@ function ValueDialog({
               </p>
             )}
             <SettingActions>
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={!ready}
-              >
+              <Button variant="primary" type="submit" isDisabled={!ready}>
                 {doing}
-              </button>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                disabled={busy}
-                onClick={onCancel}
-              >
+              </Button>
+              <Button isDisabled={busy} onPress={onCancel}>
                 Cancel
-              </button>
+              </Button>
             </SettingActions>
           </form>
         </Dialog.Content>
@@ -1252,24 +1215,13 @@ function RenameDialog({
               </p>
             )}
             <SettingActions>
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={!ready}
-              >
+              <Button variant="primary" type="submit" isDisabled={!ready}>
                 {/* Said while the core writes it (D-630-3, #1719). */}
                 {writing ? "Renaming…" : "Rename"}
-              </button>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                disabled={busy}
-                onClick={onCancel}
-              >
+              </Button>
+              <Button isDisabled={busy} onPress={onCancel}>
                 Cancel
-              </button>
+              </Button>
             </SettingActions>
           </form>
         </Dialog.Content>
@@ -1327,16 +1279,14 @@ function DeleteDialog({
           )}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button className="ui-button" type="button" tabIndex={0} disabled={busy} ref={cancel}>
+              <Button isDisabled={busy} ref={cancel}>
                 Cancel
-              </button>
+              </Button>
             </AlertDialog.Cancel>
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              disabled={deleting}
-              onClick={() => {
+            <Button
+              variant="danger"
+              isDisabled={deleting}
+              onPress={() => {
                 setDeleting(true);
                 void onDelete().then((refused) => {
                   if (refused === undefined) return;
@@ -1346,7 +1296,7 @@ function DeleteDialog({
               }}
             >
               {deleting ? "Deleting…" : "Delete"}
-            </button>
+            </Button>
           </AnswerBar>
         </AlertDialog.Content>
       </AlertDialog.Portal>

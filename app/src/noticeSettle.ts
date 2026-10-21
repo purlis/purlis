@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { createContext, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * How long after a question formed, or after the tasks it lists changed, a press on it does
@@ -29,6 +29,14 @@ export const grants = (cause: string) =>
   cause.startsWith("dispatch-grant:");
 
 const now = () => Date.now();
+
+/**
+ * **What a press on a Notice's way out asks first** (#1695, #2904): whether the place it is
+ * drawn in lets it act now. A list of Notices that come and go provides one ({@link
+ * useNoticeSettle}'s `allows`); a Notice standing alone acts at once. It is asked in the press
+ * itself, so a press from the keyboard waits as one from the pointer does.
+ */
+export const NoticeWayGuard = createContext<(way: Element) => boolean>(() => true);
 
 /**
  * **The Notices' move-settle guard** (#1695, train 50's and train 54's reviews): a Notice that
@@ -71,18 +79,16 @@ export function useNoticeSettle<T extends HTMLElement>(firstDrawn: "moves" | "st
     watching.observe(root, { childList: true, subtree: true });
     return () => watching.disconnect();
   }, [lookAll]);
-  const guard = (event: MouseEvent) => {
-    const way = (event.target as Element).closest("button.notice-fix");
-    const notice = way?.closest("[data-cause]");
+  const allows = (way: Element): boolean => {
+    const notice = way.closest("[data-cause]");
     const cause = notice?.getAttribute("data-cause");
-    if (!way || !notice || cause === null || cause === undefined || !grants(cause)) return;
+    if (!notice || cause === null || cause === undefined || !grants(cause)) return true;
     if (now() - look(notice) < SETTLE_MS) {
-      event.preventDefault();
-      event.stopPropagation();
       setSaid(NOTICE_MOVED_JUST_NOW);
-      return;
+      return false;
     }
     setSaid(undefined);
+    return true;
   };
-  return { at, guard, said };
+  return { at, allows, said };
 }

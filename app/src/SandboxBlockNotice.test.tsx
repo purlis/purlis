@@ -237,21 +237,25 @@ describe("the block Notice's ways out", () => {
     const allow = screen.getByRole("button", { name: "Allow for me on this machine" });
     const keep = screen.getByRole("button", { name: /^Keep blocked/ });
     const scopes = screen.getByRole("button", { name: "Other scopes…" });
-    expect(allow).toHaveClass("ui-button", "ui-button-grants");
+    expect(allow).toHaveAttribute("data-variant", "grants");
     // The open lock it leads with is hidden from a screen reader: its name is its words.
-    expect(allow.querySelector("svg.ui-button-grants-mark")).toHaveAttribute("aria-hidden", "true");
-    expect(keep).toHaveClass("ui-button");
-    expect(keep).not.toHaveClass("ui-button-grants");
+    expect(allow.querySelector('[data-part="icon"] svg.lucide-lock-open')).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(keep).toHaveAttribute("data-scope", "button");
+    expect(keep).not.toHaveAttribute("data-variant", "grants");
     expect(keep.querySelector("svg")).toBeNull();
     // Neither is the answer purlis suggests.
-    for (const one of ways) expect(one).not.toHaveClass("ui-button-primary");
+    for (const one of ways) expect(one).not.toHaveAttribute("data-variant", "primary");
     // Opening the scopes grants nothing, so it is drawn as Keep blocked is.
-    expect(scopes).not.toHaveClass("ui-button-grants");
+    expect(scopes).not.toHaveAttribute("data-variant", "grants");
     // The order the keyboard meets them in is the line's, Allow first and Keep blocked last.
     expect(ways.indexOf(allow)).toBeLessThan(ways.indexOf(keep));
     await userEvent.click(scopes);
-    expect(screen.getByRole("button", { name: "Allow only for this chat" })).toHaveClass(
-      "ui-button-grants",
+    expect(screen.getByRole("button", { name: "Allow only for this chat" })).toHaveAttribute(
+      "data-variant",
+      "grants",
     );
   });
 

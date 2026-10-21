@@ -57,7 +57,7 @@ describe("a Notice in a pane's corner", () => {
     expect(container.children).toHaveLength(1);
     expect(box).toHaveClass("notice-pane-box", "notice-opened");
     expect([...(box?.children ?? [])].map((one) => one.className)).toEqual([
-      "notice notice-pane notice-trouble ui-button-row",
+      "notice notice-pane notice-trouble",
       "notice-under notice-under-pane",
     ]);
     // What it opened is outside the line: the line is a live region, and a form in one would
@@ -307,7 +307,7 @@ describe("a Notice in the Inbox", () => {
     expect(container.querySelector(".notice-pane-box")).toBeNull();
     // Standing alone, the line is the inline surface itself (#1855).
     expect([...container.children].map((one) => one.className)).toEqual([
-      `notice notice-${at} ui-button-row ui-inline-surface`,
+      `notice notice-${at} ui-inline-surface`,
       `notice-under notice-under-${at}`,
     ]);
     // The mark stays before the sentence, where the Inbox's rules place it.
@@ -373,7 +373,7 @@ describe("the pane Notice's rules", () => {
   });
 
   it("wraps the ways out under the sentence, and never breaks one that fits", () => {
-    // The line is the shared row of buttons that wraps (`.ui-button-row`, #1855), read through
+    // The line is the shared row of buttons that wraps (`ButtonRow`, #1855), read through
     // the window's cascade.
     aPaneNotice();
     const line = screen.getByRole("status", { name: "Vault" });

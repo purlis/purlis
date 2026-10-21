@@ -3,6 +3,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { commands, type PlaneId } from "./bindings";
+import { Button } from "./ui/button/Button";
 
 /** What the form says when it is sent with nothing in it. The core says the same of blanks. */
 export const EMPTY_ANSWER = "The answer is empty, so nothing was sent.";
@@ -156,9 +157,9 @@ export function AnswerQuestion({
           {refused ?? noQuestionSaid(task)}
         </p>
         <div className="answer-actions">
-          <button type="button" className="panel-view" tabIndex={0} onClick={onCancel}>
+          <Button size="sm" onPress={onCancel}>
             Close
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -210,17 +211,12 @@ export function AnswerQuestion({
         </p>
       )}
       <div className="answer-actions">
-        <button
-          type="submit"
-          className="panel-view"
-          tabIndex={0}
-          disabled={sending || shut !== undefined}
-        >
+        <Button size="sm" type="submit" isDisabled={sending || shut !== undefined}>
           Send
-        </button>
-        <button type="button" className="panel-view" tabIndex={0} onClick={onCancel}>
+        </Button>
+        <Button size="sm" onPress={onCancel}>
           {shut === undefined ? "Cancel" : "Close"}
-        </button>
+        </Button>
         {shut === undefined && (
           <span className="answer-how" id={`${ids}-how`}>
             {`${task} is told this is your answer. Enter sends, Shift+Enter starts a new line.`}

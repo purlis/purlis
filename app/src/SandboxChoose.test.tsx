@@ -244,14 +244,18 @@ describe("a socket the sandbox did not name", () => {
     expect(choose).toHaveAttribute("aria-expanded", "true");
     const list = await screen.findByRole("radiogroup", { name: "Socket to allow" });
     expect(list).toHaveClass("ui-choice-radio");
-    expect(screen.getByRole("button", { name: "Use this socket" })).toHaveClass(
-      "ui-button",
-      "ui-button-sm",
-      "ui-button-grants",
+    expect(screen.getByRole("button", { name: "Use this socket" })).toHaveAttribute(
+      "data-variant",
+      "grants",
+    );
+    expect(screen.getByRole("button", { name: "Use this socket" })).toHaveAttribute(
+      "data-size",
+      "sm",
     );
     // It grants: the grant's style, never the suggested answer's (ADR 0097 §6).
-    expect(screen.getByRole("button", { name: "Use this socket" })).not.toHaveClass(
-      "ui-button-primary",
+    expect(screen.getByRole("button", { name: "Use this socket" })).not.toHaveAttribute(
+      "data-variant",
+      "primary",
     );
   });
 

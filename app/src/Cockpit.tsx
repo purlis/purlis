@@ -9,6 +9,7 @@ import type { Catalogued, Offer } from "./actions";
 import type { Piece } from "./bindings";
 import type { Place } from "./pieceViews";
 import type { WorkspaceState } from "./workspaceState";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The branch cockpit's own parts** (FM-5, #1108; #1103 V86 F2): what the explorer draws above
@@ -133,14 +134,14 @@ export function Breadcrumb({
       <nav className="cockpit-crumbs" aria-label="Breadcrumb">
         <ol className="ui-text-meta">
           <li>
-            <button
-              type="button"
-              className="ui-button ui-button-ghost ui-button-sm"
-              onClick={onLeave}
+            <Button
+              size="sm"
+              variant="ghost"
+              onPress={onLeave}
               title="Back to the whole workspace (Esc)"
             >
               {workspace}
-            </button>
+            </Button>
           </li>
           <li>
             <ChevronRight className="node-icon" />
@@ -153,25 +154,25 @@ export function Breadcrumb({
     <nav className="cockpit-crumbs" aria-label="Breadcrumb">
       <ol className="ui-text-meta">
         <li>
-          <button
-            type="button"
-            className="ui-button ui-button-ghost ui-button-sm"
-            onClick={onLeave}
+          <Button
+            size="sm"
+            variant="ghost"
+            onPress={onLeave}
             title="Back to the whole workspace (Esc)"
           >
             {workspace}
-          </button>
+          </Button>
         </li>
         <li>
           <ChevronRight className="node-icon" />
-          <button
-            type="button"
-            className="ui-button ui-button-ghost ui-button-sm"
-            onClick={onLeave}
+          <Button
+            size="sm"
+            variant="ghost"
+            onPress={onLeave}
             title="Back to the whole workspace (Esc)"
           >
             {repo}
-          </button>
+          </Button>
         </li>
         <li>
           <ChevronRight className="node-icon" />
@@ -230,16 +231,16 @@ export function CockpitHeader({
     const offer = offers.get(id);
     if (offer === undefined) return null;
     return (
-      <button
-        type="button"
-        className="ui-button ui-button-sm cockpit-action"
-        disabled={!offer.available}
+      <Button
+        size="sm"
+        isDisabled={!offer.available}
         title={offer.available ? offer.title : offer.reason}
-        onClick={() => onPress(offer)}
+        onPress={() => onPress(offer)}
+        className="cockpit-action"
       >
         <Icon className="node-icon" />
         {label}
-      </button>
+      </Button>
     );
   };
   return (

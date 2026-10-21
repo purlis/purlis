@@ -4,6 +4,7 @@
 import { useId, useState } from "react";
 import { commands, type PersonaSkillChange, type PlaneId } from "./bindings";
 import { Notice } from "./Notice";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A persona's skills in the Skill studio** (SK-5, #2768; spec decision 35): the studio filtered
@@ -90,14 +91,9 @@ export function PersonaSkillAdd({
           <option key={name} value={name} />
         ))}
       </datalist>
-      <button
-        type="submit"
-        className="ui-button"
-        tabIndex={0}
-        disabled={busy || readOnly !== undefined || written.trim() === ""}
-      >
+      <Button type="submit" isDisabled={busy || readOnly !== undefined || written.trim() === ""}>
         {busy ? "Adding…" : "Add"}
-      </button>
+      </Button>
       {refused !== undefined && (
         <Notice
           cause={`persona-skill-add:${persona}`}
@@ -130,14 +126,11 @@ export function PersonaSkillRemove({
   const [refused, setRefused] = useState<string>();
   return (
     <>
-      <button
-        type="button"
-        className="ui-button persona-skill-remove"
-        tabIndex={0}
+      <Button
         aria-label={`Remove ${written} from ${persona}`}
-        disabled={busy || readOnly !== undefined}
+        isDisabled={busy || readOnly !== undefined}
         title={readOnly}
-        onClick={() => {
+        onPress={() => {
           setBusy(true);
           void change(plane, persona, written, "remove").then((said) => {
             setBusy(false);
@@ -145,9 +138,10 @@ export function PersonaSkillRemove({
             if (said === undefined) onChanged();
           });
         }}
+        className="persona-skill-remove"
       >
         {busy ? "Removing…" : "Remove"}
-      </button>
+      </Button>
       {refused !== undefined && (
         <Notice
           cause={`persona-skill-remove:${persona}:${written}`}

@@ -79,11 +79,8 @@ from its parsed form, never copied from the file (ADR 0041, property 4). The win
 the `parts` cascade layer, above the controls and below forced colours. Semantic custom
 properties keep their names, and parts are not Tailwind utilities.
 
-The button family's rules also reach today's control class (`.ui-button`, each variant's class,
-and the native state), so a theme's parts draw on the window as it is. On the class, a variant
-that is not consent never reaches a control that also carries a consent variant's class, and a
-size or a border width never reaches the small and wrapping controls, whose size their own
-classes keep.
+The button family's rules also reached today's control class while the window was drawn by
+one; the family now draws from its wrapper alone ([amended 2026-10-21](0103/2026-10-21-the-button-family-is-reached-by-its-attributes-alone.md)).
 
 ### 7. Floors hold per part and per state, and the consent floors hold for parts unchanged
 
@@ -132,3 +129,8 @@ reaches it.
 - `purlis theme parts` and the schema are what the theme skill, the gallery and an editor read.
 - The family default is the window's own stylesheet, and a test holds the engine's copy of each
   family's colours to it, so the floors measure what the window draws.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0103/`](0103/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`.

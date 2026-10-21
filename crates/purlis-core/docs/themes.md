@@ -266,7 +266,7 @@ an unknown token is.
 
 | Family | Parts | Variants |
 |---|---|---|
-| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept) |
+| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept); since version 2 `soft-accent`, `warning-soft` and `link` |
 
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
 keyboard is on it), `disabled` and `open`.
@@ -337,12 +337,10 @@ A consent variant that breaks one draws its family default there, and where that
 so does the variant it is held apart from. Allow's lock is the window's, and no property reaches
 it.
 
-**On today's controls.** The button family's rules also reach its class (`.ui-button`, each
-variant's class and the native states). A variant that is not consent never reaches a button
-that also carries a consent variant's class, so such a button draws as that consent variant. A
-size (`padding`, `gap`, `font-size`, `font-weight`, `height`, `border-width`) never reaches a
-small button (`.ui-button-sm`) or a button in a wrapping row, whose size their own classes keep,
-and a small button's corners are clamped to its own height.
+**Sizes.** A size (`padding`, `gap`, `font-size`, `font-weight`, `height`, `border-width`) is
+the family's default size, md: it never reaches a button drawn at sm or lg, or one in a row that
+wraps, whose size the family keeps, and an sm or lg button's corners are clamped to its own
+height. A button names one variant, so a variant's rule reaches only a button of that variant.
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
 families with parts today: they are drawn as the note under [Geometry](#geometry) says.

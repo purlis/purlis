@@ -16,6 +16,7 @@ import {
   type ProfileRow,
   type StartOptions,
 } from "./bindings";
+import { Button } from "./ui/button/Button";
 
 /** The runs the script has (`purlis_core::firsttask::RUNS`). */
 const RUNS = [1, 2] as const;
@@ -294,18 +295,14 @@ export function FirstTaskTab({
             {done ? (
               <p className="came-back">
                 {`Started on the branch ${done.branch}.`}{" "}
-                <button type="button" tabIndex={0} onClick={() => does?.showDiff(done)}>
-                  Show its diff
-                </button>
+                <Button onPress={() => does?.showDiff(done)}>Show its diff</Button>
               </p>
             ) : before ? (
               <p className="came-back">
                 {`Started on the branch ${before.branch}.`}{" "}
                 {beforeDiff ? (
-                  <button
-                    type="button"
-                    tabIndex={0}
-                    onClick={() =>
+                  <Button
+                    onPress={() =>
                       does?.showDiff({
                         folder: before.folder,
                         workspace: before.workspace,
@@ -314,7 +311,7 @@ export function FirstTaskTab({
                     }
                   >
                     Show its diff
-                  </button>
+                  </Button>
                 ) : (
                   before.no_diff
                 )}
@@ -369,16 +366,14 @@ export function FirstTaskTab({
                   <FirstOnHarness glance={profile.harness} />
                 )}
                 <SettingActions>
-                  <button
-                    type="button"
-                    tabIndex={0}
-                    disabled={profile === undefined || held(profile) || starting !== undefined}
-                    onClick={() => void start(run)}
+                  <Button
+                    isDisabled={profile === undefined || held(profile) || starting !== undefined}
+                    onPress={() => void start(run)}
                   >
                     {profile?.approval != null
                       ? `Approve and start the ${ORDINAL[run].toLowerCase()}`
                       : `Start the ${ORDINAL[run].toLowerCase()}`}
-                  </button>
+                  </Button>
                 </SettingActions>
               </>
             )}
