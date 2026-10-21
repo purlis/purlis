@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792554692603,
+  "lastUpdate": 1792556285676,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -20076,6 +20076,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3721,
             "unit": "ms",
             "extra": "median of 5 runs: 102.252, 102.287, 102.372, 102.611, 104.098 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0de892e5ef593f46835aacc2f0af84d739ffe06a",
+          "message": "Browsers: a chat's browser tools end to end on a real engine (#2243) (#2824)\n\n* Browsers: a chat's browser tools end to end on a real engine (#2243)\n\nOne test drives every hop at once: the fake harness as a chat in a real\n`purlis serve`, its tool server `purlis mcp` started as a harness starts\none, the window's Ask and browsers over its link to the host, and the\npinned Chrome for Testing on the engine's fixture site. It covers open,\nnavigate, snapshot, find, click, type, wait, screenshot and close; the\nreach proxy and the judge; a login purlis performs, kept out of every\nanswer, and the browser reaching the login's site alone after it; and\nthe window's and the host's log lines for the browser's end. A second\ntest checks that Keep off refuses the next call in words.\n\n`fake-harness --mcp-relay` starts an MCP server as its own child and\nrelays its stdio to a socket, so the server's hook lines come from\ninside the chat.\n\nRefs #2243\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\n\n* Browsers: the relay pumps each line as it comes, and the test is a tests file (#2243)\n\nio::copy splices a socket into a pipe on Linux, and a line sent waited\nthere unread. The end-to-end module is named as a tests file, so the\nlane-writes guard reads it as one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a browser that does not start says what its engine's log said (#2243)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* CI: the pinned engine the end-to-end tests download may make its sandbox (#2243)\n\nUbuntu 23.10 and later let a program make user namespaces only under an\nAppArmor profile that says so. The engine purlis downloads has none, so\nit ended at its start (#2835). The rust job installs a profile for the\nengine under the temporary folder alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the end-to-end test picks each element by its role and name (#2243)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the fixture site's requests are its pages, not the engine's icon (#2243)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the end-to-end test runs in a data home and config home of its own (#2243)\n\nThe window reads them from its environment, as the app does: a login\nreads the data home for a kept store, which a fenced test build holds\nto its temporary folder.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the login's answer is read by the page it left (#2243)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the end-to-end test moves to the browsers module's tests (#2243)\n\nA move alone: browsers_end_to_end_tests.rs is browsers/tests/end_to_end.rs,\nreached through browsers.rs. The lane-writes guard reads a module's tests/\nfolder as tests, as it reads a tests.rs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: what a login filled is painted over in every screenshot after it (#2243)\n\nThe screenshots after the login must answer, and none shows a pixel of\nthe red the fixture site draws a filled value in. A port of this machine\nnobody allowed answers that its page did not load.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a port nobody allowed shows nothing of its page (#2243)\n\nThe engine answers a load its proxy refused with its own page, titled by\nthe address: the test reads that neither the answer nor a snapshot holds\nanything of the fixture's page.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the lane-writes guard reads a tests folder by the path under src (#2243)\n\nA tests folder is one under src, never one in the checkout's own path,\nand the guard fails where it read no source at all.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T08:16:31+04:00",
+          "tree_id": "fb19fcab76460b27a77f7c9babefdc51b5d8489f",
+          "url": "https://github.com/purlis/purlis/commit/0de892e5ef593f46835aacc2f0af84d739ffe06a"
+        },
+        "date": 1792556283838,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6663895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.649, 0.663, 0.666, 0.689, 0.698 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.812078,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.376, 16.590, 16.812, 16.930, 17.016 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.51230050000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.641, 102.139, 102.512, 102.766, 103.036 ms"
           }
         ]
       }
