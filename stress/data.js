@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792541947089,
+  "lastUpdate": 1792541965227,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -9016,6 +9016,42 @@ window.BENCHMARK_DATA = {
             "value": 647.3,
             "unit": "MB",
             "extra": "median of 6 samples: 614.2, 636.2, 646.7, 647.9, 649.9, 733.9 MB; window 380.7 MB, session host 266.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e32127899b743a8ce9fbec873f31550a1791e4e9",
+          "message": "ADR 0063, amended: skill_find, skill_load and the MCP fallback route (SK-13) (#2852)\n\n* ADR 0063, amended: the MCP fallback route and skill_find/skill_load\n\npurlis's MCP server gets skill_find and skill_load on every harness; each\nload opens a skill run. A harness with MCP but no skill format gets\nskills through a fourth route, Mcp: the two tools plus a one-line\nbriefing pointer. ADR 0063 now links its amendments folder.\n\nRefs #2762\nRefs #2776\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* ADR 0063 amendment: narrowing through skill_load, and self-contained\n\nA skill loaded through skill_load keeps its narrowing where the harness\ncan apply it (Claude Code); where it cannot (Codex, opencode, the Mcp\nroute) the load and the badge say narrowing not applied. The amendment\nno longer leans on the other same-day amendment, and drops the bold\ndate line.\n\nRefs #2762\nRefs #2776\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-21T02:57:02+04:00",
+          "tree_id": "0ea5fd33b3d7d79e6d08a3ec8260f27aa4fd23c8",
+          "url": "https://github.com/purlis/purlis/commit/e32127899b743a8ce9fbec873f31550a1791e4e9"
+        },
+        "date": 1792541962951,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1543.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1360.9, 1543.7, 1553.3 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 651.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 619.8, 647.5, 652.1, 651.5, 652.5, 744.1 MB; window 381.8 MB, session host 270.1 MB"
           }
         ]
       }
