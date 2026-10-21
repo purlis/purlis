@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A combo box</title></head>
+<body>
+  <label for="city">City</label>
+  <input id="city" role="combobox" aria-controls="cities" aria-expanded="true"
+         aria-activedescendant="first" autofocus>
+  <ul id="cities" role="listbox">
+    <li id="first" role="option" aria-selected="true">Yerevan</li>
+    <li id="second" role="option">Gyumri</li>
+  </ul>
+  <p id="count">Typed: 0</p>
+  <script>
+    const city = document.getElementById('city');
+    city.focus();
+    city.addEventListener('input', () => {
+      document.getElementById('count').textContent = 'Typed: ' + city.value.length;
+    });
+  </script>
+</body></html>

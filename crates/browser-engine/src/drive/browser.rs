@@ -1278,7 +1278,10 @@ impl Browser {
         let snapshot = self.snapshot_from(&target, &trees);
         let key = match snapshot.focused() {
             [] => return Err(Refusal::NothingFocused),
-            [one] => one.clone(),
+            // The tree may mark an element the page calls active (`aria-activedescendant`)
+            // while a field has the document's focus: the field, which the key goes to, is the
+            // one blanked (#2972). Where the document cannot say, the tree's is.
+            [one] => self.document_s_own(&target, one),
             // The tree marks more than one element focused (a real engine may mark a field's
             // inner editor, or its document, with it): the one its document says has the
             // focus is the one (#2295).
@@ -1295,6 +1298,22 @@ impl Browser {
         // page as read holds what it holds now.
         let read = self.snapshot_from(&target, &trees);
         Ok(((target, key), read))
+    }
+
+    /// The element that has the focus of `marked`'s document, where that document says one other
+    /// than `marked` does, else `marked` (#2972).
+    fn document_s_own(&self, target: &str, marked: &NodeKey) -> NodeKey {
+        let session = lock(&self.inner.state)
+            .page(target)
+            .and_then(|page| page.frames.get(&marked.frame))
+            .map(|frame| frame.session.clone());
+        match session.and_then(|session| self.focused_in(&session, &marked.frame)) {
+            Some(backend) if backend != marked.backend => NodeKey {
+                frame: marked.frame.clone(),
+                backend,
+            },
+            _ => marked.clone(),
+        }
     }
 
     /// Of `many`, the elements the tree marks focused on `target`'s page, the one its own

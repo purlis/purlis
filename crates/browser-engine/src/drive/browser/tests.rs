@@ -2660,6 +2660,49 @@ fn focus_on(engine: &Engine, onto: &[(&str, &str)]) {
     }
 }
 
+/// The tree's id for the node of `frame` whose element is `backend`.
+fn ax_node_of(engine: &Engine, frame: &str, backend: i64) -> String {
+    super::lock(&engine.model).ax[frame]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["backendDOMNodeId"] == backend)
+        .and_then(|n| n["nodeId"].as_str().map(str::to_owned))
+        .unwrap()
+}
+
+#[test]
+fn the_element_with_the_documents_focus_is_blanked_where_the_tree_marks_another() {
+    // #2972: a field that names an active option (`aria-activedescendant`, a combo box) has the
+    // document's focus while the tree marks the option focused: the field is blanked.
+    let (browser, engine) = browser();
+    let option = ax_node_of(&engine, "PAGE-1", 12);
+    focus_on(&engine, &[("PAGE-1", option.as_str())]);
+    super::lock(&engine.model).focused_backend = Some(20);
+    browser.blank_focused(None).unwrap();
+    let text = snapshot(&browser, 1);
+    let line = |words: &str| {
+        text.lines()
+            .find(|l| l.contains(words))
+            .map(str::to_owned)
+            .unwrap_or_default()
+    };
+    assert!(line("textbox").contains("(blanked)"), "{text}");
+    assert!(text.contains("- link \"Read more\""), "{text}");
+}
+
+#[test]
+fn the_element_the_tree_marks_focused_is_blanked_where_its_document_agrees_or_cannot_say() {
+    let (browser, engine) = browser();
+    let field = ax_node_of(&engine, "PAGE-1", 20);
+    focus_on(&engine, &[("PAGE-1", field.as_str())]);
+    browser.blank_focused(None).unwrap();
+    super::lock(&engine.model).focused_backend = Some(20);
+    browser.blank_focused(None).unwrap();
+    let text = snapshot(&browser, 1);
+    assert!(text.contains("(blanked)"), "{text}");
+}
+
 #[test]
 fn the_focused_element_in_a_frame_is_blanked_there() {
     let (browser, engine) = browser();
