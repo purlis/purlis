@@ -285,6 +285,7 @@ describe("You › This machine › Pools", () => {
       follows: true,
       draining: 0,
       named: false,
+      waiting: 0,
     };
     render(<App />);
     const nav = await yourSettings();
@@ -306,6 +307,7 @@ describe("You › This machine › Pools", () => {
       follows: true,
       draining: 0,
       named: null,
+      waiting: 0,
     };
     render(<App />);
     const nav = await yourSettings();
