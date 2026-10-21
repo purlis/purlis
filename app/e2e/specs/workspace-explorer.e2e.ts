@@ -517,8 +517,10 @@ describe("the explorer", () => {
     writeFileSync(join(branch, "changed-dir", "deep.md"), "changed\n");
     await showFilesOf("fix-login");
     await explorerRow("fix-login", "README.md");
-    // By role and name: a toggle button, and the search box beside the tree.
-    const changedOnly = await $("aria/Changed only");
+    // By role and name: a toggle button, and the search box beside the tree. The button's
+    // words are its label part (#2904), so it is the button whose words they are, not the
+    // element `aria/` finds them in.
+    const changedOnly = await $('//button[normalize-space()="Changed only"]');
     await expect(changedOnly).toHaveAttribute("aria-pressed", "false");
 
     try {

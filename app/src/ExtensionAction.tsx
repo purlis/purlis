@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import * as AlertDialog from "./overlays/alert-dialog";
 import { commands, type ActionAnswer, type PlaneId, type RowAction } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * **An extension's action, run** — from a row of its view or from a palette command
@@ -113,23 +114,15 @@ export function AskFirst({
           )}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                disabled={running}
-                ref={cancel}
-              >
+              <Button isDisabled={running} ref={cancel}>
                 {seen === undefined ? "Cancel" : "Close"}
-              </button>
+              </Button>
             </AlertDialog.Cancel>
             {seen === undefined && (
-              <button
-                type="button"
-                className={action.deletes ? "ui-button ui-button-danger ends-it" : "ui-button"}
-                tabIndex={0}
-                disabled={running}
-                onClick={() => {
+              <Button
+                variant={action.deletes ? "danger" : "secondary"}
+                isDisabled={running}
+                onPress={() => {
                   setRunning(true);
                   void onRun().then((ran) => {
                     if (ran === undefined) return;
@@ -151,7 +144,7 @@ export function AskFirst({
                   : action.deletes
                     ? "Delete"
                     : "Run"}
-              </button>
+              </Button>
             )}
           </AnswerBar>
         </AlertDialog.Content>

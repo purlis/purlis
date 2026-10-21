@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import { AnswerBar } from "./AnswerBar";
 import { ChatsToPick, type ChatHere, type Referenced } from "./references";
 import { picksSaid } from "./referencesMany";
+import { Button } from "./ui/button/Button";
 
 /**
  * **"Add to a chat's context" from a file or folder row** (FM-9, #1151): the project's chats,
@@ -63,9 +64,7 @@ export function AddToAChat({
             />
           </div>
           <AnswerBar>
-            <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-              Cancel
-            </button>
+            <Button onPress={onCancel}>Cancel</Button>
           </AnswerBar>
         </Dialog.Content>
       </Dialog.Portal>

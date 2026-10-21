@@ -4,6 +4,7 @@
 import * as AlertDialog from "./overlays/alert-dialog";
 import type { ReactNode } from "react";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The question a chat Notice asks before it does what cannot be taken back** (NO-3): Forget
@@ -76,21 +77,11 @@ export function ChatAsk({
           <AnswerBar>
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
             <AlertDialog.Cancel asChild>
-              <button className="ui-button" type="button" tabIndex={0} disabled={busy}>
-                Cancel
-              </button>
+              <Button isDisabled={busy}>Cancel</Button>
             </AlertDialog.Cancel>
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              disabled={busy}
-              // Busy as a Notice's fix is (#1719): the press was taken, and a second sends nothing.
-              aria-busy={busy}
-              onClick={onAnswer}
-            >
+            <Button variant="danger" isDisabled={busy} aria-busy={busy} onPress={onAnswer}>
               {answer}
-            </button>
+            </Button>
           </AnswerBar>
         </AlertDialog.Content>
       </AlertDialog.Portal>

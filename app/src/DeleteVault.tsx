@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import * as AlertDialog from "./overlays/alert-dialog";
 import { AnswerBar } from "./AnswerBar";
 import { Field, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** What a vault holds, as `vault_open` said it: its provider and its secrets' NAMES. */
 export type VaultHolds = { provider: string; secrets: readonly string[] };
@@ -133,24 +134,13 @@ export function DeleteVault({
                 (charter-app#186). */}
             <AnswerBar>
               <AlertDialog.Cancel asChild>
-                <button
-                  className="ui-button"
-                  type="button"
-                  tabIndex={0}
-                  disabled={deleting}
-                  onClick={onCancel}
-                >
+                <Button isDisabled={deleting} onPress={onCancel}>
                   Cancel
-                </button>
+                </Button>
               </AlertDialog.Cancel>
-              <button
-                type="submit"
-                className="ui-button ui-button-danger ends-it"
-                tabIndex={0}
-                disabled={!ready}
-              >
+              <Button variant="danger" type="submit" isDisabled={!ready}>
                 {deleting ? "Deleting…" : "Delete vault"}
-              </button>
+              </Button>
             </AnswerBar>
           </form>
         </AlertDialog.Content>

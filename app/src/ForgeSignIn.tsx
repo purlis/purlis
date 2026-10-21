@@ -8,6 +8,7 @@ import { ForgeBrowserSignIn } from "./ForgeBrowserSignIn";
 import { forgeAccountsChanged } from "./ForgeSignInEnded";
 import { ForgeTokenSignIn } from "./ForgeTokenSignIn";
 import { ImportCliLogin } from "./ImportCliLogin";
+import { Button } from "./ui/button/Button";
 
 /**
  * **Sign in to GitHub or GitLab** (#1812's entry; the sign-in itself is #1814's, then the
@@ -91,9 +92,7 @@ export function ForgeSignIn({
         }}
       />
       <p>
-        <button type="button" tabIndex={0} onClick={() => setWithToken(true)}>
-          Sign in with a token…
-        </button>
+        <Button onPress={() => setWithToken(true)}>Sign in with a token…</Button>
       </p>
       {signedIn && (
         <p className="came-back" role="status">
@@ -150,9 +149,7 @@ export function ForgeSignIn({
                 {row.installed && !row.signed_in && (
                   <>
                     {" "}
-                    <button type="button" tabIndex={0} onClick={() => onSignInToForge(row)}>
-                      Sign in to {row.title}
-                    </button>
+                    <Button onPress={() => onSignInToForge(row)}>Sign in to {row.title}</Button>
                   </>
                 )}
               </li>
