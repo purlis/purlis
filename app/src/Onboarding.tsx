@@ -11,6 +11,7 @@ import { HARNESS_SETUP, type HarnessSetupAsk } from "./harnessSetup";
 import { STEP_NAMES } from "./guidedSteps";
 import type { Onboarding as Steps } from "./useOnboarding";
 import { type Chose, type Door, Welcome } from "./Welcome";
+import { Button } from "./ui/button/Button";
 
 type WelcomeProps = ComponentProps<typeof Welcome>;
 
@@ -186,9 +187,9 @@ export function Onboarding({
           </div>
           {step === "sign-in" && (
             <div className="doing onboarding-on">
-              <button type="button" tabIndex={0} onClick={() => dispatch({ kind: "skip" })}>
+              <Button onPress={() => dispatch({ kind: "skip" })}>
                 {signedIn ? "Continue" : "Skip for now"}
-              </button>
+              </Button>
             </div>
           )}
         </>
@@ -293,18 +294,16 @@ function HarnessStep({
             <>
               <p className="trouble said-in-full">{trouble}</p>
               <div className="doing">
-                <button type="button" tabIndex={0} onClick={onStartOver}>
-                  Start over
-                </button>
+                <Button onPress={onStartOver}>Start over</Button>
               </div>
             </>
           )}
         </>
       )}
       <div className="doing onboarding-on">
-        <button type="button" tabIndex={0} disabled={!here} onClick={onSkip}>
+        <Button isDisabled={!here} onPress={onSkip}>
           Skip for now
-        </button>
+        </Button>
       </div>
     </DoorPage>
   );

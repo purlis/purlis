@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { commands, type ForgeAccountRow, type ForgeCliLogin } from "./bindings";
 import { SettingActions } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** The offers declined in this run of the window, by CLI and host: asked once, not again. */
 const declined = new Set<string>();
@@ -98,12 +99,12 @@ export function ImportCliLogin({
               Sign out of {offer.cli} if you don&apos;t want that.
             </p>
             <SettingActions>
-              <button type="button" tabIndex={0} disabled={busy} onClick={() => decline(offer)}>
+              <Button isDisabled={busy} onPress={() => decline(offer)}>
                 Not now
-              </button>
-              <button type="button" tabIndex={0} disabled={busy} onClick={() => void accept(offer)}>
+              </Button>
+              <Button isDisabled={busy} onPress={() => void accept(offer)}>
                 Use my {offer.cli} login
-              </button>
+              </Button>
             </SettingActions>
             {busy && (
               <p className="came-back" role="status">

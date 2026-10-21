@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { shownState, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";
 import type { Crumbs } from "./tabChats";
+import { Button } from "./ui/button/Button";
 
 /** Why a pane cannot draw the task its tab shows. */
 export type Away =
@@ -108,13 +109,11 @@ export function TaskAway({
         )}
       </div>
       <div className="task-away-ways">
-        <button type="button" ref={back} tabIndex={0} onClick={onBack}>
+        <Button ref={back} onPress={onBack}>
           Back to {own.name}
-        </button>
+        </Button>
         {away.why === "moved" && (
-          <button type="button" tabIndex={0} onClick={onOpenAlone}>
-            Open {task.name} in a tab of its own
-          </button>
+          <Button onPress={onOpenAlone}>Open {task.name} in a tab of its own</Button>
         )}
       </div>
     </div>

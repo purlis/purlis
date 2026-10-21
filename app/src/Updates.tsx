@@ -17,6 +17,7 @@ import { ReleaseNotes } from "./ReleaseNotes";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
 import { channelMoved, useUpdateChannel } from "./updateChannel";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * **"An update is available", and the pin that drifts** — the two version facts charter ADR
@@ -417,19 +418,16 @@ export function UpdateItem({
             )}
             {picked !== undefined && picked !== channel && (
               <SettingActions>
-                <button
-                  className="ui-button"
-                  type="button"
-                  tabIndex={0}
-                  disabled={writing !== undefined}
-                  onClick={() => {
+                <Button
+                  isDisabled={writing !== undefined}
+                  onPress={() => {
                     if (writing !== undefined) return;
                     setWriting({ to: picked, from: state });
                     choose(picked);
                   }}
                 >
                   Use this channel
-                </button>
+                </Button>
               </SettingActions>
             )}
             {moved !== undefined && (
@@ -447,25 +445,15 @@ export function UpdateItem({
                 at the trailing edge. */}
             <AnswerBar>
               <Dialog.Close asChild>
-                <button className="ui-button" type="button" tabIndex={0}>
-                  Close
-                </button>
+                <Button>Close</Button>
               </Dialog.Close>
               {state.kind !== "installing" && state.kind !== "installed" && (
-                <button className="ui-button" type="button" tabIndex={0} onClick={check}>
-                  Check now
-                </button>
+                <Button onPress={check}>Check now</Button>
               )}
               {state.kind === "offered" && (
-                <button className="ui-button" type="button" tabIndex={0} onClick={install}>
-                  Install {state.offer.version}
-                </button>
+                <Button onPress={install}>Install {state.offer.version}</Button>
               )}
-              {state.kind === "installed" && (
-                <button className="ui-button" type="button" tabIndex={0} onClick={toRestart}>
-                  Restart to update
-                </button>
-              )}
+              {state.kind === "installed" && <Button onPress={toRestart}>Restart to update</Button>}
             </AnswerBar>
           </Dialog.Content>
         </Dialog.Portal>
@@ -543,17 +531,16 @@ export function PinItem({
   return (
     <Dialog.Root onOpenChange={(now) => now && again()}>
       <Dialog.Trigger asChild>
-        <button
-          type="button"
-          className="ui-button ui-button-ghost ui-button-sm status-pin"
-          // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written
-          // down (`docs/ui-primitives.md`, charter-app#189).
-          tabIndex={0}
+        <Button
+          size="sm"
+          variant="ghost"
           data-testid="status-pin"
           title={label}
+          icon={<Pin aria-hidden="true" />}
+          className="status-pin"
         >
-          <Pin aria-hidden="true" /> {shown}
-        </button>
+          {shown}
+        </Button>
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-scrim" />
@@ -571,9 +558,7 @@ export function PinItem({
               its `tabindex` is written down. */}
           <AnswerBar>
             <Dialog.Close asChild>
-              <button className="ui-button" type="button" tabIndex={0}>
-                Close
-              </button>
+              <Button>Close</Button>
             </Dialog.Close>
           </AnswerBar>
         </Dialog.Content>

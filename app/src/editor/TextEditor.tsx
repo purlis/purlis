@@ -44,6 +44,7 @@ import {
 import { colour, useFindIn } from "./LightEditor";
 import { findable } from "./find";
 import { look } from "./look";
+import { Button, ButtonRow } from "../ui/button/Button";
 
 /** What an editor's owner can ask of it: the keyboard, back in its text. */
 export type TextEditorHandle = { focus: () => void };
@@ -369,30 +370,27 @@ export function ConflictMerge({
         onKeyDown={find.onKeyDown}
       />
       {!off && differences.length > 0 && (
-        <div
+        <ButtonRow
+          size="sm"
+          className="merge-takes"
           ref={takes}
           role="group"
           aria-label={`Differences from ${diskLabel}`}
-          className="ui-button-row merge-takes"
         >
           {differences.map(({ chunk, name }, at) => (
-            <button
-              // By place: taken, the next difference's button is the one the keyboard is on.
+            <Button
+              size="sm"
               key={at}
-              type="button"
-              className="ui-button ui-button-sm"
-              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-              tabIndex={0}
-              onClick={() => {
+              onPress={() => {
                 if (!merge.current) return;
                 taken.current = at;
                 take(merge.current, chunk);
               }}
             >
               {name}
-            </button>
+            </Button>
           ))}
-        </div>
+        </ButtonRow>
       )}
       {find.bar}
     </>

@@ -93,8 +93,11 @@ describe("a persona's hosts Notice", () => {
       name: "Allow for devops chats and chats that name no persona",
     });
     // Allow is the grants style and Not now the plain one (ADR 0097 §6).
-    expect(allow).toHaveClass("ui-button-grants");
-    expect(screen.getByRole("button", { name: "Not now" })).not.toHaveClass("ui-button-grants");
+    expect(allow).toHaveAttribute("data-variant", "grants");
+    expect(screen.getByRole("button", { name: "Not now" })).not.toHaveAttribute(
+      "data-variant",
+      "grants",
+    );
     await userEvent.setup().click(allow);
     await waitFor(() =>
       expect(asked).toContainEqual({

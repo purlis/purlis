@@ -16,6 +16,7 @@ import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./
 import { goneCause, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
 import { useNewerTrouble } from "./pickTrouble";
 import { Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** The pages behind the welcome's doors. The welcome itself is the absence of one. */
 export type Door = "create" | "get" | "sign-in";
@@ -479,18 +480,17 @@ export function Welcome({
       </ul>
 
       <p className="welcome-sign-in">
-        <button
-          type="button"
-          tabIndex={0}
-          className="welcome-link"
+        <Button
+          variant="link"
           ref={(element) => {
             doors.current["sign-in"] = element;
           }}
-          onClick={signInToAForge}
+          onPress={signInToAForge}
+          icon={<LogIn />}
+          className="welcome-link"
         >
-          <LogIn />
           Sign in to GitHub or GitLab
-        </button>
+        </Button>
       </p>
 
       {/* The path box is not a lesser picker. A native folder dialog cannot be driven by the
@@ -519,9 +519,9 @@ export function Welcome({
           )}
         />
         <SettingActions>
-          <button type="submit" tabIndex={0} disabled={!typed.trim()}>
+          <Button type="submit" isDisabled={!typed.trim()}>
             Open project
-          </button>
+          </Button>
         </SettingActions>
       </form>
 
@@ -548,7 +548,12 @@ export function Welcome({
           <ul className="recents">
             {planes.map((plane) => (
               <li key={plane.path}>
-                <button type="button" tabIndex={0} onClick={() => open(plane.path)}>
+                <button
+                  type="button"
+                  className="recent-project"
+                  tabIndex={0}
+                  onClick={() => open(plane.path)}
+                >
                   <span className="tab-name">{plane.name}</span>
                   <code className="where">{plane.path}</code>
                 </button>

@@ -7,6 +7,7 @@ import { commands } from "./bindings";
 import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { useNewerTrouble } from "./pickTrouble";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /**
  * Making a new project — a plane charter scaffolds — and the one decision it asks about.
@@ -165,15 +166,9 @@ export function NewProject({
                     onChange={setRepo}
                   />
                   {/* `tabIndex={0}`, per `docs/ui-primitives.md` (charter-app#186). */}
-                  <button
-                    className="ui-button"
-                    type="button"
-                    tabIndex={0}
-                    aria-label="Browse for the repo"
-                    onClick={() => pick(setRepo)}
-                  >
+                  <Button aria-label="Browse for the repo" onPress={() => pick(setRepo)}>
                     Browse…
-                  </button>
+                  </Button>
                 </>
               )}
             />
@@ -192,17 +187,10 @@ export function NewProject({
             {/* Asked for whichever form was sent last, as the refusal is (#839). */}
             {forgeAsk && <ForgeQuestion ask={forgeAsk} />}
             <SettingActions>
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={repo.trim() === "" || opening}
-              >
+              <Button variant="primary" type="submit" isDisabled={repo.trim() === "" || opening}>
                 Open repo
-              </button>
-              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-                Cancel
-              </button>
+              </Button>
+              <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
           </form>
 
@@ -246,15 +234,9 @@ export function NewProject({
                       buttons reading `Browse…` announce identically and pick different
                       directories, which is a question a screen reader cannot answer and a
                       sighted operator answers only from where the button sits. */}
-                    <button
-                      className="ui-button"
-                      type="button"
-                      tabIndex={0}
-                      aria-label="Browse for the folder"
-                      onClick={() => pick(setPath)}
-                    >
+                    <Button aria-label="Browse for the folder" onPress={() => pick(setPath)}>
                       Browse…
-                    </button>
+                    </Button>
                   </>
                 )}
               />
@@ -282,16 +264,13 @@ export function NewProject({
                     {/* `tabIndex={0}` here too: this button was written after the sweep that
                       put the attribute on every other one (charter-app#186), which is exactly
                       how a fixed class of defect comes back. */}
-                    <button
-                      className="ui-button"
-                      type="button"
-                      tabIndex={0}
+                    <Button
                       aria-label="Browse for the repo to adopt"
-                      disabled={planeIsThisRepo}
-                      onClick={() => pick(setAdopt)}
+                      isDisabled={planeIsThisRepo}
+                      onPress={() => pick(setAdopt)}
                     >
                       Browse…
-                    </button>
+                    </Button>
                   </>
                 )}
               />
@@ -332,19 +311,12 @@ export function NewProject({
                 `Cancel` is its last, so `Browse…`, the checkbox and `Create project` were all
                 in the middle, where neither the engine nor Radix reaches. */}
               <SettingActions>
-                <button
-                  className="ui-button ui-button-primary"
-                  type="submit"
-                  tabIndex={0}
-                  disabled={!ready}
-                >
+                <Button variant="primary" type="submit" isDisabled={!ready}>
                   {making ? "Creating…" : "Create project"}
-                </button>
+                </Button>
                 {/* A Cancel of its own (#1719): a form ends in its act and its way out, and the
                     main form's Cancel above is out of sight once this one is open and long. */}
-                <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-                  Cancel
-                </button>
+                <Button onPress={onCancel}>Cancel</Button>
               </SettingActions>
             </form>
           </details>
