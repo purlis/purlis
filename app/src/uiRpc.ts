@@ -9768,6 +9768,11 @@ export type WindowTheme = {
 	typed: WindowTyped,
 	/**  How a workspace's colour tints it (#2329, #2393): the window keeps only the arithmetic. */
 	tint: WindowTint,
+	/**
+	 *  The stylesheet of its component parts (#2903), written by the engine
+	 *  (`purlis_core::theme::parts::stylesheet`): empty for a theme that names none.
+	 */
+	parts: string,
 };
 
 /**

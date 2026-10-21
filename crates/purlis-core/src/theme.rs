@@ -87,6 +87,7 @@ pub mod levels;
 mod native;
 mod opened;
 mod options;
+pub mod parts;
 mod person;
 mod placed;
 pub mod portable;
@@ -172,6 +173,8 @@ mod measured_tests;
 mod native_tests;
 #[cfg(test)]
 mod options_tests;
+#[cfg(test)]
+mod parts_tests;
 #[cfg(test)]
 mod placed_tests;
 #[cfg(test)]
@@ -264,6 +267,10 @@ pub struct ResolvedTheme {
     /// How a workspace's colour tints the theme (#2329), the same in each of its appearances:
     /// Purlis Classic's recipe unless the theme says otherwise.
     pub tint: Tint,
+    /// Its component parts (#2903, [`parts`]), the same in each of its appearances: empty for a
+    /// theme that names none, which draws every family as its default.
+    #[serde(skip)]
+    pub parts: parts::Parts,
 }
 
 impl ResolvedTheme {
@@ -571,6 +578,7 @@ fn built_in_of(text: &str) -> Theme {
                 fonts: Fonts::classic(),
                 options: Vec::new(),
                 tint: Tint::default(),
+                parts: parts::Parts::new(),
             }
         })
         .collect();
@@ -930,6 +938,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             fonts: base.fonts.clone(),
             options: Vec::new(),
             tint: Tint::default(),
+            parts: parts::Parts::new(),
         }),
         complaints: notes,
         refused: false,

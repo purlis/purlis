@@ -815,6 +815,13 @@ pub enum Finding {
         weight: u16,
         style: Style,
     },
+    /// A component part the theme sets that breaks a floor in a variant and state (#2903), so
+    /// the window draws its family default there: `part` is `<family>.<part>.<variant>[.<state>]`.
+    PartFallsBack {
+        part: String,
+        floor: String,
+        ratio: Option<f64>,
+    },
 }
 
 /// The check, as [`super::check`] describes it.
@@ -835,6 +842,16 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
                 slot: one.slot,
                 weight: one.weight,
                 style: one.style,
+            }),
+    );
+    // A component part that breaks a floor draws its family default there (#2903).
+    findings.extend(
+        super::parts::fallen(theme)
+            .into_iter()
+            .map(|one| Finding::PartFallsBack {
+                part: one.part,
+                floor: one.floor,
+                ratio: one.ratio,
             }),
     );
     // A theme a workspace's colour does not tint is only ever drawn as it is.

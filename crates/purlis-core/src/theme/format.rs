@@ -92,6 +92,7 @@ const KEYS: &[&str] = &[
     "fonts",
     "options",
     "tint",
+    "parts",
 ];
 
 /// The longest path to an icon set purlis follows, in bytes.
@@ -473,6 +474,15 @@ impl Library {
             None => parents_tint,
             Some(raw) => tint::read(raw, &parents_tint, &palette, &mut complaints, &mut notes),
         };
+        // Every appearance of a theme carries its one set of component parts too (#2903).
+        let parents_parts = appearances
+            .first()
+            .map(|one| one.parts.clone())
+            .unwrap_or_default();
+        let parts = super::parts::over(
+            &parents_parts,
+            super::parts::read(from.get("parts"), &mut complaints, &mut notes),
+        );
         let mut seen: BTreeSet<String> = BTreeSet::new();
         for (at, raw) in given.iter().enumerate() {
             let Some(one) = raw.as_object() else {
@@ -539,6 +549,21 @@ impl Library {
             one.tuned.clone_from(&tuned);
             one.fonts.clone_from(&fonts);
             one.tint.clone_from(&tint);
+            one.parts.clone_from(&parts);
+        }
+        // A part's size is held in both densities, which are known once every appearance is.
+        let mut unfit: Vec<String> = Vec::new();
+        for one in &appearances {
+            for said in super::parts::fits(&parts, &one.geometry, &one.compact) {
+                if !unfit.contains(&said) {
+                    unfit.push(said);
+                }
+            }
+        }
+        if !unfit.is_empty() {
+            return Err(Refused::because(
+                unfit.into_iter().map(Complaint::said).collect(),
+            ));
         }
         Ok((Theme::made(name, appearances, options), notes))
     }
@@ -1004,6 +1029,7 @@ fn appearance(
         fonts: base.fonts.clone(),
         options: Vec::new(),
         tint: base.tint.clone(),
+        parts: base.parts.clone(),
     })
 }
 

@@ -237,6 +237,110 @@ names its density (see [The theme check](#the-theme-check)); the theme is drawn.
 sits on a line of 1, so it fits wherever a field's words do. Every length here grows with the text
 size alike, so what fits at the default text size fits at every one.
 
+## Component parts
+
+A token reaches every control that draws from it. A **component part** reaches one named part of
+one component family: the button's root, its label, its icon. A theme sets parts in a top-level
+`parts` object of `theme.json`, for every appearance, beside its tokens:
+
+```json
+"parts": {
+  "button.root.corner-radius": "full",
+  "button.root.border-width": 0,
+  "button.root.primary.hover.fill": "accent.base",
+  "button.label.font-weight": 500
+}
+```
+
+`purlis theme parts` prints every family, part, variant, state and property there is, with each
+bound, as JSON: what the theme skill, the gallery and an editor read. The schema completes each
+key. A theme that extends another starts from its parent's parts and layers its own over them,
+key by key. A property typed in its CSS spelling (`border-color`) is told the name it means.
+
+**The key** is `<family>.<part>[.<variant>][.<state>].<property>`. The state at rest is implied: a
+key with no state is the part at rest, and in every state that does not set the property. A key
+with no variant reaches the part in every variant; one with a variant only that variant. The more
+a key names, the more it wins: a state over rest, then a variant over every variant. A key that
+names a family, part, variant, state or property purlis does not have is said and left out, as
+an unknown token is.
+
+| Family | Parts | Variants |
+|---|---|---|
+| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept) |
+
+The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
+keyboard is on it), `disabled` and `open`.
+
+| Property | Value | Bounds |
+|---|---|---|
+| `fill` | a semantic colour token, or `transparent` | |
+| `text` | a semantic colour token | |
+| `border-colour` | a semantic colour token, or `transparent` | |
+| `shadow` | `none`, `raised` or `overlay` | |
+| `border-width` | px | 0–4 |
+| `corner-radius` | one value or four (top left, top right, bottom right, bottom left): px, a `radius.*` token or `full` | 0–9999, drawn at most half the part's height; `full` is a pill at any height |
+| `padding` | one value, or two (block, inline): px at 14px or a `space.*` token | block 0–12, inline 0–32 |
+| `gap` | px at 14px or a `space.*` token | 0–16 |
+| `font-size` | px at 14px or a `font-size.*` token | 10–18 |
+| `font-weight` | a weight or a `font-weight.*` token | 300–700 |
+| `height` | px at 14px or a `size.*` token | 24–48 |
+
+**A colour names a semantic token**, never a hex or a palette name, so the palette, the
+appearances, the tints and the floors keep working for a part as they do for a token. A geometry
+token follows the person's density; a number is the same in both.
+
+**A state never changes size.** Inside a state only `fill`, `text`, `border-colour` and `shadow`
+may be set, so nothing moves when the pointer, a press, the keyboard or a choice reaches a part.
+A theme that sets any other property inside a state is refused, and the check says why.
+
+**A corner is clamped as it is drawn** to half the part's height, its variant's own height
+where the theme sets one, and `full` draws a pill at any height and density. **A control stays a target and its words fit**: in both densities a button
+the theme sizes is at least 24px tall, and its words (its font size on a line of 1), its block
+padding and its border, top and bottom, fit in its height. A theme that breaks either is refused
+with the density named: Purlis Classic's compact button is 24px, so 14px words and a 1px border
+leave room for 4px of padding above and below, not 6.
+
+**What a theme does not set is the family default**, which the window's own stylesheet draws from
+the global tokens. A theme that names no parts draws exactly as it did; the engine writes the
+parts a theme names as one stylesheet, keyed on the wrapper's `data-scope` and `data-part`, its
+`data-variant` and its state attribute, in the `parts` layer above the controls.
+
+A geometry token is held to the property's bound at the value the theme draws it at, in both
+densities: `"gap": "space.8"` is 32 comfortable, past a gap's 16, and refuses the theme.
+
+**The floors hold per part and per state.** In each variant and state a theme's parts change,
+the part's words contrast 4.5:1 with its fill, and its icon 3:1, on every surface the family is
+drawn on; a border that is the part's only edge, on a fill that is its ground or none, contrasts
+3:1. A part that breaks one draws its family default in that variant and state, and the check
+says each as a `part-falls-back` warning. A disabled control is exempt, as WCAG has it.
+
+**The consent floors hold whatever a theme changed** (ADR 0097 §6), as it is written and in
+every workspace tint, and two looks are compared by the colours they draw, never by the tokens'
+names:
+
+- an answer that grants (`grants`, the variant of an Allow or an Accept) keeps its accent edge:
+  its `border-width` 0 is refused, a theme that turns every border off still draws it, and its
+  edge contrasts 3:1 with its fill;
+- Allow is distinguishable from Keep blocked (`secondary`) by its edge, and as plain as Keep
+  blocked: in every state it is drawn on Keep blocked's fill;
+- no part draws Allow or danger nearer the primary than the family's defaults draw it in the
+  same theme, measured on what a person reads as the look as it shows on each surface;
+- danger's words stay apart from the accent and from the primary's words.
+
+A consent variant that breaks one draws its family default there, and where that is not enough,
+so does the variant it is held apart from. Allow's lock is the window's, and no property reaches
+it.
+
+**On today's controls.** The button family's rules also reach its class (`.ui-button`, each
+variant's class and the native states). A variant that is not consent never reaches a button
+that also carries a consent variant's class, so such a button draws as that consent variant. A
+size (`padding`, `gap`, `font-size`, `font-weight`, `height`, `border-width`) never reaches a
+small button (`.ui-button-sm`) or a button in a wrapping row, whose size their own classes keep,
+and a small button's corners are clamped to its own height.
+
+The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
+families with parts today: they are drawn as the note under [Geometry](#geometry) says.
+
 ## The theme check
 
 **The grey tiers** (#2902). A theme draws words in four tiers, `text.primary`,

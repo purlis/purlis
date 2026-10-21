@@ -104,7 +104,9 @@ describe("Tailwind is wired to the tokens and to nothing else", () => {
     // Unlayered CSS beats layered CSS, so `App.css` had to be imported INTO a layer or no
     // utility could ever override a rule in it without `!important`.
     const css = await stylesheet();
-    expect(css).toContain("@layer theme, base, vendor, charter, components, utilities, forced;");
+    expect(css).toContain(
+      "@layer theme, base, vendor, charter, components, parts, utilities, forced;",
+    );
     expect(css).toMatch(/@layer charter\s*\{/);
   });
 

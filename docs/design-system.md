@@ -1430,6 +1430,21 @@ Tailwind reads these tokens and has no geometry of its own (`styles.css` hands t
 
 The core keeps its own names (`--space-*`, `--font-size-*`), so Tailwind never redefines a token.
 
+### Component parts
+
+A token reaches every control drawn from it; a **component part** (ADR 0103) reaches one part of
+one family, such as `button.root.corner-radius: full` for a pill. The theme engine holds the
+closed manifest (`purlis_core::theme::parts`, printed by `purlis theme parts`), refuses a value
+outside its bound and any size inside a state, holds the floors per part and state, and writes
+one stylesheet keyed on `data-scope`, `data-part`, `data-variant` and React Aria's state
+attributes, which `theme.ts` puts in the `parts` layer, above `components` and below `forced`.
+A theme that names no parts writes nothing there, so the controls' own classes draw it.
+`primitives/controls.css` is the family default the engine measures against, held to it by
+`parts_tests.rs`. The button family's rules also reach its class (`.ui-button`, with each
+variant's class and the native state), so a theme's parts draw on today's markup; a size or a
+border width never reaches `.ui-button-sm` or `.ui-button-row > .ui-button`, and a
+variant that is not consent never reaches a button that also carries a consent variant's class. `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
+
 ### The control baseline
 
 `app/src/base.css`, in the `base` layer under `App.css`, every selector `:where` so it has no
