@@ -73,6 +73,7 @@ mod hooks;
 mod host;
 mod inboxupdates;
 mod machineprofiles;
+mod personaskills;
 mod skillrun;
 mod skillstudio;
 mod useskill;
@@ -2875,6 +2876,10 @@ fn commands() -> Builder<tauri::Wry> {
         .constant("SPECIMEN_BUSY", specimen::BUSY)
         // The event a link's close of chats with theme drafts reaches the window on (#2761).
         .constant("CLOSE_HANDED", themedrafts::CLOSE_HANDED)
+        // The Skill studio's catalogue row and a persona's scope key (#2768): named once for
+        // the persona page's summary row and the window's catalogue.
+        .constant("SKILL_STUDIO_IN", skillstudio::STUDIO_IN)
+        .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
 }
 
 /// Where the generated TypeScript lives.

@@ -48,6 +48,8 @@ import {
   SKILL_STUDIO_IN,
   SKILL_STUDIO_TITLE,
   SKILL_STUDIO_VIEW,
+  asPersona,
+  skillStudioAs,
   inWorkspace,
   skillStudioTitle,
   skillStudioView,
@@ -2323,6 +2325,22 @@ export function catalogue(now: Now): Offer[] {
         note: "The harness profile its chats start on: one of the project's profiles, or none.",
       },
     );
+    // Its skills (#2768): the Skill studio on a chat as this persona, behind the studio's flag.
+    // Every row of its page's Skills section runs it.
+    if (now.skillStudio)
+      offers.push({
+        ...can(
+          skillStudioAs(persona),
+          "Open in Skill studio",
+          {
+            verb: "openView",
+            view: skillStudioView(asPersona(persona)),
+            title: skillStudioTitle(asPersona(persona)),
+          },
+          persona,
+        ),
+        note: `${persona}: every skill its chats get in any workspace, and why any other is left out.`,
+      });
   }
 
   // **A new memory, in each store the window lists** (SI-9c, ADR 0065 Q9): the focused
