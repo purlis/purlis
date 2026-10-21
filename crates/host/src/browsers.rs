@@ -215,7 +215,38 @@ pub trait Browsers: Send + Sync + 'static {
         data: &Path,
         reach: Option<&BrowserReach>,
         kept: Option<&KeptLogin>,
-    ) -> Result<Arc<dyn Screen>, String>;
+    ) -> Result<Arc<dyn Screen>, NotStarted>;
+}
+
+/// **Why a browser did not start**, as the binary says it (#2899): its engine cannot make its
+/// sandbox on this machine, which the host refuses `no_engine_sandbox` (1.36), or anything
+/// else, refused `not_started`. Each in words for the person.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotStarted {
+    /// The engine cannot make its sandbox here, and purlis never runs it without.
+    NoEngineSandbox(String),
+    /// It did not start, for the reason given.
+    Failed(String),
+}
+
+impl From<String> for NotStarted {
+    fn from(why: String) -> Self {
+        NotStarted::Failed(why)
+    }
+}
+
+impl From<&str> for NotStarted {
+    fn from(why: &str) -> Self {
+        NotStarted::Failed(why.to_owned())
+    }
+}
+
+impl std::fmt::Display for NotStarted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NotStarted::NoEngineSandbox(why) | NotStarted::Failed(why) => f.write_str(why),
+        }
+    }
 }
 
 /// A host whose binary starts no browser: every start of one is refused with a sentence.
@@ -231,7 +262,7 @@ impl Browsers for NoBrowsers {
         _data: &Path,
         _reach: Option<&BrowserReach>,
         _kept: Option<&KeptLogin>,
-    ) -> Result<Arc<dyn Screen>, String> {
+    ) -> Result<Arc<dyn Screen>, NotStarted> {
         Err("this session host was not given a way to start a browser".into())
     }
 }
