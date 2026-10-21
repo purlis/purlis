@@ -52,7 +52,7 @@ fn the_profile_the_package_installs_names_the_engine_in_the_default_data_folder_
 #[test]
 fn the_profile_the_notice_offers_names_this_machines_engine_wherever_its_data_folder_is() {
     let data = engines("/srv/data with space/purlis");
-    let profile = profile_for(&data);
+    let profile = profile_for(&data).expect("a profile");
     let here = machine(true, &[&profile], "/home/ada");
     assert!(sandboxes(&here, &data));
     assert!(!sandboxes(&here, &engines("/home/ada/.local/share/purlis")));
@@ -83,7 +83,7 @@ fn the_shipped_profile_allows_user_namespaces_and_names_one_program() {
 #[test]
 fn the_command_writes_the_profile_and_loads_it_and_runs_nothing_else() {
     let data = engines("/srv/it's here");
-    let command = install_command(&data);
+    let command = install_command(&data).expect("a command");
     assert!(command.starts_with("printf '%s\\n' "), "{command}");
     assert!(
         command.ends_with(&format!(
@@ -95,9 +95,32 @@ fn the_command_writes_the_profile_and_loads_it_and_runs_nothing_else() {
     let lines = shell_words(command.split(" | ").next().unwrap());
     assert_eq!(lines[0], "printf");
     assert_eq!(lines[1..].join("\n").trim_start_matches("%s\\n\n"), {
-        let profile = profile_for(&data);
+        let profile = profile_for(&data).expect("a profile");
         profile.trim_end().to_owned()
     });
+}
+
+#[test]
+fn what_apparmor_reads_as_a_pattern_in_the_data_folder_is_written_as_itself() {
+    let data = engines("/srv/{a,b} [x]?*^@{HOME}/purlis");
+    let profile = profile_for(&data).expect("a profile");
+    let line = profile
+        .lines()
+        .find(|line| line.starts_with("profile "))
+        .expect("its line");
+    assert!(
+        line.contains(
+            r#""/srv/\{a,b\} \[x\]\?\*\^\@\{HOME\}/purlis/engines/chrome-for-testing/*/"#
+        ),
+        "{line}"
+    );
+}
+
+#[test]
+fn a_data_folder_with_a_control_character_in_it_is_offered_no_profile_and_no_command() {
+    let data = engines("/srv/one\ntwo");
+    assert_eq!(profile_for(&data), None);
+    assert_eq!(install_command(&data), None);
 }
 
 #[test]

@@ -3914,8 +3914,11 @@ export type Doing = {
 export type EngineSandboxShown = {
 	/**  The sentence. */
 	says: string,
-	/**  The command that adds the profile, which the person runs themselves. */
-	command: string,
+	/**
+	 *  The command that adds the profile, which the person runs themselves: none for a data
+	 *  folder whose path holds a control character.
+	 */
+	command: string | null,
 	/**  This machine's own Chrome, where one is installed. */
 	chrome: string | null,
 };

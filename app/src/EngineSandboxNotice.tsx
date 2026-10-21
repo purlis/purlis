@@ -66,7 +66,7 @@ export function EngineSandboxNotice() {
           ? [{ label: "Use this machine's Chrome", onPress: useChrome, busy }]
           : undefined
       }
-      copy={shown.command}
+      copy={shown.command ?? undefined}
       onDismiss={() => setDismissed(true)}
     >
       {shown.says}

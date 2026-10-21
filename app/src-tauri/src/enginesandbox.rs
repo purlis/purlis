@@ -65,8 +65,9 @@ pub fn refused() {
 pub struct EngineSandboxShown {
     /// The sentence.
     pub says: String,
-    /// The command that adds the profile, which the person runs themselves.
-    pub command: String,
+    /// The command that adds the profile, which the person runs themselves: none for a data
+    /// folder whose path holds a control character.
+    pub command: Option<String>,
     /// This machine's own Chrome, where one is installed.
     pub chrome: Option<String>,
 }

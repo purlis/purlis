@@ -91,35 +91,55 @@ pub fn sandboxes(machine: &Machine, engines: &Path) -> bool {
 }
 
 /// **The profile for the pinned engine in `engines`**, wherever that is: the program by its
-/// path, any version, allowed user namespaces and nothing more.
-pub fn profile_for(engines: &Path) -> String {
+/// path, any version, allowed user namespaces and nothing more. Every character AppArmor reads
+/// as a pattern, a variable or a quote in the path is written as itself; a path with a control
+/// character in it is offered no profile.
+pub fn profile_for(engines: &Path) -> Option<String> {
+    let folder = engines.display().to_string();
+    if folder.chars().any(char::is_control) {
+        return None;
+    }
     let pattern = format!(
         "{}/*/chrome-linux64/chrome",
-        engines.display().to_string().trim_end_matches('/')
+        as_itself(folder.trim_end_matches('/'))
     );
-    format!(
+    Some(format!(
         "abi <abi/4.0>,\n\
          include <tunables/global>\n\
          \n\
-         profile purlis-engine-here \"{}\" flags=(unconfined) {{\n\
+         profile purlis-engine-here \"{pattern}\" flags=(unconfined) {{\n\
          \x20 userns,\n\
-         }}\n",
-        pattern.replace('\\', "\\\\").replace('"', "\\\"")
-    )
+         }}\n"
+    ))
+}
+
+/// `text` with each character AppArmor reads as a pattern, a variable or a quote escaped.
+fn as_itself(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if matches!(
+            c,
+            '*' | '?' | '[' | ']' | '{' | '}' | '^' | '@' | '\\' | '"'
+        ) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// **The command the person runs** to install [`profile_for`] `engines` at [`HERE_PROFILE`] and
-/// load it: purlis offers it and never runs it.
-pub fn install_command(engines: &Path) -> String {
-    let lines: Vec<String> = profile_for(engines)
+/// load it: purlis offers it and never runs it. None where no profile is offered.
+pub fn install_command(engines: &Path) -> Option<String> {
+    let lines: Vec<String> = profile_for(engines)?
         .trim_end()
         .lines()
         .map(single_quoted)
         .collect();
-    format!(
+    Some(format!(
         "printf '%s\\n' {} | sudo tee {HERE_PROFILE} >/dev/null && sudo apparmor_parser -r {HERE_PROFILE}",
         lines.join(" ")
-    )
+    ))
 }
 
 /// `text` as one word for a POSIX shell.

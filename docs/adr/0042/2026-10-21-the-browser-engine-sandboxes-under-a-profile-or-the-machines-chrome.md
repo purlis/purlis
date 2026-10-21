@@ -38,3 +38,9 @@ Decisions taken in implementation, to be confirmed:
   machine that never opens a browser is not told anything.
 - **D-2835-5** The postinst installs the profile only where the setting exists (a kernel that
   restricts user namespaces, so AppArmor 4), since an older AppArmor does not read `userns`.
+- **D-2835-6** No chat writes the engines folder (`<data>/engines/chrome-for-testing`) of the data
+  home in use, nor of the default data folder under either name: the profile lets a program at
+  that path make user namespaces, so a chat could otherwise put one there.
+- **D-2835-7** The command's profile writes every character AppArmor reads as a pattern, a
+  variable or a quote in the data path as itself, and no command is offered for a path with a
+  control character in it.
