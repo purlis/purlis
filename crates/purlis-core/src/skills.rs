@@ -19,6 +19,9 @@ pub use purlis_skills::{
     level_shown, listing, named, read, set_grant, share,
 };
 
+/// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
+pub use purlis_skills::runs;
+
 use crate::harness::{Harness, Kit};
 
 /// The variable a chat whose harness cannot load its skills is started with: the directory of
@@ -595,6 +598,21 @@ pub fn briefed(
     listing(&skills)
 }
 
+/// **The skills a briefed chat may start by reading their `SKILL.md`** (SK-3): every skill in
+/// the directory it was started with in [`LISTED_ENV`], and the plane's at `root` where
+/// [`PLANE_LISTED_ENV`] says its set holds them. Empty for a chat that was not briefed: a
+/// harness that loads its skills itself starts them by its own tool.
+pub fn readable_by_a_briefed_chat(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Vec<Skill> {
+    let Some(dir) = env(LISTED_ENV).filter(|dir| !dir.is_empty()) else {
+        return Vec::new();
+    };
+    let mut skills = read(Path::new(&dir));
+    if env(PLANE_LISTED_ENV).is_some_and(|on| on == "1") {
+        skills.extend(read(&root.join(purlis_skills::PROJECT_DIR)));
+    }
+    skills
+}
+
 /// One ask of purlis-skills, from a directory of built-in skills, the plane with the workspace
 /// the chat works in (where the plane's skills are let in), the persona a chat runs as, and the
 /// chat's route.
@@ -841,6 +859,17 @@ pub fn studio_rows(set: &SkillSet, plane: &Path) -> Vec<StudioRow> {
             .then(a.left_out.is_some().cmp(&b.left_out.is_some()))
     });
     rows
+}
+
+/// **The studio's runs** (SK-3): every run the plane at `plane`'s skill log holds, newest first,
+/// of skill `skill` where one is named (by its name, with or without the namespace a harness
+/// used it by), at most `limit`. The one list a skill's Runs panel and `purlis skill runs` draw.
+pub fn studio_runs(plane: &Path, skill: Option<&str>, limit: usize) -> Vec<crate::skilluse::Run> {
+    crate::skilluse::runs(plane)
+        .into_iter()
+        .filter(|run| skill.is_none_or(|name| run.is_of(name)))
+        .take(limit)
+        .collect()
 }
 
 /// The built-in skills' directory of the plugin installed beside this binary, where there is one
