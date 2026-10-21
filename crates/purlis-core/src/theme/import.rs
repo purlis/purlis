@@ -933,6 +933,12 @@ pub enum Recipe {
     /// check the fewest findings for the token, the consent floors it holds counted with them.
     /// A point no better than the source's own colour is never taken.
     Toward(&'static [&'static str]),
+    /// Whichever of these keys the source has reads most on the window (`surface.base`), the
+    /// first of them on a tie: a token two of the source's greys could fill takes the louder.
+    Loudest(&'static [&'static str]),
+    /// Left out when it reads louder on the window than `other`, so it follows the tier above
+    /// it: a fainter tier is never drawn louder than the one it sits under.
+    NoLouderThan(&'static str),
 }
 
 /// The points [`Recipe::Toward`] tries on each step of its way.
@@ -1018,7 +1024,8 @@ const BASE16_ANSI_HUES: &[&str] = &[
 /// - the muted words, comments and bright black (`base03`) and the secondary words and
 ///   placeholder (`base04`) take the nearest step toward `base05` that reads;
 /// - faint, the marks (`base03`, the styling guide's invisibles), takes the nearest step toward
-///   `base05` that reads as a mark, so it stays fainter than the muted words;
+///   `base05` that reads as a mark, and is left out, following the muted words, when that step
+///   reads louder than they do;
 /// - each hue ([`HUES`], and the ANSI colours it fills) takes the nearest step toward `base05`
 ///   that reads, and stays as the scheme wrote it when it reads already.
 const BASE16_RECIPES: Recipes = &[
@@ -1036,6 +1043,7 @@ const BASE16_RECIPES: Recipes = &[
     ),
     ("text.muted", Recipe::Toward(&["base04", "base05"])),
     ("text.faint", Recipe::Toward(&["base04", "base05"])),
+    ("text.faint", Recipe::NoLouderThan("text.muted")),
     ("syntax.comment", Recipe::Toward(&["base04", "base05"])),
     (
         "terminal.ansi.bright-black",
@@ -1075,16 +1083,26 @@ const ITERM_RECIPES: Recipes = terminal_recipes!("Foreground Color");
 /// A Ghostty theme's recipes.
 const GHOSTTY_RECIPES: Recipes = terminal_recipes!("foreground");
 
-/// **A VS Code theme's recipe**: it names a colour for nearly every role, and those are taken as
-/// they are. Its selected text, when it colours the selection and not the text, is the editor's
-/// words, so the window's words on a selection read as the editor's do.
-const VSCODE_RECIPES: Recipes = &[(
-    "selection.text",
-    Recipe::Fill {
-        keys: &["editor.foreground", "foreground"],
-        when: "selection.background",
-    },
-)];
+/// **A VS Code theme's recipes**: it names a colour for nearly every role, and those are taken
+/// as they are. Its selected text, when it colours the selection and not the text, is the
+/// editor's words, so the window's words on a selection read as the editor's do. Its muted words
+/// take the louder of its line numbers' grey and its disabled grey, so muted is never fainter
+/// than quiet or faint; and its faint (the disabled grey) is left out, following quiet, when it
+/// reads louder than the line numbers.
+const VSCODE_RECIPES: Recipes = &[
+    (
+        "selection.text",
+        Recipe::Fill {
+            keys: &["editor.foreground", "foreground"],
+            when: "selection.background",
+        },
+    ),
+    (
+        "text.muted",
+        Recipe::Loudest(&["editorLineNumber.foreground", "disabledForeground"]),
+    ),
+    ("text.faint", Recipe::NoLouderThan("text.quiet")),
+];
 
 /// **The recipes of `kind`**, in the order they are applied: its own, then each hue walked
 /// toward its foreground. A VS Code theme's hues and a zip's are taken as they are.
@@ -1127,6 +1145,16 @@ pub fn recipes_markdown(kind: SourceKind) -> String {
             ),
             Recipe::Between(one, other) => format!("halfway between `{one}` and `{other}`"),
             Recipe::Toward(keys) => format!("toward {}", quoted(keys)),
+            Recipe::Loudest(keys) => format!(
+                "the one of {} that reads most on `surface.base`",
+                keys.iter()
+                    .map(|key| format!("`{key}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Recipe::NoLouderThan(other) => {
+                format!("left out when it reads louder than `{other}` on `surface.base`")
+            }
         };
         out.push_str(&format!("| `{token}` | {said} |\n"));
     }
@@ -1189,8 +1217,47 @@ fn tune(
                     tokens.insert(token.to_owned(), Value::from(nearer));
                 }
             }
+            Recipe::Loudest(keys) => {
+                if !tokens.contains_key(token) {
+                    continue;
+                }
+                let Some(theme) = resolved(&mut document, tokens) else {
+                    return;
+                };
+                let window = theme.value("surface.base");
+                let mut loudest: Option<(&'static str, &str, f64)> = None;
+                for key in keys {
+                    if let Some(hex) = look.colour(key) {
+                        let reads = reads_on(hex, window);
+                        if loudest.is_none_or(|(_, _, most)| reads > most) {
+                            loudest = Some((*key, hex, reads));
+                        }
+                    }
+                }
+                if let Some((key, hex, _)) = loudest {
+                    tokens.insert(token.to_owned(), named(key, hex));
+                }
+            }
+            Recipe::NoLouderThan(other) => {
+                if !tokens.contains_key(token) {
+                    continue;
+                }
+                let Some(theme) = resolved(&mut document, tokens) else {
+                    return;
+                };
+                let window = theme.value("surface.base");
+                if reads_on(theme.value(token), window) > reads_on(theme.value(other), window) {
+                    tokens.shift_remove(token);
+                }
+            }
         }
     }
+}
+
+/// How `colour` reads on the opaque `window`: its contrast, laid over the window when it has
+/// alpha, as the check measures it.
+fn reads_on(colour: &str, window: &str) -> f64 {
+    super::check::contrast(&super::check::onto(colour, window), window)
 }
 
 /// The point [`Recipe::Toward`] takes for `token` in `theme`: `None` when its own colour leaves
