@@ -286,7 +286,11 @@ fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
         let names: Vec<&str> = jobs.iter().map(|j| j.name.as_str()).collect();
         // The runner image's SBOM and attestations (#2191) are held to their own test,
         // `the_runner_image_carries_its_sbom_and_provenance.rs`.
-        let attested: &[&str] = if image.released { &["sbom", "attest"] } else { &[] };
+        let attested: &[&str] = if image.released {
+            &["sbom", "attest"]
+        } else {
+            &[]
+        };
         let made: Vec<&str> = ["plan", "binary", "image", "index"]
             .into_iter()
             .chain(attested.iter().copied())
@@ -315,7 +319,11 @@ fn the_workflow_grants_nothing_and_each_job_only_what_it_needs() {
             .filter(|j| j.can_mint_an_oidc_token())
             .map(|j| j.name.as_str())
             .collect();
-        let signers: &[&str] = if image.released { &["index", "attest"] } else { &["index"] };
+        let signers: &[&str] = if image.released {
+            &["index", "attest"]
+        } else {
+            &["index"]
+        };
         assert_eq!(minting, signers, "{file}");
     }
 }

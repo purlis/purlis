@@ -57,7 +57,10 @@ fn syft_pin(job: &Job, key: &str) -> String {
 fn the_runner_images_sbom_is_read_from_the_pushed_bytes_with_the_releases_own_syft() {
     let jobs = runner_jobs();
     let sbom = job_named(&jobs, "sbom", FILE);
-    assert_eq!(sbom.condition(), Some("needs.plan.outputs.publish == 'true'"));
+    assert_eq!(
+        sbom.condition(),
+        Some("needs.plan.outputs.publish == 'true'")
+    );
     assert_eq!(
         sbom.needs(),
         ["plan", "image"],
@@ -76,10 +79,15 @@ fn the_runner_images_sbom_is_read_from_the_pushed_bytes_with_the_releases_own_sy
         assert_eq!(syft_pin(sbom, key), syft_pin(releases, key), "{key}");
     }
     let run = commands(sbom).join("\n");
-    assert!(run.contains("sha256sum -c -"), "syft is checked before it runs");
+    assert!(
+        run.contains("sha256sum -c -"),
+        "syft is checked before it runs"
+    );
     for arch in ["amd64", "arm64"] {
         assert!(
-            run.contains(&format!("registry:$IMAGE@$(cat \"$RUNNER_TEMP/digests/{arch}\")")),
+            run.contains(&format!(
+                "registry:$IMAGE@$(cat \"$RUNNER_TEMP/digests/{arch}\")"
+            )),
             "{arch} is read from the image as pushed: {run}"
         );
     }
@@ -91,16 +99,26 @@ fn the_runner_images_sbom_is_read_from_the_pushed_bytes_with_the_releases_own_sy
         .into_iter()
         .find(|s| action(s) == Some("actions/upload-artifact"))
         .expect("the SBOMs are handed on");
-    assert_eq!(step_value(&upload, "with", "name"), Some("runner-image-sbom"));
+    assert_eq!(
+        step_value(&upload, "with", "name"),
+        Some("runner-image-sbom")
+    );
 }
 
 #[test]
 fn only_attest_stores_attestations_and_it_pushes_provenance_and_each_sbom_beside_the_image() {
     let jobs = runner_jobs();
     let attest = job_named(&jobs, "attest", FILE);
-    assert_eq!(attest.condition(), Some("needs.plan.outputs.publish == 'true'"));
+    assert_eq!(
+        attest.condition(),
+        Some("needs.plan.outputs.publish == 'true'")
+    );
     for need in ["plan", "index", "sbom"] {
-        assert!(attest.needs().contains(&need.to_owned()), "{:?}", attest.needs());
+        assert!(
+            attest.needs().contains(&need.to_owned()),
+            "{:?}",
+            attest.needs()
+        );
     }
     assert_eq!(
         attest.permissions(),
@@ -137,8 +155,16 @@ fn only_attest_stores_attestations_and_it_pushes_provenance_and_each_sbom_beside
     let subjects: Vec<(Option<&str>, Option<&str>)> = attests
         .iter()
         .map(|s| {
-            assert_eq!(step_value(s, "with", "push-to-registry"), Some("true"), "{s:#?}");
-            assert_eq!(step_value(s, "with", "subject-name"), Some("${{ env.IMAGE }}"), "{s:#?}");
+            assert_eq!(
+                step_value(s, "with", "push-to-registry"),
+                Some("true"),
+                "{s:#?}"
+            );
+            assert_eq!(
+                step_value(s, "with", "subject-name"),
+                Some("${{ env.IMAGE }}"),
+                "{s:#?}"
+            );
             (
                 step_value(s, "with", "subject-digest"),
                 step_value(s, "with", "predicate-type"),
@@ -191,9 +217,16 @@ fn each_attestation_is_verified_in_the_run_that_pushed_it() {
     let first_verify = attest
         .steps()
         .iter()
-        .position(|s| run_lines(s).iter().any(|l| l.starts_with("gh attestation verify")))
+        .position(|s| {
+            run_lines(s)
+                .iter()
+                .any(|l| l.starts_with("gh attestation verify"))
+        })
         .expect("verified");
-    assert!(last_attest < first_verify, "verified after every attestation is stored");
+    assert!(
+        last_attest < first_verify,
+        "verified after every attestation is stored"
+    );
 }
 
 #[test]
