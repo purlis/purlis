@@ -34,3 +34,16 @@ describe("the person's colours in Settings", () => {
     expect(coloursOf(colourLines(colours))).toEqual(colours);
   });
 });
+
+describe("a complaint about the person's settings links to its group (#2925)", () => {
+  it("names Your colours, Motion and contrast, or Density and fonts", async () => {
+    const { settingsFor } = await import("../appearance");
+    expect(settingsFor(['your colour for accent.base, "red", is not #rgb'])).toBe("you.colours");
+    expect(settingsFor(["brand.hue is not a colour token of the theme vocabulary"])).toBe(
+      "you.colours",
+    );
+    expect(settingsFor(['motion is "off", which is …'])).toBe("you.motion");
+    expect(settingsFor(["contrast is 7, which is …"])).toBe("you.motion");
+    expect(settingsFor(['density is "cosy", which is …'])).toBe("you.look");
+  });
+});

@@ -2605,7 +2605,7 @@ export const commands = {
 	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null, kept: boolean | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at, kept })),
+} | null, kept: boolean | null, person: string | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at, kept, person })),
 	/**
 	 *  **The theme in force at a project and workspace, with no window** (#2697): what
 	 *  [`theme_in_force`] answers for the same question, read the same way, and served on a link.
@@ -2619,7 +2619,7 @@ export const commands = {
 	themeInForceAt: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at })),
+} | null, person: string | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at, person })),
 	/**
 	 *  **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
 	 *  read again by the core's theme engine from inside the theme's folder, under its cap, and only
@@ -2631,8 +2631,8 @@ export const commands = {
 	/**
 	 *  **The person's density, font override, motion, contrast and colours, read by the core's theme
 	 *  engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
-	 *  The colours and the contrast are drawn by the engine, over each theme it answers with, from
-	 *  now on; the window asks for the theme in force again. The window keeps them in its
+	 *  The colours and the contrast are drawn by the engine into each theme the window then asks
+	 *  for: the window hands them with each ask. The window keeps them in its
 	 *  layout file beside the text sizes, and is handed the same at creation. `appearance` is the
 	 *  layout's `appearance` as JSON text.
 	 */
@@ -2691,7 +2691,7 @@ export const commands = {
 	themeCardDrawn: (at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null, theme: string, from: string | null, appearance: string | null, light: boolean, moreContrast: boolean) => typedError<{
+} | null, theme: string, from: string | null, appearance: string | null, light: boolean, moreContrast: boolean, person: string | null) => typedError<{
 	/**
 	 *  The theme to draw; `null` keeps the one the window draws (an extension theme that is not
 	 *  JSON at all, which nothing picked).
@@ -2737,7 +2737,7 @@ export const commands = {
 	 *  would put a pair under its floor here, said once. Empty when none was.
 	 */
 	mine: string[],
-} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
+} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast, person })),
 	/**
 	 *  **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names
 	 *  them, and `from`, the level of the theme folder it picks (#2516), kept beside `machine.json`

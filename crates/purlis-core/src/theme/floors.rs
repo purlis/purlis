@@ -271,9 +271,11 @@ impl Chromas {
 
 fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
     let mut found = Vec::new();
+    // With more contrast asked for, every consent pair is held at its raised floor (#2925), in
+    // a tint as in the theme as written.
     let failing = |drawn: &ResolvedTheme, tinted: bool, (floor, pair): (Floor, &Pair)| {
         ratio(drawn, pair)
-            .is_some_and(|ratio| ratio < pair.floor)
+            .is_some_and(|ratio| ratio < drawn.least.floor(pair.floor))
             .then(|| Failure {
                 floor,
                 tinted,
@@ -379,7 +381,15 @@ pub(super) fn allow_apart(theme: &ResolvedTheme) -> f64 {
 /// Purlis Classic's values of its appearance for the tokens of the pairs that fail, and what was
 /// put right.
 pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
-    let ours = built_in_for(theme.appearance);
+    // With more contrast asked for, purlis's own values are its own raised (#2925), so a token
+    // put back is put back at the raised floors.
+    let raised;
+    let ours = if theme.least == super::Least::More {
+        raised = super::least::raise(built_in_for(theme.appearance));
+        &raised
+    } else {
+        built_in_for(theme.appearance)
+    };
     let mut drawn = theme.clone();
     let mut floors = BTreeSet::new();
     let mut taken: BTreeSet<&'static str> = BTreeSet::new();

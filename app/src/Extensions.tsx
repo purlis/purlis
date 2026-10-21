@@ -31,6 +31,7 @@ import {
   PREFERS_MORE_CONTRAST,
   moreContrastAsked,
   onPersonLook,
+  personAsked,
   personLook,
   sameTheme,
   systemIsLight,
@@ -474,6 +475,7 @@ export async function themeOptionsInForce(): Promise<readonly WindowOption[]> {
       false,
       where,
       null,
+      personAsked(),
     );
     if (answered.status !== "ok") return [];
     const given = answered.data as typeof answered.data | null;
@@ -744,6 +746,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
       again,
       where,
       null,
+      personAsked(),
     );
   } catch {
     return;
@@ -820,6 +823,7 @@ async function drawADraftOver(mine: number): Promise<void> {
       false,
       where,
       null,
+      personAsked(),
     );
   } catch {
     return;
@@ -856,6 +860,7 @@ export async function compareWithKept(held: boolean): Promise<void> {
       false,
       where,
       true,
+      personAsked(),
     );
   } catch {
     return;

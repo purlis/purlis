@@ -471,6 +471,16 @@ export function personLook(over: Person = person): string {
   return `${over.contrast ?? "standard"}\u0000${JSON.stringify(over.colours ?? {})}`;
 }
 
+/** **What the window hands the engine with each ask of a theme** (#2925): its own person's
+ *  contrast and colours, as JSON text, which the engine draws into the theme it answers with.
+ *  Each window asks with the layer it draws, so no window's answer is drawn with another's.
+ *  `null` when the layer draws every theme as it is. */
+export function personAsked(over: Person = person): string | null {
+  const colours = over.colours ?? {};
+  if (over.contrast !== "more" && Object.keys(colours).length === 0) return null;
+  return JSON.stringify({ contrast: over.contrast ?? "standard", colours });
+}
+
 /** Each follower of the person's look: told when Settings changes it, to ask for the theme in
  *  force again. */
 const lookFollowers = new Set<() => void>();
@@ -815,12 +825,14 @@ export type XtermLook = {
   drawBoldTextInBrightColors: boolean;
 };
 
-/** The theme's terminal tokens that are not colours, as xterm's options. */
-export function xtermLook(theme: Theme): XtermLook {
+/** The theme's terminal tokens that are not colours, as xterm's options. xterm blinks its cursor
+ *  on a timer of its own, which no stylesheet reaches, so under reduced motion (the system's or
+ *  purlis's, #2925) the cursor does not blink whatever the theme says. */
+export function xtermLook(theme: Theme, reduced: boolean = motionReduced()): XtermLook {
   const style = theme.typed.choices[CURSOR_STYLE];
   return {
     cursorStyle: CURSOR_STYLES.find((one) => one === style) ?? "block",
-    cursorBlink: theme.typed.flags["terminal.cursor-blink"] === true,
+    cursorBlink: theme.typed.flags["terminal.cursor-blink"] === true && !reduced,
     lineHeight: theme.typed.numbers[LINE_HEIGHT] ?? 1,
     drawBoldTextInBrightColors: theme.typed.flags["terminal.bold-as-bright"] !== false,
   };
@@ -1046,8 +1058,10 @@ export function personInForce(): Person {
  *  font. The terminals are told their family. */
 export function drawPerson(next: Person): void {
   const looked = personLook(person);
+  const moved = motionReduced();
   person = next;
   reduceMotionInPurlis(next.motion === "reduced");
+  if (motionReduced() !== moved) tellTheTerminals();
   // The engine draws the colours and the contrast into the theme: ask for it again.
   if (personLook(next) !== looked) for (const follow of lookFollowers) follow();
   if (drawnOn !== null) {
@@ -1087,11 +1101,11 @@ let fading: ReturnType<typeof setTimeout> | undefined;
 /**
  * **Draws `theme` with a short crossfade** (spec #2313, #2323): what a workspace switch does.
  * Every colour eases from the last theme's to this one's across the motion token
- * `duration.slide` (R150), and the class comes off once it has. With reduced motion the duration is 0
+ * `duration.enter`, and the class comes off once it has. With reduced motion the duration is 0
  * and the class is never put on: the repaint is at once.
  */
 export function crossfadeIn(theme: Theme, to: HTMLElement = document.documentElement): void {
-  const ms = motionReduced() ? 0 : theme.motion.durations["duration.slide"];
+  const ms = motionReduced() ? 0 : theme.motion.durations["duration.enter"];
   if (ms > 0) {
     to.classList.add(CROSSFADE);
     if (fading !== undefined) clearTimeout(fading);
@@ -1146,6 +1160,12 @@ export function onDrawn(follow: (theme: Theme) => void): () => void {
   };
 }
 
+/** Tells every follower the theme in force again: reduced motion changed, and a terminal's
+ *  cursor blinks only while motion is on ({@link xtermLook}). */
+function tellTheTerminals(): void {
+  for (const follow of followers) follow(current);
+}
+
 /** Everything following the theme in force: one per terminal on screen. */
 const followers = new Set<(theme: Theme) => void>();
 
@@ -1168,6 +1188,7 @@ function followReducedMotion(): void {
     if (drawnOn === null) return;
     // The person's own setting still holds when the system's is turned off (#2925).
     apply(current, drawnOn, systemReducesMotion() || person.motion === "reduced");
+    tellTheTerminals();
     if (tint !== null) paint(current, drawnOn, tint);
   });
 }

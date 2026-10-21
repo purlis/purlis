@@ -63,9 +63,6 @@ export const DURATIONS = [
   "duration.settle",
   "duration.spin",
   "duration.breathe",
-  "duration.slide",
-  "duration.panel",
-  "duration.half",
 ] as const;
 
 /**

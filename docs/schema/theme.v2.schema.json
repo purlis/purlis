@@ -2114,24 +2114,6 @@
           "minimum": 0,
           "maximum": 10000
         },
-        "duration.slide": {
-          "description": "Milliseconds; 0 turns it off.",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 10000
-        },
-        "duration.panel": {
-          "description": "Milliseconds; 0 turns it off.",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 10000
-        },
-        "duration.half": {
-          "description": "Milliseconds; 0 turns it off.",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 10000
-        },
         "easing.standard": {
           "description": "A cubic Bézier, [x1, y1, x2, y2]: each x from 0 to 1, each y from -1 to 2.",
           "type": "array",

@@ -107,11 +107,11 @@
 
 /* **A workspace switch repaints with a short crossfade** (spec #2313, #2323): while the window
    moves from one workspace's theme to the next, `theme.crossfadeIn` puts this class on the root
-   and colours ease across `duration.slide`, the shell's step for a workspace switch (R150). In the base layer and at no specificity (`:where`),
+   and colours ease across `duration.enter`. In the base layer and at no specificity (`:where`),
    so every component and utility that sets a transition of its own keeps it. Reduced motion
    makes the duration 0, so the repaint is at once. */
 :where(:root.theme-crossfade, :root.theme-crossfade *) {
   transition-property: color, background-color, border-color, outline-color, fill, stroke;
-  transition-duration: var(--motion-duration-slide);
+  transition-duration: var(--motion-duration-enter);
   transition-timing-function: var(--motion-easing-standard);
 }

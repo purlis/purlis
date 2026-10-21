@@ -125,8 +125,8 @@ describe("purlis's own reduce motion is layered on the system's (#2925)", () => 
     drawIn(fresh, element);
     expect(motionReduced()).toBe(false);
     expect(element.getAttribute(MOTION_ATTRIBUTE)).toBeNull();
-    expect(ms(element.style.getPropertyValue("--motion-duration-slide"))).toBe(
-      fresh.motion.durations["duration.slide"],
+    expect(ms(element.style.getPropertyValue("--motion-duration-enter"))).toBe(
+      fresh.motion.durations["duration.enter"],
     );
 
     drawPerson({ ...NO_PERSON, motion: "reduced" });
@@ -164,7 +164,7 @@ describe("purlis's own reduce motion is layered on the system's (#2925)", () => 
     expect(ms(element.style.getPropertyValue("--motion-duration-quick"))).toBe(0);
   });
 
-  it("times a workspace switch's crossfade by the shell's slide step (R150)", async () => {
+  it("times a workspace switch's crossfade by duration.enter", async () => {
     vi.resetModules();
     vi.useFakeTimers();
     try {
@@ -172,12 +172,47 @@ describe("purlis's own reduce motion is layered on the system's (#2925)", () => 
       const element = document.createElement("div");
       crossfadeIn(fresh, element);
       expect(element.classList.contains(CROSSFADE)).toBe(true);
-      vi.advanceTimersByTime(fresh.motion.durations["duration.slide"] - 1);
+      vi.advanceTimersByTime(fresh.motion.durations["duration.enter"] - 1);
       expect(element.classList.contains(CROSSFADE)).toBe(true);
       vi.advanceTimersByTime(1);
       expect(element.classList.contains(CROSSFADE)).toBe(false);
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe("a terminal's cursor under reduced motion (#2925)", () => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  it("does not blink, whatever the theme says, and open terminals are told", async () => {
+    vi.resetModules();
+    const {
+      drawIn,
+      drawPerson,
+      onDrawn,
+      xtermLook,
+      DEFAULT_THEME: fresh,
+      NO_PERSON,
+    } = await import("./theme");
+    const blinking = {
+      ...fresh,
+      typed: { ...fresh.typed, flags: { ...fresh.typed.flags, "terminal.cursor-blink": true } },
+    };
+    expect(xtermLook(blinking, false).cursorBlink).toBe(true);
+    expect(xtermLook(blinking, true).cursorBlink).toBe(false);
+
+    drawIn(blinking, document.createElement("div"));
+    const told: boolean[] = [];
+    const stop = onDrawn((theme) => told.push(xtermLook(theme).cursorBlink));
+    try {
+      drawPerson({ ...NO_PERSON, motion: "reduced" });
+      drawPerson({ ...NO_PERSON, motion: "system" });
+      expect(told).toEqual([false, true]);
+    } finally {
+      stop();
     }
   });
 });

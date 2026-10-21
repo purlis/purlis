@@ -161,8 +161,9 @@ pub(crate) struct Created {
     pub(crate) native: theme::Native,
     /// Whether the first frame follows the system: the native parts are then the system's.
     pub(crate) follows_system: bool,
-    /// The person's layer the creation read from the layout file (#2925): what the engine
-    /// draws over every theme the window is answered with from now on.
+    /// The person's layer the creation read from the layout file (#2925), drawn into every
+    /// theme the window is handed.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) person: theme::Layer,
 }
 
@@ -331,10 +332,7 @@ pub(crate) static THEIRS: TheirsKept = TheirsKept::new();
 /// A machine with no config home hands the page an empty layout and no theme of the person's:
 /// the default arrangement and the built-in theme, which is what such a machine has always had.
 pub(crate) fn at_creation(config_root: Option<&Path>, on: Option<&CreatedOn>) -> Created {
-    let created = at_creation_from(&THEIRS, config_root, on, crate::syscontrast::asked());
-    // What the window is answered with from now on is drawn with the person's layer read here.
-    crate::extensions::keep_person(created.person.clone());
-    created
+    at_creation_from(&THEIRS, config_root, on, crate::syscontrast::asked())
 }
 
 /// [`at_creation`], from the person's theme as `kept` holds it and the contrast `contrast`.

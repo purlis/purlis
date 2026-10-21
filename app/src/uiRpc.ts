@@ -1289,13 +1289,13 @@ export const commands = {
 	themeInForceAt: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at })),
+} | null, person: string | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at, person })),
 	themeFont: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The person's density, font override, motion, contrast and colours, read by the core's theme
 	 *  engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
-	 *  The colours and the contrast are drawn by the engine, over each theme it answers with, from
-	 *  now on; the window asks for the theme in force again. The window keeps them in its
+	 *  The colours and the contrast are drawn by the engine into each theme the window then asks
+	 *  for: the window hands them with each ask. The window keeps them in its
 	 *  layout file beside the text sizes, and is handed the same at creation. `appearance` is the
 	 *  layout's `appearance` as JSON text.
 	 */
@@ -1328,7 +1328,7 @@ export const commands = {
 	themeCardDrawn: (at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null, theme: string, from: string | null, appearance: string | null, light: boolean, moreContrast: boolean) => typedError<{
+} | null, theme: string, from: string | null, appearance: string | null, light: boolean, moreContrast: boolean, person: string | null) => typedError<{
 	/**
 	 *  The theme to draw; `null` keeps the one the window draws (an extension theme that is not
 	 *  JSON at all, which nothing picked).
@@ -1374,7 +1374,7 @@ export const commands = {
 	 *  would put a pair under its floor here, said once. Empty when none was.
 	 */
 	mine: string[],
-} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
+} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast, person })),
 	themeChooseMachine: __WINDOW_ONLY_RESULT,
 	themeChooseOption: __WINDOW_ONLY_RESULT,
 	themeDuplicate: __WINDOW_ONLY_RESULT,

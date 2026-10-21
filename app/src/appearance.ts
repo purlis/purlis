@@ -106,10 +106,20 @@ export function sayAppearance(complaints: readonly string[] | undefined): void {
           severity: "warn",
           detail: complaints.join("; "),
           remedy: "change it in Settings",
-          settings: "you.look",
+          settings: settingsFor(complaints),
         }
       : undefined,
   );
+}
+
+/** **The Settings group a complaint about the person's settings links to** (#2925): Your
+ *  colours for a colour, Motion and contrast for those two, else Density and fonts. */
+export function settingsFor(complaints: readonly string[]): string {
+  const first = complaints[0] ?? "";
+  if (/^(your colour for|colours is|[a-z0-9.-]+ is not a colour token)/.test(first))
+    return "you.colours";
+  if (/^(motion|contrast) is/.test(first)) return "you.motion";
+  return "you.look";
 }
 
 /** The person's density. */

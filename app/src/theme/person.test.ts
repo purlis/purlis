@@ -9,6 +9,7 @@ import {
   drawnFont,
   moreContrastAsked,
   onPersonLook,
+  personAsked,
   type Person,
   type Theme,
 } from "./theme";
@@ -94,5 +95,20 @@ describe("the person's contrast and colours (#2925)", () => {
       stop();
       drawPerson(comfortable);
     }
+  });
+});
+
+describe("what a window hands the engine with each ask (#2925)", () => {
+  it("is its own contrast and colours, or nothing when they draw every theme as it is", () => {
+    expect(personAsked(comfortable)).toBeNull();
+    expect(personAsked({ ...comfortable, contrast: "standard", colours: {} })).toBeNull();
+    expect(JSON.parse(personAsked({ ...comfortable, contrast: "more" }) ?? "")).toEqual({
+      contrast: "more",
+      colours: {},
+    });
+    const accent = DEFAULT_THEME.values["accent.base"];
+    expect(
+      JSON.parse(personAsked({ ...comfortable, colours: { "accent.base": accent } }) ?? ""),
+    ).toEqual({ contrast: "standard", colours: { "accent.base": accent } });
   });
 });

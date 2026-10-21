@@ -136,31 +136,51 @@ impl Layer {
         // again; each round leaves one colour out at least, so it ends.
         loop {
             let under = measured.iter().find_map(|pair| {
-                let mine = pair
-                    .tokens()
-                    .find(|token| drawn.value(token) != theme.value(token))?;
+                pair.tokens()
+                    .any(|token| drawn.value(token) != theme.value(token))
+                    .then_some(())?;
                 let ratio = check::ratio(&drawn, pair)?;
                 let was = check::ratio(theme, pair);
-                (ratio < pair.floor && was.is_none_or(|was| ratio < was))
-                    .then_some((mine, pair, ratio))
+                (ratio < pair.floor && was.is_none_or(|was| ratio < was)).then_some((pair, ratio))
             });
-            let Some((mine, pair, ratio)) = under else {
+            let Some((pair, ratio)) = under else {
                 break;
             };
+            // The person's colours in the pair: the one left out is one whose leaving out alone
+            // puts the pair right, when there is one, else the first.
+            let mine: Vec<&'static str> = pair
+                .tokens()
+                .filter(|token| drawn.value(token) != theme.value(token))
+                .collect();
+            let puts_right = |token: &'static str| {
+                let mut without = drawn.clone();
+                without.values.insert(token, theme.value(token).to_owned());
+                check::ratio(&without, pair).is_none_or(|now| now >= pair.floor)
+            };
+            let out = mine
+                .iter()
+                .copied()
+                .find(|token| puts_right(token))
+                .unwrap_or(mine[0]);
+            let with: String = mine
+                .iter()
+                .filter(|token| **token != out)
+                .map(|token| format!(" with your colour for {token}, {},", drawn.value(token)))
+                .collect();
             said.push(Complaint::about(
-                mine,
+                out,
                 format!(
-                    "your colour for {mine}, {}, is left out in {}: {} on {} would contrast \
-                     {ratio}:1, under its floor of {}:1, so the theme's is drawn",
-                    drawn.value(mine),
+                    "your colour for {out}, {}, is left out in {}: {} on {}{with} would \
+                     contrast {ratio}:1, under its floor of {}:1, so the theme's is drawn",
+                    drawn.value(out),
                     theme.name,
                     pair.front,
                     pair.back,
                     pair.floor
                 ),
             ));
-            let theirs = theme.value(mine).to_owned();
-            drawn.values.insert(mine, theirs);
+            let theirs = theme.value(out).to_owned();
+            drawn.values.insert(out, theirs);
         }
         if self.contrast == Least::More {
             drawn = least::raise(&drawn);

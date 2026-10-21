@@ -1151,7 +1151,7 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 
 ### The vocabulary
 
-`DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Twelve names, written to the document as
+`DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Nine names, written to the document as
 `--motion-duration-*` and `--motion-easing-*` beside the colours. The built-ins are Purlis
 Classic's; Purlis draws `duration.quick` at 150 ms and `easing.standard` and `easing.enter` on
 the shell's one ease (below):
@@ -1163,21 +1163,15 @@ the shell's one ease (below):
 | `duration.settle`  | 280 ms             | a mark arriving at an answer: a pipeline finished, a chat changed state |
 | `duration.spin`    | 900 ms             | one turn of _still running_                                             |
 | `duration.breathe` | 1600 ms            | one breath of _queued, not yet running_                                 |
-| `duration.slide`   | 260 ms             | a workspace switch, moving the work from one workspace to the next      |
-| `duration.panel`   | 240 ms             | the right side's region arriving                                        |
-| `duration.half`    | 220 ms             | a half of the bottom panel arriving                                     |
 | `easing.standard`  | `[0.2, 0, 0, 1]`   | a state changing in place                                               |
 | `easing.enter`     | `[0, 0, 0.2, 1]`   | decelerating into place, which is what reads as _arrived_               |
 | `easing.steady`    | `[0, 0, 1, 1]`     | a turn; an eased one stutters once a second                             |
 | `easing.breathe`   | `[0.4, 0, 0.6, 1]` | a loop with no visible seam                                             |
 
 **The shell's motion rule** (R150, #2925): one ease, `cubic-bezier(.22, .8, .24, 1)`, which
-Purlis gives `easing.standard` and `easing.enter`, and the shell's steps as durations: 260 for a
-workspace switch and the rail, 240 for the right panel, 220 for a bottom half and the rail's
-peek coming in, 200 for the peek leaving and the rail fading, 180 for a side view changing, and
-150 (Purlis's `duration.quick`) for a chevron and a switch's knob. The 200 and 180 steps are
-added with the rail's and the side views' motions, so no duration is named before something
-moves by it.
+Purlis gives `easing.standard` and `easing.enter`, and 150 ms for a chevron and a switch's knob,
+Purlis's `duration.quick`. Each of the shell's other steps is a duration token that arrives with
+the motion it times.
 
 **Semantic, not a scale**, for the reason `needs-you.base` and `danger.base` are two tokens: a
 theme that wants arrivals quicker changes `duration.enter` and does not also speed up whatever
@@ -1220,7 +1214,8 @@ duration as `0ms`**, and follows the setting live if the operator changes it whi
 up. It also writes `data-motion="reduced"` on the root, which **one global switch** reads
 (`app/src/theme/reduced-motion.css`, R152): no transition, and every animation plays its whole
 run at once, so a motion written without a token stops too, and a component waiting for an
-animation's end still hears it. The switch's declarations are important in the first layer,
+animation's end still hears it. xterm blinks its cursor on a timer of its own, so under reduced
+motion every terminal is told not to blink, whatever the theme says. The switch's declarations are important in the first layer,
 so no later layer turns motion back on. A transition over no time is
 no transition, and a looping animation with a zero duration has a zero active duration (Web
 Animations), so a spinner does not spin and a pulse does not pulse. **A component written
@@ -1371,11 +1366,22 @@ it draws a theme's high-contrast appearance where it has one, as the system's do
 raises the floors the engine holds, words from 4.5:1 to 7:1 (WCAG 1.4.6) and marks from 3:1
 to 4.5:1 (`purlis_core::theme::Least`). A pair under its raised floor has its front drawn
 lighter on a dark ground or darker on a light one, in small steps toward white or black, and
-then its back the other way where the back is not one of the window's grounds; marks are raised
-before words, so where they meet the words' floor holds. A floor under a mark's, a hint's, is
-not raised. A theme's component parts are held to the raised floors too, and one under them
-draws its family default. The window's tokens, the terminal's colours and the parts' stylesheet
-all come from the one theme the engine answers with, so the setting holds everywhere.
+then its back the other way where the back is not one of the window's grounds. Where the back
+has to move, the two may swap sides instead, dark words on a light mark, when that leaves fewer
+pairs under their floors. Marks are raised before words. A grey tier is raised as far as the
+tier above it and never past it, so muted words can at most match secondary ones and the tiers
+keep their order. A floor under a mark's, a hint's, is not raised. The consent floors are held
+at the raised floors, with purlis's own values raised where a theme's are put back, in the
+theme as written and in every workspace tint. A theme's component parts are held to the raised
+floors too, and one under them draws its family default. The window's tokens, the terminal's
+colours and the parts' stylesheet all come from the one theme the engine answers with, so the
+setting holds everywhere.
+
+**Each window asks with its own layer.** The window hands the engine its person's contrast and
+colours with each ask of a theme, and is handed its first frame drawn with the layer the layout
+file held as it was created. A theme's specimen and the gallery's card pictures show the theme
+itself and are drawn without the layer; a card drawn on the window while the pointer is on it
+wears it.
 
 ### The core tokens
 

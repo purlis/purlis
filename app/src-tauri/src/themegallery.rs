@@ -544,7 +544,9 @@ pub async fn theme_card_drawn(
     appearance: Option<String>,
     light: bool,
     more_contrast: bool,
+    person: Option<String>,
 ) -> Result<Option<ThemeInForce>, String> {
+    let person = crate::extensions::person_layer(person.as_deref());
     let level = level_of(from.as_deref())?;
     let (config, plane, workspace) = place_of(&planes, at).await?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -558,6 +560,7 @@ pub async fn theme_card_drawn(
             &values,
             light,
             more_contrast,
+            &person,
         )
     })
     .await
@@ -565,6 +568,8 @@ pub async fn theme_card_drawn(
 }
 
 /// [`theme_card_drawn`] without a runtime.
+// The window's question, as it asks it, and the person's layer it hands.
+#[allow(clippy::too_many_arguments)]
 fn card_drawn_of(
     place: &Place,
     id: &str,
@@ -573,6 +578,7 @@ fn card_drawn_of(
     values: &Values,
     light: bool,
     more_contrast: bool,
+    person: &purlis_core::theme::Layer,
 ) -> Option<ThemeInForce> {
     let system = if light {
         theme::Appearance::Light
@@ -589,7 +595,7 @@ fn card_drawn_of(
         crate::extensions::contrast_of(more_contrast),
     )?
     // A card drawn on the window wears the person's colours and contrast too (#2925).
-    .under(&crate::extensions::person_in_force());
+    .under(person);
     Some(ThemeInForce {
         // The gallery's card says it is refused; only the window's theme offers the review.
         review: None,
@@ -631,9 +637,18 @@ pub(crate) fn specimen_theme(
         place.map_or((None, None), |(root, workspace)| (Some(root), workspace));
     let place = Place::read(config_root()?, plane, workspace);
     let values = place.values_for(theme, level);
-    card_drawn_of(&place, theme, level, appearance, &values, false, false)
-        .and_then(|drawn| drawn.theme)
-        .ok_or_else(|| format!("there is no theme {theme} here to draw the specimen of"))
+    card_drawn_of(
+        &place,
+        theme,
+        level,
+        appearance,
+        &values,
+        false,
+        false,
+        &purlis_core::theme::Layer::default(),
+    )
+    .and_then(|drawn| drawn.theme)
+    .ok_or_else(|| format!("there is no theme {theme} here to draw the specimen of"))
 }
 
 /// **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names

@@ -22,6 +22,7 @@ import {
   CLASSIC,
   SYSTEM,
   moreContrastAsked,
+  personAsked,
   personLook,
   systemIsLight,
   THEME_ALIASES,
@@ -376,7 +377,7 @@ function enter(
     return;
   }
   void commands
-    .themeCardDrawn(at, card.id, card.level, appearance, light, more)
+    .themeCardDrawn(at, card.id, card.level, appearance, light, more, personAsked())
     .then((answer) => {
       const theme =
         answer.status === "ok" && answer.data?.theme

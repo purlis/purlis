@@ -214,35 +214,12 @@ fn every_pair() -> Vec<Pair> {
     PAIRS.iter().copied().chain(measure::ansi_pairs()).collect()
 }
 
-/// Whether `token` is the ground of a pair of words: a mark drawn in it is held to the words'
-/// floor on it first.
-fn grounds_words(token: &str) -> bool {
-    every_pair()
-        .iter()
-        .any(|pair| pair.back == token && pair.floor >= 4.5)
-}
-
-/// Whether `pair` names a consent colour: where raising it would break a consent floor, purlis's
-/// own is drawn, held at its standard floor.
-fn consent(pair: &Pair) -> bool {
-    pair.tokens().any(|token| {
-        ["needs-you.", "danger.", "state."]
-            .iter()
-            .any(|it| token.starts_with(it))
-    })
-}
-
-/// Every pair the check measures that `theme` has under its raised floor: words under 7:1, and
-/// marks under 4.5:1, or under their standard floor where the mark is the ground of words or the
-/// pair names a consent colour.
+/// Every pair the check measures that `theme` has under its raised floor: words under 7:1, marks
+/// under 4.5:1, the consent colours' among them.
 fn under_raised(theme: &ResolvedTheme) -> Vec<String> {
     let mut under = Vec::new();
     for pair in every_pair() {
-        let floor = if consent(&pair) || (pair.floor < 4.5 && grounds_words(pair.front)) {
-            pair.floor
-        } else {
-            Least::More.floor(pair.floor)
-        };
+        let floor = Least::More.floor(pair.floor);
         if let Some(ratio) = measure::ratio(theme, &pair)
             && ratio < floor
         {
@@ -375,4 +352,102 @@ fn more_contrast_raises_the_parts_reading_floors_in_the_stylesheet() {
     );
     // The stylesheet draws the family default there.
     assert_ne!(parts::stylesheet(&more), parts::stylesheet(&standard));
+}
+
+#[test]
+fn more_contrast_keeps_the_grey_tiers_in_their_order() {
+    let layer = layer_of(json!({ "contrast": "more" }));
+    for theme in [classic(), purlis()] {
+        for appearance in &theme.appearances {
+            let drawn = drawn_under(appearance, &layer).theme.unwrap();
+            let lum = |token: &str| measure::luminance(drawn.value(token));
+            let tiers = [
+                "text.primary",
+                "text.secondary",
+                "text.muted",
+                "text.quiet",
+                "text.faint",
+            ];
+            for pair in tiers.windows(2) {
+                let (above, below) = (lum(pair[0]), lum(pair[1]));
+                let ordered = match appearance.appearance {
+                    Appearance::Dark => above >= below,
+                    Appearance::Light => above <= below,
+                };
+                assert!(
+                    ordered,
+                    "{} {}: {} before {}",
+                    theme.name, appearance.id, pair[0], pair[1]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_consent_floors_are_held_at_the_raised_floors_with_purlis_s_own_raised() {
+    // A theme drawn for more contrast whose consent words were never raised: holding the floors
+    // puts purlis's own raised values in, so the danger and needs-you words are held at 7:1 too.
+    let unraised = ResolvedTheme {
+        least: Least::More,
+        ..classic_dark().clone()
+    };
+    let (held, said) = floors::hold(&unraised);
+    let said = said.expect("the raised consent floors were held");
+    assert!(!said.tokens.is_empty());
+    for (_, pair) in floors::pairs() {
+        if let Some(ratio) = measure::ratio(&held, pair) {
+            assert!(
+                ratio >= Least::More.floor(pair.floor),
+                "{} on {} {ratio}",
+                pair.front,
+                pair.back
+            );
+        }
+    }
+}
+
+#[test]
+fn more_contrast_holds_the_consent_floors_raised_in_every_workspace_tint() {
+    let layer = layer_of(json!({ "contrast": "more" }));
+    for theme in [classic(), purlis()] {
+        for appearance in &theme.appearances {
+            let drawn = drawn_under(appearance, &layer).theme.unwrap();
+            for hue in &drawn.tint.hues {
+                let tinted = tint::tinted(&drawn, hue.name);
+                for (_, pair) in floors::pairs() {
+                    if let Some(ratio) = measure::ratio(&tinted, pair) {
+                        assert!(
+                            ratio >= Least::More.floor(pair.floor),
+                            "{} {} in {}: {} on {} {ratio}",
+                            theme.name,
+                            appearance.id,
+                            hue.name,
+                            pair.front,
+                            pair.back
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn of_two_colours_that_break_a_pair_the_one_that_breaks_it_is_left_out_and_both_are_named() {
+    // A light ground with the theme's light words breaks them; a dark text alone would not.
+    let layer = layer_of(json!({
+        "colours": { "text.primary": "#f0f0f0", "surface.base": "#ececec" }
+    }));
+    let drawn = drawn_under(classic_dark(), &layer);
+    let theme = drawn.theme.unwrap();
+    let said = &drawn.mine[0].said;
+    assert!(
+        said.contains("text.primary") && said.contains("surface.base"),
+        "{said}"
+    );
+    assert!(
+        theme.value("surface.base") == classic_dark().value("surface.base")
+            || theme.value("text.primary") == classic_dark().value("text.primary")
+    );
 }

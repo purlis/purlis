@@ -230,8 +230,10 @@ pub async fn theme_in_force(
     reread: bool,
     at: Option<ThemeAt>,
     kept: Option<bool>,
+    person: Option<String>,
 ) -> Result<ThemeInForce, String> {
-    let asked = ThemeAsked::of(&planes, pick, on, light, more_contrast, reread, at, true)?;
+    let asked = ThemeAsked::of(&planes, pick, on, light, more_contrast, reread, at, true)?
+        .drawn_for(person.as_deref());
     tauri::async_runtime::spawn_blocking(move || {
         crate::themewatch::follow(&window, asked.target());
         asked.read(kept)
@@ -250,6 +252,8 @@ pub async fn theme_in_force(
 /// that window's folders. A link is answered the theme the levels choose.
 #[tauri::command]
 #[specta::specta]
+// The state is Tauri's to hand in; the rest is the link's question.
+#[allow(clippy::too_many_arguments)]
 pub async fn theme_in_force_at(
     planes: tauri::State<'_, crate::planes::Planes>,
     pick: Option<String>,
@@ -258,8 +262,10 @@ pub async fn theme_in_force_at(
     more_contrast: bool,
     reread: bool,
     at: Option<ThemeAt>,
+    person: Option<String>,
 ) -> Result<ThemeInForce, String> {
-    let asked = ThemeAsked::of(&planes, pick, on, light, more_contrast, reread, at, false)?;
+    let asked = ThemeAsked::of(&planes, pick, on, light, more_contrast, reread, at, false)?
+        .drawn_for(person.as_deref());
     tauri::async_runtime::spawn_blocking(move || asked.for_a_link())
         .await
         .map_err(|err| format!("reading the theme in force did not finish: {err}"))
@@ -279,9 +285,20 @@ struct ThemeAsked {
     light: bool,
     more_contrast: bool,
     reread: bool,
+    /// The person's layer the asker draws (#2925): its colours and contrast, drawn into the
+    /// answer. Each window and each link asks with its own.
+    person: purlis_core::theme::Layer,
 }
 
 impl ThemeAsked {
+    /// The ask, answered with the person's layer `person` names ([`person_layer`]).
+    fn drawn_for(self, person: Option<&str>) -> Self {
+        Self {
+            person: person_layer(person),
+            ..self
+        }
+    }
+
     /// The ask, its project found among the ones held; with `drafts`, the chats drafting there.
     // The window's question, as it asks it.
     #[allow(clippy::too_many_arguments)]
@@ -318,6 +335,7 @@ impl ThemeAsked {
             light,
             more_contrast,
             reread,
+            person: purlis_core::theme::Layer::default(),
         })
     }
 
@@ -395,16 +413,17 @@ impl ThemeAsked {
                     ..draft
                 }),
                 // A draft drawn is not refused: there is nothing to review.
-                ..answer_of(drawn, &levels, |_| None)
+                ..answer_of(drawn.under(&self.person), &levels, |_| None)
             };
         }
-        let answer = theme_in_force_of(
+        let answer = theme_in_force_under(
             &levels,
             &folders,
             self.on.as_deref(),
             theirs.theme.as_ref(),
             self.light,
             contrast_of(self.more_contrast),
+            &self.person,
             offered,
             |faces| {
                 at.and_then(|plane| {
@@ -622,6 +641,33 @@ pub(crate) fn theme_in_force_of(
     offered: impl FnOnce() -> Arc<[purlis_core::theme::Offered]>,
     review: impl FnOnce(&[&str]) -> Option<ThemeReview>,
 ) -> ThemeInForce {
+    theme_in_force_under(
+        levels,
+        folders,
+        on,
+        theirs,
+        light,
+        contrast,
+        &purlis_core::theme::Layer::default(),
+        offered,
+        review,
+    )
+}
+
+/// [`theme_in_force_of`], with the person's layer `person` drawn into the answer (#2925).
+// The command's own inputs, and two reads taken only when the answer needs them.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn theme_in_force_under(
+    levels: &purlis_core::theme::Levels,
+    folders: &purlis_core::theme::Folders,
+    on: Option<&[String]>,
+    theirs: Option<&purlis_core::theme::Theme>,
+    light: bool,
+    contrast: purlis_core::theme::Contrast,
+    person: &purlis_core::theme::Layer,
+    offered: impl FnOnce() -> Arc<[purlis_core::theme::Offered]>,
+    review: impl FnOnce(&[&str]) -> Option<ThemeReview>,
+) -> ThemeInForce {
     use purlis_core::theme;
     let drawn = theme::resolve_levels(
         &theme::LevelInputs {
@@ -637,7 +683,8 @@ pub(crate) fn theme_in_force_of(
             contrast,
         },
         offered,
-    );
+    )
+    .under(person);
     answer_of(drawn, levels, review)
 }
 
@@ -648,8 +695,6 @@ pub(crate) fn answer_of(
     levels: &purlis_core::theme::Levels,
     review: impl FnOnce(&[&str]) -> Option<ThemeReview>,
 ) -> ThemeInForce {
-    // The person's colours and contrast, over whatever the levels or a draft chose (#2925).
-    let drawn = drawn.under(&person_in_force());
     let review = {
         let faces = drawn.awaiting_faces();
         if faces.is_empty() {
@@ -1167,32 +1212,18 @@ impl PersonInForce {
     }
 }
 
-/// **The person's layer in force for this process** (#2925): their colours and the contrast they
-/// ask for, which the engine draws over every theme the window is answered with
-/// ([`answer_of`]). The layout file is the machine's, so this is one for every window: read
-/// from it as a window is created, and kept again each time Settings changes it
-/// ([`theme_person`]).
-static PERSON: std::sync::Mutex<Option<purlis_core::theme::Layer>> = std::sync::Mutex::new(None);
-
-/// The person's layer in force: nothing set until a window was created or Settings said.
-pub(crate) fn person_in_force() -> purlis_core::theme::Layer {
-    PERSON
-        .lock()
-        .map(|kept| kept.clone().unwrap_or_default())
-        .unwrap_or_default()
-}
-
-/// Keeps `layer` as the person's layer in force.
-pub(crate) fn keep_person(layer: purlis_core::theme::Layer) {
-    if let Ok(mut kept) = PERSON.lock() {
-        *kept = Some(layer);
-    }
+/// **The person's layer an asker draws** (#2925): `person` is the JSON text of what the asking
+/// window or link draws of the layout file's `appearance` (its `contrast` and `colours`), read by
+/// the engine. Nothing, or text that is not that, is the layer that draws every theme as it is.
+pub(crate) fn person_layer(person: Option<&str>) -> purlis_core::theme::Layer {
+    let value = person.and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok());
+    purlis_core::theme::Person::read(value.as_ref()).0.layer()
 }
 
 /// **The person's density, font override, motion, contrast and colours, read by the core's theme
 /// engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
-/// The colours and the contrast are drawn by the engine, over each theme it answers with, from
-/// now on; the window asks for the theme in force again. The window keeps them in its
+/// The colours and the contrast are drawn by the engine into each theme the window then asks
+/// for: the window hands them with each ask. The window keeps them in its
 /// layout file beside the text sizes, and is handed the same at creation. `appearance` is the
 /// layout's `appearance` as JSON text.
 #[tauri::command]
@@ -1203,10 +1234,7 @@ pub async fn theme_person(appearance: Option<String>) -> PersonInForce {
     let value = appearance.map(|text| {
         serde_json::from_str::<serde_json::Value>(&text).unwrap_or(serde_json::Value::String(text))
     });
-    let (answered, layer) = PersonInForce::read(value.as_ref());
-    // What the window asks for next is drawn with it (#2925): it asks again once answered.
-    keep_person(layer);
-    answered
+    PersonInForce::read(value.as_ref()).0
 }
 
 fn owned_names(tokens: &[&str]) -> Vec<String> {
@@ -2683,6 +2711,47 @@ mod tests {
     }
 
     #[test]
+    fn each_ask_is_drawn_with_the_person_s_layer_it_hands() {
+        // #2925: the window hands its own person's colours with each ask, and the answer wears
+        // them; an ask with none is drawn as the levels chose it.
+        let accent = "#9a86ff";
+        let asked = |person: Option<&str>| {
+            theme_in_force_under(
+                &picked(None),
+                &Default::default(),
+                None,
+                None,
+                false,
+                Contrast::Standard,
+                &person_layer(person),
+                || std::sync::Arc::from(Vec::new()),
+                |_| None,
+            )
+        };
+        let mine = asked(Some(&format!(
+            r#"{{"colours":{{"accent.base":"{accent}"}}}}"#
+        )));
+        assert_eq!(mine.theme.expect("drawn").values["accent.base"], accent);
+        assert!(mine.mine.is_empty());
+        let none = asked(None);
+        assert_eq!(
+            none.theme.expect("drawn").values["accent.base"],
+            purlis_core::theme::default_theme().value("accent.base")
+        );
+        // Text that is not the layer is the layer that draws every theme as it is.
+        assert_eq!(
+            person_layer(Some("not json")),
+            purlis_core::theme::Layer::default()
+        );
+        // A colour that breaks a floor is left out and said.
+        let ground = purlis_core::theme::default_theme().value("surface.base");
+        let broken = asked(Some(&format!(
+            r#"{{"colours":{{"text.primary":"{ground}"}}}}"#
+        )));
+        assert_eq!(broken.mine.len(), 1);
+    }
+
+    #[test]
     fn more_contrast_asked_for_draws_the_person_s_appearance_tagged_high_contrast() {
         // #2328: the window says `prefers-contrast: more`, and the engine draws the appearance of
         // the drawn tag tagged high contrast.
@@ -3354,6 +3423,7 @@ mod tests {
             light: false,
             more_contrast: false,
             reread: false,
+            person: purlis_core::theme::Layer::default(),
         };
         let answered = asked.for_a_link();
         assert_eq!(
@@ -3405,6 +3475,7 @@ mod tests {
             light: false,
             more_contrast: false,
             reread: false,
+            person: purlis_core::theme::Layer::default(),
         };
         let window = asked().read(None);
         assert_eq!(
@@ -3444,6 +3515,7 @@ mod tests {
             light: false,
             more_contrast: false,
             reread: false,
+            person: purlis_core::theme::Layer::default(),
         };
         let drawn = asked().read(None);
         assert_eq!(drawn.draft.map(|draft| draft.kept_refused), Some(false));
