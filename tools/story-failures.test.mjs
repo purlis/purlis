@@ -48,6 +48,11 @@ const FAILED = {
   },
 };
 
+// Storybook's Vitest addon puts a link to the story before the message of each one that failed.
+const LINKED = (message) =>
+  "\n\u001b[34mClick to debug the error directly in Storybook: http://localhost:6006/?path=/story/probe--a\u001b[39m\n\n" +
+  message;
+
 const reportOf = (story, error) => ({
   failures: [{ file: "src/Probe.stories.tsx", story, errors: [error] }],
   errors: [],
@@ -65,7 +70,9 @@ const WHY = {
 for (const [gate, failed] of Object.entries(FAILED)) {
   test(`a story failing its ${gate} gate says the same in WebKit as in Chromium`, () => {
     for (const browser of ["chromium", "webkit"]) {
-      const error = { message: failed.message, stack: failed[browser] };
+      const message =
+        gate === "screenshot" ? failed.message : LINKED(failed.message);
+      const error = { message, stack: failed[browser] };
       assert.equal(gateOf(error), gate, `${gate} in ${browser}`);
       assert.deepEqual(annotations(reportOf("Probe Story", error), browser), [
         `::error title=Probe Story in ${browser}::src/Probe.stories.tsx: ${gate}: ${WHY[gate]}`,

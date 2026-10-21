@@ -39,6 +39,9 @@ const RULE = /"[^"\n]*\(([a-z0-9-]+)\)"/g;
 /** A matcher's own line, `expect(received).toX()`, which says what was checked, not what was found. */
 const MATCHER = /^expect\(.*\)\.[\w.]+\(.*\)$/;
 
+/** The link to the story that Storybook's Vitest addon puts before a failed story's message. */
+const DEBUG_LINK = /^Click to debug the error directly in Storybook:/;
+
 /** React drawing a component: the frames of a story that failed to render, in either engine. */
 const RENDERING =
   /\b(renderWithHooks|react_stack_bottom_frame|performUnitOfWork)\b/;
@@ -70,7 +73,9 @@ export function whyOf(error) {
     .replace(ANSI, "")
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line && !/^Error:?$/.test(line));
+    .filter(
+      (line) => line && !/^Error:?$/.test(line) && !DEBUG_LINK.test(line),
+    );
   if (lines.length === 0)
     return "the browser gave no message; the job's log has its stack";
   const [first, next] = lines;
