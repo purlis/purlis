@@ -8,8 +8,7 @@ and gains a second layer beside its tokens. It keeps
 [ADR 0041](0041-a-plugin-is-a-subprocess-or-charter-has-no-plugins.md)'s four properties of a
 declarative extension.
 
-**Built by #2903**, with the button as its first family; each family ticket of #2897 adds its own
-parts to the manifest.
+**Built by #2903**, with the button as its first family.
 
 ## Where purlis was
 
@@ -25,8 +24,7 @@ it got told it cannot be done.
 ### 1. A component part is a named element of a family, in one closed manifest
 
 A **component part** is a named, stable element of a component family: the button's root, label
-and icon; later a tab's strip, tab, indicator, label and closer, a dialog's surface, header,
-body and footer. Each family declares its parts exactly once, in the window's wrapper
+and icon. Each family declares its parts exactly once, in the window's wrapper
 (`data-scope`, `data-part`) and in the theme engine's **closed, versioned manifest**
 (`purlis_core::theme::parts::MANIFEST`), which `purlis theme parts` prints as JSON and the
 published schema is generated from. The manifest only grows: a family, part, variant or property
@@ -81,12 +79,11 @@ from its parsed form, never copied from the file (ADR 0041, property 4). The win
 the `parts` cascade layer, above the controls and below forced colours. Semantic custom
 properties keep their names, and parts are not Tailwind utilities.
 
-Until a family moves to its React Aria wrapper, its rules also reach today's control class (the
-button's `.ui-button`, each variant's class, and the native state), so a theme's parts draw on
-the window as it is. On the class, a variant that is not consent never reaches a control that
-also carries a consent variant's class, and a size never reaches the small and wrapping
-controls, whose size their own classes keep. The family's ticket takes that interim selector
-away when it moves.
+The button family's rules also reach today's control class (`.ui-button`, each variant's class,
+and the native state), so a theme's parts draw on the window as it is. On the class, a variant
+that is not consent never reaches a control that also carries a consent variant's class, and a
+size or a border width never reaches the small and wrapping controls, whose size their own
+classes keep.
 
 ### 7. Floors hold per part and per state, and the consent floors hold for parts unchanged
 
@@ -101,10 +98,13 @@ and two looks are compared by the colours they draw, never by the tokens' names:
 
 - an answer that grants keeps its accent edge: a border width of 0 on it is refused, a theme
   that turns every border off still draws it, and its edge contrasts 3:1 with its fill;
-- Allow is distinguishable from Keep blocked by its edge;
-- **Allow never takes the primary look**;
-- danger is distinguishable from primary: its words stay apart from the accent, and its look
-  is never the primary's.
+- Allow is distinguishable from Keep blocked by its edge, and is as plain as Keep blocked: in
+  every state it is drawn on Keep blocked's fill;
+- **Allow never takes the primary look**: parts never draw a consent variant nearer the primary
+  than the family's defaults draw it in the same theme, by the farthest of its fill, its edge
+  and, for danger, its words;
+- danger is distinguishable from primary: its words stay apart from the accent and from the
+  primary's words, on the consent floors' scale.
 
 A consent variant that breaks one draws its own default there; where that is not enough, so
 does the variant it is held apart from. Allow's lock is the window's markup, and no property
@@ -127,8 +127,8 @@ reaches it.
 
 - A theme can give purlis the shapes of the Figma design, part by part, within bounds that keep
   it readable and keep every control a target.
-- Every family ticket adds its parts and its defaults to the manifest, and its wrapper sets
-  `data-scope`, `data-part` and `data-variant`; the manifest's version grows with each.
+- A family joins the manifest with its parts and its defaults, under a new manifest version, and
+  its wrapper sets `data-scope`, `data-part` and `data-variant`.
 - `purlis theme parts` and the schema are what the theme skill, the gallery and an editor read.
 - The family default is the window's own stylesheet, and a test holds the engine's copy of each
   family's colours to it, so the floors measure what the window draws.

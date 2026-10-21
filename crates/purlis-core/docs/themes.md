@@ -321,18 +321,20 @@ names:
 - an answer that grants (`grants`, the variant of an Allow or an Accept) keeps its accent edge:
   its `border-width` 0 is refused, a theme that turns every border off still draws it, and its
   edge contrasts 3:1 with its fill;
-- Allow is distinguishable from Keep blocked (`secondary`) by its edge;
-- Allow never takes the primary look;
-- danger's words stay apart from the accent, and danger never takes the primary look.
+- Allow is distinguishable from Keep blocked (`secondary`) by its edge, and as plain as Keep
+  blocked: in every state it is drawn on Keep blocked's fill;
+- no part draws Allow or danger nearer the primary than the family's defaults draw it in the
+  same theme, by the farthest of its fill, its edge and, for danger, its words;
+- danger's words stay apart from the accent and from the primary's words.
 
 A consent variant that breaks one draws its family default there, and where that is not enough,
 so does the variant it is held apart from. Allow's lock is the window's, and no property reaches
 it.
 
-**On today's controls.** Until a family moves to its wrapper, its rules also reach its class
-(`.ui-button`, each variant's class and the native states). A variant that is not consent never
-reaches a button that also carries a consent variant's class, so such a button draws as that
-consent variant. A size (`padding`, `gap`, `font-size`, `font-weight`, `height`) never reaches a
+**On today's controls.** The button family's rules also reach its class (`.ui-button`, each
+variant's class and the native states). A variant that is not consent never reaches a button
+that also carries a consent variant's class, so such a button draws as that consent variant. A
+size (`padding`, `gap`, `font-size`, `font-weight`, `height`, `border-width`) never reaches a
 small button (`.ui-button-sm`) or a button in a wrapping row, whose size their own classes keep,
 and a small button's corners are clamped to its own height.
 

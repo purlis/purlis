@@ -1440,9 +1440,9 @@ one stylesheet keyed on `data-scope`, `data-part`, `data-variant` and React Aria
 attributes, which `theme.ts` puts in the `parts` layer, above `components` and below `forced`.
 A theme that names no parts writes nothing there, so the controls' own classes draw it.
 `primitives/controls.css` is the family default the engine measures against, held to it by
-`parts_tests.rs`. Until a family moves to its wrapper, its rules also reach its class
-(`.ui-button`, with each variant's class and the native state), so a theme's parts draw on
-today's markup; a size never reaches `.ui-button-sm` or `.ui-button-row > .ui-button`, and a
+`parts_tests.rs`. The button family's rules also reach its class (`.ui-button`, with each
+variant's class and the native state), so a theme's parts draw on today's markup; a size or a
+border width never reaches `.ui-button-sm` or `.ui-button-row > .ui-button`, and a
 variant that is not consent never reaches a button that also carries a consent variant's class. `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
 
 ### The control baseline

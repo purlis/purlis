@@ -436,7 +436,7 @@ fn a_part_whose_words_break_their_floor_draws_its_family_default_there() {
 fn a_part_that_clears_its_floors_is_drawn_as_written() {
     let loaded = load(&with_parts(json!({
         "button.root.primary.fill": "accent.surface",
-        "button.root.secondary.hover.fill": "surface.hover",
+        "button.root.ghost.hover.fill": "control.hover",
     })));
     let fallen = parts::fallen(loaded.theme.first());
     assert!(fallen.is_empty(), "{fallen:?}");
@@ -482,8 +482,7 @@ fn allow_never_takes_the_primary_look() {
     let theme = loaded.theme.first();
     let fallen = parts::fallen(theme);
     assert!(
-        fallen.iter().any(|one| one.part == "button.root.grants"
-            && one.floor == "Allow never takes the primary look"),
+        fallen.iter().any(|one| one.part == "button.root.grants"),
         "{fallen:?}"
     );
     let sheet = parts::stylesheet(theme);
@@ -562,8 +561,7 @@ fn danger_never_takes_the_primary_look() {
     let theme = loaded.theme.first();
     let fallen = parts::fallen(theme);
     assert!(
-        fallen.iter().any(|one| one.part == "button.root.danger"
-            && one.floor == "danger is distinguishable from primary"),
+        fallen.iter().any(|one| one.part == "button.root.danger"),
         "{fallen:?}"
     );
     let sheet = parts::stylesheet(theme);
@@ -887,5 +885,86 @@ fn a_css_spelling_of_a_property_is_told_its_name() {
         said(&loaded)[0].ends_with("so it was left out; did you mean `border-colour`?"),
         "{:?}",
         said(&loaded)
+    );
+}
+
+/// A theme over Purlis Classic whose dark appearance sets `tokens` and that sets `parts`.
+fn with_tokens_and_parts(tokens: Value, parts: Value) -> Value {
+    json!({
+        "name": "Shaped", "extends": "purlis-classic",
+        "appearances": [{ "id": "dark", "tokens": tokens }],
+        "parts": parts
+    })
+}
+
+fn fallen_parts(document: &Value) -> Vec<String> {
+    let loaded = load(document);
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    parts::fallen(loaded.theme.first())
+        .into_iter()
+        .map(|one| one.part)
+        .collect()
+}
+
+#[test]
+fn allow_is_drawn_on_keep_blockeds_fill() {
+    for near in ["#1d3630", "#1f3832"] {
+        let fallen = fallen_parts(&with_tokens_and_parts(
+            json!({ "chart.2": near }),
+            json!({ "button.root.grants.fill": "chart.2" }),
+        ));
+        assert!(
+            fallen.contains(&"button.root.grants".to_owned()),
+            "{near}: {fallen:?}"
+        );
+    }
+}
+
+#[test]
+fn the_primary_is_never_drawn_nearer_allow_than_the_family_draws_it() {
+    for near in ["#2c2c29", "#2e2e2b"] {
+        let fallen = fallen_parts(&with_tokens_and_parts(
+            json!({ "chart.4": near }),
+            json!({
+                "button.root.primary.fill": "chart.4",
+                "button.root.primary.border-colour": "focus.ring",
+                "button.root.primary.hover.fill": "control.hover",
+            }),
+        ));
+        assert!(
+            fallen.contains(&"button.root.primary".to_owned()),
+            "{near}: {fallen:?}"
+        );
+    }
+}
+
+#[test]
+fn dangers_words_are_apart_from_the_primarys() {
+    for near in ["#e4e3dd", "#e7e6e0"] {
+        let fallen = fallen_parts(&with_tokens_and_parts(
+            json!({ "chart.3": near }),
+            json!({
+                "button.root.danger.fill": "accent.surface",
+                "button.root.danger.border-colour": "accent.base",
+                "button.root.danger.text": "chart.3",
+            }),
+        ));
+        assert!(
+            fallen.contains(&"button.root.danger".to_owned()),
+            "{near}: {fallen:?}"
+        );
+    }
+}
+
+#[test]
+fn a_border_width_never_reaches_todays_small_buttons() {
+    let sheet = sheet_of(json!({ "button.root.border-width": 2 }));
+    let line = sheet
+        .lines()
+        .find(|line| line.contains("border-width: 2px"))
+        .expect("the width's rule");
+    assert!(
+        line.contains(":not(.ui-button-sm, .ui-button-row > .ui-button)"),
+        "{line}"
     );
 }

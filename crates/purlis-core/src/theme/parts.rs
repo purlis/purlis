@@ -57,7 +57,7 @@
 //! as drawn, by colour, never by the tokens' names. Where the consent variant's own default is
 //! not enough, the variant it is held apart from draws its default too.
 //!
-//! **Until a family moves to its wrapper** (#2904) its rules also reach its class: a variant
+//! **On today's markup** a family's rules also reach its class: a variant
 //! that is not consent never reaches a control that carries a consent variant's class too, and
 //! a size never reaches the small or wrapping controls, whose size their own classes keep.
 
@@ -358,7 +358,7 @@ pub struct Family {
     pub variants: &'static [Variant],
     /// The surfaces it is drawn on, which a see-through fill shows.
     pub grounds: &'static [&'static str],
-    /// The class today's markup draws its root with, until it moves to its wrapper (#2904).
+    /// The class today's markup draws its root with, beside the wrapper's attributes.
     class: Option<&'static str>,
     /// The selectors of today's controls of the class whose size the window's own classes keep
     /// (a small button, a button in a wrapping row): a part's size never reaches them.
@@ -511,10 +511,28 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
     look
 }
 
-/// **How far apart two looks are drawn, at least, to be two looks**: the distance in OKLab
-/// below which a person sees one colour, about 0.02 (`floors.rs`'s scale). Two variants whose
-/// fill and edge are both closer than this are drawn alike, whatever tokens name them.
+/// **The distance in OKLab below which a person sees one colour** (`floors.rs`'s scale): how
+/// near Allow's fill is held to Keep blocked's.
 const SEEN: f64 = 0.02;
+
+/// How much nearer the primary than the family's defaults a consent variant may be drawn: none,
+/// beyond what rounding a colour moves.
+const NO_NEARER: f64 = 0.005;
+
+/// How far apart two looks are drawn: the farthest of their fills, their edges and, with
+/// `words`, their words, in OKLab. A colour against none (transparent) is as far as can be.
+fn look_apart(theme: &ResolvedTheme, a: &Drawn, b: &Drawn, words: bool) -> f64 {
+    let one = |x: &str, y: &str| match (hex(theme, x), hex(theme, y)) {
+        (None, None) => 0.0,
+        (Some(_), Some(_)) => apart(theme, x, y).unwrap_or(1.0),
+        _ => 1.0,
+    };
+    let mut far = one(a.fill, b.fill).max(one(a.border, b.border));
+    if words {
+        far = far.max(one(a.words[0], b.words[0]));
+    }
+    far
+}
 
 /// The variant every family's suggested answer is drawn in.
 const PRIMARY: &str = "primary";
@@ -1303,11 +1321,13 @@ fn consent_broken(
 ) -> Option<Consented> {
     let look = drawn(rules, family, variant.name, state);
     let primary = drawn(rules, family, PRIMARY, state);
-    let defaults_alike = |other: &str, least: f64| {
-        let a = drawn(&[], family, variant.name, state);
-        let b = drawn(&[], family, other, state);
-        alike(theme, a.fill, b.fill, least) && alike(theme, a.border, b.border, least)
-    };
+    let default_look = drawn(&[], family, variant.name, state);
+    let default_primary = drawn(&[], family, PRIMARY, state);
+    // Parts never bring a consent variant nearer the primary than the family's defaults are, in
+    // this same drawn theme: the farthest of its fill, its edge and (for danger) its words.
+    let words = variant.consent == Some(Consent::Danger);
+    let nearer = look_apart(theme, &look, &primary, words)
+        < look_apart(theme, &default_look, &default_primary, words) - NO_NEARER;
     match variant.consent? {
         Consent::Grants => {
             let own = edge(rules, family, variant.name, &look);
@@ -1336,10 +1356,16 @@ fn consent_broken(
                     keep_blocked_name,
                 ));
             }
-            if !defaults_alike(PRIMARY, SEEN)
-                && alike(theme, look.fill, primary.fill, SEEN)
-                && alike(theme, look.border, primary.border, SEEN)
+            // Allow is as plain as Keep blocked: told apart by its edge and its lock alone.
+            if alike(theme, default_look.fill, default_keep_blocked.fill, SEEN)
+                && !alike(theme, look.fill, keep_blocked.fill, SEEN)
             {
+                return Some(Consented::Both(
+                    "Allow is drawn on Keep blocked's fill".to_owned(),
+                    keep_blocked_name,
+                ));
+            }
+            if nearer {
                 return Some(Consented::Both(
                     "Allow never takes the primary look".to_owned(),
                     PRIMARY,
@@ -1356,11 +1382,19 @@ fn consent_broken(
                     None,
                 ));
             }
-            if !defaults_alike(PRIMARY, SEEN)
-                && alike(theme, look.fill, primary.fill, SEEN)
-                && alike(theme, look.border, primary.border, SEEN)
-                && alike(theme, look.words[0], primary.words[0], SEEN)
-            {
+            let words_apart = |a: &Drawn, b: &Drawn| {
+                apart(theme, a.words[0], b.words[0])
+                    .is_none_or(|distance| distance >= super::DANGER_APART)
+            };
+            if words_apart(&default_look, &default_primary) && !words_apart(&look, &primary) {
+                return Some(Consented::Both(
+                    "danger is distinguishable from primary: its words are apart from the \
+                     primary's"
+                        .to_owned(),
+                    PRIMARY,
+                ));
+            }
+            if nearer {
                 return Some(Consented::Both(
                     "danger is distinguishable from primary".to_owned(),
                     PRIMARY,
@@ -1686,7 +1720,12 @@ fn selector(rule: &Rule, sized: bool) -> String {
 fn sizes(property: Prop) -> bool {
     matches!(
         property,
-        Prop::Padding | Prop::Gap | Prop::FontSize | Prop::FontWeight | Prop::Height
+        Prop::Padding
+            | Prop::Gap
+            | Prop::FontSize
+            | Prop::FontWeight
+            | Prop::Height
+            | Prop::BorderWidth
     )
 }
 
