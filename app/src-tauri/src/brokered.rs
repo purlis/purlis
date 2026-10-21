@@ -39,8 +39,11 @@ pub fn write(held: &Held, ask: &WriteAsk) -> Answer {
         persona: open.persona,
     };
     // **A chat on a pool's runner changes nothing here unasked** (#2046, ADR 0078 §7): its write
-    // is held for the person as a proposal, and made only on their Apply.
-    if let Some(pool) = held.chats().pool_of(ask.chat) {
+    // is held for the person as a proposal, and made only on their Apply. Whatever comes over a
+    // pool's link is held, by the link it came over; and a chat recorded on a pool is held
+    // wherever its line came from.
+    let pool = crate::hooks::heard_from_a_pool().or_else(|| held.chats().pool_of(ask.chat));
+    if let Some(pool) = pool {
         return crate::runnerwrites::hold(held, &pool, asker, ask.write.clone());
     }
     answered(

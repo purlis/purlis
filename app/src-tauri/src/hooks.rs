@@ -387,6 +387,27 @@ pub struct Relayed {
     routes: Mutex<Option<Routes>>,
 }
 
+std::thread_local! {
+    /// The pool whose runner's link the ask heard on this thread came over, while it is heard:
+    /// `None` for this machine's host's (#2046).
+    static HEARD_FROM: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `hear` with the ask it hears known to have come over `pool`'s link, or this machine's.
+fn heard_from<T>(pool: Option<String>, hear: impl FnOnce() -> T) -> T {
+    HEARD_FROM.with(|from| *from.borrow_mut() = pool);
+    let heard = hear();
+    HEARD_FROM.with(|from| *from.borrow_mut() = None);
+    heard
+}
+
+/// **The pool whose runner's link the ask being heard came over** (#2046), or `None` where it
+/// came over this machine's host's: what decides whether a brokered write is held for the
+/// person, by the link and not by the chat the line names.
+pub fn heard_from_a_pool() -> Option<String> {
+    HEARD_FROM.with(|from| from.borrow().clone())
+}
+
 /// Which pool chat `number` runs on, or `None` for this machine (#2046).
 pub type Routes = Arc<dyn Fn(u32) -> Option<String> + Send + Sync + 'static>;
 
@@ -456,9 +477,10 @@ impl Relayed {
             let heeding = Arc::clone(&self.heeding);
             let exec = matches!(heard, purlis_core::hookwire::relay::Heard::SecretExec(_));
             let replies = Arc::clone(&reply);
+            let pool = self.pool.clone();
             let spawned = std::thread::Builder::new()
                 .name("purlis-hook-ask".into())
-                .spawn(move || heeding.hear(link, id, heard, reply));
+                .spawn(move || heard_from(pool, || heeding.hear(link, id, heard, reply)));
             if let Err(why) = spawned {
                 tracing::warn!("purlis: a chat's ask could not be heard ({why})");
                 // A secret exec that will not run keeps no input, and its host is told so

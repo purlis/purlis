@@ -74,7 +74,7 @@ fn a_memory_written_on_a_runner_waits_as_a_proposal_and_is_made_only_on_apply() 
         "nothing is written while it waits"
     );
 
-    let made = apply_in(&root, &writes, id, now()).expect("applied");
+    let made = apply_in(&root, &writes, id, crate::proposals::From::Row, now()).expect("applied");
     assert_eq!(made.session, 4);
     let made = memories(&root);
     assert_eq!(made.len(), 1, "{made:?}");
@@ -85,7 +85,7 @@ fn a_memory_written_on_a_runner_waits_as_a_proposal_and_is_made_only_on_apply() 
         "{text}"
     );
     // Answered once: it waits no more.
-    assert!(apply_in(&root, &writes, id, now()).is_err());
+    assert!(apply_in(&root, &writes, id, crate::proposals::From::Row, now()).is_err());
     assert!(writes.every().is_empty());
 }
 
@@ -116,4 +116,121 @@ fn one_chat_holds_at_most_so_many_proposals() {
         writes.note("builds", chat(5), a_memory(), 99).is_some(),
         "another chat's are its own"
     );
+}
+
+/// A memory too long for a row: many lines.
+fn a_long_memory() -> Write {
+    purlis_core::runnerwrite::held_as(Write::WorkspaceRemember {
+        text: (1..=30)
+            .map(|n| format!("line {n} of the lesson\n"))
+            .collect(),
+        title: None,
+    })
+}
+
+#[test]
+fn a_write_its_row_cannot_show_whole_is_opened_and_applied_only_from_its_own_tab() {
+    let (_dir, root) = a_project();
+    let writes = RunnerWrites::default();
+    let id = writes
+        .note("builds", chat(4), a_long_memory(), 100)
+        .unwrap();
+    let one = &writes.every()[0];
+
+    let shown = crate::asking::runner_write(one);
+    let offered: Vec<&str> = shown.options.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(offered, vec![crate::asking::OPEN, crate::asking::DISMISS]);
+    assert!(!crate::asking::runner_write_shown_whole(one));
+
+    // Apply from a row is refused, and it still waits.
+    let refused = apply_in(&root, &writes, id, crate::proposals::From::Row, now());
+    assert!(
+        matches!(&refused, Err(NotMade::Kept(why)) if why == NOT_SHOWN_WHOLE),
+        "{refused:?}"
+    );
+    assert_eq!(memories(&root), Vec::<String>::new());
+    assert_eq!(writes.every().len(), 1);
+
+    // Its tab shows it whole, and Apply there makes it, every line as shown.
+    let whole = whole_of(&writes.every()[0]);
+    assert!(whole.applies);
+    assert!(
+        whole.said.contains("line 30 of the lesson"),
+        "{}",
+        whole.said
+    );
+    apply_in(&root, &writes, id, crate::proposals::From::Tab, now()).expect("applied");
+    let made = memories(&root);
+    let text =
+        std::fs::read_to_string(root.join("workspaces/alpha/memory").join(&made[0])).unwrap();
+    assert!(text.contains("line 1 of the lesson\nline 2"), "{text}");
+}
+
+#[test]
+fn a_short_write_is_applied_from_its_row_as_the_row_says_it() {
+    let writes = RunnerWrites::default();
+    writes.note("builds", chat(4), a_memory(), 100).unwrap();
+    let one = &writes.every()[0];
+    let shown = crate::asking::runner_write(one);
+    let offered: Vec<&str> = shown.options.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(offered, vec![crate::asking::APPLY, crate::asking::DISMISS]);
+    assert!(
+        shown
+            .says
+            .contains("“Runner branches”: The pool's runner keeps its own branch.")
+    );
+}
+
+#[test]
+fn a_write_that_draws_otherwise_is_applied_nowhere() {
+    let (_dir, root) = a_project();
+    let writes = RunnerWrites::default();
+    let id = writes
+        .note(
+            "builds",
+            chat(4),
+            Write::Todo {
+                text: "fix\u{202e}gol".into(),
+            },
+            100,
+        )
+        .unwrap();
+    let one = &writes.every()[0];
+    assert!(!crate::asking::runner_write_shown_whole(one));
+    let whole = whole_of(one);
+    assert!(!whole.applies);
+    assert_eq!(whole.why.as_deref(), Some(DRAWN_OTHERWISE));
+    assert!(
+        !whole.said.contains('\u{202e}'),
+        "drawn inertly: {}",
+        whole.said
+    );
+    for from in [crate::proposals::From::Row, crate::proposals::From::Tab] {
+        assert!(matches!(
+            apply_in(&root, &writes, id, from, now()),
+            Err(NotMade::Kept(_))
+        ));
+    }
+}
+
+#[test]
+fn an_apply_the_project_refuses_is_said_and_waits_no_more() {
+    let (_dir, root) = a_project();
+    let writes = RunnerWrites::default();
+    // A memory to bring back from an archive that holds none.
+    let id = writes
+        .note(
+            "builds",
+            chat(4),
+            Write::UnarchiveMemory {
+                of: purlis_core::brokered::Store::Workspace,
+                slug: "no-such-memory".into(),
+                restore_as: None,
+            },
+            100,
+        )
+        .unwrap();
+    let refused = apply_in(&root, &writes, id, crate::proposals::From::Row, now());
+    assert!(matches!(refused, Err(NotMade::Refused(..))), "{refused:?}");
+    assert!(writes.every().is_empty());
 }

@@ -10,6 +10,7 @@ import { IN_ITS_CHAT, answerTaken, answerThrough, asksMoved, useAsks } from "./a
 import type { Shown } from "./bindings";
 import { OPEN_BROWSER_ASK, type OpenBrowserAsk } from "./browserNeedsYou";
 import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
+import { OPEN_RUNNER_WRITE_ASK } from "./runnerWriteOpen";
 import { PROFILE_SIGN_IN } from "./settings/links";
 import { useSandboxCommands } from "./sandboxAsked";
 
@@ -538,8 +539,33 @@ describe("a runner chat's change to the project (#2046)", () => {
       live: false,
     });
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
-      ["apply_runner_write", { plane: PLANE, id: 3 }],
+      ["apply_runner_write", { plane: PLANE, id: 3, from: "row" }],
       ["dismiss_runner_write", { plane: PLANE, id: 3 }],
     ]);
+  });
+
+  it("opens one its row cannot show whole in its own tab, and sends nothing", async () => {
+    const calls = sent({});
+    const asked: unknown[] = [];
+    const heard = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener(OPEN_RUNNER_WRITE_ASK, heard);
+    const opens: Shown = {
+      ...RUNNER_WRITE,
+      options: [
+        { id: "open", label: "Open", allows: false },
+        { id: "dismiss", label: "Dismiss", allows: false },
+      ],
+    };
+    expect(await answerTaken(PLANE, opens, "open")).toEqual({
+      refused: undefined,
+      live: false,
+      opened: true,
+    });
+    expect(await answerTaken(PLANE, opens, "apply")).toMatchObject({
+      refused: expect.stringContaining("is not one of the answers"),
+    });
+    window.removeEventListener(OPEN_RUNNER_WRITE_ASK, heard);
+    expect(asked).toEqual([{ plane: PLANE, id: 3 }]);
+    expect(calls).toEqual([]);
   });
 });

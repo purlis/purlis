@@ -1311,6 +1311,7 @@ export const commands = {
 	projectsNotHeld: __WINDOW_ONLY_RESULT,
 	chatsRunOn: __WINDOW_ONLY_RESULT,
 	applyRunnerWrite: __WINDOW_ONLY_RESULT,
+	runnerWrite: __WINDOW_ONLY_RESULT,
 	dismissRunnerWrite: __WINDOW_ONLY_RESULT,
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
@@ -2259,7 +2260,7 @@ export type AnswerPath =
 { via: "proposed-change"; id: number; path: string } | 
 /**
  *  `apply_runner_write` for Apply and `dismiss_runner_write` for Dismiss, on held runner
- *  write `id` (#2046).
+ *  write `id` (#2046); Open opens its own tab, which shows it whole, and sends nothing.
  */
 { via: "runner-write"; id: number } | 
 /**
@@ -8114,6 +8115,23 @@ export type RunnerBranch = {
 	 *  checkout is on where there is none.
 	 */
 	ahead: number,
+};
+
+/**
+ *  **A held write whole, as its own tab draws it**: what it would do with every text whole, and
+ *  whether Apply is offered there, or why not.
+ */
+export type RunnerWriteWhole = {
+	/**  The chat that asked for it. */
+	session: number,
+	/**  The pool it runs on. */
+	pool: string,
+	/**  What it would do, every text whole, drawn safely. */
+	said: string,
+	/**  Whether Apply is offered: every text it carries is drawn as it is. */
+	applies: boolean,
+	/**  Why Apply is not offered, in a sentence. */
+	why: string | null,
 };
 
 /**  What the picker says about the sandbox for one profile, before anything starts. */

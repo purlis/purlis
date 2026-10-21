@@ -182,7 +182,7 @@ pub enum AnswerPath {
     /// proposal `id` (#1975); Open opens its own tab, titled by `path`, and sends nothing.
     ProposedChange { id: u32, path: String },
     /// `apply_runner_write` for Apply and `dismiss_runner_write` for Dismiss, on held runner
-    /// write `id` (#2046).
+    /// write `id` (#2046); Open opens its own tab, which shows it whole, and sends nothing.
     RunnerWrite { id: u32 },
     /// Sign in sends nothing: it opens a shell tab where the core types the harness's own
     /// sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
@@ -1249,27 +1249,44 @@ fn runner_write_key(id: u32) -> String {
     format!("runner-write:{id}")
 }
 
-/// **The runner write adapter** (#2046): a change to the project a chat on a pool's runner
-/// asked for, said in words, held until the person answers: **Apply** makes it as the window
-/// would for a chat here, **Dismiss** makes nothing. Never "always apply".
-pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
-    let says = format!(
+/// What a held runner write's row says.
+fn runner_write_says(one: &crate::runnerwrites::HeldWrite) -> String {
+    format!(
         "Asks, from pool {}, to change this project: {}",
         one.pool, one.said
-    );
+    )
+}
+
+/// **Whether held runner write `one`'s row shows it whole** (#1146's rule): its line, as the
+/// row draws it, is the line said, with no text cut, collapsed, masked or escaped; so what the
+/// person reads there is what Apply writes.
+pub fn runner_write_shown_whole(one: &crate::runnerwrites::HeldWrite) -> bool {
+    let says = runner_write_says(one);
+    !purlis_core::runnerwrite::cut(&one.write) && said_inertly(&says) == says
+}
+
+/// **The runner write adapter** (#2046): a change to the project a chat on a pool's runner
+/// asked for, said in words, held until the person answers. **Apply** is offered only where the
+/// row shows it whole ([`runner_write_shown_whole`]); otherwise **Open** shows it whole in its
+/// own tab, where Apply is pressed. **Dismiss** makes nothing. Never "always apply".
+pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
+    let mut options = Vec::new();
+    if runner_write_shown_whole(one) {
+        options.push(Offered {
+            id: APPLY.to_owned(),
+            label: "Apply".to_owned(),
+            allows: true,
+            preselected: None,
+        });
+    } else {
+        options.push(refuses(OPEN, "Open"));
+    }
+    options.push(refuses(DISMISS, "Dismiss"));
     Shown {
         session: one.session,
         ask: runner_write_key(one.id),
-        says: said_inertly(&says),
-        options: vec![
-            Offered {
-                id: APPLY.to_owned(),
-                label: "Apply".to_owned(),
-                allows: true,
-                preselected: None,
-            },
-            refuses(DISMISS, "Dismiss"),
-        ],
+        says: said_inertly(&runner_write_says(one)),
+        options,
         source: AskSource::RunnerWrite,
         chain: Vec::new(),
         answer: AnswerPath::RunnerWrite { id: one.id },

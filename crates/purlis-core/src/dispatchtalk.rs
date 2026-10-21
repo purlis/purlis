@@ -302,13 +302,23 @@ pub enum ProposalWord {
     /// The file changed since it was proposed, so it cannot be applied: read it again and
     /// propose again if it is still wanted.
     Stale { path: String },
+    /// The person applied it, and it could not be made, for `why`, purlis's own sentence:
+    /// nothing was written (#2046).
+    NotMade { path: String, why: String },
+    /// purlis restarted, and every change this chat asked for before waits no more: nothing of
+    /// them was written (#2046). It names no change.
+    Restarted,
 }
 
 impl ProposalWord {
-    /// The file it is about.
+    /// The file it is about: none for [`Self::Restarted`].
     pub fn path(&self) -> &str {
         match self {
-            Self::Applied { path } | Self::Dismissed { path } | Self::Stale { path } => path,
+            Self::Applied { path }
+            | Self::Dismissed { path }
+            | Self::Stale { path }
+            | Self::NotMade { path, .. } => path,
+            Self::Restarted => "",
         }
     }
 }
@@ -674,7 +684,7 @@ impl Talk {
     /// file**: a later word about the same file takes the place of one not handed yet.
     pub fn proposal_word(&mut self, chat: u32, word: ProposalWord) {
         let path = word.path();
-        if path.is_empty()
+        if (path.is_empty() && word != ProposalWord::Restarted)
             || path.len() > crate::proposed::MOST_PATH_BYTES
             || path.chars().any(|c| c.is_control() || c == '`')
         {
@@ -1345,6 +1355,15 @@ pub fn proposal_said(word: &ProposalWord) -> String {
              changed since you read it. Read it again and propose the change again if it is \
              still wanted. This line is purlis's own."
         ),
+        ProposalWord::NotMade { path, why } => format!(
+            "⬢ purlis: the person applied the change you asked for, `{path}`, and it could not \
+             be made: nothing was written. purlis said: {}. This line is purlis's own.",
+            why.trim_end_matches('.')
+        ),
+        ProposalWord::Restarted => "⬢ purlis: purlis restarted, so every change to the project \
+             this chat asked for before waits no more: none of them was written. Ask again for \
+             any still wanted. This line is purlis's own."
+            .to_owned(),
     }
 }
 

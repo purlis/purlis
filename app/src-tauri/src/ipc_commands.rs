@@ -395,6 +395,7 @@ macro_rules! app_commands {
                 notheld::projects_not_held,
                 dockerpools::chats_run_on,
                 runnerwrites::apply_runner_write,
+                runnerwrites::runner_write,
                 runnerwrites::dismiss_runner_write,
                 dockerpools::set_chats_run_on,
                 updates::check_for_update,

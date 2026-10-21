@@ -122,6 +122,10 @@ pub(crate) fn finish(
     for open in &opened {
         // As old as its dispatch's record says, which the ledger did not see (#1463).
         crate::dispatched::brought_back(held, open.session, &records);
+        // A runner chat's changes held before the restart were in memory alone (#2046).
+        if held.chats().pool_of(open.session).is_some() {
+            crate::runnerwrites::restarted(held, open.session);
+        }
         let told = launch
             .back
             .chats
