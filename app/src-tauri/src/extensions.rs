@@ -648,6 +648,8 @@ pub(crate) fn answer_of(
     levels: &purlis_core::theme::Levels,
     review: impl FnOnce(&[&str]) -> Option<ThemeReview>,
 ) -> ThemeInForce {
+    // The person's colours and contrast, over whatever the levels or a draft chose (#2925).
+    let drawn = drawn.under(&person_in_force());
     let review = {
         let faces = drawn.awaiting_faces();
         if faces.is_empty() {
@@ -687,6 +689,7 @@ pub(crate) fn answer_of(
         follows_system: drawn.follows_system,
         floors: drawn.held.map(|held| held.said()),
         draft: None,
+        mine: drawn.mine.into_iter().map(|one| one.said).collect(),
     }
 }
 
@@ -792,6 +795,9 @@ pub struct ThemeInForce {
     /// the levels choose while it holds every hard floor, and named on the draft strip either
     /// way. `None` when no chat there has one, or the theme as kept was asked for.
     pub draft: Option<crate::themedrafts::WindowDraft>,
+    /// What drawing the person's own colours over this theme left out (#2925): each colour that
+    /// would put a pair under its floor here, said once. Empty when none was.
+    pub mine: Vec<String>,
 }
 
 /// What a refused theme's Notice may offer (#2647, [`ThemeInForce::review`]).
@@ -1109,15 +1115,26 @@ pub struct PersonInForce {
     /// The family list for each font the person named (`ui`, `mono`, `terminal`), as the engine
     /// wrote it.
     pub fonts: std::collections::BTreeMap<String, String>,
+    /// `system` or `reduced` (#2925): `reduced` turns every motion off, whatever the system says.
+    pub motion: String,
+    /// `standard` or `more` (#2925): `more` draws a theme's high-contrast appearance and raises
+    /// the floors, which the engine does to every theme it answers the window with.
+    pub contrast: String,
+    /// The person's colour for each token they set (#2925), as the engine read it: what Settings
+    /// shows. The engine draws them over each theme, held to its floors.
+    pub colours: std::collections::BTreeMap<String, String>,
     pub complaints: Vec<String>,
 }
 
 impl PersonInForce {
-    /// The person's settings as the layout file's `appearance` holds them, read by the engine.
-    pub fn of(appearance: Option<&serde_json::Value>) -> Self {
+    /// The person's settings as the layout file's `appearance` holds them, read by the engine,
+    /// and the layer the engine draws over every theme for them.
+    pub(crate) fn read(
+        appearance: Option<&serde_json::Value>,
+    ) -> (Self, purlis_core::theme::Layer) {
         let (person, complaints) = purlis_core::theme::Person::read(appearance);
         let layer = person.layer();
-        Self {
+        let answered = Self {
             density: match layer.density {
                 purlis_core::theme::Density::Comfortable => "comfortable",
                 purlis_core::theme::Density::Compact => "compact",
@@ -1125,16 +1142,57 @@ impl PersonInForce {
             .to_owned(),
             fonts: layer
                 .fonts
-                .into_iter()
-                .map(|(slot, stack)| (slot.to_owned(), stack))
+                .iter()
+                .map(|(slot, stack)| ((*slot).to_owned(), stack.clone()))
+                .collect(),
+            motion: if layer.reduce_motion {
+                "reduced"
+            } else {
+                "system"
+            }
+            .to_owned(),
+            contrast: match layer.contrast {
+                purlis_core::theme::Least::Standard => "standard",
+                purlis_core::theme::Least::More => "more",
+            }
+            .to_owned(),
+            colours: layer
+                .colours
+                .iter()
+                .map(|(token, colour)| ((*token).to_owned(), colour.clone()))
                 .collect(),
             complaints: complaints.into_iter().map(|one| one.said).collect(),
-        }
+        };
+        (answered, layer)
     }
 }
 
-/// **The person's density and font override, read by the core's theme engine** (#2326): what
-/// the window draws over every theme once Settings changed them. The window keeps them in its
+/// **The person's layer in force for this process** (#2925): their colours and the contrast they
+/// ask for, which the engine draws over every theme the window is answered with
+/// ([`answer_of`]). The layout file is the machine's, so this is one for every window: read
+/// from it as a window is created, and kept again each time Settings changes it
+/// ([`theme_person`]).
+static PERSON: std::sync::Mutex<Option<purlis_core::theme::Layer>> = std::sync::Mutex::new(None);
+
+/// The person's layer in force: nothing set until a window was created or Settings said.
+pub(crate) fn person_in_force() -> purlis_core::theme::Layer {
+    PERSON
+        .lock()
+        .map(|kept| kept.clone().unwrap_or_default())
+        .unwrap_or_default()
+}
+
+/// Keeps `layer` as the person's layer in force.
+pub(crate) fn keep_person(layer: purlis_core::theme::Layer) {
+    if let Ok(mut kept) = PERSON.lock() {
+        *kept = Some(layer);
+    }
+}
+
+/// **The person's density, font override, motion, contrast and colours, read by the core's theme
+/// engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
+/// The colours and the contrast are drawn by the engine, over each theme it answers with, from
+/// now on; the window asks for the theme in force again. The window keeps them in its
 /// layout file beside the text sizes, and is handed the same at creation. `appearance` is the
 /// layout's `appearance` as JSON text.
 #[tauri::command]
@@ -1145,7 +1203,10 @@ pub async fn theme_person(appearance: Option<String>) -> PersonInForce {
     let value = appearance.map(|text| {
         serde_json::from_str::<serde_json::Value>(&text).unwrap_or(serde_json::Value::String(text))
     });
-    PersonInForce::of(value.as_ref())
+    let (answered, layer) = PersonInForce::read(value.as_ref());
+    // What the window asks for next is drawn with it (#2925): it asks again once answered.
+    keep_person(layer);
+    answered
 }
 
 fn owned_names(tokens: &[&str]) -> Vec<String> {

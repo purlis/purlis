@@ -45,6 +45,17 @@
  *   has just changed. Longer than `enter`, because it is the one motion meant to be noticed.
  * - `spin` — one turn of a mark saying *this is still running*.
  * - `breathe` — one breath of a mark saying *this is queued and not yet running*.
+ *
+ * **The shell's motions** (R150, #2925), each on the one ease the Purlis theme gives
+ * `easing.standard` and `easing.enter`, `cubic-bezier(.22, .8, .24, 1)`:
+ *
+ * - `slide` — the rail hiding or showing, and a workspace switch sliding the work across (260).
+ * - `panel` — the right panel arriving (240).
+ * - `half` — a bottom half arriving, and the rail's peek coming in (220).
+ * - `leave` — the peek going, and the rail fading out (200).
+ * - `view` — a side view's list changing (180).
+ *
+ * `quick` is the chevron turning and a switch's knob sliding (150 in Purlis).
  */
 export const DURATIONS = [
   "duration.quick",
@@ -52,6 +63,9 @@ export const DURATIONS = [
   "duration.settle",
   "duration.spin",
   "duration.breathe",
+  "duration.slide",
+  "duration.panel",
+  "duration.half",
 ] as const;
 
 /**
@@ -115,8 +129,31 @@ export function motionVariables(motion: Motion, reduced: boolean): Record<string
 /** The media query the operator's reduced-motion setting is read through. */
 export const REDUCE = "(prefers-reduced-motion: reduce)";
 
-/** Whether the operator has asked for less motion. A webview without `matchMedia` (jsdom, for
- *  one) is read as not having asked, which is the platform's own default. */
-export function motionReduced(): boolean {
+/** Whether the system asks for less motion. A webview without `matchMedia` (jsdom, for one) is
+ *  read as not having asked, which is the platform's own default. */
+export function systemReducesMotion(): boolean {
   return typeof matchMedia === "function" && matchMedia(REDUCE).matches;
 }
+
+/** Whether the person turned motion off in purlis's own settings (#2925): `theme.ts` sets it
+ *  from the person's layer, which the engine reads from the layout file's `appearance`. */
+let inPurlis = false;
+
+/** Says whether the person turned motion off in purlis. `theme.ts` draws again after it. */
+export function reduceMotionInPurlis(reduced: boolean): void {
+  inPurlis = reduced;
+}
+
+/**
+ * **Whether the operator has asked for less motion**, in the system or in purlis (#2925): the
+ * two are layered, and either asking is enough. Under it every duration is `0ms`
+ * ({@link motionVariables}) and the root carries {@link MOTION_ATTRIBUTE}, which the stylesheet's
+ * one global switch reads (`styles.css`): no transition, and every animation over at once.
+ */
+export function motionReduced(): boolean {
+  return inPurlis || systemReducesMotion();
+}
+
+/** The root's attribute that says motion is off: `reduced`, or none. The one global switch in
+ *  `styles.css` reads it, so a transition or a keyframe written without a token still stops. */
+export const MOTION_ATTRIBUTE = "data-motion";

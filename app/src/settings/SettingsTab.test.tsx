@@ -63,6 +63,8 @@ describe("the Settings tab, at the You level", () => {
       "Text",
       "Theme",
       "Density and fonts",
+      "Motion and contrast",
+      "Your colours",
       "Editor",
       "Chats list",
       "Notifications",
@@ -263,10 +265,10 @@ describe("the Settings tab, by keyboard", () => {
     await userEvent.keyboard("{ArrowDown}");
     expect(group("Density and fonts")).toHaveFocus();
     await userEvent.keyboard("{ArrowDown}");
-    expect(group("Editor")).toHaveFocus();
+    expect(group("Motion and contrast")).toHaveFocus();
     await userEvent.keyboard("{Enter}");
 
-    expect(shown()).toHaveAccessibleName("Editor");
+    expect(shown()).toHaveAccessibleName("Motion and contrast");
   });
 });
 

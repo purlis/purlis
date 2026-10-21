@@ -7284,6 +7284,16 @@ h2.sidebar-title .node-icon {
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
 }
 
+/* The right side's region and the bottom panel take the shell's own steps (R150): the right
+   panel arrives across `panel`, a bottom half across `half`. */
+.region-slot.slot-right.arrived {
+  animation-duration: var(--motion-duration-panel);
+}
+
+.region-slot.slot-panel.arrived {
+  animation-duration: var(--motion-duration-half);
+}
+
 /* **A modal surface opening** — every dialog and the scrim behind it. A fade
    and no movement: a question should be where the eye already is. Opening only, on purpose.
    Radix unmounts a closing surface at once unless an animation is running on it, and a close

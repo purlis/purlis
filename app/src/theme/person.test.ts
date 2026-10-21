@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { DEFAULT_THEME, apply, drawnFont, type Person, type Theme } from "./theme";
+import {
+  DEFAULT_THEME,
+  apply,
+  drawPerson,
+  drawnFont,
+  moreContrastAsked,
+  onPersonLook,
+  type Person,
+  type Theme,
+} from "./theme";
 
 /**
  * **The window draws the person's layer over the theme** (#2326). What the layer holds, and
@@ -59,5 +68,31 @@ describe("the person's layer", () => {
         fonts: { terminal: '"X", monospace' },
       }),
     ).toBe('"X", monospace');
+  });
+});
+
+describe("the person's contrast and colours (#2925)", () => {
+  it("asks for more contrast when the person did, whatever the system says", () => {
+    expect(moreContrastAsked(comfortable)).toBe(false);
+    expect(moreContrastAsked({ ...comfortable, contrast: "more" })).toBe(true);
+    expect(moreContrastAsked({ ...comfortable, contrast: "standard" })).toBe(false);
+  });
+
+  it("asks for the theme again only when the colours or the contrast change", () => {
+    const told: string[] = [];
+    const stop = onPersonLook(() => told.push("again"));
+    try {
+      drawPerson({ ...comfortable, density: "compact" });
+      expect(told).toEqual([]);
+      drawPerson({ ...comfortable, colours: { "accent.base": "#8f7bff" } });
+      expect(told).toEqual(["again"]);
+      drawPerson({ ...comfortable, colours: { "accent.base": "#8f7bff" }, motion: "reduced" });
+      expect(told).toEqual(["again"]);
+      drawPerson({ ...comfortable, colours: { "accent.base": "#8f7bff" }, contrast: "more" });
+      expect(told).toEqual(["again", "again"]);
+    } finally {
+      stop();
+      drawPerson(comfortable);
+    }
   });
 });

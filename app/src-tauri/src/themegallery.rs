@@ -587,7 +587,9 @@ fn card_drawn_of(
         values,
         system,
         crate::extensions::contrast_of(more_contrast),
-    )?;
+    )?
+    // A card drawn on the window wears the person's colours and contrast too (#2925).
+    .under(&crate::extensions::person_in_force());
     Some(ThemeInForce {
         // The gallery's card says it is refused; only the window's theme offers the review.
         review: None,
@@ -610,6 +612,7 @@ fn card_drawn_of(
         follows_system: drawn.follows_system,
         floors: drawn.held.map(|held| held.said()),
         draft: None,
+        mine: drawn.mine.into_iter().map(|one| one.said).collect(),
     })
 }
 

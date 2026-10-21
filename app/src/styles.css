@@ -73,6 +73,11 @@
  * the `parts` layer: above `components`, so a part a theme names wins over the family default,
  * and below `forced`. A theme that names no parts writes nothing there.
  *
+ * **Reduced motion is one switch, in the first layer** (R152, #2925). `theme/reduced-motion.css`
+ * stops every transition and animation under the root's `data-motion="reduced"`, which the
+ * window writes when the system or the person's own setting turns motion off. Its declarations
+ * are important in the first layer, so no later layer turns motion back on.
+ *
  * **Forced colours are drawn over all of it** (#2328). `theme/forced-colors.css` says again, in
  * the system's palette and with a shape, what the window says with a background or a shadow
  * alone, for a platform that forces its contrast colours. It is the last layer, `forced`, so it is
@@ -92,6 +97,7 @@
 
 @import "tailwindcss/theme.css" layer(theme);
 @import "./theme/geometry.css" layer(theme);
+@import "./theme/reduced-motion.css" layer(theme);
 @import "./base.css" layer(base);
 @import "@xterm/xterm/css/xterm.css" layer(vendor);
 @import "tailwindcss/utilities.css" layer(utilities);
@@ -234,6 +240,9 @@
   --transition-duration-settle: var(--motion-duration-settle);
   --transition-duration-spin: var(--motion-duration-spin);
   --transition-duration-breathe: var(--motion-duration-breathe);
+  --transition-duration-slide: var(--motion-duration-slide);
+  --transition-duration-panel: var(--motion-duration-panel);
+  --transition-duration-half: var(--motion-duration-half);
 
   --ease-*: initial;
   --ease-standard: var(--motion-easing-standard);

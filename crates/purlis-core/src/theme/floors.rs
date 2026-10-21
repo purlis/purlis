@@ -197,6 +197,34 @@ impl Held {
     }
 }
 
+/// **Two holds' answers as one** (#2925): what holding the floors put right over a theme, and
+/// then over the person's layer drawn on it, each floor and token named once.
+pub(super) fn joined(first: Option<Held>, then: Option<Held>) -> Option<Held> {
+    match (first, then) {
+        (None, then) => then,
+        (first, None) => first,
+        (Some(mut first), Some(then)) => {
+            for floor in then.floors {
+                if !first.floors.contains(&floor) {
+                    first.floors.push(floor);
+                }
+            }
+            for token in then.tokens {
+                if !first.tokens.contains(&token) {
+                    first.tokens.push(token);
+                }
+            }
+            for token in then.untinted {
+                if !first.untinted.contains(&token) {
+                    first.untinted.push(token);
+                }
+            }
+            first.floors.sort();
+            Some(first)
+        }
+    }
+}
+
 /// One failure: the floor, whether only a workspace's tint broke it, and the tokens it is
 /// between, a wash's ground included.
 struct Failure {

@@ -21,7 +21,8 @@ import {
   BUILT_IN,
   CLASSIC,
   SYSTEM,
-  systemAsksMoreContrast,
+  moreContrastAsked,
+  personLook,
   systemIsLight,
   THEME_ALIASES,
   type Theme,
@@ -366,9 +367,9 @@ function enter(
   }
   const appearance = appearanceFor(card, yours) ?? SYSTEM;
   const light = systemIsLight();
-  const more = systemAsksMoreContrast();
+  const more = moreContrastAsked();
   const values = isYours(card, yours) ? JSON.stringify(yours?.options ?? {}) : "";
-  const key = `${keyOf(at)}\u0000${card.key}\u0000${card.stamp}\u0000${appearance}\u0000${values}\u0000${light}\u0000${more}`;
+  const key = `${keyOf(at)}\u0000${card.key}\u0000${card.stamp}\u0000${appearance}\u0000${values}\u0000${light}\u0000${more}\u0000${personLook()}`;
   const kept = drawnThemes.get(key);
   if (kept) {
     showWhileOn(kept, ticket, cards);
