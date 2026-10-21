@@ -647,33 +647,7 @@ fn checked(
 /// for `None`. Every other line is left as written. `None` when `text` has no frontmatter to
 /// hold the line.
 pub fn with_profile(text: &str, profile: Option<&str>) -> Option<String> {
-    let rest = text.strip_prefix("---")?;
-    let end = rest.find("---")?;
-    let (block, after) = rest.split_at(end);
-    let mut lines: Vec<String> = Vec::new();
-    let mut placed = false;
-    for line in block.split_inclusive('\n') {
-        let is_key = line
-            .split_once(':')
-            .is_some_and(|(key, _)| key.trim() == KEY);
-        if !is_key {
-            lines.push(line.to_owned());
-            continue;
-        }
-        // The first line is rewritten where it stands; a second one would answer instead of
-        // it (a later line wins), so it goes.
-        if let (Some(profile), false) = (profile, placed) {
-            lines.push(format!("{KEY}: {profile}\n"));
-            placed = true;
-        }
-    }
-    if let (Some(profile), false) = (profile, placed) {
-        if lines.last().is_some_and(|last| !last.ends_with('\n')) {
-            lines.push("\n".to_owned());
-        }
-        lines.push(format!("{KEY}: {profile}\n"));
-    }
-    Some(format!("---{}{after}", lines.concat()))
+    crate::personas::with_key(text, KEY, profile)
 }
 
 /// **Set the profile `persona`'s chats start on**, or name none with `None`, in its own
