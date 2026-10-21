@@ -100,6 +100,20 @@ jobs:
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+      # The pinned engine the window's end-to-end browser tests download (#2243) makes its
+      # sandbox with user namespaces, which Ubuntu 23.10 and later allow only to a program with
+      # an AppArmor profile that says so, as Chrome's own package installs for itself. Without
+      # one it ends at its start (#2835). This profile is for anything at that path, under the
+      # temporary folder.
+      - name: The pinned engine may make its sandbox
+        run: |
+          printf '%s\n' \
+            'abi <abi/4.0>,' \
+            'include <tunables/global>' \
+            'profile purlis-test-engine /tmp/**/chrome-for-testing/*/chrome-linux64/chrome flags=(unconfined) {' \
+            '  userns,' \
+            '}' | sudo tee /etc/apparmor.d/purlis-test-engine >/dev/null
+          sudo apparmor_parser -r /etc/apparmor.d/purlis-test-engine
       # Built in a step of its own, so the run's step timings say how much of this job is
       # compiling and linking the test binaries and how much is running them, with no log to read.
       - name: Build the tests
