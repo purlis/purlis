@@ -1483,6 +1483,121 @@ fn purlis_exports_as_a_copy_with_its_fonts_icons_and_licence() {
     }
 }
 
+/// A theme folder's files as the engine compares them: `theme.json` read as JSON, the rest as
+/// bytes.
+fn folder_as_read(folder: &Path) -> (String, Vec<(String, Vec<u8>)>) {
+    let files = folder_files(folder);
+    let theme: serde_json::Value = files
+        .iter()
+        .find(|(name, _)| name == "theme.json")
+        .map(|(_, bytes)| serde_json::from_slice(bytes).expect("theme.json is JSON"))
+        .expect("a theme.json");
+    let rest = files
+        .into_iter()
+        .filter(|(name, _)| name != "theme.json")
+        .collect();
+    // Written as text, so the comparison sees the keys' order too.
+    (serde_json::to_string(&theme).expect("JSON"), rest)
+}
+
+#[test]
+fn a_theme_folder_exported_as_design_tokens_imports_back_to_the_same_folder() {
+    let rig = Rig::new();
+    let folder = rig.dir.path().join("made/kept");
+    std::fs::create_dir_all(folder.join("icons")).expect("a folder");
+    std::fs::write(
+        folder.join("theme.json"),
+        r##"{ "name": "Kept", "palette": { "ink": "#101418" },
+              "appearances": [{ "id": "dark", "appearance": "dark",
+                                "tokens": { "surface.base": "ink", "caret": "platform" } }] }"##,
+    )
+    .expect("a theme");
+    std::fs::write(folder.join("LICENSE"), "made up for a test\n").expect("a licence");
+    std::fs::write(folder.join("icons/notes.json"), "{}").expect("a file");
+    let tokens = rig.dir.path().join("kept.tokens.json");
+    let back = rig.dir.path().join("back");
+
+    let exported = rig.run(&[
+        "export",
+        folder.to_str().expect("a path"),
+        "--kind",
+        "design-tokens",
+        "--to",
+        tokens.to_str().expect("a path"),
+    ]);
+    let imported = rig.run(&[
+        "import",
+        tokens.to_str().expect("a path"),
+        "--into",
+        back.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(exported.code, 0, "{}", exported.err);
+    assert_eq!(
+        exported.out.lines().next().unwrap_or_default(),
+        format!("exported kept (3 files) to {}", tokens.display())
+    );
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&tokens).expect("read")).expect("JSON");
+    assert_eq!(
+        written["appearance"]["dark"]["surface"]["base"]["$value"], "{palette.ink}",
+        "a palette colour is a reference to the palette"
+    );
+    assert_eq!(imported.code, 0, "{}{}", imported.out, imported.err);
+    assert!(
+        imported
+            .out
+            .starts_with("imported Kept (design-tokens) into "),
+        "{}",
+        imported.out
+    );
+    assert_eq!(folder_as_read(&back.join("kept")), folder_as_read(&folder));
+}
+
+#[test]
+fn every_built_in_theme_exports_as_design_tokens_and_imports_back_the_same() {
+    for (id, copy) in [
+        ("purlis-classic", "purlis-classic-copy"),
+        ("purlis", "purlis-copy"),
+    ] {
+        let rig = Rig::new();
+        let back = rig.dir.path().join("back");
+
+        let exported = rig.run(&["export", id, "--kind", "design-tokens"]);
+        let tokens = rig.plane().join(format!("{copy}.tokens.json"));
+        let imported = rig.run(&[
+            "import",
+            tokens.to_str().expect("a path"),
+            "--into",
+            back.to_str().expect("a path"),
+        ]);
+
+        assert_eq!(exported.code, 0, "{id}: {}", exported.err);
+        assert_eq!(imported.code, 0, "{id}: {}{}", imported.out, imported.err);
+        let files = if id == "purlis" {
+            purlis_core::theme::purlis_files()
+        } else {
+            purlis_core::theme::Files::from([(
+                "theme.json".to_owned(),
+                purlis_core::theme::CLASSIC_THEME_JSON.as_bytes().to_vec(),
+            )])
+        };
+        let (theme, rest) = folder_as_read(&back.join(copy));
+        let expected: serde_json::Value =
+            serde_json::from_slice(&files["theme.json"]).expect("JSON");
+        assert_eq!(
+            theme,
+            serde_json::to_string(&expected).expect("JSON"),
+            "{id}'s theme.json"
+        );
+        let expected_rest: Vec<(String, Vec<u8>)> = files
+            .into_iter()
+            .filter(|(name, _)| name != "theme.json")
+            .collect();
+        assert_eq!(rest, expected_rest, "{id}'s files");
+    }
+}
+
 #[test]
 fn an_export_writes_its_name_here_and_never_over_a_file_without_force() {
     let rig = Rig::new();
@@ -2059,7 +2174,7 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     let json = ran.json();
     assert_eq!(json["schema"], 1);
-    assert_eq!(json["version"], 1);
+    assert_eq!(json["version"], 2);
     assert_eq!(
         json["theme_schema"]
             .as_str()

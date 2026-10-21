@@ -6,6 +6,7 @@ import { useContext, type ComponentType, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { Offer } from "./actions";
 import { HalfActions } from "./halfHead";
+import { IconButton } from "./ui/button/Button";
 
 /**
  * One section of the Attention region: **its heading, and whatever it holds under it.**
@@ -94,17 +95,13 @@ export function HeadingOffer({
 }) {
   if (!offer) return null;
   return (
-    <button
-      type="button"
-      className="panel-view"
-      // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-      tabIndex={0}
+    <IconButton
+      size="sm"
       aria-label={offer.title}
       title={offer.available ? (offer.note ?? offer.title) : offer.reason}
-      disabled={!offer.available}
-      onClick={() => onPress(offer)}
-    >
-      <Mark className="node-icon" aria-hidden="true" />
-    </button>
+      isDisabled={!offer.available}
+      onPress={() => onPress(offer)}
+      icon={<Mark className="node-icon" aria-hidden="true" />}
+    />
   );
 }

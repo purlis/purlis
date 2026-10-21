@@ -121,10 +121,8 @@
 
   /* What ends or destroys, and a ground that says something is wrong: a dashed outline inside
      its edge, which takes no room. Focus, below, draws its solid ring over it. */
-  .ui-button-danger,
+  [data-scope="button"][data-part="root"][data-variant="danger"],
   .ui-menu-item-danger,
-  .answer .ends-it,
-  .ui-setting-actions button.ends-it,
   .title-kill-switch[data-stopped="yes"],
   .trouble,
   .ui-inline-surface-trouble,

@@ -11,7 +11,7 @@ import { commands, type PlaneId, type StartOptions, type WithoutSandbox } from "
 import { useChatsHere } from "./chatState";
 import { Choice, Field, SettingActions, SettingGroup, SettingRow } from "./settings/components";
 import { profileCommand, profilePage } from "./settings/profileAddress";
-import { GrantsMark } from "./primitives/Grants";
+import { Button } from "./ui/button/Button";
 
 /**
  * The value that stands for "no persona at all".
@@ -309,15 +309,12 @@ export function StartChat({
               row offers, where one ignore line is the whole cure. */}
           {options.ignore_fix_id && onFix && (
             <SettingActions>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                disabled={fixing}
-                onClick={() => options.ignore_fix_id && onFix(options.ignore_fix_id)}
+              <Button
+                isDisabled={fixing}
+                onPress={() => options.ignore_fix_id && onFix(options.ignore_fix_id)}
               >
                 {fixing ? "Adding the ignore line…" : "Add the ignore line"}
-              </button>
+              </Button>
             </SettingActions>
           )}
           {options.declares_none && !options.ignore_fix && localFile !== undefined && (
@@ -470,16 +467,7 @@ export function StartChat({
                     <p className="honest">
                       Install it with <code>{sandbox.install}</code>. It needs sudo, so purlis types
                       it in a shell tab and leaves running it to you.{" "}
-                      {onInstall && (
-                        <button
-                          className="ui-button"
-                          type="button"
-                          tabIndex={0}
-                          onClick={onInstall}
-                        >
-                          Type it in a shell tab
-                        </button>
-                      )}
+                      {onInstall && <Button onPress={onInstall}>Type it in a shell tab</Button>}
                     </p>
                   )}
                 </>
@@ -512,14 +500,11 @@ export function StartChat({
                     {onOpenSettings && (
                       <>
                         {" "}
-                        <button
-                          className="ui-button"
-                          type="button"
-                          tabIndex={0}
-                          onClick={() => onOpenSettings(profilePage(name), profileCommand(name))}
+                        <Button
+                          onPress={() => onOpenSettings(profilePage(name), profileCommand(name))}
                         >
                           Open {name} in Settings
-                        </button>
+                        </Button>
                       </>
                     )}
                   </li>
@@ -542,9 +527,7 @@ export function StartChat({
               {/* One Ask per profile, in the Inbox: its Sign in runs the harness's own sign-in in
                   a shell tab the person drives (#2035). */}
               Sign in {signIn} waits in the Inbox.{" "}
-              <button className="ui-button" type="button" tabIndex={0} onClick={onShowSignIn}>
-                Go to the Inbox
-              </button>
+              <Button onPress={onShowSignIn}>Go to the Inbox</Button>
             </p>
           )}
 
@@ -567,11 +550,9 @@ export function StartChat({
             {picked?.approval ? (
               // Approving a profile's command grants it its run: drawn as every grant is
               // (ADR 0097 §6), as plain as Cancel beside it.
-              <button
-                className="ui-button ui-button-grants"
-                type="button"
-                tabIndex={0}
-                onClick={() => {
+              <Button
+                variant="grants"
+                onPress={() => {
                   if (picked.harness) noteHarness(picked.harness.name);
                   onApprove(
                     picked.name,
@@ -583,30 +564,27 @@ export function StartChat({
                     withoutSandbox,
                   );
                 }}
-                disabled={!picked || starting || blockedByPolicy}
+                isDisabled={!picked || starting || blockedByPolicy}
               >
-                <GrantsMark />
                 {starting ? "Starting…" : `Approve and ${startWord.toLowerCase()}`}
-              </button>
+              </Button>
             ) : (
-              <button
-                className="ui-button ui-button-primary"
-                type="button"
-                tabIndex={0}
-                onClick={() => {
+              <Button
+                variant="primary"
+                onPress={() => {
                   if (!profile) return;
                   if (picked?.harness) noteHarness(picked.harness.name);
                   onStart(profile, persona, showFooter, label, newBranch, withoutSandbox);
                 }}
-                disabled={!profile || starting || blockedByPolicy}
+                isDisabled={!profile || starting || blockedByPolicy}
               >
                 {starting ? "Starting…" : startWord}
-              </button>
+              </Button>
             )}
             {/* Focused on opening, though second: see `onOpenAutoFocus` above. */}
-            <button className="ui-button" type="button" ref={cancel} tabIndex={0} onClick={leave}>
+            <Button ref={cancel} onPress={leave}>
               Cancel
-            </button>
+            </Button>
           </SettingActions>
         </Dialog.Content>
       </Dialog.Portal>

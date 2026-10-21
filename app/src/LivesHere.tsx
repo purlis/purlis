@@ -7,6 +7,7 @@ import { commands, type PlaneId } from "./bindings";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
 import { PUBLISHED, PublishProject } from "./PublishProject";
 import { useReadOnlySaid } from "./ReadOnlyLine";
+import { Button } from "./ui/button/Button";
 
 /** What the line says: plainly where the project is, and what that costs. */
 export const LIVES_HERE =
@@ -65,15 +66,13 @@ export function LivesHere({ plane, as = "line" }: { plane: PlaneId; as?: "line" 
     <PublishProject plane={plane} suggested={publishing} onClose={() => setPublishing(undefined)} />
   );
   const publish = suggested !== undefined && (
-    <button
-      type="button"
-      tabIndex={0}
-      disabled={readOnly !== undefined}
+    <Button
+      isDisabled={readOnly !== undefined}
       title={readOnly}
-      onClick={() => setPublishing(suggested)}
+      onPress={() => setPublishing(suggested)}
     >
       Publish to GitHub or GitLab…
-    </button>
+    </Button>
   );
   // The dialog stays where it is drawn whether or not the line is: once a publish lands the line
   // goes, and the dialog, which says where it went, must not be drawn afresh.

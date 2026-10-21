@@ -23,6 +23,7 @@ import type { PanelEmpty, PanelRow, RowAction } from "./bindings";
 import { byDay, isDated, type Day } from "./dayGroups";
 import { EmptyState } from "./EmptyState";
 import { useTabStop } from "./roving";
+import { Button } from "./ui/button/Button";
 
 /**
  * The list a panel is drawn from, and the one the operator asked for by name.
@@ -235,17 +236,14 @@ export function PanelList({
         body={empty.body === null ? undefined : codeSpans(empty.body)}
         action={
           offer === undefined ? undefined : (
-            <button
-              type="button"
-              className="ui-button ui-button-primary"
-              // #190: WebKit leaves a button out of the tab sequence without this.
-              tabIndex={0}
-              disabled={!offer.available}
+            <Button
+              variant="primary"
+              isDisabled={!offer.available}
               title={offer.available ? offer.note : offer.reason}
-              onClick={() => onRun?.(offer.id)}
+              onPress={() => onRun?.(offer.id)}
             >
               {offer.title}
-            </button>
+            </Button>
           )
         }
         testid={testid === undefined ? undefined : `${testid}-empty`}
@@ -497,15 +495,15 @@ function Row({
       <span className="row-actions">
         {row.actions.map((action) => (
           <RovingFocusGroup.Item key={action.id} asChild tabStopId={actionStop(row, action)}>
-            <button
-              type="button"
-              className="ui-button ui-button-sm row-action"
+            <Button
+              size="sm"
               aria-disabled={actsOff !== undefined || undefined}
               title={actsOff}
-              onClick={actsOff === undefined ? () => onAct(row, action) : undefined}
+              onPress={actsOff === undefined ? () => onAct(row, action) : undefined}
+              className="row-action"
             >
               {action.title}
-            </button>
+            </Button>
           </RovingFocusGroup.Item>
         ))}
       </span>

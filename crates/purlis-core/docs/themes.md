@@ -266,7 +266,7 @@ an unknown token is.
 
 | Family | Parts | Variants |
 |---|---|---|
-| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept) |
+| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept); since version 2 `soft-accent`, `warning-soft` and `link` |
 
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
 keyboard is on it), `disabled` and `open`.
@@ -331,12 +331,10 @@ A consent variant that breaks one draws its family default there, and where that
 so does the variant it is held apart from. Allow's lock is the window's, and no property reaches
 it.
 
-**On today's controls.** The button family's rules also reach its class (`.ui-button`, each
-variant's class and the native states). A variant that is not consent never reaches a button
-that also carries a consent variant's class, so such a button draws as that consent variant. A
-size (`padding`, `gap`, `font-size`, `font-weight`, `height`, `border-width`) never reaches a
-small button (`.ui-button-sm`) or a button in a wrapping row, whose size their own classes keep,
-and a small button's corners are clamped to its own height.
+**Sizes.** A size (`padding`, `gap`, `font-size`, `font-weight`, `height`, `border-width`) is
+the family's default size, md: it never reaches a button drawn at sm or lg, or one in a row that
+wraps, whose size the family keeps, and an sm or lg button's corners are clamped to its own
+height. A button names one variant, so a variant's rule reaches only a button of that variant.
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
 families with parts today: they are drawn as the note under [Geometry](#geometry) says.
@@ -611,7 +609,9 @@ itself never fetches the address; only your editor does.
   `palette:`);
 - an **iTerm2 colour preset** (`iterm`), an `.itermcolors` file;
 - a **Ghostty theme** (`ghostty`): its `key = value` lines;
-- a **theme folder's zip** (`zip`), as `purlis theme export` writes one.
+- a **theme folder's zip** (`zip`), as `purlis theme export` writes one;
+- a **W3C design-tokens file** (`design-tokens`), format 2025.10, as `purlis theme export --kind
+  design-tokens` or a design tool writes one: see [Design tokens](#design-tokens).
 
 The kind is told from the file's name and its first words; `--kind` says it when they do not.
 The new folder goes in `--into <folder>`, a `themes/` folder, or in your own themes' folder,
@@ -1390,6 +1390,65 @@ root, is a link or is encrypted, a folder that is not a theme folder's id, two n
 filesystem writes as one file (in other case or other accents), and a zip whose end lists more
 entries than that are refused whole, and nothing of it is written. A zip holds at
 most 64 files, each at most 2 MiB (the most a font may be) and 16 MiB together.
+
+## Design tokens
+
+`theme.json` is the only format purlis reads a theme in. The W3C Design Tokens Community
+Group's format, version 2025.10, is a way in and out of it, so a design tool and purlis can
+exchange a theme's tokens: `purlis theme export <theme folder> --kind design-tokens` writes the
+folder as one design-tokens file, at `--to <file>` or as `<folder's name>.tokens.json` here, and
+`purlis theme import <file>.tokens.json` reads one back. **Exporting and then importing gives
+the same theme folder**: the same `theme.json`, its component parts and grey tiers included, and
+the same files beside it. Every built-in theme does, and the export is checked against the
+format's official schema in CI.
+
+```
+exported purlis-copy (12 files) to purlis-copy.tokens.json
+```
+
+What is a token:
+
+- **The palette** is the group `palette`, a `color` token for each colour.
+- **Each appearance** is the group `appearance.<id>`. A token's name is split at its dots into
+  groups (`text.muted` is `text` › `muted`). A colour that names a palette colour is a reference
+  to it (`{palette.label}`); one given as hex is the colour. A geometry token is a `dimension` in
+  `px`, a font weight a `fontWeight`, a line height a `number`. The motion is the group
+  `appearance.<id>.motion`: each duration a `duration` in `ms`, each easing a `cubicBezier`.
+- **The `compact` layer** is the group `compact`, typed as an appearance's geometry is.
+- A name that is a token and also starts other tokens' names is its group's `$root`.
+
+What the format has no type for (a flag, a word such as `platform` or the cursor's shape, a
+component part, an option, the tint, the fonts and icon set a theme names) is kept as
+`theme.json` writes it under the vendor key `dev.purlis.theme` in `$extensions`, which the
+format asks every tool to keep: on an appearance's group, its tag, `high-contrast` and its
+untyped values; on the file, the rest of `theme.json`. The files beside `theme.json` (a font, a
+licence, an icon set) travel there too, as base64.
+
+**Colours are hex.** A colour is written in `srgb` with its `hex`, and its `alpha` when it is not
+opaque. Reading, purlis takes a colour's `srgb` components or, in any other colour space or when
+a component is `none`, its `hex`; a colour with neither, and one whose components and hex are two
+colours, refuse the file with a sentence that names the token. A colour spelled another way than the format writes it
+(`#FFF`) keeps its spelling under the vendor key.
+
+**A file purlis did not write** is read by the same rules. Its `appearance.<id>` groups are the
+appearances; with none, the tokens at its top that purlis has names for (`surface.base`,
+`text.primary`) are one appearance, dark or light by its ground. A reference to its `palette`
+keeps the palette name, and any other reference is followed to the colour it ends at. A token
+no purlis token takes, a dimension in `rem`, a font weight given as a word, a JSON pointer
+(`$ref`) and a group's `$extends` are listed under `not taken`. A reference to a token that is
+not there, or round in a circle, refuses the file.
+
+Imports are bounded in size and work. A design-tokens file is at most 24 MiB and holds at most
+400,000 JSON values, counted before it is read, no number longer than 64 KiB and no more strings
+that long than the files it may carry; a number is taken when it is at most 32 characters long;
+a group's or a token's name is at most 64 bytes
+and a token's path, its groups' names and its own, at most 256; the `theme.json` it makes is at
+most 2 MiB, as a zip's is; it has at most 64 appearances; the files it carries are held to a
+zip's bounds (64 files, each at most 2 MiB, 16 MiB together, each where a theme folder keeps a
+file, no two a filesystem writes as one); its groups nest at most 32 deep and it holds at most
+50,000 groups and tokens. A file a newer purlis wrote, whose `dev.purlis.theme` version this one does not
+read, and one whose version is not a whole number, are refused with the version they have.
+A `.json` file with tokens in it is read as design tokens even when its top group is `colors`.
 
 ## Names every platform holds
 

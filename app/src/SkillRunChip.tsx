@@ -6,6 +6,7 @@ import { Sparkles } from "lucide-react";
 import { counted } from "./dispatches";
 import { useOpenRunOf } from "./skillRuns";
 import { useSkillStudioOn } from "./skillStudio";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The skill run open in a tab's chat** (SK-3, #2766): the skill's name and the tool calls
@@ -28,20 +29,21 @@ export const SkillRunChip = memo(function SkillRunChip({
   const calls = counted(run.tool_calls, "tool call", "tool calls");
   return (
     <span className="tab-tasks tab-skill-run">
-      <button
-        type="button"
-        className="ui-button ui-button-ghost ui-button-sm tab-tasks-counts"
+      <Button
+        variant="ghost"
+        size="sm"
+        className="tab-tasks-counts"
         data-testid="tab-skill-run"
         title={`Using the skill ${run.skill}: ${calls} so far. Open its runs.`}
         aria-label={`Using the skill ${run.skill}, ${calls} so far. Open its runs`}
-        onClick={() => onOpen(run.skill, run.id)}
+        onPress={() => onOpen(run.skill, run.id)}
       >
         <span className="count">
           <Sparkles aria-hidden="true" />
           <span className="skill-run-name">{run.skill}</span>
         </span>
         <span className="count">{run.tool_calls}</span>
-      </button>
+      </Button>
     </span>
   );
 });

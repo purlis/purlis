@@ -980,6 +980,20 @@ title bar's ✋, which opens the **Inbox**, and each is counted in red on its ta
 show-more hiding it. **Ignore** clears a chat's items until the next one arrives (ADR 0076).
 _Avoid_: notification, alert (an alert is a **Notice**), waiting (for the state)
 
+**Component family**:
+One kind of control the window draws one way everywhere, such as the button (with the icon button
+and the toggle button), the field, the select or the dialog: its variants, its sizes and its
+keyboard, built once in `app/src/ui/<family>` and used by every screen. A screen never builds a
+control of a family by hand, and lint holds it (ADR 0104).
+_Avoid_: component library, design system (that is the tokens, the families and their rules
+together), widget, house component
+
+**Primitive wrapper**:
+The one file in a component family that wraps a React Aria primitive, the only place the
+primitives library is imported. It is where the family's variants, sizes and parts are set, and
+the seam a later change of library would cross (ADR 0104).
+_Avoid_: adapter, shim, HOC
+
 **Notice**:
 A standing line in a project's window about something that is true now, such as a pin to a
 workspace that is gone or a repo that could not be cloned. A Notice always offers a way out:
@@ -1176,6 +1190,13 @@ theme may set on its own: its fill, border, corners or size, within bounds, keye
 window's wrapper and in the theme engine's closed, versioned manifest (ADR 0103). The button's
 `grants` variant is the look of an answer that grants (an Allow, an Accept), not a grant itself.
 _Avoid_: part (bare, which is plain composition here), slot, sub-component, element
+
+**Design-tokens file**:
+A theme folder written in the W3C Design Tokens Community Group's format, version 2025.10
+(`.tokens.json`), for exchanging a theme with a design tool: `purlis theme export --kind
+design-tokens` writes one and `purlis theme import` reads one back to the same folder. It is a way
+in and out, never a theme format purlis draws from; `theme.json` is that.
+_Avoid_: token file (a theme's tokens live in `theme.json`), tokens export
 
 **Palette** (of a theme):
 A theme's named colours, which its tokens refer to by name, so one colour is changed once. The

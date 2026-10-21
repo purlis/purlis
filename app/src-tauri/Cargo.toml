@@ -67,7 +67,9 @@ rfd = { version = "0.16", default-features = false }
 # The app moving itself (ADR 0042). Its signature check is an ordinary dependency
 # of the plugin, not a feature, so there is no build of it that skips verification.
 tauri-plugin-updater = "2"
-tokio = { version = "1", features = ["net", "time", "rt"] }
+tokio = { version = "1", features = ["fs", "io-util", "net", "time", "rt"] }
+# Where a bundle of a project's code is kept while it crosses to a runner (#2046), removed with it.
+tempfile.workspace = true
 # What the app notices goes to the diagnostic log `purlis_core::applog` installs (#647): a
 # file that rotates daily, and standard error. The version purlis-core uses.
 tracing = "0.1"

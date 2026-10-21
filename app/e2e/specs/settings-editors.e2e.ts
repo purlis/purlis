@@ -99,7 +99,7 @@ async function editorMeasured() {
     const section = editor?.closest("section");
     // The section's help line spans its content box: the width the editor should take.
     const help = section?.querySelector("p.ui-setting-help");
-    const control = document.querySelector(".ui-raw-actions .ui-button");
+    const control = document.querySelector('.ui-raw-actions [data-scope="button"]');
     return {
       editor: box(editor),
       content: box(help),

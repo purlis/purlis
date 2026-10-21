@@ -39,6 +39,7 @@ import { MergeViewer } from "./LightEditor";
 import { sized, ToYourEditor } from "./PieceFiles";
 import { jumpTo } from "../fileJump";
 import { useBranchMoved } from "./branchMoved";
+import { Button } from "../ui/button/Button";
 
 /** The comparison, as the tab draws it: being read, refused with the core's sentence, or read. */
 type Read =
@@ -94,14 +95,9 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
         {now.kind === "read" && <span>{against(now.shown)}</span>}
         <span className="piece-files-actions">
           <ToYourEditor plane={plane} cut={cut} path={path} line={firstLine(now)} />
-          <button
-            type="button"
-            className="ui-button ui-button-sm"
-            tabIndex={0}
-            onClick={() => setAsked((n) => n + 1)}
-          >
+          <Button size="sm" onPress={() => setAsked((n) => n + 1)}>
             Compare again
-          </button>
+          </Button>
         </span>
       </header>
       {again && (
@@ -148,14 +144,9 @@ function ChangedLines({
       <span className="piece-files-actions">
         {offered.map((line) => (
           <Fragment key={line}>
-            <button
-              type="button"
-              className="ui-button ui-button-sm"
-              tabIndex={0}
-              onClick={() => jumpTo({ plane, place: cut, path, line })}
-            >
+            <Button size="sm" onPress={() => jumpTo({ plane, place: cut, path, line })}>
               {`Open at line ${line}`}
-            </button>
+            </Button>
             <ToYourEditor plane={plane} cut={cut} path={path} line={line} />
           </Fragment>
         ))}

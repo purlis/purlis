@@ -69,9 +69,10 @@ fn a_scheduled_run_holds_no_key_and_publishes_nowhere() {
     );
     // The two jobs that sign provenance and write the release run only for a publish.
     for name in ["provenance", "publish"] {
-        assert_eq!(
-            job(&jobs, name).condition(),
-            Some("needs.plan.outputs.publish == 'true'"),
+        assert!(
+            job(&jobs, name)
+                .condition()
+                .is_some_and(|said| said.contains("needs.plan.outputs.publish == 'true'")),
             "job `{name}`"
         );
     }

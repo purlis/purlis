@@ -3,6 +3,7 @@
 
 import { harnessCardId, type Catalogued, type Offer } from "./actions";
 import type { HarnessGlance } from "./bindings";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The card's label as a link, at the end of an off control's reason** (#1134, ADR 0072 §3: "a
@@ -70,15 +71,9 @@ export function ReasonWithCard<Card extends { label: string }>({
   return (
     <>
       {ending.before}
-      <button
-        type="button"
-        className="said-link"
-        // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-        tabIndex={0}
-        onClick={() => onOpen(ending.card)}
-      >
+      <Button variant="link" onPress={() => onOpen(ending.card)} className="said-link">
         {ending.card.label}
-      </button>
+      </Button>
       .
     </>
   );

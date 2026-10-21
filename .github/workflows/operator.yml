@@ -21,6 +21,7 @@ on:
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
       - .github/actions/helm/**
+      - tools/operator-install*
       - .github/workflows/operator.yml
   push:
     branches: [main]
@@ -31,6 +32,7 @@ on:
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
       - .github/actions/helm/**
+      - tools/operator-install*
       - .github/workflows/operator.yml
   # Nightly, so a new advisory against the operator's own lock, or a change elsewhere that
   # breaks the runner image the kind run builds, is reported though nothing here changed.
@@ -116,6 +118,11 @@ jobs:
           sudo install -m 0755 "$RUNNER_TEMP/kind" /usr/local/bin/kind
       # Helm, which installs the operator's chart on the kind cluster.
       - uses: ./.github/actions/helm
+      # Node, for `tools/operator-install.mjs`, which pins the install kind.sh installs (#2281).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
       # The runner image of this commit, from runner-image/Dockerfile, as `runner-image.yml`
       # builds it (the binary and purlis's plugin) but in a debug build: the operator is under
       # test here, not the binary.

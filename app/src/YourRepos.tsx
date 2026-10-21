@@ -6,6 +6,7 @@ import { LoaderCircle } from "lucide-react";
 import { commands, type ListedRepo, type RepoListing, type RepoReach } from "./bindings";
 import { ForgeTokenSignIn } from "./ForgeTokenSignIn";
 import { Field, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 const NOTHING: RepoListing = { repos: [], reaches: [] };
 
@@ -119,7 +120,7 @@ export function YourRepos({
                   <button
                     type="button"
                     tabIndex={0}
-                    className="welcome-link"
+                    className="welcome-link repo-card"
                     disabled={busy}
                     aria-label={`Get ${repo.path}${repo.project ? ", a purlis project," : ""} from ${repo.host} as ${repo.login}`}
                     onClick={() => onPick(repo.url)}
@@ -151,19 +152,18 @@ export function YourRepos({
                   ? `${reach.login} reaches no repos on ${reach.host}. Paste a project's URL above, or sign in as another account.`
                   : `${reach.listed} ${reach.listed === 1 ? "repo" : "repos"} on ${reach.host} as ${reach.login}.`)}{" "}
               {(reach.login === null || reach.trouble !== null) && (
-                <button
-                  type="button"
-                  tabIndex={0}
+                <Button
+                  variant="link"
+                  onPress={() => setSigningIn(forgeOf(reach))}
                   className="welcome-link"
-                  onClick={() => setSigningIn(forgeOf(reach))}
                 >
                   {reach.login === null ? "Sign in…" : "Sign in again…"}
-                </button>
+                </Button>
               )}
               {reach.login !== null && reach.trouble !== null && (
-                <button type="button" tabIndex={0} className="welcome-link" onClick={askAgain}>
+                <Button variant="link" onPress={askAgain} className="welcome-link">
                   Retry
-                </button>
+                </Button>
               )}
             </li>
           ))}

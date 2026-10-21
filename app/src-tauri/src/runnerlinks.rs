@@ -84,13 +84,20 @@ impl ToARunner {
     fn kept(kept: &Kept, docker: Docker, desktop: Identity) -> ToARunner {
         let made = kept.made.clone();
         let checking = docker.clone();
+        let preparing = docker.clone();
         let connector = CommandConnector::new(
-            docker.0.clone(),
+            docker.program().to_path_buf(),
             made.connect_args(),
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || checking.check(&made).map_err(|why| why.0)),
-        );
+        )
+        // Each run of `docker exec` is given what every run of `docker` is: a checked copy of
+        // Docker's settings and the engine pinned (#2752).
+        .preparing(Arc::new(move || {
+            let (env, cleared, held) = preparing.prepared().map_err(|why| why.0)?.into_parts();
+            Ok(purlis_host::Prepared { env, cleared, held })
+        }));
         ToARunner {
             connector,
             device: desktop.device,
@@ -135,15 +142,39 @@ pub fn relaying(
 ) -> purlis_host::RelaysTo {
     Arc::new(move |pool: &str| {
         let machine = machine()?;
-        let kept = purlis_core::runners::runner_for(&machine.config, pool)
+        // A pool's runner, or one of its runners that drains (`<pool>/<runner>`, #2865).
+        let (kept, _) = purlis_core::runners::reachable(&machine.config, pool)
             .map_err(|why| why.to_string())?;
         // A runner of another version than this desktop's is said, every time (#2749).
         if let Some(behind) = behind(&machine, &kept) {
             tracing::warn!("purlis: pool {pool}: {behind}");
         }
+        let resolved = format!("{}/{}", kept.pool(), kept.name());
         let to = ToARunner::of_kept(&machine, &kept)?;
-        Ok(Arc::new(move || to.keep()) as purlis_host::Keep)
+        Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
     })
+}
+
+/// **Which runner the session host the window starts relays to drains** (#2865): one reached as
+/// `<pool>/<runner>`, which keeps its chats and starts no new one. Read from `config_root` as
+/// each `relay_to` is taken.
+pub fn drains_to(config_root: PathBuf) -> purlis_host::DrainsTo {
+    Arc::new(move |name: &str| drains(&config_root, name))
+}
+
+/// **Whether the runner `<pool>/<runner>` kept under `config_root` takes no new chat** (#2865):
+/// only a runner of that pool kept here and not draining takes one. A file that cannot be read,
+/// a runner not kept, a name of another shape and one that drains all refuse it.
+fn drains(config_root: &Path, name: &str) -> bool {
+    let Some((pool, runner)) = name.split_once('/') else {
+        return true;
+    };
+    match purlis_core::runners::read(config_root) {
+        Ok(kept) => !kept
+            .iter()
+            .any(|kept| kept.pool() == pool && kept.name() == runner && !kept.draining),
+        Err(_) => true,
+    }
 }
 
 /// **What this desktop's version is**, as its own `purlis --version` would say it: the
@@ -208,15 +239,18 @@ fn once_for(
     Ok(version)
 }
 
-/// **Whether a chat still runs on the runner `to`** (#2749): what a draining runner waits on
-/// before it is removed. One link, made and let go of; a runner that does not answer is not
+/// **How many chats still run on the runner `to`** (#2749, #2865): what a draining runner waits
+/// on before it is removed. One link, made and let go of; a runner that does not answer is not
 /// known to be idle.
-pub fn runs_a_chat(to: &ToARunner) -> Result<bool, String> {
+pub fn chats_on(to: &ToARunner) -> Result<u32, String> {
     on_one_link(to, async |linked| match linked {
         Ok(client) => client
             .list()
             .await
-            .map(|chats| chats.iter().any(|chat| chat.state != "ended"))
+            .map(|chats| {
+                u32::try_from(chats.iter().filter(|chat| chat.state != "ended").count())
+                    .unwrap_or(u32::MAX)
+            })
             .map_err(|why| why.to_string()),
         Err(down) => Err(down.why),
     })

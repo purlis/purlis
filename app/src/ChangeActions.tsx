@@ -7,6 +7,7 @@ import { LoaderCircle } from "lucide-react";
 import { commands, type LandQuestion, type PlaneId, type PushQuestion } from "./bindings";
 import { Choice, SettingRow } from "./settings/components";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A cross-repo change's Push and Land, from its changes view** (#474, ADR 0060).
@@ -64,22 +65,20 @@ function Doing({
   return (
     <AnswerBar>
       <AlertDialog.Cancel asChild>
-        <button type="button" tabIndex={0} disabled={running} ref={cancel}>
+        <Button isDisabled={running} ref={cancel}>
           {done ? "Close" : "Cancel"}
-        </button>
+        </Button>
       </AlertDialog.Cancel>
       {!done && (
-        <button
-          type="button"
-          className="ends-it"
-          tabIndex={0}
-          disabled={running || disabled}
+        <Button
+          variant="danger"
+          isDisabled={running || disabled}
           aria-busy={running}
-          onClick={onAct}
+          onPress={onAct}
         >
           {running && <LoaderCircle className="node-icon spinning" aria-hidden="true" />}
           {act}
-        </button>
+        </Button>
       )}
     </AnswerBar>
   );

@@ -22,6 +22,7 @@ import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import type { Shown } from "./fileControls";
+import { Button } from "../ui/button/Button";
 
 /**
  * **Settings › Project › Dispatch** (#1439, #1440; spec #1434): how many persona chats a chat
@@ -457,17 +458,14 @@ function useDispatchTable(
                           </OutLink>
                         )}
                       {removable && (
-                        <button
-                          type="button"
-                          className="ui-button"
-                          tabIndex={0}
+                        <Button
                           aria-label={`Remove the override for ${whose}`}
-                          disabled={offFor(one) !== undefined}
+                          isDisabled={offFor(one) !== undefined}
                           title={offFor(one)}
-                          onClick={() => remove(one)}
+                          onPress={() => remove(one)}
                         >
                           Remove override
-                        </button>
+                        </Button>
                       )}
                     </td>
                   </tr>
@@ -534,20 +532,17 @@ function useDispatchTable(
               disabled={open.length === 0 || readOnly !== undefined}
               onValueChange={setPicked}
             />
-            <button
-              type="button"
-              className="ui-button"
-              tabIndex={0}
-              disabled={chosen === undefined || readOnly !== undefined}
+            <Button
+              isDisabled={chosen === undefined || readOnly !== undefined}
               title={readOnly}
-              onClick={() => {
+              onPress={() => {
                 if (chosen === undefined) return;
                 setDrafts((was) => [...was, chosen]);
                 setPicked("");
               }}
             >
               Add an override
-            </button>
+            </Button>
           </div>
         )}
         {trouble}
@@ -566,11 +561,7 @@ export function DispatchLimitsTable({ plane, scope }: { plane: PlaneId; scope?: 
   return (
     <>
       {control()}
-      {undo && (
-        <button type="button" className="ui-button" tabIndex={0} onClick={undo}>
-          Undo
-        </button>
-      )}
+      {undo && <Button onPress={undo}>Undo</Button>}
     </>
   );
 }

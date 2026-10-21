@@ -29,8 +29,8 @@ macro_rules! digest {
 }
 
 const PLACEHOLDER_DIGEST: &str = placeholder_digest!();
-/// The image the plain manifests name. `e2e/kind.sh` and `.github/workflows/operator-image.yml`
-/// replace exactly this line.
+/// The image the plain manifests name. `tools/operator-install.mjs` replaces exactly this line,
+/// for `e2e/kind.sh` and `.github/workflows/operator-image.yml` alike (#2281).
 const PLACEHOLDER: &str = concat!(
     "ghcr.io/purlis/purlis-cluster-operator@",
     placeholder_digest!()
@@ -216,7 +216,7 @@ fn the_plain_operator_manifest_names_the_placeholder_image_once() {
     assert_eq!(
         text.lines().filter(|l| *l == line).count(),
         1,
-        "e2e/kind.sh and operator-image.yml replace exactly `{line}`"
+        "tools/operator-install.mjs replaces exactly `{line}`"
     );
 }
 

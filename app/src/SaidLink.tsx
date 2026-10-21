@@ -3,6 +3,7 @@
 
 import type { SettingsWay } from "./actions";
 import type { SettingsLink } from "./settings/links";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A refusal's way to the setting that puts it right** (#1201, SE-22), drawn beside the words
@@ -20,9 +21,9 @@ export function SaidLink({
   return (
     <>
       {" "}
-      <button type="button" className="said-link" tabIndex={0} onClick={() => onFollow(way.link)}>
+      <Button variant="link" onPress={() => onFollow(way.link)} className="said-link">
         {way.label}
-      </button>
+      </Button>
     </>
   );
 }

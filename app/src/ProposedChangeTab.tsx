@@ -6,8 +6,8 @@ import { commands, type PlaneId, type ProposedWhole } from "./bindings";
 import { asksMoved } from "./asks";
 import { DRAWING } from "./AskWrites";
 import { EmptyState } from "./EmptyState";
-import { GrantsMark } from "./primitives/Grants";
 import { FileCode, LoaderCircle } from "lucide-react";
+import { Button, ButtonRow } from "./ui/button/Button";
 
 /** The merge view, from the editor's own chunk, loaded when a change is opened. */
 const MergeViewer = lazy(() =>
@@ -95,30 +95,16 @@ export function ProposedChangeTab({ plane, id }: { plane: PlaneId; id: number })
           <Drawn onDrawn={() => setDrawn(true)} />
         </Suspense>
       )}
-      <div className="ui-button-row">
+      <ButtonRow>
         {read.applies && (
-          <button
-            type="button"
-            // Apply grants what the change writes: drawn as every grant is (ADR 0097 §6).
-            className="ui-button ui-button-grants"
-            tabIndex={0}
-            aria-disabled={busy || !drawn}
-            onClick={() => answer(true)}
-          >
-            <GrantsMark />
+          <Button variant="grants" aria-disabled={busy || !drawn} onPress={() => answer(true)}>
             Apply
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          className="ui-button"
-          tabIndex={0}
-          aria-disabled={busy}
-          onClick={() => answer(false)}
-        >
+        <Button aria-disabled={busy} onPress={() => answer(false)}>
           Dismiss
-        </button>
-      </div>
+        </Button>
+      </ButtonRow>
       {said !== undefined && <p className="inbox-refused">{said}</p>}
     </section>
   );

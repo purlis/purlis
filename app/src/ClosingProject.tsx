@@ -6,6 +6,7 @@ import * as Alert from "./overlays/alert-dialog";
 import { useFocusBack } from "./EndingChat";
 import { EndingList, type Ending } from "./QuitWarning";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * What charter asks before it closes a project that has chats open.
@@ -82,23 +83,17 @@ export function ClosingProject({
           {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
           <AnswerBar>
             <Alert.Cancel asChild>
-              <button className="ui-button" type="button" ref={cancel} tabIndex={0}>
-                Cancel
-              </button>
+              <Button ref={cancel}>Cancel</Button>
             </Alert.Cancel>
             <Alert.Action asChild>
               {/* `ends-it` only where a chat may end (D-1719-3): closing a project with nothing
                   open loses nothing, and it opens again as it was. */}
-              <button
-                type="button"
-                className={
-                  chats.length > 0 || !heard ? "ui-button ui-button-danger ends-it" : "ui-button"
-                }
-                tabIndex={0}
-                onClick={onClose}
+              <Button
+                variant={chats.length > 0 || !heard ? "danger" : "secondary"}
+                onPress={onClose}
               >
                 {chats.length > 0 ? `Close and end ${count}` : "Close project"}
-              </button>
+              </Button>
             </Alert.Action>
           </AnswerBar>
         </Alert.Content>

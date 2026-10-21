@@ -1127,6 +1127,10 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
                 .join(crate::datahome::BROWSERS),
+            // The checked copies of Docker's settings each run of `docker` is given (#2752).
+            Homes::charter_data(&machine(Os::Linux))
+                .expect("a data home")
+                .join(crate::dockerpool::settings::DIR),
             // The browser logins this device keeps (#2021).
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")

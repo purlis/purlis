@@ -344,9 +344,10 @@ describe("the line is one status bar (qw357)", () => {
     draw({ alerts: { count: 2, open: vi.fn() }, doctor: doctor([row("git", "warn")]) });
 
     for (const item of [screen.getByTestId("status-alerts"), screen.getByTestId("status-doctor")]) {
-      expect(item).toHaveClass("ui-button", "ui-button-ghost", "ui-button-sm");
+      expect(item).toHaveAttribute("data-variant", "ghost");
+      expect(item).toHaveAttribute("data-size", "sm");
     }
-    // And no rule of the window's own boxes them again: the look is the class's, whole.
+    // And no rule of the window's own boxes them again: the look is the family's, whole.
     const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8");
     for (const boxed of [".status-alerts {", ".status-doctor {", ".status-pin {"]) {
       expect(css).not.toContain(`\n${boxed}`);
