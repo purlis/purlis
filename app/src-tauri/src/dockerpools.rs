@@ -248,6 +248,8 @@ pub fn remove_on(machine: &Machine, name: &str) -> Result<Option<String>, String
     };
     let removed = purlis_core::pools::remove(&machine.config, &machine.docker, name, Some(&unpair))
         .map_err(|why| why.to_string())?;
+    // The projects that ran their chats on it run them on no pool now: their marks go (#2846).
+    crate::notheld::recheck(&machine.config);
     Ok(removed.and_then(|removed| removed.left()))
 }
 

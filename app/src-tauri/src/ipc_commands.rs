@@ -367,6 +367,7 @@ macro_rules! app_commands {
                 dockerpools::remove_docker_pool,
                 dockerpools::docker_pool_link,
                 dockerpools::docker_pool_version,
+                notheld::projects_not_held,
                 updates::check_for_update,
                 updates::install_update,
                 updates::restart_to_update,
