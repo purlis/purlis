@@ -747,3 +747,16 @@ fn a_lay_out_into_sets_that_are_a_link_is_refused() {
         "nothing written there"
     );
 }
+
+#[test]
+fn the_studio_checks_every_harness_the_projects_profiles_run_and_claude_code_for_none() {
+    use crate::harness::Harness;
+    let kinds = |words: &[&str]| -> Vec<String> { words.iter().map(|w| (*w).to_owned()).collect() };
+    assert_eq!(
+        harnesses_of(&kinds(&["opencode", "claude", "codex", "claude"])),
+        [Harness::ClaudeCode, Harness::Codex, Harness::Opencode]
+    );
+    assert_eq!(harnesses_of(&kinds(&["codex"])), [Harness::Codex]);
+    assert_eq!(harnesses_of(&kinds(&["sh"])), [Harness::ClaudeCode]);
+    assert_eq!(harnesses_of(&[]), [Harness::ClaudeCode]);
+}

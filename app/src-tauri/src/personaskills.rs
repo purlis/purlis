@@ -25,7 +25,7 @@ pub(crate) fn blocks(root: &Path, name: &str) -> Vec<panel::Block> {
             mark: panel::Mark::Dot,
             tone: panel::Tone::Plain,
             detail: None,
-            runs: Some(format!("skills.studio:persona/{name}")),
+            runs: Some(crate::skillstudio::studio_as(name)),
             actions: Vec::new(),
         }],
         empty: panel::Empty {

@@ -852,8 +852,10 @@ pub fn studio_on(flags: &crate::machine::Flags, env: &dyn Fn(&str) -> Option<Str
 /// **What the Skill studio and `purlis skill list` show** (SK-2): the skill set of a chat in the
 /// plane at `plane`, at its root (`workspace` `None`) or in `workspace`, as `persona` or on none
 /// (SK-5), with the built-in skills from `built_in`. Every skill with its level, and every one
-/// left out with its reason. Read as a Claude Code chat's on this machine: the route is not what
-/// they show, and a harness skill a persona names is looked for in Claude Code's own.
+/// left out with its reason. Read as a Claude Code chat's: the route is not what they show. A
+/// harness skill a persona names is looked for in every harness the project's profiles run
+/// ([`harnesses_used`]): there where any has it, unchecked where none has it and one cannot list
+/// its plugin's skills, and left out only where none has it.
 pub fn in_the_studio(
     built_in: Option<&Path>,
     plane: &Path,
@@ -866,12 +868,42 @@ pub fn in_the_studio(
         linked: None,
     };
     let here = persona.map(|_| {
-        on_machine(
-            crate::harness::Harness::ClaudeCode,
-            &crate::harness_plugin::Env::of(&[]),
-        )
+        let env = crate::harness_plugin::Env::of(&[]);
+        harnesses_used(plane)
+            .into_iter()
+            .flat_map(|harness| on_machine(harness, &env))
+            .collect::<Vec<_>>()
     });
     ask(built_in, Some(at), persona, Route::Plugin, here.as_deref())
+}
+
+/// **Every harness the project's profiles run**, in the registry's order, or Claude Code alone
+/// for a project that offers none on this machine: what the studio checks a persona's harness
+/// skills against.
+pub fn harnesses_used(plane: &Path) -> Vec<crate::harness::Harness> {
+    let kinds: Vec<String> = crate::personaprofile::offers_shown(plane)
+        .into_iter()
+        .map(|offer| offer.kind)
+        .collect();
+    harnesses_of(&kinds)
+}
+
+/// The harnesses profiles of `kinds` run, in the registry's order, or Claude Code alone for none.
+fn harnesses_of(kinds: &[String]) -> Vec<crate::harness::Harness> {
+    let used: Vec<crate::harness::Harness> = crate::harness::Harness::ALL
+        .iter()
+        .copied()
+        .filter(|harness| {
+            kinds
+                .iter()
+                .any(|kind| crate::harness::Harness::of_kind(kind) == Some(*harness))
+        })
+        .collect();
+    if used.is_empty() {
+        vec![crate::harness::Harness::ClaudeCode]
+    } else {
+        used
+    }
 }
 
 /// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,

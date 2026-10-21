@@ -47,13 +47,6 @@ impl Reference {
         })
     }
 
-    /// The skill's own name, without the part before a `:`.
-    pub fn name(&self) -> &str {
-        match self {
-            Self::BuiltIn(name) | Self::Named(name) | Self::Harness { name, .. } => name,
-        }
-    }
-
     /// Whether it names the plane skill `name`: only a bare name can.
     pub(crate) fn names_plane(&self, name: &str) -> bool {
         matches!(self, Self::Named(named) if named == name)

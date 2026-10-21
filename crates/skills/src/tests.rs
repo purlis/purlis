@@ -1045,7 +1045,6 @@ fn a_reference_is_read_by_its_prefix() {
     for nothing in ["", "  ", ":tdd", "superpowers:", ":"] {
         assert_eq!(Reference::parse(nothing), None, "{nothing:?}");
     }
-    assert_eq!(Reference::parse("superpowers:tdd").unwrap().name(), "tdd");
 }
 
 #[test]

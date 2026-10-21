@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useSyncExternalStore } from "react";
-import { commands } from "./bindings";
+import { commands, PERSONA_SCOPE_KEY, SKILL_STUDIO_IN } from "./bindings";
 import type { ViewRef } from "./tabs";
 
 /**
@@ -42,7 +42,7 @@ const SCOPES: Record<
     chat: (name) => `A chat in ${name}`,
   },
   persona: {
-    prefix: "persona/",
+    prefix: PERSONA_SCOPE_KEY,
     title: (name) => `${SKILL_STUDIO_TITLE} · ${name}`,
     chat: (name) => `A chat as ${name}`,
   },
@@ -108,8 +108,9 @@ export function scopeChat(scope: StudioScope): string {
   return SCOPES[scope.at].chat(scope.name);
 }
 
-/** The catalogue row that opens the studio on `workspace`'s chats (#2767). */
-export const SKILL_STUDIO_IN = "skills.studio:";
+/** The catalogue row that opens the studio on a scope's chats, before the scope's key (#2767): the
+ *  core names it once (`skillstudio::STUDIO_IN`). */
+export { SKILL_STUDIO_IN };
 
 /** The catalogue row that opens the studio on `persona`'s chats (#2768): what its page's summary
  *  row and a chat's missing-skills Notice run. */

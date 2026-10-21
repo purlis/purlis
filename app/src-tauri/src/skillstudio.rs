@@ -10,6 +10,19 @@
 use serde::Serialize;
 use specta::Type;
 
+/// The catalogue row that opens the Skill studio on one scope's chats is this, then the scope's
+/// key (`app/src/skillStudio.ts`).
+pub(crate) const STUDIO_IN: &str = "skills.studio:";
+
+/// What a persona's scope key starts with, before its name. A workspace's key is its plain name,
+/// which never holds the `/`.
+pub(crate) const PERSONA_SCOPE_KEY: &str = "persona/";
+
+/// The catalogue row that opens the Skill studio on a chat as `persona`.
+pub(crate) fn studio_as(persona: &str) -> String {
+    format!("{STUDIO_IN}{PERSONA_SCOPE_KEY}{persona}")
+}
+
 /// The level a skill comes from, as the studio draws it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]

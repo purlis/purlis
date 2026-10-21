@@ -43,7 +43,7 @@ pub enum Change {
 /// **The names of `persona`'s own skills**, shared and local, in the plane at `plane`: what its
 /// chats load beside what its `skills:` list names. Read without asking git, so a local skill git
 /// would commit is counted too.
-pub fn own(plane: &Path, persona: &str) -> Vec<String> {
+pub(crate) fn own(plane: &Path, persona: &str) -> Vec<String> {
     [false, true]
         .into_iter()
         .filter_map(|local| super::persona_dir(plane, persona, local))

@@ -294,7 +294,7 @@ pub fn reserved_refusal(name: &str) -> Option<String> {
 /// `None`. Every other line is left as written. The first such line is rewritten where it
 /// stands, and any later one goes, since a later line would answer instead of it. `None` when
 /// `text` has no frontmatter to hold the line.
-pub fn with_key(text: &str, key: &str, value: Option<&str>) -> Option<String> {
+pub(crate) fn with_key(text: &str, key: &str, value: Option<&str>) -> Option<String> {
     let rest = text.strip_prefix("---")?;
     let end = rest.find("---")?;
     let (block, after) = rest.split_at(end);

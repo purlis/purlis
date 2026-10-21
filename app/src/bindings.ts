@@ -3624,7 +3624,11 @@ export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
 
 export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
+export const PERSONA_SCOPE_KEY = "persona/" as const;
+
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
+
+export const SKILL_STUDIO_IN = "skills.studio:" as const;
 
 export const SPECIMEN_BUSY = "purlis is drawing another theme specimen, and draws one at a time: ask again in a moment" as const;
 

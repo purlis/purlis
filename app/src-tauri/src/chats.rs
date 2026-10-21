@@ -1189,10 +1189,8 @@ impl Chats {
         })
     }
 
-    /// What chat `session`'s start found to say on its tab beyond the core's notices, once.
-    /// An older Claude Code's sentence among them is said, from now on, for this process
-    /// (#1699): marked here, as the tab shows it, so a chat that never reached its tab does not
-    /// use the one telling up.
+    /// The skills chat `session`'s persona names that it started without (SK-5, #2768), until
+    /// the Notice that says them is put away.
     pub fn skills_missing(&self, session: u32) -> Option<SkillsMissing> {
         lock(&self.skills_missing).get(&session).cloned()
     }
@@ -1202,6 +1200,10 @@ impl Chats {
         lock(&self.skills_missing).remove(&session);
     }
 
+    /// What chat `session`'s start found to say on its tab beyond the core's notices, once.
+    /// An older Claude Code's sentence among them is said, from now on, for this process
+    /// (#1699): marked here, as the tab shows it, so a chat that never reached its tab does not
+    /// use the one telling up.
     pub fn start_notes(&self, session: u32) -> Vec<String> {
         if let Some(version) = lock(&self.older_in_notes).remove(&session) {
             purlis_core::sandbox::older_shown(version);

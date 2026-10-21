@@ -25,7 +25,7 @@ Each comma-separated entry of the persona's own `skills:` line is one `purlis_sk
 
 ## Every skill choice is the Skill studio's
 
-The persona page shows one row, "Brings N skills into every workspace", which opens the Skill studio filtered to a chat as the persona (decision 35, the dispatcher's ruling R2 of 2026-10-21, over the ticket's older wording of a Skills section on the page). There the persona's own skills, the skills it names and the installed skills it names are listed with their level; Add names one more and Remove takes a name out, editing the persona's own `skills:` line. The studio is read as a Claude Code chat's on this machine, so an installed skill is checked against Claude Code's own.
+The persona page shows one row, "Brings N skills into every workspace", which opens the Skill studio filtered to a chat as the persona (decision 35, the dispatcher's ruling R2 of 2026-10-21, over the ticket's older wording of a Skills section on the page). There the persona's own skills, the skills it names and the installed skills it names are listed with their level; Add names one more and Remove takes a name out, editing the persona's own `skills:` line. An installed skill the persona names is checked against every harness the project's profiles run (Claude Code where none is offered): there where any has it, unchecked where none has it and one cannot list its plugin's skills, and left out only where none has it.
 
 ## A missing skill is a Notice on the chat's tab
 
