@@ -45,6 +45,19 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
   `parameters.a11y.config.rules`, with the reason beside it. Never turn a rule off for every
   story.
 
+## When a component family is done
+
+A family's ticket (spec #2897) is done when it ships:
+
+- a story for each variant and state that draws differently, each passing all four gates in both
+  browsers;
+- a `play` function on every interactive story: its keyboard path, Esc dismissal where it
+  dismisses, and the focus in sight after every move;
+- its baselines, drawn by the label and reviewed in the pull request;
+- its parts in the theme engine's manifest, and its docs;
+- every call site moved to it, with the lint rule for it at error;
+- the operator's before and after look at the screens it changes.
+
 ## Running them
 
 ```bash
