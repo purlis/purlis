@@ -46,9 +46,12 @@ Claim says whether it is ready.
   architecture, a numbered user who is not root, the operator as the whole default command,
   and a binary that starts there.
 - **Tags:** `sha-<commit>`, and `main` for the image of the latest commit; `main` only moves
-  forward. Tags can move, so name the image by its **digest**. The run's summary records it,
-  and its `operator-image` artifact holds the digest and this commit's
-  `operator/deploy/operator.yaml` with its image set to it.
+  forward. Tags can move, so name the image by its **digest**. The run's summary records it.
+  Its `operator-image` artifact holds the digest and `install/`: this commit's plain
+  manifests and chart, with `operator.yaml`'s image and the chart's default `image.repository`
+  and `image.digest` set to that image (#2281). So an install from it names the image built
+  from the same commit as the manifests, with nothing to set.
+  `tools/operator-install.mjs` makes it, and the kind tests install from what it makes.
 - **Signed:** keyless with [cosign](https://docs.sigstore.dev/), by the `operator-image.yml`
   workflow on `main`, through GitHub's OIDC identity, as the runner image is: no key is stored
   anywhere, and the signature's entry in Sigstore's public transparency log names the image
@@ -170,8 +173,8 @@ kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
 
 # 3. The `purlis-system` namespace and the operator, with its image named by digest: the
-#    `operator.yaml` of a run's `operator-image` artifact, which already names it, or this
-#    one with the image set.
+#    `install/operator.yaml` of a run's `operator-image` artifact, which already names it, or
+#    this one with the image set.
 kubectl apply --server-side -f operator/deploy/operator.yaml
 kubectl -n purlis-system set image deployment/purlis-cluster-operator \
   operator=ghcr.io/purlis/purlis-cluster-operator@sha256:<digest>

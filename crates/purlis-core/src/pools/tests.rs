@@ -542,3 +542,39 @@ fn what_a_kept_runner_claims_is_left_as_it_is() {
         "a kept runner's container or volume was touched"
     );
 }
+
+/// **A draining runner is reached as `<pool>/<runner>` until it is removed** (#2865): a link to
+/// it carries on with its chats, while the pool's name still reaches only the pool's runner of
+/// this version. A runner of the pool that is not draining, or one of another pool, is not
+/// reached so.
+#[test]
+fn a_draining_runner_is_reached_under_its_pool_until_it_is_removed() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+
+    let (kept, draining) = runners::reachable(config.path(), "first").unwrap();
+    assert_eq!((kept.name(), draining), (successor.as_str(), false));
+    let (kept, draining) = runners::reachable(config.path(), "first/first").unwrap();
+    assert_eq!((kept.name(), draining), ("first", true));
+    for refused in [
+        format!("first/{successor}"),
+        "other/first".to_owned(),
+        "first/nothing".to_owned(),
+        "nothing-kept".to_owned(),
+    ] {
+        assert!(
+            runners::reachable(config.path(), &refused).is_err(),
+            "{refused}"
+        );
+    }
+
+    // Once it is removed, it is reached no more.
+    drain(config.path(), &fake.docker(), "first", None).unwrap();
+    assert!(runners::reachable(config.path(), "first/first").is_err());
+}

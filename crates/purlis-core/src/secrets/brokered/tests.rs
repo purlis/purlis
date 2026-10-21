@@ -3163,6 +3163,47 @@ fn a_host_alone_in_pghost_the_chat_may_reach_goes_through_a_tunnel() {
     assert!(reached.contains(&(None, "open", 1)), "{reached:?}");
 }
 
+/// [`under_a_service_a_brokered_run_is_logged_by_its_program_and_never_its_vault`], for a run
+/// whose secret's host is reached through a tunnel (#2838): the tunnel's line says its port,
+/// never the secret's variable. Binds sockets: first run on CI.
+#[test]
+fn under_a_service_a_tunnel_is_logged_by_its_port_and_never_its_variable() {
+    use std::io::Read as _;
+    let database = std::net::TcpListener::bind("127.0.0.1:0").expect("a stand-in database");
+    let at = database.local_addr().unwrap();
+    let answering = std::thread::spawn(move || {
+        let (mut conn, _) = database.accept().expect("the tunnel's connection");
+        let mut asked = [0u8; 4];
+        conn.read_exact(&mut asked).expect("the client's bytes");
+        conn.write_all(b"pong").expect("answered");
+    });
+    let project = project();
+    holding_dsn(project.path(), "127.0.0.1");
+    let logged = logged_as_a_service(|| {
+        let mut want = wanted(
+            project.path(),
+            "team",
+            sh(r#"printf ping | /usr/bin/nc -w 5 "$PGHOST" "$PGPORT""#),
+        );
+        want.env = vec!["PGHOST=DSN".into()];
+        want.environment
+            .push(("PGPORT".into(), at.port().to_string().into()));
+        let listed = format!("127.0.0.1:{}", at.port());
+        let (frames, _, _) = served_recorded(
+            &reaching(asker(project.path(), Some("devops")), &[listed.as_str()]),
+            want,
+        );
+        assert_eq!(stdout(&frames), "pong", "{frames:?}");
+    });
+    answering.join().unwrap();
+    assert!(logged.contains("through a tunnel on port"), "{logged}");
+    assert!(
+        !logged.contains("PGHOST"),
+        "the variable was logged: {logged}"
+    );
+    assert!(!logged.contains("team"), "the vault was logged: {logged}");
+}
+
 // ---- a chat runs only its persona's declared tools (D-PE-ruling-2) ----------------------------
 
 /// The operator's ruling of 2026-10-12: a sandboxed chat no longer runs an arbitrary program
@@ -4280,4 +4321,74 @@ fn a_login_allowed_now_answers_the_identity_its_values_are_read_by() {
     asker.confines.as_mut().unwrap().tools = vec![shop_login_armed("team", "OTHER", None)];
     let declared_otherwise = login_allowed(&asker, "shop-login", false).expect("allowed");
     assert_ne!(declared_otherwise, read_by);
+}
+
+/// What is logged at `info` and up while `during` runs on this thread, as a host that is a
+/// service (`purlis serve`) logs it.
+fn logged_as_a_service(during: impl FnOnce()) -> String {
+    #[derive(Clone, Default)]
+    struct Kept(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Kept {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let kept = Kept::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer({
+            let kept = kept.clone();
+            move || kept.clone()
+        })
+        .finish();
+    crate::applog::as_a_service_on_this_thread(true);
+    tracing::subscriber::with_default(subscriber, during);
+    crate::applog::as_a_service_on_this_thread(false);
+    String::from_utf8(kept.0.lock().unwrap().clone()).unwrap()
+}
+
+/// **A runner's journal never names a vault** (#2838): under `purlis serve`, a brokered
+/// `secret exec` that is refused is logged by its program alone, though the refusal names the
+/// vaults.
+#[test]
+fn under_a_service_a_refused_brokered_run_is_logged_by_its_program_and_never_a_vault() {
+    let project = project();
+    let logged = logged_as_a_service(|| {
+        let mut refused = wanted(project.path(), "other", sh("echo no"));
+        refused.env = vec!["X=TOKEN".into()];
+        let frames = served(&asker(project.path(), Some("devops")), refused);
+        assert!(
+            matches!(frames.as_slice(), [Frame::Refused { .. }]),
+            "{frames:?}"
+        );
+    });
+    assert!(logged.contains("/bin/sh"), "the program is said: {logged}");
+    for vault in ["team", "other"] {
+        assert!(
+            !logged.contains(vault),
+            "vault {vault} was logged: {logged}"
+        );
+    }
+}
+
+/// [`under_a_service_a_refused_brokered_run_is_logged_by_its_program_and_never_a_vault`], for a
+/// run that is answered: the line of what ran names its program, never its vault.
+#[test]
+fn under_a_service_a_brokered_run_is_logged_by_its_program_and_never_its_vault() {
+    let project = project();
+    let logged = logged_as_a_service(|| {
+        let mut ran = wanted(project.path(), "team", sh("echo ok"));
+        ran.env = vec!["X=TOKEN".into()];
+        let frames = served(&asker(project.path(), Some("devops")), ran);
+        assert_eq!(frames.first(), Some(&Frame::Started), "{frames:?}");
+    });
+    assert!(
+        logged.contains("ran `/bin/sh`"),
+        "the program is said: {logged}"
+    );
+    assert!(!logged.contains("team"), "the vault was logged: {logged}");
 }

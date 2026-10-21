@@ -509,6 +509,8 @@ struct Inner {
     /// The most bytes one bundle may be here: [`purlis_session_protocol::code::MOST_BUNDLE_BYTES`]
     /// unless a test holds it lower.
     most_bundle: OnceLock<u64>,
+    /// Which runner it relays to drains (#2865): the binary's, or nothing.
+    drains: OnceLock<crate::routing::DrainsTo>,
     /// Set once the window has quit (#2006): whoever serves this host stops.
     quit: tokio::sync::watch::Sender<bool>,
     /// Told whenever a window links or goes, or a project is held or let go of: what the host's
@@ -889,6 +891,7 @@ impl Hosting {
                 code: OnceLock::new(),
                 projects: OnceLock::new(),
                 most_bundle: OnceLock::new(),
+                drains: OnceLock::new(),
                 seen_elsewhere: Mutex::new(None),
                 quit: tokio::sync::watch::Sender::new(false),
                 changed: tokio::sync::Notify::new(),
@@ -973,6 +976,17 @@ impl Hosting {
     pub fn relaying_with(self, relays: crate::routing::RelaysTo) -> Hosting {
         let _ = self.inner.relays.set(relays);
         self
+    }
+
+    /// This host, telling by `drains` which runner it relays to drains (#2865).
+    pub fn draining_with(self, drains: crate::routing::DrainsTo) -> Hosting {
+        let _ = self.inner.drains.set(drains);
+        self
+    }
+
+    /// Which runner it relays to drains, where it is told.
+    pub(crate) fn drains(&self) -> Option<crate::routing::DrainsTo> {
+        self.inner.drains.get().cloned()
     }
 
     /// What links a window's link to a runner, where this host relays one.
