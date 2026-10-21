@@ -120,6 +120,21 @@ fn a_browser_the_window_opens_is_drawn_a_whole_frame_at_a_time() {
 }
 
 #[test]
+fn a_first_browser_start_past_the_hosts_usual_answer_time_still_starts() {
+    // The first start on a host downloads the engine inside it: it is waited for past the
+    // 30 seconds any other answer gets, as long as the download may take.
+    let window = window_of(StandInBrowsers::holding_starts, |hosting| hosting);
+    let opened = std::thread::scope(|scope| {
+        let opening = scope.spawn(|| window.browsers.open(&window.root));
+        until("the start is under way", || window.started.waiting() == 1);
+        std::thread::sleep(crate::hostedsessions::ANSWER_WITHIN + Duration::from_secs(2));
+        window.started.let_starts_go();
+        opening.join().unwrap()
+    });
+    assert!(opened.is_ok(), "{opened:?}");
+}
+
+#[test]
 fn two_clones_of_one_project_each_open_a_browser() {
     // #2178: one project id, two folders.
     let window = window();
