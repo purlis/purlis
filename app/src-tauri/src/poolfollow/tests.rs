@@ -156,7 +156,7 @@ fn a_release_with_no_runner_image_leaves_the_pools_where_they_are() {
     let before = runners::read(&machine.config).unwrap();
     let pools = runners::pools(&machine.config).unwrap();
 
-    note_named(&Ok(None));
+    note_named(&Ok(Found::NoneNamed));
     assert_eq!(this_versions_image_named(), Some(false));
     follow_and_drain(&machine, None, &|_| Ok(true));
 
@@ -167,9 +167,33 @@ fn a_release_with_no_runner_image_leaves_the_pools_where_they_are() {
         "docker was asked to do something"
     );
 
-    // A look that could not be made notes nothing; one that found an image notes it.
+    // A look that could not be made, or one of another version, notes nothing; one that found
+    // this version's image notes it.
     note_named(&Err("offline".into()));
     assert_eq!(this_versions_image_named(), Some(false));
-    note_named(&Ok(Some(Image::pinned(NEW).unwrap())));
+    note_named(&Ok(Found::OtherVersion));
+    assert_eq!(this_versions_image_named(), Some(false));
+    note_named(&Ok(Found::Named(Image::pinned(NEW).unwrap())));
     assert_eq!(this_versions_image_named(), Some(true));
+    note_named(&Ok(Found::OtherVersion));
+    assert_eq!(this_versions_image_named(), Some(true));
+}
+
+/// **Only a manifest of this very version says its release has no runner image** (#2880): one
+/// of another version, a desktop behind or ahead of its channel, says nothing of it.
+#[test]
+fn only_a_manifest_of_this_version_says_its_release_has_no_runner_image() {
+    let ours = "0.4.2-dev.17";
+    assert_eq!(found_in(None, "", ours), Ok(Found::OtherVersion));
+    for other in ["0.4.2-dev.16", "0.4.2-dev.18", "0.4.3"] {
+        assert_eq!(
+            found_in(Some(&serde_json::json!({ "version": other })), "", ours),
+            Ok(Found::OtherVersion),
+            "{other}"
+        );
+    }
+    assert_eq!(
+        found_in(Some(&serde_json::json!({ "version": ours })), "", ours),
+        Ok(Found::NoneNamed)
+    );
 }

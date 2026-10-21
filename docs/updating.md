@@ -373,8 +373,8 @@ version, or one from before the image was named, moves nothing.
 **A runner image that fails never holds the desktop back.** The manifest, provenance and
 publish jobs ask for the jobs the desktop needs by name, so a release whose runner image could
 not be built or signed still ships the desktop, with no `runnerImage` in its manifest. Every
-pool then stays on the runner it has, and the Pools group says a pool of purlis's own image is
-not following.
+pool then stays on the runner it has, and the Pools group says a pool of purlis's own image does
+not move to that version.
 
 ## Counting weekly users, without an identifier
 

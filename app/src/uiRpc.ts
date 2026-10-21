@@ -6950,7 +6950,7 @@ export type PoolVersion = {
 	draining: number,
 	/**
 	 *  Whether this version's release named a runner image, as purlis last found it (#2880):
-	 *  one that named none leaves the pool where it is, not following; `None` until purlis has
+	 *  one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
 	 *  looked.
 	 */
 	named: boolean | null,

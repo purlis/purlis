@@ -10,8 +10,9 @@ implementation, to be confirmed*.
    or not signed, the manifest names no `runnerImage` and says why in the run's log; the run as a
    whole still shows the image's failure. *Decided in implementation, to be confirmed*
    (D-2880-1).
-2. **A release with no runner image moves no pool.** The window notes, at each look, whether its
-   version's manifest named a runner image; where it named none, every pool stays on the runner
-   it has, and a pool of purlis's own image whose runner is of another version says in the Pools
-   group that it is not following purlis and stays on its runner. *Decided in implementation, to
+2. **A release with no runner image moves no pool.** The window notes, at each look, whether the
+   manifest of its very version named a runner image; a manifest of another version (a desktop
+   behind or ahead of its channel) says nothing of it. Where its own named none, every pool stays
+   on the runner it has, and a pool of purlis's own image whose runner is of another version says
+   in the Pools group that it does not move to this version and stays on its runner. *Decided in implementation, to
    be confirmed* (D-2880-2).

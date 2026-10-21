@@ -78,7 +78,7 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
         ? `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. Build your image from purlis ${version.desktop}, then add the pool again.`
         : version.named === false
           ? // The release came out without its runner image (#2880): the pool stays put.
-            `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. The release of ${version.desktop} has no runner image, so the pool is not following purlis and stays on its runner.`
+            `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. The release of ${version.desktop} has no runner image, so the pool does not move to ${version.desktop} and stays on its runner.`
           : `Its runner runs purlis ${version.runner}, and this machine runs ${version.desktop}. New chats start on a runner of ${version.desktop} once that version's runner image is published.`,
     );
   }
