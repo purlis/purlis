@@ -1035,18 +1035,6 @@ fn a_first_key_on_an_element_that_is_no_field_reads_the_whole_tree() {
 }
 
 #[test]
-fn the_engines_tree_is_kept_ready_while_the_person_drives() {
-    let (browser, engine) = browser();
-    browser.take_over();
-    wait_for("the tree is readied", || {
-        !engine.sent("Accessibility.enable").is_empty()
-    });
-    assert!(engine.sent("Accessibility.disable").is_empty());
-    browser.hand_back();
-    assert_eq!(engine.sent("Accessibility.disable").len(), 1);
-}
-
-#[test]
 fn a_key_into_a_second_field_reads_the_whole_tree() {
     // A code typed one box at a time is kept out whole from the whole page's tree (#2144).
     let (browser, engine) = browser();

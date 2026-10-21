@@ -87,9 +87,6 @@ pub(crate) struct Typing {
     /// document number it was blanked under (#2295): a key into it while it keeps the focus
     /// needs no new read of the page.
     focus: Option<Focused>,
-    /// The session whose engine was asked to keep its accessibility tree while the person drives
-    /// (#2967), until the hand-back.
-    tree_kept_on: Option<String>,
 }
 
 /// Whether input lands on what the person saw (#2638), with what judging it read: the page's
@@ -190,7 +187,6 @@ impl Browser {
         };
         // A field blanked in an earlier turn is asked about again from the page itself.
         lock(&self.typing).focus = None;
-        self.ready_the_tree_around_the_focus();
         // Whatever waits for the page wakes now, and finds itself cut.
         self.inner.changed.notify_all();
         epoch
@@ -206,15 +202,6 @@ impl Browser {
         }
         self.keep_typing_out();
         lock(&self.typing).focus = None;
-        // The engine keeps its tree no longer than the person drives (#2967).
-        if let Some(session) = lock(&self.typing).tree_kept_on.take() {
-            let _ = self.devtools().call_within(
-                "Accessibility.disable",
-                json!({}),
-                Some(&session),
-                Duration::from_secs(5),
-            );
-        }
         // What a login the person cut had filled is emptied before the agent has the page.
         self.clear_cut_logins();
         let mut lease = lock(&self.lease);
@@ -872,35 +859,6 @@ impl Browser {
         ["textbox", "searchbox", "combobox", "spinbutton"].contains(&role)
             || ["INPUT", "TEXTAREA"].contains(&name.as_str())
             || editable
-    }
-
-    /// Readies the engine's tree for the person's first key (#2967): the engine makes its
-    /// accessibility tree the first time it is asked, which on a large page is what a first key
-    /// would wait for. Its accessibility domain is enabled on the page's session, on a thread of
-    /// its own, so the engine keeps its tree while the person drives; the hand-back disables it.
-    fn ready_the_tree_around_the_focus(&self) {
-        let Ok(target) = self.target(None) else {
-            return;
-        };
-        let Some(session) = lock(&self.inner.state)
-            .page(&target)
-            .and_then(|page| page.session.clone())
-        else {
-            return;
-        };
-        lock(&self.typing).tree_kept_on = Some(session.clone());
-        let devtools = std::sync::Arc::clone(&self.inner.devtools);
-        let _ = std::thread::Builder::new()
-            .name("purlis-tree-ready".into())
-            .spawn(move || {
-                // Nothing of the page's own world is run, and nothing is kept.
-                let _ = devtools.call_within(
-                    "Accessibility.enable",
-                    json!({}),
-                    Some(&session),
-                    Duration::from_secs(30),
-                );
-            });
     }
 
     /// Whether the document of `frame` on `session` has an element focused (or one inside a

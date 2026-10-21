@@ -11,8 +11,11 @@
    whole tree as before. Every later field of the page is found in the whole tree, so a code
    typed one character a box is kept out whole (#2144). *D-2967-1, decided in implementation, to
    be confirmed.*
-2. **The engine keeps its tree while the person drives.** The engine makes its accessibility tree
-   the first time it is asked, which on a large page is what a first key would wait for: as the
-   person takes the browser over, its accessibility domain is enabled on the page's session, on a
-   thread of its own, so the engine keeps the tree; the hand-back disables it. Nothing of the
-   page's world is run. *D-2967-2, decided in implementation, to be confirmed.*
+2. **What the first key takes, measured.** On the large page of #2295 (20,000 rows, about
+   60,000 nodes), on macOS real Chrome: the first key took 23 to 46 s when it read every frame's
+   whole tree, and takes 250 to 450 ms from the tree around its field; every later key into the
+   field takes a few milliseconds. Enabling the engine's accessibility domain as the person
+   takes over, to have the tree made before the first key, was measured and did not bring the
+   first key under the spec's 50 ms (448 ms a second after the take-over), so purlis does not do
+   it. The first key on such a page stays over the bound; what is left of it is the engine's
+   own making of its tree for the page.
