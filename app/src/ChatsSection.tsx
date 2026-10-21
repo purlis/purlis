@@ -84,6 +84,7 @@ import { stateClock, useStateSince, type StateClock } from "./stateClock";
 import { deletes } from "./tabKeys";
 import { askSettingsLink } from "./settings/links";
 import { DISPATCH } from "./settings/dispatch";
+import { Button } from "./ui/button/Button";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
 type ShownFacts = {
@@ -861,19 +862,17 @@ export function ChatsSection({
           {every.length > 0 && (
             <div className="chats-notes ui-text-secondary">
               {hiddenFirst !== undefined && goesTo !== undefined && (
-                <button
-                  type="button"
-                  className="chats-hidden-go"
-                  // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                  tabIndex={0}
+                <Button
+                  size="sm"
                   data-leads-to={goesTo.session}
                   aria-label={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
                   title={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
-                  onClick={() => onOpen(goesTo.session)}
+                  onPress={() => onOpen(goesTo.session)}
+                  icon={<Hand aria-hidden="true" />}
+                  className="chats-hidden-go"
                 >
-                  <Hand aria-hidden="true" />
                   Go
-                </button>
+                </Button>
               )}
               <p
                 className={said === undefined ? "chats-hidden" : "chats-hidden away"}
@@ -1522,9 +1521,9 @@ const Row = memo(function Row({
         >
           {/* Which limit binds, with its number: only its own is "its task limit". */}
           <span>{atLimit.row}</span>
-          <button type="button" className="at-limit-settings" onClick={onLimits}>
+          <Button variant="link" onPress={onLimits} className="at-limit-settings">
             Dispatch settings
-          </button>
+          </Button>
         </span>
       )}
       {waitingOnMemory !== null && waitingOnMemory > 0 && (

@@ -11,6 +11,7 @@ import { archiveWhere, memoryOf, scopeKey, scopeWord, unnumbered } from "./memor
 import { PAGE, snippetOf } from "./PanelList";
 import { SettingActions } from "./settings/components";
 import { OffWhenReadOnly } from "./ReadOnlyLine";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A store's archive, in a tab of its own** (KN-4, D6): what the window's Delete — and
@@ -267,25 +268,13 @@ export function MemoryArchiveTab({
           {/* A restore writes the committed store: off on a read-only project, with why (#826). */}
           <OffWhenReadOnly>
             <SettingActions>
-              <button
-                type="button"
-                className="ui-button ui-button-primary"
-                tabIndex={0}
-                disabled={restoring}
-                onClick={() => void restore(shown)}
-              >
+              <Button variant="primary" isDisabled={restoring} onPress={() => void restore(shown)}>
                 Restore memory
-              </button>
+              </Button>
               {offered !== undefined && (
-                <button
-                  type="button"
-                  className="ui-button"
-                  tabIndex={0}
-                  disabled={restoring}
-                  onClick={() => void restore(shown, offered)}
-                >
+                <Button isDisabled={restoring} onPress={() => void restore(shown, offered)}>
                   {`Restore as ${offered}`}
-                </button>
+                </Button>
               )}
             </SettingActions>
           </OffWhenReadOnly>

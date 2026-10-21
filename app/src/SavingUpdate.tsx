@@ -5,6 +5,7 @@ import { ArrowDownToLine, LoaderCircle } from "lucide-react";
 import type { ProjectUpdate } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
 import { SettingActions } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** "1 incoming commit", "259 incoming commits". */
 export function incomingSaid(n: number): string {
@@ -46,18 +47,17 @@ export function UpdateFromRemote({
 }) {
   return (
     <SettingActions>
-      <button
-        type="button"
-        className="ui-button ui-button-sm panel-view"
-        tabIndex={0}
+      <Button
+        size="sm"
         data-testid="saving-update"
         title={
           saveFirst
             ? `Save what changed here, then bring in ${incomingSaid(incoming)} from the remote`
             : updateSaid(incoming)
         }
-        disabled={busy}
-        onClick={saveFirst ? onSaveThenUpdate : onUpdate}
+        isDisabled={busy}
+        onPress={saveFirst ? onSaveThenUpdate : onUpdate}
+        className="panel-view"
       >
         {busy ? (
           <LoaderCircle className="node-icon spinning" aria-hidden="true" />
@@ -65,7 +65,7 @@ export function UpdateFromRemote({
           <ArrowDownToLine className="node-icon" aria-hidden="true" />
         )}
         {saveFirst ? "Save, then update" : "Update"}
-      </button>
+      </Button>
     </SettingActions>
   );
 }

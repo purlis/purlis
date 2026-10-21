@@ -71,6 +71,7 @@ import {
   type Frames,
 } from "./imagePreview";
 import { motionReduced } from "../theme/motion";
+import { Button, ToggleButton } from "../ui/button/Button";
 
 export { ToYourEditor };
 
@@ -213,11 +214,9 @@ function CopyAndReveal({ plane, cut, path }: { plane: PlaneId; cut: Place; path:
   };
   return (
     <>
-      <button
-        type="button"
-        className="ui-button ui-button-sm"
-        tabIndex={0}
-        onClick={() =>
+      <Button
+        size="sm"
+        onPress={() =>
           answered(
             commands.copyBranchPath(plane, cut.workspace, cut.repo, cut.piece, path, false),
             `Copied the path of ${path}.`,
@@ -225,17 +224,15 @@ function CopyAndReveal({ plane, cut, path }: { plane: PlaneId; cut: Place; path:
         }
       >
         Copy path
-      </button>
-      <button
-        type="button"
-        className="ui-button ui-button-sm"
-        tabIndex={0}
-        onClick={() =>
+      </Button>
+      <Button
+        size="sm"
+        onPress={() =>
           answered(commands.revealBranchPath(plane, cut.workspace, cut.repo, cut.piece, path))
         }
       >
         {REVEAL_SAID}
-      </button>
+      </Button>
       {sentence !== undefined && <Said>{sentence}</Said>}
     </>
   );
@@ -390,15 +387,15 @@ function ImagePreview({
       <figcaption>
         {now?.trouble ?? (now?.size === undefined ? mime : `${now.size} · ${mime}${still}`)}
         {frames !== undefined && (
-          <button
-            type="button"
-            tabIndex={0}
-            className="ui-button ui-button-ghost ui-button-sm piece-image-play"
-            onClick={() => setPaused(!paused)}
+          <Button
+            size="sm"
+            variant="ghost"
+            onPress={() => setPaused(!paused)}
+            className="piece-image-play"
           >
             {paused ? <Play /> : <Pause />}
             {paused ? "Play" : "Pause"}
-          </button>
+          </Button>
         )}
       </figcaption>
     </figure>
@@ -581,14 +578,12 @@ function ShowWhatChanged({
   onOpenView: (view: ViewRef, title: string) => void;
 }) {
   return (
-    <button
-      type="button"
-      className="ui-button ui-button-sm"
-      tabIndex={0}
-      onClick={() => onOpenView(pieceDiffView(cut, path), pieceDiffTitle(cut, path))}
+    <Button
+      size="sm"
+      onPress={() => onOpenView(pieceDiffView(cut, path), pieceDiffTitle(cut, path))}
     >
       Show what changed
-    </button>
+    </Button>
   );
 }
 
@@ -611,15 +606,9 @@ function SourceToggle({
   if (read.kind !== "text" || !(isMarkdown(path) || (isSvg(path) && svgDraws === true)))
     return null;
   return (
-    <button
-      type="button"
-      className="ui-button ui-button-sm"
-      tabIndex={0}
-      aria-pressed={source}
-      onClick={() => onSource(!source)}
-    >
+    <ToggleButton size="sm" isSelected={source} onPress={() => onSource(!source)}>
       Source
-    </button>
+    </ToggleButton>
   );
 }
 
@@ -729,16 +718,14 @@ export function PieceFilesTab({
                   />
                   <ToYourEditor plane={plane} cut={cut} path={picked} line={at.line} />
                   <CopyAndReveal plane={plane} cut={cut} path={picked} />
-                  <button
-                    type="button"
-                    className="ui-button ui-button-sm"
-                    tabIndex={0}
-                    onClick={() =>
+                  <Button
+                    size="sm"
+                    onPress={() =>
                       onOpenView(pieceFileView(cut, picked), pieceFileTitle(cut, picked))
                     }
                   >
                     Open in a tab of its own
-                  </button>
+                  </Button>
                   {changed !== undefined && (
                     <ShowWhatChanged cut={cut} path={picked} onOpenView={onOpenView} />
                   )}

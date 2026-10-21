@@ -23,6 +23,7 @@ import { createContext, useContext, useState, type DragEvent } from "react";
 import { MessageSquarePlus } from "lucide-react";
 import { commands, type Handed, type PlaneId } from "./bindings";
 import type { Ran } from "./actions";
+import { Button, IconButton } from "./ui/button/Button";
 
 /** The drag's own type: only charter's rows carry it, so a file dragged in from the desktop or
  *  text from another app is never taken for a reference. */
@@ -159,16 +160,16 @@ export function PickAChat({ referenced, how }: { referenced: Referenced; how: "a
   const chats = lent.chats;
   return (
     <span className="pick-a-chat">
-      <button
-        type="button"
-        tabIndex={0}
+      <Button
+        size="sm"
+        variant="ghost"
         aria-expanded={open}
         aria-haspopup="menu"
-        onClick={() => setOpen((was) => !was)}
+        onPress={() => setOpen((was) => !was)}
+        icon={<MessageSquarePlus className="node-icon" aria-hidden="true" />}
       >
-        <MessageSquarePlus className="node-icon" aria-hidden="true" />
         {label}
-      </button>
+      </Button>
       {open && (
         <ChatsToPick
           chats={chats}
@@ -194,15 +195,13 @@ export function StartAChatHere({ referenced }: { referenced: Referenced }) {
   const start = lent?.start;
   if (start === undefined) return null;
   return (
-    <button
-      type="button"
-      tabIndex={0}
+    <IconButton
+      size="sm"
+      variant="ghost"
       aria-label={`Start a chat here on ${referenceSaid(referenced)}`}
-      onClick={() => start(referenced)}
-    >
-      <MessageSquarePlus className="node-icon" aria-hidden="true" />
-      Start a chat here
-    </button>
+      onPress={() => start(referenced)}
+      icon={<MessageSquarePlus className="node-icon" aria-hidden="true" />}
+    />
   );
 }
 

@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { commands, type ForgeAccountRow, type ForgeDeviceCode } from "./bindings";
 import { SettingActions } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** What each scope the sign-in asks for lets purlis do, in the window's words (FI2). */
 const SCOPE_SAYS: Record<string, string> = {
@@ -147,23 +148,10 @@ export function ForgeDeviceSignIn({
                 </strong>
               </p>
               <SettingActions>
-                <button
-                  type="button"
-                  className="ui-button ui-button-primary"
-                  // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                  tabIndex={0}
-                  onClick={() => void openUrl(step.code.verification_uri)}
-                >
+                <Button variant="primary" onPress={() => void openUrl(step.code.verification_uri)}>
                   Open GitHub in your browser
-                </button>
-                <button
-                  type="button"
-                  className="ui-button"
-                  tabIndex={0}
-                  onClick={() => copy(step.code.user_code)}
-                >
-                  Copy code
-                </button>
+                </Button>
+                <Button onPress={() => copy(step.code.user_code)}>Copy code</Button>
               </SettingActions>
               {copied !== undefined && (
                 <p className="ui-setting-help" role="status">
@@ -200,18 +188,11 @@ export function ForgeDeviceSignIn({
 
           <SettingActions>
             {step.at === "ended" && (
-              <button
-                type="button"
-                className="ui-button ui-button-primary"
-                tabIndex={0}
-                onClick={tryAgain}
-              >
+              <Button variant="primary" onPress={tryAgain}>
                 Try again
-              </button>
+              </Button>
             )}
-            <button type="button" className="ui-button" tabIndex={0} onClick={onCancel}>
-              Cancel
-            </button>
+            <Button onPress={onCancel}>Cancel</Button>
           </SettingActions>
         </Dialog.Content>
       </Dialog.Portal>

@@ -17,7 +17,8 @@
  *   drawn at its ordinary width, with motion and no narrowing query in force;
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
- * - `primitives/controls.css` and then `primitives/overlays.css` are in the `components` layer,
+ * - `primitives/controls.css`, `ui/button/button.css` and then `primitives/overlays.css` are in
+ *   the `components` layer,
  *   above `App.css`'s `charter` (`styles.css`), so a primitive's rule beats any of `App.css`'s that
  *   sets the same property, at any specificity;
  * - inside one layer, the winner is the highest specificity, then the last in the file.
@@ -105,20 +106,26 @@ function rulesOf(css: string, layer = 0, from = 0): Rule[] {
 }
 
 /** The window's cascade: `App.css`, and in the layer above it the collections, the control
- *  classes, the overlay surface and then the text roles, in the order `styles.css` imports
- *  them. */
+ *  classes, the button family (#2904), the overlay surface and then the text roles, in the order
+ *  `styles.css` imports them. */
 const COLLECTIONS = rulesOf(sheet("primitives/collections.css"), 1);
 const CONTROLS = rulesOf(sheet("primitives/controls.css"), 1, COLLECTIONS.length);
-const OVERLAYS = rulesOf(sheet("primitives/overlays.css"), 1, COLLECTIONS.length + CONTROLS.length);
+const BUTTONS = rulesOf(sheet("ui/button/button.css"), 1, COLLECTIONS.length + CONTROLS.length);
+const OVERLAYS = rulesOf(
+  sheet("primitives/overlays.css"),
+  1,
+  COLLECTIONS.length + CONTROLS.length + BUTTONS.length,
+);
 const RULES = [
   ...rulesOf(sheet("App.css"), 0),
   ...COLLECTIONS,
   ...CONTROLS,
+  ...BUTTONS,
   ...OVERLAYS,
   ...rulesOf(
     sheet("primitives/text.css"),
     1,
-    COLLECTIONS.length + CONTROLS.length + OVERLAYS.length,
+    COLLECTIONS.length + CONTROLS.length + BUTTONS.length + OVERLAYS.length,
   ),
 ];
 
@@ -202,11 +209,15 @@ export interface Drawn {
 }
 
 /** `selector` as jsdom can match it for an element in `state`: a pseudo-class it cannot match is
- *  an attribute the call puts on the element for the length of the match. */
+ *  an attribute the call puts on the element for the length of the match, and so is the state
+ *  attribute React Aria writes for it (`data-hovered`, `data-focus-visible`). */
 function asMatched(selector: string, state: Drawn): string {
   return selector
-    .replace(/:hover\b/g, state.hover ? "[data-cascade-hover]" : ":not(*)")
-    .replace(/:focus-visible\b/g, state.focusVisible ? "[data-cascade-focus]" : ":not(*)");
+    .replace(/:hover\b|\[data-hovered\]/g, state.hover ? "[data-cascade-hover]" : ":not(*)")
+    .replace(
+      /:focus-visible\b|\[data-focus-visible\]/g,
+      state.focusVisible ? "[data-cascade-focus]" : ":not(*)",
+    );
 }
 
 /**

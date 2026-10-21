@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { ForgeAccountRow } from "./bindings";
 import { ForgeDeviceSignIn } from "./ForgeDeviceSignIn";
 import { ForgeGitLabSignIn } from "./ForgeGitLabSignIn";
+import { Button, ButtonRow } from "./ui/button/Button";
 
 /** The forges with a browser sign-in, by the word the core names each. */
 type Through = "github" | "gitlab";
@@ -30,26 +31,14 @@ export function ForgeBrowserSignIn({
 
   return (
     <>
-      <div className="ui-button-row">
-        <button
-          type="button"
-          className="ui-button ui-button-primary"
-          // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-          tabIndex={0}
-          onClick={() => setThrough("github")}
-        >
+      <ButtonRow>
+        <Button variant="primary" onPress={() => setThrough("github")}>
           Sign in with GitHub
-        </button>
-        <button
-          type="button"
-          className="ui-button ui-button-primary"
-          // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-          tabIndex={0}
-          onClick={() => setThrough("gitlab")}
-        >
+        </Button>
+        <Button variant="primary" onPress={() => setThrough("gitlab")}>
           Sign in with GitLab
-        </button>
-      </div>
+        </Button>
+      </ButtonRow>
       {through === "github" && (
         <ForgeDeviceSignIn
           onCancel={() => setThrough(undefined)}

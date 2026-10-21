@@ -5,6 +5,7 @@ import { useRef } from "react";
 import * as Dialog from "./overlays/dialog";
 import type { ExtensionAsk } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * What this extension says it brings, what charter will actually do about it, and — in charter's
@@ -109,18 +110,12 @@ export function ApproveExtension({
               down. A consent surface an operator cannot reach with the keyboard is one they
               answer with the mouse or not at all. */}
           <AnswerBar>
-            <button
-              className="ui-button"
-              type="button"
-              tabIndex={0}
-              ref={cancel}
-              onClick={onCancel}
-            >
+            <Button ref={cancel} onPress={onCancel}>
               Cancel
-            </button>
-            <button className="ui-button" type="button" tabIndex={0} onClick={() => onApprove(ask)}>
+            </Button>
+            <Button onPress={() => onApprove(ask)}>
               {ask.first ? "Trust it" : "Trust it anyway"}
-            </button>
+            </Button>
           </AnswerBar>
         </Dialog.Content>
       </Dialog.Portal>

@@ -6,6 +6,7 @@ import { commands, type PlaneId } from "../bindings";
 import type { Place } from "../pieceViews";
 import { askSettingsLink } from "../settings/links";
 import { CHOOSE_EDITOR, NO_EDITOR, useYourEditor } from "../yourEditor";
+import { Button } from "../ui/button/Button";
 
 // *Open in your editor* in a module of its own, apart from the light editor: a session record
 // offers it too (#1043), and importing it from `PieceFiles.tsx` would pull CodeMirror into the
@@ -61,23 +62,18 @@ export function ToYourEditor({
   };
   return (
     <>
-      <button type="button" className="ui-button ui-button-sm" tabIndex={0} onClick={open}>
+      <Button size="sm" onPress={open}>
         {`Open in your editor at line ${line}`}
-      </button>
+      </Button>
       {trouble !== undefined && (
         <Said>
           {trouble}
           {trouble === NO_EDITOR && (
             <>
               {" "}
-              <button
-                type="button"
-                className="ui-button ui-button-sm"
-                tabIndex={0}
-                onClick={() => askSettingsLink(plane, CHOOSE_EDITOR)}
-              >
+              <Button size="sm" onPress={() => askSettingsLink(plane, CHOOSE_EDITOR)}>
                 Choose your editor
-              </button>
+              </Button>
             </>
           )}
         </Said>

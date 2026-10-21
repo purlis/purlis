@@ -10,6 +10,7 @@ import { commands, type PlaneId, type SettingsChange } from "./bindings";
 import { compareWithKept, drawWhatIsInForce } from "./Extensions";
 import { isRevertKey, keepSays, revertKeySaid, useDraftHere } from "./themeDrafts";
 import { useFocusBack } from "./EndingChat";
+import { Button } from "./ui/button/Button";
 
 /** What Keep asks once it has kept: the theme, and the level it went to. */
 type Kept = { folder: string; workspace: string | null; keptTo: string };
@@ -133,27 +134,14 @@ export function ThemeDraftStrip({
       </div>
       <div className="theme-draft-actions">
         {/* #190: WebKit leaves a button out of the tab sequence without `tabIndex`. */}
-        <button
-          type="button"
-          className="ui-button"
-          tabIndex={0}
-          onClick={() => (draft.replaces ? setReplacing(true) : keep())}
-        >
-          Keep
-        </button>
-        <button
-          type="button"
-          className="ui-button"
-          tabIndex={0}
+        <Button onPress={() => (draft.replaces ? setReplacing(true) : keep())}>Keep</Button>
+        <Button
           title={`Revert every theme draft here at once: ${revertKeySaid()}`}
-          onClick={revert}
+          onPress={revert}
         >
           Revert
-        </button>
-        <button
-          type="button"
-          className="ui-button"
-          tabIndex={0}
+        </Button>
+        <Button
           title="Hold to see the theme as it was last kept"
           onPointerDown={() => compare(true)}
           onPointerUp={() => compare(false)}
@@ -170,7 +158,7 @@ export function ThemeDraftStrip({
           }}
         >
           Compare
-        </button>
+        </Button>
       </div>
       {replacing && (
         <ReplaceAsk
@@ -238,19 +226,12 @@ function ReplaceAsk({
           </Alert.Description>
           <AnswerBar>
             <Alert.Cancel asChild>
-              <button className="ui-button" type="button" ref={cancel} tabIndex={0}>
-                Cancel
-              </button>
+              <Button ref={cancel}>Cancel</Button>
             </Alert.Cancel>
             <Alert.Action asChild>
-              <button
-                type="button"
-                className="ui-button ui-button-danger"
-                tabIndex={0}
-                onClick={onReplace}
-              >
+              <Button variant="danger" onPress={onReplace}>
                 Replace
-              </button>
+              </Button>
             </Alert.Action>
           </AnswerBar>
         </Alert.Content>
@@ -363,18 +344,11 @@ export function KeepAsk({
           )}
           <AnswerBar>
             <Alert.Cancel asChild>
-              <button className="ui-button" type="button" ref={mine} tabIndex={0}>
-                Only for me
-              </button>
+              <Button ref={mine}>Only for me</Button>
             </Alert.Cancel>
-            <button
-              type="button"
-              className="ui-button ui-button-primary"
-              tabIndex={0}
-              onClick={() => void asDefault()}
-            >
+            <Button variant="primary" onPress={() => void asDefault()}>
               Make it {where}'s default
-            </button>
+            </Button>
           </AnswerBar>
         </Alert.Content>
       </Alert.Portal>

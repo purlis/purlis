@@ -16,6 +16,7 @@ import type { TaskEnding } from "./bindings";
 import { fitWaysOn } from "./wholeWays";
 import { AnswerBar } from "./AnswerBar";
 import { Choice, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** The two answers about the tasks at work below the one being ended. */
 const TOO = "too";
@@ -213,36 +214,23 @@ export function TaskEndAsk({
           )}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button
-                className="ui-button"
-                type="button"
-                ref={cancel}
-                tabIndex={0}
-                disabled={asked.busy}
-              >
+              <Button ref={cancel} isDisabled={asked.busy}>
                 Cancel
-              </button>
+              </Button>
             </AlertDialog.Cancel>
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              disabled={asked.busy}
-              onClick={() => onAnswer("now")}
-            >
+            <Button variant="danger" isDisabled={asked.busy} onPress={() => onAnswer("now")}>
               Close now
-            </button>
+            </Button>
             {reports && (
-              <button
-                type="button"
+              <Button
+                variant="primary"
                 ref={stop}
-                className="ui-button ui-button-primary default-answer"
-                tabIndex={0}
-                disabled={asked.busy}
-                onClick={() => onAnswer("report")}
+                isDisabled={asked.busy}
+                onPress={() => onAnswer("report")}
+                className="default-answer"
               >
                 Stop and get its report
-              </button>
+              </Button>
             )}
           </AnswerBar>
         </AlertDialog.Content>
@@ -307,12 +295,12 @@ export function TaskEndConfirm({
       </span>
       {/* The way out first, then the answer at the edge: the answer bar's order, which every
           question keeps, inline ones too (#1719). */}
-      <button type="button" ref={keep} tabIndex={0} disabled={busy} onClick={onKeep}>
+      <Button ref={keep} isDisabled={busy} onPress={onKeep}>
         Keep
-      </button>
-      <button type="button" className="ends-it" tabIndex={0} disabled={busy} onClick={onAnswer}>
+      </Button>
+      <Button variant="danger" isDisabled={busy} onPress={onAnswer}>
         {answer}
-      </button>
+      </Button>
       {trouble && (
         // Cut where the line is short, as the question is: the title says it whole.
         <span className="trouble" role="alert" title={trouble}>

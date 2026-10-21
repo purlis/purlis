@@ -9,6 +9,7 @@ import { inertly } from "../sandboxBlocks";
 import type { RowIds } from "./components";
 import type { LiveSetting } from "./groups";
 import { YOUR_LEVEL } from "./yourLevel";
+import { Button, ButtonRow } from "../ui/button/Button";
 
 /**
  * **The team's say over Your level** (#2071, PR C), beside the switch: why nobody goes below
@@ -73,28 +74,19 @@ export function TeamPolicy({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
                 ? "You kept it on: your chats here keep your own level."
                 : "You have not answered yet: your chats here keep your own level."}
           </p>
-          <div className="ui-button-row">
+          <ButtonRow>
             {off.answer !== true && (
-              <button
-                type="button"
-                className="ui-button"
-                disabled={busy}
-                onClick={() => answer(true)}
-              >
+              // Accepting runs chats with no sandbox: an answer that grants (ADR 0097 §6).
+              <Button variant="grants" isDisabled={busy} onPress={() => answer(true)}>
                 Accept
-              </button>
+              </Button>
             )}
             {off.answer !== false && (
-              <button
-                type="button"
-                className="ui-button"
-                disabled={busy}
-                onClick={() => answer(false)}
-              >
+              <Button isDisabled={busy} onPress={() => answer(false)}>
                 Keep it on for me
-              </button>
+              </Button>
             )}
-          </div>
+          </ButtonRow>
         </>
       )}
       {said !== undefined && <p>{said}</p>}

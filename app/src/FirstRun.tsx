@@ -18,6 +18,7 @@ import { DoorPage } from "./DoorPage";
 import { useNewerTrouble } from "./pickTrouble";
 import { harnessSays } from "./harnessSays";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /**
  * **Create a project: the page behind the welcome's first door** (#1812; FR-4 #603, FR-17).
@@ -191,9 +192,9 @@ export function FirstRun({
           {/* One leading row of the two ways in (#1719), and the path form's own below it.
           `tabIndex={0}` on every button, per `docs/ui-primitives.md` (charter-app#189). */}
           <SettingActions>
-            <button type="button" tabIndex={0} disabled={opening} onClick={pick}>
+            <Button isDisabled={opening} onPress={pick}>
               Open a repo…
-            </button>
+            </Button>
           </SettingActions>
 
           {/* The path and the template are rows of the settings set (DS-3d, #1176). */}
@@ -219,9 +220,9 @@ export function FirstRun({
             />
             <SettingActions>
               {/* The same act as New project's, in the same words (`docs/ui-copy.md`, #630). */}
-              <button type="submit" tabIndex={0} disabled={!typed.trim() || opening}>
+              <Button type="submit" isDisabled={!typed.trim() || opening}>
                 Open repo
-              </button>
+              </Button>
             </SettingActions>
           </form>
 
@@ -262,9 +263,9 @@ export function FirstRun({
           {/* The other way to make one, in the catalogue's words for it (`project.create`). */}
           <p className="welcome-elsewhere">
             To keep the project in a folder you choose, use{" "}
-            <button type="button" tabIndex={0} className="welcome-link" onClick={onNewProject}>
+            <Button variant="link" onPress={onNewProject} className="welcome-link">
               New project…
-            </button>
+            </Button>
           </p>
         </>
       )}

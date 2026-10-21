@@ -14,7 +14,6 @@ import {
   type Shown,
 } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
-import { GrantsMark } from "./primitives/Grants";
 import { useReadOnlySaid } from "./ReadOnlyLine";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { asksMoved } from "./asks";
@@ -25,6 +24,7 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { moreRefusedSaid, useRefusedMore } from "./refusedMore";
 import { RestartEndsLine } from "./RestartEnds";
 import { Field, SettingRow } from "./settings/components";
+import { Button, ButtonRow } from "./ui/button/Button";
 
 /**
  * **What a chat's sandbox blocked, on its tab** (#1338): the operation and the kind of path or
@@ -270,27 +270,16 @@ export function SandboxBlockNotice({
         <pre className="block-report-draft" aria-label="Report draft">
           {`${draft.title}\n\n${draft.body}`}
         </pre>
-        <div className="block-report-actions ui-button-row">
+        <ButtonRow size="sm" className="block-report-actions">
           {inTheWindow(commands, "fileSandboxBlockReport") && (
-            <button
-              type="button"
-              className="ui-button ui-button-sm ui-button-primary"
-              tabIndex={0}
-              disabled={filing}
-              onClick={() => file(draft)}
-            >
+            <Button size="sm" variant="primary" isDisabled={filing} onPress={() => file(draft)}>
               File report
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
-            className="ui-button ui-button-sm"
-            tabIndex={0}
-            onClick={() => setDraft(undefined)}
-          >
+          <Button size="sm" onPress={() => setDraft(undefined)}>
             Cancel
-          </button>
-        </div>
+          </Button>
+        </ButtonRow>
       </div>
     );
 
@@ -408,17 +397,11 @@ function PointKubectl({ block, onPointed }: { block: HeldBlock; onPointed: () =>
   return (
     <div className="block-kubectl ui-inline-surface" id={id}>
       {pointed ? null : contexts === undefined ? (
-        <div className="ui-button-row">
-          <button
-            type="button"
-            className="ui-button ui-button-sm"
-            tabIndex={0}
-            disabled={busy}
-            onClick={list}
-          >
+        <ButtonRow size="sm">
+          <Button size="sm" isDisabled={busy} onPress={list}>
             Point kubectl at it…
-          </button>
-        </div>
+          </Button>
+        </ButtonRow>
       ) : contexts.length === 0 ? (
         <p>Your kubeconfig holds no context.</p>
       ) : (
@@ -428,15 +411,9 @@ function PointKubectl({ block, onPointed }: { block: HeldBlock; onPointed: () =>
             {contexts.map((context) => (
               <li key={context.name}>
                 {context.refused === null ? (
-                  <button
-                    type="button"
-                    className="ui-button ui-button-sm"
-                    tabIndex={0}
-                    disabled={busy}
-                    onClick={() => point(context.name)}
-                  >
+                  <Button size="sm" isDisabled={busy} onPress={() => point(context.name)}>
                     Use {inertly(context.name)}
-                  </button>
+                  </Button>
                 ) : (
                   <>
                     <code>{inertly(context.name)}</code>: {inertly(context.refused)}
@@ -969,25 +946,22 @@ function AllowNotice({
     <div className="block-allow" id={id}>
       {named}
       {alwaysOpen && (
-        <div className="block-allow-actions ui-button-row">
+        <ButtonRow size="sm" className="block-allow-actions">
           {others.map((option) => (
-            <button
+            <Button
+              size="sm"
+              variant="grants"
               key={option.id}
-              type="button"
-              // Each is an Allow, drawn as every Allow is (ADR 0097 §6).
-              className="ui-button ui-button-sm ui-button-grants"
-              tabIndex={0}
-              disabled={
+              isDisabled={
                 busy || target === "" || (option.id === "project" && readOnly !== undefined)
               }
               title={option.id === "project" ? readOnly : undefined}
-              onClick={() => allow(option.id, option.label)}
+              onPress={() => allow(option.id, option.label)}
             >
-              <GrantsMark />
               {option.label}
-            </button>
+            </Button>
           ))}
-        </div>
+        </ButtonRow>
       )}
     </div>
   );
