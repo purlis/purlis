@@ -67,7 +67,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::{Map, Value, json};
 
-use super::check::{contrast, onto};
+use super::check::{contrast, is_opaque, onto, solid};
 use super::geometry::{self, Geometry};
 use super::tint;
 use super::vocabulary::{PLATFORM, TOKENS};
@@ -1241,26 +1241,34 @@ fn hex<'a>(theme: &'a ResolvedTheme, token: &str) -> Option<&'a str> {
     (value != PLATFORM && !value.is_empty()).then_some(value)
 }
 
-/// **The family's grounds as `theme` draws them**: each opaque one as it is, and a wash laid
-/// over each opaque one, since a wash is drawn over what is under it.
+/// **The family's grounds as `theme` draws them**, never none: each opaque one as it is, its
+/// alpha read as drawn, and a wash laid over each opaque one, since a wash is drawn over what is
+/// under it. With no opaque ground, each is measured as its colour drawn opaque; with no ground
+/// purlis can read, on black and on white, the strictest.
 fn grounds(theme: &ResolvedTheme, family: &Family) -> Vec<String> {
-    let opaque = |hex: &str| matches!(hex.trim_start_matches('#').len(), 3 | 6);
     let given: Vec<&str> = family
         .grounds
         .iter()
         .filter_map(|ground| hex(theme, ground))
         .collect();
-    let under: Vec<&str> = given.iter().copied().filter(|one| opaque(one)).collect();
-    given
+    let under: Vec<String> = given
         .iter()
-        .flat_map(|one| {
-            if opaque(one) {
-                vec![(*one).to_owned()]
-            } else {
-                under.iter().map(|below| onto(one, below)).collect()
-            }
-        })
-        .collect()
+        .filter(|one| is_opaque(one))
+        .map(|one| solid(one))
+        .collect();
+    if under.is_empty() {
+        let drawn: Vec<String> = given.iter().map(|one| solid(one)).collect();
+        return if drawn.is_empty() {
+            vec!["#000000".to_owned(), "#ffffff".to_owned()]
+        } else {
+            drawn
+        };
+    }
+    let mut drawn = under.clone();
+    for one in given.iter().filter(|one| !is_opaque(one)) {
+        drawn.extend(under.iter().map(|below| onto(one, below)));
+    }
+    drawn
 }
 
 /// The lowest contrast `front` has on `fill` over each of the family's grounds.
@@ -1367,9 +1375,10 @@ fn unreadable(
     if let Some(border) = edge(rules, family, variant, look) {
         let fill = hex(theme, look.fill);
         let on_its_ground = fill.is_none_or(|fill| {
-            grounds(theme, family)
-                .iter()
-                .any(|ground| ground.eq_ignore_ascii_case(fill))
+            !is_opaque(fill)
+                || grounds(theme, family)
+                    .iter()
+                    .any(|ground| ground.eq_ignore_ascii_case(&solid(fill)))
         });
         if on_its_ground
             && let Some(ratio) = lowest(theme, family, look.fill, border)

@@ -10,9 +10,10 @@
  * only the window can know is which grounds those are, so that half is here, found from the
  * components rather than written by hand:
  *
- * - **a ground** is an element a stylesheet gives a background token, at rest or in a state
- *   (`.row:hover`), by its class or a Tailwind `bg-*` utility; the window itself (`:root`) is the
- *   ground under everything else, and what is portaled to the body;
+ * - **a ground** is an element a stylesheet under `src/` gives a background token, at rest or in
+ *   a state (`.row:hover`), by its class, its tag or an attribute it is written with (inside the
+ *   classes the rule is scoped by), or a Tailwind `bg-*` utility; the window itself (`:root`) is
+ *   the ground under everything else, and what is portaled to the body;
  * - **a button** is an element of the family: one with the `ui-button` class, or the family's
  *   `data-scope="button"` wrapper;
  * - every component is read: a button is on the grounds of the elements around it, up to the
@@ -78,33 +79,44 @@ function topLevel(text: string, sep: RegExp): string[] {
   return out.map((part) => part.trim()).filter((part) => part !== "");
 }
 
-/** Without each `:not(…)`, which only narrows which elements are meant. */
+/** Without each `:not(…)` and `:has(…)`, which only narrow which elements are meant: a class
+ *  inside them is another element's. */
 function narrowedOut(selector: string): string {
   let out = selector;
   for (let was = ""; was !== out;) {
     was = out;
-    out = out.replace(/:not\([^()]*(?:\([^()]*\)[^()]*)*\)/g, "");
+    out = out.replace(/:(?:not|has)\([^()]*(?:\([^()]*\)[^()]*)*\)/g, "");
   }
   return out;
 }
 
-/** Every sheet of the window's own: `styles.css` and each sheet it imports, as the contrast
- *  check reads them. */
-function sheets(): string[] {
-  const read = (file: string) =>
-    readFileSync(join(SRC, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-  const names = [
-    "styles.css",
-    ...[...read("styles.css").matchAll(/@import "\.\/([^"]+\.css)"/g)].map((hit) => hit[1]),
-  ];
-  return names.map(read);
+/** Every sheet under `src/`: the window's and the specimen's, each a sheet a button may be
+ *  drawn by. */
+function sheets(dir = SRC): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return sheets(path);
+    return entry.name.endsWith(".css")
+      ? [readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, "")]
+      : [];
+  });
 }
+
+/** A rule a background is set by that the reader cannot tie to a class, as `selector`; and
+ *  each rule on an attribute, by the form it reaches (`[role=tab]`), which is read where an
+ *  element carries it as written. */
+type Unread = { classless: string[]; within: string[]; byAttribute: Map<string, string[]> };
 
 /** The class each rule's subject carries, with the background tokens it is drawn in; and the
  *  window's own ground, the `:root`'s. */
-function groundsOfClasses(css: string[]): { byClass: Map<string, Ground>; window: Set<Token> } {
+function groundsOfClasses(css: string[]): {
+  byClass: Map<string, Ground>;
+  window: Set<Token>;
+  unread: Unread;
+} {
   const byClass = new Map<string, Ground>();
   const window = new Set<Token>();
+  const unread: Unread = { classless: [], within: [], byAttribute: new Map() };
   for (const sheet of css)
     for (const [, selectors, body] of sheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
       const backs = [
@@ -117,9 +129,45 @@ function groundsOfClasses(css: string[]): { byClass: Map<string, Ground>; window
       for (const selector of topLevel(selectors.replace(/^\s*@[^;{]*;?/, ""), /,/)) {
         if (/^(?::root|html|body)$/.test(selector)) backs.forEach((token) => window.add(token));
         const compounds = topLevel(selector, /[\s>+~]/);
-        const subject = narrowedOut(compounds[compounds.length - 1] ?? "");
-        const rest = !STATE.test(narrowedOut(selector));
-        for (const [, name] of subject.matchAll(/\.([\w-]+)/g)) {
+        const last = compounds[compounds.length - 1] ?? "";
+        const subject = narrowedOut(last);
+        // Only a rule on the element alone, at rest, and on the element itself rather than one
+        // of its pseudo-elements, hides the ground under it: a rule scoped by where the element
+        // stands reaches only some of them.
+        const rest =
+          !STATE.test(narrowedOut(selector)) && compounds.length === 1 && !subject.includes("::");
+        if (/:has\(/.test(last)) unread.within.push(selector);
+        const classes = [...subject.matchAll(/\.([\w-]+)/g)];
+        // A rule on a tag (`.vault-secrets tbody tr:hover`) or an attribute (`.tabs
+        // [role="tab"]`) reaches each element of it inside the classes it is scoped by: a ground
+        // each such element may draw, never one that hides another.
+        const bare = subject.replace(/^:(?:where|is)\(/, "");
+        const tag = /^([a-z][\w-]*)/.exec(bare)?.[1];
+        const attribute = /^\[([\w-]+)(?:="([^"]*)")?\]/.exec(bare);
+        // A button's own fill is no ground: nothing a button holds is another button.
+        if (classes.length === 0 && tag === "button") continue;
+        const form =
+          tag !== undefined
+            ? `<${tag}>`
+            : attribute === null
+              ? undefined
+              : `[${attribute[1]}=${attribute[2] ?? ""}]`;
+        if (classes.length === 0 && form !== undefined && !/^(?:html|body)$/.test(tag ?? "")) {
+          if (tag === undefined)
+            unread.byAttribute.set(form, [...(unread.byAttribute.get(form) ?? []), selector]);
+          const within = compounds
+            .slice(0, -1)
+            .flatMap((one) => [...narrowedOut(one).matchAll(/\.([\w-]+)/g)].map((hit) => hit[1]))
+            .join(" ");
+          const key = `${form}@${within}`;
+          const ground = byClass.get(key) ?? { tokens: new Set<Token>(), rest: false };
+          backs.forEach((token) => ground.tokens.add(token));
+          byClass.set(key, ground);
+          continue;
+        }
+        if (classes.length === 0 && !/^(?::root|html|body)$/.test(selector))
+          unread.classless.push(selector);
+        for (const [, name] of classes) {
           const ground = byClass.get(name) ?? { tokens: new Set<Token>(), rest: false };
           backs.forEach((token) => ground.tokens.add(token));
           ground.rest ||= rest;
@@ -127,7 +175,7 @@ function groundsOfClasses(css: string[]): { byClass: Map<string, Ground>; window
         }
       }
     }
-  return { byClass, window };
+  return { byClass, window, unread };
 }
 
 /** The ground a Tailwind utility draws: `bg-surface-hover`, or `hover:bg-surface-hover` in a
@@ -146,7 +194,7 @@ type Carried = { name: string; always: boolean };
 
 /** One element around a button: the grounds it may draw, and whether it draws one at rest
  *  always, which hides what is under it. */
-type Frame = { tokens: Set<Token>; covers: boolean };
+type Frame = { tokens: Set<Token>; covers: boolean; classes: Set<string> };
 
 /** What one function that renders JSX places: the grounds its buttons are drawn on, whether
  *  one is drawn on what is under the function, where its `children` go, and what it renders. */
@@ -195,11 +243,30 @@ class Reader {
   readonly units = new Map<string, Unit[]>();
   /** The classes a button carries, which are its own fill and never a ground under it. */
   readonly buttonClasses = new Set<string>();
+  /** Each element that sets a background in its own `style`, which no stylesheet names. */
+  readonly inline = new Set<string>();
+  /** Each tag or attribute form a background rule reaches that some element carries. */
+  readonly reached = new Set<string>();
+
+  /** The grounds of the rules on a tag or an attribute, by the form each reaches, with the
+   *  classes each is scoped by. */
+  private readonly forms = new Map<string, { scoped: string[]; ground: Ground }[]>();
 
   constructor(
     private readonly files: { name: string; text: string }[],
     private readonly byClass: Map<string, Ground>,
-  ) {}
+  ) {
+    for (const [key, ground] of byClass) {
+      const at = key.indexOf("@");
+      if (at < 0) continue;
+      const scoped = key
+        .slice(at + 1)
+        .split(" ")
+        .filter((one) => one !== "");
+      const form = key.slice(0, at);
+      this.forms.set(form, [...(this.forms.get(form) ?? []), { scoped, ground }]);
+    }
+  }
 
   /** One pass over every file, with each component's `children` places from the pass before. */
   read(): void {
@@ -343,6 +410,9 @@ class Reader {
           (one): one is ts.JsxAttribute =>
             ts.isJsxAttribute(one) && one.name.getText(source) === name,
         );
+      const style = attribute("style")?.initializer;
+      if (style !== undefined && /\bbackground/i.test(style.getText(source)))
+        this.inline.add(`${source.fileName}: <${tag}>`);
       const className = attribute("className")?.initializer;
       const carried = className === undefined ? [] : this.classesOf(className, classLists);
       const scope = attribute("data-scope")?.initializer;
@@ -356,14 +426,34 @@ class Reader {
         drawn.tokens.forEach((token) => unit.found.add(token));
         if (!drawn.covered) unit.loose = true;
       } else {
-        const frame: Frame = { tokens: new Set(), covers: false };
+        const frame: Frame = {
+          tokens: new Set(),
+          covers: false,
+          classes: new Set(carried.map((one) => one.name)),
+        };
+        // The forms a rule on a tag or an attribute reaches this element by, as it is written.
+        const forms = new Set<string>(/^[a-z]/.test(tag) ? [`<${tag}>`] : []);
+        for (const one of attributes) {
+          if (!ts.isJsxAttribute(one)) continue;
+          const name = one.name.getText(source);
+          forms.add(`[${name}=]`);
+          const value = one.initializer;
+          if (value !== undefined && ts.isStringLiteral(value))
+            forms.add(`[${name}=${value.text}]`);
+        }
+        for (const one of forms)
+          for (const { scoped, ground } of this.forms.get(one) ?? []) {
+            this.reached.add(one);
+            if (scoped.every((name) => frames.some((at) => at.classes.has(name))))
+              ground.tokens.forEach((token) => frame.tokens.add(token));
+          }
         for (const one of carried) {
           const ground = this.byClass.get(one.name) ?? utility(one.name);
           if (ground === undefined || this.buttonClasses.has(one.name)) continue;
           ground.tokens.forEach((token) => frame.tokens.add(token));
           if (ground.rest && one.always) frame.covers = true;
         }
-        if (frame.tokens.size > 0) inside = [...frames, frame];
+        if (frame.tokens.size > 0 || frame.classes.size > 0) inside = [...frames, frame];
       }
       const component = /^[A-Z]/.test(tag) ? tag.split(".").pop() : undefined;
       if (component !== undefined) unit.uses.push({ name: component, frames: inside });
@@ -453,23 +543,67 @@ function hasJsx(node: ts.Node): boolean {
 }
 
 /** Reads `files` against `css`: every ground a button of the family is drawn on, each with
- *  the components it was found in. */
-function buttonGroundsWhere(
+ *  the components it was found in; and what the reader could not read. */
+function readGrounds(
   files: { name: string; text: string }[],
   css: string[],
-): Map<Token, string[]> {
-  const { byClass, window } = groundsOfClasses(css);
+): { found: Map<Token, string[]>; unread: Unread; inline: string[] } {
+  const { byClass, window, unread } = groundsOfClasses(css);
   const reader = new Reader(files, byClass);
   // The first pass finds the buttons' classes and each component's `children` places, the next
   // ones read what is placed in them; a third settles a component placed in another's children.
   for (let pass = 0; pass < 3; pass += 1) reader.read();
-  return reader.grounds(window);
+  // A rule on an attribute no element carries as written is one the reader cannot tie to one:
+  // the window sets it as it runs, or spells it in an expression.
+  for (const [form, selectors] of unread.byAttribute)
+    if (!reader.reached.has(form)) unread.classless.push(...selectors);
+  return { found: reader.grounds(window), unread, inline: [...reader.inline].sort() };
+}
+
+function buttonGroundsWhere(
+  files: { name: string; text: string }[],
+  css: string[],
+): Map<Token, string[]> {
+  return readGrounds(files, css).found;
 }
 
 /** Every ground a button of the family is drawn on, in order. */
 function buttonGrounds(files: { name: string; text: string }[], css: string[]): string[] {
   return [...buttonGroundsWhere(files, css).keys()].sort();
 }
+
+/**
+ * The background rules the reader cannot tie to an element the components write, each with why
+ * no button is drawn on what it paints. A new one fails the test below until it is read or
+ * listed here.
+ */
+const CLASSLESS: readonly string[] = [
+  // The band a chat row takes for a moment once it is revealed (`revealTask.ts` sets the
+  // attribute as it runs); the row is a `.ui-row`, which holds no button.
+  ".chats-section [data-revealed]",
+  // A selected or current table row's cells: no table row the window draws is selected or
+  // current.
+  '.ui-table tbody tr:is([aria-selected="true"], [aria-current]:not([aria-current="false"])) > *',
+  // Selected words, not a box anything stands on.
+  ':root[data-theme-draws~="selection.background"] :not(.cm-editor, .cm-editor *)::selection',
+  // The handle between two panes, which the panel library draws, and which holds nothing.
+  "[data-separator]",
+  "[data-separator]:hover",
+  "[data-separator][data-dragging]",
+];
+
+/**
+ * The background rules that reach an element by what it holds (`:has(…)`). Each is read on the
+ * element it paints, whatever it holds, so it counts as a ground there and never hides the one
+ * under it; a class inside the `:has(…)` is another element's and is not read as a ground. Each
+ * is listed so a new one is looked at.
+ */
+const WITHIN: readonly string[] = [
+  ".chats-section li:has(> .ui-row[data-revealed])",
+  '.projects .project:has([aria-selected="true"])',
+  '.tabs .tab:has([aria-selected="true"])',
+  '.workspaces-strip .workspace:has([aria-selected="true"])',
+];
 
 // --- The tests ------------------------------------------------------------------------------
 
@@ -538,6 +672,38 @@ describe("the grounds a button is drawn on", () => {
     expect(found).toEqual(["danger.surface", "surface.base", "surface.raised"].sort());
   });
 
+  it("read a rule on a tag or an attribute inside the classes it is scoped by", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "T.tsx",
+          `export function T() {
+             return <><table className="secrets"><tr><td><button className="ui-button" /></td></tr></table>
+               <table className="other"><tr><td><button className="ui-button" /></td></tr></table>
+               <div role="tab"><button className="ui-button" /></div></>;
+           }`,
+        ),
+      ],
+      css(
+        `.secrets tr:hover { background: var(--layer-selected); } .tabs-only [role="tab"] { background: var(--tab-active); } [role="tab"]:hover { background: var(--surface-hover); }`,
+      ),
+    );
+    expect(found).toEqual(["layer.selected", "surface.base", "surface.hover"]);
+  });
+
+  it("never take a class inside :has() as the element a rule paints", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "H.tsx",
+          `export function H() { return <li className="row"><button className="ui-button" /></li>; }`,
+        ),
+      ],
+      css(`li:has(> .row) { background: var(--surface-raised); }`),
+    );
+    expect(found).toEqual(["surface.base", "surface.raised"]);
+  });
+
   it("never count a button's own fill, or a utility it carries, as a ground", () => {
     const found = buttonGrounds(
       [
@@ -553,10 +719,13 @@ describe("the grounds a button is drawn on", () => {
     expect(found).toEqual(["surface.base", "surface.sunken"]);
   });
 
+  /** The window, read once for the tests below. */
+  const read = readGrounds(sources(SRC), sheets());
+
   it("are, in the window, exactly the grounds the button family's manifest lists", () => {
     const listed = manifestGrounds(readFileSync(PARTS, "utf8")).get("button");
     expect(listed, "the button family's grounds in parts.rs").toBeDefined();
-    const where = buttonGroundsWhere(sources(SRC), sheets());
+    const where = read.found;
     const found = [...where.keys()].sort();
     expect(found).toContain("surface.base");
     expect(found).toContain("danger.surface");
@@ -566,5 +735,24 @@ describe("the grounds a button is drawn on", () => {
       .map((token) => `${token}: ${(where.get(token) ?? []).slice(0, 3).join("; ")}`);
     expect(unlisted).toEqual([]);
     expect([...(listed ?? [])].sort()).toEqual(found);
+  });
+
+  /**
+   * **What the reader cannot tie to a component fails here** until it is read or listed below
+   * with why it is no ground a button is drawn on: a background in an element's own `style`, a
+   * background rule whose element is named by an attribute or a tag rather than a class, and a
+   * background rule that only reaches an element by what it holds (`:has(…)`).
+   */
+
+  it("are never set in an element's own style", () => {
+    expect(read.inline).toEqual([]);
+  });
+
+  it("are set by a class, or the rule is listed with why no button is drawn on it", () => {
+    expect([...new Set(read.unread.classless)].sort()).toEqual([...CLASSLESS].sort());
+  });
+
+  it("are never reached only by what an element holds, or the rule is listed with why", () => {
+    expect([...new Set(read.unread.within)].sort()).toEqual([...WITHIN].sort());
   });
 });
