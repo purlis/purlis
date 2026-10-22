@@ -1,0 +1,5 @@
+{
+ "graphRoot": "/home/runner/.local/share/containers/storage",
+ "runRoot": "/run/user/1001/containers",
+ "volumePath": "/home/runner/.local/share/containers/storage/volumes"
+}

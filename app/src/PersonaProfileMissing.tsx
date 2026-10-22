@@ -7,6 +7,7 @@ import { Notice } from "./Notice";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
 import { HARNESSES } from "./settings/profiles";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * **A persona whose profile this machine does not have** (#2039, spec #2030 story 21, ADR 0095
@@ -103,7 +104,7 @@ export function PersonaProfileMissing({
       ]}
       under={
         open && (
-          <form
+          <Form
             id={form}
             aria-label={`Create profile ${named}`}
             onSubmit={(event) => {
@@ -135,7 +136,7 @@ export function PersonaProfileMissing({
                 {busy ? "Creating…" : "Create profile"}
               </Button>
             </SettingActions>
-          </form>
+          </Form>
         )
       }
     >

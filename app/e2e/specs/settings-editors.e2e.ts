@@ -128,9 +128,11 @@ async function listMeasured() {
       ? (document.getElementById(name.htmlFor) as HTMLTextAreaElement | null)
       : null;
     const row = name?.closest(".ui-setting-row");
+    // The box a person sees is the field family's around the element typed in (#2905).
+    const frame = field?.closest('[data-scope="textarea"][data-part="root"]');
     return {
       label: box(name),
-      field: box(field),
+      field: box(frame),
       row: box(row),
       tag: field?.tagName ?? "",
       scrolls: field ? field.scrollHeight > field.clientHeight + 1 : true,

@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import { commands } from "./bindings";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * Making a persona (SI-3), asked where the answer is given — `NewVault`'s shape, for `charter
@@ -102,7 +103,7 @@ export function NewPersona({
             in <code>{plane}/personas/</code>, committed with the project
           </p>
 
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               create();
@@ -184,7 +185,7 @@ export function NewPersona({
                 Create persona needs Delegate when, or a persona it inherits from.
               </p>
             )}
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

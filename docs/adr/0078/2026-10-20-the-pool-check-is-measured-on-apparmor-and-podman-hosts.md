@@ -36,6 +36,20 @@ others are **decided in implementation, to be confirmed** (D-2680-1 to D-2680-5)
 6. **Podman's own folders are never a chat's to write** (the person's ruling). Its settings
    (`containers/` in `$XDG_CONFIG_HOME` and `~/.config`), its storage (`containers/` in
    `$XDG_DATA_HOME` and `~/.local/share`) and its run state (`containers/` and `libpod/` in
-   `$XDG_RUNTIME_DIR`) are denied to every chat's writes as later code, each with everything
+   `$XDG_RUNTIME_DIR`, or, where that is unset, `/tmp/podman-run-<uid>`,
+   `/tmp/storage-run-<uid>` and `/tmp/containers-user-<uid>`, #2896) are denied to every chat's
+   writes as later code, each with everything
    below it, under every spelling on macOS. Rootless stays the preferred engine for a local
    runner, as V55 has it.
+7. **The live check also loosens IPC, the host name, cgroups, a folder and a device** (#2895):
+   `--ipc host`, `--uts host`, `--cgroupns host`, `--volume /:/host:ro` and `--device`, each
+   refused on every host it is measured on, and a loosening an engine cannot make is said in its
+   words rather than failing the job. **On rootless Podman, the container's runtime config is
+   checked too**: Podman writes a device it was given there, as a mount, and not in what
+   `inspect` says. The config must be that container's own, under Podman's store as `podman
+   info` names it; its devices none; and its mounts the runtime's own file systems, the
+   container's own files from exactly its own folder of Podman's storage or run state, and the
+   home's volume from exactly Podman's own volumes (`check_oci`), as measured. It is opened
+   without waiting and read only when it is a file; one that is not on this machine, as a
+   Podman machine keeps it in its VM, refuses the check with a sentence that says so. *Decided in
+   implementation, to be confirmed (D-2895-1).*

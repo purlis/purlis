@@ -5,9 +5,9 @@
    of how that kind is drawn. `docs/ui-primitives.md` ("The control classes") lists each class,
    its variants and the markup it goes on; `primitives/controls.test.tsx` holds them.
 
-   **Behaviour is Radix's, the look is this file's.** A class goes on a native `<button>`,
-   `<input>`, `<select>` or `<textarea>`, or on the element a Radix primitive renders (a
-   checkbox, a radio item, a switch, a select's trigger, a menu's content and items). There is no
+   **Behaviour is Radix's, the look is this file's.** A class goes on a native control, or
+   on the element a Radix primitive renders (a checkbox, a radio item, a switch, a select's
+   trigger, a menu's content and items). There is no
    React layer for the look (ADR 0037): the primitive is the component and this is its CSS.
 
    **Only tokens.** Every size is a core geometry token (`theme/geometry.css`) and every colour a
@@ -20,11 +20,10 @@
    drifting again, and over the window's zero-specificity focus floor, which draws rings inside.
    A view still places a control (margin, width, flex, order): nothing here sets those. Where a
    view needs a control to differ in a size the class owns, the class reads a property the view
-   may set (`--ui-menu-indent`, and a leading icon's three, `--ui-input-lead-*`), and that is
-   the whole list.
+   may set (`--ui-menu-indent`), and that is the whole list.
 
    Heights: every control is `--size-control` tall (28px at the default text size), a small
-   one `--size-chrome` (21px, for strips and pane headers); a button's sizes are its family's. A menu's row is at least a
+   one `--size-chrome` (21px, for strips and pane headers); a button's and a field's sizes are their families'. A menu's row is at least a
    control tall. Focus: a control's ring is outside it (`--focus-ring-offset`); a segment's is
    inside, because its group clips what is outside it. A menu's row draws no ring: the row the
    keyboard is on is the highlighted one, as in every native menu. */
@@ -32,12 +31,13 @@
 /* The button is a component family now, drawn from its wrapper's attributes:
    `ui/button/button.css` (#2904, ADR 0104). */
 
+/* The field is a component family now, drawn from its wrapper's attributes:
+   `ui/field/field.css` (#2905, ADR 0104). */
+
 /* ---------------------------------------------------------------------------------------------
-   Field: `.ui-input` on an `<input>` or a `<textarea>`. Select: `.ui-select` on a native `<select>` or
-   on Radix Select's trigger, whose list is a `.ui-menu` of `.ui-menu-item`s.
+   Select: `.ui-select` on Radix Select's trigger, whose list is a `.ui-menu` of `.ui-menu-item`s.
    --------------------------------------------------------------------------------------------- */
 
-.ui-input,
 .ui-select {
   box-sizing: border-box;
   block-size: var(--size-control);
@@ -50,23 +50,6 @@
   background-color: var(--surface-sunken);
   font-size: var(--font-size-base);
   appearance: none;
-}
-
-/* Rows of text: as tall as three controls at least, and as tall as a person drags it. */
-textarea.ui-input {
-  block-size: auto;
-  min-block-size: calc(var(--size-control) * 3);
-  padding-block: var(--space-2);
-  resize: vertical;
-}
-
-/* Rows that grow (DS-10, #1842): a list field, one entry per line, as wide as its row and as
-   tall as its lines. Its height is set as it is typed (`grownTo`, settings/components.tsx), so
-   it is never dragged and never scrolls inside. */
-textarea.ui-input.ui-list-field {
-  inline-size: 100%;
-  overflow-y: hidden;
-  resize: none;
 }
 
 /* A select draws its own arrow, two triangles in the text's colour, so no theme names one and
@@ -102,56 +85,14 @@ textarea.ui-input.ui-list-field {
   color: var(--text-quiet);
 }
 
-/* A value the field refuses (`aria-invalid`): the danger colour on its edge, beside the words
-   that say why. */
-.ui-input[aria-invalid="true"] {
-  border-color: var(--danger-base);
-}
-
-.ui-input:disabled,
 .ui-select:disabled,
 .ui-select[data-disabled] {
   opacity: 0.5;
 }
 
-.ui-input:focus-visible,
 .ui-select:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
-}
-
-/* **A field with a leading icon** (#1856): `.ui-input-lead` holds a `.ui-input-lead-icon` (the
-   glass of a filter or search box, `aria-hidden`) and then the `.ui-input`. The icon is the
-   text's size, inset from the field's start by the field's own small step and centred on its
-   height; the field's text starts past it by one more step, so what is typed never runs under
-   it. The icon takes no press: a press on the glass lands in the field. A view places and sizes
-   the holder as it would the field. A view whose text must line up with something else (the
-   Chats filter with the chats' names, DS-11) sets the three sizes this reads on the holder:
-   `--ui-input-lead-at`, `--ui-input-lead-size` and `--ui-input-lead-text`. */
-.ui-input-lead {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-inline-size: 0;
-}
-
-.ui-input-lead > .ui-input {
-  flex: 1 1 auto;
-  padding-inline-start: var(
-    --ui-input-lead-text,
-    calc(var(--space-3) + var(--font-size-base) + var(--space-2))
-  );
-}
-
-.ui-input-lead-icon {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: var(--ui-input-lead-at, var(--space-3));
-  inline-size: var(--ui-input-lead-size, var(--font-size-base));
-  block-size: var(--ui-input-lead-size, var(--font-size-base));
-  margin-block: auto;
-  color: var(--text-muted);
-  pointer-events: none;
 }
 
 /* ---------------------------------------------------------------------------------------------

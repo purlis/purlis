@@ -843,30 +843,14 @@ body {
   min-width: 0;
 }
 
-/* A chat tab's name, open for editing in the tab's place (charter-app#254, `TabRename.tsx`).
-   It fills the cell the button did, so the strip does not move while a name is typed. */
+/* A chat tab's name, open for editing in the tab's place (charter-app#254, `TabRename.tsx`):
+   the field family's small box (#2905), in the cell the button had, so the strip does not move
+   while a name is typed. */
 .tabs .tab-rename {
   flex: 1 1 auto;
   min-width: 0;
-  align-self: stretch;
-  margin: var(--space-1);
-  padding: 0 var(--space-3);
-  color: var(--text-primary);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  font: inherit;
-  /* The size of the title it stands in for (qw337). */
-  font-size: var(--font-size-md);
-}
-
-.tabs .tab-rename:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -1px;
-}
-
-.tabs .tab-rename[aria-invalid="true"] {
-  border-color: var(--danger-base);
+  align-self: center;
+  margin-inline: var(--space-1);
 }
 
 /* Why the core would not hold the name: under the box, and read before it is changed. */
@@ -1363,8 +1347,8 @@ button.show-more:focus-visible {
   box-shadow: var(--elevation-raised);
 }
 
-/* The box is the shared field with the glass at its start (`.ui-input-lead`, #1856). */
-.pane-find input {
+/* The box is the field family's, with the glass at its start (#2905). */
+.pane-find-box {
   width: 14rem;
 }
 
@@ -3140,7 +3124,7 @@ button.show-more:focus-visible {
   flex-wrap: wrap;
   gap: var(--space-3);
 }
-.inbox-reply > .ui-input {
+.inbox-reply > .inbox-reply-box {
   flex: 1 1 8rem;
 }
 /* An edit's change (#1146): each in the light editor's merge view, one under another, its box
@@ -3419,8 +3403,8 @@ button.show-more:focus-visible {
   margin-block-start: var(--space-4);
 }
 
-/* The box that narrows the file rows (FM-4): the shared field with its glass
-   (`.ui-input-lead`, #1856), the tree's width. */
+/* The box that narrows the file rows (FM-4): the field family's, with its mark, the tree's
+   width. */
 .explorer .files-filter {
   margin-block-end: var(--space-3);
 }
@@ -3908,14 +3892,14 @@ h2.sidebar-title .node-icon {
 
 /* The box and its glass. **Its text starts where a top-level chat's name does** (DS-11): the
    glass stands in the state marks' column, and the text after it, past the box's hairline. */
-/* The box is the shared field with a leading icon (`.ui-input-lead`, #1856); these are the
-   three sizes it lets a view hand it, so the glass is the marks' size in their column and the
-   text starts at the names, past the field's hairline. */
+/* The box is the field family's, with a leading glass (#2905); these are the three sizes it
+   lets a view hand it, so the glass is the marks' size in their column and the text starts at the
+   names, past the field's hairline. */
 .chats-filter-box {
   flex: 1 1 5rem;
-  --ui-input-lead-at: var(--space-5);
-  --ui-input-lead-size: var(--chats-mark);
-  --ui-input-lead-text: calc(var(--chats-name-at) - 1px);
+  --text-input-start: var(--space-5);
+  --text-input-icon: var(--chats-mark);
+  --text-input-gap: calc(var(--chats-name-at) - 1px - var(--space-5) - var(--chats-mark));
 }
 
 /* **The notes, on the title's line** (#1499, DS-11). What the filter hides and why a key did
@@ -4841,7 +4825,7 @@ h2.sidebar-title .node-icon {
   opacity: 0.7;
 }
 
-/* The shared field (`.ui-input`), across the palette. */
+/* The field family's box (#2905), across the palette. */
 .palette-query {
   width: 100%;
 }
@@ -6120,14 +6104,9 @@ h2.sidebar-title .node-icon {
 
 /* **The search, once there is more than a page** — and it stays once it is there, because a
    box that vanished when a search narrowed the list would take away the control in use. */
-/* The box is the shared field (`.ui-input`, DS-12), the list's width. */
+/* The box is the field family's (#2905), the list's width. */
 .panel-search {
-  display: flex;
   margin: var(--space-2) 0;
-}
-
-.panel-search > .ui-input {
-  flex: 1 1 auto;
 }
 
 /* Load-more: a row of the list (`.ui-row`) rather than a button beside it, so the list ends with
@@ -6872,7 +6851,7 @@ h2.sidebar-title .node-icon {
   align-items: center;
 }
 
-.vault-identity-put input {
+.vault-identity-put > .vault-token {
   flex: 1 1 16rem;
   min-width: 12rem;
 }
@@ -6972,10 +6951,9 @@ h2.sidebar-title .node-icon {
   color: var(--text-primary);
 }
 
-/* The picker's text box for any other colour, as #rrggbb: the shared field (`.ui-input`, #1857),
-   as wide as the seven characters it holds (its `size`) and the field's own inset either side.
-   A refused value's edge is the field's (`aria-invalid`). */
-.persona-mark-hex .ui-field {
+/* The picker's text box for any other colour, as #rrggbb: the field family's (#2905), as wide
+   as the seven characters it holds (its `columns`); a value it refuses is said under it. */
+.persona-mark-hex {
   font-variant-numeric: tabular-nums;
 }
 
@@ -7581,7 +7559,7 @@ h2.sidebar-title .node-icon {
 }
 
 /* A memory's title and body take the row's whole width: the body is a page, not a value. */
-.memory-editor .ui-field {
+.memory-editor .ui-setting-box {
   width: 100%;
   box-sizing: border-box;
 }
@@ -7688,7 +7666,7 @@ h2.sidebar-title .node-icon {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-/* The box and its glass (`.ui-input-lead`, #1856). */
+/* The box and its glass: the field family's (#2905). */
 .search-query-box {
   flex: 1 1 auto;
 }
@@ -8351,7 +8329,7 @@ h2.sidebar-title .node-icon {
 
 /* A text box takes the row's width, and a button beside it — a dialog's `Browse…`, which
    picks what the box holds (DS-3c) — is drawn as the reset is: a quiet button in the row. */
-.ui-setting-control > input.ui-field {
+.ui-setting-control > .ui-setting-box {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -8365,7 +8343,7 @@ h2.sidebar-title .node-icon {
 
 /* A list field (DS-10, #1842) is drawn under its name, at the row's width: its control takes a
    line of its own rather than the room beside the label. */
-.ui-setting-control:has(> .ui-list-field) {
+.ui-setting-control:has(> .ui-setting-list) {
   flex-basis: 100%;
 }
 
@@ -8465,12 +8443,6 @@ h2.sidebar-title .node-icon {
 .ui-field:disabled {
   color: var(--text-muted);
   cursor: default;
-}
-
-textarea.ui-field {
-  resize: vertical;
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
 }
 
 /* A slider is not a text box: no box, and what it is at beside it in even-width digits. */
