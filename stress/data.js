@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792688157430,
+  "lastUpdate": 1792691214157,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5602,6 +5602,42 @@ window.BENCHMARK_DATA = {
             "value": 349.8,
             "unit": "MB",
             "extra": "median of 6 samples: 298.3, 374.1, 360, 349.3, 350.2, 240.7 MB; window 172.6 MB, session host 178.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "11fe126e311f167042c21cdef00034f34894ee27",
+          "message": "Theme parts: measure states that hold at once (#2958) (#2966)\n\nThe parts check resolves every set of states a family names that a part\ncan be in at once (hovered and pressed, focused and selected; a text\nbox's hovered and focused) as the stylesheet's order does, and holds it\nto the reading and consent floors like one state. Sets that draw every\nlook exactly as a state alone or a set already measured are read once,\nand the hold runs again until a round writes no fallback.\n\nA part that breaks a floor in a set draws its family default in the\nlast of its states the family's rules name, and the finding names the\nset (`button.root.primary.hover+focused`). The family default for a set\nfollows each family's stylesheet, and a test holds the button's to\nbutton.css. app/src/theme/consentToggles.test.ts fails on a primary, an\nAllow or a danger button that is a toggle.\n\nRebuilt on the field families (#3021): one commit in place of four, as\neach family names its own states now.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T20:21:15+04:00",
+          "tree_id": "10047ee97767b784f3387675b9cd2095a99c86de",
+          "url": "https://github.com/purlis/purlis/commit/11fe126e311f167042c21cdef00034f34894ee27"
+        },
+        "date": 1792691211688,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 941,
+            "unit": "MB",
+            "extra": "median of 3 samples: 835, 941, 1075 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 367.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 387.4, 389.3, 371.3, 362.2, 363.2, 227.7 MB; window 168.7 MB, session host 193.9 MB"
           }
         ]
       }
