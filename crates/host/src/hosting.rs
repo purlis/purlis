@@ -244,16 +244,17 @@ pub trait Running: Send + Sync + 'static {
     /// What a view of it attaches to.
     fn source(&self) -> Arc<dyn Source>;
     /// What a view of `kind` attaches to, as `role`, at most `rate` frames a second where it
-    /// says, its frames naming what they show where the view `aims` (1.14); `None` when it has
-    /// no view of that kind. A terminal's is its terminal view.
+    /// says, its frames read as `reads` says its link reads them (frames that name what they
+    /// show, 1.14; the page's origin, 1.35); `None` when it has no view of that kind. A
+    /// terminal's is its terminal view.
     fn view(
         &self,
         kind: ViewKind,
         role: Option<ViewRole>,
         rate: Option<u32>,
-        aims: bool,
+        reads: crate::browsers::Reads,
     ) -> Option<Arc<dyn Source>> {
-        let _ = (role, rate, aims);
+        let _ = (role, rate, reads);
         (kind == ViewKind::Terminal).then(|| self.source())
     }
     /// The size its views are drawn at, where it is not its terminal's: a browser's page, in
@@ -1987,14 +1988,10 @@ impl Hosting {
                 .programs
                 .get(program)
                 .ok_or_else(|| no_such_program(program))?;
-            let aims = peer.version()
-                >= Version {
-                    major: 1,
-                    minor: 14,
-                };
+            let reads = crate::browsers::Reads::of(peer.version());
             let source = hosted
                 .running
-                .view(kind, role, rate, aims)
+                .view(kind, role, rate, reads)
                 .ok_or_else(|| Refusal {
                     code: session::MALFORMED.into(),
                     why: format!("program {program} has no view of that kind"),

@@ -1087,6 +1087,7 @@ impl Watching {
                         *drawn.lock().unwrap_or_else(PoisonError::into_inner) = aim;
                     }
                 }),
+                Box::new(|_| {}),
                 Arc::new(|_| {}),
             )
             .expect("the person watches the browser");

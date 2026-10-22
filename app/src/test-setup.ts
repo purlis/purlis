@@ -9,6 +9,7 @@ import { toHaveValue } from "@testing-library/jest-dom/matchers";
 import { afterEach, expect } from "vitest";
 import { forgetKeptScopes } from "./chatsScope";
 import { forgetExtensionThemes } from "./Extensions";
+import { forgetEntering } from "./settings/entering";
 import { forgetExtensionsOn } from "./extensionsOn";
 import { forgetProjectThemes } from "./projectTheme";
 import { forgetSwitches } from "./switchClock";
@@ -30,6 +31,9 @@ afterEach(() => {
   // The Chats view's scope is kept per project on this machine (#1679); every test's machine is
   // a new one.
   forgetKeptScopes();
+  // A way into Settings stands, and retries on a timer, for up to two seconds (#1206): one a
+  // test left standing never fires into the next test, or after its window is gone.
+  forgetEntering();
 });
 
 // jsdom has no ResizeObserver, and the panes and their splits watch their own size with one.

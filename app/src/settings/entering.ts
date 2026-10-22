@@ -92,6 +92,8 @@ function movedOn(event: Event): void {
  * so that event does not drop its own ask.
  */
 function watchThePerson(on: boolean): void {
+  // A retry timer can outlive the window it was set in (a test's, torn down): nothing to watch.
+  if (typeof window === "undefined") return;
   const change = on ? window.addEventListener : window.removeEventListener;
   for (const type of ["pointerdown", "keydown"]) change.call(window, type, movedOn, true);
 }

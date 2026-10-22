@@ -222,9 +222,14 @@ use crate::view::{Limits, Views};
 /// which a host that keeps its own projects holds where it keeps them. Both code commands are the
 /// window's alone, relayed for it. A host before 1.34 refuses each `unknown_command`, and a hold
 /// with no path `malformed`.
+///
+/// 1.35 added the page a browser view shows (#2300): an origin frame on the view's stream
+/// (`view::frames::ORIGIN`), the origin of the page the browser shows and nothing else of its
+/// address, sent where it changes and before the image in the view's snapshot. A view of a link
+/// before 1.35 is sent images alone.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 34,
+    minor: 35,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
