@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792683778579,
+  "lastUpdate": 1792686186181,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21756,6 +21756,48 @@ window.BENCHMARK_DATA = {
             "value": 101.45996600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.190, 101.390, 101.460, 102.355, 102.559 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "11fe126e311f167042c21cdef00034f34894ee27",
+          "message": "Theme parts: measure states that hold at once (#2958) (#2966)\n\nThe parts check resolves every set of states a family names that a part\ncan be in at once (hovered and pressed, focused and selected; a text\nbox's hovered and focused) as the stylesheet's order does, and holds it\nto the reading and consent floors like one state. Sets that draw every\nlook exactly as a state alone or a set already measured are read once,\nand the hold runs again until a round writes no fallback.\n\nA part that breaks a floor in a set draws its family default in the\nlast of its states the family's rules name, and the finding names the\nset (`button.root.primary.hover+focused`). The family default for a set\nfollows each family's stylesheet, and a test holds the button's to\nbutton.css. app/src/theme/consentToggles.test.ts fails on a primary, an\nAllow or a danger button that is a toggle.\n\nRebuilt on the field families (#3021): one commit in place of four, as\neach family names its own states now.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T20:21:15+04:00",
+          "tree_id": "10047ee97767b784f3387675b9cd2095a99c86de",
+          "url": "https://github.com/purlis/purlis/commit/11fe126e311f167042c21cdef00034f34894ee27"
+        },
+        "date": 1792686183797,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6574605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.646, 0.652, 0.657, 0.684, 0.696 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7646415,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.262, 16.633, 16.765, 16.860, 16.946 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9146035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.261, 101.769, 101.915, 102.002, 102.183 ms"
           }
         ]
       }
