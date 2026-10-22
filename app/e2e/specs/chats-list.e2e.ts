@@ -370,8 +370,15 @@ describe("the Chats list in a narrow sidebar", () => {
         const style = getComputedStyle(box);
         const outer = box.getBoundingClientRect();
         const rows = [...section.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+        // The shared row's height as the theme in force sets it (`--size-chrome`).
+        const probe = document.createElement("div");
+        probe.style.height = "var(--size-chrome)";
+        document.body.append(probe);
+        const chrome = probe.getBoundingClientRect().height;
+        probe.remove();
         return {
           root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+          chrome,
           // Where a typed letter starts: past the box's border and its padding.
           text:
             outer.left +
@@ -389,7 +396,7 @@ describe("the Chats list in a narrow sidebar", () => {
         };
       });
       check("nothing was measured", seen !== null, width);
-      const { root, text: at, filterBottom, rows } = seen as NonNullable<typeof seen>;
+      const { root, chrome, text: at, filterBottom, rows } = seen as NonNullable<typeof seen>;
       const top = rows.filter((one) => one.level === 1);
       check("no top-level row was drawn", top.length >= 3, rows);
       check(
@@ -404,13 +411,14 @@ describe("the Chats list in a narrow sidebar", () => {
           Math.abs(one.nameLeft - at) <= 1.5,
           { at, one },
         );
-      // Every chat's row is the shared row's height (`--size-chrome`, 1.5rem), give or take a
-      // pixel, and the first comes right under the filter: no empty line between them.
+      // Every chat's row is the shared row's height (`--size-chrome`, as the theme in force sets
+      // it: 1.5rem in Purlis Classic, 24px at 14px in Purlis), give or take a pixel, and the
+      // first comes right under the filter: no empty line between them.
       for (const one of rows)
         check(
           `${one.name}: its row is not the list row's height (${width})`,
-          one.height >= 1.5 * root - 1 && one.height <= 1.5 * root + 1,
-          { root, one },
+          one.height >= chrome - 1 && one.height <= chrome + 1,
+          { chrome, one },
         );
       const gap = rows[0].top - filterBottom;
       check(
