@@ -16,6 +16,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import { ProjectShownProvider } from "../../projectShown";
 import { Button, IconButton, ToggleButton } from "../button/Button";
+import { StatusCell, StatusItem } from "../status/StatusItem";
 import {
   Tooltip,
   TOOLTIP_CLOSE_DELAY,
@@ -79,6 +80,7 @@ describe("a tooltip under the pointer", () => {
 
   it("is hoverable: the pointer moves onto it and it stays (WCAG 1.4.13)", async () => {
     render(<Path />);
+    await pointerIn();
     await user.hover(screen.getByText("purlis"));
     await wait(TOOLTIP_DELAY + 50);
     const tip = shownTip();
@@ -131,6 +133,7 @@ describe("a tooltip under the pointer", () => {
 
   it("is persistent: it stays while the pointer rests, and goes once it leaves both", async () => {
     render(<Path />);
+    await pointerIn();
     const target = screen.getByText("purlis");
     await user.hover(target);
     await wait(TOOLTIP_DELAY + 50);
@@ -360,6 +363,48 @@ describe("a tooltip from the keyboard", () => {
     const words = screen.getByText("plain");
     expect(words).not.toHaveAttribute("tabindex");
     expect(tipOf(words)).toBeNull();
+  });
+});
+
+describe("a status item's tooltip", () => {
+  it("is a pill's hint, shown by the keyboard, and a cell's, which makes it a Tab stop", () => {
+    render(
+      <>
+        <StatusItem
+          variant="pill"
+          aria-label="Update"
+          tooltip="Purlis 1.2 is ready"
+          onPress={() => {}}
+        />
+        <StatusCell tooltip="From the forge's facts file" count="3">
+          PRs
+        </StatusCell>
+      </>,
+    );
+    expect(tipOf(screen.getByRole("button", { name: "Update" }))).toBe("Purlis 1.2 is ready");
+    const cell = screen.getByText("PRs").closest('[data-scope="status-item"][data-part="root"]');
+    expect(cell).toHaveAttribute("tabindex", "0");
+    expect(tipOf(cell)).toBe("From the forge's facts file");
+    expect(document.querySelector("[title]")).toBeNull();
+  });
+
+  it("keeps a disabled item with a hint in reach, saying why, and pressing nothing", async () => {
+    const pressed = vi.fn();
+    render(
+      <StatusItem isDisabled tooltip="This status line has no Inbox behind it." onPress={pressed}>
+        Notices
+      </StatusItem>,
+    );
+    const item = screen.getByRole("button", { name: "Notices" });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    expect(item).not.toBeDisabled();
+    expect(item).toHaveAttribute("tabindex", "0");
+    expect(item).toHaveAccessibleDescription("This status line has no Inbox behind it.");
+    await user.click(item);
+    item.focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
+    expect(pressed).not.toHaveBeenCalled();
   });
 });
 

@@ -136,8 +136,19 @@ function root({
  * variant. A trigger's `asChild` (a dialog's, a menu's) hands it its press too.
  */
 export function StatusItem(props: StatusItemProps) {
-  const { variant, tone, strong, shrinks, icon, count, children, className, ref, tooltip, ...rest } =
-    props;
+  const {
+    variant,
+    tone,
+    strong,
+    shrinks,
+    icon,
+    count,
+    children,
+    className,
+    ref,
+    tooltip,
+    ...rest
+  } = props;
   const tip = usePressTip(props["aria-label"], tooltip, false, props.isDisabled === true);
   // The press the button family has too (`ui/pressable.tsx`): its native attributes, the keys a
   // handler does not stop going on (Shift F10 reaching the bar's menu), a disabled item with a

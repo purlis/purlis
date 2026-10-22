@@ -424,9 +424,9 @@ function describedBy(own: string | undefined, error: string, said: string | unde
  * off would otherwise never be heard. Hands back the call's props described by a hidden node with
  * the hint, and that node, to draw inside the field.
  */
-function useReason<P extends { isDisabled?: boolean; tooltip?: string; "aria-describedby"?: string }>(
-  props: P,
-): { described: P; reason: ReactNode } {
+function useReason<
+  P extends { isDisabled?: boolean; tooltip?: string; "aria-describedby"?: string },
+>(props: P): { described: P; reason: ReactNode } {
   const id = `${useId()}-reason`;
   const tip = props.isDisabled === true ? props.tooltip : undefined;
   if (tip === undefined || tip === "") return { described: props, reason: null };

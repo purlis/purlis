@@ -19,7 +19,6 @@ import { channelMoved, useUpdateChannel } from "./updateChannel";
 import { AnswerBar } from "./AnswerBar";
 import { Button } from "./ui/button/Button";
 import { StatusItem } from "./ui/status/StatusItem";
-import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **"An update is available", and the pin that drifts** — the two version facts charter ADR
