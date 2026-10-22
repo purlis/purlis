@@ -142,6 +142,16 @@ fn linked(skills: &Path) -> Vec<(String, PathBuf)> {
     handed
 }
 
+fn wanted(here: &Here) -> Vec<(String, PathBuf)> {
+    vec![
+        ("deploy".to_owned(), here.plane.join("skills/deploy")),
+        (
+            "triage".to_owned(),
+            here.plane.join("personas/ops/skills/triage"),
+        ),
+    ]
+}
+
 #[test]
 fn a_claude_code_chat_as_the_persona_loads_its_skills_in_a_workspace_granted_none() {
     purlis_core::unsteered!();
