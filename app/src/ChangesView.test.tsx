@@ -111,6 +111,67 @@ describe("the Changes view", () => {
     expect(row("tool")).toHaveTextContent("clean");
   });
 
+  it("shows a runner chat's branch as fetched from its pool, with what is new here (#2046)", () => {
+    render(
+      <ChangesView
+        offers={NO_MENUS}
+        onPress={() => {}}
+        workspace="alpha"
+        state={state({
+          repos: {
+            workspace: "alpha",
+            cache_refused: null,
+            repos: [
+              repo("svc", {
+                on_a_runner: [
+                  { pool: "builds", branch: "fix-login", ahead: 2 },
+                  { pool: "builds", branch: "main", ahead: 0 },
+                ],
+              }),
+              repo("tool"),
+            ],
+          },
+        })}
+      />,
+    );
+
+    const there = screen.getByTestId("runner-svc-builds-fix-login");
+    expect(there).toHaveTextContent("fix-login");
+    expect(there).toHaveTextContent("on pool builds");
+    expect(there).toHaveTextContent("2 commits not on this machine");
+    expect(screen.getByTestId("runner-svc-builds-main")).not.toHaveTextContent(
+      "not on this machine",
+    );
+    expect(screen.queryByTestId(/^runner-tool-/)).toBeNull();
+    // A row of the tree like every other: the keys reach it.
+    expect(there).toHaveAttribute("role", "treeitem");
+  });
+
+  it("draws a runner's branch name inertly, so it cannot turn its line around (#2046)", () => {
+    render(
+      <ChangesView
+        offers={NO_MENUS}
+        onPress={() => {}}
+        workspace="alpha"
+        state={state({
+          repos: {
+            workspace: "alpha",
+            cache_refused: null,
+            repos: [
+              repo("svc", {
+                on_a_runner: [{ pool: "builds", branch: "fix\u202egol", ahead: 0 }],
+              }),
+            ],
+          },
+        })}
+      />,
+    );
+
+    const there = screen.getByTestId("runner-svc-builds-fix\u202egol");
+    expect(there).toHaveTextContent("fix\\u202egol");
+    expect(there.textContent).not.toContain("\u202e");
+  });
+
   it("never draws a tree purlis could not read as clean", () => {
     // The whole reason the core has a third state. "Clean" here is a lie that reads as
     // "nothing to do", which is exactly the wrong thing to tell someone in a hurry.

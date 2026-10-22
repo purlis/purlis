@@ -91,6 +91,50 @@ pub enum Heard {
     InputEnded { of: u64 },
 }
 
+impl Heard {
+    /// The chat the line says it comes from, where it names one: a line about a line handed on
+    /// before (`Left`, `Input`, `InputEnded`) or a hook connection (`AskerGone`) names none.
+    pub fn chat(&self) -> Option<u32> {
+        match self {
+            Heard::Report(report) => Some(report.chat),
+            Heard::Ask { ask, .. } => Some(ask.chat()),
+            Heard::StartedByHand(notice) => Some(notice.chat),
+            Heard::Saved(saved) => Some(saved.chat),
+            Heard::Refused(refused) => Some(refused.chat),
+            Heard::Tool(call) => Some(call.chat),
+            Heard::Touching(touching) => Some(touching.chat),
+            Heard::Blocked(blocked) => Some(blocked.chat),
+            Heard::Doing(doing) => Some(doing.chat),
+            Heard::Output(output) => Some(output.chat),
+            Heard::Permission(asked) => Some(asked.chat),
+            Heard::SecretExec(ask) => Some(ask.chat),
+            Heard::Left { .. }
+            | Heard::AskerGone { .. }
+            | Heard::Input { .. }
+            | Heard::InputEnded { .. } => None,
+        }
+    }
+
+    /// **Refuses the line, replying through `reply`** as each kind is refused, for `why`: a
+    /// report, a tool call or a refused commit is not taken, an ask is answered no, a permission
+    /// ask is not held, and a `secret exec` ends; nothing is replied to the rest.
+    pub fn refuse(&self, reply: &Reply, why: &str) {
+        match self {
+            Heard::Report(_) | Heard::Refused(_) | Heard::Tool(_) => {
+                reply(Replied::NotTaken {
+                    why: why.to_owned(),
+                });
+            }
+            Heard::Ask { .. } => reply(Replied::Answer(Answer::No {
+                why: why.to_owned(),
+            })),
+            Heard::Permission(_) => reply(Replied::NotHeld),
+            Heard::SecretExec(_) => reply(Replied::Ended),
+            _ => {}
+        }
+    }
+}
+
 /// What the window replies to a line handed on.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -478,7 +522,8 @@ pub type Reply = Arc<dyn Fn(Replied) + Send + Sync + 'static>;
 /// **The window's half**: hears each line the host handed on with the window's own
 /// [`Hearing`], and replies what it answered.
 pub struct Heeding {
-    hearing: Hearing,
+    /// Shared with every heeding made [`Heeding::beside`] it.
+    hearing: Arc<Hearing>,
     /// The hook connections whose askers hung up while their asks were answered.
     gone: Mutex<HashSet<u64>>,
     /// What each permission ask held here is told if the host lets it go first.
@@ -733,6 +778,18 @@ const A_HELD_ASK_IS_LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 impl Heeding {
     /// Hears every line with `hearing`.
     pub fn new(hearing: Hearing) -> Heeding {
+        Heeding::hearing_with(Arc::new(hearing))
+    }
+
+    /// **Hears another host's lines with this one's hearing** (#2046): the lines of a pool's
+    /// runner, beside this machine's host. Its links, its secret execs' input, its held asks
+    /// and its askers that hung up are its own, since each host numbers its own lines and its
+    /// own hook connections.
+    pub fn beside(&self) -> Heeding {
+        Heeding::hearing_with(Arc::clone(&self.hearing))
+    }
+
+    fn hearing_with(hearing: Arc<Hearing>) -> Heeding {
         Heeding {
             hearing,
             gone: Mutex::default(),

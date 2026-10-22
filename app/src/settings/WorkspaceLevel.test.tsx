@@ -201,9 +201,13 @@ function core(
     dropsClean = false,
     iconThemes = [{ extension: "solarized", name: "Seti", text: "{}" }],
     iconsDrawn = null as string | null,
+    // The pools this machine keeps (#2046): none, and nothing about pools shows.
+    pools = [] as string[],
   } = {},
 ) {
   let file = settings;
+  /** The pool alpha's chats run on, as this machine's store says it (#2046). */
+  let runsOn: string | null = null;
   /** What `alpha` names and this machine has not cloned (#1228). */
   const absent = ["web"];
   const cloned = ["api"];
@@ -214,6 +218,20 @@ function core(
       const given = (args ?? {}) as Record<string, unknown>;
       asked.push([cmd, given]);
       if (cmd === "workspace_settings") return file;
+      if (cmd === "docker_pools")
+        return {
+          pools: pools.map((name) => ({
+            name,
+            image: "ghcr.io/purlis/purlis-runner@sha256:0123",
+            limits: { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 },
+          })),
+          defaults: { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 },
+        };
+      if (cmd === "chats_run_on") return { pool: runsOn, pools };
+      if (cmd === "set_chats_run_on") {
+        runsOn = (given.pool as string | null) ?? null;
+        return { pool: runsOn, pools };
+      }
       // The project's two files, empty, for a tab that is at the Project level.
       if (cmd === "project_settings")
         return Object.fromEntries(
@@ -398,6 +416,30 @@ describe("the Workspace level", () => {
     );
     expect(asked("workspace_settings")).toContainEqual({ plane: PLANE, workspace: "alpha" });
     expect(asked("project_extensions")).toContainEqual({ plane: PLANE, workspace: "alpha" });
+  });
+
+  it("offers where its chats run only once this machine keeps a pool, and sets it on this machine (#2046)", async () => {
+    const { asked } = core(ALPHA, undefined, NO_THEME, null, { pools: ["builds"] });
+    await at();
+    await waitFor(() => expect(groups()).toContain("Runs on"));
+    expect(groups().indexOf("Runs on")).toBe(groups().indexOf("Repos") + 1);
+    await open("Runs on");
+    const runs = screen.getByRole("region", { name: "Runs on" });
+    expect(runs).toHaveTextContent("Kept on this machine only, never in a committed file.");
+    const here = await within(runs).findByRole("radio", { name: /This machine/ });
+    await waitFor(() => expect(here).toHaveAttribute("aria-checked", "true"));
+
+    await userEvent.click(within(runs).getByRole("radio", { name: /Pool builds/ }));
+
+    await waitFor(() =>
+      expect(within(runs).getByRole("radio", { name: /Pool builds/ })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      ),
+    );
+    expect(asked("set_chats_run_on")).toEqual([
+      { plane: PLANE, workspace: "alpha", pool: "builds" },
+    ]);
   });
 
   it("hides a group with nothing in it, but Extensions, which links to where one is installed", async () => {

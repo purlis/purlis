@@ -413,6 +413,22 @@ pub(crate) struct RepoState {
     /// Why there is nothing from the forge to show. Absent when something was fetched, even
     /// when what was fetched named no pipeline.
     not_fetched: Option<String>,
+    /// The branches of the pool's runner this workspace's chats run on, as this machine last
+    /// fetched them (#2046): each ready to push or open as a pull request here. Left out where
+    /// there is none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[specta(optional)]
+    on_a_runner: Vec<RunnerBranch>,
+}
+
+/// One branch of a pool's runner, as this machine last fetched it (#2046).
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub(crate) struct RunnerBranch {
+    pool: String,
+    branch: String,
+    /// The commits it has that this machine's branch of that name does not, or what this
+    /// checkout is on where there is none.
+    ahead: u32,
 }
 
 /// Every clone of one workspace, as the panels draw them.
@@ -1266,7 +1282,31 @@ pub(crate) fn persona_view(
 /// The panel that needs git. Call it off the thread that draws, for one project's workspace.
 pub(crate) fn repo_states(root: &Path, workspace: &str) -> Result<RepoStates, String> {
     let binary = crate::charter_binary();
-    states_of(root, workspace, binary.as_deref())
+    // The pool this workspace's chats run on, where it runs them on one this machine keeps
+    // (#2046): read here, so a test of what the panel draws reads no machine store.
+    let pool = purlis_core::machine::config_root()
+        .and_then(|config| purlis_core::pools::runs_on(&config, root, Some(workspace)).ok())
+        .flatten();
+    let mut states = states_of(root, workspace, binary.as_deref())?;
+    if let Some(pool) = pool {
+        on_its_runner(&mut states, root, workspace, &pool);
+    }
+    Ok(states)
+}
+
+/// What the runner of `pool` has of each clone of `workspace` in `states`, as fetched (#2046).
+fn on_its_runner(states: &mut RepoStates, root: &Path, workspace: &str, pool: &str) {
+    for row in &mut states.repos {
+        let clone = root.join("workspaces").join(workspace).join(&row.name);
+        row.on_a_runner = purlis_core::codelink::on_a_runner(&clone, pool)
+            .into_iter()
+            .map(|branch| RunnerBranch {
+                pool: pool.to_owned(),
+                branch: branch.branch,
+                ahead: branch.ahead,
+            })
+            .collect();
+    }
 }
 
 /// [`repo_states`] with the `charter` binary said out loud rather than discovered.

@@ -235,6 +235,29 @@ pub trait SessionHost: Send + Sync {
         false
     }
 
+    /// **Whether a harness chat started in `workspace` is composed by the host it runs on**
+    /// (#2046): where the window routes each workspace's chats to the host that runs them, a
+    /// workspace whose chats run on a pool's runner is started by its names there. Every other
+    /// host answers as [`Self::composes_its_harness_chats`] does.
+    fn composes_its_harness_chats_in(&self, workspace: Option<&str>) -> bool {
+        let _ = workspace;
+        self.composes_its_harness_chats()
+    }
+
+    /// **Holds the project in this host now** (#2046), as a window that is about to start a
+    /// chat on a runner beside it does: this machine's host keeps the project's board for
+    /// every chat, those on runners included. Nothing, where the window's own process runs the
+    /// chats.
+    fn hold_here(&self) {}
+
+    /// **Fetches the branches of `workspace`'s clones back from the runner of `pool`** (#2046),
+    /// where this host runs the project's chats there: each clone's `refs/remotes/<pool>/*`.
+    /// Answers what could not be fetched, in sentences. Nothing, where chats run elsewhere.
+    fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
+        let _ = (workspace, pool);
+        Vec::new()
+    }
+
     /// Sends what a pane typed to the program: bytes, written to its pty as they are. Text is
     /// its UTF-8; a mouse report in the default encoding is bytes that are not text at all
     /// (charter#493).
@@ -375,6 +398,14 @@ pub trait SessionHost: Send + Sync {
     fn left_running(&self, number: u32) -> bool {
         let _ = number;
         false
+    }
+
+    /// [`Self::left_running`], of a chat that worked in `workspace` (#2046): where the
+    /// project's chats are routed, it is asked of this machine's host and of the one pool the
+    /// workspace runs its chats on, and no other.
+    fn left_running_in(&self, number: u32, workspace: Option<&str>) -> bool {
+        let _ = workspace;
+        self.left_running(number)
     }
 
     /// **Reattaches chat `number`** as a chat of this window (#2006): what [`Self::open`] does,
@@ -581,6 +612,11 @@ pub(crate) mod pretend {
         /// Whether it runs its chats on a runner, which composes each harness chat
         /// ([`Pretend::on_a_runner`], #2446).
         on_a_runner: std::sync::atomic::AtomicBool,
+        /// Each fetch back it was asked for, by workspace and pool, and how many ran at once
+        /// at most (#2046).
+        fetched: Mutex<Vec<(String, String)>>,
+        fetching: AtomicU32,
+        most_fetching: AtomicU32,
         /// Each chat started by its names, its number, and whether its hearing asks.
         named: Mutex<Vec<(u32, Named, bool)>>,
         /// How it records the run of each chat it composes from now on, where a test said
@@ -592,6 +628,16 @@ pub(crate) mod pretend {
         /// Runs its chats on a runner from now on, which composes each harness chat (#2446).
         pub fn on_a_runner(&self) {
             self.seen.on_a_runner.store(true, Ordering::SeqCst);
+        }
+
+        /// Each fetch back it was asked for, by workspace and pool, in order.
+        pub fn fetched(&self) -> Vec<(String, String)> {
+            lock(&self.seen.fetched).clone()
+        }
+
+        /// The most fetches back that ran at once.
+        pub fn most_fetching_at_once(&self) -> u32 {
+            self.seen.most_fetching.load(Ordering::SeqCst)
         }
 
         /// Records the run of each chat it composes from now on as `ran`, as a host answers its
@@ -826,6 +872,14 @@ pub(crate) mod pretend {
                     ))
                 }),
             })
+        }
+        fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
+            let now = self.seen.fetching.fetch_add(1, Ordering::SeqCst) + 1;
+            self.seen.most_fetching.fetch_max(now, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(50));
+            lock(&self.seen.fetched).push((workspace.to_owned(), pool.to_owned()));
+            self.seen.fetching.fetch_sub(1, Ordering::SeqCst);
+            Vec::new()
         }
         fn composes_its_harness_chats(&self) -> bool {
             self.seen.on_a_runner.load(Ordering::SeqCst)

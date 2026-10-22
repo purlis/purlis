@@ -380,7 +380,19 @@ pub struct Relayed {
     /// The lines handed on before the window took the host's board, in the order they came:
     /// `None` once it has.
     waiting: Mutex<Option<Vec<InOrder>>>,
+    /// The pool whose runner's lines these are, or `None` for this machine's host (#2046).
+    pool: Option<String>,
+    /// Which pool each chat runs on, where the project's chats are routed by workspace: a line
+    /// is heard only from the host its chat runs on ([`Relayed::for_a_pool`]).
+    routes: Mutex<Option<Routes>>,
 }
+
+/// Which pool chat `number` runs on, or `None` for this machine (#2046).
+pub type Routes = Arc<dyn Fn(u32) -> Option<String> + Send + Sync + 'static>;
+
+/// What a line from a host its chat does not run on is refused with (#2046).
+const NOT_ITS_HOST: &str =
+    "this line came from a host its chat does not run on, so it was not heard";
 
 /// A line to hear in order: the link it came over, its number, the line, and what replies to
 /// it.
@@ -404,6 +416,16 @@ impl Relayed {
         heard: purlis_core::hookwire::relay::Heard,
         reply: purlis_core::hookwire::relay::Reply,
     ) {
+        // Each host speaks only for the chats that run on it (#2046): a pool's runner never for
+        // a chat of this machine's or another pool's, nor this machine's host for a runner's.
+        if !self.its_own(&heard) {
+            tracing::warn!(
+                "purlis: a hook line for chat {} came from a host it does not run on; refused",
+                heard.chat().unwrap_or_default()
+            );
+            heard.refuse(&reply, NOT_ITS_HOST);
+            return;
+        }
         if let Some(waiting) = self
             .waiting
             .lock()
@@ -469,6 +491,50 @@ impl Relayed {
         if let Some(lines) = in_order.as_ref() {
             let _ = lines.send((link, id, heard, reply));
         }
+    }
+
+    /// Whether `heard` names a chat that runs on this host, where the chats are routed: one that
+    /// names none is of this host's own lines and hook connections.
+    fn its_own(&self, heard: &purlis_core::hookwire::relay::Heard) -> bool {
+        let Some(chat) = heard.chat() else {
+            return true;
+        };
+        let routes = self
+            .routes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        match routes {
+            Some(routes) => routes(chat) == self.pool,
+            // Not routed: this machine's host runs every chat, and no pool's lines come here.
+            None => self.pool.is_none(),
+        }
+    }
+
+    /// **The project's chats are routed by workspace** (#2046): from now on this host's lines
+    /// are heard only for the chats `routes` says run on it.
+    pub fn routed(&self, routes: Routes) {
+        *self.routes.lock().unwrap_or_else(PoisonError::into_inner) = Some(routes);
+    }
+
+    /// **What hears the lines of `pool`'s runner** (#2046), beside this machine's host's: the
+    /// same board and hearing, with links, secret execs, held asks and programs of its own, since
+    /// each host numbers its own; and only for the chats `routes` says run on `pool`. The board
+    /// is this machine's host's to keep, held there before any chat starts on a runner, so no
+    /// line waits for it here.
+    pub fn for_a_pool(&self, pool: &str, routes: Routes) -> Arc<Relayed> {
+        Arc::new(Relayed {
+            heeding: Arc::new(self.heeding.beside()),
+            in_order: Mutex::new(None),
+            socket: self.socket.clone(),
+            programs: Mutex::default(),
+            board: Arc::clone(&self.board),
+            plane: self.plane.clone(),
+            moved: Arc::clone(&self.moved),
+            waiting: Mutex::new(None),
+            pool: Some(pool.to_owned()),
+            routes: Mutex::new(Some(routes)),
+        })
     }
 
     /// The host's lines for this project come over link `link` from now on: a link other than
@@ -1835,6 +1901,8 @@ impl Hooks {
             plane,
             moved,
             waiting: Mutex::new(Some(Vec::new())),
+            pool: None,
+            routes: Mutex::new(None),
         }));
         hooks
     }
