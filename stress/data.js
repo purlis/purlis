@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792651960443,
+  "lastUpdate": 1792651974754,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -10740,6 +10740,42 @@ window.BENCHMARK_DATA = {
             "value": 708.3,
             "unit": "MB",
             "extra": "median of 6 samples: 649, 687.9, 704.8, 711.8, 712.6, 799.7 MB; window 408 MB, session host 300.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2452451de3dac008e82e249ab35c88a5f0b25847",
+          "message": "Token-level floor that keeps Allow apart from the primary (#2978)\n\n* Token-level floor that keeps Allow apart from the primary (#2948)\n\nA consent floor, Allow is distinguishable from the primary, measured on\nthe final token set the window draws with the parts check's look measure,\nas written and in each of the theme's tints. Where it fails, the primary's\nfill is drawn as purlis's own first. ADR 0097 section 6 amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Record the operator's ruling on how far apart Allow and the primary are held (#2948)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Hold Allow apart from the primary at every hue a workspace colour can take (#2948)\n\nThe token floor sweeps every whole degree as the other consent floors do,\ndrawing the two fills untinted where a hue fails, and says it measures the\ntoken set the window is handed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Hold the every-hue sweep for Allow at a fraction of the cost (#2948)\n\nEach degree rewrites the few turned tokens on one copy instead of cloning the\ntheme, and a thread keeps the last recipes' per-degree chromas between draws.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T10:11:45+04:00",
+          "tree_id": "ffd4791b1e6c59b0c6200b9ce7a2cbfffc0b66e4",
+          "url": "https://github.com/purlis/purlis/commit/2452451de3dac008e82e249ab35c88a5f0b25847"
+        },
+        "date": 1792651973376,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1559.6,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1353, 1559.6, 1648.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 649.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 623.1, 638.9, 648, 651.6, 653.1, 744.4 MB; window 391 MB, session host 258.8 MB"
           }
         ]
       }
