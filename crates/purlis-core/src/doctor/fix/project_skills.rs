@@ -566,13 +566,10 @@ fn references(root: &Path, built_in: Option<&Path>) -> Vec<String> {
         let set = crate::skills::in_the_studio(built_in, root, None, Some(&persona));
         let mut all = true;
         for reference in &names {
-            let name = match reference {
-                crate::skills::Reference::BuiltIn(name)
-                | crate::skills::Reference::Named(name)
-                | crate::skills::Reference::Harness { name, .. } => name,
-            };
+            // A reference the set leaves out is listed as its `skills:` list writes it.
+            let written = reference.to_string();
             let missing = set.left_out.iter().find(|left| {
-                left.name == *name
+                left.name == written
                     && matches!(
                         left.reason,
                         Reason::NotOnThisMachine | Reason::NoSuchBuiltIn
