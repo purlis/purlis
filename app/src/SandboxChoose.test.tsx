@@ -199,7 +199,7 @@ describe("a socket the sandbox did not name", () => {
 
     const box = screen.getByRole("textbox", { name: "Socket path" });
     expect(box).toHaveValue("");
-    expect(box).toHaveClass("ui-field");
+    expect(box.closest('[data-scope="field"]')).toHaveClass("ui-setting-box");
     expect(box.closest(".ui-setting-row")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Use this socket" })).toBeDisabled();
 

@@ -21,10 +21,9 @@ import { describe, expect, it } from "vitest";
  * where it is named below, with how many and why.
  *
  * **Not a form row** (`STANDS`) is the one kind of entry, exact about the file and about the
- * count: a box that is the surface itself rather than a row of a form, such as a list's filter,
- * the palette's query, a tab renamed in place, a reply box, a raw file editor, or a secret's
- * value box, which the set's `Field` cannot hold because a secret is never kept in React state
- * (`docs/ui-primitives.md`, the native box in a row's slot).
+ * count: a control that is the surface itself rather than a row of a form and that no family
+ * draws yet. A box a person types in, a filter, a reply or a secret's value among them, is the
+ * field family's (`ui/field`, #2905) and is never native here.
  *
  * **There is no debt any more** (#626 line 2). The list of form controls that should have been
  * a `Field` or a `Choice` was paid off file by file: the Chats list's state chips are the set's
@@ -43,43 +42,12 @@ const SRC = join(process.cwd(), "src");
 /** The set itself: the one file that draws the native controls for everybody else. */
 const THE_SET = "settings/components.tsx";
 
-const FILTER = "a list's own filter or search box, drawn over the list it narrows: not a form row";
-const SECRET =
-  "a secret's value box: native so the value never sits in React state, which a Field would keep";
-
-/** Native form controls that are the surface itself, not a row of a form. */
+/**
+ * Native form controls that are the surface itself, not a row of a form. A box a person types
+ * in is the field family's (`ui/field`, #2905) wherever it stands, a filter, a reply, a secret's
+ * value, so none is named here; what is left is a control no family draws yet.
+ */
 const STANDS: Record<string, { count: number; why: string }> = {
-  "AnswerQuestion.tsx": { count: 1, why: "the reply box a chat's question is answered in" },
-  "BrowserView.tsx": {
-    count: 1,
-    why: "a browser's address box, its own bar above the page it sends somewhere (#2176)",
-  },
-  "ChatsSection.tsx": { count: 1, why: FILTER },
-  "Explorer.tsx": { count: 1, why: FILTER },
-  "ForgeTokenSignIn.tsx": { count: 1, why: `the token box: ${SECRET}` },
-  "Inbox.tsx": {
-    count: 2,
-    why:
-      "a reply typed into an Inbox row, and why a sandbox ask is kept blocked (#1987): each a " +
-      "stop of the list it is in",
-  },
-  "FindBar.tsx": {
-    count: 1,
-    why: "the find box, its own bar over a chat's terminal or a file (#1088)",
-  },
-  "MemoryArchiveTab.tsx": { count: 1, why: FILTER },
-  "Palette.tsx": { count: 1, why: "the palette's query, a combobox over its own list" },
-  "PanelList.tsx": { count: 1, why: FILTER },
-  "Panels.tsx": { count: 1, why: "a todo typed straight into its list, Enter adds it" },
-  "personaSkills.tsx": {
-    count: 1,
-    why: "a skill typed straight into a persona's Skills list, Add names it (#2768)",
-  },
-  "PersonaMarkPicker.tsx": { count: 1, why: "the mark picker's own hex box beside its swatches" },
-  "SearchTab.tsx": { count: 1, why: "the Search view's query, the view itself" },
-  "TabRename.tsx": { count: 1, why: "a tab renamed in place, on the strip" },
-  "VaultSignIn.tsx": { count: 1, why: SECRET },
-  "VaultTab.tsx": { count: 3, why: `${FILTER}; and two value boxes: ${SECRET}` },
   "settings/SettingsTab.tsx": {
     count: 1,
     why: "the colour well, which no Field kind draws, in the row's control slot",
@@ -122,18 +90,21 @@ describe("the views take their form controls from the set (#626, D-626-5)", () =
     const drawn = new Map(
       views()
         .map((path) => [relative(SRC, path), nativeControls(readFileSync(path, "utf8"))] as const)
-        .filter(([file]) => file !== THE_SET),
+        // The set, and the component layer, where a family wraps its native element (#2905).
+        .filter(([file]) => file !== THE_SET && !file.startsWith("ui/")),
     );
     expect(offTheList(drawn)).toEqual([]);
   });
 
   it("fails an entry its file no longer bears out, so none goes stale (#626)", () => {
     // A box moved onto the set, still named: the file draws none of what its entry says.
-    expect(offTheList(new Map([["TabRename.tsx", 0]]))).toContain(
-      "TabRename.tsx: 0 native form controls, 1 named",
+    expect(offTheList(new Map([["settings/SettingsTab.tsx", 0]]))).toContain(
+      "settings/SettingsTab.tsx: 0 native form controls, 1 named",
     );
     // A named file the views no longer have at all.
-    expect(offTheList(new Map()).some((line) => line.startsWith("TabRename.tsx: 0"))).toBe(true);
+    expect(
+      offTheList(new Map()).some((line) => line.startsWith("settings/SettingsTab.tsx: 0")),
+    ).toBe(true);
     // And one drawn where nothing names it.
     expect(offTheList(new Map([["Fresh.tsx", 1]]))).toContain(
       "Fresh.tsx: 1 native form controls, 0 named",

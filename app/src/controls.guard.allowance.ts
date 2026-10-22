@@ -20,9 +20,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "ActivityTab.tsx": [
     "<button className=\"vault-secret\">",
   ],
-  "AnswerQuestion.tsx": [
-    "<textarea className=\"ui-field answer-text\">",
-  ],
   "App.tsx": [
     "<button>",
   ],
@@ -64,9 +61,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"tab-tasks-hand needs-you-mark\">",
     "<button className=\"tab-tasks-counts\">",
     "<button className=\"tasks-menu-place\">",
-  ],
-  "TabRename.tsx": [
-    "<input className=\"tab-rename\">",
   ],
   "TaskChangesTab.tsx": [
     "<button className=\"vault-secret\">",

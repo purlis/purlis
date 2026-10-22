@@ -17,6 +17,7 @@ import { goneCause, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismi
 import { useNewerTrouble } from "./pickTrouble";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /** The pages behind the welcome's doors. The welcome itself is the absence of one. */
 export type Door = "create" | "get" | "sign-in";
@@ -496,7 +497,7 @@ export function Welcome({
       {/* The path box is not a lesser picker. A native folder dialog cannot be driven by the
           scenario tests, and somebody who already knows the path types faster than they click —
           so the two are one command with two ways in, and neither resolves anything itself. */}
-      <form
+      <Form
         className="by-path"
         onSubmit={(event) => {
           event.preventDefault();
@@ -523,7 +524,7 @@ export function Welcome({
             Open project
           </Button>
         </SettingActions>
-      </form>
+      </Form>
 
       {said && (
         <p className="trouble" role="alert">

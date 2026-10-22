@@ -7,6 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { commands, type ForgeAccountRow, type ForgeTokenHelp } from "./bindings";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form, TextField } from "./ui/field/Field";
 
 /** The forges a token signs in to, and the host each defaults to. */
 export const FORGES = [
@@ -126,7 +127,7 @@ export function ForgeTokenSignIn({
           <Dialog.Title>Sign in with a token</Dialog.Title>
           <p className="where">for this machine; the token is kept in your system keychain</p>
 
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               void signIn();
@@ -193,16 +194,14 @@ export function ForgeTokenSignIn({
               label="Token"
               help="It goes to purlis once, is checked with the forge, and is kept in your system keychain. It never reaches a chat."
               control={(ids) => (
-                <input
-                  ref={box}
+                <TextField
+                  inputRef={box}
                   id={ids.id}
-                  className="ui-field ui-input"
+                  className="ui-setting-box"
                   type="password"
                   placeholder="Paste the token"
-                  autoComplete="off"
-                  spellCheck={false}
-                  tabIndex={0}
-                  disabled={checking}
+                  isDisabled={checking}
+                  aria-labelledby={ids.labelledBy}
                   aria-describedby={ids.describedBy}
                 />
               )}
@@ -222,7 +221,7 @@ export function ForgeTokenSignIn({
                 Cancel
               </Button>
             </SettingActions>
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

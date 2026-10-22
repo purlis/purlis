@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { userEvent } from "@testing-library/user-event";
 import type { StartOptions } from "./bindings";
@@ -37,6 +37,10 @@ const ONE: StartOptions = {
 };
 
 const options = (over: Partial<StartOptions> = {}): StartOptions => ({ ...ONE, ...over });
+
+/** ⌘⏎ on a Mac, Ctrl+Enter elsewhere: the platform the test runs on. */
+const MAC = navigator.platform.startsWith("Mac");
+const SEND = { key: "Enter", metaKey: MAC, ctrlKey: !MAC };
 
 function show(over: Partial<StartOptions> = {}, repo?: string) {
   const onStart = vi.fn();
@@ -488,6 +492,51 @@ describe("the picker a chat starts from", () => {
     await user.click(screen.getByRole("button", { name: "Start" }));
 
     expect(onStart).toHaveBeenCalledWith("claude", "steward", false, "billing bug", false, null);
+  });
+
+  it("starts on ⌘⏎ from the Name field, where a plain Return starts nothing (N26)", async () => {
+    const { onStart, user } = show();
+    const name = screen.getByRole("textbox", { name: /^Name/ });
+    await user.type(name, "billing bug");
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(onStart).not.toHaveBeenCalled();
+    fireEvent.keyDown(name, SEND);
+    expect(onStart).toHaveBeenCalledWith("claude", "steward", false, "billing bug", false, null);
+    expect(screen.getByRole("button", { name: "Start" })).toHaveAttribute(
+      "aria-keyshortcuts",
+      MAC ? "Meta+Enter" : "Control+Enter",
+    );
+  });
+
+  it("never approves a command on ⌘⏎: a grant is a press of its own button (ADR 0097 §6)", () => {
+    const { onStart, onApprove } = show({
+      profiles: [{ ...ONE.profiles[0], name: "claude", shown: "claude --x", approval: "new" }],
+    });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), SEND);
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it("never starts without the sandbox on ⌘⏎, from Cancel or the Name field (ADR 0097 §6)", () => {
+    const { onStart } = show({
+      profiles: [
+        {
+          ...ONE.profiles[0],
+          sandbox: {
+            state: "refused",
+            said: "bwrap is not installed.",
+            install: null,
+            locked: null,
+          },
+        },
+      ],
+    });
+    expect(screen.getByRole("button", { name: "Start without the sandbox" })).toBeInTheDocument();
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, SEND);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: /^Name/ }), SEND);
+    expect(onStart).not.toHaveBeenCalled();
   });
 
   it("starts under the default name when the Name field is only spaces", async () => {
