@@ -154,8 +154,8 @@ body {
   [role="separator"],
   [tabindex]:not(textarea)
 ):focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* **Every icon in the window, sized once, from the text it sits in.**
@@ -498,8 +498,8 @@ body {
 .projects [role="tab"]:focus-visible,
 .workspaces-strip [role="tab"]:focus-visible,
 .tabs [role="tab"]:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* A tab's `×`, which ENDS the chat. Flat like the tab it is part of, and it goes to the danger
@@ -535,8 +535,8 @@ body {
 
 .tab .closer:focus-visible,
 .project .closer:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* **A settings gear** (SE-23, V89i): on the project in front's tab and the focused workspace's,
@@ -575,8 +575,8 @@ body {
 
 .project .gear:focus-visible,
 .workspace .gear:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* **A tab's counts, in one pill** (`CountPill.tsx`, qw337): how many chats are open in a
@@ -1036,8 +1036,8 @@ button.bare:hover:not(:disabled) {
 }
 
 button.bare:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* **`N more` is one of the strip's own controls, and is drawn as one** — the operator's
@@ -1084,8 +1084,8 @@ button.show-more:hover:not(:disabled) {
 }
 
 button.show-more:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* **`End this pane's chat` is not on the bar any more** — it is in each pane's own corner, and
@@ -1383,8 +1383,8 @@ button.show-more:focus-visible {
 }
 
 .pane-find button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* **The gauge floats; it takes no row.** For one build (#207) the pane gave the gauge a row of
@@ -1910,8 +1910,8 @@ button.show-more:focus-visible {
 }
 
 .pane-brief:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* **Words for a screen reader and for nobody else**: what a drawn separator stands for. Clipped
@@ -2085,8 +2085,8 @@ button.show-more:focus-visible {
 }
 
 .tabs .tab-tasks button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 .tab-tasks-counts .count {
@@ -2410,8 +2410,8 @@ button.show-more:focus-visible {
 /* Where "Show the request" lands (`VaultRefusedNotice`): the line itself, never one of its
    buttons, so no key pressed next answers it. */
 .notice-pane:focus {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset) / 2);
 }
 
 /* **What a way out opened, under the line and at its width.** `min-width: 0` and the `pre`
@@ -2599,8 +2599,8 @@ button.show-more:focus-visible {
 }
 
 .pane-doing button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 .pane-doing button:disabled {
@@ -2847,8 +2847,8 @@ button.show-more:focus-visible {
 }
 
 .activity-tab:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* **The open view: the icon at full strength and the accent edge toward the side it opens**,
@@ -4432,8 +4432,8 @@ h2.sidebar-title .node-icon {
 }
 
 .brief-panel .brief-text:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset) / 2);
 }
 
 .brief-panel .answer {
@@ -4669,8 +4669,8 @@ h2.sidebar-title .node-icon {
   background: var(--control-hover);
 }
 .needs-you-button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 /* The mark may be `needs-you.base`; the WORDS may not. `#bd5654` on `surface.base` measures
    3.88:1 in purlis-dark, which is under AA for text and over the 3:1 an icon is held to —
@@ -5106,7 +5106,7 @@ h2.sidebar-title .node-icon {
 
 /* A card's ring sits outside it: inside, it would run over the mark's corner. */
 .welcome .welcome-door:focus-visible {
-  outline-offset: 2px;
+  outline-offset: var(--focus-ring-offset);
 }
 
 .welcome-door-mark {
@@ -5931,8 +5931,8 @@ h2.sidebar-title .node-icon {
 .title-kill-switch:focus-visible,
 .title-about:focus-visible,
 .title-bar .status-update:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* What the version brought. The body scrolls, bounded, and the title and Close around it stay
@@ -7030,8 +7030,8 @@ h2.sidebar-title .node-icon {
 }
 
 .panel-view:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset) / 2);
 }
 
 /* An extension's own actions on its row (charter-app#341): beside the row's words, drawn as the
@@ -7865,7 +7865,7 @@ h2.sidebar-title .node-icon {
 
 /* Inside the group, which clips what is outside it: the ring is drawn within the segment. */
 .ui-levels .ui-level:focus-visible {
-  outline-offset: -2px;
+  outline-offset: var(--focus-ring-inset);
 }
 
 .ui-level:hover {
@@ -7987,8 +7987,8 @@ h2.sidebar-title .node-icon {
 .ui-setting-control > .ui-field + button:focus-visible,
 .ui-field:focus-visible,
 .ui-field-range input:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .ui-setting-group h3 {
@@ -8143,8 +8143,8 @@ h2.sidebar-title .node-icon {
 }
 
 .dispatch-grants:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* Settings › Sandbox (#1340): the mode as a status line with its one button; each preset's hosts

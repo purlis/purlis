@@ -12,8 +12,9 @@
    a theme's colours are exactly what forced colours replace. It says each of those things again
    in the system's palette and with a shape:
 
-   - **Focus** is a solid ring in `Highlight` wherever Tab lands, at the offset each control
-     already draws its own.
+   - **Focus** is a solid ring in `Highlight` wherever Tab lands, at the width and offset each
+     control already draws its own (the theme's `focus-ring.*`: forced colours replace colour,
+     not geometry).
    - **What is selected or current** is drawn in `SelectedItem` and `SelectedItemText`, the
      system's own pair, and underlined (or, for an icon, edged), so it is told without colour.
    - **What cannot be used** is `GrayText`.
@@ -145,7 +146,9 @@
 
   /* Focus: wherever Tab lands, a ring the system's palette draws. A menu's row says it by being
      the highlighted one, above, and the terminal's textarea is off screen. Last in the block, and
-     more specific than each outline above, so it is drawn over all of them. */
+     more specific than each outline above, so it is drawn over all of them. Forced colours replace
+     colour, not geometry: the ring keeps the width and offset the window's own rule gives it,
+     the theme's `focus-ring.*`, so this sets no width (#2867). */
   :is(
       button,
       summary,
@@ -158,7 +161,6 @@
       [tabindex]
     ):not(.ui-menu-item, .xterm-helper-textarea):focus-visible {
     outline-style: solid;
-    outline-width: 2px;
     outline-color: Highlight;
   }
 }
