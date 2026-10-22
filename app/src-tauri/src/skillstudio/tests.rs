@@ -76,6 +76,7 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             workspace: None,
             persona: None,
             workspaces: Vec::new(),
+            levels: Vec::new(),
             skills: Vec::new()
         }
     );

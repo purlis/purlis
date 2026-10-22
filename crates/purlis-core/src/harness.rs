@@ -380,6 +380,29 @@ impl Harness {
         }
     }
 
+    /// **What a running chat on this harness takes in by itself** when the project's skills
+    /// change, through the route purlis hands them by (ADR 0099 §5); everything else waits for a
+    /// restart on the same conversation, which the chat's tab offers (#2770).
+    ///
+    /// - The plugin and config routes (Claude Code, opencode): nothing. Claude Code reads a
+    ///   `--plugin-dir` plugin's skills at the start (measured twice on 2.1.304), and opencode
+    ///   caches discovery and the body per directory (measured on 1.18.33).
+    /// - The MCP route: everything, as its tools ask for the chat's set afresh at each call.
+    /// - The briefing route (Codex): the bodies. The `SessionStart` briefing lists each skill
+    ///   with its `SKILL.md`'s path, once, and the model reads the file from where it lies each
+    ///   time a skill applies, so an edit to a listed skill is read and every other change
+    ///   waits. This is the route's own working, not the harness's: it is handed no folder.
+    pub fn skills_reload(self) -> crate::skills::Reload {
+        match self.skills() {
+            crate::skills::Route::Briefing => crate::skills::Reload::Bodies,
+            // `skill_find` and `skill_load` work the chat's set out at each call (SK-13).
+            crate::skills::Route::Mcp => crate::skills::Reload::Everything,
+            crate::skills::Route::Plugin | crate::skills::Route::Config => {
+                crate::skills::Reload::Nothing
+            }
+        }
+    }
+
     /// What a chat's pane sends for Shift+Enter: the bytes this harness reads as "a new line
     /// in what I am typing", rather than "send it" (SI-4).
     ///

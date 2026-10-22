@@ -12,8 +12,9 @@ import { Button } from "./ui/button/Button";
  * choice is the studio's; the persona's page only counts them.
  */
 
-/** Adds `written` to `persona`'s skills, or takes it out: the core's refusal, or nothing. */
-async function change(
+/** Adds `written` to `persona`'s skills, or takes it out: the core's refusal, or nothing. What
+ *  Add here and a studio row's Add and Remove do. */
+export async function changePersonaSkill(
   plane: PlaneId,
   persona: string,
   written: string,
@@ -56,7 +57,7 @@ export function PersonaSkillAdd({
     const name = written.trim();
     if (busy || name === "") return;
     setBusy(true);
-    const said = await change(plane, persona, name, "add");
+    const said = await changePersonaSkill(plane, persona, name, "add");
     setBusy(false);
     setRefused(said);
     if (said === undefined) {
@@ -108,50 +109,5 @@ export function PersonaSkillAdd({
   );
 }
 
-/** **Remove** (#2768): takes `written` out of `persona`'s `skills:` list. */
-export function PersonaSkillRemove({
-  plane,
-  persona,
-  written,
-  onChanged,
-  readOnly,
-}: {
-  plane: PlaneId;
-  persona: string;
-  written: string;
-  onChanged: () => void;
-  readOnly?: string;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [refused, setRefused] = useState<string>();
-  return (
-    <>
-      <Button
-        aria-label={`Remove ${written} from ${persona}`}
-        isDisabled={busy || readOnly !== undefined}
-        title={readOnly}
-        onPress={() => {
-          setBusy(true);
-          void change(plane, persona, written, "remove").then((said) => {
-            setBusy(false);
-            setRefused(said);
-            if (said === undefined) onChanged();
-          });
-        }}
-        className="persona-skill-remove"
-      >
-        {busy ? "Removing…" : "Remove"}
-      </Button>
-      {refused !== undefined && (
-        <Notice
-          cause={`persona-skill-remove:${persona}:${written}`}
-          tone="trouble"
-          label="The skill was not removed"
-          onDismiss={() => setRefused(undefined)}
-        >
-          {refused}
-        </Notice>
-      )}
-    </>
-  );
-}
+/* **Remove** (#2768) is one of a studio row's actions (`SkillRowActions`, #2770), beside Add
+   for a skill the persona's list does not name: it calls `changePersonaSkill` too. */

@@ -385,6 +385,10 @@ struct Running {
     /// Fixed at the start, as its sandbox is: an Allow of its own grants or a new default
     /// changes it at the next start.
     grants_as: Option<String>,
+    /// **The plane skills it started with** (#2770, ADR 0099 §5), as its harness would miss a
+    /// change to them: what [`Chats::skills_changed`] compares with the skills now. `None` for a
+    /// chat that runs no harness.
+    skills: Option<purlis_core::skills::Stamp>,
 }
 
 /// **The personas a chat is named by** (#2691), from one read of the app's record of its run
@@ -2700,6 +2704,56 @@ impl Chats {
         Some(OlderSandbox { chats })
     }
 
+    /// **The open chats whose skills changed since they started** (#2770, ADR 0099 §5), by
+    /// session: the plane skills each would get now differ from those it started with, in a way
+    /// its harness does not take in by itself ([`Harness::skills_reload`]). Its tab offers a
+    /// restart on the same conversation. Read from disk each time it is asked.
+    pub fn skills_changed(&self) -> Vec<u32> {
+        // The flag once, for every chat: while it is off, no chat gets the plane's skills.
+        if !purlis_core::skills::studio_on_here() {
+            return Vec::new();
+        }
+        self.skills_changed_while_on()
+    }
+
+    /// [`Self::skills_changed`] while the `skill-studio` flag is on.
+    fn skills_changed_while_on(&self) -> Vec<u32> {
+        // Read out first: no lock is held while the plane's skill folders are read.
+        type Started = (
+            u32,
+            Option<String>,
+            Option<String>,
+            Harness,
+            purlis_core::skills::Stamp,
+        );
+        let started: Vec<Started> = lock(&self.open)
+            .iter()
+            .filter_map(|(session, running)| {
+                Some((
+                    *session,
+                    running.workspace.clone(),
+                    running.chat.persona.clone(),
+                    running.harness?,
+                    running.skills.clone()?,
+                ))
+            })
+            .collect();
+        let mut changed: Vec<u32> = started
+            .into_iter()
+            .filter(|(_, workspace, persona, harness, then)| {
+                purlis_core::skills::stamp_of(
+                    &self.project,
+                    workspace.as_deref(),
+                    persona.as_deref(),
+                    *harness,
+                ) != *then
+            })
+            .map(|(session, ..)| session)
+            .collect();
+        changed.sort_unstable();
+        changed
+    }
+
     /// The chats owed a restart (#1342, #1428): what the window drives once each one's turn
     /// has ended, read again whenever the window is drawn anew.
     pub fn owed_restarts(&self) -> Vec<u32> {
@@ -3636,6 +3690,15 @@ impl Chats {
             lock(&self.older_in_notes).insert(session, version);
         }
         let workspace = workspace_at_start(Some(&self.project), under.cwd.as_deref());
+        // Read before any lock is taken: a stamp is a read of the plane's skill folders.
+        let skills = harness.map(|harness| {
+            purlis_core::skills::stamp_now(
+                &self.project,
+                workspace.as_deref(),
+                under.persona.as_deref(),
+                harness,
+            )
+        });
         // A start under this number has been told nothing yet (#1450).
         lock(&self.told).remove(&session);
         lock(&self.starting_as).remove(&session);
@@ -3656,6 +3719,7 @@ impl Chats {
                 ran,
                 composed_by_its_host: on_the_runner,
                 grants_as: grants_persona_of(chat, &self.project),
+                skills,
             },
         );
         lock(&self.sizes).insert(session, size);

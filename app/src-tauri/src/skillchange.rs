@@ -1,0 +1,459 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **The Skill studio's changes** (SK-7, #2770): make a skill from a template, open and save it
+//! in the light editor with its live lint, rename it, move it between levels, delete it after
+//! saying who uses it, restore it, change a project skill's grant and turn one off or on in a
+//! workspace. Each is `purlis_core::skills::verbs`' own, which `purlis skill` calls too, and each
+//! is one commit. Behind the `skill-studio` flag until its finish line (#2786).
+
+use serde::{Deserialize, Serialize};
+use specta::Type;
+
+use purlis_core::repocmd::Say;
+use purlis_core::skills::verbs::{self, By, Level};
+use purlis_core::skills::{Grant, Template};
+
+/// A level of the project's, as the studio names one: the project's root (`workspace` null) or a
+/// workspace's, shared or kept on this machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SkillLevel {
+    pub workspace: Option<String>,
+    pub local: bool,
+}
+
+impl From<&SkillLevel> for Level {
+    fn from(level: &SkillLevel) -> Level {
+        match &level.workspace {
+            None => Level::project(),
+            Some(ws) => Level::workspace(ws),
+        }
+        .local(level.local)
+    }
+}
+
+impl From<&Level> for SkillLevel {
+    fn from(level: &Level) -> SkillLevel {
+        SkillLevel {
+            workspace: level.workspace_name().map(str::to_owned),
+            local: level.local,
+        }
+    }
+}
+
+/// Where a project skill reaches, as the studio sets it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "to", rename_all = "kebab-case")]
+pub enum SkillGrant {
+    /// Chats at the project's root alone.
+    Root,
+    /// Every workspace's chats too.
+    All,
+    /// The workspaces named.
+    Only { workspaces: Vec<String> },
+}
+
+impl From<Grant> for SkillGrant {
+    fn from(grant: Grant) -> SkillGrant {
+        match grant {
+            Grant::Root => SkillGrant::Root,
+            Grant::All => SkillGrant::All,
+            Grant::Only(workspaces) => SkillGrant::Only { workspaces },
+        }
+    }
+}
+
+impl From<SkillGrant> for Grant {
+    fn from(grant: SkillGrant) -> Grant {
+        match grant {
+            SkillGrant::Root => Grant::Root,
+            SkillGrant::All => Grant::All,
+            SkillGrant::Only { workspaces } => Grant::Only(workspaces),
+        }
+    }
+}
+
+/// A template a new skill can start from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillTemplateId {
+    Blank,
+    Steps,
+}
+
+impl From<SkillTemplateId> for Template {
+    fn from(id: SkillTemplateId) -> Template {
+        match id {
+            SkillTemplateId::Blank => Template::Blank,
+            SkillTemplateId::Steps => Template::Steps,
+        }
+    }
+}
+
+impl From<Template> for SkillTemplateId {
+    fn from(template: Template) -> SkillTemplateId {
+        match template {
+            Template::Blank => SkillTemplateId::Blank,
+            Template::Steps => SkillTemplateId::Steps,
+        }
+    }
+}
+
+/// One template, as the New skill form offers it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillTemplate {
+    pub id: SkillTemplateId,
+    pub label: String,
+    pub about: String,
+}
+
+/// What a change had to say beyond being done: that it was left for the next save, or that a
+/// place naming the skill was left as it was. Empty for a change that only did what was asked.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
+pub struct SkillChanged {
+    pub notes: Vec<String>,
+}
+
+/// Who uses a skill, as Delete shows before it deletes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillUsers {
+    /// Whether chats at the project's root get it.
+    pub root: bool,
+    pub workspaces: Vec<String>,
+    pub personas: Vec<String>,
+    pub skills: Vec<String>,
+}
+
+/// A deleted skill Restore can bring back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct DeletedSkill {
+    /// What Restore is handed back: the core's own record of it, whole, which the window holds
+    /// and never reads.
+    pub id: String,
+    pub name: String,
+    pub level: SkillLevel,
+    /// Its level as a person reads it: `project`, `local workspace ops`.
+    pub label: String,
+}
+
+/// A level a skill can be moved to or made at, and its words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioLevel {
+    pub level: SkillLevel,
+    /// As a person reads it: `project`, `local workspace ops` (the core's `Level`).
+    pub label: String,
+}
+
+/// Every level of the project at `root`, in the core's order, with its words.
+pub(crate) fn levels(root: &std::path::Path) -> Vec<StudioLevel> {
+    Level::every(root)
+        .iter()
+        .map(|level| StudioLevel {
+            level: level.into(),
+            label: level.to_string(),
+        })
+        .collect()
+}
+
+/// Runs `change` with a context of the project at `root`, asked from the window, and answers
+/// the lines worth showing: what was not done, or left. A `Done` line is the command line's.
+fn heard<T>(
+    root: &std::path::Path,
+    change: impl FnOnce(&mut verbs::Ctx<'_>) -> Result<T, String>,
+) -> Result<SkillChanged, String> {
+    let mut notes = Vec::new();
+    let mut say = |line: Say| match line {
+        Say::Info(text) | Say::Warn(text) | Say::Fail(text) => notes.push(text),
+        Say::Done(_) | Say::Plain(_) | Say::Out(_) => {}
+    };
+    let built_in = built_in();
+    change(&mut verbs::Ctx {
+        plane: root,
+        built_in: built_in.as_deref(),
+        by: By::Window,
+        say: &mut say,
+    })?;
+    Ok(SkillChanged { notes })
+}
+
+/// Refused while the flag is off.
+fn flag_on() -> Result<(), String> {
+    if purlis_core::skills::studio_on_here() {
+        Ok(())
+    } else {
+        Err("The Skill studio is not turned on on this machine.".to_owned())
+    }
+}
+
+/// The built-in skills' directory of the plugin this app carries.
+fn built_in() -> Option<std::path::PathBuf> {
+    crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin))
+}
+
+/// The templates a new skill can start from.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn skill_templates() -> Vec<SkillTemplate> {
+    Template::ALL
+        .iter()
+        .map(|template| SkillTemplate {
+            id: (*template).into(),
+            label: template.label().to_owned(),
+            about: template.about().to_owned(),
+        })
+        .collect()
+}
+
+/// **The live lint** of `text`, a `SKILL.md` being edited for the skill `name`: each line the
+/// editor shows, none where a save would be taken.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn skill_lint(name: String, text: String) -> Vec<String> {
+    purlis_core::skills::check(&text, &name)
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
+/// **Makes a skill** from `template` at `level`.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_new(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+    description: String,
+    template: SkillTemplateId,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("making the skill", move || {
+        flag_on()?;
+        heard(held.root(), |cx| {
+            verbs::create(cx, &(&level).into(), &name, &description, template.into())
+        })
+    })
+    .await
+}
+
+/// The text of a skill's `SKILL.md`, which the light editor opens.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_text(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the skill", move || {
+        flag_on()?;
+        verbs::text_of(held.root(), &(&level).into(), &name).map(|(_, text)| text)
+    })
+    .await
+}
+
+/// **Saves an edit**: `now` as the skill's `SKILL.md`, only while it is still `was`, the text the
+/// editor opened.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_save(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+    was: String,
+    now: String,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("saving the skill", move || {
+        flag_on()?;
+        heard(held.root(), |cx| {
+            verbs::edit(cx, &(&level).into(), &name, &was, &now)
+        })
+    })
+    .await
+}
+
+/// **Renames a skill**, and every persona and skill that names it.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_rename(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+    to: String,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("renaming the skill", move || {
+        flag_on()?;
+        heard(held.root(), |cx| {
+            verbs::rename(cx, &(&level).into(), &name, &to)
+        })
+    })
+    .await
+}
+
+/// Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn skill_move_needs_grant(from: SkillLevel, to: SkillLevel) -> bool {
+    verbs::needs_grant(&(&from).into(), &(&to).into())
+}
+
+/// **Moves a skill** from `from` to `to`, with `grant` where it becomes a project skill.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_move(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    from: SkillLevel,
+    name: String,
+    to: SkillLevel,
+    grant: Option<SkillGrant>,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("moving the skill", move || {
+        flag_on()?;
+        let grant: Option<Grant> = grant.map(Into::into);
+        heard(held.root(), |cx| {
+            verbs::move_to(cx, &(&from).into(), &name, &(&to).into(), grant.as_ref())
+        })
+    })
+    .await
+}
+
+/// **Who uses a skill**: what Delete shows first.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_users(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+) -> Result<SkillUsers, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading who uses the skill", move || {
+        flag_on()?;
+        let users = verbs::users(held.root(), &(&level).into(), &name)?;
+        Ok(SkillUsers {
+            root: users.root,
+            workspaces: users.workspaces,
+            personas: users.personas,
+            skills: users.skills,
+        })
+    })
+    .await
+}
+
+/// **Deletes a skill**, so Restore can bring it back.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_delete(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("deleting the skill", move || {
+        flag_on()?;
+        heard(held.root(), |cx| verbs::delete(cx, &(&level).into(), &name))
+    })
+    .await
+}
+
+/// The deleted skills Restore can bring back, newest first.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skills_deleted(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<DeletedSkill>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the deleted skills", move || {
+        flag_on()?;
+        verbs::deleted(held.root())
+            .into_iter()
+            .map(|one| {
+                Ok(DeletedSkill {
+                    id: serde_json::to_string(&one)
+                        .map_err(|_| format!("{} could not be listed to restore", one.name))?,
+                    label: one.level.to_string(),
+                    level: (&one.level).into(),
+                    name: one.name,
+                })
+            })
+            .collect()
+    })
+    .await
+}
+
+/// **Restores** the deleted skill `id` names: the core's record of it, as [`skills_deleted`]
+/// handed it out.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_restore(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    id: String,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("restoring the skill", move || {
+        flag_on()?;
+        let deleted: verbs::Deleted = serde_json::from_str(&id)
+            .map_err(|_| "That deleted skill is not one this project lists.".to_owned())?;
+        heard(held.root(), |cx| verbs::restore(cx, &deleted))
+    })
+    .await
+}
+
+/// **Sets where the project skill `name` reaches.**
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_grant(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    name: String,
+    grant: SkillGrant,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("granting the skill", move || {
+        flag_on()?;
+        let grant: Grant = grant.into();
+        heard(held.root(), |cx| verbs::grant(cx, &name, &grant))
+    })
+    .await
+}
+
+/// **Turns the project skill `name` off, or back on, in `workspace`.** A refused "on" names the
+/// grant that would reach the workspace.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_turn(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: String,
+    name: String,
+    on: bool,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("turning the skill on or off", move || {
+        flag_on()?;
+        heard(held.root(), |cx| verbs::switch(cx, &workspace, &name, on))
+    })
+    .await
+}
+
+/// **Shares** a local skill: commits it to the project at its level (#2767), one commit.
+pub(crate) fn share(
+    root: &std::path::Path,
+    workspace: Option<&str>,
+    name: &str,
+) -> Result<(), String> {
+    heard(root, |cx| verbs::share(cx, workspace, name)).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests;

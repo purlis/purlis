@@ -367,6 +367,9 @@ pub struct PlaneUpdated {
     /// The files that changed, by their path from the plane root: `CLAUDE.md`,
     /// `personas/steward/persona.md`, …
     pub files: Vec<String>,
+    /// Whether its skills changed since it started, in a way its harness does not take in by
+    /// itself (#2770): its pane offers a restart on the same conversation.
+    pub skills: bool,
 }
 
 /// Why a task is not started fresh (#1489): what the window's question and the row say. Said
@@ -745,14 +748,17 @@ impl Held {
             .into_iter()
             .map(|open| (open.session, open.persona))
             .collect();
+        let skills = self.chats.skills_changed();
         let mut updated: Vec<PlaneUpdated> = lock_started(&self.started_on)
             .iter()
             .filter_map(|(session, then)| {
                 let persona = personas.get(session).cloned().flatten();
                 let files = now.changed_since(then, persona.as_deref());
-                (!files.is_empty()).then_some(PlaneUpdated {
+                let skills = skills.contains(session);
+                (!files.is_empty() || skills).then_some(PlaneUpdated {
                     session: *session,
                     files,
+                    skills,
                 })
             })
             .collect();
