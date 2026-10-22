@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792691652679,
+  "lastUpdate": 1792693360486,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21882,6 +21882,48 @@ window.BENCHMARK_DATA = {
             "value": 103.946035,
             "unit": "ms",
             "extra": "median of 5 runs: 103.322, 103.467, 103.946, 104.030, 104.231 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7c7bae7459ce32a3a4559d65a220c5b14f1a76cd",
+          "message": "Browsers: a browser view's chip names the page, and its rows say who drives (#2300) (#2833)\n\n* Browsers: a browser view's chip names the page, and its rows say who drives (#2300)\n\nSession protocol 1.35: a browser view's stream carries the origin of the\npage it shows, cut in the host from the engine's own record of the page,\nsent where it changes and in each snapshot. The chip and a row's tooltip\nname it; never a path, query or title. A chat's browser row and thumbnail\nsay when the person drives it, and when purlis is signing in.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the window takes only a real origin, and two logins keep the mark (#2300)\n\nWhat a host sends as a page's origin is taken only where it is one,\nexactly as origin_of writes it and at most 255 bytes; anything else is no\norigin. Two logins at once in one browser each hold its purlis mark.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the chip's origin on top of 1.34, the tests main added watching with it (#2300)\n\nThe rebase onto #2830's 1.34 keeps 1.35 for the origin frame, names it in\nthe frame fixture's promise, and gives the views main's tests open an\norigin sink.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Settings: a way in a test left standing never fires after its window is gone\n\nA way into Settings retries on a timer for up to two seconds (#1206).\nEvery test now forgets it after it runs, and the watch on the person's\nnext move does nothing where there is no window, so a retry that\noutlives a torn-down test window no longer throws (seen on #2833's web\nrun from TitleBar.test.tsx).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T22:20:56+04:00",
+          "tree_id": "8f4d6d34760a3ed069a9ab29ff476ddab9d27d9f",
+          "url": "https://github.com/purlis/purlis/commit/7c7bae7459ce32a3a4559d65a220c5b14f1a76cd"
+        },
+        "date": 1792693358090,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4620295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.454, 0.455, 0.462, 0.470, 0.474 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.535771500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.320, 16.534, 16.536, 16.562, 16.746 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.332856,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.372, 101.231, 101.333, 101.523, 103.076 ms"
           }
         ]
       }
