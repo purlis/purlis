@@ -456,6 +456,7 @@ pub const MANIFEST: &[Family] = &[Family {
         "layer.workspace",
         "layer.chat",
         "layer.selected",
+        "terminal.background",
     ],
     keeps_size: &[
         "[data-size=\"sm\"]",

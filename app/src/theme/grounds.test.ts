@@ -50,6 +50,9 @@ function manifestGrounds(source: string): Map<string, string[]> {
 
 // --- The stylesheets: which class draws which ground ---------------------------------------
 
+/** The button family's members (`app/src/ui/button`): each draws one button. */
+const FAMILY = new Set(["Button", "IconButton", "ToggleButton"]);
+
 const BY_PROPERTY = new Map<string, Token>(TOKENS.map((token) => [property(token), token]));
 /** A token by its name in a Tailwind utility: `surface-hover` is `surface.hover`. */
 const BY_DASHED = new Map<string, Token>(TOKENS.map((token) => [token.replace(/\./g, "-"), token]));
@@ -146,6 +149,8 @@ function groundsOfClasses(css: string[]): {
         const attribute = /^\[([\w-]+)(?:="([^"]*)")?\]/.exec(bare);
         // A button's own fill is no ground: nothing a button holds is another button.
         if (classes.length === 0 && tag === "button") continue;
+        // Nor is the family's own stylesheet, on its wrapper's attributes.
+        if (/\[data-scope="button"\]/.test(subject)) continue;
         const form =
           tag !== undefined
             ? `<${tag}>`
@@ -243,6 +248,8 @@ class Reader {
   readonly units = new Map<string, Unit[]>();
   /** The classes a button carries, which are its own fill and never a ground under it. */
   readonly buttonClasses = new Set<string>();
+  /** Each family member a file names, as `file:name`, which draws a button wherever it stands. */
+  private readonly family = new Set<string>();
   /** Each element that sets a background in its own `style`, which no stylesheet names. */
   readonly inline = new Set<string>();
   /** Each tag or attribute form a background rule reaches that some element carries. */
@@ -286,6 +293,19 @@ class Reader {
   }
 
   private readFile(source: ts.SourceFile, into: Map<string, Unit[]>): void {
+    // The family's members this file names: imported from the family's module, or its own.
+    const own = /(^|\/)ui\/button\/Button\.tsx$/.test(source.fileName);
+    for (const statement of source.statements) {
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+        continue;
+      if (!/(^|\/)ui\/button(\/Button)?$/.test(statement.moduleSpecifier.text)) continue;
+      const bindings = statement.importClause?.namedBindings;
+      if (bindings !== undefined && ts.isNamedImports(bindings))
+        for (const one of bindings.elements)
+          if (FAMILY.has((one.propertyName ?? one.name).text))
+            this.family.add(`${source.fileName}:${one.name.text}`);
+    }
+    if (own) for (const name of FAMILY) this.family.add(`${source.fileName}:${name}`);
     /** Each variable whose value is JSX, by name, read where it is placed; and every other
      *  variable's value, which a `className` may name. */
     const held = new Map<string, ts.Node>();
@@ -416,9 +436,15 @@ class Reader {
       const className = attribute("className")?.initializer;
       const carried = className === undefined ? [] : this.classesOf(className, classLists);
       const scope = attribute("data-scope")?.initializer;
+      const part = attribute("data-part")?.initializer;
+      const named = tag.split(".").pop() ?? tag;
       const isButton =
         carried.some((one) => one.name === "ui-button") ||
-        (scope !== undefined && ts.isStringLiteral(scope) && scope.text === "button");
+        (scope !== undefined &&
+          ts.isStringLiteral(scope) &&
+          scope.text === "button" &&
+          (part === undefined || (ts.isStringLiteral(part) && part.text === "root"))) ||
+        (FAMILY.has(named) && this.family.has(`${source.fileName}:${named}`));
       let inside = frames;
       if (isButton) {
         carried.forEach((one) => this.buttonClasses.add(one.name));
@@ -455,7 +481,7 @@ class Reader {
         }
         if (frame.tokens.size > 0 || frame.classes.size > 0) inside = [...frames, frame];
       }
-      const component = /^[A-Z]/.test(tag) ? tag.split(".").pop() : undefined;
+      const component = /^[A-Z]/.test(tag) && !isButton ? tag.split(".").pop() : undefined;
       if (component !== undefined) unit.uses.push({ name: component, frames: inside });
       // What a component is given is placed where it places its `children`, or around them.
       const places: Frame[][] =
@@ -702,6 +728,28 @@ describe("the grounds a button is drawn on", () => {
       css(`li:has(> .row) { background: var(--surface-raised); }`),
     );
     expect(found).toEqual(["surface.base", "surface.raised"]);
+  });
+
+  it("count each member of the button family as a button, and its parts as its own", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "ui/button/Button.tsx",
+          `export function Button({ children }) {
+             return <span data-scope="button" data-part="label">{children}</span>;
+           }`,
+        ),
+        file(
+          "Away.tsx",
+          `import { Button, IconButton as Icon } from "./ui/button";
+           export function Away() {
+             return <div className="far"><Button>Back</Button><Icon /></div>;
+           }`,
+        ),
+      ],
+      css(`.far { background: var(--terminal-background); }`),
+    );
+    expect(found).toEqual(["surface.base", "terminal.background"]);
   });
 
   it("never count a button's own fill, or a utility it carries, as a ground", () => {
