@@ -110,3 +110,109 @@ describe("the window follows the setting while it is up", () => {
     );
   });
 });
+
+describe("purlis's own reduce motion is layered on the system's (#2925)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("turns every motion off when the person asked, whatever the system says", async () => {
+    vi.resetModules();
+    const { drawIn, drawPerson, DEFAULT_THEME: fresh, NO_PERSON } = await import("./theme");
+    const { motionReduced, MOTION_ATTRIBUTE } = await import("./motion");
+    const element = document.createElement("div");
+    drawIn(fresh, element);
+    expect(motionReduced()).toBe(false);
+    expect(element.getAttribute(MOTION_ATTRIBUTE)).toBeNull();
+    expect(ms(element.style.getPropertyValue("--motion-duration-enter"))).toBe(
+      fresh.motion.durations["duration.enter"],
+    );
+
+    drawPerson({ ...NO_PERSON, motion: "reduced" });
+    expect(motionReduced()).toBe(true);
+    expect(element.getAttribute(MOTION_ATTRIBUTE)).toBe("reduced");
+    for (const token of DURATIONS)
+      expect(ms(element.style.getPropertyValue(motionProperty(token))), token).toBe(0);
+
+    drawPerson({ ...NO_PERSON, motion: "system" });
+    expect(motionReduced()).toBe(false);
+    expect(element.getAttribute(MOTION_ATTRIBUTE)).toBeNull();
+  });
+
+  it("keeps motion off when the system stops asking and the person still does", async () => {
+    vi.resetModules();
+    let reduced = true;
+    const listeners: (() => void)[] = [];
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        get matches() {
+          return query === REDUCE && reduced;
+        },
+        addEventListener: (_: string, listener: () => void) => listeners.push(listener),
+      })),
+    );
+    const { drawIn, drawPerson, DEFAULT_THEME: fresh, NO_PERSON } = await import("./theme");
+    const { MOTION_ATTRIBUTE } = await import("./motion");
+    const element = document.createElement("div");
+    drawPerson({ ...NO_PERSON, motion: "reduced" });
+    drawIn(fresh, element);
+    reduced = false;
+    for (const listener of listeners) listener();
+    expect(element.getAttribute(MOTION_ATTRIBUTE)).toBe("reduced");
+    expect(ms(element.style.getPropertyValue("--motion-duration-quick"))).toBe(0);
+  });
+
+  it("times a workspace switch's crossfade by duration.enter", async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    try {
+      const { crossfadeIn, CROSSFADE, DEFAULT_THEME: fresh } = await import("./theme");
+      const element = document.createElement("div");
+      crossfadeIn(fresh, element);
+      expect(element.classList.contains(CROSSFADE)).toBe(true);
+      vi.advanceTimersByTime(fresh.motion.durations["duration.enter"] - 1);
+      expect(element.classList.contains(CROSSFADE)).toBe(true);
+      vi.advanceTimersByTime(1);
+      expect(element.classList.contains(CROSSFADE)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("a terminal's cursor under reduced motion (#2925)", () => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  it("does not blink, whatever the theme says, and open terminals are told", async () => {
+    vi.resetModules();
+    const {
+      drawIn,
+      drawPerson,
+      onDrawn,
+      xtermLook,
+      DEFAULT_THEME: fresh,
+      NO_PERSON,
+    } = await import("./theme");
+    const blinking = {
+      ...fresh,
+      typed: { ...fresh.typed, flags: { ...fresh.typed.flags, "terminal.cursor-blink": true } },
+    };
+    expect(xtermLook(blinking, false).cursorBlink).toBe(true);
+    expect(xtermLook(blinking, true).cursorBlink).toBe(false);
+
+    drawIn(blinking, document.createElement("div"));
+    const told: boolean[] = [];
+    const stop = onDrawn((theme) => told.push(xtermLook(theme).cursorBlink));
+    try {
+      drawPerson({ ...NO_PERSON, motion: "reduced" });
+      drawPerson({ ...NO_PERSON, motion: "system" });
+      expect(told).toEqual([false, true]);
+    } finally {
+      stop();
+    }
+  });
+});

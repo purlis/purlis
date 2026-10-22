@@ -2689,7 +2689,7 @@ export const commands = {
 	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null, kept: boolean | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at, kept })),
+} | null, kept: boolean | null, person: string | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at, kept, person })),
 	/**
 	 *  **The theme in force at a project and workspace, with no window** (#2697): what
 	 *  [`theme_in_force`] answers for the same question, read the same way, and served on a link.
@@ -2703,7 +2703,7 @@ export const commands = {
 	themeInForceAt: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at })),
+} | null, person: string | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at, person })),
 	/**
 	 *  **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
 	 *  read again by the core's theme engine from inside the theme's folder, under its cap, and only
@@ -2713,8 +2713,10 @@ export const commands = {
 	 */
 	themeFont: (asset: string) => typedError<string, string>(__TAURI_INVOKE("theme_font", { asset })),
 	/**
-	 *  **The person's density and font override, read by the core's theme engine** (#2326): what
-	 *  the window draws over every theme once Settings changed them. The window keeps them in its
+	 *  **The person's density, font override, motion, contrast and colours, read by the core's theme
+	 *  engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
+	 *  The colours and the contrast are drawn by the engine into each theme the window then asks
+	 *  for: the window hands them with each ask. The window keeps them in its
 	 *  layout file beside the text sizes, and is handed the same at creation. `appearance` is the
 	 *  layout's `appearance` as JSON text.
 	 */
@@ -2773,7 +2775,7 @@ export const commands = {
 	themeCardDrawn: (at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null, theme: string, from: string | null, appearance: string | null, light: boolean, moreContrast: boolean) => typedError<{
+} | null, theme: string, from: string | null, appearance: string | null, light: boolean, moreContrast: boolean, person: string | null) => typedError<{
 	/**
 	 *  The theme to draw; `null` keeps the one the window draws (an extension theme that is not
 	 *  JSON at all, which nothing picked).
@@ -2814,7 +2816,12 @@ export const commands = {
 	 *  way. `None` when no chat there has one, or the theme as kept was asked for.
 	 */
 	draft: WindowDraft | null,
-} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
+	/**
+	 *  What drawing the person's own colours over this theme left out (#2925): each colour that
+	 *  would put a pair under its floor here, said once. Empty when none was.
+	 */
+	mine: string[],
+} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast, person })),
 	/**
 	 *  **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names
 	 *  them, and `from`, the level of the theme folder it picks (#2516), kept beside `machine.json`
@@ -8185,6 +8192,18 @@ export type PersonInForce = {
 	 *  wrote it.
 	 */
 	fonts: { [key in string]: string },
+	/**  `system` or `reduced` (#2925): `reduced` turns every motion off, whatever the system says. */
+	motion: string,
+	/**
+	 *  `standard` or `more` (#2925): `more` draws a theme's high-contrast appearance and raises
+	 *  the floors, which the engine does to every theme it answers the window with.
+	 */
+	contrast: string,
+	/**
+	 *  The person's colour for each token they set (#2925), as the engine read it: what Settings
+	 *  shows. The engine draws them over each theme, held to its floors.
+	 */
+	colours: { [key in string]: string },
 	complaints: string[],
 };
 
@@ -11185,6 +11204,11 @@ export type ThemeInForce = {
 	 *  way. `None` when no chat there has one, or the theme as kept was asked for.
 	 */
 	draft: WindowDraft | null,
+	/**
+	 *  What drawing the person's own colours over this theme left out (#2925): each colour that
+	 *  would put a pair under its floor here, said once. Empty when none was.
+	 */
+	mine: string[],
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */

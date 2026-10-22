@@ -84,7 +84,17 @@ fn a_card_draws_its_theme_in_the_appearance_asked_for_and_nothing_else_is_drawn(
     let home = tempfile::tempdir().unwrap();
     let place = machine(home.path());
     let none = Values::new();
-    let dusk = card_drawn_of(&place, "dusk", None, None, &none, false, false).unwrap();
+    let dusk = card_drawn_of(
+        &place,
+        "dusk",
+        None,
+        None,
+        &none,
+        false,
+        false,
+        &purlis_core::theme::Layer::default(),
+    )
+    .unwrap();
     let theme = dusk.theme.unwrap();
     assert_eq!(theme.values["surface.base"], "#141414");
     let light = card_drawn_of(
@@ -95,11 +105,24 @@ fn a_card_draws_its_theme_in_the_appearance_asked_for_and_nothing_else_is_drawn(
         &none,
         true,
         false,
+        &purlis_core::theme::Layer::default(),
     )
     .unwrap();
     assert!(light.follows_system);
     assert_eq!(light.theme.unwrap().appearance, "light");
-    assert!(card_drawn_of(&place, "nowhere", None, None, &none, false, false).is_none());
+    assert!(
+        card_drawn_of(
+            &place,
+            "nowhere",
+            None,
+            None,
+            &none,
+            false,
+            false,
+            &purlis_core::theme::Layer::default()
+        )
+        .is_none()
+    );
 }
 
 /// The machine's level with a theme folder `accented` of the person's, whose accent is an

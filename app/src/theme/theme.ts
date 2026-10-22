@@ -45,7 +45,15 @@
  * where it and its reasons live, including why reduced motion is decided there and only there.
  */
 
-import { motionReduced, motionVariables, REDUCE, type Motion } from "./motion";
+import {
+  MOTION_ATTRIBUTE,
+  motionReduced,
+  motionVariables,
+  REDUCE,
+  reduceMotionInPurlis,
+  systemReducesMotion,
+  type Motion,
+} from "./motion";
 import { apartChroma, hueOf, tintHex, type Apart } from "./tint";
 
 /**
@@ -432,11 +440,59 @@ export type Density = "comfortable" | "compact";
 export type Person = {
   density: Density;
   fonts: Partial<Record<FontSlot, string>>;
+  /** Whether the person turned motion off in purlis (#2925), whatever the system says: `reduced`
+   *  turns every motion off; `system` follows the system's own setting. */
+  motion?: "system" | "reduced";
+  /** The contrast the person asks purlis to hold, at least (#2925): `more` draws a theme's
+   *  high-contrast appearance and raises the floors, which the engine does to the theme it
+   *  answers (`purlis_core::theme::Least`). */
+  contrast?: "standard" | "more";
+  /** The person's colour for each token they set (#2925), as the engine read it. The engine
+   *  draws them over each theme it answers with; the window keeps them only to know when to ask
+   *  again. */
+  colours?: Record<string, string>;
   complaints?: string[];
 };
 
-/** Nothing set: comfortable, and the theme's fonts. */
+/** Nothing set: comfortable, the theme's fonts, motion as the system has it, the standard
+ *  contrast. */
 export const NO_PERSON: Person = { density: "comfortable", fonts: {} };
+
+/** Whether more contrast is asked for, by the system or in purlis (#2925): what the window tells
+ *  the engine, which then draws a theme's high-contrast appearance and, for the person's own
+ *  setting, raises the floors. Either asking is enough. */
+export function moreContrastAsked(over: Person = person): boolean {
+  return systemAsksMoreContrast() || over.contrast === "more";
+}
+
+/** What of the person's layer the engine draws into a theme (#2925): their contrast and their
+ *  colours, as one key. A theme answered for another key is answered again. */
+export function personLook(over: Person = person): string {
+  return `${over.contrast ?? "standard"}\u0000${JSON.stringify(over.colours ?? {})}`;
+}
+
+/** **What the window hands the engine with each ask of a theme** (#2925): its own person's
+ *  contrast and colours, as JSON text, which the engine draws into the theme it answers with.
+ *  Each window asks with the layer it draws, so no window's answer is drawn with another's.
+ *  `null` when the layer draws every theme as it is. */
+export function personAsked(over: Person = person): string | null {
+  const colours = over.colours ?? {};
+  if (over.contrast !== "more" && Object.keys(colours).length === 0) return null;
+  return JSON.stringify({ contrast: over.contrast ?? "standard", colours });
+}
+
+/** Each follower of the person's look: told when Settings changes it, to ask for the theme in
+ *  force again. */
+const lookFollowers = new Set<() => void>();
+
+/** Calls `follow` whenever the person's look changes ({@link personLook}); answers the way to
+ *  stop. */
+export function onPersonLook(follow: () => void): () => void {
+  lookFollowers.add(follow);
+  return () => {
+    lookFollowers.delete(follow);
+  };
+}
 
 /** The person's layer the window was handed as it was created. */
 function handedPerson(): Person {
@@ -769,12 +825,14 @@ export type XtermLook = {
   drawBoldTextInBrightColors: boolean;
 };
 
-/** The theme's terminal tokens that are not colours, as xterm's options. */
-export function xtermLook(theme: Theme): XtermLook {
+/** The theme's terminal tokens that are not colours, as xterm's options. xterm blinks its cursor
+ *  on a timer of its own, which no stylesheet reaches, so under reduced motion (the system's or
+ *  purlis's, #2925) the cursor does not blink whatever the theme says. */
+export function xtermLook(theme: Theme, reduced: boolean = motionReduced()): XtermLook {
   const style = theme.typed.choices[CURSOR_STYLE];
   return {
     cursorStyle: CURSOR_STYLES.find((one) => one === style) ?? "block",
-    cursorBlink: theme.typed.flags["terminal.cursor-blink"] === true,
+    cursorBlink: theme.typed.flags["terminal.cursor-blink"] === true && !reduced,
     lineHeight: theme.typed.numbers[LINE_HEIGHT] ?? 1,
     drawBoldTextInBrightColors: theme.typed.flags["terminal.bold-as-bright"] !== false,
   };
@@ -835,6 +893,8 @@ export function apply(
   reduced = motionReduced(),
   over: Person = person,
 ): void {
+  // The person's own setting is layered on the system's (#2925): either one is enough.
+  reduced = reduced || over.motion === "reduced";
   for (const [name, value] of Object.entries(cssVariables(theme)))
     to.style.setProperty(name, value);
   for (const [name, value] of Object.entries(motionVariables(theme.motion, reduced)))
@@ -851,6 +911,9 @@ export function apply(
   to.dataset.theme = theme.name;
   to.dataset.themeDraws = themeDraws(theme);
   to.dataset.density = over.density;
+  // The one global switch reads this (`styles.css`): every transition and keyframe stops.
+  if (reduced) to.setAttribute(MOTION_ATTRIBUTE, "reduced");
+  else to.removeAttribute(MOTION_ATTRIBUTE);
   loadFaces(theme, over);
 }
 
@@ -984,6 +1047,7 @@ function loadFaces(theme: Theme, over: Person): void {
 
 /** The person's layer in force. */
 let person: Person = handedPerson();
+reduceMotionInPurlis(person.motion === "reduced");
 
 /** The person's layer in force: what Settings shows. */
 export function personInForce(): Person {
@@ -993,7 +1057,13 @@ export function personInForce(): Person {
 /** Draws the person's layer over the theme in force: Settings changed their density or a
  *  font. The terminals are told their family. */
 export function drawPerson(next: Person): void {
+  const looked = personLook(person);
+  const moved = motionReduced();
   person = next;
+  reduceMotionInPurlis(next.motion === "reduced");
+  if (motionReduced() !== moved) tellTheTerminals();
+  // The engine draws the colours and the contrast into the theme: ask for it again.
+  if (personLook(next) !== looked) for (const follow of lookFollowers) follow();
   if (drawnOn !== null) {
     apply(current, drawnOn);
     if (tint !== null) paint(current, drawnOn, tint);
@@ -1090,6 +1160,12 @@ export function onDrawn(follow: (theme: Theme) => void): () => void {
   };
 }
 
+/** Tells every follower the theme in force again: reduced motion changed, and a terminal's
+ *  cursor blinks only while motion is on ({@link xtermLook}). */
+function tellTheTerminals(): void {
+  for (const follow of followers) follow(current);
+}
+
 /** Everything following the theme in force: one per terminal on screen. */
 const followers = new Set<(theme: Theme) => void>();
 
@@ -1108,9 +1184,11 @@ let following = false;
 function followReducedMotion(): void {
   if (following || typeof matchMedia !== "function") return;
   following = true;
-  matchMedia(REDUCE).addEventListener("change", (event) => {
+  matchMedia(REDUCE).addEventListener("change", () => {
     if (drawnOn === null) return;
-    apply(current, drawnOn, event.matches);
+    // The person's own setting still holds when the system's is turned off (#2925).
+    apply(current, drawnOn, systemReducesMotion() || person.motion === "reduced");
+    tellTheTerminals();
     if (tint !== null) paint(current, drawnOn, tint);
   });
 }
