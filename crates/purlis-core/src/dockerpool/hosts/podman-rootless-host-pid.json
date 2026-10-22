@@ -1,0 +1,85 @@
+[
+ {
+  "AppArmorProfile": "",
+  "BoundingCaps": null,
+  "Config": {
+   "Image": "localhost:5000/pool-stand-in@sha256:ab3a14b089182d23307fffa8885fdf74bb5b0ccc4e0da0fda04ecca6cae5195e",
+   "Labels": {
+    "purlis.runner": "host-pid-8183"
+   },
+   "User": "10001:10001"
+  },
+  "EffectiveCaps": null,
+  "HostConfig": {
+   "Binds": [
+    "purlis-runner-host-pid-8183-home:/home/purlis:rw,rprivate,nosuid,nodev,rbind"
+   ],
+   "CapAdd": [],
+   "CapDrop": [
+    "CAP_CHOWN",
+    "CAP_DAC_OVERRIDE",
+    "CAP_FOWNER",
+    "CAP_FSETID",
+    "CAP_KILL",
+    "CAP_NET_BIND_SERVICE",
+    "CAP_SETFCAP",
+    "CAP_SETGID",
+    "CAP_SETPCAP",
+    "CAP_SETUID",
+    "CAP_SYS_CHROOT"
+   ],
+   "CgroupMode": "private",
+   "Devices": [],
+   "IpcMode": "private",
+   "Memory": 4294967296,
+   "MemorySwap": 4294967296,
+   "NanoCpus": 2000000000,
+   "NetworkMode": "bridge",
+   "OomKillDisable": false,
+   "PidMode": "host",
+   "PidsLimit": 1024,
+   "PortBindings": {},
+   "Privileged": false,
+   "PublishAllPorts": false,
+   "ReadonlyRootfs": true,
+   "Runtime": "oci",
+   "SecurityOpt": [
+    "no-new-privileges"
+   ],
+   "Tmpfs": {
+    "/tmp": "rw,nosuid,nodev,noexec,size=1024m,rprivate,tmpcopyup"
+   },
+   "UTSMode": "private",
+   "UsernsMode": "",
+   "VolumesFrom": null
+  },
+  "Id": "7932c570cc91cd9933cf0afd8a4795edc93c845b707c8a350d6f10108c3161b8",
+  "MountLabel": "",
+  "Mounts": [
+   {
+    "Destination": "/home/purlis",
+    "Driver": "local",
+    "Mode": "",
+    "Name": "purlis-runner-host-pid-8183-home",
+    "Options": [
+     "nosuid",
+     "nodev",
+     "rbind"
+    ],
+    "Propagation": "rprivate",
+    "RW": true,
+    "Type": "volume"
+   }
+  ],
+  "NetworkSettings": {
+   "Networks": {
+    "podman": {}
+   }
+  },
+  "OCIRuntime": "crun",
+  "ProcessLabel": "",
+  "State": {
+   "Running": true
+  }
+ }
+]

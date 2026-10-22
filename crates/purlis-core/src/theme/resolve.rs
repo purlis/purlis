@@ -168,9 +168,11 @@ impl Drawn {
         faces
     }
 
-    /// `theme` as it is drawn: with the consent floors held ([`super::floors`]).
+    /// `theme` as it is drawn: with the consent floors held ([`super::floors`]), then the tier
+    /// floors on the grounds those draw ([`super::tiers`]).
     pub(super) fn of(theme: &ResolvedTheme) -> Self {
         let (theme, held) = super::floors::hold(theme);
+        let (theme, _) = super::tiers::hold(&theme);
         Self {
             theme: Some(theme),
             complaints: Vec::new(),

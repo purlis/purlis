@@ -15,9 +15,9 @@ use std::path::{Path, PathBuf};
 
 pub use purlis_skills::{
     BUILT_IN_PREFIXES, Budget, Chat, DIR_IN_BUNDLE, Declared, Effective, FromHarness, Given, Grant,
-    HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing, OnMachine, Origin, Over, PROJECT_DIR,
-    Reason, Reference, Route, Skill, SkillSet, Spent, declared, grant_of, in_bundle, level_dir,
-    level_shown, listing, named, persona_dir, read, set_grant, share,
+    HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing, Narrowing, OnMachine, Origin, Over,
+    POINTER, PROJECT_DIR, Reason, Reference, Route, Skill, SkillSet, Spent, declared, grant_of,
+    in_bundle, level_dir, level_shown, listing, named, persona_dir, read, set_grant, share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -1010,6 +1010,91 @@ fn harnesses_of(kinds: &[String]) -> Vec<crate::harness::Harness> {
     } else {
         used
     }
+}
+
+/// **The route a chat's skills take, by its harness** as the chat names it in
+/// [`crate::hookwire::HARNESS_ENV`] (ADR 0063 as amended 2026-10-20): a harness purlis ships
+/// takes its own ([`Harness::skills`], a chat that names none being Claude Code's,
+/// [`Harness::of_chat`]); a harness of `declarations` whose declaration (ADR 0073) says it takes
+/// MCP servers ([`crate::harness_declaration::MCP_SERVERS`]) and which purlis has no adapter
+/// for, so no skill format purlis can hand skills by, takes [`Route::Mcp`]. Any other has none.
+pub fn route_of(
+    harness: Option<&str>,
+    declarations: &crate::harness_declaration::Declarations,
+) -> Option<Route> {
+    if let Some(shipped) = Harness::of_chat(harness) {
+        return Some(shipped.skills());
+    }
+    declarations
+        .get(harness?)
+        .filter(|declared| {
+            declared
+                .capability(crate::harness_declaration::MCP_SERVERS)
+                .holds()
+        })
+        .map(|_| Route::Mcp)
+}
+
+/// **Which copy of the skill a chat started as `skill`, a name as its harness gave it, is of**,
+/// and the workspace the chat works in (SK-13): what a run's start carries, so a chat is shown
+/// the runs of its own copies alone. The copy is the one the chat's set holds by that name
+/// ([`purlis_skills::by_name`]), with the built-in skills purlis ships beside this binary; `None`
+/// for a name the set does not hold, such as a harness's own skill.
+pub fn whose(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    skill: &str,
+) -> runs::Whose {
+    // A skill started in purlis's own plugin (`purlis:secrets`) is the built-in copy, whether
+    // or not this binary has the bundle beside it: a plane skill never takes a built-in name.
+    let built_in_by_name = skill
+        .split_once(':')
+        .is_some_and(|(plugin, _)| crate::names::PLUGIN_NAME.recognises(plugin));
+    let level = if built_in_by_name {
+        Some(runs::Level {
+            origin: Origin::BuiltIn,
+            local: false,
+        })
+    } else {
+        let built_in = built_in_here();
+        let set = of_a_chat(
+            built_in.as_deref(),
+            plane,
+            workspace,
+            persona,
+            Route::Plugin,
+        );
+        purlis_skills::by_name(&set, skill).map(|effective| runs::Level {
+            origin: effective.origin,
+            local: effective.local,
+        })
+    };
+    runs::Whose {
+        workspace: workspace.map(str::to_owned),
+        level,
+    }
+}
+
+/// **The skill set of one chat, as purlis's MCP server's skill tools work it out** (SK-13): a
+/// chat in the plane at `plane`, at its root (`workspace` `None`) or in `workspace`, running as
+/// `persona`, its skills taking `route`, with the built-in skills from `built_in`. The plane's
+/// skills are in it: the tools are there only while the `skill-studio` flag lets the plane's
+/// skills into a chat ([`studio_on`]). Worked out at each call, as the chat's place is.
+pub fn of_a_chat(
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    route: Route,
+) -> SkillSet {
+    let at = PlaneSkills {
+        plane,
+        workspace,
+        linked: None,
+    };
+    // The harness's own installed skills are the harness's to hand over, never these tools'.
+    ask(built_in, Some(at), persona, route, None)
 }
 
 /// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,

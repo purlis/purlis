@@ -50,3 +50,4 @@ keeps_conversations_by_directory = "no: Codex finds a session by its id from any
 reports_waiting = "no: Codex says only when it stops mid-turn for your approval, never when it waits on anything else"
 resumes_by_id = "yes"
 per_chat_plugins = "no: Codex has no switch that turns a plugin on for one session"
+mcp_servers = "yes"

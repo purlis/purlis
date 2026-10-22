@@ -960,12 +960,18 @@ fn every_tool_pre_allowed_in_claude_code_is_one_that_only_reads() {
             "dispatch_read",
             // The theme specimen's pictures (#2330, ADR 0064 amended 2026-10-17).
             "theme_preview",
+            // The chat's own skills, read or loaded (SK-13, ADR 0063 amended 2026-10-20).
+            "skill_list",
+            "skill_runs",
+            "skill_find",
+            "skill_load",
         ]
     );
     for name in PRE_ALLOWED {
         let tool = TOOLS
             .iter()
             .chain(crate::themepreview::TOOLS.iter())
+            .chain(crate::skilltools::TOOLS.iter())
             .find(|tool| tool.name == name)
             .unwrap_or_else(|| panic!("{name} is not a tool"));
         assert!(tool.read_only, "{name} writes");

@@ -139,6 +139,16 @@ pub trait HarnessAdapter: Sync {
         None
     }
 
+    /// **What a chat of this harness types to start `name`, a skill of its set from `origin`,
+    /// with the harness's own skill tool, where that start applies what the skill narrows**
+    /// (SK-13; ADR 0063 as amended 2026-10-20, §2): the one way a skill `skill_load` is asked for
+    /// keeps its narrowing. `None` for a harness whose own start cannot apply it, the default:
+    /// a load there says "narrowing not applied". Pure.
+    fn narrowed_start(&self, name: &str, origin: crate::skills::Origin) -> Option<String> {
+        let _ = (name, origin);
+        None
+    }
+
     /// **The name this harness knows a skill of the chat's set by** (SK-12): what its own Skill
     /// tool and its picker call it, and what a run of it records. The default is the skill's
     /// own name, for a harness that does not namespace them.
