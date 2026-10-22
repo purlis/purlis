@@ -1137,10 +1137,24 @@ describe("the Ask persona dialog", () => {
       const scrim = el("div", "ui-scrim");
       const dialog = el("div", "ui-dialog warning ask-persona");
       dialog.setAttribute("role", "dialog");
-      const name = el("input", "ui-field") as HTMLInputElement;
+      // The field family's boxes (#2905), as `TextField` and `TextArea` draw them: the field's
+      // root, the box, and the element typed in.
+      const field = (scope: "text-input" | "textarea", place: string, typed: HTMLElement) => {
+        const root = el("div", place);
+        Object.assign(root.dataset, { scope: "field", part: "root" });
+        const frame = el("div", "");
+        Object.assign(frame.dataset, { scope, part: "root" });
+        if (scope === "text-input") frame.dataset.size = "md";
+        else frame.dataset.grows = "";
+        frame.append(typed);
+        root.append(frame);
+        return root;
+      };
+      const name = field("text-input", "ui-setting-box", el("input", ""));
       // The shared list field (DS-10): the row's width, growing with its lines.
-      const ask = el("textarea", "ui-field ui-input ui-list-field") as HTMLTextAreaElement;
-      ask.rows = 4;
+      const typed = el("textarea", "") as HTMLTextAreaElement;
+      typed.rows = 4;
+      const ask = field("textarea", "ui-setting-box ui-setting-list", typed);
       const form = el("form", "");
       form.append(
         row(name, "What the task is called, on its tab and under this chat."),
@@ -1172,7 +1186,7 @@ describe("the Ask persona dialog", () => {
           return { left, right, top, bottom, width, height };
         },
       ][0];
-      const style = getComputedStyle(ask);
+      const style = getComputedStyle(typed);
       return {
         window: {
           left: 0,

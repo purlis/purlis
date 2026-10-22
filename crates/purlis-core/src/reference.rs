@@ -287,6 +287,14 @@ pub fn may_type_into(harness: Harness, now: Now) -> Result<(), NotNow> {
     if harness.ready_to_type().is_none() {
         return Err(NotNow::CannotBeTyped(harness.title()));
     }
+    at_its_prompt(now)
+}
+
+/// **Whether a running chat is at its prompt now**, on any harness: the rule of
+/// [`may_type_into`] past the harness. What Use skill… types by (SK-12, #2775): a harness purlis
+/// cannot type a chat's first prompt into (`Harness::ready_to_type`, opencode) is refused there
+/// only for the race at its start, which a chat whose hooks have said `Waiting` has passed.
+pub fn at_its_prompt(now: Now) -> Result<(), NotNow> {
     let raw = now.edits_lines != Some(true);
     match now.state {
         State::Running => Err(NotNow::MidTurn),
@@ -404,6 +412,22 @@ mod tests {
             may_type_into(Harness::ClaudeCode, now(State::Done)),
             Err(NotNow::Ended)
         );
+    }
+
+    #[test]
+    fn a_chat_at_its_prompt_is_typed_into_on_every_harness_and_one_not_heard_from_never_is() {
+        // Use skill… (#2775): opencode too, once its hooks said it waits at its prompt.
+        assert_eq!(at_its_prompt(now(State::Waiting)), Ok(()));
+        assert_eq!(
+            at_its_prompt(now(State::Unknown)),
+            Err(NotNow::NotHeardFrom)
+        );
+        assert_eq!(at_its_prompt(now(State::Running)), Err(NotNow::MidTurn));
+        let canonical = Now {
+            edits_lines: Some(true),
+            ..now(State::Waiting)
+        };
+        assert_eq!(at_its_prompt(canonical), Err(NotNow::NotYetAtItsPrompt));
     }
 
     #[test]

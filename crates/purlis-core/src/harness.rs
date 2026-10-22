@@ -22,7 +22,22 @@ pub mod opencode;
 #[cfg(test)]
 pub(crate) mod testing;
 
-pub use adapter::{HarnessAdapter, SkillStart};
+pub use adapter::{HarnessAdapter, SkillStart, SkillToStart};
+
+/// **purlis's skill budget for one chat** (SK-12, #2775; ADR 0102 §1 as amended 2026-10-21): 30
+/// skills and 6,000 characters of their descriptions, on every harness. Under the smallest
+/// harness limit measured on 2026-10-20 (Claude Code's 1% of a 200k-token window, about 8,000
+/// characters for names, descriptions and their lines together), with room for 30 names and the
+/// lines they sit on, so no harness has to cut anything. Each adapter adds its own cap on one
+/// description, whether it lists a skill's path and whether it leaves a manual-only skill out
+/// ([`HarnessAdapter::skill_budget`]).
+pub(crate) const SKILL_BUDGET: crate::skills::Budget = crate::skills::Budget {
+    skills: 30,
+    chars: 6_000,
+    per_description: None,
+    lists_paths: false,
+    manual_free: false,
+};
 pub use claude::SMART_CLOSE_ALLOW;
 
 /// A harness session's id, held to a shape that cannot be read as a flag.
@@ -355,6 +370,30 @@ impl Harness {
         }
     }
 
+    /// [`HarnessAdapter::skill_start_text`]: what Use skill… types to start `skill` (SK-12).
+    pub fn skill_start_text(self, skill: &SkillToStart<'_>) -> String {
+        self.adapter().skill_start_text(skill)
+    }
+
+    /// [`HarnessAdapter::skill_name`]: what this harness calls a skill of a chat's set (SK-12).
+    pub fn skill_name(self, name: &str, origin: crate::skills::Origin) -> String {
+        self.adapter().skill_name(name, origin)
+    }
+
+    /// [`HarnessAdapter::typed_start_named`]: how a skill Use skill… typed is confirmed sent.
+    pub fn typed_start(self) -> crate::skillspan::Confirmed {
+        if self.adapter().typed_start_named() {
+            crate::skillspan::Confirmed::ByName
+        } else {
+            crate::skillspan::Confirmed::ByPrompt
+        }
+    }
+
+    /// [`HarnessAdapter::skill_budget`]: one chat's skill budget on this harness (SK-12).
+    pub fn skill_budget(self) -> crate::skills::Budget {
+        self.adapter().skill_budget()
+    }
+
     /// How a chat on this harness comes to know charter's skills, for that chat alone and with
     /// nothing written (ADR 0063). [`Self::state_hooks`] is where each route is taken.
     ///
@@ -397,9 +436,11 @@ impl Harness {
             crate::skills::Route::Briefing => crate::skills::Reload::Bodies,
             // `skill_find` and `skill_load` work the chat's set out at each call (SK-13).
             crate::skills::Route::Mcp => crate::skills::Reload::Everything,
-            crate::skills::Route::Plugin | crate::skills::Route::Config => {
-                crate::skills::Reload::Nothing
-            }
+            // `Own` is no harness's route: it is how a harness takes its own skills, which purlis
+            // hands nothing of.
+            crate::skills::Route::Plugin
+            | crate::skills::Route::Config
+            | crate::skills::Route::Own => crate::skills::Reload::Nothing,
         }
     }
 
@@ -598,8 +639,12 @@ mod tests {
             let applied = applied.unwrap_or_else(|refused| panic!("{from:?}: {refused}"));
             for to in Harness::ALL.into_iter().filter(|to| *to != from) {
                 assert_eq!(
-                    to.adapter()
-                        .arm(kit, Some(plane.path()), &BTreeMap::new(), Some(&applied)),
+                    to.adapter().arm(
+                        kit,
+                        Some(plane.path()),
+                        &crate::harness_plugin::Chosen::new(),
+                        Some(&applied)
+                    ),
                     StateHooks::None,
                     "{from:?}'s sandbox armed a {to:?} chat"
                 );
@@ -869,14 +914,14 @@ mod tests {
 
     /// Claude Code's arguments and environment for a chat in `cwd`.
     fn claude(binary: &str, cwd: &std::path::Path) -> (Vec<String>, Vec<(String, String)>) {
-        claude_with(binary, cwd, &BTreeMap::new())
+        claude_with(binary, cwd, &crate::harness_plugin::Chosen::new())
     }
 
     /// The same, for a project that chose `plugins`.
     fn claude_with(
         binary: &str,
         cwd: &std::path::Path,
-        plugins: &BTreeMap<String, bool>,
+        plugins: &crate::harness_plugin::Chosen,
     ) -> (Vec<String>, Vec<(String, String)>) {
         match Harness::ClaudeCode.state_hooks(kit(binary), Some(cwd), plugins, None) {
             StateHooks::ThisSessionOnly {
@@ -937,6 +982,31 @@ mod tests {
     }
 
     #[test]
+    fn a_claude_code_chat_is_handed_the_skills_the_project_turned_off_as_overrides() {
+        // SK-6 (#2769), measured on 2.1.304: `skillOverrides` `"off"` takes a person's own skill
+        // out of the chat. A plugin's skill is not one it reaches, so none is written for one.
+        let empty = tempfile::tempdir().expect("a directory");
+        let chosen = crate::harness_plugin::Chosen {
+            plugins: BTreeMap::new(),
+            skills_off: ["langfuse".to_owned(), "figma:frame".to_owned()].into(),
+        };
+        let (args, _) = claude_with("/bin/charter", empty.path(), &chosen);
+        let settings: serde_json::Value = serde_json::from_str(settings_of(&args)).expect("JSON");
+        assert_eq!(
+            settings["skillOverrides"],
+            serde_json::json!({ "langfuse": "off" })
+        );
+
+        let (args, _) = claude("/bin/charter", empty.path());
+        let settings: serde_json::Value = serde_json::from_str(settings_of(&args)).expect("JSON");
+        assert_eq!(
+            settings.get("skillOverrides"),
+            None,
+            "the operator's own overrides stand"
+        );
+    }
+
+    #[test]
     fn a_claude_code_chat_is_handed_the_projects_plugins_and_the_pins_win() {
         // charter-app#274: the set a project chose rides in the same `enabledPlugins` as the two
         // values every chat has always carried, and those two are written last, so a set that
@@ -951,7 +1021,7 @@ mod tests {
             ("charter-app@inline".to_owned(), true),
             ("charter@charter-app".to_owned(), true),
         ]);
-        let (args, _) = claude_with("/bin/charter", empty.path(), &chosen);
+        let (args, _) = claude_with("/bin/charter", empty.path(), &chosen.into());
         let settings: serde_json::Value = serde_json::from_str(settings_of(&args)).expect("JSON");
 
         assert_eq!(
@@ -969,16 +1039,46 @@ mod tests {
     }
 
     #[test]
-    fn a_codex_chat_is_handed_no_plugin_flag_whatever_the_project_chose() {
-        // Codex 0.147.0 ignores a plugin's `enabled` given with `-c` (measured, charter-app#274),
-        // so nothing is added: its adapter says "not supported yet" instead.
-        let chosen = BTreeMap::from([("charter@charter".to_owned(), false)]);
+    fn a_codex_chat_is_handed_each_plugin_and_skill_the_project_turned_off_by_its_own_flags() {
+        // Measured on codex-cli 0.163.0 (SK-6, #2769): `-c plugins."<id>".enabled=false` takes a
+        // plugin's skills out for one session, and one `skills.config` takes a skill out, a
+        // plugin's included, beside the operator's own entries.
+        let chosen = crate::harness_plugin::Chosen {
+            plugins: BTreeMap::from([("zp@zmkt".to_owned(), false)]),
+            skills_off: ["langfuse".to_owned(), "zp:zp \"skill\"".to_owned()].into(),
+        };
         let StateHooks::ThisSessionOnly { args, .. } =
             Harness::Codex.state_hooks(kit("/bin/charter"), None, &chosen, None)
         else {
             panic!("armed per session");
         };
-        assert!(args.iter().all(|arg| !arg.contains("plugins")), "{args:?}");
+        let flags: Vec<&str> = args
+            .windows(2)
+            .filter(|pair| pair[0] == "-c")
+            .map(|pair| pair[1].as_str())
+            .filter(|flag| flag.starts_with("plugins.") || flag.starts_with("skills."))
+            .collect();
+        assert_eq!(
+            flags,
+            [
+                "plugins.\"zp@zmkt\".enabled=false",
+                "skills.config=[{name=\"langfuse\",enabled=false},{name='zp:zp \"skill\"',enabled=false}]",
+            ]
+        );
+        let none = Harness::Codex.state_hooks(
+            kit("/bin/charter"),
+            None,
+            &crate::harness_plugin::Chosen::new(),
+            None,
+        );
+        let StateHooks::ThisSessionOnly { args, .. } = none else {
+            panic!("armed per session");
+        };
+        assert!(
+            args.iter()
+                .all(|arg| !arg.starts_with("plugins.") && !arg.starts_with("skills.")),
+            "{args:?}"
+        );
     }
 
     /// The tools that are not reads and that a Claude Code chat runs without asking:
@@ -1278,7 +1378,12 @@ mod tests {
             ..kit("/bin/charter")
         };
         assert!(matches!(
-            Harness::ClaudeCode.state_hooks(no_plugin, Some(empty.path()), &BTreeMap::new(), None),
+            Harness::ClaudeCode.state_hooks(
+                no_plugin,
+                Some(empty.path()),
+                &crate::harness_plugin::Chosen::new(),
+                None
+            ),
             StateHooks::None
         ));
     }
@@ -1403,9 +1508,12 @@ mod tests {
         // are whole-session switches, and loosening either would be far broader than the one
         // command Smart close needs (SI-8e, ADR 0064's measurements). Where the plane has not
         // turned the sandbox on, Codex keeps its own settings, as it always has.
-        let StateHooks::ThisSessionOnly { args, .. } =
-            Harness::Codex.state_hooks(kit("/bin/charter"), None, &BTreeMap::new(), None)
-        else {
+        let StateHooks::ThisSessionOnly { args, .. } = Harness::Codex.state_hooks(
+            kit("/bin/charter"),
+            None,
+            &crate::harness_plugin::Chosen::new(),
+            None,
+        ) else {
             panic!("armed per session");
         };
         for arg in &args {
@@ -1423,7 +1531,7 @@ mod tests {
         let StateHooks::ThisSessionOnly { args, .. } = Harness::Codex.state_hooks(
             kit("/bin/charter"),
             Some(plane.path()),
-            &BTreeMap::new(),
+            &crate::harness_plugin::Chosen::new(),
             Some(&applied),
         ) else {
             panic!("armed per session");
@@ -1517,7 +1625,7 @@ mod tests {
         let StateHooks::ThisSessionOnly { args, .. } = Harness::ClaudeCode.state_hooks(
             kit("/bin/charter"),
             Some(plane.path()),
-            &BTreeMap::new(),
+            &crate::harness_plugin::Chosen::new(),
             Some(&applied),
         ) else {
             panic!("armed per session");
@@ -1608,7 +1716,7 @@ mod tests {
         let StateHooks::ThisSessionOnly { args, .. } = Harness::ClaudeCode.state_hooks(
             kit("/bin/charter"),
             Some(&cwd),
-            &BTreeMap::new(),
+            &crate::harness_plugin::Chosen::new(),
             Some(&applied),
         ) else {
             panic!("armed per session");
@@ -1732,7 +1840,7 @@ mod tests {
         let StateHooks::ThisSessionOnly { args, .. } = Harness::ClaudeCode.state_hooks(
             kit("/bin/charter"),
             Some(plane.path()),
-            &BTreeMap::new(),
+            &crate::harness_plugin::Chosen::new(),
             Some(&applied),
         ) else {
             panic!("armed per session");
@@ -1803,7 +1911,7 @@ mod tests {
                 persona: None,
             },
             None,
-            &BTreeMap::new(),
+            &crate::harness_plugin::Chosen::new(),
             None,
         );
         assert_eq!(hooks, StateHooks::None);
@@ -1911,9 +2019,12 @@ mod tests {
     /// The `-c` pairs that arm Codex's hooks, without the one that hands it charter's MCP
     /// server (HP-7, which `codex::tests` holds).
     fn codex_flags(binary: &str) -> Vec<(String, toml::Value)> {
-        let StateHooks::ThisSessionOnly { args, env, .. } =
-            Harness::Codex.state_hooks(kit(binary), None, &BTreeMap::new(), None)
-        else {
+        let StateHooks::ThisSessionOnly { args, env, .. } = Harness::Codex.state_hooks(
+            kit(binary),
+            None,
+            &crate::harness_plugin::Chosen::new(),
+            None,
+        ) else {
             panic!("Codex's hooks are armed per session");
         };
         assert!(
@@ -2023,7 +2134,12 @@ mod tests {
     fn a_codex_chat_says_it_cannot_report_a_question_asked_mid_turn() {
         // Codex has no `Notification`. Its `PermissionRequest` is armed (#1691), so an
         // approval is an ask; anything else it stops on mid-turn says nothing.
-        let hooks = Harness::Codex.state_hooks(kit("/bin/charter"), None, &BTreeMap::new(), None);
+        let hooks = Harness::Codex.state_hooks(
+            kit("/bin/charter"),
+            None,
+            &crate::harness_plugin::Chosen::new(),
+            None,
+        );
 
         let StateHooks::ThisSessionOnly { cannot_report, .. } = hooks else {
             panic!("armed per session");
@@ -2228,7 +2344,7 @@ mod tests {
                 persona: None,
             },
             None,
-            &BTreeMap::from([("some-plugin".to_owned(), false)]),
+            &BTreeMap::from([("some-plugin".to_owned(), false)]).into(),
             None,
         );
         (plugin, hooks)
@@ -2290,7 +2406,7 @@ mod tests {
                 persona: None,
             },
             None,
-            &BTreeMap::new(),
+            &crate::harness_plugin::Chosen::new(),
             None,
         ));
         assert_eq!(
@@ -2311,7 +2427,8 @@ mod tests {
             persona: None,
         };
         for harness in [Harness::ClaudeCode, Harness::Opencode] {
-            let env = env_of(harness.state_hooks(kit, None, &BTreeMap::new(), None));
+            let env =
+                env_of(harness.state_hooks(kit, None, &crate::harness_plugin::Chosen::new(), None));
             assert!(!env.contains_key(crate::skills::LISTED_ENV), "{harness:?}");
         }
     }
@@ -2327,7 +2444,7 @@ mod tests {
                 persona: None,
             },
             None,
-            &BTreeMap::new(),
+            &crate::harness_plugin::Chosen::new(),
             None,
         ));
         let config: serde_json::Value =
@@ -2354,7 +2471,7 @@ mod tests {
                 persona: None,
             },
             None,
-            &BTreeMap::new(),
+            &crate::harness_plugin::Chosen::new(),
             None,
         );
         assert_eq!(hooks, StateHooks::None);

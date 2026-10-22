@@ -161,6 +161,10 @@ pub(crate) struct Created {
     pub(crate) native: theme::Native,
     /// Whether the first frame follows the system: the native parts are then the system's.
     pub(crate) follows_system: bool,
+    /// The person's layer the creation read from the layout file (#2925), drawn into every
+    /// theme the window is handed.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) person: theme::Layer,
 }
 
 impl FirstFrame {
@@ -171,7 +175,15 @@ impl FirstFrame {
         on: Option<&CreatedOn>,
         theirs: Option<&theme::Theme>,
         contrast: Option<Contrast>,
+        person: &theme::Layer,
     ) -> (Self, theme::Native) {
+        // More contrast in purlis is layered on the system's (#2925): it draws as the system's
+        // does, so there is one frame for it.
+        let contrast = if person.contrast == theme::Least::More {
+            Some(Contrast::More)
+        } else {
+            contrast
+        };
         let plane = on.map(|on| on.plane.as_path());
         let workspace = on.and_then(|on| on.workspace.as_deref());
         let levels = theme::Levels::read(config_root, plane, workspace);
@@ -187,6 +199,7 @@ impl FirstFrame {
                 system,
                 contrast,
             })
+            .under(person)
         };
         let contrasts: &[Contrast] = match contrast {
             Some(Contrast::More) => &[Contrast::More],
@@ -268,14 +281,15 @@ struct TheirDrawn {
     floors: Option<String>,
 }
 
-impl From<Theirs> for TheirTheme {
-    fn from(theirs: Theirs) -> Self {
+impl TheirTheme {
+    /// The person's own theme with their layer `person` drawn over it (#2925).
+    fn of(theirs: Theirs, person: &theme::Layer) -> Self {
         // What the window draws of the person's own theme where no level chooses (`handedFor`
         // in `Extensions.tsx`): its first appearance for each contrast, the consent floors held.
         // The page picks with `prefers-contrast`, so both are handed.
         let drawn = |contrast| {
             theirs.theme.as_ref().and_then(|theme| {
-                let drawn = theme::draw(theme.first_for(contrast));
+                let drawn = theme::draw(theme.first_for(contrast)).under(person);
                 Some(TheirDrawn {
                     theme: WindowTheme::from(drawn.theme.as_ref()?),
                     floors: drawn.held.map(|held| held.said()),
@@ -334,13 +348,16 @@ fn at_creation_from(
         .document
         .as_ref()
         .and_then(|document| document.get("appearance"));
-    let person = PersonInForce::of(appearance);
+    let (person, layer) = PersonInForce::read(appearance);
     let theirs = kept.get(config_root);
-    let (first, native) = FirstFrame::of(config_root, on, theirs.theme.as_ref(), contrast);
+    let (first, native) = FirstFrame::of(config_root, on, theirs.theme.as_ref(), contrast, &layer);
     let follows_system = first.follows_system;
     let at = AtCreation {
-        theme: theirs.into(),
-        built_in: theme::built_ins().iter().map(WindowTheme::from).collect(),
+        theme: TheirTheme::of(theirs, &layer),
+        built_in: theme::built_ins()
+            .iter()
+            .map(|one| built_in_under(one, &layer))
+            .collect(),
         person,
         layout,
         first,
@@ -353,7 +370,18 @@ fn at_creation_from(
         ),
         native,
         follows_system,
+        person: layer,
     }
+}
+
+/// A built-in theme as the window is handed it: as it is, or with the person's colours and
+/// contrast drawn over it, the consent floors held, when their layer changes colours (#2925).
+fn built_in_under(one: &theme::ResolvedTheme, person: &theme::Layer) -> WindowTheme {
+    if !person.colours_anything() {
+        return WindowTheme::from(one);
+    }
+    let drawn = theme::draw(one).under(person);
+    WindowTheme::from(drawn.theme.as_ref().unwrap_or(one))
 }
 
 /// [`at_creation_from`]'s script, for a window on no project and the standard contrast.
@@ -611,6 +639,76 @@ mod tests {
         std::fs::write(dir.join(windowprefs::THEME), r#"{"name":"Mine"}"#).unwrap();
         let at = defined(&creation_script_from(&TheirsKept::new(), Some(home.path())));
         assert_eq!(at["theme"]["floors"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn the_first_frame_and_the_built_ins_wear_the_person_s_colours_and_contrast() {
+        // #2925: the person's colours and more contrast, read from the layout file, are drawn
+        // into every theme the page is handed as it is created.
+        let home = tempfile::tempdir().unwrap();
+        let dir = purlis_core::machine::dir(home.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        let layout = |appearance: &str| {
+            std::fs::write(
+                dir.join(windowprefs::LAYOUT),
+                format!(r#"{{"version":2,"regions":[],"appearance":{appearance}}}"#),
+            )
+            .unwrap();
+            at_creation_from(&TheirsKept::new(), Some(home.path()), None, None)
+        };
+        let accent = "#9a86ff";
+        let created = layout(&format!(
+            r#"{{"motion":"reduced","colours":{{"accent.base":"{accent}"}}}}"#
+        ));
+        let at = defined(&created.script);
+        assert_eq!(at["person"]["motion"], "reduced");
+        assert_eq!(at["person"]["colours"]["accent.base"], accent);
+        for frame in at["first"]["frames"].as_array().expect("frames") {
+            assert_eq!(frame["theme"]["values"]["accent.base"], accent);
+        }
+        // A light accent reads on the dark built-ins; on a light one it would put words under
+        // their floor, so the theme's own is drawn there.
+        for one in at["built_in"].as_array().expect("the built-ins") {
+            let drawn = &one["values"]["accent.base"];
+            if one["appearance"] == "dark" {
+                assert_eq!(drawn, accent, "{}", one["name"]);
+            } else {
+                assert_ne!(drawn, accent, "{}", one["name"]);
+            }
+        }
+        assert_eq!(
+            created
+                .person
+                .colours
+                .get("accent.base")
+                .map(String::as_str),
+            Some(accent)
+        );
+
+        // More contrast in purlis is the system's more: one frame, for it, drawn raised.
+        let created = layout(r#"{"contrast":"more"}"#);
+        let at = defined(&created.script);
+        assert_eq!(at["person"]["contrast"], "more");
+        assert_eq!(at["first"]["contrast"], "more");
+        for frame in at["first"]["frames"].as_array().expect("frames") {
+            assert_eq!(frame["more"], true);
+        }
+        assert_eq!(created.person.contrast, theme::Least::More);
+        let classic = &at["built_in"][0]["values"];
+        assert_ne!(
+            classic["text.muted"],
+            theme::default_theme().value("text.muted"),
+            "muted words are raised to 7:1"
+        );
+    }
+
+    #[test]
+    fn with_nothing_of_the_person_s_the_built_ins_are_handed_as_they_are() {
+        let at = defined(&creation_script_from(&TheirsKept::new(), None));
+        let handed: Vec<WindowTheme> = theme::built_ins().iter().map(WindowTheme::from).collect();
+        assert_eq!(at["built_in"], serde_json::to_value(&handed).unwrap());
+        assert_eq!(at["person"]["contrast"], "standard");
+        assert_eq!(at["person"]["motion"], "system");
     }
 
     #[test]

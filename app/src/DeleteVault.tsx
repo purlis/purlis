@@ -6,6 +6,7 @@ import * as AlertDialog from "./overlays/alert-dialog";
 import { AnswerBar } from "./AnswerBar";
 import { Field, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /** What a vault holds, as `vault_open` said it: its provider and its secrets' NAMES. */
 export type VaultHolds = { provider: string; secrets: readonly string[] };
@@ -112,7 +113,7 @@ export function DeleteVault({
             </>
           )}
 
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               del();
@@ -142,7 +143,7 @@ export function DeleteVault({
                 {deleting ? "Deleting…" : "Delete vault"}
               </Button>
             </AnswerBar>
-          </form>
+          </Form>
         </AlertDialog.Content>
       </AlertDialog.Portal>
     </AlertDialog.Root>

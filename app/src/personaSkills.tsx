@@ -5,6 +5,7 @@ import { useId, useState } from "react";
 import { commands, type PersonaSkillChange, type PlaneId } from "./bindings";
 import { Notice } from "./Notice";
 import { Button } from "./ui/button/Button";
+import { Form, TextField } from "./ui/field/Field";
 
 /**
  * **A persona's skills in the Skill studio** (SK-5, #2768; spec decision 35): the studio filtered
@@ -67,7 +68,7 @@ export function PersonaSkillAdd({
   };
 
   return (
-    <form
+    <Form
       className="persona-skill-add"
       aria-label={`Add a skill to ${persona}`}
       onSubmit={(event) => {
@@ -75,16 +76,15 @@ export function PersonaSkillAdd({
         void add();
       }}
     >
-      <label htmlFor={input}>Add a skill</label>
-      <input
+      <TextField
         id={input}
-        className="ui-input"
+        label="Add a skill"
         list={suggestions}
         value={written}
         placeholder="Its name, as the Skill studio lists it"
-        disabled={busy || readOnly !== undefined}
+        isDisabled={busy || readOnly !== undefined}
         title={readOnly}
-        onChange={(event) => setWritten(event.target.value)}
+        onChange={setWritten}
         data-testid="persona-skill-name"
       />
       <datalist id={suggestions}>
@@ -105,7 +105,7 @@ export function PersonaSkillAdd({
           {refused}
         </Notice>
       )}
-    </form>
+    </Form>
   );
 }
 

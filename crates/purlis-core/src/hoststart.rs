@@ -149,12 +149,43 @@ pub fn plane_skills_laid_out(
     persona: Option<&str>,
     kit: &Kit,
 ) -> Option<PathBuf> {
+    laid_out_on(
+        on,
+        root,
+        workspace,
+        persona,
+        kit,
+        crate::skills::Route::Plugin,
+        &[],
+    )
+}
+
+/// [`plane_skills_laid_out`] for a chat whose harness takes its skills by `route`, with `repo`
+/// the repo skills of the clone it works in (SK-6): a plane skill a narrower repo copy hides is
+/// not laid out.
+fn laid_out_on(
+    on: bool,
+    root: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    kit: &Kit,
+    route: crate::skills::Route,
+    repo: &[crate::skills::OutsideSkill],
+) -> Option<PathBuf> {
     if !on {
         return None;
     }
     let sets = kit.skill_sets.as_deref()?;
     let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
-    crate::skills::lay_out_for_chat(root, workspace, persona, built_in.as_deref(), sets)
+    crate::skills::lay_out_for_chat(
+        root,
+        workspace,
+        persona,
+        built_in.as_deref(),
+        sets,
+        route,
+        repo,
+    )
 }
 
 /// **The skills a chat's persona names that it starts without** (SK-5, #2768), where the Skill
@@ -647,11 +678,26 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     // turns the set into words (ADR 0063 as amended 2026-10-20).
     let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
     let on = studio;
-    let linked = plane_skills_laid_out(on, root, workspace.as_deref(), persona, kit);
+    // And the repo skills of the clone it works in, read here too, so a narrower repo copy of a
+    // plane skill is the one its harness gets where purlis builds what it is handed (SK-6).
+    let repo = match (on, workspace.as_deref(), cwd) {
+        (true, Some(ws), Some(cwd)) => crate::skills::repo_skills_of_chat(harness, root, ws, cwd),
+        _ => Vec::new(),
+    };
+    let linked = laid_out_on(
+        on,
+        root,
+        workspace.as_deref(),
+        persona,
+        kit,
+        harness.skills(),
+        &repo,
+    );
     let skills = on.then_some(crate::skills::PlaneSkills {
         plane: root,
         workspace: workspace.as_deref(),
         linked: linked.as_deref(),
+        repo: &repo,
     });
     let armed = crate::harness::Kit {
         binary,

@@ -85,6 +85,7 @@ import { deletes } from "./tabKeys";
 import { askSettingsLink } from "./settings/links";
 import { DISPATCH } from "./settings/dispatch";
 import { Button } from "./ui/button/Button";
+import { TextField } from "./ui/field/Field";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
 type ShownFacts = {
@@ -894,28 +895,22 @@ export function ChatsSection({
           <div className="chats-filter" role="search" aria-label="Filter the chats">
             {/* **The box's text starts where a top-level chat's name does** (DS-11): its
                 glass stands in the column the rows' state marks stand in. */}
-            <span className="chats-filter-box ui-input-lead">
-              <Search className="ui-input-lead-icon chats-filter-glass" aria-hidden="true" />
-              <input
-                type="search"
-                className="ui-input chats-filter-text"
-                // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
-                tabIndex={0}
-                aria-label="Filter chats by name, persona, workspace or state"
-                placeholder="Filter chats"
-                value={text}
-                onChange={(event) => {
-                  const typed = event.target.value;
-                  refilter(() => setText(typed));
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "Escape" || !filtering) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  clear();
-                }}
-              />
-            </span>
+            <TextField
+              className="chats-filter-box"
+              type="search"
+              icon={<Search className="chats-filter-glass" aria-hidden="true" />}
+              keepsFocus="chats-filter"
+              aria-label="Filter chats by name, persona, workspace or state"
+              placeholder="Filter chats"
+              value={text}
+              onChange={(typed) => refilter(() => setText(typed))}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape" || !filtering) return;
+                event.preventDefault();
+                event.stopPropagation();
+                clear();
+              }}
+            />
             {/* The chips: the set's (#626), ONE Tab stop with the arrows between them,
                 named as a group so each box is heard as what it narrows the list to. A box
                 each, since each is on or off, drawn as a chip. */}

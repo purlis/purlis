@@ -1068,6 +1068,12 @@ has it; nothing reads the key after that.
   not one is its default, and the Inbox says so. Settings and the size keys
   (`⌘`/`Ctrl` with `=`, `-`, `0`, `app/src/textSize.ts`) write it; it is in this file and not in
   a plane because a size is this machine's, and a plane would carry it to every clone.
+- **`appearance`** is what the person sets that every theme honours (#2326, #2925):
+  **`density`** (`comfortable` or `compact`), **`fonts`** (a family for `ui`, `mono` and
+  `terminal`), **`motion`** (`system` or `reduced`), **`contrast`** (`standard` or `more`) and
+  **`colours`** (a colour for each token the person sets, `#rgb`, `#rgba`, `#rrggbb` or
+  `#rrggbbaa`). Leave any out for its default; Settings › You writes them. A value the engine
+  cannot use is its default, and the Inbox says so.
 - **`editor`** is your editor (RC-20, ADR 0081 §3), where *Open in your editor* sends a file
   at a line: `vscode`, `zed`, `idea` (a JetBrains IDE) or `variable` (`$VISUAL`, else
   `$EDITOR`, from purlis's own environment, run with `+line` and the file). Leave it out and
@@ -1146,7 +1152,9 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 ### The vocabulary
 
 `DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Nine names, written to the document as
-`--motion-duration-*` and `--motion-easing-*` beside the colours:
+`--motion-duration-*` and `--motion-easing-*` beside the colours. The built-ins are Purlis
+Classic's; Purlis draws `duration.quick` at 150 ms and `easing.standard` and `easing.enter` on
+the shell's one ease (below):
 
 | token              | built-in           | what it is for                                                          |
 | ------------------ | ------------------ | ----------------------------------------------------------------------- |
@@ -1159,6 +1167,11 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 | `easing.enter`     | `[0, 0, 0.2, 1]`   | decelerating into place, which is what reads as _arrived_               |
 | `easing.steady`    | `[0, 0, 1, 1]`     | a turn; an eased one stutters once a second                             |
 | `easing.breathe`   | `[0.4, 0, 0.6, 1]` | a loop with no visible seam                                             |
+
+**The shell's motion rule** (R150, #2925): one ease, `cubic-bezier(.22, .8, .24, 1)`, which
+Purlis gives `easing.standard` and `easing.enter`, and 150 ms for a chevron and a switch's knob,
+Purlis's `duration.quick`. Each of the shell's other steps is a duration token that arrives with
+the motion it times.
 
 **Semantic, not a scale**, for the reason `needs-you.base` and `danger.base` are two tokens: a
 theme that wants arrivals quicker changes `duration.enter` and does not also speed up whatever
@@ -1195,8 +1208,15 @@ A theme file carries them under `motion`, beside `tokens`:
 
 ### Reduced motion is the layer's job, once
 
-Under `prefers-reduced-motion: reduce`, `drawIn` writes **every duration as `0ms`**, and follows
-the setting live if the operator changes it while the window is up. A transition over no time is
+Under `prefers-reduced-motion: reduce`, or with **Reduce motion** on in Settings › You › Motion
+and contrast (#2925, layered on the system's: either one is enough), `drawIn` writes **every
+duration as `0ms`**, and follows the setting live if the operator changes it while the window is
+up. It also writes `data-motion="reduced"` on the root, which **one global switch** reads
+(`app/src/theme/reduced-motion.css`, R152): no transition, and every animation plays its whole
+run at once, so a motion written without a token stops too, and a component waiting for an
+animation's end still hears it. xterm blinks its cursor on a timer of its own, so under reduced
+motion every terminal is told not to blink, whatever the theme says. The switch's declarations are important in the first layer,
+so no later layer turns motion back on. A transition over no time is
 no transition, and a looping animation with a zero duration has a zero active duration (Web
 Animations), so a spinner does not spin and a pulse does not pulse. **A component written
 tomorrow gets this for free, because it reads a token** — and `literals.test.ts` refuses a
@@ -1332,49 +1352,89 @@ for the slot (`purlis_core::theme::Person`), so a family that is not installed f
 core's. The terminal reads its family from the theme too (`terminalFont`), and its old literal
 is core's terminal family.
 
+**The person's colours are drawn over any theme, held to the floors** (#2925, ruling #2814·8).
+Settings › You › Your colours takes a colour for any token of the vocabulary, one
+`token #colour` a line, and the engine draws each over the theme in force, whatever it is
+(`purlis_core::theme::Layer::over`). A colour that would put a pair of the check under its floor
+in that theme, and lower than the theme has it, is left out there and the theme's is drawn; a
+Notice names each one. The consent floors are held after the person's colours, as after a
+theme's option values, so a colour can no more bring danger near the accent than a theme can.
+
+**Minimum contrast is the person's too** (#2925, ruling #2814·7). Settings › You › Motion and
+contrast offers the theme's floors or more. More is layered on the system's Increase contrast:
+it draws a theme's high-contrast appearance where it has one, as the system's does, and it
+raises the floors the engine holds, words from 4.5:1 to 7:1 (WCAG 1.4.6) and marks from 3:1
+to 4.5:1 (`purlis_core::theme::Least`). A pair under its raised floor has its front drawn
+lighter on a dark ground or darker on a light one, in small steps toward white or black, and
+then its back the other way where the back is not one of the window's grounds. Where the back
+has to move, the two may swap sides instead, dark words on a light mark, when that leaves fewer
+pairs under their floors. Marks are raised before words. A grey tier is raised as far as the
+tier above it and never past it, so muted words can at most match secondary ones and the tiers
+keep their order. A floor under a mark's, a hint's, is not raised. The consent floors are held
+at the raised floors, with purlis's own values raised where a theme's are put back, in the
+theme as written and in every workspace tint. A theme's component parts are held to the raised
+floors too, and one under them draws its family default. The window's tokens, the terminal's
+colours and the parts' stylesheet all come from the one theme the engine answers with, so the
+setting holds everywhere.
+
+**Each window asks with its own layer.** The window hands the engine its person's contrast and
+colours with each ask of a theme, and is handed its first frame drawn with the layer the layout
+file held as it was created. A theme's specimen and the gallery's card pictures show the theme
+itself and are drawn without the layer; a card drawn on the window while the pointer is on it
+wears it.
+
 ### The core tokens
 
 Lengths that should grow with the words are in rem, written as "N px at 14px"
 (`calc(6rem / 14)`), so the text-size setting scales them with the window. Corners and focus
-rings stay in px. The px below are at the default 14px text.
+rings stay in px. The values below are Purlis Classic's, as `app/src/theme/geometry.css` writes
+them, in px at the default 14px text.
 
-| token                   | value                                      | for                                                                      |
-| ----------------------- | ------------------------------------------ | ------------------------------------------------------------------------ |
-| `--space-0`             | 0                                          | the spacing scale: every padding, gap and margin                         |
-| `--space-1`             | 2px                                        |                                                                          |
-| `--space-2`             | 4px                                        |                                                                          |
-| `--space-3`             | 6px                                        |                                                                          |
-| `--space-4`             | 8px                                        | a control's side padding                                                 |
-| `--space-5`             | 12px                                       |                                                                          |
-| `--space-6`             | 16px                                       |                                                                          |
-| `--space-7`             | 24px                                       |                                                                          |
-| `--space-8`             | 32px                                       |                                                                          |
-| `--font-size-2xs`       | 10px                                       | the type scale, seven steps: a tight secondary label only (#2319)        |
-| `--font-size-xs`        | 11px                                       | badges, counts; the meta and label roles: the words' floor               |
-| `--font-size-sm`        | 12px                                       | secondary lines, help text; the secondary role                           |
-| `--font-size-md`        | 13px                                       | dense lists and tables, a menu's rows; the body role                     |
-| `--font-size-base`      | 14px                                       | the window's text (`1rem`); the heading role                             |
-| `--font-size-lg`        | 16px                                       | the title role; nothing drew it before the [text roles](#text-roles)     |
-| `--font-size-xl`        | 20px                                       | on the scale; nothing draws it and no role reads it (#1920 rules on it)  |
-| `--font-weight-regular` | 400                                        | the weight of the window's words                                         |
-| `--font-weight-medium`  | 500                                        | a form's label: a setting's name, a choice's name                        |
-| `--font-weight-strong`  | 600                                        | the one strong weight: a title, a heading, a label, a row's strong line  |
-| `--line-height-tight`   | 1.2                                        | a compact line: a count, a chip. A share of the text's size, so no unit  |
-| `--line-height-body`    | 1.4                                        | the window's own line (`:root`)                                          |
-| `--font-ui`             | `ui-sans-serif, Inter, Avenir, Helvetica, Arial, sans-serif` | the window's own family (`:root`); a theme's `fonts.ui`                  |
-| `--font-mono`           | `ui-monospace, Menlo, Consolas, monospace` | the one monospace family: a command, a path, a host; a theme's `fonts.mono` |
-| `--radius-sm`           | 3px                                        | checkboxes, chips                                                        |
-| `--radius-md`           | 4px                                        | every control                                                            |
-| `--radius-lg`           | 6px                                        | every overlay (dialogs, popovers, menus, tooltips), segmented controls   |
-| `--radius-xl`           | 8px                                        | on the scale; nothing draws it since overlays share one corner (#1845)   |
-| `--radius-full`         | 9999px                                     | pills and round marks                                                    |
-| `--size-control`        | 28px                                       | every button, field, select and Reset                                    |
-| `--size-chrome`         | 21px                                       | every tab strip and pane header                                          |
-| `--focus-ring-width`    | 2px                                        | both focus rings, drawn in the theme's `focus.ring`                      |
-| `--focus-ring-offset`   | 2px                                        | rule 1: a control's ring, **outside** it                                 |
-| `--focus-ring-inset`    | -2px                                       | rule 2: a row's or a tab's ring, **inside** it, so a list never clips it |
-| `--elevation-raised`    | 0 2px 8px                                  | a bar floating over a pane (the find bar)                                |
-| `--elevation-overlay`   | 0 8px 24px                                 | every overlay: dialogs, popovers, menus, tooltips (#1845)                |
+**What each token reaches is said once, in the theme docs**: the "What it reaches" column of
+[`themes.md`'s Geometry section](../crates/purlis-core/docs/themes.md#geometry). That table's
+tokens, units, bounds and values are held to the engine's `STEPS` by `geometry_tests.rs`; its
+"What it reaches" words are kept by hand, so a change to what a token reaches updates them in
+the same change. They are not repeated here. `--font-ui` and `--font-mono`
+are no geometry token: they are the window's own family and its one monospace family, a theme's
+`fonts.ui` and `fonts.mono`.
+
+| token                   | value                                                        |
+| ----------------------- | ------------------------------------------------------------ |
+| `--space-0`             | 0                                                            |
+| `--space-1`             | 2px                                                          |
+| `--space-2`             | 4px                                                          |
+| `--space-3`             | 6px                                                          |
+| `--space-4`             | 8px                                                          |
+| `--space-5`             | 12px                                                         |
+| `--space-6`             | 16px                                                         |
+| `--space-7`             | 24px                                                         |
+| `--space-8`             | 32px                                                         |
+| `--font-size-2xs`       | 10px                                                         |
+| `--font-size-xs`        | 11px                                                         |
+| `--font-size-sm`        | 12px                                                         |
+| `--font-size-md`        | 13px                                                         |
+| `--font-size-base`      | 14px                                                         |
+| `--font-size-lg`        | 16px                                                         |
+| `--font-size-xl`        | 20px                                                         |
+| `--font-weight-regular` | 400                                                          |
+| `--font-weight-medium`  | 500                                                          |
+| `--font-weight-strong`  | 600                                                          |
+| `--line-height-tight`   | 1.2                                                          |
+| `--line-height-body`    | 1.4                                                          |
+| `--font-ui`             | `ui-sans-serif, Inter, Avenir, Helvetica, Arial, sans-serif` |
+| `--font-mono`           | `ui-monospace, Menlo, Consolas, monospace`                   |
+| `--radius-sm`           | 3px                                                          |
+| `--radius-md`           | 4px                                                          |
+| `--radius-lg`           | 6px                                                          |
+| `--radius-xl`           | 8px                                                          |
+| `--radius-full`         | 9999px                                                       |
+| `--size-control`        | 28px                                                         |
+| `--size-chrome`         | 21px                                                         |
+| `--focus-ring-width`    | 2px                                                          |
+| `--focus-ring-offset`   | 2px                                                          |
+| `--focus-ring-inset`    | -2px                                                         |
+| `--elevation-raised`    | 0 2px 8px                                                    |
+| `--elevation-overlay`   | 0 8px 24px                                                   |
 
 ### What a theme may set them to
 
@@ -1442,7 +1502,9 @@ A theme that names no parts writes nothing there, so the family's own stylesheet
 `ui/button/button.css` is the family default the engine measures against, held to it by
 `parts_tests.rs`. A size or a border width a theme sets is the family's md size and never
 reaches a button at sm or lg or in a wrapping row, and a variant's rule reaches only a button of
-that variant (#2904). `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
+that variant (#2904). `ui/field/field.css` is the field families' default (`field`,
+`text-input`, `textarea`, #2905), held to it the same way; a family with no variants is keyed on
+its part alone. `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
 
 ### The control baseline
 
@@ -1530,8 +1592,8 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
 - **`controls.guard.test.ts`** fails on a control that does not wear its class
   (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
   `asChild` (a row, segment or menu row; a button of the button family is `Button`, never a
-  native `<button>`), an `<input>` or `<textarea>`
-  (`ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
+  native `<button>`), an `<input>` or `<textarea>` (none: a box is the field family's
+  `TextField` or `TextArea`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
   trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
   (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
   `block-size` or `min-block-size` set on a control is `--size-control`, and one set on a strip

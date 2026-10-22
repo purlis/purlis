@@ -611,11 +611,11 @@ describe("a panel list on the shared styles", () => {
       expect(drawnWith(button, "padding-inline")).toBe("var(--ui-row-pad)");
       expect(drawnWith(button, "background", { hover: true })).toBe("var(--surface-hover)");
     }
-    const search = screen.getByRole("searchbox");
+    // The field family's box (#2905): a control tall, the ring outside it with the caret in it.
+    const search = screen.getByRole("searchbox").parentElement as Element;
     expect(drawnWith(search, "block-size")).toBe("var(--size-control)");
-    expect(drawnWith(search, "outline", { focusVisible: true })).toBe(
-      "var(--focus-ring-width) solid var(--focus-ring)",
-    );
+    search.setAttribute("data-focus-within", "true");
+    expect(drawnWith(search, "outline")).toBe("var(--focus-ring-width) solid var(--focus-ring)");
     const more = screen.getByRole("button", { name: /Show 2 more/ });
     expect(drawnWith(more, "min-block-size")).toBe("var(--ui-row-height)");
   });

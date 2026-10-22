@@ -494,6 +494,20 @@ fn writer_refusals(root: &Path, which: Which, text: &str) -> Vec<String> {
             out.push(check.reason);
         }
     }
+    // A built-in skill's name in `[harness_skills]` (SK-6, #2769): never turned off, on any
+    // harness, as the built-in skills of the bundle beside this binary name them.
+    if let Ok(top) = text.parse::<toml::Table>() {
+        out.extend(
+            crate::harness_plugin::built_in_refused(
+                &top,
+                which.file(),
+                "",
+                &crate::skills::built_in_names_here(),
+            )
+            .into_iter()
+            .map(|one| one.why),
+        );
+    }
     // As typed, and as charter reads it (#1304): the one answer the project save gives a
     // staged charter.toml, so the editor and the save refuse the same files.
     if let Some(kind) =

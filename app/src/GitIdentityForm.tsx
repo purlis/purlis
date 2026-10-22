@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * **The git identity form** (FX-3): the fix for the doctor's `git identity` row, which needs a
@@ -75,7 +76,7 @@ export function GitIdentityForm({
   const locked = "Already set in git's global config; this fix leaves it as it is.";
 
   return (
-    <form
+    <Form
       id={id}
       ref={form}
       className="doctor-form"
@@ -131,6 +132,6 @@ export function GitIdentityForm({
         </Button>
         <Button onPress={onCancel}>Cancel</Button>
       </SettingActions>
-    </form>
+    </Form>
   );
 }

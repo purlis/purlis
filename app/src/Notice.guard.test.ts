@@ -356,7 +356,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": Finding files…",
   },
-  "Panels.tsx": { count: 3, why: "a panel's read refusal and its blocks' tone, inside the panel" },
+  "Panels.tsx": { count: 2, why: "a panel's read refusal and its blocks' tone, inside the panel" },
   "PersonaProfile.tsx": {
     count: 3,
     why: ACTION + ". Also its read refusal: " + READ_ONCE + ". And " + READING,
@@ -450,6 +450,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". Also its warning that installing ends every chat (WARNING's case), and the channel " +
       "it moved to: what the last press answered, not a standing line",
+  },
+  "UseSkill.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ", in the picker and in the arguments form, one shown at a time (#2775). And the " +
+      "dialog's warning that the chat's set is past its skill budget, read as it opens: about " +
+      "the chat the dialog is for, gone with the dialog",
   },
   "VaultSignIn.tsx": {
     count: 5,
@@ -548,6 +556,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "settings/thisMachine.tsx": {
     count: 1,
     why: "This machine's read refusal, standing in for its list inside Settings (ST-2; NO-7, #1232)",
+  },
+  "ui/field/Field.tsx": {
+    count: 1,
+    why: "a field's error line under its box, why its value is refused, in either of the family's boxes (#2905)",
   },
 };
 

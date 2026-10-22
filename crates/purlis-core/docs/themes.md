@@ -267,9 +267,21 @@ an unknown token is.
 | Family | Parts | Variants |
 |---|---|---|
 | `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept); since version 2 `soft-accent`, `warning-soft` and `link` |
+| `field` (since version 3) | `root` (`gap`: the room between what it stacks), `label` (`text`, `font-size`, `font-weight`), `help` (`text`, `font-size`), `error` (`text`, `font-size`) | none |
+| `text-input` (since version 3) | `root` (every property but `font-weight`: the box for one line, and the words typed in it), `icon` (`text`: a filter's or a search's glass) | none |
+| `textarea` (since version 3) | `root` (every property but `gap`, `font-weight` and `height`: a textarea is as tall as its lines) | none |
+
+A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
+one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
+box. A family with no variants is named by its part alone (`text-input.root.fill`); its words are
+measured on its own fill as a button's are, and its floors fall back to its own default, a field's
+help to the quiet tier and its error to the danger colour.
 
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
-keyboard is on it), `disabled` and `open`.
+keyboard is on it; a field whenever it holds the caret), `disabled` and `open`. A family names
+only the states its wrapper marks: the button every one; a text input and a textarea `hover`,
+`focused` and `disabled`; a field's root `disabled` alone. A key naming another is said and left
+out.
 
 | Property | Value | Bounds |
 |---|---|---|
@@ -346,6 +358,7 @@ it.
 the family's default size, md: it never reaches a button drawn at sm or lg, or one in a row that
 wraps, whose size the family keeps, and an sm or lg button's corners are clamped to its own
 height. A button names one variant, so a variant's rule reaches only a button of that variant.
+A text input's size is its md size too: it never reaches an sm or lg box.
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
 families with parts today: they are drawn as the note under [Geometry](#geometry) says.

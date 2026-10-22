@@ -81,6 +81,8 @@ properties keep their names, and parts are not Tailwind utilities.
 
 The button family's rules also reached today's control class while the window was drawn by
 one; the family now draws from its wrapper alone ([amended 2026-10-21](0103/2026-10-21-the-button-family-is-reached-by-its-attributes-alone.md)).
+The field families join at version 3, the first with no variants
+([amended 2026-10-22](0103/2026-10-22-the-field-families-and-a-family-with-no-variants.md)).
 
 ### 7. Floors hold per part and per state, and the consent floors hold for parts unchanged
 

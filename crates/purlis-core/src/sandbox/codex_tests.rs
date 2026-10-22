@@ -661,7 +661,7 @@ fn charters_hooks() -> Vec<String> {
             persona: None,
         },
         None,
-        &std::collections::BTreeMap::new(),
+        &crate::harness_plugin::Chosen::new(),
         None,
     ) else {
         panic!("armed per session");

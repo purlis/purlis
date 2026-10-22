@@ -29,8 +29,11 @@ import {
   inForce,
   PREFERS_LIGHT,
   PREFERS_MORE_CONTRAST,
+  moreContrastAsked,
+  onPersonLook,
+  personAsked,
+  personLook,
   sameTheme,
-  systemAsksMoreContrast,
   systemIsLight,
   THEME_ALIASES,
   type Theme,
@@ -435,10 +438,11 @@ export async function themeOptionsInForce(): Promise<readonly WindowOption[]> {
       picked,
       on,
       systemIsLight(),
-      systemAsksMoreContrast(),
+      moreContrastAsked(),
       false,
       where,
       null,
+      personAsked(),
     );
     if (answered.status !== "ok") return [];
     const given = answered.data as typeof answered.data | null;
@@ -485,6 +489,8 @@ export function forgetExtensionThemes() {
   unfollowSystem = undefined;
   unfollowContrast?.();
   unfollowContrast = undefined;
+  unfollowLook?.();
+  unfollowLook = undefined;
   unfollowFolders?.();
   unfollowFolders = undefined;
   forgetTheirTheme();
@@ -602,11 +608,43 @@ let following = false;
  * default may choose a theme folder (#2602), so the core is asked.
  */
 function handedFor(pick: string | null): Theme | undefined {
+  // What was handed was drawn with the person's colours and contrast as the window was created:
+  // once Settings changed them, the core is asked (#2925).
+  if (personLook() !== lookHanded) return undefined;
   const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
   if (pick === null) return where === null ? undefined : theirThemeOnce();
   if (pick === CLASSIC) return DEFAULT_THEME;
   const id = has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
   return has(BUILT_IN, id) ? BUILT_IN[id] : undefined;
+}
+
+/** The person's look the window was handed its themes in: what {@link handedFor} draws. */
+const lookHanded = personLook();
+
+/** How to stop following the person's look, while it is followed. */
+let unfollowLook: (() => void) | undefined;
+
+/** **Draws again when Settings changes the person's colours or contrast** (#2925): the engine
+ *  draws them into the theme it answers with. One follower for the life of the window, started
+ *  by the first draw. */
+function followLook() {
+  unfollowLook ??= onPersonLook(() => void drawWhatIsInForce());
+}
+
+/** Says, or takes back, which of the person's colours the theme in force leaves out, and why
+ *  (#2925): each would put a pair under its floor in this theme. */
+function sayYourColours(mine: readonly string[] | undefined) {
+  sayAboutThisMachine(
+    "your colours",
+    mine !== undefined && mine.length > 0
+      ? {
+          severity: "warn",
+          detail: mine.join("; "),
+          remedy: "pick another colour in Settings, or clear it to draw the theme's",
+          settings: "you.colours",
+        }
+      : undefined,
+  );
 }
 
 /** Puts `theme` in force, unless it is already what is drawn — so the terminal is told only of
@@ -643,6 +681,7 @@ function draw(theme: Theme) {
 export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> {
   const mine = ++drawing;
   followContrast();
+  followLook();
   followThemeFolders();
   if (reread) surveyAgain = true;
   const handed = handedFor(picked);
@@ -670,10 +709,11 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
       picked,
       on,
       systemIsLight(),
-      systemAsksMoreContrast(),
+      moreContrastAsked(),
       again,
       where,
       null,
+      personAsked(),
     );
   } catch {
     return;
@@ -687,6 +727,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   following = given.follows_system === true;
   if (following) followSystem();
   sayTheRefused(given.refused, given.review ?? null);
+  sayYourColours(Array.isArray(given.mine) ? given.mine : undefined);
   if (given.theme) {
     const theme = given.theme as unknown as Theme;
     // The person's own theme file, drawn (no level chose): its way out is Use built-in.
@@ -745,10 +786,11 @@ async function drawADraftOver(mine: number): Promise<void> {
       picked,
       on,
       systemIsLight(),
-      systemAsksMoreContrast(),
+      moreContrastAsked(),
       false,
       where,
       null,
+      personAsked(),
     );
   } catch {
     return;
@@ -781,10 +823,11 @@ export async function compareWithKept(held: boolean): Promise<void> {
       picked,
       on,
       systemIsLight(),
-      systemAsksMoreContrast(),
+      moreContrastAsked(),
       false,
       where,
       true,
+      personAsked(),
     );
   } catch {
     return;

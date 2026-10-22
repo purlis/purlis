@@ -369,7 +369,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 2): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 3): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -1749,6 +1749,177 @@
         },
         "button.icon.link.open.text": {
           "$ref": "#/$defs/part-text"
+        },
+        "field.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "field.label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "field.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "field.label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "field.label.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "field.help.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "field.help.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "field.help.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "field.error.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "field.error.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "field.error.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "text-input.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "text-input.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "text-input.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "text-input.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "text-input.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "text-input.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "text-input.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "text-input.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "text-input.root.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "text-input.root.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "text-input.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "text-input.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "text-input.root.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "text-input.root.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "text-input.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "text-input.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "text-input.root.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "text-input.root.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "text-input.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "text-input.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "text-input.root.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "text-input.root.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "text-input.icon.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "text-input.icon.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "text-input.icon.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "text-input.icon.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "textarea.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "textarea.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "textarea.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "textarea.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "textarea.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "textarea.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "textarea.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "textarea.root.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "textarea.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "textarea.root.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "textarea.root.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "textarea.root.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "textarea.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "textarea.root.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "textarea.root.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "textarea.root.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "textarea.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "textarea.root.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "textarea.root.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "textarea.root.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
         }
       }
     }

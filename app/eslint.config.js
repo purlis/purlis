@@ -38,6 +38,7 @@ const OTHER_FAMILIES = {
     "plane-updated",
     "pane-brief",
     "pane-harness",
+    "pane-skills",
     "task-end",
     "strip-offer",
     // The title bar's chips and pills, and the status items.
@@ -92,7 +93,10 @@ export default tseslint.config(
       // A raw `<button>` left is a control of a family that has not moved yet (D-2904-9), said
       // by its role or its class; each family's ticket takes its own out of these lists.
       "purlis/button-family": ["error", { otherFamilies: OTHER_FAMILIES }],
-      "purlis/field-family": "warn",
+      // A box a person types in is the field family's, since #2905.
+      "purlis/field-family": "error",
+      "purlis/select-family": "warn",
+      "purlis/choice-family": "warn",
       "purlis/dialog-family": "warn",
       "purlis/tooltip-family": "warn",
     },

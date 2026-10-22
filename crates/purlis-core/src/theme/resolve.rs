@@ -138,9 +138,36 @@ pub struct Drawn {
     /// folder), which is no card of a gallery: what Settings › Theme says is drawn (#2615).
     #[serde(skip)]
     pub theirs: bool,
+    /// What drawing the person's layer over it left out (#2925): each of their colours that
+    /// would put a pair under its floor in this theme. Empty when nothing was, or no layer was
+    /// drawn ([`Self::under`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mine: Vec<Complaint>,
 }
 
 impl Drawn {
+    /// **This answer with the person's layer drawn over it** (#2925): their colours, held to the
+    /// floors, and the contrast they ask for ([`super::Layer::over`]); then the consent floors,
+    /// held again over the result, as after a theme's option values. A layer with no colours and
+    /// the standard contrast leaves the answer as it is.
+    #[must_use]
+    pub fn under(self, layer: &super::Layer) -> Self {
+        if !layer.colours_anything() {
+            return self;
+        }
+        let Some(theme) = self.theme.as_ref() else {
+            return self;
+        };
+        let (over, mine) = layer.over(theme);
+        let (theme, held) = super::floors::hold(&over);
+        Self {
+            theme: Some(theme),
+            held: super::floors::joined(self.held.clone(), held),
+            mine,
+            ..self
+        }
+    }
+
     /// **Whether the project's trust ask can let the theme chosen be drawn** (#2647): it was
     /// refused, and among why is a font file of the project's or a workspace's theme folder
     /// that this machine's approval of the project does not hold. The refused Notice offers
@@ -182,6 +209,7 @@ impl Drawn {
             level: None,
             refused: false,
             theirs: false,
+            mine: Vec::new(),
         }
     }
 

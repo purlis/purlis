@@ -33,7 +33,7 @@ import {
  * | Drawn as                                                         | Wears                     |
  * | ---------------------------------------------------------------- | ------------------------- |
  * | `<button>`, or a Radix trigger or close without `asChild`        | a row, a segment or a menu row; a button of the button family is `Button` (#2904), never a native `<button>` |
- * | `<input>`, `<textarea>`                                          | `ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio` |
+ * | `<input>`, `<textarea>`                                          | nothing: a box is the field family's `TextField` or `TextArea` (#2905); a checkbox `ui-checkbox`, a radio `ui-radio` |
  * | `<select>`, Radix Select's `Trigger`                             | `ui-select`               |
  * | `<table>`                                                        | `ui-table`                |
  * | a Radix menu's or Select's `Content` or `SubContent`             | `ui-menu`                 |
@@ -55,11 +55,12 @@ import {
 const BUTTON = ["ui-row", "ui-tree-row", "ui-segmented-item", "ui-menu-item"];
 const WEARS: Record<string, string[]> = {
   button: BUTTON,
-  input: ["ui-input"],
+  // A box a person types in is the field family's (#2905): no class makes a raw one right.
+  input: [],
   "input:checkbox": ["ui-checkbox"],
   "input:radio": ["ui-radio"],
-  "input:dynamic": ["ui-input", "ui-checkbox", "ui-radio"],
-  textarea: ["ui-input"],
+  "input:dynamic": ["ui-checkbox", "ui-radio"],
+  textarea: [],
   select: ["ui-select"],
   table: ["ui-table"],
   menu: ["ui-menu"],
@@ -336,7 +337,9 @@ describe("the control guard (#1837)", () => {
       '<button className="tab-close">',
       '<button className={cn("ui-button", on && "ui-button-primary")}>',
       "<input>",
+      '<input className="ui-input">',
       '<input type="checkbox" className="box">',
+      '<input className="ui-input">',
       '<textarea className="notes">',
       "<select>",
       '<table className="vault-secrets">',
@@ -481,7 +484,7 @@ const STRIP =
 const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 
 /** The chips on a pane's top line (#2484): the breadcrumb, Brief, the gauge, the harness, where
- *  a handed-off chat came from and its work item. Each is as tall as the line, the chrome
+ *  a handed-off chat came from, its work item and its skills (#2775). Each is as tall as the line, the chrome
  *  height, so the line is one height with the ways to end a task beside them. */
 export const PANE_LINE_CHIPS = [
   "pane-crumbs",
@@ -490,6 +493,7 @@ export const PANE_LINE_CHIPS = [
   "pane-harness",
   "pane-from",
   "pane-work-item",
+  "pane-skills",
 ];
 
 /** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
@@ -796,6 +800,7 @@ const LINE_CHIP_COMPONENTS: Record<string, string> = {
   BriefButton: "pane-brief",
   ChatGauge: "chat-gauge",
   HarnessChip: "pane-harness",
+  SkillsChip: "pane-skills",
 };
 
 /** A component that draws its one child as itself (`asChild`): the line reads through it. */
