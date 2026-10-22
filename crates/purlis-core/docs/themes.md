@@ -333,6 +333,12 @@ surfaces and the strips' layers, and a Notice's danger surface and wash among th
 read laid over the surface under it. `app/src/theme/grounds.test.ts` finds them from the components, and fails until the
 manifest lists a new one.
 
+**States that hold at once are held as one.** A button can be hovered and pressed, or focused and
+selected, at the same time, and the stylesheet's order decides which state's colour each property
+takes. Every such set is resolved that way and held to the same floors, the consent floors too.
+A part that breaks one in a set draws its family default in the state the stylesheet writes
+last, and the warning names the set (`button.root.primary.hover+focused`).
+
 **The consent floors hold whatever a theme changed** (ADR 0097 §6), as it is written and in
 every workspace tint, and two looks are compared by the colours they draw, never by the tokens'
 names:
