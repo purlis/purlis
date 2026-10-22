@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { commands, type PlaneId, type RunnerWriteWhole } from "./bindings";
 import { asksMoved } from "./asks";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { LoaderCircle, Server } from "lucide-react";
 import { Button, ButtonRow } from "./ui/button/Button";
 
