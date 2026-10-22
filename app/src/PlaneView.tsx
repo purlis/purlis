@@ -342,6 +342,7 @@ import { useRefusedAmong } from "./vaultRefusals";
 import { type Asking } from "./NeedsYou";
 import { EndingChat, type SmartAsk } from "./EndingChat";
 import { draftsOfClosing, settleClosingDrafts, type KeptOnClose } from "./closingDrafts";
+import { useCloseQuestion } from "./closeQuestion";
 import { KeepAsk, ThemeDraftStrip } from "./ThemeDraftStrip";
 import { ChatAsk, focusAfterNoticeGone } from "./ChatAsk";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
@@ -7295,25 +7296,21 @@ export const PlaneView = memo(function PlaneView({
     },
     [askedByNow, carryOut, plane, setEndingChat],
   );
-  /** How many closes are being asked about and have no question drawn yet (#2761). */
-  const [closesLoading, setClosesLoading] = useState(0);
   /**
-   * **A close counts as a question up from its first step** (#2761): the window is told at once,
-   * before the core is asked what the close would end, so a link's close that comes meanwhile is
-   * not asked over it.
+   * **A close counts as a question up from its first step** (#2761), and the mark is cleared
+   * however it settles (#2845): `closeQuestion.ts`.
    */
+  const { up: questionUp, counted } = useCloseQuestion(
+    plane,
+    endingChat !== undefined || keptOnClose.length > 0,
+    onAsking,
+  );
   const askToEnd = useCallback(
     async (offer: Offer, fromALink: boolean): Promise<Ran> => {
       if (!offer.available || !endsAChat(offer.does)) return askToEndNow(offer, fromALink);
-      onAsking?.(plane, true);
-      setClosesLoading((was) => was + 1);
-      try {
-        return await askToEndNow(offer, fromALink);
-      } finally {
-        setClosesLoading((was) => was - 1);
-      }
+      return counted(() => askToEndNow(offer, fromALink));
     },
-    [askToEndNow, onAsking, plane],
+    [askToEndNow, counted],
   );
   const run = useCallback((offer: Offer) => askToEnd(offer, false), [askToEnd]);
 
@@ -7324,12 +7321,6 @@ export const PlaneView = memo(function PlaneView({
    * (`closeHanded.ts`), so a link never changes what the person is answering; nor for chats no
    * tab here holds alone, which the person closes here themselves. Either is said here.
    */
-  const questionUp = endingChat !== undefined || keptOnClose.length > 0 || closesLoading > 0;
-  useEffect(() => {
-    if (onAsking === undefined) return;
-    onAsking(plane, questionUp);
-    return () => onAsking(plane, false);
-  }, [onAsking, plane, questionUp]);
   /** Says, under the strip, why a link's close was not asked: once the ask is handled, as a
    *  close's own answer is said once it is carried out. */
   const sayNotAsked = useCallback((words: string) => {

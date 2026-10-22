@@ -756,6 +756,49 @@ fn a_chat_has_drafts_only_while_its_folder_holds_a_theme_folder() {
     assert!(!drafts::has_drafts(&places.plane, &drafting));
 }
 
+#[cfg(unix)]
+#[test]
+fn a_chat_whose_drafts_folder_is_a_link_has_no_drafts() {
+    let places = Places::new();
+    let id = chat();
+    let elsewhere = places.plane.join("elsewhere");
+    put(&elsewhere.join("dusk"), &dark("Elsewhere", json!({})));
+    let linked = drafts::folder_of(&places.plane, &id).unwrap();
+    std::fs::create_dir_all(linked.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &linked).unwrap();
+    assert!(!drafts::has_drafts(&places.plane, &id));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_draft_folder_that_is_a_link_is_no_draft_of_its_chat() {
+    let places = Places::new();
+    let id = chat();
+    let elsewhere = places.plane.join("elsewhere");
+    put(&elsewhere, &dark("Elsewhere", json!({})));
+    let chat_folder = drafts::folder_of(&places.plane, &id).unwrap();
+    std::fs::create_dir_all(&chat_folder).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, chat_folder.join("dusk")).unwrap();
+    assert!(!drafts::has_drafts(&places.plane, &id));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chat_has_no_drafts_through_a_link_on_the_way_to_its_folder() {
+    let places = Places::new();
+    let id = chat();
+    let real = drafts::folder_of(&places.plane, &id).unwrap();
+    let drafts_folder = real.parent().unwrap().to_path_buf();
+    let elsewhere = places.plane.join("elsewhere-drafts");
+    put(
+        &elsewhere.join(&id).join("dusk"),
+        &dark("Elsewhere", json!({})),
+    );
+    std::fs::create_dir_all(drafts_folder.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &drafts_folder).unwrap();
+    assert!(!drafts::has_drafts(&places.plane, &id));
+}
+
 #[test]
 fn a_start_record_that_is_not_a_plain_file_counts_as_changed() {
     let places = Places::new();

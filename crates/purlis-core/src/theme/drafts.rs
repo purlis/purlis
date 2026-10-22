@@ -754,10 +754,16 @@ pub fn changed(plane: &Path, draft: &Draft) -> bool {
     real_now(plane, &draft.kept_to, &draft.folder).is_none_or(|now| now != recorded)
 }
 
+/// **The most entries of a chat's drafts folder [`has_drafts`] looks at**: every theme folder a
+/// level is read for (`folders::MOST_FOLDERS`), the start record of each,
+/// and the owner record.
+pub const MOST_ENTRIES_LOOKED_AT: usize = 2 * super::folders::MOST_FOLDERS + 1;
+
 /// **Whether `chat` has a theme draft** in the plane at `plane` (#2761): its drafts folder holds a
 /// folder named as a theme folder is. Only that is looked at, never what the draft says, so the
-/// answer costs the same whatever the draft holds. A link on the way, or at the chat's folder,
-/// counts as none.
+/// answer costs the same whatever the draft holds, and at most [`MOST_ENTRIES_LOOKED_AT`] entries
+/// are looked at. A link on the way, at the chat's folder or in place of a theme folder counts as
+/// none.
 pub fn has_drafts(plane: &Path, chat: &str) -> bool {
     let Some(folder) = folder_of(plane, chat) else {
         return false;
@@ -769,10 +775,13 @@ pub fn has_drafts(plane: &Path, chat: &str) -> bool {
         return false;
     }
     std::fs::read_dir(&folder).is_ok_and(|listed| {
-        listed.filter_map(Result::ok).take(MOST_CHATS).any(|entry| {
-            entry.file_type().is_ok_and(|kind| kind.is_dir())
-                && entry.file_name().to_str().is_some_and(super::is_folder_id)
-        })
+        listed
+            .filter_map(Result::ok)
+            .take(MOST_ENTRIES_LOOKED_AT)
+            .any(|entry| {
+                entry.file_type().is_ok_and(|kind| kind.is_dir())
+                    && entry.file_name().to_str().is_some_and(super::is_folder_id)
+            })
     })
 }
 
