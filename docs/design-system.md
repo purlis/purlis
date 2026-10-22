@@ -1340,8 +1340,10 @@ rings stay in px. The values below are Purlis Classic's, as `app/src/theme/geome
 them, in px at the default 14px text.
 
 **What each token reaches is said once, in the theme docs**: the "What it reaches" column of
-[`themes.md`'s Geometry section](../crates/purlis-core/docs/themes.md#geometry), held to the
-engine's `STEPS` by `geometry_tests.rs`. It is not repeated here. `--font-ui` and `--font-mono`
+[`themes.md`'s Geometry section](../crates/purlis-core/docs/themes.md#geometry). That table's
+tokens, units, bounds and values are held to the engine's `STEPS` by `geometry_tests.rs`; its
+"What it reaches" words are kept by hand, so a change to what a token reaches updates them in
+the same change. They are not repeated here. `--font-ui` and `--font-mono`
 are no geometry token: they are the window's own family and its one monospace family, a theme's
 `fonts.ui` and `fonts.mono`.
 
