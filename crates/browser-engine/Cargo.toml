@@ -29,7 +29,7 @@ sha2 = "0.11"
 # Pinned exactly: it is before 1.0, so a new release is read before it is taken.
 sigstore-verify = { version = "=0.15.0", default-features = false }
 ring = "0.17"
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
 # Chrome for Testing ships as a zip. Only the deflate reader, on the zlib-rs backend flate2
 # already links; the one crate it adds is typed-path, its path handling.
 zip = { version = "9.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
