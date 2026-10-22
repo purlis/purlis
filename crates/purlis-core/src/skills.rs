@@ -700,7 +700,10 @@ pub fn readable_by_a_briefed_chat(
     if env(PLANE_LISTED_ENV).is_some_and(|on| on == "1") {
         let tried = verbs::drafts::tried(root, cwd);
         skills.extend(read(
-            &tried.as_deref().unwrap_or(root).join(purlis_skills::PROJECT_DIR),
+            &tried
+                .as_deref()
+                .unwrap_or(root)
+                .join(purlis_skills::PROJECT_DIR),
         ));
     }
     skills

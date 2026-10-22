@@ -1114,7 +1114,10 @@ fn a_claude_code_write_of_a_skills_file_is_handed_over_as_a_draft_and_the_tool_r
         assert_eq!(verdict.denial, crate::skills::verbs::drafts::DRAFTED_SAID);
         let handed = handed.into_inner();
         assert_eq!(handed.len(), 1);
-        assert_eq!((handed[0].chat, handed[0].path.as_str()), (7, "skills/triage/SKILL.md"));
+        assert_eq!(
+            (handed[0].chat, handed[0].path.as_str()),
+            (7, "skills/triage/SKILL.md")
+        );
         assert_eq!(
             handed[0].change,
             crate::proposed::Change::Whole {
@@ -1123,7 +1126,10 @@ fn a_claude_code_write_of_a_skills_file_is_handed_over_as_a_draft_and_the_tool_r
         );
         assert!(!plane.root.join("skills/triage").exists());
         assert_eq!(
-            plane.ask(write(&plane), |hook| pretooluse_edit_proposing(hook, &|_| false)),
+            plane.ask(write(&plane), |hook| pretooluse_edit_proposing(
+                hook,
+                &|_| false
+            )),
             Answer::Nothing
         );
     }

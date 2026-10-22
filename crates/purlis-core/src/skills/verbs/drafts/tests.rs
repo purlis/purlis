@@ -24,7 +24,11 @@ fn plane() -> tempfile::TempDir {
     std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
     std::fs::write(root.join("workspaces/ops/.keep"), "").unwrap();
     skill_at(root, "skills/deploy", "deploy", "Ships it.");
-    std::fs::write(root.join(".gitignore"), ".charter/\n.purlis/\n/skills.local/\n").unwrap();
+    std::fs::write(
+        root.join(".gitignore"),
+        ".charter/\n.purlis/\n/skills.local/\n",
+    )
+    .unwrap();
     run(root, &["init", "-q", "-b", "main", "."]);
     run(root, &["config", "user.name", "Fixture"]);
     run(root, &["config", "user.email", "fixture@example.invalid"]);
@@ -106,7 +110,10 @@ fn only_a_file_below_a_plane_levels_skill_is_draftable() {
     let is = |rel: &str| draftable(root, &root.join(rel));
     let file = is("skills/triage/SKILL.md").unwrap();
     assert_eq!(file.level, Level::project());
-    assert_eq!((file.folder.as_str(), file.inner.as_str()), ("triage", "SKILL.md"));
+    assert_eq!(
+        (file.folder.as_str(), file.inner.as_str()),
+        ("triage", "SKILL.md")
+    );
     assert_eq!(
         is("workspaces/ops/skills.local/x/scripts/run.sh").map(|f| f.level),
         Some(Level::workspace("ops").local(true))
@@ -124,7 +131,10 @@ fn only_a_file_below_a_plane_levels_skill_is_draftable() {
     ] {
         assert_eq!(is(not), None, "{not}");
     }
-    assert_eq!(draftable(root, Path::new("/elsewhere/skills/x/SKILL.md")), None);
+    assert_eq!(
+        draftable(root, Path::new("/elsewhere/skills/x/SKILL.md")),
+        None
+    );
 }
 
 #[cfg(unix)]
@@ -154,7 +164,10 @@ fn a_chats_write_is_a_draft_that_never_reaches_the_project_or_git() {
     let drafts = list(root);
     assert_eq!(drafts.len(), 1);
     let draft = &drafts[0];
-    assert_eq!((draft.id.as_str(), draft.name.as_str()), (id.as_str(), "triage"));
+    assert_eq!(
+        (draft.id.as_str(), draft.name.as_str()),
+        (id.as_str(), "triage")
+    );
     assert_eq!((draft.new, draft.chat), (true, Some(7)));
     assert_eq!(draft.files[0].before, None);
     assert!(draft.files[0].after.contains("Sorts issues."));
@@ -192,7 +205,13 @@ fn a_second_write_adds_to_the_same_draft_and_an_edit_is_made_to_the_drafts_copy(
     let paths: Vec<&str> = draft.files.iter().map(|f| f.path.as_str()).collect();
     assert_eq!(paths, ["SKILL.md", "scripts/check.sh"]);
     assert!(draft.files[0].after.contains("Ships it twice."));
-    assert!(draft.files[0].before.as_deref().unwrap().contains("Ships it."));
+    assert!(
+        draft.files[0]
+            .before
+            .as_deref()
+            .unwrap()
+            .contains("Ships it.")
+    );
     assert!(!draft.stale());
 }
 
@@ -329,11 +348,18 @@ fn try_it_hands_a_chat_in_its_piece_the_draft_alone_and_ending_it_leaves_nothing
     let skills_from = tried(root, &tried_out.piece).expect("the piece is a try's");
     // The skill as the draft makes it, the project's other files of it with it, and no other.
     let set = crate::skills::in_the_studio(None, &skills_from, None, None);
-    let names: Vec<&str> = set.effective.iter().map(|e| e.skill.name.as_str()).collect();
+    let names: Vec<&str> = set
+        .effective
+        .iter()
+        .map(|e| e.skill.name.as_str())
+        .collect();
     assert_eq!(names, ["deploy"]);
     assert!(set.effective[0].skill.description.contains("twice"));
     let laid = skills_from.join("skills/deploy");
-    assert_eq!(std::fs::read_to_string(laid.join("notes.md")).unwrap(), "drafted\n");
+    assert_eq!(
+        std::fs::read_to_string(laid.join("notes.md")).unwrap(),
+        "drafted\n"
+    );
     assert_eq!(
         std::fs::read_to_string(laid.join("kept.md")).unwrap(),
         "the project's\n"

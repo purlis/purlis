@@ -199,7 +199,9 @@ pub(crate) async fn skill_draft_chat(
             None => root.clone(),
             Some(ws) => purlis_core::workspaces::Plane::open(&root)
                 .workspace(ws)
-                .map_err(|_| format!("this project has no workspace {ws:?}, so no chat was opened"))?
+                .map_err(|_| {
+                    format!("this project has no workspace {ws:?}, so no chat was opened")
+                })?
                 .dir()
                 .to_path_buf(),
         };

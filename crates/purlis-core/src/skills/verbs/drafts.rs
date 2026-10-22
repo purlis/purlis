@@ -95,7 +95,10 @@ impl SkillFile {
 /// workspace that is not there; and never a path with a link in it.
 pub fn draftable(root: &Path, path: &Path) -> Option<SkillFile> {
     let rel = relative_to(root, path)?;
-    let parts: Vec<&str> = rel.iter().map(|part| part.to_str()).collect::<Option<_>>()?;
+    let parts: Vec<&str> = rel
+        .iter()
+        .map(|part| part.to_str())
+        .collect::<Option<_>>()?;
     let at = match parts.first().copied()? {
         "workspaces" => 3,
         _ => 1,
@@ -224,7 +227,10 @@ fn id_of(level: &Level, folder: &str) -> String {
 
 /// Whether `id` is a name this module makes: sixteen lowercase hex characters.
 fn an_id(id: &str) -> bool {
-    id.len() == 16 && id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    id.len() == 16
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// The text of the file at `rel` under `at`, read pinned; `None` where nothing is there.
@@ -303,9 +309,8 @@ pub fn take(root: &Path, chat: u32, file: &SkillFile, change: &Change) -> Result
         .or_insert_with(|| proposed::base_of(in_project.as_deref().map(str::as_bytes)));
     record.chat = Some(chat);
     // The draft's own folders are made below its `files/`.
-    write_at(&state, &drafted_rel, drafted.as_deref(), &after, 3).map_err(|why| {
-        super::not_written(&format!("the draft of {}", file.folder), why)
-    })?;
+    write_at(&state, &drafted_rel, drafted.as_deref(), &after, 3)
+        .map_err(|why| super::not_written(&format!("the draft of {}", file.folder), why))?;
     let was_text = match &was_record {
         Some(was) => Some(serde_json::to_string(was).map_err(|why| why.to_string())?),
         None => None,
@@ -625,7 +630,10 @@ fn files_below(plane: &Path, folder: &Path) -> Vec<(String, String)> {
         let names: Vec<&str> = at_rel.split('/').collect();
         let Ok(dir) = super::store::open_dir(
             plane,
-            &names.iter().map(|one| (*one).to_owned()).collect::<Vec<_>>(),
+            &names
+                .iter()
+                .map(|one| (*one).to_owned())
+                .collect::<Vec<_>>(),
             usize::MAX,
         ) else {
             continue;
