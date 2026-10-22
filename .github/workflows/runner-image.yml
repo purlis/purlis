@@ -338,6 +338,14 @@ jobs:
         with:
           name: digest-arm64
           path: ${{ runner.temp }}/digests
+      # Each is a digest and nothing else, before anything names an image by it.
+      - name: Each architecture's digest is a sha256 digest
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            [[ "$(cat "$RUNNER_TEMP/digests/$arch")" =~ ^sha256:[0-9a-f]{64}$ ]] \
+              || { echo "::error::digests/$arch holds no sha256 digest"; exit 1; }
+          done
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -438,3 +446,183 @@ jobs:
           path: ${{ runner.temp }}/record/runner-image.txt
           if-no-files-found: error
           retention-days: 90
+
+  # **An SBOM of each architecture's image, read from the pushed bytes** (#2191), as
+  # `release.yml`'s `sbom` reads each platform's bundle (#584): the image's packages, and the
+  # crates the `purlis` binary was built from, which `cargo auditable` embeds in it. syft is the
+  # version `release.yml` pins, checked against the same sha256 before it is unpacked, and it
+  # runs in a job that can read the private package and write nothing: no OIDC token, no
+  # attestation, no secret but the run's own token for the pull. It reads the images `image`
+  # pushed by digest, beside `index`, so the release waits on it no longer than on `index`. The
+  # SBOMs are handed to `attest` under one exact name.
+  sbom:
+    name: SBOM of each architecture's image
+    needs: [plan, image]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: digest-amd64
+          path: ${{ runner.temp }}/digests
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: digest-arm64
+          path: ${{ runner.temp }}/digests
+      # Each is a digest and nothing else, before anything names an image by it.
+      - name: Each architecture's digest is a sha256 digest
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            [[ "$(cat "$RUNNER_TEMP/digests/$arch")" =~ ^sha256:[0-9a-f]{64}$ ]] \
+              || { echo "::error::digests/$arch holds no sha256 digest"; exit 1; }
+          done
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The same two lines as `release.yml`'s `sbom`: moving to a new syft is both, in both.
+      - name: syft, at one version and checksum, reads each architecture's image
+        env:
+          SYFT_VERSION: 1.52.0
+          SYFT_SHA256: caeedb81fb0491615f1ebd1761e4145d41ee86dd2cc7bf80669f9f5ad9d6133d
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' -o "$RUNNER_TEMP/syft.tar.gz" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          echo "$SYFT_SHA256  $RUNNER_TEMP/syft.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/syft.tar.gz" -C "$RUNNER_TEMP" syft
+          "$RUNNER_TEMP/syft" version
+          mkdir -p out
+          "$RUNNER_TEMP/syft" scan "registry:$IMAGE@$(cat "$RUNNER_TEMP/digests/amd64")" -o "cyclonedx-json=out/purlis-runner-amd64.cdx.json"
+          "$RUNNER_TEMP/syft" scan "registry:$IMAGE@$(cat "$RUNNER_TEMP/digests/arm64")" -o "cyclonedx-json=out/purlis-runner-arm64.cdx.json"
+      # An SBOM that lists nothing looks like one that lists everything until someone reads it:
+      # each has to name the binary's own crate, which it does only when the binary was built
+      # with cargo auditable, and the base image's packages.
+      - name: Each SBOM names the purlis binary and the image's packages
+        env:
+          REQUIRED_PURLS: pkg:cargo/purlis-cli@ pkg:deb/
+        run: |
+          set -euo pipefail
+          for sbom in out/*.cdx.json; do
+            purls=$(jq -r '.components[]?.purl // empty' "$sbom")
+            for want in $REQUIRED_PURLS; do
+              grep -q "^$want" <<<"$purls" \
+                || { echo "::error::$sbom has no $want component"; exit 1; }
+            done
+            echo "$sbom: $(grep -c '^pkg:cargo/' <<<"$purls") crates, $(grep -c '^pkg:deb/' <<<"$purls") packages"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runner-image-sbom
+          path: out/
+          if-no-files-found: error
+          retention-days: 90
+
+  # **Build provenance and the SBOMs, attached to the image and verified here** (#2191), as
+  # `release.yml`'s `provenance` does for its files (#583). SLSA provenance on the index the
+  # release names, and each architecture's SBOM on that architecture's image, each stored by
+  # GitHub and pushed to the registry beside the image (`push-to-registry`), into the same
+  # private package. Then each is checked as a person would check it: signed by this workflow,
+  # for this commit, on a GitHub-hosted runner. An attestation that does not verify fails the
+  # run, and with it the release's call. The one job of the workflow that may store an
+  # attestation; it builds and runs nothing of the commit's.
+  attest:
+    name: provenance and SBOM, attested and verified
+    needs: [plan, index, sbom]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: digest-amd64
+          path: ${{ runner.temp }}/digests
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: digest-arm64
+          path: ${{ runner.temp }}/digests
+      # Each is a digest and nothing else, before anything names an image by it.
+      - name: Each architecture's digest is a sha256 digest
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            [[ "$(cat "$RUNNER_TEMP/digests/$arch")" =~ ^sha256:[0-9a-f]{64}$ ]] \
+              || { echo "::error::digests/$arch holds no sha256 digest"; exit 1; }
+          done
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: runner-image-sbom
+          path: ${{ runner.temp }}/sbom
+      - name: The digests attested
+        id: digests
+        env:
+          LINE: ${{ needs.index.outputs.image }}
+        run: |
+          set -euo pipefail
+          case "$LINE" in
+            "$IMAGE"@sha256:*) ;;
+            *) echo "::error::index handed back '$LINE'"; exit 1 ;;
+          esac
+          {
+            echo "index=${LINE#*@}"
+            echo "amd64=$(cat "$RUNNER_TEMP/digests/amd64")"
+            echo "arm64=$(cat "$RUNNER_TEMP/digests/arm64")"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.digests.outputs.index }}
+          push-to-registry: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.digests.outputs.amd64 }}
+          predicate-type: https://cyclonedx.org/bom
+          predicate-path: ${{ runner.temp }}/sbom/purlis-runner-amd64.cdx.json
+          push-to-registry: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.digests.outputs.arm64 }}
+          predicate-type: https://cyclonedx.org/bom
+          predicate-path: ${{ runner.temp }}/sbom/purlis-runner-arm64.cdx.json
+          push-to-registry: true
+      # What a person checking the image runs (docs/runner-image.md), run here first and pinned
+      # to this workflow, this commit and a GitHub-hosted runner.
+      - name: The provenance and each SBOM verify against this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INDEX: ${{ steps.digests.outputs.index }}
+          AMD64: ${{ steps.digests.outputs.amd64 }}
+          ARM64: ${{ steps.digests.outputs.arm64 }}
+        run: |
+          set -euo pipefail
+          pinned=(--repo "$GITHUB_REPOSITORY"
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/runner-image.yml"
+            --signer-digest "$GITHUB_WORKFLOW_SHA"
+            --source-digest "$GITHUB_SHA"
+            --deny-self-hosted-runners)
+          gh attestation verify "oci://$IMAGE@$INDEX" "${pinned[@]}"
+          for digest in "$AMD64" "$ARM64"; do
+            gh attestation verify "oci://$IMAGE@$digest" "${pinned[@]}" --predicate-type https://cyclonedx.org/bom
+          done
+          {
+            echo "### Runner image attestations"
+            echo
+            echo "Build provenance on \`$IMAGE@$INDEX\`; an SBOM on each architecture's image. Verified."
+          } >> "$GITHUB_STEP_SUMMARY"

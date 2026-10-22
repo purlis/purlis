@@ -166,7 +166,9 @@ fn only_the_provenance_job_can_sign_and_publish_can_only_read() {
         })
         .map(|j| j.name.as_str())
         .collect();
-    assert_eq!(attesters, ["provenance"], "{attesters:?}");
+    // `runner-image` calls `runner-image.yml`, whose `attest` attests the runner image's own
+    // provenance and SBOMs to the image in the registry (#2191), never a file of the release.
+    assert_eq!(attesters, ["runner-image", "provenance"], "{attesters:?}");
 }
 
 #[test]

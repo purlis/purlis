@@ -541,6 +541,74 @@ fn no_chat_writes_where_a_podman_machine_or_a_rootless_engine_keeps_its_socket()
     }
 }
 
+/// Podman's own folders are never a chat's to write (#2680, the person's ruling of 2026-10-20):
+/// its settings, its storage and its run state, under every spelling on macOS; the folders
+/// beside them stay the chat's.
+#[test]
+fn podmans_folders_are_never_written_by_a_chat() {
+    use super::tests::writes;
+    let (_dir, root) = project();
+    let bin = tempfile::tempdir().expect("a bin");
+    let home_dir = tempfile::tempdir().expect("a home");
+    let home = real(home_dir.path());
+    let config = home.join("cfg");
+    let path = bin.path().display().to_string();
+    let config_said = config.display().to_string();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[
+            ("PATH", path.as_str()),
+            ("XDG_CONFIG_HOME", config_said.as_str()),
+            ("XDG_RUNTIME_DIR", "/run/user/1000"),
+        ]),
+        home: Some(home.clone()),
+        os: Os::MacOs,
+    };
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let profile = wrapped_floor(harness, &root, &machine, &[4040, 4041], None);
+        for not in [
+            home.join(".config/containers/containers.conf"),
+            home.join(".Config/Containers/containers.conf"),
+            config.join("containers/containers.conf.d/x.conf"),
+            home.join(".local/share/containers/storage/volumes/x"),
+            PathBuf::from("/run/user/1000/containers/auth.json"),
+            PathBuf::from("/run/user/1000/libpod/tmp/x"),
+        ] {
+            assert!(
+                !writes(&profile, &not),
+                "{harness:?}: {} is writable",
+                not.display()
+            );
+        }
+        for still in [
+            home.join(".config/other/x"),
+            home.join(".local/share/other/x"),
+            PathBuf::from("/run/user/1000/other"),
+            root.join("containers/x"),
+        ] {
+            assert!(
+                writes(&profile, &still),
+                "{harness:?}: {} is not writable",
+                still.display()
+            );
+        }
+    }
+    // On Linux, whose disks do not fold case, each is held as it is spelled.
+    let linux = Machine {
+        os: Os::Linux,
+        ..machine.clone()
+    };
+    let held: Vec<Denial> = Denied::of(&root, &linux)
+        .paths
+        .into_iter()
+        .filter(|denial| denial.path.ends_with("containers") || denial.path.ends_with("libpod"))
+        .collect();
+    assert_eq!(held.len(), 5, "{held:?}");
+    assert!(
+        held.iter()
+            .all(|denial| !denial.any_case && denial.access == Access::Write)
+    );
+}
+
 /// The floor holds what reaches outside it (#2071 review): the profile applied for real, where
 /// this machine can apply one.
 #[cfg(target_os = "macos")]

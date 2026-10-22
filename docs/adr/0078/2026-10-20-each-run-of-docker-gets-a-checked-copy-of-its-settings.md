@@ -25,8 +25,11 @@ items 2 to 4 are **decided in implementation, to be confirmed** (D-2752-6 to D-2
    temporary folder (a Podman machine's helper), and `docker.sock` and `podman/` in the runtime
    folder (a rootless engine). *D-2752-7.*
 4. **The copy goes with its run**: a link's `docker exec` holds its copy for as long as the link
-   runs (`purlis_host::CommandConnector::preparing`), and every other run until it has ended. A
-   copy left by a run that ended outright is not swept yet. *D-2752-8.*
+   runs (`purlis_host::CommandConnector::preparing`), and every other run until it has ended.
+   *D-2752-8.* Since #2893, each run holds its folder's `run.lock` while it goes, and a `run-*`
+   folder not changed for a day whose lock no run holds is swept as a run is prepared and as the
+   app starts; a run still going keeps its copy however old (decided in implementation, to be
+   confirmed: D-2893-1).
 5. **A run's `PATH` is Docker's own folders and the system's** (`/bin`, `/usr/sbin`, `/sbin`):
    nothing of the home or of the window's `PATH`, so the helper `docker` runs is the one the copy
    was checked against. *D-2752-10.*

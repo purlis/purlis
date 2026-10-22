@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A field beside a frame that reloads</title></head>
+<body>
+  <label>Note <input id="note" autofocus></label>
+  <p id="count">Typed: 0</p>
+  <iframe title="Advert" src="http://other.test/advert.html" width="300" height="100"></iframe>
+  <script>
+    const note = document.getElementById('note');
+    note.focus();
+    note.addEventListener('input', () => {
+      document.getElementById('count').textContent = 'Typed: ' + note.value.length;
+    });
+    // The advert loads another document every 100 ms, as a rotating one does.
+    const advert = document.querySelector('iframe');
+    let shown = 0;
+    setInterval(() => { advert.src = 'http://other.test/advert.html?' + (++shown); }, 100);
+  </script>
+</body></html>
