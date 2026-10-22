@@ -40,14 +40,19 @@ type Themes = Record<
   Record<string, { fonts?: Record<string, { faces: { asset: string }[] }> }>
 >;
 
+/** The file the core's resolution of the built-in themes is kept in. */
+const THEMES = fileURLToPath(new URL("built-in-themes.json", import.meta.url));
+
 function themes(): Themes {
-  return JSON.parse(
-    readFileSync(fileURLToPath(new URL("built-in-themes.json", import.meta.url)), "utf8"),
-  ) as Themes;
+  return JSON.parse(readFileSync(THEMES, "utf8")) as Themes;
 }
 
-/** Every face file of every built-in folder whose digest one of `named` names, as base64. */
-function faces(named: Themes): Record<string, string> {
+/**
+ * Every face `named` asks for, as base64 by its digest, from the built-in folders, and each file
+ * read for them. Throws when a digest is in no folder: a theme drawn in its fallback would be
+ * pictured as though it were drawn in its own font.
+ */
+function faces(named: Themes): { found: Record<string, string>; read: string[] } {
   const wanted = new Set(
     Object.values(named).flatMap((appearances) =>
       Object.values(appearances).flatMap((theme) =>
@@ -56,16 +61,25 @@ function faces(named: Themes): Record<string, string> {
     ),
   );
   const found: Record<string, string> = {};
+  const read: string[] = [];
   for (const folder of readdirSync(BUILT_IN)) {
     const dir = join(BUILT_IN, folder, "fonts");
     if (!existsSync(dir)) continue;
     for (const file of readdirSync(dir).filter((name) => name.endsWith(".woff2"))) {
+      read.push(join(dir, file));
       const bytes = readFileSync(join(dir, file));
       const digest = createHash("sha256").update(bytes).digest("hex");
       if (wanted.has(digest)) found[digest] = bytes.toString("base64");
     }
   }
-  return found;
+  const missing = [...wanted].filter((digest) => !(digest in found));
+  if (missing.length > 0)
+    throw new Error(
+      `no built-in theme folder has the face of digest ${missing.join(", ")} that ` +
+        "built-in-themes.json names: a font file was moved or changed since it was written; " +
+        "write it again (docs/component-stories.md)",
+    );
+  return { found, read };
 }
 
 export function handedThemes(): Plugin {
@@ -73,7 +87,9 @@ export function handedThemes(): Plugin {
     name: "purlis-handed-themes",
     resolveId: (asked) => (asked === HANDED || asked === FACES ? `\0${asked}` : undefined),
     load(loading) {
+      // Watched, so a running Storybook draws a theme written again, or a face changed.
       if (loading === `\0${HANDED}`) {
+        this.addWatchFile(THEMES);
         const all = themes();
         const classic = Object.values(all["purlis-classic"]);
         return (
@@ -81,7 +97,12 @@ export function handedThemes(): Plugin {
           `export const themes = ${JSON.stringify(all)};\n`
         );
       }
-      if (loading === `\0${FACES}`) return `export default ${JSON.stringify(faces(themes()))};\n`;
+      if (loading === `\0${FACES}`) {
+        this.addWatchFile(THEMES);
+        const { found, read } = faces(themes());
+        for (const file of read) this.addWatchFile(file);
+        return `export default ${JSON.stringify(found)};\n`;
+      }
       return undefined;
     },
   };

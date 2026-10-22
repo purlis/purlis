@@ -93,7 +93,7 @@ const classic = JSON.parse(readFileSync(CLASSIC, "utf8")) as { appearances: Appe
 /** What the core hands a window as it is created, as far as a test's window needs it: the
  *  built-in appearances. A story's page is handed what the core itself resolves for every
  *  built-in theme instead (`.storybook/handed.plugin.ts`, #2945). */
-export function handedAtCreation() {
+function handedAtCreation() {
   return { built_in: classic.appearances.map(resolved) };
 }
 

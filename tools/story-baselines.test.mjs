@@ -16,7 +16,15 @@ import { crc32 } from "node:zlib";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { gather, picturedCells, problems, take } from "./story-baselines.mjs";
+import {
+  BASELINE,
+  gather,
+  pictureName,
+  picturedCells,
+  problems,
+  take,
+} from "./story-baselines.mjs";
+import { cellsOf, pictureOf } from "../app/.storybook/matrix.ts";
 
 /** A chunk of a PNG: its length, type, data and CRC. */
 function chunk(type, data) {
@@ -381,4 +389,48 @@ test("take refuses an app that is itself a link", () => {
   const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
   assert.throws(() => take(drawn, join(holder, "app")), /a link/);
   assert.equal(existsSync(join(real, `${SHOT}-webkit-linux.png`)), true);
+});
+
+test("every cell of the matrix can be pictured: its picture's name is a baseline's", () => {
+  const themes = JSON.parse(
+    readFileSync(
+      new URL("../app/.storybook/built-in-themes.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const cells = cellsOf(themes, []);
+  assert.ok(cells.some((cell) => cell.density !== "comfortable"));
+  for (const cell of cells) {
+    const id = "ui-button--primary";
+    // As Vitest names the picture, and as `liveStories` expects it.
+    const picture = pictureName(pictureOf(id, cell));
+    assert.equal(picture, `${pictureName(id)}_${cell.name}`, cell.name);
+    for (const browser of ["chromium", "webkit"])
+      assert.match(
+        `src/ui/button/__screenshots__/Button.stories.tsx/${picture}-${browser}-linux.png`,
+        BASELINE,
+        cell.name,
+      );
+  }
+});
+
+test("a compact cell's baseline is live where that cell is pictured", () => {
+  const compact = `${SHOT}_compact-webkit-linux.png`;
+  const app = tree({ "src/settings/Choice.stories.tsx": "", [compact]: PNG });
+  assert.deepEqual(problems(app, INDEX, ["purlis_dark_compact"]), []);
+  assert.equal(problems(app, INDEX, CELLS).length, 1);
+});
+
+test("take refuses baselines over the total cap, and writes nothing", () => {
+  const drawn = tree({
+    [`${SHOT}-chromium-linux.png`]: PNG,
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  const app = tree({ "src/settings/Choice.stories.tsx": "" });
+  assert.throws(
+    () => take(drawn, app, { total: 2 * PNG.length - 1 }),
+    /in all/,
+  );
+  assert.equal(existsSync(join(app, `${SHOT}-chromium-linux.png`)), false);
+  assert.equal(take(drawn, app, { total: 2 * PNG.length }).taken.length, 2);
 });

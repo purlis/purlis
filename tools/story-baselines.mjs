@@ -26,7 +26,8 @@
 // A baseline is
 // `app/src/<dir>/__screenshots__/<name>.stories.tsx/<story id>_<cell>-<browser>-linux.png`, where
 // Vitest's `toMatchScreenshot` keeps it (`app/.storybook/screenshots.setup.ts`), and a cell is
-// `<theme>_<appearance>`.
+// `<theme>_<appearance>`, with `_<density>` after it for any density but the default
+// (`app/.storybook/matrix.ts`).
 import {
   constants,
   copyFileSync,
@@ -42,14 +43,20 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32 } from "node:zlib";
 
-/** A baseline's path inside `app/`, with `/` between its parts. */
-const BASELINE =
-  /^src\/(?:[\w.-]+\/)*__screenshots__\/[\w.-]+\.stories\.tsx\/[a-z0-9-]+_[a-z0-9-]+_[a-z0-9-]+-(?:chromium|webkit)-linux\.png$/;
+/** A baseline's path inside `app/`, with `/` between its parts: its story's id, then its cell,
+ *  `_<theme>_<appearance>` and `_<density>` for a density but the default. */
+export const BASELINE =
+  /^src\/(?:[\w.-]+\/)*__screenshots__\/[\w.-]+\.stories\.tsx\/[a-z0-9-]+_[a-z0-9-]+_[a-z0-9-]+(?:_[a-z]+)?-(?:chromium|webkit)-linux\.png$/;
 
-/** How much `take` takes at most: bytes in one baseline, baselines in one run. A story's
- *  picture is tens of kilobytes; a dialog's on the page, a few hundred. Each story has a
- *  picture in each pictured cell and each browser, eight today. */
-export const LIMITS = { bytes: 2 * 1024 * 1024, files: 5000 };
+/** How much `take` takes at most: bytes in one baseline, baselines in one run, and bytes in
+ *  all of them together, which bounds what one commit pushes. A story's picture is tens of
+ *  kilobytes; a dialog's on the page, a few hundred. Each story has a picture in each pictured
+ *  cell and each browser, eight today. */
+export const LIMITS = {
+  bytes: 2 * 1024 * 1024,
+  files: 5000,
+  total: 256 * 1024 * 1024,
+};
 
 /** The widest and tallest picture a story is drawn at, in pixels. */
 const SIDE = 4096;
@@ -224,11 +231,12 @@ export function gather(app, index, out, cells = picturedCells(app)) {
  * Writes the baselines `gather` copied to `drawn` into `app`, deletes every other file in a
  * `__screenshots__` directory of `app/src`, and says which it wrote and which it deleted.
  * Everything in `drawn` must be a baseline: a path a baseline has, a plain file reached through
- * no link, a whole PNG within {@link LIMITS}. Nothing in `app` written or deleted may be a link
+ * no link, a whole PNG, all of them within {@link LIMITS}. Nothing in `app` written or deleted may be a link
  * or be reached through one, `app` included. Unless all of it holds, nothing is written or
  * deleted.
  */
-export function take(drawn, app, limits = LIMITS) {
+export function take(drawn, app, within = LIMITS) {
+  const limits = { ...LIMITS, ...within };
   if (lstatSync(app).isSymbolicLink())
     throw new Error(`not a baseline, so nothing was taken: ${app} is a link`);
   const all = files(drawn).sort();
@@ -236,6 +244,7 @@ export function take(drawn, app, limits = LIMITS) {
     throw new Error(
       `not a baseline, so nothing was taken: more than ${limits.files} files`,
     );
+  let total = 0;
   const taken = all.map((path) => {
     if (!BASELINE.test(path))
       throw new Error(`not a baseline, so nothing was taken: ${path}`);
@@ -247,6 +256,11 @@ export function take(drawn, app, limits = LIMITS) {
     if (lstatSync(from).size > limits.bytes)
       throw new Error(
         `not a baseline, so nothing was taken: ${path} is over the cap of ${limits.bytes} bytes`,
+      );
+    total += lstatSync(from).size;
+    if (total > limits.total)
+      throw new Error(
+        `not a baseline, so nothing was taken: the baselines are over the cap of ${limits.total} bytes in all`,
       );
     const bytes = readFileSync(from);
     if (!isWholePng(bytes))

@@ -9,14 +9,19 @@
 //! [`FIXTURE`], and the test below holds it to what the core resolves now. One engine draws the
 //! window and the stories; the stories never resolve a theme themselves.
 //!
-//! When a built-in theme changes, the test fails and says how to write the file again:
-//! `PURLIS_WRITE_STORY_THEMES=1 cargo test -p purlis-app storythemes`.
+//! When a built-in theme changes, the test fails and says how to write the file again, from the
+//! repository's root: [`WRITE_AGAIN`].
 
 use std::collections::BTreeMap;
 
 use purlis_core::theme::{self, Theme};
 
 use crate::extensions::WindowTheme;
+
+/// The command that writes [`FIXTURE`] again, from the repository's root: the app crate builds
+/// only with a frontend folder, and only its library holds the test.
+const WRITE_AGAIN: &str =
+    "mkdir -p app/dist && PURLIS_WRITE_STORY_THEMES=1 cargo test -p purlis-app --lib storythemes";
 
 /// Where the stories read the built-in themes from (`app/.storybook/handed.plugin.ts`).
 const FIXTURE: &str = concat!(
@@ -61,8 +66,7 @@ mod tests {
         assert!(
             kept == now,
             "app/.storybook/built-in-themes.json is not what the core resolves the built-in \
-             themes to; write it again with \
-             `PURLIS_WRITE_STORY_THEMES=1 cargo test -p purlis-app storythemes` and commit it"
+             themes to; write it again with `{WRITE_AGAIN}` and commit it"
         );
     }
 

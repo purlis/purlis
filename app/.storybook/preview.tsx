@@ -9,7 +9,8 @@
  *   or, in Storybook's own UI, the toolbar's Theme, Appearance and Density. The one decorator
  *   below does it for every story; no story picks a theme of its own.
  * - **In the theme's own fonts**, made from the bytes purlis ships them in, as the window makes
- *   them from the bytes purlis serves it (`handed.plugin.ts`).
+ *   them from the bytes purlis serves it (`handed.plugin.ts`), every face made before the story
+ *   renders.
  * - **Inside one frame**, `[data-story-frame]`, on the theme's ground: what a picture is taken of
  *   (`screenshots.setup.ts`), so a picture is the story's size, not the page's.
  * - **Held to WCAG 2.2 AA by axe** in every cell: every rule tagged A or AA in WCAG 2.0, 2.1 and
@@ -18,13 +19,14 @@
  */
 import "./handed";
 import "../src/styles.css";
-import type { Decorator, Preview } from "@storybook/react-vite";
+import type { Decorator, Loader, Preview } from "@storybook/react-vite";
 import { themes } from "virtual:purlis-handed";
 import {
   CLASSIC,
   DEFAULT_THEME,
   drawIn,
   drawPerson,
+  facesLoaded,
   fetchFacesWith,
   personInForce,
   type Theme,
@@ -49,7 +51,8 @@ function appearanceOf(id: string, appearance: string): Theme {
   return (theme?.[appearance] ?? Object.values(theme ?? {})[0] ?? DEFAULT_THEME) as Theme;
 }
 
-const drawnIn: Decorator = (Story, { globals }) => {
+/** Draws the story's cell: the test's, or the toolbar's in Storybook's own UI. */
+function drawCell(globals: Record<string, unknown>): void {
   const cell = cellInTest() ?? {
     theme: String(globals.theme),
     appearance: String(globals.appearance),
@@ -58,6 +61,18 @@ const drawnIn: Decorator = (Story, { globals }) => {
   const density = DENSITIES.includes(cell.density) ? cell.density : DENSITIES[0];
   if (personInForce().density !== density) drawPerson({ ...personInForce(), density });
   drawIn(appearanceOf(cell.theme, cell.appearance));
+}
+
+/** Before a story renders, its cell is drawn and every face of its theme made, so the story,
+ *  its keyboard path and axe all meet the theme's own fonts, in every cell. */
+const inItsFonts: Loader = async ({ globals }) => {
+  drawCell(globals);
+  await facesLoaded();
+  return {};
+};
+
+const drawnIn: Decorator = (Story, { globals }) => {
+  drawCell(globals);
   return (
     <div
       data-story-frame=""
@@ -77,6 +92,7 @@ const drawnIn: Decorator = (Story, { globals }) => {
 const APPEARANCES = [...new Set(Object.values(themes).flatMap((one) => Object.keys(one)))];
 
 const preview: Preview = {
+  loaders: [inItsFonts],
   decorators: [drawnIn],
   globalTypes: {
     theme: {

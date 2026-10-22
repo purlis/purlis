@@ -37,7 +37,15 @@ the cells `app/.storybook/pictured.json` names, each its own baseline, named for
 appearance: `<story id>_<theme>_<appearance>-<browser>-linux.png`, so
 `ui-button-primary_purlis_light-webkit-linux.png` is the Primary button in Purlis's light
 appearance in WebKit. A cell's name is `<theme>_<appearance>`, and `_compact` after it for the
-compact density.
+compact density, which its pictures' names carry too
+(`ui-button-primary_purlis_dark_compact-webkit-linux.png`). Any cell can be pictured by adding its
+name to `pictured.json`; four are today, to keep the `stories` job short, and axe and the
+keyboard run in all ten. A picture's name is held to the names `tools/story-baselines.mjs`
+takes, cell by cell, in `tools/story-baselines.test.mjs`.
+
+Every face a theme names is made before its story renders, so the keyboard path, axe and the
+picture all meet the theme's own fonts. A face the theme names that its folder no longer has
+stops Storybook and the stories from loading, rather than drawing the fallback.
 
 **The themes are the core's.** A story's page cannot ask the core for anything, so what the core
 hands a window for each built-in appearance is kept in `app/.storybook/built-in-themes.json`, and
@@ -45,8 +53,7 @@ a test of the app's crate (`app/src-tauri/src/storythemes.rs`) fails when it is 
 resolves now. After a change to a built-in theme, write it again and commit it:
 
 ```bash
-mkdir -p app/dist
-PURLIS_WRITE_STORY_THEMES=1 cargo test -p purlis-app --lib storythemes
+mkdir -p app/dist && PURLIS_WRITE_STORY_THEMES=1 cargo test -p purlis-app --lib storythemes
 ```
 
 Each theme's fonts are drawn from the files its folder ships (`app/.storybook/handed.plugin.ts`),
