@@ -109,7 +109,7 @@ pub use archive::{
     unpack,
 };
 pub use check::{FAINT, FITS, Finding, Fit, PAIRS, Pair, Report, TEXT_TIERS, TIER_GROUNDS};
-pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
+pub use floors::{ALLOW_APART, ALLOW_FROM_PRIMARY, DANGER_APART, Floor, Held};
 pub use fonts::{
     BOLD, CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES,
     MOST_FONT_BYTES, Measured, NORMAL, SETTLED, Style, StyleDrawn, served, styles_drawn,

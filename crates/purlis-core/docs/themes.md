@@ -327,6 +327,12 @@ names:
   same theme, measured on what a person reads as the look as it shows on each surface;
 - danger's words stay apart from the accent and from the primary's words.
 
+**A theme's tokens alone keep Allow apart from the primary** (#2948): the button family's
+defaults, drawn from the theme's tokens, are measured the same way, at rest and in each state, as
+written and in each of the theme's own tints. A theme whose tokens bring the two together is
+drawn with purlis's own fill for the primary, and Allow's own fill only when that is not enough,
+under the consent floors' Notice.
+
 A consent variant that breaks one draws its family default there, and where that is not enough,
 so does the variant it is held apart from. Allow's lock is the window's, and no property reaches
 it.
@@ -409,7 +415,8 @@ each layer under it as a warning names them, its ratio and the tint it was found
   is the author's call; the theme is drawn.
 - **Consent floors** (an ask contrasts with its surface, Allow is distinguishable from Keep
   blocked, the danger colours contrast with what they are drawn on, danger is distinguishable
-  from primary, the state marks meet the mark floor) hold in every combination. A combination
+  from primary, the state marks meet the mark floor, Allow is distinguishable from the primary)
+  hold in every combination. A combination
   that breaks one, an option value's included, is drawn with purlis's own values for those
   tokens and the rest as written, and the window says so in a Notice.
 - **Hard floors** are the few rules that keep the window readable whatever a theme says, each
