@@ -835,7 +835,7 @@ fn side_by_side_compares_purlis_s_dark_with_its_high_contrast_dark() {
 }
 
 #[test]
-fn the_tool_says_purlis_is_a_preview_and_names_its_high_contrast_dark() {
+fn the_tool_says_purlis_is_the_default_and_names_its_high_contrast_dark() {
     let schema = (TOOLS[0].schema)();
     assert_eq!(
         schema["properties"]["appearance"]["enum"],
@@ -848,8 +848,14 @@ fn the_tool_says_purlis_is_a_preview_and_names_its_high_contrast_dark() {
     let theme = schema["properties"]["theme"]["description"]
         .as_str()
         .unwrap();
-    assert!(theme.contains("purlis, Purlis, a preview theme"), "{theme}");
-    assert!(TOOLS[0].description.contains("preview theme"));
+    assert!(theme.contains("purlis, Purlis, the default"), "{theme}");
+    assert!(
+        TOOLS[0]
+            .description
+            .contains("purlis is Purlis, the default theme")
+    );
+    assert!(!TOOLS[0].description.contains("preview theme"));
+    // A specimen of a preview theme still says so, though no built-in ships as one now (#3034).
     let painted = Painted {
         theme: "purlis".to_owned(),
         appearance: Appearance::Dark,

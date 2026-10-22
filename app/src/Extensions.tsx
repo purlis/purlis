@@ -23,8 +23,8 @@ import { iconThemeComplaints, offeredIconThemes, projectThemeChanged } from "./p
 import {
   BUILT_IN,
   CLASSIC,
+  CLASSIC_THEME,
   crossfadeIn,
-  DEFAULT_THEME,
   drawIn,
   inForce,
   PREFERS_LIGHT,
@@ -613,7 +613,7 @@ function handedFor(pick: string | null): Theme | undefined {
   if (personLook() !== lookHanded) return undefined;
   const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
   if (pick === null) return where === null ? undefined : theirThemeOnce();
-  if (pick === CLASSIC) return DEFAULT_THEME;
+  if (pick === CLASSIC) return CLASSIC_THEME;
   const id = has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
   return has(BUILT_IN, id) ? BUILT_IN[id] : undefined;
 }

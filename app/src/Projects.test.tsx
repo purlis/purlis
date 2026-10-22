@@ -556,7 +556,7 @@ describe("a window holding more than one project", () => {
       await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
       expect(terminal.map((theme) => theme.name)).toEqual([
         "purlis-light",
-        "purlis-dark",
+        "Purlis",
         "purlis-light",
       ]);
     } finally {

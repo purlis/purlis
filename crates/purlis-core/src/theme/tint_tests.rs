@@ -99,7 +99,7 @@ fn purlis_classic_tints_what_it_tinted_before_a_theme_could_say() {
 #[test]
 fn the_window_is_handed_classic_s_recipe_as_the_shared_fixture_holds_it() {
     let cases: Value = serde_json::from_str(TINT_CASES).unwrap();
-    let handed = serde_json::to_value(&default_theme().tint).unwrap();
+    let handed = serde_json::to_value(&built_in_for(Appearance::Dark).tint).unwrap();
     assert_eq!(handed, cases["classic"]);
 }
 
@@ -109,9 +109,9 @@ fn a_theme_that_says_nothing_of_tint_has_classic_s_recipe() {
         "name": "Plain",
         "appearances": [{ "id": "dark", "appearance": "dark" }]
     }));
-    assert_eq!(format_2.tint, default_theme().tint);
+    assert_eq!(format_2.tint, built_in_for(Appearance::Dark).tint);
     let format_1 = drawn(&json!({ "name": "Old", "tokens": {} }));
-    assert_eq!(format_1.tint, default_theme().tint);
+    assert_eq!(format_1.tint, built_in_for(Appearance::Dark).tint);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -165,7 +165,10 @@ fn the_strip_shades_are_tinted_on_a_workspace_s_own_strip_and_not_on_the_window(
     assert_eq!(theme.tint.tabs(), ["text.muted", "layer.divider"]);
     assert_eq!(theme.tint.window(), ["text.muted"]);
     for token in TAB_ONLY {
-        assert!(!default_theme().tint.window().contains(token), "{token}");
+        assert!(
+            !built_in_for(Appearance::Dark).tint.window().contains(token),
+            "{token}"
+        );
     }
 }
 
@@ -244,12 +247,12 @@ fn a_theme_gives_a_workspace_colour_a_hue_of_its_own() {
     // A colour the theme does not name keeps purlis's hue.
     assert_eq!(
         tinted(&theme, "teal").values,
-        tinted(default_theme(), "teal").values
+        tinted(built_in_for(Appearance::Dark), "teal").values
     );
     // And a workspace's own `#rrggbb` is its own hue whatever the theme says.
     assert_eq!(
         tinted(&theme, "#c0392b").values,
-        tinted(default_theme(), "#c0392b").values
+        tinted(built_in_for(Appearance::Dark), "#c0392b").values
     );
     let named: Vec<&str> = theme.tint.hues.iter().map(|one| one.name).collect();
     assert_eq!(named, crate::extension::project::theme::PALETTE);
@@ -568,7 +571,9 @@ fn the_accent_is_held_apart_exactly_as_the_window_holds_it() {
 #[test]
 fn a_theme_whose_accent_meets_danger_under_one_tint_is_drawn_with_them_apart_there() {
     // Danger drawn as the accent turned to red: apart as written, the same under a red tint.
-    let accent = default_theme().value("accent.base").to_owned();
+    let accent = built_in_for(Appearance::Dark)
+        .value("accent.base")
+        .to_owned();
     let danger = tint_hex(&accent, 25.0);
     let theme = drawn(&json!({
         "name": "Close",
@@ -745,7 +750,7 @@ fn an_option_s_tokens_are_tinted_as_the_recipe_says() {
     let (on, complaints) = loaded.theme.with(&values);
     assert!(complaints.is_empty(), "{complaints:?}");
     let drawn = on.first();
-    assert_eq!(drawn.tint, default_theme().tint);
+    assert_eq!(drawn.tint, built_in_for(Appearance::Dark).tint);
     let tint = tinted(drawn, "red");
     let most = apart_chroma(drawn, 25.0).expect("apart");
     assert_eq!(
@@ -774,7 +779,9 @@ fn allow_s_edge_is_held_apart_from_keep_blocked_s_under_the_theme_s_own_tint() {
     // Keep blocked's edge written as the accent turned red: apart from Allow's as written, and
     // one colour under any tint that turned both alike. The tint holds the two apart itself, so
     // the theme is drawn as written, and the edges stay apart at every hue of its recipe.
-    let accent = default_theme().value("accent.base").to_owned();
+    let accent = built_in_for(Appearance::Dark)
+        .value("accent.base")
+        .to_owned();
     let border = tint_hex(&accent, 25.0);
     let edges = drawn(&json!({
         "name": "Edges",
@@ -833,7 +840,9 @@ fn both_apart(tint: &ResolvedTheme) -> bool {
 /// A theme whose Keep blocked edge is apart from Allow's as written, and meets it under any
 /// tint that turns both: the same luminance, half the colour, another hue.
 fn edges_meet_under_tint() -> ResolvedTheme {
-    let accent = default_theme().value("accent.base").to_owned();
+    let accent = built_in_for(Appearance::Dark)
+        .value("accent.base")
+        .to_owned();
     drawn(&json!({
         "name": "Edges",
         "tint": { "tokens": ["accent.base", "border.strong"] },
@@ -847,7 +856,9 @@ fn edges_meet_under_tint() -> ResolvedTheme {
 /// The same Keep blocked edge, with a recipe that turns it alone and leaves the accent as it is:
 /// at the accent's own hue the two would meet.
 fn only_keep_blocked_s_edge_tinted() -> ResolvedTheme {
-    let accent = default_theme().value("accent.base").to_owned();
+    let accent = built_in_for(Appearance::Dark)
+        .value("accent.base")
+        .to_owned();
     drawn(&json!({
         "name": "Edge",
         "tint": { "tokens": ["border.strong"] },
@@ -917,7 +928,9 @@ fn the_floors_hold_allow_apart_from_keep_blocked_through_each_tint_and_with_it_o
     // Keep blocked's edge written as Allow's: the floors find it in their pass over the theme
     // and its tints, draw both edges as purlis's, and those stay apart under every tint. The
     // same theme with its tint off is held the same way: the floor is the theme's, not its tint's.
-    let accent = default_theme().value("accent.base").to_owned();
+    let accent = built_in_for(Appearance::Dark)
+        .value("accent.base")
+        .to_owned();
     let same = |on: bool| {
         drawn(&json!({
             "name": "Same",
@@ -1161,7 +1174,7 @@ fn purlis_classic_s_tints_are_these() {
 /// A dark theme whose `token` is the danger colour turned to teal: apart from danger as written,
 /// and nearly danger itself under a red tint that turned it whole.
 fn kin_near_danger_under_red(token: &str) -> ResolvedTheme {
-    let danger = default_theme().value("danger.base");
+    let danger = built_in_for(Appearance::Dark).value("danger.base");
     drawn(&json!({
         "name": "Kin",
         "appearances": [{
@@ -1210,7 +1223,7 @@ fn the_floors_measure_danger_apart_from_the_accent_and_its_kin_as_written_and_pe
             "tint": { "on": on },
             "appearances": [{
                 "id": "dark", "appearance": "dark",
-                "tokens": { "focus.ring": default_theme().value("danger.base") }
+                "tokens": { "focus.ring": built_in_for(Appearance::Dark).value("danger.base") }
             }]
         }))
     };
@@ -1222,7 +1235,7 @@ fn the_floors_measure_danger_apart_from_the_accent_and_its_kin_as_written_and_pe
         let shown = shown.theme.expect("a theme is always drawn");
         assert_eq!(
             shown.value("focus.ring"),
-            default_theme().value("focus.ring")
+            built_in_for(Appearance::Dark).value("focus.ring")
         );
         for one in &shown.tint.hues {
             assert!(rules_hold(&tinted(&shown, one.name)), "{on} {}", one.name);

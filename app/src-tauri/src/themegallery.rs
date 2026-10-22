@@ -433,10 +433,10 @@ fn gallery_of(place: &Place, theirs: Option<&theme::Theme>) -> ThemeGallery {
         .map(GalleryCard::from)
         .collect();
     // The card the level that chose names: Purlis Classic by any id one of its appearances
-    // has had, and with nothing chosen.
+    // has had; the default, Purlis, with nothing chosen (#3034).
     let chose = levels.of_level(level);
     let drawn_key = match chose {
-        None if level == Level::Purlis => Some(theme::CLASSIC.to_owned()),
+        None if level == Level::Purlis => Some(theme::DEFAULT.to_owned()),
         None => None,
         Some(choice) => place.card_of(choice, level.reach(), &cards, theirs.is_some()),
     };
@@ -759,7 +759,7 @@ fn choose_option_of(
             match levels.of_level(level) {
                 Some(choice) => choice.clone().placed(&place.folders, level.reach()),
                 None if level == Level::Purlis => {
-                    Choice::new(theme::CLASSIC, None).expect("Purlis Classic is a pick")
+                    Choice::new(theme::DEFAULT, None).expect("the default theme is a pick")
                 }
                 None => {
                     return Err(

@@ -2116,9 +2116,9 @@ fn project_theme_of(
         })
         .collect();
     let icons_why = theme::resolve_icons(&on, Some(&icons), said).why;
-    // The built-in themes whole, each drawing its first appearance (#2709), then Purlis
-    // Classic's two appearances by their own ids.
-    let mut options: Vec<ThemeOption> = [purlis_core::theme::CLASSIC, purlis_core::theme::PURLIS]
+    // The built-in themes whole, each drawing its first appearance (#2709), the default first
+    // (#3034), then Purlis Classic's two appearances by their own ids.
+    let mut options: Vec<ThemeOption> = [purlis_core::theme::PURLIS, purlis_core::theme::CLASSIC]
         .into_iter()
         .chain(extension::BUILT_IN_THEMES)
         .map(|name| ThemeOption {
@@ -2839,7 +2839,7 @@ mod tests {
 
     #[test]
     fn the_window_is_handed_a_theme_s_icon_set_by_view_and_classic_s_as_none() {
-        let classic = WindowTheme::from(purlis_core::theme::default_theme());
+        let classic = WindowTheme::from(&purlis_core::theme::built_ins()[0]);
         assert!(classic.icons.is_empty());
 
         let dir = tempfile::tempdir().expect("a directory");
@@ -2909,7 +2909,7 @@ mod tests {
             offered,
             |_| None,
         );
-        assert_eq!(off.theme.map(|it| it.name).as_deref(), Some("purlis-dark"));
+        assert_eq!(off.theme.map(|it| it.name).as_deref(), Some("Purlis"));
         let system = theme_in_force_of(
             &picked(Some("system")),
             &Default::default(),
@@ -3133,8 +3133,8 @@ mod tests {
                 .map(|one| (one.value.as_str(), one.label.as_str()))
                 .collect::<Vec<_>>(),
             vec![
+                ("purlis", "purlis (built in)"),
                 ("purlis-classic", "purlis-classic (built in)"),
-                ("purlis", "purlis (built in, preview)"),
                 ("purlis-dark", "purlis-dark (built in)"),
                 ("purlis-light", "purlis-light (built in)"),
                 ("system", "Follow the system"),
@@ -3143,12 +3143,12 @@ mod tests {
         );
         assert_eq!(theme.picked.as_deref(), Some("solarized/Solarized Dark"));
         assert_eq!(theme.file.as_deref(), Some("charter.toml"));
-        assert_eq!(theme.draws.as_deref(), Some("purlis-dark"));
+        assert_eq!(theme.draws.as_deref(), Some("purlis"));
         assert_eq!(
             theme.why.as_deref(),
             Some(
                 "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this \
-                 project — so the built-in purlis-dark is drawn"
+                 project — so the built-in purlis is drawn"
             )
         );
         assert_eq!(
@@ -3158,7 +3158,7 @@ mod tests {
                 &levels_of(&said)
             )
             .as_deref(),
-            Some("purlis-dark"),
+            Some("purlis"),
             "the window drew a theme the project turned off"
         );
 
@@ -3249,7 +3249,7 @@ mod tests {
             Some("workspaces/alpha/workspace.json")
         );
         assert_eq!(theme.colour.as_deref(), Some("purple"));
-        assert_eq!(theme.draws.as_deref(), Some("purlis-dark"));
+        assert_eq!(theme.draws.as_deref(), Some("purlis"));
         assert_eq!(
             project_theme_drawn_of(
                 &extension::read(&config, &extension::BuiltIn::none()),
@@ -3257,7 +3257,7 @@ mod tests {
                 &levels_of(&said)
             )
             .as_deref(),
-            Some("purlis-dark"),
+            Some("purlis"),
             "the window drew a theme the workspace turned off"
         );
 

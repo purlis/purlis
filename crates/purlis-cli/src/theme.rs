@@ -25,8 +25,8 @@
 //! `import` reads back to the same folder. A staged import
 //! is read only to check (#2587): none of its fonts is left registered once it moves or goes.
 //!
-//! **Where a theme comes from, and its level** (#2518): built in (Purlis Classic, `purlis-classic`,
-//! and Purlis, `purlis`, which the table names as a preview); the person's own `theme.json` (its id
+//! **Where a theme comes from, and its level** (#2518): built in (Purlis, `purlis`, the default,
+//! and Purlis Classic, `purlis-classic`, #3034); the person's own `theme.json` (its id
 //! is [`MINE`]) and the theme folders in the person's `themes/`, at the machine level; the
 //! project's `themes/` at the plane root; each workspace's `themes/`; or an approved extension that
 //! is on (its id is `<extension>/<theme>`, as a project's pick names it). A theme folder's id names
@@ -120,7 +120,7 @@ pub enum ThemeCommand {
     },
     /// This chat's theme draft of a theme folder (#2332), which the app that started the chat
     /// writes in purlis's local folder, never committed: a copy of the workspace's or the
-    /// project's folder of that name, or a new theme that extends Purlis Classic. It also makes a
+    /// project's folder of that name, or a new theme that extends Purlis, the default. It also makes a
     /// working copy for you to edit; `--save` hands that to the app. The draft is drawn only in
     /// this chat's workspace, and the person keeps or reverts it in the window. Run it in a chat
     /// purlis started. Exits 0 when the draft is drawn, 1 when it is not or nothing was written.
@@ -396,7 +396,7 @@ impl Found {
         Self::built_in(theme::CLASSIC, theme::classic())
     }
 
-    /// Purlis (#2336), a preview until it becomes the default.
+    /// Purlis (#2336), the default (#3034).
     fn purlis() -> Self {
         Self::built_in(theme::PURLIS, theme::purlis())
     }
@@ -952,7 +952,7 @@ fn plane() -> Option<std::path::PathBuf> {
 /// (the person's own, then their theme folders); the project's; each workspace's, by name; then
 /// each approved extension's in the order the survey found them.
 fn available(here: Here<'_>) -> Vec<Found> {
-    let mut found = vec![Found::classic(), Found::purlis()];
+    let mut found = vec![Found::purlis(), Found::classic()];
     if let Some(config) = here.config {
         found.extend(mine(config));
     }
@@ -1578,10 +1578,10 @@ fn this_chats_draft(here: Here<'_>, folder: &str) -> Result<Found, Vec<Complaint
     ))
 }
 
-/// The engine's refusal of a theme for `why`, Purlis in its place.
+/// The engine's refusal of a theme for `why`, the default, Purlis, in its place.
 fn refusal(why: String) -> Resolved {
     Resolved {
-        theme: theme::classic().clone(),
+        theme: theme::purlis().clone(),
         complaints: vec![Complaint {
             said: why,
             token: None,

@@ -107,10 +107,10 @@ fn purlis_classic_is_one_theme_with_a_dark_and_a_light_appearance() {
         [("dark", Appearance::Dark), ("light", Appearance::Light)]
     );
     assert!(classic.appearances.iter().all(|one| !one.high_contrast));
-    // The appearances are what the old ids draw, and what the window comes up in.
+    // The appearances are what the old ids draw; the window comes up in Purlis (#3034).
     assert_eq!(&classic.appearances[0], classic_dark());
     assert_eq!(&classic.appearances[1], classic_light());
-    assert_eq!(default_theme(), classic_dark());
+    assert_eq!(default_theme(), purlis().first());
 }
 
 #[test]
@@ -264,8 +264,8 @@ fn a_name_that_is_not_in_the_palette_refuses_the_theme_and_says_so() {
           name in this theme's palette"
         ]
     );
-    // A refused theme draws Purlis, whole.
-    assert_eq!(&loaded.theme, classic());
+    // A refused theme draws the default, Purlis, whole.
+    assert_eq!(&loaded.theme, purlis());
 }
 
 #[test]
@@ -660,7 +660,7 @@ fn a_theme_folder_that_is_a_link_is_not_read() {
     std::os::unix::fs::symlink(&elsewhere, themes.join("far")).unwrap();
     let loaded = Library::new().load_folder(&themes, "far");
     assert!(loaded.refused);
-    assert_eq!(&loaded.theme, classic());
+    assert_eq!(&loaded.theme, purlis());
 }
 
 #[test]
@@ -688,7 +688,7 @@ fn a_theme_json_that_is_a_link_is_not_read() {
     std::os::unix::fs::symlink(&elsewhere, folder.join("theme.json")).unwrap();
     let loaded = Library::new().load_folder(dir.path(), "linked");
     assert!(loaded.refused);
-    assert_eq!(&loaded.theme, classic());
+    assert_eq!(&loaded.theme, purlis());
 }
 
 #[test]

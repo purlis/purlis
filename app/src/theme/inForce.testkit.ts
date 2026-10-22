@@ -1,7 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { BUILT_IN, DEFAULT_THEME, SYSTEM, THEME_ALIASES, type Theme } from "./theme";
+import {
+  BUILT_IN,
+  CLASSIC,
+  CLASSIC_THEME,
+  DEFAULT_THEME,
+  SYSTEM,
+  THEME_ALIASES,
+  type Theme,
+} from "./theme";
 
 /**
  * **What the core's `theme_in_force` answers, for a test's window that picks only built-ins.**
@@ -26,6 +34,7 @@ export function themeInForce(args: unknown): {
       complaints: [],
       follows_system: true,
     };
+  if (pick === CLASSIC) return { theme: CLASSIC_THEME, complaints: [], follows_system: false };
   const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
   const id = pick !== null && has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
   const theme = id !== null && has(BUILT_IN, id) ? BUILT_IN[id] : DEFAULT_THEME;

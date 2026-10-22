@@ -13,7 +13,9 @@
 //!    and this machine approved it. A pick that cannot be drawn draws the default.
 //! 2. With no pick, **the person's own theme file**, the one theme they wrote for this machine.
 //!    A project's pick is more specific than a machine's file, which is why it comes first.
-//! 3. With neither, the first theme from an extension the project has on, or the default.
+//! 3. With neither, the first theme from an extension the project has on, or the default,
+//!    Purlis ([`super::DEFAULT`], #3034), in its high-contrast dark when more contrast is asked
+//!    for. A pick of Purlis Classic, by any id it has had, draws Classic.
 //!
 //! **Following the system works with any theme that has a dark and a light appearance**: the
 //! window is told it follows, and asks again when the system turns. [`follow`] of a theme with
@@ -41,7 +43,7 @@ use std::sync::Arc;
 
 use super::{
     Appearance, Complaint, Contrast, Held, PURLIS, Resolved, ResolvedTheme, Theme, built_in,
-    classic, default_theme, shipped,
+    classic, default_for, default_theme, shipped,
 };
 use crate::extension::project::theme::Pick;
 
@@ -311,7 +313,7 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
         _ => offered.iter().filter(may).find(|one| !one.theme.refused),
     };
     match chosen.map(|one| &one.theme) {
-        None => Drawn::of(default_theme()),
+        None => Drawn::of(default_for(inputs.contrast)),
         Some(resolved) => Drawn {
             complaints: resolved.complaints.clone(),
             refused: resolved.refused,

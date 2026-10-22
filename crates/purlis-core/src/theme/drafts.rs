@@ -584,7 +584,7 @@ pub struct Started {
 
 /// **Starts `chat`'s draft of the theme folder `folder`** at `place`: a copy of the folder it is a
 /// draft of when there is one (the workspace's or the project's), else a new theme that extends
-/// Purlis Classic. A draft that is there already is left as it is. `chat` is the app's record of
+/// Purlis, the default (#3034). A draft that is there already is left as it is. `chat` is the app's record of
 /// the chat that asked, never a word of the ask.
 pub fn start(
     config_root: Option<&Path>,
@@ -980,12 +980,12 @@ pub fn save(
     })
 }
 
-/// A new theme's `theme.json`: its name, and Purlis Classic to extend.
+/// A new theme's `theme.json`: its name, and the default theme, Purlis, to extend (#3034).
 fn new_theme(folder: &str) -> String {
     let theme = serde_json::json!({
         "$schema": super::SCHEMA_URL,
         "name": folder,
-        "extends": super::CLASSIC,
+        "extends": super::DEFAULT,
     });
     format!(
         "{}\n",

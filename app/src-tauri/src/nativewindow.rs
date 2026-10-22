@@ -111,7 +111,9 @@ mod tests {
             .native();
         assert_eq!(theme_of(light.appearance), tauri::Theme::Light);
         assert_eq!(colour_of(light), Color(0xfc, 0xfb, 0xf8, 255));
-        let dark = purlis_core::theme::default_theme().native();
+        let dark = purlis_core::theme::built_in("purlis-dark")
+            .expect("Classic dark")
+            .native();
         assert_eq!(theme_of(dark.appearance), tauri::Theme::Dark);
         assert_eq!(colour_of(dark), Color(0x19, 0x19, 0x17, 255));
     }

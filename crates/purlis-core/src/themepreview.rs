@@ -129,8 +129,8 @@ pub struct Painted {
     /// Whether the appearance drawn is tagged high contrast (#2709).
     #[serde(default, skip_serializing_if = "is_false")]
     pub high_contrast: bool,
-    /// Whether the theme is a preview theme ([`theme::is_preview`]): Purlis, until it is the
-    /// default.
+    /// Whether the theme is a preview theme ([`theme::is_preview`]): none is since Purlis became
+    /// the default (#3034).
     #[serde(default, skip_serializing_if = "is_false")]
     pub preview: bool,
     pub width: u32,
@@ -152,8 +152,8 @@ pub static TOOLS: [Tool; 1] = [Tool {
                   theme's own fonts), and return its picture. A theme is named by its id, as \
                   `purlis theme list` names it; draft:<folder> is this chat's own theme draft. \
                   Give side_by_side to get a second specimen beside it to compare, such as a \
-                  draft beside the theme as kept. purlis is Purlis, a preview theme: \
-                  purlis-classic is still the default. The specimen never shows the person's window, \
+                  draft beside the theme as kept. purlis is Purlis, the default theme; \
+                  purlis-classic is Purlis Classic, the alternative. The specimen never shows the person's window, \
                   chats, paths or terminal output.",
     schema,
     read_only: true,
@@ -163,8 +163,8 @@ fn choice_properties() -> Value {
     json!({
         "theme": {
             "type": "string",
-            "description": "The theme's id: purlis-classic, the default; purlis, Purlis, a \
-                            preview theme; one of Purlis Classic's appearances by id \
+            "description": "The theme's id: purlis, Purlis, the default; purlis-classic, \
+                            Purlis Classic, the alternative; one of Purlis Classic's appearances by id \
                             (purlis-dark, purlis-light); a theme folder by its name (dusk), or \
                             with its level (workspace:dusk, project:dusk, \
                             machine:dusk); draft:<folder>, this chat's own theme draft; or an \
@@ -360,7 +360,7 @@ fn appearance(given: Option<&Value>) -> Result<(Option<Appearance>, bool), Strin
 fn known() -> String {
     let ids: Vec<&str> = theme::built_ins().iter().map(|t| t.name.as_str()).collect();
     format!(
-        "{PURLIS_CLASSIC} (dark or light), {} (a preview: dark, light or {HIGH_CONTRAST_DARK}), \
+        "{} (the default: dark, light or {HIGH_CONTRAST_DARK}), {PURLIS_CLASSIC} (dark or light), \
          or {}; a theme folder by its name (dusk), or \
          with its level (workspace:dusk, project:dusk, machine:dusk); {DRAFT}:<folder>, this \
          chat's own theme draft; or an extension's theme (<extension>/<theme>), each as `purlis \

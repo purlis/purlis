@@ -353,12 +353,18 @@ fn the_first_frame_with_no_level_chosen_is_the_person_s_theme_for_the_contrast_e
     };
     assert_eq!(drawn_id(&asked(Some(&theme), Contrast::Standard)), "dark");
     assert_eq!(drawn_id(&asked(Some(&theme), Contrast::More)), "contrast");
+    // Nothing chose and no theme of the person's: the default, Purlis, in its high-contrast
+    // dark for more contrast (#3034).
     let none = asked(None, Contrast::More);
-    assert_eq!(none.theme.as_ref(), Some(default_theme()));
+    assert_eq!(none.theme.as_ref(), Some(default_for(Contrast::More)));
+    let drawn = none.theme.expect("drawn");
     assert_eq!(
-        none.theme.map(|theme| theme.native().background),
-        Some([0x19, 0x19, 0x17])
+        (drawn.name.as_str(), drawn.id.as_str()),
+        ("Purlis", "dark-high-contrast")
     );
+    let standard = asked(None, Contrast::Standard).theme.expect("drawn");
+    assert_eq!(&standard, default_theme());
+    assert_eq!(standard.native().background, [0x12, 0x12, 0x15]);
 }
 
 #[test]

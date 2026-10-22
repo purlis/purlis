@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BUILT_IN,
-  DEFAULT_THEME,
+  CLASSIC_THEME,
   drawIn,
   drawTint,
   hueIn,
@@ -53,12 +53,12 @@ function withTint(theme: Theme, tint: Partial<Theme["tint"]>): Theme {
 
 describe("a workspace's colour", () => {
   it("reads a name as the theme's hue, a #rrggbb as the hue it has, and anything else as none", () => {
-    expect(hueIn(DEFAULT_THEME, "teal")).toBe(190);
-    const purple = hueIn(DEFAULT_THEME, "purple") ?? Number.NaN;
+    expect(hueIn(CLASSIC_THEME, "teal")).toBe(190);
+    const purple = hueIn(CLASSIC_THEME, "purple") ?? Number.NaN;
     // Within two degrees: each channel is rounded to its byte on the shade's own side.
     expect(apart(hueOf(tintHex("#6a9fb5", purple)) ?? Number.NaN, purple)).toBeLessThan(2);
     for (const none of [null, undefined, "", "mauve", "#fff", "#12345", "#808080"])
-      expect(hueIn(DEFAULT_THEME, none), String(none)).toBeUndefined();
+      expect(hueIn(CLASSIC_THEME, none), String(none)).toBeUndefined();
   });
 });
 
@@ -91,11 +91,11 @@ describe("the core's copy of the tint", () => {
     };
     expect(cases.tints.length).toBeGreaterThan(100);
     for (const { colour, hue } of cases.hues) {
-      if (hue === null) expect(hueIn(DEFAULT_THEME, colour), colour).toBeUndefined();
-      else expect(hueIn(DEFAULT_THEME, colour), colour).toBeCloseTo(hue, 9);
+      if (hue === null) expect(hueIn(CLASSIC_THEME, colour), colour).toBeUndefined();
+      else expect(hueIn(CLASSIC_THEME, colour), colour).toBeCloseTo(hue, 9);
     }
     for (const { hex, colour, tinted: want } of cases.tints)
-      expect(tintHex(hex, hueIn(DEFAULT_THEME, colour) ?? Number.NaN), `${hex} in ${colour}`).toBe(
+      expect(tintHex(hex, hueIn(CLASSIC_THEME, colour) ?? Number.NaN), `${hex} in ${colour}`).toBe(
         want,
       );
     // The accent held apart from danger: the chroma held to, and the accent drawn.
@@ -170,32 +170,32 @@ describe("a tint", () => {
   });
 
   it("colours a grey shade, which has no hue of its own", () => {
-    const shade = DEFAULT_THEME.values["layer.chat"];
-    expect(tinted(DEFAULT_THEME, "green").values["layer.chat"]).not.toBe(shade);
-    expect(hueOf(tinted(DEFAULT_THEME, "green").values["layer.chat"])).toBeDefined();
+    const shade = CLASSIC_THEME.values["layer.chat"];
+    expect(tinted(CLASSIC_THEME, "green").values["layer.chat"]).not.toBe(shade);
+    expect(hueOf(tinted(CLASSIC_THEME, "green").values["layer.chat"])).toBeDefined();
   });
 
   it("is nothing without a colour, or with one purlis does not read", () => {
-    expect(tinted(DEFAULT_THEME, null)).toBe(DEFAULT_THEME);
-    expect(tinted(DEFAULT_THEME, "mauve")).toBe(DEFAULT_THEME);
-    expect(tabTint(DEFAULT_THEME, null)).toEqual({});
+    expect(tinted(CLASSIC_THEME, null)).toBe(CLASSIC_THEME);
+    expect(tinted(CLASSIC_THEME, "mauve")).toBe(CLASSIC_THEME);
+    expect(tabTint(CLASSIC_THEME, null)).toEqual({});
   });
 
   it("takes a custom colour's hue", () => {
     const custom = "#c06020";
     const hue = hueOf(custom) ?? Number.NaN;
-    const accent = tinted(DEFAULT_THEME, custom).values["accent.base"];
+    const accent = tinted(CLASSIC_THEME, custom).values["accent.base"];
     expect(apart(hueOf(accent) ?? Number.NaN, hue)).toBeLessThan(4);
-    expect(accent).not.toBe(DEFAULT_THEME.values["accent.base"]);
+    expect(accent).not.toBe(CLASSIC_THEME.values["accent.base"]);
   });
 
   it("is the same theme object each time it is asked, so a redraw repaints nothing", () => {
-    expect(tinted(DEFAULT_THEME, "blue")).toBe(tinted(DEFAULT_THEME, "blue"));
+    expect(tinted(CLASSIC_THEME, "blue")).toBe(tinted(CLASSIC_THEME, "blue"));
   });
 
   it("is handed to an element as the custom properties of the tokens asked for", () => {
-    const tint = tinted(DEFAULT_THEME, "pink");
-    expect(tintVariables(DEFAULT_THEME, "pink", ["layer.chat", "accent.base"])).toEqual({
+    const tint = tinted(CLASSIC_THEME, "pink");
+    expect(tintVariables(CLASSIC_THEME, "pink", ["layer.chat", "accent.base"])).toEqual({
       [property("layer.chat")]: tint.values["layer.chat"],
       [property("accent.base")]: tint.values["accent.base"],
     });
@@ -205,19 +205,19 @@ describe("a tint", () => {
 describe("the window's tint", () => {
   afterEach(() => {
     drawTint(null);
-    drawIn(DEFAULT_THEME);
+    drawIn(CLASSIC_THEME);
   });
 
   it("puts the workspace in front's accent and focus ring on the window, and no tab shade", () => {
     const root = document.documentElement;
-    drawIn(DEFAULT_THEME);
+    drawIn(CLASSIC_THEME);
     drawTint("yellow");
-    const tint = tinted(DEFAULT_THEME, "yellow");
-    for (const token of DEFAULT_THEME.tint.window as readonly Token[])
+    const tint = tinted(CLASSIC_THEME, "yellow");
+    for (const token of CLASSIC_THEME.tint.window as readonly Token[])
       expect(root.style.getPropertyValue(property(token)), token).toBe(tint.values[token]);
     // The tab shades are each tab's own, set on the tab: the project strip is not a workspace's.
     for (const token of ["layer.project", "layer.workspace", "layer.chat"] as const)
-      expect(root.style.getPropertyValue(property(token)), token).toBe(DEFAULT_THEME.values[token]);
+      expect(root.style.getPropertyValue(property(token)), token).toBe(CLASSIC_THEME.values[token]);
   });
 
   it("follows the theme drawn under it, and goes when the workspace has no colour", () => {
@@ -237,16 +237,16 @@ describe("the window's tint", () => {
 describe("a theme's own recipe", () => {
   afterEach(() => {
     drawTint(null);
-    drawIn(DEFAULT_THEME);
+    drawIn(CLASSIC_THEME);
   });
 
   it("draws a theme that turns tint off untinted, on the window and on a workspace's tab", () => {
-    const off = withTint(DEFAULT_THEME, { window: [], tabs: [] });
+    const off = withTint(CLASSIC_THEME, { window: [], tabs: [] });
     const root = document.documentElement;
     drawIn(off);
     drawTint("teal");
     expect(root.style.getPropertyValue(property("accent.base"))).toBe(
-      DEFAULT_THEME.values["accent.base"],
+      CLASSIC_THEME.values["accent.base"],
     );
     expect(tinted(off, "teal")).toBe(off);
     expect(tabTint(off, "teal")).toEqual({});
@@ -255,7 +255,7 @@ describe("a theme's own recipe", () => {
   });
 
   it("tints the tokens the theme names, where it names them", () => {
-    const own = withTint(DEFAULT_THEME, {
+    const own = withTint(CLASSIC_THEME, {
       window: ["surface.raised"],
       tabs: ["surface.raised", "layer.chat"],
     });
@@ -276,16 +276,16 @@ describe("a theme's own recipe", () => {
 
   it("draws a colour untinted when no amount of colour keeps the accent apart from danger", () => {
     const grey = {
-      ...DEFAULT_THEME,
-      values: { ...DEFAULT_THEME.values, "accent.base": "#777777", "danger.base": "#777777" },
+      ...CLASSIC_THEME,
+      values: { ...CLASSIC_THEME.values, "accent.base": "#777777", "danger.base": "#777777" },
     };
     expect(tinted(grey, "red")).toBe(grey);
   });
 
   it("leaves a value left to the platform as it is", () => {
     const own = {
-      ...withTint(DEFAULT_THEME, { tabs: ["accent.base", "caret"] }),
-      values: { ...DEFAULT_THEME.values, caret: PLATFORM },
+      ...withTint(CLASSIC_THEME, { tabs: ["accent.base", "caret"] }),
+      values: { ...CLASSIC_THEME.values, caret: PLATFORM },
     };
     const tint = tinted(own, "teal");
     expect(tint.values.caret).toBe(PLATFORM);
@@ -293,14 +293,14 @@ describe("a theme's own recipe", () => {
   });
 
   it("gives a workspace colour the hue the theme gives it", () => {
-    const blue = hueIn(DEFAULT_THEME, "blue") ?? Number.NaN;
-    const own = withTint(DEFAULT_THEME, {
-      hues: DEFAULT_THEME.tint.hues.map((one) =>
+    const blue = hueIn(CLASSIC_THEME, "blue") ?? Number.NaN;
+    const own = withTint(CLASSIC_THEME, {
+      hues: CLASSIC_THEME.tint.hues.map((one) =>
         one.name === "red" ? { ...one, hue: blue } : one,
       ),
     });
-    expect(tinted(own, "red").values).toEqual(tinted(DEFAULT_THEME, "blue").values);
-    expect(tinted(own, "teal").values).toEqual(tinted(DEFAULT_THEME, "teal").values);
+    expect(tinted(own, "red").values).toEqual(tinted(CLASSIC_THEME, "blue").values);
+    expect(tinted(own, "teal").values).toEqual(tinted(CLASSIC_THEME, "teal").values);
   });
 });
 
@@ -308,10 +308,10 @@ describe("every tint", () => {
   it("keeps Allow's edge apart from Keep blocked's at every whole degree of a custom colour", () => {
     // Keep blocked's edge the accent turned red with half its colour: one colour with Allow's
     // under any tint that turns both alike.
-    const accent = DEFAULT_THEME.values["accent.base"];
+    const accent = CLASSIC_THEME.values["accent.base"];
     const edges = {
-      ...withTint(DEFAULT_THEME, { tabs: ["accent.base", "border.strong"] }),
-      values: { ...DEFAULT_THEME.values, "border.strong": tintHex(accent, 25, 0.05) },
+      ...withTint(CLASSIC_THEME, { tabs: ["accent.base", "border.strong"] }),
+      values: { ...CLASSIC_THEME.values, "border.strong": tintHex(accent, 25, 0.05) },
     };
     for (let degree = 0; degree < 360; degree++) {
       const colour = tintHex("#c0392b", degree);
@@ -330,10 +330,10 @@ describe("every tint", () => {
 
 describe("a recipe that turns only Keep blocked's edge", () => {
   it("keeps the edge apart from Allow's at every whole degree, and turns it still", () => {
-    const accent = DEFAULT_THEME.values["accent.base"];
+    const accent = CLASSIC_THEME.values["accent.base"];
     const edge = {
-      ...withTint(DEFAULT_THEME, { tabs: ["border.strong"] }),
-      values: { ...DEFAULT_THEME.values, "border.strong": tintHex(accent, 25, 0.05) },
+      ...withTint(CLASSIC_THEME, { tabs: ["border.strong"] }),
+      values: { ...CLASSIC_THEME.values, "border.strong": tintHex(accent, 25, 0.05) },
     };
     let turned = 0;
     for (let degree = 0; degree < 360; degree++) {
@@ -376,7 +376,7 @@ describe("the consent floors under every tint (#2526)", () => {
 
   it("is handed a rule keeping each accent-hued token apart from danger", () => {
     for (const token of ACCENT_KIN)
-      expect(DEFAULT_THEME.tint.apart).toContainEqual({
+      expect(CLASSIC_THEME.tint.apart).toContainEqual({
         token,
         from: "danger.base",
         distance: 0.1,
@@ -386,16 +386,16 @@ describe("the consent floors under every tint (#2526)", () => {
   it.each(ACCENT_KIN)("keeps %s apart from danger at every whole degree", (token) => {
     // The token written as danger turned to teal: apart as written, one colour with danger under
     // a red tint that turned it whole.
-    const danger = DEFAULT_THEME.values["danger.base"];
+    const danger = CLASSIC_THEME.values["danger.base"];
     const kin = {
-      ...DEFAULT_THEME,
-      values: { ...DEFAULT_THEME.values, [token]: tintHex(danger, 190) },
+      ...CLASSIC_THEME,
+      values: { ...CLASSIC_THEME.values, [token]: tintHex(danger, 190) },
     };
     expect(oklabDistance(kin.values[token], danger)).toBeGreaterThanOrEqual(0.1);
     expect(oklabDistance(tintHex(kin.values[token], 25), danger)).toBeLessThan(0.1);
     for (let degree = 0; degree < 360; degree++) {
       const tint = tinted(kin, tintHex("#c0392b", degree));
-      for (const rule of DEFAULT_THEME.tint.apart)
+      for (const rule of CLASSIC_THEME.tint.apart)
         expect(
           oklabDistance(tint.values[rule.token as Token], tint.values[rule.from as Token]),
           `${rule.token} at ${degree}`,
@@ -406,9 +406,9 @@ describe("the consent floors under every tint (#2526)", () => {
 
   it("gives a grey accent as much colour as keeps it apart from danger, not none", () => {
     const grey = {
-      ...DEFAULT_THEME,
+      ...CLASSIC_THEME,
       values: {
-        ...DEFAULT_THEME.values,
+        ...CLASSIC_THEME.values,
         "accent.base": "#808080",
         "focus.ring": "#808080",
         "list.selected-edge": "#808080",

@@ -95,8 +95,8 @@ pub const COLOUR: &str = "colour";
 /// The value that follows the operating system's appearance.
 pub const SYSTEM: &str = "system";
 
-/// The built-in a pick that cannot be drawn falls back to: the theme the window comes up in.
-pub const FALLBACK: &str = crate::names::THEME_DARK.write;
+/// The built-in a pick that cannot be drawn falls back to: the default theme, Purlis (#3034).
+pub const FALLBACK: &str = crate::theme::DEFAULT;
 
 /// The colours a workspace may name (charter-app#281). Each is a hue the window tints with;
 /// `theme.ts` holds the hues, and a test there holds the two lists to one another.

@@ -517,9 +517,9 @@ export function property(token: Token): string {
  */
 export const AT_CREATION = "__CHARTER_AT_CREATION__";
 
-/** The themes purlis ships, as the core resolved them and handed them to the window: dark first,
- *  the theme the window comes up in. The window always has them; a page opened without them is
- *  not purlis's window. */
+/** Purlis Classic's appearances, as the core resolved them and handed them to the window, dark
+ *  first, by the ids a pick names them by (`purlis-dark`, `purlis-light`). The window always has
+ *  them; a page opened without them is not purlis's window. */
 function handedBuiltIns(): Theme[] {
   const given = (globalThis as Record<string, unknown>)[AT_CREATION] as
     { built_in?: unknown } | undefined;
@@ -529,9 +529,21 @@ function handedBuiltIns(): Theme[] {
   return themes as Theme[];
 }
 
+/** The default theme's appearance, Purlis's dark (#3034), as the core handed it: what the window
+ *  comes up in when nothing has said otherwise. */
+function handedDefault(): Theme {
+  const given = (globalThis as Record<string, unknown>)[AT_CREATION] as
+    { default_theme?: unknown } | undefined;
+  const theme = given?.default_theme;
+  if (typeof theme !== "object" || theme === null)
+    throw new Error("purlis's window was opened without the default theme its core hands it");
+  return theme as Theme;
+}
+
 const [DARK, LIGHT] = handedBuiltIns();
 
-/** The two themes purlis ships, by the name a theme file or a setting names them by. */
+/** Purlis Classic's two appearances, by the name a theme file or a setting names them by. A pick
+ *  of either is a choice of Classic, and draws it. */
 export const BUILT_IN: Record<string, Theme> = {
   [DARK.name]: DARK,
   [LIGHT.name]: LIGHT,
@@ -550,13 +562,17 @@ export const THEME_ALIASES: Readonly<Record<string, string>> = {
   "charter-light": LIGHT.name,
 };
 
-/** The theme the window comes up in when nothing has said otherwise. */
-export const DEFAULT_THEME: Theme = DARK;
+/** The theme the window comes up in when nothing has said otherwise: Purlis's dark (#3034,
+ *  `purlis_core::theme::default_theme`). */
+export const DEFAULT_THEME: Theme = handedDefault();
 
 /** Purlis Classic's own id (`purlis_core::theme::CLASSIC`): a pick of it draws its first
  *  appearance, the dark one, as the engine's `built_in` answers. Not an old id, so not in
  *  {@link THEME_ALIASES}. */
 export const CLASSIC = "purlis-classic";
+
+/** What a pick of {@link CLASSIC} draws: Purlis Classic's first appearance, its dark. */
+export const CLASSIC_THEME: Theme = DARK;
 
 /** The pick that follows the operating system's appearance, as a project's `[theme] use` holds it
  *  (charter-app#273; `purlis_core::extension::project::theme::SYSTEM`). */

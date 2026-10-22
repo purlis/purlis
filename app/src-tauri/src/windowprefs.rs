@@ -35,8 +35,12 @@ struct AtCreation {
     /// The person's own theme, resolved by the core: what the first frame is drawn in when it
     /// is in force.
     theme: TheirTheme,
-    /// The themes purlis ships, resolved: what the first frame is drawn in otherwise.
+    /// Purlis Classic's appearances by the ids a pick names them by, resolved: what a pick of
+    /// one draws without asking the core.
     built_in: Vec<WindowTheme>,
+    /// The default theme's appearance, Purlis's dark (#3034): what the window draws when nothing
+    /// else was handed.
+    default_theme: WindowTheme,
     /// The person's density and font override, read by the engine from the layout file's
     /// `appearance` (#2326): what the first frame draws over the theme.
     person: PersonInForce,
@@ -358,6 +362,7 @@ fn at_creation_from(
             .iter()
             .map(|one| built_in_under(one, &layer))
             .collect(),
+        default_theme: built_in_under(theme::default_theme(), &layer),
         person,
         layout,
         first,
@@ -601,7 +606,7 @@ mod tests {
         // Resolved: every token, filled from the built-in the file did not mention.
         assert_eq!(
             at["theme"]["theme"]["values"]["surface.base"],
-            theme::default_theme().value("surface.base")
+            theme::built_in_for(theme::Appearance::Dark).value("surface.base")
         );
         let built: Vec<&str> = at["built_in"]
             .as_array()
@@ -617,7 +622,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let dir = purlis_core::machine::dir(home.path());
         std::fs::create_dir_all(&dir).unwrap();
-        let lost = theme::default_theme().value("surface.base");
+        let lost = theme::built_in_for(theme::Appearance::Dark).value("surface.base");
         std::fs::write(
             dir.join(windowprefs::THEME),
             format!(r#"{{"name":"Mine","tokens":{{"state.failed":"{lost}"}}}}"#),
@@ -626,7 +631,7 @@ mod tests {
         let at = defined(&creation_script_from(&TheirsKept::new(), Some(home.path())));
         assert_eq!(
             at["theme"]["theme"]["values"]["state.failed"],
-            theme::default_theme().value("state.failed")
+            theme::built_in_for(theme::Appearance::Dark).value("state.failed")
         );
         let floors = at["theme"]["floors"]
             .as_str()
@@ -697,7 +702,7 @@ mod tests {
         let classic = &at["built_in"][0]["values"];
         assert_ne!(
             classic["text.muted"],
-            theme::default_theme().value("text.muted"),
+            theme::built_ins()[0].value("text.muted"),
             "muted words are raised to 7:1"
         );
     }
@@ -709,6 +714,47 @@ mod tests {
         assert_eq!(at["built_in"], serde_json::to_value(&handed).unwrap());
         assert_eq!(at["person"]["contrast"], "standard");
         assert_eq!(at["person"]["motion"], "system");
+    }
+
+    #[test]
+    fn the_window_is_handed_the_default_purlis_s_dark_beside_classic_s_appearances() {
+        // #3034: Purlis is the default, and Classic's appearances stay handed by their pick ids.
+        let at = defined(&creation_script_from(&TheirsKept::new(), None));
+        let default = serde_json::to_value(WindowTheme::from(theme::purlis().first())).unwrap();
+        assert_eq!(at["default_theme"], default);
+        assert_eq!(at["default_theme"]["name"], "Purlis");
+        assert_eq!(at["built_in"][0]["name"], "purlis-dark");
+        assert_eq!(at["built_in"][1]["name"], "purlis-light");
+    }
+
+    /// **The story harness is handed Purlis as the core hands it** (#3034): Storybook's page and
+    /// a unit test's jsdom have no core, so `app/src/theme/handed.purlis.json` holds each of
+    /// Purlis's appearances, by its id, as a [`WindowTheme`], and this holds the file to the
+    /// engine. Run with
+    /// `PURLIS_WRITE_HANDED=1` to write it again after Purlis changes.
+    #[test]
+    fn the_story_harness_is_handed_purlis_as_the_core_hands_it() {
+        let file = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../src/theme/handed.purlis.json"
+        );
+        let handed: Vec<serde_json::Value> = theme::purlis()
+            .appearances
+            .iter()
+            .map(|one| serde_json::json!({ "id": one.id, "theme": WindowTheme::from(one) }))
+            .collect();
+        let text = format!(
+            "{}\n",
+            serde_json::to_string_pretty(&handed).expect("a theme is plain data")
+        );
+        if std::env::var_os("PURLIS_WRITE_HANDED").is_some() {
+            std::fs::write(file, &text).expect("the handed file is written");
+        }
+        let kept = std::fs::read_to_string(file).unwrap_or_default();
+        assert!(
+            kept == text,
+            "{file} is not Purlis as the core hands it: run this test with PURLIS_WRITE_HANDED=1"
+        );
     }
 
     #[test]
@@ -729,7 +775,7 @@ mod tests {
     fn a_resolved_theme_is_handed_in_one_shape_whatever_hands_it() {
         // The creation script's built-ins are `WindowTheme`s, as `theme_in_force`'s answer is.
         let at = defined(&creation_script_from(&TheirsKept::new(), None));
-        let one = serde_json::to_value(WindowTheme::from(theme::default_theme())).unwrap();
+        let one = serde_json::to_value(WindowTheme::from(&theme::built_ins()[0])).unwrap();
         assert_eq!(at["built_in"][0], one);
     }
 
@@ -998,9 +1044,12 @@ mod tests {
         let on = places.on(Some("alpha"));
         let created = places.created(Some(&on), Some(Contrast::Standard));
         assert_eq!(created.native.background, [0xab, 0xcd, 0xef]);
-        // At the plane root the project's own is drawn.
+        // At the plane root the project's own is drawn: its stored pick of Purlis Classic's
+        // dark, which stays Classic now that Purlis is the default (#3034).
         let root = places.created(Some(&places.on(None)), Some(Contrast::Standard));
-        assert_eq!(root.native, theme::default_theme().native());
+        let classic = theme::built_in("purlis-dark").expect("Classic dark");
+        assert_eq!(root.native, classic.native());
+        assert_ne!(root.native, theme::default_theme().native());
     }
 
     #[test]
@@ -1066,7 +1115,7 @@ mod tests {
 
     #[test]
     fn the_first_frame_holds_the_consent_floors_and_names_them() {
-        let lost = theme::default_theme().value("surface.base");
+        let lost = theme::built_in_for(theme::Appearance::Dark).value("surface.base");
         let places = Places::new("[theme]\nuse = \"breaks\"\n");
         Places::put(
             &places.plane.join("themes"),
@@ -1080,7 +1129,7 @@ mod tests {
         let frame = &at["first"]["frames"][0];
         assert_eq!(
             frame["theme"]["values"]["state.failed"],
-            theme::default_theme().value("state.failed")
+            theme::built_in_for(theme::Appearance::Dark).value("state.failed")
         );
         assert!(
             frame["floors"]

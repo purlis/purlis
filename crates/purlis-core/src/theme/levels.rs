@@ -25,7 +25,7 @@
 //! 3. the person's choice for the project;
 //! 4. the project's committed default;
 //! 5. the person's machine default;
-//! 6. Purlis.
+//! 6. Purlis, the default ([`super::DEFAULT`], #3034).
 //!
 //! **The plane root resolves from level 3 down**: it is on no workspace.
 //!
@@ -61,8 +61,8 @@ pub(crate) use super::folders::plane_fonts;
 pub use super::folders::{Folders, Found, FoundFolder, MOST_FOLDERS, Reach, THEMES, ThemesFolder};
 use super::resolve::{Drawn, Offered, On, follow};
 use super::{
-    Appearance, Complaint, Contrast, PURLIS, Theme, Values, built_in, classic, default_theme,
-    shipped,
+    Appearance, Complaint, Contrast, PURLIS, Theme, Values, built_in, classic, default_for,
+    default_theme, shipped,
 };
 use crate::extension::project::theme::{Pick, SYSTEM, Said, is_appearance};
 use crate::settings::Source;
@@ -399,7 +399,7 @@ pub fn resolve_levels(inputs: &LevelInputs<'_>, offered: impl FnOnce() -> Arc<[O
                 complaints: one.theme.complaints.clone(),
                 ..Drawn::of(one.theme.theme.first_for(inputs.contrast))
             },
-            None => Drawn::of(default_theme()),
+            None => Drawn::of(default_for(inputs.contrast)),
         };
         Drawn {
             level: Some(Level::Purlis),

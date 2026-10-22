@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BUILT_IN_ICONS, DEFAULT_ICONS, ICON_THEME_ALIASES, builtInIcons } from "./icons";
-import { BUILT_IN, DEFAULT_THEME, THEME_ALIASES } from "./theme";
+import { BUILT_IN, CLASSIC_THEME, DEFAULT_THEME, THEME_ALIASES } from "./theme";
 
 /**
  * **The built-in themes' ids** (#1838, the #1719 theme-id item). The two themes are
@@ -38,7 +38,9 @@ describe("the built-in themes' ids", () => {
     expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-dark", "purlis-light"]);
     expect(BUILT_IN["purlis-dark"].appearance).toBe("dark");
     expect(BUILT_IN["purlis-light"].appearance).toBe("light");
-    expect(DEFAULT_THEME).toBe(BUILT_IN["purlis-dark"]);
+    // Purlis Classic's dark by its pick id; the window comes up in Purlis's (#3034).
+    expect(CLASSIC_THEME).toBe(BUILT_IN["purlis-dark"]);
+    expect(DEFAULT_THEME.name).toBe("Purlis");
   });
 
   it("name a built-in for each old id: which theme an old id draws is the core's", () => {

@@ -94,7 +94,7 @@ fn an_old_built_in_id_is_read_as_the_renamed_theme() {
             );
         }
     }
-    assert_eq!(FALLBACK, THEME_DARK.write);
+    assert_eq!(FALLBACK, crate::theme::PURLIS);
 }
 
 // -------------------------------------------------------------------------------------
@@ -139,12 +139,12 @@ fn an_extension_theme_whose_extension_the_project_turned_off_falls_back_with_a_r
         "[extensions.solarized]\nenabled = false\n",
     );
     assert_eq!(got.picked, Some(solarized()));
-    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-dark")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this \
-             project — so the built-in purlis-dark is drawn"
+             project — so the built-in purlis is drawn"
         )
     );
 }
@@ -157,12 +157,12 @@ fn an_extension_theme_this_machine_has_not_approved_falls_back_with_a_reason() {
     };
     let got = theme(&[unapproved], None, "", PICKS_SOLARIZED);
     assert_eq!(got.source, Source::Local);
-    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-dark")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "charter.local.toml picks “Solarized Dark” from solarized, but this machine has not \
-             approved solarized — so the built-in purlis-dark is drawn"
+             approved solarized — so the built-in purlis is drawn"
         )
     );
 }
@@ -170,12 +170,12 @@ fn an_extension_theme_this_machine_has_not_approved_falls_back_with_a_reason() {
 #[test]
 fn an_extension_theme_from_an_extension_not_installed_falls_back_with_a_reason() {
     let got = theme(&[], None, PICKS_SOLARIZED, "");
-    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-dark")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Dark” from solarized, but solarized is not installed \
-             on this machine — so the built-in purlis-dark is drawn"
+             on this machine — so the built-in purlis is drawn"
         )
     );
 }
@@ -188,12 +188,12 @@ fn a_theme_the_extension_does_not_contribute_falls_back_when_the_survey_says_so(
         "[theme]\nuse = \"solarized/Solarized Light\"\n",
         "",
     );
-    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-dark")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Light” from solarized, but solarized contributes no \
-             theme called “Solarized Light” — so the built-in purlis-dark is drawn"
+             theme called “Solarized Light” — so the built-in purlis is drawn"
         )
     );
     // Asked without a survey, the pick stands: the window only holds what a survey found.
@@ -375,12 +375,12 @@ fn a_workspaces_extension_theme_falls_back_when_the_workspace_turned_that_extens
             "extensions": {"solarized": {"enabled": false}}}}"#,
         "",
     );
-    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-dark")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "workspaces/alpha/workspace.json picks “Solarized Dark” from solarized, but \
-             solarized is off in this workspace — so the built-in purlis-dark is drawn"
+             solarized is off in this workspace — so the built-in purlis is drawn"
         )
     );
     // And the project's pick, when the workspace turned its extension off, says the same.
@@ -395,7 +395,7 @@ fn a_workspaces_extension_theme_falls_back_when_the_workspace_turned_that_extens
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this \
-             workspace — so the built-in purlis-dark is drawn"
+             workspace — so the built-in purlis is drawn"
         )
     );
 }

@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **Purlis, the theme built from the foundation** (#2336), at the engine's interface: what it
-//! draws, that every combination of it clears the check and every consent floor, that a pick
-//! names it while Purlis Classic stays the default, and that its faces are served.
+//! draws, that every combination of it clears the check and every consent floor, that it is the
+//! default while a pick of Purlis Classic keeps drawing Classic (#3034), and that its faces are
+//! served.
 
 use std::sync::Arc;
 
@@ -220,17 +221,68 @@ fn a_style_drawn_with_no_face_of_its_own_is_named() {
         ]
     );
     // A font with no face is the platform's own, whose styles are its own: Purlis Classic's.
-    assert_eq!(without_a_face(default_theme()), []);
+    assert_eq!(without_a_face(classic().first()), []);
 }
 
 #[test]
-fn a_pick_names_it_and_purlis_classic_stays_the_default() {
+fn it_is_the_default_and_a_pick_of_purlis_classic_keeps_drawing_classic() {
     assert_eq!(Pick::parse(PURLIS), Some(Pick::BuiltIn(PURLIS)));
-    assert_ne!(default_theme().name, "Purlis");
+    assert_eq!(DEFAULT, PURLIS);
+    assert_eq!(default_theme(), purlis().first());
+    // Nothing chose: Purlis's dark, and its high-contrast dark for more contrast (#3034).
+    let nothing = drawn_for(&Levels::default(), Contrast::Standard);
+    assert_eq!(nothing.level, Some(Level::Purlis));
+    assert_eq!(nothing.theme.as_ref(), Some(purlis().first()));
+    let sharp = drawn_for(&Levels::default(), Contrast::More).theme.unwrap();
     assert_eq!(
-        name_of(&drawn_for(&Levels::default(), Contrast::Standard)),
-        crate::names::THEME_DARK.write
+        (sharp.name.as_str(), sharp.id.as_str()),
+        ("Purlis", "dark-high-contrast")
     );
+    // A choice of Purlis Classic stored by any id it has had keeps drawing Classic: by its own,
+    // by its appearances' ids, by the ids they had before the rename, and the old `system`.
+    for (stored, appearance, drawn) in [
+        (CLASSIC, None, "purlis-dark"),
+        (CLASSIC, Some("light"), "purlis-light"),
+        ("purlis-dark", None, "purlis-dark"),
+        ("purlis-light", None, "purlis-light"),
+        ("charter-dark", None, "purlis-dark"),
+        ("charter-light", None, "purlis-light"),
+        ("system", None, "purlis-dark"),
+    ] {
+        for level in 0..5 {
+            let choice = Choice::new(stored, appearance);
+            let levels = match level {
+                0 => Levels {
+                    workspace_choice: choice,
+                    ..Levels::default()
+                },
+                1 => Levels {
+                    workspace_default: choice,
+                    ..Levels::default()
+                },
+                2 => Levels {
+                    project_choice: choice,
+                    ..Levels::default()
+                },
+                3 => Levels {
+                    project_default: choice,
+                    ..Levels::default()
+                },
+                _ => Levels {
+                    machine_default: choice,
+                    ..Levels::default()
+                },
+            };
+            for contrast in [Contrast::Standard, Contrast::More] {
+                let got = drawn_for(&levels, contrast);
+                assert_eq!(name_of(&got), drawn, "{stored} {appearance:?} at {level}");
+                assert!(
+                    classic().appearances.contains(got.theme.as_ref().unwrap()),
+                    "{stored}"
+                );
+            }
+        }
+    }
     let chosen = Levels {
         project_choice: Choice::new(PURLIS, None),
         ..Levels::default()
@@ -276,7 +328,7 @@ fn no_theme_folder_takes_its_id_and_a_theme_may_extend_it() {
 }
 
 #[test]
-fn the_gallery_shows_it_beside_purlis_classic_as_a_preview() {
+fn the_gallery_shows_it_first_as_the_default_and_purlis_classic_beside_it() {
     let folders = Folders::of(None, None, None);
     let cards = gallery::cards(&Shelf {
         folders: &folders,
@@ -289,8 +341,9 @@ fn the_gallery_shows_it_beside_purlis_classic_as_a_preview() {
         .take(2)
         .map(|one| (one.id.as_str(), one.preview))
         .collect();
-    assert_eq!(built_in, [(CLASSIC, false), (PURLIS, true)]);
-    let purlis = &cards[1];
+    assert_eq!(built_in, [(PURLIS, false), (CLASSIC, false)]);
+    assert!(!is_preview(PURLIS) && !is_preview(CLASSIC));
+    let purlis = &cards[0];
     assert_eq!(purlis.name, "Purlis");
     assert!(purlis.warnings.is_empty() && purlis.floors.is_empty());
     assert!(purlis.duplicable && !purlis.folder);

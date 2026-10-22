@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUILT_IN,
   CLASSIC as CLASSIC_ID,
+  CLASSIC_THEME,
   DEFAULT_THEME,
   PARTS_STYLE,
   TOKENS,
@@ -57,12 +58,14 @@ describe("the themes the core hands the window", () => {
       "utf8",
     );
     expect(engine).toContain(`pub const CLASSIC: &str = "${CLASSIC_ID}";`);
-    expect(DEFAULT_THEME).toBe(BUILT_IN["purlis-dark"]);
+    expect(CLASSIC_THEME).toBe(BUILT_IN["purlis-dark"]);
   });
 
   it("are the core's built-ins, complete, the window coming up in the dark one", () => {
     expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-dark", "purlis-light"]);
-    expect(DEFAULT_THEME).toBe(BUILT_IN["purlis-dark"]);
+    // The window comes up in the default, Purlis's dark, as the core hands it (#3034).
+    expect([DEFAULT_THEME.name, DEFAULT_THEME.appearance]).toEqual(["Purlis", "dark"]);
+    for (const token of TOKENS) expect(DEFAULT_THEME.values[token], token).toBeTruthy();
     for (const name of Object.keys(BUILT_IN))
       for (const token of TOKENS) expect(BUILT_IN[name].values[token], token).toBeTruthy();
     expect(BUILT_IN["purlis-light"].values["surface.base"]).toBe(light.tokens["surface.base"]);
@@ -192,9 +195,10 @@ describe("the tokens that are not the chrome (#2327)", () => {
   it("leave Purlis Classic's selection, caret, placeholder and scrollbars to the platform", () => {
     expect(themeDraws(BUILT_IN["purlis-dark"])).toBe("");
     expect(themeDraws(BUILT_IN["purlis-light"])).toBe("");
+    const classic = BUILT_IN["purlis-dark"];
     const theme: Theme = {
-      ...DEFAULT_THEME,
-      values: { ...DEFAULT_THEME.values, caret: "#ff0000", "scrollbar.thumb": "#80808080" },
+      ...classic,
+      values: { ...classic.values, caret: "#ff0000", "scrollbar.thumb": "#80808080" },
     };
     expect(themeDraws(theme)).toBe("caret scrollbar.thumb");
   });
