@@ -346,6 +346,16 @@ fn a_codex_chat_is_briefed_on_a_manual_only_skill_by_its_name_and_file_alone() {
         "{text}"
     );
     assert!(!text.contains("Does release"), "{text}");
+    assert!(
+        text.contains(&format!("(`{}`)", handed_deploy.display())),
+        "the narrowed SKILL.md: {text}"
+    );
+    assert!(
+        !fs::read_to_string(&handed_deploy)
+            .unwrap()
+            .contains("\nallowed-tools:"),
+        "and it widens nothing"
+    );
     let handed = PathBuf::from(var(&env, purlis_core::skills::PLANE_LISTED_ENV).unwrap());
     let release = handed.join("skills/release/SKILL.md");
     assert!(
