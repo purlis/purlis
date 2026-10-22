@@ -55,6 +55,21 @@ function drafted(state: string, id: string, name: string, chat: number): void {
   );
 }
 
+/** Waits until the strip has more tabs than `before`; else fails with what the window says. */
+async function untilATabOpens(before: number, what: string): Promise<void> {
+  try {
+    await browser.waitUntil(async () => (await tabNames()).length > before, { timeout: 30_000 });
+  } catch {
+    const said = await browser.execute(() =>
+      [...document.querySelectorAll('[role="alert"], [role="status"]')]
+        .map((one) => (one.textContent ?? "").trim())
+        .filter((text) => text !== "")
+        .join(" | "),
+    );
+    throw new Error(`${what}. The window says: ${said}`);
+  }
+}
+
 /** The tries laid out now, by id. */
 function tries(state: string): string[] {
   const dir = join(state, "skill-tries");
@@ -83,6 +98,8 @@ describe("draft skills in the Skill studio", function () {
 
   after(async () => {
     await endTheSessionsStartedSince(wereRunning);
+    // A chat at the project's root is filed on the root's strip: the studio's tab is on alpha's.
+    await focusWorkspace("alpha");
     await closeTheViewTabsOpenedSince(wereOpen);
     for (const id of [ACCEPTED_ID, REJECTED_ID])
       rmSync(join(state, "skill-drafts", id), { recursive: true, force: true });
@@ -113,10 +130,7 @@ describe("draft skills in the Skill studio", function () {
     const triesBefore = tries(state);
     const tabsBefore = (await tabNames()).length;
     await (await $(`aria/Try ${ACCEPTED}`)).click();
-    await browser.waitUntil(async () => (await tabNames()).length > tabsBefore, {
-      timeout: 30_000,
-      timeoutMsg: "Try it opened no scratch chat",
-    });
+    await untilATabOpens(tabsBefore, "Try it opened no scratch chat");
     const laid = tries(state).filter((one) => !triesBefore.includes(one));
     expect(laid.length).toBe(1);
     await endTheSessionsStartedSince(wereRunning);
@@ -124,6 +138,7 @@ describe("draft skills in the Skill studio", function () {
       timeout: 30_000,
       timeoutMsg: "the try's throwaway folder outlived its chat",
     });
+    await focusWorkspace("alpha");
 
     await (await $(`aria/Accept ${ACCEPTED}`)).click();
     await $(`[data-testid="skill-${ACCEPTED}"]`).waitForExist({ timeout: 20_000 });
@@ -134,15 +149,13 @@ describe("draft skills in the Skill studio", function () {
 
   it("opens a chat to draft a skill", async () => {
     // The chat Try it opened went, so the studio is brought to the front again.
+    await focusWorkspace("alpha");
     await runFromThePalette("Open Skill studio", "skills.studio");
     const ask = await $("button=Ask a chat to draft a skill");
     await ask.waitForClickable({ timeout: 20_000 });
     const tabsBefore = (await tabNames()).length;
     await ask.click();
-    await browser.waitUntil(async () => (await tabNames()).length > tabsBefore, {
-      timeout: 30_000,
-      timeoutMsg: "Ask a chat to draft a skill opened no chat",
-    });
+    await untilATabOpens(tabsBefore, "Ask a chat to draft a skill opened no chat");
     await endTheSessionsStartedSince(wereRunning);
   });
 });

@@ -17,7 +17,7 @@
 //!   ([`accept`]), and a draft of a local skill is written and left uncommitted, as every local
 //!   skill is. **Reject deletes the draft** ([`reject`]).
 //! - **Try it** ([`try_out`]) lays the skill as the draft makes it out in this machine's
-//!   [`TRIES_DIR`], beside an empty folder of its own in the person's temp folder: the
+//!   [`TRIES_DIR`], beside an empty folder of its own in the project's [`PIECES`]: the
 //!   **throwaway piece** a scratch chat starts in. A chat started there is armed with the
 //!   built-in skills and that one skill alone ([`tried`]), and when it closes both are removed
 //!   ([`end_try_at`]). What is left is the skill run its use recorded, under the skill's name.
@@ -38,7 +38,7 @@ pub const DRAFTS_DIR: &str = "skill-drafts";
 /// The folder of this machine's state each Try it's skill is laid out in, one folder each.
 pub const TRIES_DIR: &str = "skill-tries";
 
-/// The start of a throwaway piece's folder's name, in the person's temp folder.
+/// The start of a throwaway piece's folder's name, in the project's [`PIECES`].
 pub const PIECE_PREFIX: &str = "purlis-try-";
 
 /// A draft's record, in its folder.
@@ -494,7 +494,14 @@ pub fn accept(cx: &mut Ctx<'_>, id: &str) -> Result<PathBuf, String> {
         } else {
             format!("skill edit {name}")
         };
-        cx.commit(&written, &message);
+        // A new skill's folder holds the draft's files alone, so it is named whole, as a new
+        // skill's is (`create`).
+        let paths = if draft.new {
+            vec![folder_rel.clone()]
+        } else {
+            written
+        };
+        cx.commit(&paths, &message);
     }
     Ok(folder)
 }
@@ -509,10 +516,10 @@ pub struct Try {
 
 /// **Lays out Try it for the draft `id`** in the project at `root`: the skill as the draft makes
 /// it (the project's files of the skill, with the draft's over them) in this machine's
-/// [`TRIES_DIR`], as the one skill of a project of its own, and an empty throwaway piece in
-/// `temp`, made new. A chat started in the piece gets the built-in skills and that skill alone
+/// [`TRIES_DIR`], as the one skill of a project of its own, and an empty throwaway piece in the
+/// project's [`PIECES`], made new. A chat started in the piece gets the built-in skills and that skill alone
 /// ([`tried`]).
-pub fn try_out(root: &Path, id: &str, temp: &Path) -> Result<Try, String> {
+pub fn try_out(root: &Path, id: &str) -> Result<Try, String> {
     let draft = one(root, id)?;
     let state = state_with(root, TRIES_DIR)?;
     let try_id = random_id()?;
@@ -537,7 +544,7 @@ pub fn try_out(root: &Path, id: &str, temp: &Path) -> Result<Try, String> {
             write_at(&state, &format!("{skill_rel}/{path}"), None, text, 3)
                 .map_err(|why| super::not_written(&format!("{}'s {path}", draft.name), why))?;
         }
-        let piece = made_piece(temp, &try_id)?;
+        let piece = made_piece(root, &try_id)?;
         let piece_text = piece.display().to_string();
         write_at(
             &state,
@@ -552,7 +559,7 @@ pub fn try_out(root: &Path, id: &str, temp: &Path) -> Result<Try, String> {
     match laid {
         Ok(piece) => Ok(Try { id: try_id, piece }),
         Err(why) => {
-            let _ = remove_piece(temp, &try_id);
+            let _ = remove_piece(root, &try_id);
             let _ = remove_in(&state, TRIES_DIR, &try_id);
             Err(why)
         }
@@ -566,37 +573,56 @@ fn random_id() -> Result<String, String> {
     Ok(random.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-/// The throwaway piece of the try `id` in `temp`, made new and private, by the name the kernel
-/// knows it by.
-fn made_piece(temp: &Path, id: &str) -> Result<PathBuf, String> {
+/// The folder of the project the throwaway pieces are made in, relative to its root: inside the
+/// project, since a sandboxed chat starts only in a folder of the project, and below
+/// `workspaces/` under a dot-name no workspace takes, so git ignores it with every LOCAL
+/// workspace's files (`/workspaces/*/*`) and no save stages it (`planegit::SAVE_STAGES`).
+pub const PIECES: [&str; 2] = ["workspaces", ".throwaway"];
+
+/// The folder of the throwaway pieces of the project at `root`, held open, made where it is not
+/// there; no link followed on the way.
+#[cfg(unix)]
+fn pieces_at(root: &Path, make: bool) -> Result<rustix::fd::OwnedFd, String> {
+    let names: Vec<String> = PIECES.iter().map(|one| (*one).to_owned()).collect();
+    super::store::open_dir(root, &names, if make { 1 } else { usize::MAX })
+        .map_err(|why| format!("the throwaway folders could not be opened ({why})"))
+}
+
+/// The throwaway piece of the try `id` in the project at `root`, made new and private, by the
+/// name the kernel knows it by.
+fn made_piece(root: &Path, id: &str) -> Result<PathBuf, String> {
     #[cfg(unix)]
     {
-        let at = super::super::at::folder(temp).map_err(|why| why.to_string())?;
+        let at = pieces_at(root, true)?;
         rustix::fs::mkdirat(
             &at,
             format!("{PIECE_PREFIX}{id}").as_str(),
             rustix::fs::Mode::from_raw_mode(0o700),
         )
         .map_err(|why| format!("the throwaway folder could not be made ({why})"))?;
-        std::fs::canonicalize(temp.join(format!("{PIECE_PREFIX}{id}")))
+        let mut path = root.to_path_buf();
+        path.extend(PIECES);
+        std::fs::canonicalize(path.join(format!("{PIECE_PREFIX}{id}")))
             .map_err(|why| why.to_string())
     }
     #[cfg(not(unix))]
     {
-        let _ = (temp, id);
+        let _ = (root, id);
         Err("Try it needs folders that can be held open".to_owned())
     }
 }
 
-/// Removes the throwaway piece of the try `id` from `temp`: only a folder itself of the name this
-/// module made, through `temp`'s handle.
-fn remove_piece(temp: &Path, id: &str) -> Result<(), String> {
+/// Removes the throwaway piece of the try `id` from the project at `root`: only a folder itself
+/// of the name this module made, through its folder's handle.
+fn remove_piece(root: &Path, id: &str) -> Result<(), String> {
     if !an_id(id) {
         return Err(NO_SUCH.to_owned());
     }
     #[cfg(unix)]
     {
-        let at = super::super::at::folder(temp).map_err(|why| why.to_string())?;
+        let Ok(at) = pieces_at(root, false) else {
+            return Ok(());
+        };
         let name = format!("{PIECE_PREFIX}{id}");
         match super::super::at::entry_in(&at, &name).map_err(|why| why.to_string())? {
             None => Ok(()),
@@ -608,7 +634,7 @@ fn remove_piece(temp: &Path, id: &str) -> Result<(), String> {
     }
     #[cfg(not(unix))]
     {
-        let _ = temp;
+        let _ = root;
         Ok(())
     }
 }
@@ -691,13 +717,13 @@ pub fn tried(root: &Path, cwd: &Path) -> Option<PathBuf> {
     Some(crate::plane::state_dir(root).join(TRIES_DIR).join(id))
 }
 
-/// **Ends the Try it whose throwaway piece `cwd` is**, in the project at `root`, with the person's
-/// temp folder `temp`: the piece and the laid-out skill are removed. Nothing for any other folder.
-pub fn end_try_at(root: &Path, cwd: &Path, temp: &Path) -> Result<bool, String> {
+/// **Ends the Try it whose throwaway piece `cwd` is**, in the project at `root`: the piece and the
+/// laid-out skill are removed. Nothing for any other folder.
+pub fn end_try_at(root: &Path, cwd: &Path) -> Result<bool, String> {
     let Some(id) = try_of(root, cwd) else {
         return Ok(false);
     };
-    end_try(root, &id, temp)?;
+    end_try(root, &id)?;
     Ok(true)
 }
 
@@ -729,7 +755,9 @@ pub fn asking(level: &Level) -> String {
         purlis_skills::PROJECT_DIR
     };
     format!(
-        "Draft a skill as {dir}/<name>/SKILL.md, with name and description frontmatter (where          you cannot write it, write it in your own folder and run purlis propose with --from);          purlis keeps it as a draft in the Skill studio for me to try. The skill should "
+        "Draft a skill as {dir}/<name>/SKILL.md, with name and description frontmatter (where \
+         you cannot write it, write it in your own folder and run purlis propose with --from); \
+         purlis keeps it as a draft in the Skill studio for me to try. The skill should "
     )
 }
 
@@ -739,8 +767,8 @@ pub fn trying(name: &str) -> String {
 }
 
 /// Ends the try `id`: [`end_try_at`] by its id.
-pub fn end_try(root: &Path, id: &str, temp: &Path) -> Result<(), String> {
-    remove_piece(temp, id)?;
+pub fn end_try(root: &Path, id: &str) -> Result<(), String> {
+    remove_piece(root, id)?;
     remove_in(&crate::plane::state_dir(root), TRIES_DIR, id)
 }
 

@@ -938,11 +938,7 @@ export const commands = {
 	skillRestore: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **Every draft skill of the project**, by name: what the studio lists, and what a chat's tab
-	 *  asks to say "draft ready in Skill studio". None while the flag is off.
-	 */
-	skillDrafts: (plane: PlaneId) => typedError<SkillDraft[], string>(__TAURI_INVOKE("skill_drafts", { plane })),
+	skillDrafts: __WINDOW_ONLY_RESULT,
 	skillDraftAccept: __WINDOW_ONLY_RESULT,
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_RESULT,

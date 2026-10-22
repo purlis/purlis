@@ -240,7 +240,6 @@ pub(crate) async fn skill_draft_try(
     crate::off_the_window("starting Try it", move || {
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
-        let temp = std::env::temp_dir();
         let standing: Vec<std::path::PathBuf> = held
             .chats()
             .open_now()
@@ -250,7 +249,7 @@ pub(crate) async fn skill_draft_try(
             .collect();
         for (left, piece) in drafts::tries(&root) {
             if !standing.contains(&piece)
-                && let Err(why) = drafts::end_try(&root, &left, &temp)
+                && let Err(why) = drafts::end_try(&root, &left)
             {
                 tracing::warn!("purlis: a Try it left behind was not ended ({why})");
             }
@@ -260,7 +259,7 @@ pub(crate) async fn skill_draft_try(
             Some(profile) => profile,
             None => crate::curation::default_profile(&root, "Try it did not start")?.0,
         };
-        let tried = drafts::try_out(&root, &id, &temp)?;
+        let tried = drafts::try_out(&root, &id)?;
         let started = open(
             &held,
             ChatTyped {
@@ -274,7 +273,7 @@ pub(crate) async fn skill_draft_try(
             purlis_core::engine::Size { columns, rows },
         );
         if started.is_err()
-            && let Err(why) = drafts::end_try(&root, &tried.id, &temp)
+            && let Err(why) = drafts::end_try(&root, &tried.id)
         {
             tracing::warn!("purlis: a Try it that did not start was not ended ({why})");
         }
@@ -332,7 +331,7 @@ pub(crate) fn closed_in(root: &std::path::Path, cwd: &std::path::Path) {
     let (root, cwd) = (root.to_path_buf(), cwd.to_path_buf());
     std::thread::spawn(move || {
         std::thread::sleep(purlis_core::skills::TIDY_AFTER_A_CLOSE);
-        if let Err(why) = drafts::end_try_at(&root, &cwd, &std::env::temp_dir()) {
+        if let Err(why) = drafts::end_try_at(&root, &cwd) {
             tracing::warn!("purlis: a Try it's throwaway folder was not removed ({why})");
         }
     });

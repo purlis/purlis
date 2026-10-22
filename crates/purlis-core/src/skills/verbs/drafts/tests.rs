@@ -247,6 +247,24 @@ fn accept_is_one_commit_of_exactly_the_drafts_files_and_the_draft_is_gone() {
 }
 
 #[test]
+fn accepting_a_change_to_a_skill_commits_the_files_it_changed_and_nothing_else() {
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::write(root.join("skills/deploy/notes.md"), "mine\n").unwrap();
+    let id = drafted(
+        root,
+        "skills/deploy/SKILL.md",
+        &whole(&skill_text("deploy", "Ships it twice.")),
+    );
+    drafted(root, "skills/deploy/check.sh", &whole("check\n"));
+    accepted(root, &id).0.unwrap();
+    let (subject, paths) = last_commit(root);
+    assert!(subject.ends_with("skill edit deploy"), "{subject}");
+    assert_eq!(paths, ["skills/deploy/SKILL.md", "skills/deploy/check.sh"]);
+    assert!(uncommitted(root).contains("skills/deploy/notes.md"));
+}
+
+#[test]
 fn accept_refuses_a_draft_of_a_file_the_project_changed_since_and_writes_nothing() {
     let tmp = plane();
     let root = tmp.path();
@@ -325,7 +343,6 @@ fn reject_deletes_the_draft_and_nothing_else() {
 fn try_it_hands_a_chat_in_its_piece_the_draft_alone_and_ending_it_leaves_nothing() {
     let tmp = plane();
     let root = tmp.path();
-    let temp = tempfile::tempdir().unwrap();
     let id = drafted(
         root,
         "skills/deploy/SKILL.md",
@@ -335,7 +352,7 @@ fn try_it_hands_a_chat_in_its_piece_the_draft_alone_and_ending_it_leaves_nothing
     std::fs::write(root.join("skills/deploy/kept.md"), "the project's\n").unwrap();
     skill_at(root, "skills/release", "release", "Cuts it.");
 
-    let tried_out = try_out(root, &id, temp.path()).unwrap();
+    let tried_out = try_out(root, &id).unwrap();
     assert!(tried_out.piece.is_dir());
     assert!(
         tried_out
@@ -366,16 +383,23 @@ fn try_it_hands_a_chat_in_its_piece_the_draft_alone_and_ending_it_leaves_nothing
     );
     // Any other folder is no try's.
     assert_eq!(tried(root, root), None);
-    assert_eq!(tried(root, temp.path()), None);
+    assert_eq!(tried(root, &root.join("workspaces/ops")), None);
 
     std::fs::write(tried_out.piece.join("made.txt"), "by the chat\n").unwrap();
-    assert!(end_try_at(root, &tried_out.piece, temp.path()).unwrap());
+    assert!(end_try_at(root, &tried_out.piece).unwrap());
     assert!(!tried_out.piece.exists());
     assert!(!skills_from.exists());
-    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+    assert_eq!(
+        std::fs::read_dir(root.join("workspaces/.throwaway"))
+            .unwrap()
+            .count(),
+        0
+    );
+    // Inside the project, and never anything a save takes.
+    assert_eq!(uncommitted(root), "");
     // The draft stays, for Accept or Reject.
     assert_eq!(list(root).len(), 1);
-    assert!(!end_try_at(root, &tried_out.piece, temp.path()).unwrap());
+    assert!(!end_try_at(root, &tried_out.piece).unwrap());
 }
 
 #[cfg(unix)]
@@ -383,7 +407,6 @@ fn try_it_hands_a_chat_in_its_piece_the_draft_alone_and_ending_it_leaves_nothing
 fn ending_a_try_never_follows_a_link_put_in_its_piece() {
     let tmp = plane();
     let root = tmp.path();
-    let temp = tempfile::tempdir().unwrap();
     let elsewhere = tempfile::tempdir().unwrap();
     std::fs::write(elsewhere.path().join("keep.txt"), "keep\n").unwrap();
     let id = drafted(
@@ -391,9 +414,9 @@ fn ending_a_try_never_follows_a_link_put_in_its_piece() {
         "skills/triage/SKILL.md",
         &whole(&skill_text("triage", "Sorts issues.")),
     );
-    let tried_out = try_out(root, &id, temp.path()).unwrap();
+    let tried_out = try_out(root, &id).unwrap();
     std::os::unix::fs::symlink(elsewhere.path(), tried_out.piece.join("link")).unwrap();
-    end_try(root, &tried_out.id, temp.path()).unwrap();
+    end_try(root, &tried_out.id).unwrap();
     assert!(!tried_out.piece.exists());
     assert!(elsewhere.path().join("keep.txt").is_file());
 }

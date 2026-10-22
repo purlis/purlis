@@ -610,9 +610,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_restore",
     "skill_grant",
     "skill_turn",
-    // A draft skill accepted or rejected, and a chat opened to draft one or to try one (SK-9,
-    // #2772): an accept is one commit to the project, and a chat starts a program as the person.
-    // The person's own press in their window, as every skill change is.
+    // A chat's draft skills read, accepted or rejected, and a chat opened to draft one or to try
+    // one (SK-9, #2772): a draft is what a chat wrote, read by the person in their window as a
+    // proposed change is; an accept is one commit to the project, and a chat starts a program as
+    // the person. The person's own press in their window, as every skill change is.
+    "skill_drafts",
     "skill_draft_accept",
     "skill_draft_reject",
     "skill_draft_chat",

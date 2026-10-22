@@ -6852,17 +6852,20 @@ rewritten.
 - **Format:** one folder per Try it of a draft skill (SK-9, #2772), `<id>` sixteen random hex
   characters. `skills/<name>/` holds the skill as the draft makes it: the project's files of the
   skill, with the draft's over them. `piece` names the try's **throwaway piece**: a folder
-  `purlis-try-<id>` made new, `0700`, in the person's temp folder, which the scratch chat starts in.
+  `workspaces/.throwaway/purlis-try-<id>` made new, `0700`, inside the project (a sandboxed chat
+  starts only in a folder of the project), which the scratch chat starts in. A dot-name below
+  `workspaces/` is no workspace, git ignores it with every LOCAL workspace's files
+  (`/workspaces/*/*`), and a save never stages it (`planegit::SAVE_STAGES`).
   A chat started in that folder is armed with the built-in skills and this one skill alone, as if
   `skill-tries/<id>/` were a project of its own (`drafts::tried`).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
-- **Tier:** Transient — it lasts as long as its chat.
+- **Tier:** Clone state — this machine's, and it lasts only as long as its chat.
 - **Written by:** `drafts::try_out`, from the studio's Try it.
 - **Removed by:** the app when the chat closes (`drafts::end_try_at`), with its throwaway piece;
   and by the next Try it, for one no open chat stands in (a quit or a crash left it). Only the
   names this module made are removed, through the handle of the folder that holds them, and no
   link is followed. What is left is the skill run the chat recorded, under the skill's name.
-- **Git:** gitignored, under the state directory. The piece is outside the project.
+- **Git:** gitignored, under the state directory; the piece is ignored and never staged.
 
 ### `save-journal.jsonl`
 - **Format:** JSON Lines, one object per save attempt, appended. Capped at the newest 500
