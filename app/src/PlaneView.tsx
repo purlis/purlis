@@ -370,7 +370,7 @@ import type { FirstTaskDoes } from "./FirstTaskTab";
 import { useTabStop } from "./roving";
 import { onAMac } from "./tabKeys";
 import { opensAShell } from "./shellKey";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { SandboxChangedNotice, useOlderSandbox } from "./SandboxChanged";
 import { useSandboxCommands } from "./sandboxAsked";
 import { useAskOffer } from "./askOffer";

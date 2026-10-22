@@ -54,6 +54,7 @@ import { inADialog } from "./paneKeyboard";
 import { CHAT_KEYBOARD } from "./actions";
 import { forgetFrameScroll, useViewScroll } from "./viewScroll";
 import { IconButton } from "./ui/button/Button";
+import { PanelSectionTitle, panelRoot } from "./ui/panel/Panel";
 
 /**
  * **The window, drawn from the arrangement** (ADR 0038, and `regions.ts` for why the
@@ -411,6 +412,8 @@ export function RegionFrame({
               minSize="20%"
               role="region"
               aria-label={EDITOR}
+              // The content panel (`ui/panel`): its ground and the theme's corners.
+              {...panelRoot("content")}
             >
               {centre}
             </Panel>
@@ -689,6 +692,8 @@ function Half({
     >
       <div
         className="panel-half"
+        // A half of the bottom panel is a panel of its own (`ui/panel`).
+        {...panelRoot("bottom")}
         data-side={side}
         // A named region to a screen reader (P-13): its side's half, whichever view is open.
         role="region"
@@ -698,7 +703,7 @@ function Half({
         {placed !== undefined && (
           <>
             <div className="half-head">
-              <h2 className="sidebar-title ui-text-label">{title}</h2>
+              <PanelSectionTitle>{title}</PanelSectionTitle>
               {views.map(({ view }) => (
                 <span
                   key={view}
@@ -923,6 +928,8 @@ function Slot({
     <Panel
       id={panelOf(side)}
       className={`region-slot slot-${side}${arrived ? " arrived" : ""}`}
+      // A side is a panel (`ui/panel`); the bottom slot only holds its halves, each one.
+      {...(side === "panel" ? {} : panelRoot("side"))}
       // A region only while it has a name: an unnamed one is no landmark.
       role="region"
       aria-label={named}

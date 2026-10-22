@@ -1430,6 +1430,9 @@ are no geometry token: they are the window's own family and its one monospace fa
 | `--radius-full`         | 9999px                                                       |
 | `--size-control`        | 28px                                                         |
 | `--size-chrome`         | 21px                                                         |
+| `--window-gutter`       | 0px                                                          |
+| `--panel-corner-radius` | 0px                                                          |
+| `--panel-border-width`  | 1px                                                          |
 | `--focus-ring-width`    | 2px                                                          |
 | `--focus-ring-offset`   | 2px                                                          |
 | `--focus-ring-inset`    | -2px                                                         |
@@ -1472,6 +1475,9 @@ engine's (`purlis_core::theme::geometry::STEPS`), which the published schema car
 | `radius.full` | `--radius-full` | 0 to 9999 px | 9999 | 9999 |
 | `size.control` | `--size-control` | 20 to 40 px at 14px | 28 | 24 |
 | `size.chrome` | `--size-chrome` | 16 to 32 px at 14px | 21 | 18 |
+| `window.gutter` | `--window-gutter` | 0 to 16 px | 0 | 0 |
+| `panel.corner-radius` | `--panel-corner-radius` | 0 to 24 px | 0 | 0 |
+| `panel.border-width` | `--panel-border-width` | 0 to 2 px | 1 | 1 |
 | `focus-ring.width` | `--focus-ring-width` | 1 to 4 px | 2 | 2 |
 | `focus-ring.offset` | `--focus-ring-offset` | 0 to 4 px | 2 | 2 |
 | `focus-ring.inset` | `--focus-ring-inset` | -4 to 0 px | -2 | -2 |

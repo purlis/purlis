@@ -575,6 +575,8 @@ describe("every menu in the window", () => {
         "../TabChip.tsx",
         "../TerminalMenu.tsx",
         "../VaultTab.tsx",
+        // The status bar's menu, where the person hides an item (#2913).
+        "../ui/status/StatusBar.tsx",
       ]),
     );
   });

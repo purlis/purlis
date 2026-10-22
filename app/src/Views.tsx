@@ -41,7 +41,7 @@ import {
 import { PersonaMark } from "./PersonaMark";
 import { PersonaMarkPicker } from "./PersonaMarkPicker";
 import { PersonaProfileMissing } from "./PersonaProfileMissing";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { OffWhenReadOnly, useReadOnlySaid } from "./ReadOnlyLine";
 import { LandAsk, PushAsk, askLand } from "./ChangeActions";

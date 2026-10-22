@@ -18,6 +18,7 @@ import { Choice, SettingActions, SettingRow } from "./settings/components";
 import { channelMoved, useUpdateChannel } from "./updateChannel";
 import { AnswerBar } from "./AnswerBar";
 import { Button } from "./ui/button/Button";
+import { StatusItem } from "./ui/status/StatusItem";
 
 /**
  * **"An update is available", and the pin that drifts** — the two version facts charter ADR
@@ -313,23 +314,30 @@ export function UpdateItem({
         }}
       >
         <Dialog.Trigger asChild>
-          <button
-            type="button"
-            className={`status-update update-${state.kind}`}
-            // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written
-            // down (`docs/ui-primitives.md`, charter-app#189).
-            tabIndex={0}
+          <StatusItem
+            // A status pill (R115): a quiet updater is its icon alone, in the pill's quiet words;
+            // an offer is the one thing there that is news, on the accent's ground; a failure the
+            // person asked about is amber beside its words.
+            variant={
+              state.kind === "offered" || state.kind === "installed" || state.kind === "installing"
+                ? "accent"
+                : "pill"
+            }
+            tone={state.kind === "failed" ? "waiting" : undefined}
             data-testid="status-update"
+            data-kind={state.kind}
             aria-label={label}
             title={label}
+            icon={
+              state.kind === "installing" ? (
+                <LoaderCircle aria-hidden="true" className="spinning" />
+              ) : (
+                <ArrowUpCircle aria-hidden="true" />
+              )
+            }
           >
-            {state.kind === "installing" ? (
-              <LoaderCircle aria-hidden="true" className="spinning" />
-            ) : (
-              <ArrowUpCircle aria-hidden="true" />
-            )}
-            {words && <span> {words}</span>}
-          </button>
+            {words}
+          </StatusItem>
         </Dialog.Trigger>
         <Dialog.Portal>
           <Dialog.Overlay className="ui-scrim" />
@@ -531,16 +539,14 @@ export function PinItem({
   return (
     <Dialog.Root onOpenChange={(now) => now && again()}>
       <Dialog.Trigger asChild>
-        <Button
-          size="sm"
-          variant="ghost"
+        <StatusItem
           data-testid="status-pin"
           title={label}
+          tone="waiting"
           icon={<Pin aria-hidden="true" />}
-          className="status-pin"
         >
           {shown}
-        </Button>
+        </StatusItem>
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-scrim" />

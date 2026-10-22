@@ -4,7 +4,7 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 import Markdown from "react-markdown";
 import { LoaderCircle } from "lucide-react";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { COMPONENTS } from "./SessionRecordTab";
 import {

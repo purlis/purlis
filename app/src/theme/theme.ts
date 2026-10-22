@@ -149,6 +149,10 @@ export const TOKENS = [
   "danger.text",
   "danger.wash",
 
+  // What waits on the person, or asks for care: the amber wash a pill or a soft warning stands on
+  // (#2804's wash rule, #2913).
+  "wash.warning",
+
   // A diff in the light editor's merge view (RC-5): the wash on a line git reported changed,
   // on the base side and on the head side, and the stronger mark on the words that changed
   // inside it. Washes, so the text drawn over them keeps the terminal's own contrast.

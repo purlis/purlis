@@ -102,8 +102,9 @@ each font you named that their folder does not already have.
 **Shape and size** are tokens beside the colours, set in each appearance (one that leaves them out
 keeps the theme it extends): a whole number (the line heights take decimals) inside its bounds, or
 the theme is refused. Offer them: the built-in Purlis theme sets `radius.md` 7, `radius.lg` 10,
-`radius.xl` 12, `size.control` 26, `size.chrome` 24 and `line-height.body` 1.55 in all three of its
-appearances. The top-level `compact` holds what compact density draws. A token it leaves out keeps
+`radius.xl` 12, `size.control` 26, `size.chrome` 24, `line-height.body` 1.55, `window.gutter` 8 and
+`panel.corner-radius` 12 in all three of its appearances: its panels float with rounded corners,
+where Purlis Classic draws them flush. The top-level `compact` holds what compact density draws. A token it leaves out keeps
 the appearance's own value, except the ones Classic's compact moves (`space.2` to `space.8`,
 `line-height.body`, `size.control`, `size.chrome`): those take the smaller of Classic's compact and
 the appearance's own.
@@ -119,6 +120,9 @@ Most asks for another shape come down to the corners and the heights:
 | `radius.full` | 0–9999 px | 9999 | 9999 | pills: counts, toggle tracks |
 | `size.control` | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
 | `size.chrome` | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
+| `window.gutter` | 0–16 px | 0 | 0 | the gap between the window's regions: 0 draws them flush, 8 floats them |
+| `panel.corner-radius` | 0–24 px | 0 | 0 | the corners of the side panels, the content and the bottom panel's halves |
+| `panel.border-width` | 0–2 px | 1 | 1 | the hairline between two regions that sit flush |
 
 `purlis docs show themes` has every one in its Geometry section: the spacing and type scales,
 the weights, the line heights, the focus ring and the shadows too, each with its unit, bounds,
