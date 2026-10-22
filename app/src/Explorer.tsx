@@ -62,6 +62,7 @@ import { pickable, useFilePicks, type Pickable } from "./filePicks";
 import { useLastRead } from "./editor/lastRead";
 import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
 import { Button, ToggleButton } from "./ui/button/Button";
+import { TextField } from "./ui/field/Field";
 
 /**
  * The left region: the repo and worktree **explorer** (ADR 0038).
@@ -885,25 +886,24 @@ type TabStop = ReturnType<typeof useTabStop>;
  *  Esc clears it. */
 function FilesFilter({ filter, onFilter }: { filter: string; onFilter: (to: string) => void }) {
   return (
-    <div className="files-filter ui-input-lead">
-      <ListFilter className="ui-input-lead-icon" aria-hidden="true" />
-      <input
-        type="search"
-        className="ui-input"
-        value={filter}
-        aria-label="Filter files"
-        placeholder="Filter files"
-        onChange={(event) => onFilter(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape" || filter === "") return;
-          // Taken here: an Esc that cleared the box has done its job, and nothing behind
-          // the explorer should act on it too.
-          event.preventDefault();
-          event.stopPropagation();
-          onFilter("");
-        }}
-      />
-    </div>
+    <TextField
+      className="files-filter"
+      type="search"
+      icon={<ListFilter aria-hidden="true" />}
+      keepsFocus="files-filter"
+      value={filter}
+      aria-label="Filter files"
+      placeholder="Filter files"
+      onChange={onFilter}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || filter === "") return;
+        // Taken here: an Esc that cleared the box has done its job, and nothing behind
+        // the explorer should act on it too.
+        event.preventDefault();
+        event.stopPropagation();
+        onFilter("");
+      }}
+    />
   );
 }
 

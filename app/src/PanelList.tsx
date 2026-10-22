@@ -24,6 +24,7 @@ import { byDay, isDated, type Day } from "./dayGroups";
 import { EmptyState } from "./EmptyState";
 import { useTabStop } from "./roving";
 import { Button } from "./ui/button/Button";
+import { TextField } from "./ui/field/Field";
 
 /**
  * The list a panel is drawn from, and the one the operator asked for by name.
@@ -254,22 +255,21 @@ export function PanelList({
   return (
     <div className="panel-list" data-testid={testid}>
       {searchable && (
-        <div className="panel-search ui-input-lead">
-          <Search className="ui-input-lead-icon" aria-hidden="true" />
-          <input
-            type="search"
-            className="ui-input"
-            value={query}
-            aria-label={`Search ${label}`}
-            placeholder={`Search ${rows.length}`}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              // Back to one page: a search that kept a grown limit would show forty matches
-              // for one word and then twelve for the next, which reads as rows going missing.
-              setLimit(page);
-            }}
-          />
-        </div>
+        <TextField
+          className="panel-search"
+          type="search"
+          icon={<Search aria-hidden="true" />}
+          keepsFocus={`panel-search:${label}`}
+          value={query}
+          aria-label={`Search ${label}`}
+          placeholder={`Search ${rows.length}`}
+          onChange={(to) => {
+            setQuery(to);
+            // Back to one page: a search that kept a grown limit would show forty matches
+            // for one word and then twelve for the next, which reads as rows going missing.
+            setLimit(page);
+          }}
+        />
       )}
 
       {matching.length === 0 ? (

@@ -117,10 +117,11 @@ function cssComplaints(path: string, text: string): string[] {
       complaints.push(`${at(path, text, hit.index)} has ${what}: ${hit[0]}`);
     }
   }
-  // A declaration's value, and — in a page — an attribute's.
+  // A declaration's value, and — in a page — an attribute's. In a stylesheet a quoted value
+  // after `=` is a selector's (`[data-scope="field"]`, #2905), never a colour.
   const values = [
     ...text.matchAll(/[\w-]+\s*:\s*([^;{}]+?)\s*(?=[;}]|$)/gm),
-    ...text.matchAll(/=\s*"([^"]*)"/g),
+    ...(path.endsWith(".html") ? text.matchAll(/=\s*"([^"]*)"/g) : []),
   ];
   for (const value of values) {
     for (const hit of value[1].matchAll(named.pattern)) {
@@ -190,6 +191,10 @@ describe("the stylesheet guard", () => {
     // `mark` and `field` are system colours and also an element and a class charter has; a
     // selector naming one is not a colour.
     expect(cssComplaints("a.css", "mark, .field { color: var(--text-primary); }")).toEqual([]);
+    expect(cssComplaints("a.css", '[data-scope="field"] { color: var(--text-primary); }')).toEqual(
+      [],
+    );
+    expect(cssComplaints("a.css", ".a { color: field; }")).not.toEqual([]);
   });
 });
 
