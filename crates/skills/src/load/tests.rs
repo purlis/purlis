@@ -30,7 +30,7 @@ fn skill(dir: &Path, name: &str, description: &str, more: &str) -> Effective {
 fn set(effective: Vec<Effective>) -> SkillSet {
     SkillSet {
         effective,
-        left_out: Vec::new(),
+        ..SkillSet::default()
     }
 }
 

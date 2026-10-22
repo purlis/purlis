@@ -987,7 +987,8 @@ pub fn of_a_chat(
         workspace,
         linked: None,
     };
-    ask(built_in, Some(at), persona, route)
+    // The harness's own installed skills are the harness's to hand over, never these tools'.
+    ask(built_in, Some(at), persona, route, None)
 }
 
 /// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,
