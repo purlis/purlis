@@ -6,7 +6,7 @@ import { commands, type ProfileRow, type SkillDraft } from "./bindings";
 import { counted } from "./dispatches";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Select } from "./primitives/Select";
-import { askSkillChat } from "./skillDrafts";
+import { askSkillChat } from "./skillDraftAsks";
 
 /** The merge view, from the editor's own chunk (ADR 0086 row M2), loaded when a diff opens. */
 const MergeViewer = lazy(() =>

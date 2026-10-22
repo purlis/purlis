@@ -101,7 +101,9 @@ describe("draft skills in the Skill studio", function () {
     expect(existsSync(join(root, "skills", ACCEPTED))).toBe(false);
 
     await (await $(`aria/Changes in ${ACCEPTED}`)).click();
-    await expect($(`[data-testid="draft-${ACCEPTED}"] [data-testid="draft-file-SKILL.md"]`)).toExist();
+    await expect(
+      $(`[data-testid="draft-${ACCEPTED}"] [data-testid="draft-file-SKILL.md"]`),
+    ).toExist();
 
     await (await $(`aria/Reject ${REJECTED}`)).click();
     await $(`[data-testid="draft-${REJECTED}"]`).waitForExist({ reverse: true, timeout: 20_000 });

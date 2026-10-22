@@ -5,7 +5,7 @@ import { useContext, useState } from "react";
 import type { PlaneId } from "./bindings";
 import { Notice, NoticeOf } from "./Notice";
 import { askSettingsAction } from "./settings/links";
-import { draftReadySays, useSkillDrafts } from "./skillDrafts";
+import { draftReadySays, useSkillDrafts } from "./skillDraftAsks";
 import { SKILL_STUDIO_SHOW, useSkillStudioOn } from "./skillStudio";
 
 /**

@@ -938,6 +938,15 @@ export const commands = {
 	skillRestore: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **Every draft skill of the project**, by name: what the studio lists, and what a chat's tab
+	 *  asks to say "draft ready in Skill studio". None while the flag is off.
+	 */
+	skillDrafts: (plane: PlaneId) => typedError<SkillDraft[], string>(__TAURI_INVOKE("skill_drafts", { plane })),
+	skillDraftAccept: __WINDOW_ONLY_RESULT,
+	skillDraftReject: __WINDOW_ONLY_RESULT,
+	skillDraftChat: __WINDOW_ONLY_RESULT,
+	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillStudioSwitch: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The skills chat `session` has, as Use skill… offers them, and its skill budget**: nothing
@@ -8916,6 +8925,34 @@ export type SkillBudget = {
  */
 export type SkillChanged = {
 	notes: string[],
+};
+
+/**  One draft skill, as the studio lists it. */
+export type SkillDraft = {
+	/**  What Try it, Accept and Reject are handed back. */
+	id: string,
+	name: string,
+	level: SkillLevel,
+	/**  Its level as a person reads it: `project`, `local workspace ops`. */
+	label: string,
+	/**  The chat that wrote it last, by its number. */
+	chat: number | null,
+	/**  A new skill, rather than a change to one. */
+	new: boolean,
+	/**  A file it changes changed in the project since: Accept is refused. */
+	stale: boolean,
+	files: SkillDraftFile[],
+};
+
+/**  One file of a draft: the project's text and the draft's, drawn as a diff. */
+export type SkillDraftFile = {
+	/**  Below the skill's folder: `SKILL.md`, `scripts/run.sh`. */
+	path: string,
+	before: string | null,
+	after: string,
+	/**  The lines that changed, as git's one line diff marks them in the merge view. */
+	hunks: GitHunk[],
+	stale: boolean,
 };
 
 /**  Where a project skill reaches, as the studio sets it. */

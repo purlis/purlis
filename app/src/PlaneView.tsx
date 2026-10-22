@@ -468,7 +468,7 @@ import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
 import { SessionOffersLent } from "./sessionOffers";
 import { WorkspaceStrip } from "./WorkspaceStrip";
-import { SKILL_CHAT, type SkillChatAsk } from "./skillDrafts";
+import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import { ChatStrip, NO_ENDED, NO_ROWS } from "./ChatStrip";
 import { type FirstChat, type PlaneReport, type WindowDoing } from "./planeReport";
 import { Doer, Pin } from "./StripMarks";

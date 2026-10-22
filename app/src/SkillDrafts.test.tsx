@@ -14,7 +14,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { DraftReadyNotice } from "./DraftReadyNotice";
 import { AT_THE_ROOT, inWorkspace } from "./skillStudio";
-import { SKILL_CHAT, draftReadySays, type SkillChatAsk } from "./skillDrafts";
+import { SKILL_CHAT, draftReadySays, type SkillChatAsk } from "./skillDraftAsks";
 
 afterEach(() => {
   cleanup();
@@ -29,7 +29,9 @@ const draft = (name: string, over: Record<string, unknown> = {}) => ({
   chat: 4,
   new: true,
   stale: false,
-  files: [{ path: "SKILL.md", before: null, after: "---\nname: x\n---\n", hunks: [], stale: false }],
+  files: [
+    { path: "SKILL.md", before: null, after: "---\nname: x\n---\n", hunks: [], stale: false },
+  ],
   ...over,
 });
 

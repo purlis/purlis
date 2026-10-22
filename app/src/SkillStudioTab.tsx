@@ -23,7 +23,7 @@ import { Button, ButtonRow } from "./ui/button/Button";
 import { Notice } from "./Notice";
 import { SkillRowActions } from "./SkillRowActions";
 import { SkillDrafts } from "./SkillDrafts";
-import { askSkillChat, useSkillDrafts } from "./skillDrafts";
+import { askSkillChat, useSkillDrafts } from "./skillDraftAsks";
 import { Select } from "./primitives/Select";
 import { Field, SettingRow } from "./settings/components";
 import {
