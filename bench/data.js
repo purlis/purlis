@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792703669838,
+  "lastUpdate": 1792705837460,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22092,6 +22092,48 @@ window.BENCHMARK_DATA = {
             "value": 102.05520150000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.472, 101.980, 102.055, 102.226, 102.577 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ba21b813dccb84767db04914d3cb6e2fdea082d3",
+          "message": "SK-21: move today's skills into the Skill studio without breaking anything (#2784) (#3045)\n\n* Skills: move a project's .claude/skills into the Skill studio in one commit (project-skills, #2784)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: format the project-skills migration and its tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: an unresolved persona reference is found by how its skills: list writes it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: the migration's tests commit with an identity, and its words name no command\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: the move follows the review of #3045\n\nA moved project's skills reach every chat whatever the flag says (the dispatcher's ruling).\nThe move checks every folder, every route, persona and clone chat, refuses a detached HEAD,\nan operation under way or a folder that is not the project's root, rolls the index back when\nthe commit fails, works through folder handles, rewrites only references, and speaks the\nwindow's words. The shared commit helpers move to fix/commit.rs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T01:49:10+04:00",
+          "tree_id": "8f2116d7fb8e3214edf1d23ae799ea0c00c65377",
+          "url": "https://github.com/purlis/purlis/commit/ba21b813dccb84767db04914d3cb6e2fdea082d3"
+        },
+        "date": 1792705834730,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.529823,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.473, 0.508, 0.530, 0.550, 0.578 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0880705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.550, 16.894, 17.088, 17.232, 17.341 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.68940900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.905, 104.488, 104.689, 105.083, 105.357 ms"
           }
         ]
       }
