@@ -91,9 +91,22 @@ jobs:
       - name: The image is the Playwright the lockfile names, by its tag and its digest
         run: node ../tools/story-image.mjs
       # Every story must still pass its keyboard test and axe: a baseline is drawn only of a
-      # story that passes everything else.
+      # story that passes everything else. Each browser on its own, as in `stories.yml`, so a
+      # story that fails here is named the same way.
       - name: The stories, writing each picture that is new or differs
-        run: npm run test:stories -- --update
+        run: |
+          failed=0
+          for browser in chromium webkit; do
+            PURLIS_STORY_REPORT="$RUNNER_TEMP/stories-$browser.json" \
+              npx vitest run --project "stories * ($browser)" --update \
+              --reporter=default --reporter=../tools/story-failures.mjs || failed=1
+          done
+          exit "$failed"
+      - name: The stories that failed, named
+        if: failure()
+        run: |
+          node ../tools/story-failures.mjs \
+            chromium "$RUNNER_TEMP/stories-chromium.json" webkit "$RUNNER_TEMP/stories-webkit.json"
       # Only the baselines of the stories Storybook's index has: `commit` deletes every other one.
       - name: The baselines, gathered
         run: |
