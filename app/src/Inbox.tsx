@@ -64,6 +64,7 @@ import { AskWrites } from "./AskWrites";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Form, TextField } from "./ui/field/Field";
+import { PanelSectionTitle } from "./ui/panel/Panel";
 
 /** What an empty Inbox says (I-12). */
 export const NOTHING_WAITS = "Nothing is waiting on you";
@@ -469,7 +470,9 @@ export function Inbox({
               hidden={noticed === 0 && windowLinesCount === 0}
               ref={noticesAt}
             >
-              <h3 className="inbox-chain sidebar-title">{NOTICES}</h3>
+              <PanelSectionTitle level={3} className="inbox-chain">
+                {NOTICES}
+              </PanelSectionTitle>
               <NothingDone said={noticesSaid} />
               {/* The window's own lines, listed first: the window draws its one list here. */}
               {placeWindowLines !== undefined && (
@@ -1032,7 +1035,9 @@ function Empty({
       <p className="inbox-none">{quiet ?? NOTHING_WAITS}</p>
       {recent.length > 0 && (
         <section className="inbox-recent" aria-label="Recently answered">
-          <h3 className="inbox-chain sidebar-title">Recently answered</h3>
+          <PanelSectionTitle level={3} className="inbox-chain">
+            Recently answered
+          </PanelSectionTitle>
           <ul>
             {recent.map((one) => (
               <li key={`${one.at}:${chainSaid(one.chain)}:${one.says}`}>
@@ -1049,7 +1054,9 @@ function Empty({
       )}
       {allowed.length > 0 && (
         <section className="inbox-recent" aria-label={ALLOWED_LATELY}>
-          <h3 className="inbox-chain sidebar-title">{ALLOWED_LATELY}</h3>
+          <PanelSectionTitle level={3} className="inbox-chain">
+            {ALLOWED_LATELY}
+          </PanelSectionTitle>
           <ul>
             {allowed.map((one) => (
               <li key={one.key}>
@@ -1181,7 +1188,9 @@ function UpdateList({ updates, stops }: { updates: Updates; stops: readonly stri
   return (
     <section className="inbox-updates" aria-label={UPDATES}>
       <div className="inbox-updates-head">
-        <h3 className="inbox-chain sidebar-title">{UPDATES}</h3>
+        <PanelSectionTitle level={3} className="inbox-chain">
+          {UPDATES}
+        </PanelSectionTitle>
         <Stop id={READ_ALL_STOP} focusable={unread}>
           <Button
             size="sm"

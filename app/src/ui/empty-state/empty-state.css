@@ -1,0 +1,81 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The empty state family's default** (#2913, ADR 0103, ADR 0104): what a surface says when it
+   holds nothing, centred, with the way out in it (`ui/empty-state/EmptyState.tsx`). Keyed on the
+   wrapper's attributes alone; `purlis_core::theme::parts` holds a copy of its colours.
+
+   `page` is the middle of the content: the operator's *"open new tab button on empty page
+   center"*. `panel` is the same thing at a side panel's width, where a page's type would wrap the
+   headline to three lines.
+
+   In the `components` layer (`styles.css`), above `App.css`. */
+
+[data-scope="empty-state"][data-part="root"] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+[data-scope="empty-state"][data-part="root"][data-variant="page"] {
+  block-size: 100%;
+  padding: var(--space-8);
+}
+
+[data-scope="empty-state"][data-part="root"][data-variant="panel"] {
+  padding: var(--space-6) var(--space-4);
+}
+
+/* The mark: two controls tall on a page, a chrome's height in a panel. A mark and never words,
+   so the faint tier (#2897). */
+[data-scope="empty-state"][data-part="icon"] {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+[data-scope="empty-state"][data-part="icon"] > svg {
+  inline-size: var(--space-8);
+  block-size: var(--space-8);
+}
+
+[data-variant="panel"] > [data-scope="empty-state"][data-part="icon"] > svg {
+  inline-size: var(--space-6);
+  block-size: var(--space-6);
+}
+
+[data-scope="empty-state"][data-part="headline"] {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-strong);
+}
+
+[data-variant="panel"] > [data-scope="empty-state"][data-part="headline"] {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+}
+
+[data-scope="empty-state"][data-part="body"] {
+  margin: 0;
+  max-inline-size: 28rem;
+  font-size: var(--font-size-sm);
+}
+
+[data-variant="panel"] > [data-scope="empty-state"][data-part="body"] {
+  font-size: var(--font-size-xs);
+}
+
+/* The way out: the shared primary button, one beside another where there are two. */
+[data-scope="empty-state"][data-part="action"] {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-3);
+}

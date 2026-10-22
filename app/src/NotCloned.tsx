@@ -13,6 +13,7 @@ import {
 } from "./actions";
 import type { CloneState } from "./repoClones";
 import { Button } from "./ui/button/Button";
+import { PanelSectionTitle } from "./ui/panel/Panel";
 
 /** What this window is cloning into the focused workspace, by repo (`repoClones`). */
 export type Cloning = ReadonlyMap<string, CloneState>;
@@ -54,7 +55,7 @@ export function NotClonedHere({
   return (
     <section className="absent" data-testid="absent">
       <div className="absent-heading">
-        <h2 className="sidebar-title ui-text-label">Not cloned here</h2>
+        <PanelSectionTitle>Not cloned here</PanelSectionTitle>
         {absent.length > 1 && all !== undefined && (
           <div className="absent-actions">
             <SettingActions>

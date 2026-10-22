@@ -1,0 +1,76 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The panel family's default** (#2913, ADR 0103, ADR 0104): how a region panel and a panel's
+   section are drawn when a theme names none of their parts. Every rule is keyed on the wrapper's
+   attributes (`ui/panel/Panel.tsx`), never on a class, so a screen cannot reach a panel's look and
+   a theme's parts reach exactly what this file draws (`purlis_core::theme::parts`, which holds a
+   copy of the colours here).
+
+   **The window's geometry is the theme's** (#2805): a panel's corners are `panel.corner-radius`,
+   the gap between panels is `window.gutter` (the regions' own rules in `App.css`), and the
+   hairline between two flush panels is `panel.border-width`. Purlis Classic's are 0, 0 and 1:
+   flush, as the window always drew. Purlis floats its panels, 8 apart with 12px corners.
+
+   In the `components` layer (`styles.css`), above `App.css`: a view places a panel and nothing it
+   writes redraws one. So this file sets no margin: where a section or its title sits is its
+   view's (`App.css`). */
+
+/* ---------------------------------------------------------------------------------------------
+   A region panel.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="panel"][data-part="root"] {
+  box-sizing: border-box;
+  border: 0 solid var(--border-subtle);
+  border-radius: var(--panel-corner-radius);
+  background-color: var(--surface-base);
+}
+
+/* A library's resizable panel draws its root's attributes on its outer box and scrolls its inner
+   one, which keeps to the root's corners. */
+[data-scope="panel"][data-part="root"][data-panel] > * {
+  border-radius: inherit;
+}
+
+/* Any other panel clips what it holds to its own corners. */
+[data-scope="panel"][data-part="root"]:not([data-panel]) {
+  overflow: clip;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A panel's section: its heading line and its title.
+   --------------------------------------------------------------------------------------------- */
+
+/* The heading line: the title, then the section's actions. As tall as a heading with a small
+   button, so a heading without one lines up the same. */
+[data-scope="panel-section"][data-part="head"] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--size-chrome);
+}
+
+[data-scope="panel-section"][data-part="head"] > [data-part="title"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* **A section's title** — smaller, heavier and a tier brighter than a row, in the label's
+   capitals, and never dimmed, so it reads as where a section starts and not as its first row.
+   The mark takes the title's colour: a muted glyph is what a row carries. */
+[data-scope="panel-section"][data-part="title"] {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+[data-scope="panel-section"][data-part="title"] .node-icon {
+  flex: none;
+  color: inherit;
+}

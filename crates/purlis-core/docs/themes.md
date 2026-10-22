@@ -173,6 +173,9 @@ over the appearance as its colours are.
 | `radius.full` | px | 0–9999 | 9999 | 9999 | pills: counts, toggle tracks |
 | `size.control` | px at 14px | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
 | `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
+| `window.gutter` | px | 0–16 | 0 | 0 | the gap between the window's regions, and around them inside the frame |
+| `panel.corner-radius` | px | 0–24 | 0 | 0 | a region panel's corners: the sides, the content and the bottom panel's halves |
+| `panel.border-width` | px | 0–2 | 1 | 1 | the hairline between two regions, drawn only while they sit flush (no gutter) |
 | `focus-ring.width` | px | 1–4 | 2 | 2 | every focus ring, and the selected row's edge |
 | `focus-ring.offset` | px | 0–4 | 2 | 2 | a ring outside its element: a control's, a card's |
 | `focus-ring.inset` | px | −4–0 | −2 | −2 | a ring inside its element: a list row's, a tab's, a segment's |
@@ -367,6 +370,15 @@ the family's default size, md: it never reaches a button drawn at sm or lg, or o
 wraps, whose size the family keeps, and an sm or lg button's corners are clamped to its own
 height. A button names one variant, so a variant's rule reaches only a button of that variant.
 A text input's size is its md size too: it never reaches an sm or lg box.
+
+**The window's own families** (manifest version 4, #2913): `panel` (a region: `side`, `content`,
+`bottom`), `panel-section` (its `head` and its `title`), `empty-state` (its `icon`, `headline`,
+`body` and `action`) and `status-item` (a status bar item or a title-bar pill: `bar`, `pill`,
+`waiting`, `accent`; its `icon`, `label` and `count`). A panel, a section and an empty state are
+boxes as tall as what they hold: no target of their own, so only their bounds hold, and each
+of their corners is clamped to half their own box (`min(r, 50%)`; `full` is `50%`). A status item is a control, 24px tall in either density, and keeps
+its words in that height. `panel.root.corner-radius` sets one panel's corners over the theme's
+`panel.corner-radius` token, which sets every panel's.
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
 families with parts today: they are drawn as the note under [Geometry](#geometry) says.

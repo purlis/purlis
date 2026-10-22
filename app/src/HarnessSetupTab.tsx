@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { commands, type HarnessSetupFound, type PlaneId } from "./bindings";
 import { harnessSays } from "./harnessSays";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { askHarnessSetup } from "./harnessSetup";
 import { Button } from "./ui/button/Button";
 
@@ -165,7 +165,7 @@ export function HarnessSetupTab({
       ) : (
         found !== undefined && (
           <EmptyState
-            size="panel"
+            variant="panel"
             headline="No model is served on this machine"
             body="Without an account, opencode can run on a model served on this machine by Ollama or LM Studio: start one and press Check again."
             testid="harness-setup-no-local-model"

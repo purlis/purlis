@@ -52,6 +52,9 @@
     "ansi-cyan": "#79cfd6",
     "ansi-bright-cyan": "#83d9e0"
   },
+  "parts": {
+    "panel.root.fill": "surface.raised"
+  },
   "appearances": [
     {
       "id": "dark",
@@ -92,6 +95,7 @@
         "danger.surface": "danger-surface",
         "danger.text": "danger-text",
         "danger.wash": "#f0a9a81f",
+        "wash.warning": "#e5c08a1f",
         "diff.deleted": "#f0a9a81f",
         "diff.inserted": "#8fc79a1f",
         "diff.deleted-text": "#f0a9a855",
@@ -217,6 +221,9 @@
         "radius.xl": 12,
         "size.control": 26,
         "size.chrome": 24,
+        "window.gutter": 8,
+        "panel.corner-radius": 12,
+        "panel.border-width": 0,
         "line-height.body": 1.55,
         "elevation.raised-y": 0,
         "elevation.raised-blur": 0
@@ -272,6 +279,7 @@
         "danger.surface": "#e1d4d9",
         "danger.text": "#351c1c",
         "danger.wash": "#682e301f",
+        "wash.warning": "#5236011f",
         "diff.deleted": "#682e301f",
         "diff.inserted": "#20562f1f",
         "diff.deleted-text": "#682e3055",
@@ -397,6 +405,9 @@
         "radius.xl": 12,
         "size.control": 26,
         "size.chrome": 24,
+        "window.gutter": 8,
+        "panel.corner-radius": 12,
+        "panel.border-width": 0,
         "line-height.body": 1.55,
         "elevation.raised-y": 0,
         "elevation.raised-blur": 0
@@ -453,6 +464,7 @@
         "danger.surface": "danger-surface",
         "danger.text": "danger-text",
         "danger.wash": "#f0a9a81f",
+        "wash.warning": "#e5c08a24",
         "diff.deleted": "#f0a9a81f",
         "diff.inserted": "#8fc79a1f",
         "diff.deleted-text": "#f0a9a855",
@@ -578,6 +590,9 @@
         "radius.xl": 12,
         "size.control": 26,
         "size.chrome": 24,
+        "window.gutter": 8,
+        "panel.corner-radius": 12,
+        "panel.border-width": 0,
         "line-height.body": 1.55,
         "elevation.raised-y": 0,
         "elevation.raised-blur": 0

@@ -27,7 +27,6 @@ import {
   Children,
   createContext,
   useContext,
-  type ButtonHTMLAttributes,
   type ComponentPropsWithRef,
   type CSSProperties,
   type ReactNode,
@@ -37,10 +36,10 @@ import {
   Button as AriaButton,
   ToggleButton as AriaToggleButton,
   type ButtonProps as AriaButtonProps,
-  type KeyboardEvent,
   type ToggleButtonProps as AriaToggleButtonProps,
 } from "react-aria-components";
 import { LockOpen } from "lucide-react";
+import { pressable, renderPressed, type Native } from "../pressable";
 
 /** The family's variants, in the order the manifest names them. */
 export const BUTTON_VARIANTS = [
@@ -58,36 +57,6 @@ export type ButtonVariant = (typeof BUTTON_VARIANTS)[number];
 /** The family's sizes: 24, 28 and 32 px at the default text size and density (`button.css`). */
 export const BUTTON_SIZES = ["sm", "md", "lg"] as const;
 export type ButtonSize = (typeof BUTTON_SIZES)[number];
-
-/**
- * The native attributes React Aria does not hand to its element, which a call site still needs:
- * a tooltip (until the shared tooltip replaces `title`, #2897), a busy press (#1190), a
- * shortcut, and the place in a roving group's tab sequence.
- */
-type Native = Pick<
-  ButtonHTMLAttributes<HTMLButtonElement>,
-  | "title"
-  | "tabIndex"
-  | "aria-busy"
-  | "aria-keyshortcuts"
-  | "aria-live"
-  | "aria-atomic"
-  | "aria-owns"
-  | "aria-roledescription"
-  | "aria-errormessage"
->;
-
-const NATIVE_KEYS = [
-  "title",
-  "tabIndex",
-  "aria-busy",
-  "aria-keyshortcuts",
-  "aria-live",
-  "aria-atomic",
-  "aria-owns",
-  "aria-roledescription",
-  "aria-errormessage",
-] as const satisfies readonly (keyof Native)[];
 
 /** What every member of the family takes beside React Aria's own props. */
 interface Drawn extends Native {
@@ -197,17 +166,6 @@ function GrantsLock() {
   );
 }
 
-/** Splits a call's props into what React Aria takes and the native attributes it would drop. */
-function split<T extends Drawn>(props: T) {
-  const native: Record<string, unknown> = {};
-  const aria: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(props)) {
-    if ((NATIVE_KEYS as readonly string[]).includes(key)) native[key] = value;
-    else aria[key] = value;
-  }
-  return { native, aria };
-}
-
 function useDrawn(props: Drawn & { children?: ReactNode; isDisabled?: boolean }, iconOnly = false) {
   const rowSize = useContext(RowSize);
   const {
@@ -221,17 +179,9 @@ function useDrawn(props: Drawn & { children?: ReactNode; isDisabled?: boolean },
     ...rest
   } = props;
   const size = rowSize ?? ownSize;
-  const { native, aria } = split(rest);
-  // A key a button's own handler does not stop goes on to its row, its list and the window, as
-  // a native button's does; React Aria stops every key at a handler unless told otherwise.
-  for (const name of ["onKeyDown", "onKeyUp"] as const) {
-    const handler = aria[name] as ((event: KeyboardEvent) => void) | undefined;
-    if (handler)
-      aria[name] = (event: KeyboardEvent) => {
-        event.continuePropagation();
-        handler(event);
-      };
-  }
+  // The press every pressable family shares (`ui/pressable.tsx`): the native attributes, the
+  // keys a handler does not stop going on, and the element.
+  const { native, aria } = pressable(rest);
   const content = (
     <>
       {variant === "grants" ? <GrantsLock /> : null}
@@ -249,28 +199,8 @@ function useDrawn(props: Drawn & { children?: ReactNode; isDisabled?: boolean },
     "data-variant": variant,
     "data-size": size,
     "data-icon-only": iconOnly ? "" : undefined,
-    // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-    render: (domProps: ComponentPropsWithRef<"button">) => {
-      // A button that says it is unavailable but keeps the focus (`aria-disabled`, #1700) is
-      // drawn and themed as disabled, and never as under the pointer or pressed: React Aria
-      // marks only `isDisabled` so.
-      const unavailable = String(domProps["aria-disabled"]) === "true";
-      const {
-        "data-hovered": hovered,
-        "data-pressed": pressed,
-        ...rest
-      } = domProps as ComponentPropsWithRef<"button"> & Record<`data-${string}`, unknown>;
-      return (
-        <button
-          {...rest}
-          data-hovered={unavailable ? undefined : (hovered as string | undefined)}
-          data-pressed={unavailable ? undefined : (pressed as string | undefined)}
-          data-disabled={unavailable ? "true" : (rest["data-disabled"] as string | undefined)}
-          tabIndex={domProps.tabIndex ?? 0}
-          {...native}
-        />
-      );
-    },
+    // #190, #1700: `ui/pressable.tsx`.
+    render: renderPressed(native),
     children: content,
   };
 }

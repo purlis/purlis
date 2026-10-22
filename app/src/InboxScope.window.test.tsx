@@ -320,7 +320,7 @@ describe("what a row is made of", () => {
         onDismissAll: () => undefined,
       },
     });
-    expect(screen.getByRole("heading", { name: "Updates" }).classList).toContain("sidebar-title");
+    expect(screen.getByRole("heading", { name: "Updates" })).toHaveAttribute("data-part", "title");
     const update = part(document, "li.inbox-update");
     expect(update.querySelector(".inbox-primary")).not.toBeNull();
     expect(update.querySelector(".inbox-meta time")).not.toBeNull();

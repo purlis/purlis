@@ -5,7 +5,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { commands, type PlaneId, type ProposedWhole } from "./bindings";
 import { asksMoved } from "./asks";
 import { DRAWING } from "./AskWrites";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { FileCode, LoaderCircle } from "lucide-react";
 import { Button, ButtonRow } from "./ui/button/Button";
 

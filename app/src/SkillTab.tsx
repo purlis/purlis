@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Sparkles } from "lucide-react";
 import { commands, type RunEnd, type RunStart, type StudioRun } from "./bindings";
 import { saidAt } from "./dispatches";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 
 /** What started a run, as its row says it. */
 export function startedBySaid(started: RunStart | null): string {
