@@ -1144,7 +1144,7 @@ export const commands = {
 	 *  switch is allowed. **Nothing here crosses a network** — the forge state comes out of
 	 *  `.charter/cache/glstate.json`, which charter-app reads and never writes.
 	 */
-	workspaceRepos: (plane: PlaneId, workspace: string) => typedError<RepoStates, string>(__TAURI_INVOKE("workspace_repos", { plane, workspace })),
+	workspaceRepos: (plane: PlaneId, workspace: string) => typedError<RepoStates_Serialize, string>(__TAURI_INVOKE("workspace_repos", { plane, workspace })),
 	/**
 	 *  What is wrong in every project this process holds, project by project, for each project's
 	 *  Inbox (`InboxAlerts.tsx`, #1695).
@@ -1309,6 +1309,8 @@ export const commands = {
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	projectsNotHeld: __WINDOW_ONLY_RESULT,
+	chatsRunOn: __WINDOW_ONLY_RESULT,
+	setChatsRunOn: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	installUpdate: __WINDOW_ONLY,
@@ -3237,6 +3239,15 @@ export type ChatsReconnecting = {
 	/**  The chats, by their number in the plane. */
 	sessions: number[],
 	reconnection: Reconnection,
+};
+
+/**
+ *  **Where a workspace's chats run on this machine** (#2046): the pool its chats run on, `None`
+ *  for this machine, and every pool this machine keeps, which the setting offers.
+ */
+export type ChatsRunOn = {
+	pool: string | null,
+	pools: string[],
 };
 
 /**  One child agent of a chat, as the window draws it under the chat (ADR 0066, ADR 0076 §6). */
@@ -7824,7 +7835,10 @@ export type RepoSaving = {
 };
 
 /**  One clone's git state, and what the forge cache last recorded for its branch. */
-export type RepoState = {
+export type RepoState = RepoState_Serialize | RepoState_Deserialize;
+
+/**  One clone's git state, and what the forge cache last recorded for its branch. */
+export type RepoState_Deserialize = {
 	name: string,
 	/**  The branch the checkout is on, where it is on one. */
 	branch: string | null,
@@ -7855,12 +7869,72 @@ export type RepoState = {
 	 *  when what was fetched named no pipeline.
 	 */
 	not_fetched: string | null,
+	/**
+	 *  The branches of the pool's runner this workspace's chats run on, as this machine last
+	 *  fetched them (#2046): each ready to push or open as a pull request here. Left out where
+	 *  there is none.
+	 */
+	on_a_runner?: RunnerBranch[],
+};
+
+/**  One clone's git state, and what the forge cache last recorded for its branch. */
+export type RepoState_Serialize = {
+	name: string,
+	/**  The branch the checkout is on, where it is on one. */
+	branch: string | null,
+	/**  Whether that branch holds no commit yet. */
+	unborn: boolean,
+	/**  The commit HEAD sits on when it is on no branch. */
+	detached: string | null,
+	upstream: string | null,
+	ahead: number,
+	behind: number,
+	/**  Changed files git is tracking. */
+	tracked: number,
+	/**  Files git is not tracking. */
+	untracked: number,
+	/**
+	 *  Why charter could not read the tree. Every count above is zero when this is set, and
+	 *  it means charter does not know — not that the tree is clean.
+	 */
+	unreadable: string | null,
+	/**  What the forge cache last recorded, one of the seven states charter knows. */
+	ci: string | null,
+	change: number | null,
+	sigil: string | null,
+	/**  How long ago the cache entry was written, which is how old this answer is. */
+	fetched_seconds_ago: number | null,
+	/**
+	 *  Why there is nothing from the forge to show. Absent when something was fetched, even
+	 *  when what was fetched named no pipeline.
+	 */
+	not_fetched: string | null,
+	/**
+	 *  The branches of the pool's runner this workspace's chats run on, as this machine last
+	 *  fetched them (#2046): each ready to push or open as a pull request here. Left out where
+	 *  there is none.
+	 */
+	on_a_runner?: RunnerBranch[],
 };
 
 /**  Every clone of one workspace, as the panels draw them. */
-export type RepoStates = {
+export type RepoStates = RepoStates_Serialize | RepoStates_Deserialize;
+
+/**  Every clone of one workspace, as the panels draw them. */
+export type RepoStates_Deserialize = {
 	workspace: string,
-	repos: RepoState[],
+	repos: RepoState_Deserialize[],
+	/**
+	 *  Why the forge cache was not read at all, where it was not. Reported once for the
+	 *  listing rather than repeated on every row.
+	 */
+	cache_refused: string | null,
+};
+
+/**  Every clone of one workspace, as the panels draw them. */
+export type RepoStates_Serialize = {
+	workspace: string,
+	repos: RepoState_Serialize[],
 	/**
 	 *  Why the forge cache was not read at all, where it was not. Reported once for the
 	 *  listing rather than repeated on every row.
@@ -7987,6 +8061,17 @@ export type RunStart =
 "use-skill" | 
 /**  A start a newer purlis wrote. */
 "unknown";
+
+/**  One branch of a pool's runner, as this machine last fetched it (#2046). */
+export type RunnerBranch = {
+	pool: string,
+	branch: string,
+	/**
+	 *  The commits it has that this machine's branch of that name does not, or what this
+	 *  checkout is on where there is none.
+	 */
+	ahead: number,
+};
 
 /**  What the picker says about the sandbox for one profile, before anything starts. */
 export type SandboxAhead = {

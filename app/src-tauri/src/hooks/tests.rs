@@ -2864,3 +2864,108 @@ fn a_notice_for_the_systems_name_lookup_offers_no_allow() {
         assert_eq!(said.route.as_deref(), Some(NAME_LOOKUP_REFUSED), "{lookup}");
     }
 }
+
+/// A project routed by workspace (#2046): this machine's host's lines and a pool's runner's,
+/// each heard through its own, chat 3 here and chat 7 on pool `builds`. Each secret exec runs
+/// and says what it read.
+fn routed_hearing() -> (Hooks, Arc<Relayed>, Arc<Relayed>) {
+    use std::io::{BufRead, Write};
+    let dir = tempfile::tempdir().expect("a directory");
+    let at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join("app").join("hooks.sock"),
+    };
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let hooks = Hooks::relayed(plane, &at, Arc::new(|_| {}), Arc::new(|_| {}));
+    hooks.exec_secrets_with(Arc::new(|ask, reader, mut writer, _told| {
+        let _ = writeln!(writer, "chat {}", ask.chat);
+        for line in reader.lines() {
+            let _ = writeln!(writer, "ran {}", line.unwrap_or_default());
+        }
+    }));
+    let routes: Routes = Arc::new(|chat| (chat == 7).then(|| "builds".to_owned()));
+    let here = hooks.relayed_from_the_host().expect("relayed");
+    here.routed(Arc::clone(&routes));
+    here.keep_with(Arc::new(|_, _| {}), None);
+    let builds = here.for_a_pool("builds", routes);
+    (hooks, here, builds)
+}
+
+/// A secret exec of `chat` taken through `relayed` over `link`, as line `id`, its input ended:
+/// what it replied.
+fn exec_through(
+    relayed: &Relayed,
+    link: u64,
+    id: u64,
+    chat: u32,
+) -> Vec<purlis_core::hookwire::relay::Replied> {
+    use purlis_core::hookwire::relay::{Heard, Replied, Reply};
+    let (replies, replied) = std::sync::mpsc::channel();
+    let reply: Reply = Arc::new(move |r| {
+        let _ = replies.send(r);
+    });
+    relayed.take(
+        link,
+        id,
+        Heard::SecretExec(purlis_core::secrets::brokered::Ask {
+            chat,
+            secret_exec: Default::default(),
+        }),
+        reply,
+    );
+    relayed.take(link, id + 1, Heard::InputEnded { of: id }, Arc::new(|_| {}));
+    let mut all = Vec::new();
+    while let Ok(one) = replied.recv_timeout(std::time::Duration::from_secs(10)) {
+        let ended = one == Replied::Ended;
+        all.push(one);
+        if ended {
+            break;
+        }
+    }
+    all
+}
+
+#[test]
+fn a_desktop_chats_secret_exec_still_runs_once_a_runner_chat_has_started() {
+    use purlis_core::hookwire::relay::Replied;
+    let (_hooks, here, builds) = routed_hearing();
+    here.linked(1);
+    // A pool's link holds the project after this machine's, numbering its own lines.
+    builds.linked(2);
+
+    assert_eq!(
+        exec_through(&here, 1, 10, 3),
+        vec![
+            Replied::Wrote {
+                text: "chat 3\n".into()
+            },
+            Replied::Ended
+        ]
+    );
+    assert_eq!(
+        exec_through(&builds, 2, 10, 7),
+        vec![
+            Replied::Wrote {
+                text: "chat 7\n".into()
+            },
+            Replied::Ended
+        ]
+    );
+    // The pool's link ending leaves this machine's as it was.
+    builds.unlinked(2);
+    assert_eq!(exec_through(&here, 1, 20, 3).len(), 2);
+}
+
+#[test]
+fn a_line_is_heard_only_from_the_host_its_chat_runs_on() {
+    use purlis_core::hookwire::relay::Replied;
+    let (_hooks, here, builds) = routed_hearing();
+    here.linked(1);
+    builds.linked(2);
+
+    // The pool's link names this machine's chat 3, and an unknown chat; this machine's names
+    // the pool's chat 7. None of them runs.
+    assert_eq!(exec_through(&builds, 2, 10, 3), vec![Replied::Ended]);
+    assert_eq!(exec_through(&builds, 2, 20, 99), vec![Replied::Ended]);
+    assert_eq!(exec_through(&here, 1, 10, 7), vec![Replied::Ended]);
+}

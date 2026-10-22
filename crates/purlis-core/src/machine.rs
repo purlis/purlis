@@ -1461,6 +1461,20 @@ impl Store {
             .map(String::as_str)
     }
 
+    /// Every workspace of `plane` that runs its chats on a pool on this machine, with its pool
+    /// (#2046).
+    pub fn every_chats_run_on(&self, plane: &Path) -> Vec<(&str, &str)> {
+        self.recent(plane)
+            .map(|entry| {
+                entry
+                    .chats_run_on
+                    .iter()
+                    .map(|(workspace, pool)| (workspace.as_str(), pool.as_str()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Moves a workspace's pin to the name it was renamed to (charter#367), keeping its
     /// place in the order, and answers whether anything changed.
     ///

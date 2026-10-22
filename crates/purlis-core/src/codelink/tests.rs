@@ -654,6 +654,16 @@ fn a_clone_is_sent_on_its_branch_with_its_work_and_its_runner_commits_come_back(
         "half done\n",
         "the desktop's own work is untouched"
     );
+    // What Changes shows of it: the runner's branch, one commit ahead of the branch here.
+    assert_eq!(
+        on_a_runner(&world.desktop, "builds"),
+        vec![OnARunner {
+            branch: "fix".into(),
+            oid: on_the_runner,
+            ahead: 1,
+        }]
+    );
+    assert_eq!(on_a_runner(&world.desktop, "other"), Vec::new());
 }
 
 #[test]

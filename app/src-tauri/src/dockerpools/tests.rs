@@ -94,3 +94,32 @@ fn the_pools_are_listed_with_a_new_pools_defaults() {
     assert_eq!(shown.defaults.cpus, "2");
     assert_eq!(shown.defaults.memory_mib, 4096);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_workspace_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    purlis_core::machine::update(config.path(), |store| store.remember(plane, 1)).unwrap();
+    assert_eq!(
+        chats_run_on_at(config.path(), plane, "app").unwrap(),
+        ChatsRunOn {
+            pool: None,
+            pools: Vec::new(),
+        }
+    );
+    // A pool this machine does not keep is refused, and nothing is set.
+    let refused = set_chats_run_on_at(config.path(), plane, "app", Some("builds")).unwrap_err();
+    assert!(refused.contains("builds"), "{refused}");
+    assert_eq!(
+        chats_run_on_at(config.path(), plane, "app").unwrap().pool,
+        None
+    );
+    // This machine is always one to choose.
+    assert_eq!(
+        set_chats_run_on_at(config.path(), plane, "app", None)
+            .unwrap()
+            .pool,
+        None
+    );
+}
