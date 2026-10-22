@@ -2,8 +2,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* **The core geometry** (ADR 0094): the one place a size, a gap, a corner, a focus ring or a
-   lift is given a value. `geometry.ts` names these properties and `docs/design-system.md`
-   says where each one is used.
+   lift is given a value. `geometry.ts` names these properties, and the Geometry section of
+   `crates/purlis-core/docs/themes.md` says what each one reaches.
 
    **These are core's values, Purlis Classic's** (ADR 0097). A theme sets geometry and fonts
    as numbers and woff2 files, within the bounds the core's theme engine documents

@@ -960,6 +960,26 @@ fn a_key_reads_the_pages_tree_at_most_once_while_another_frame_reloads() {
 }
 
 #[test]
+fn a_move_onto_a_frame_swapped_into_a_process_of_its_own_since_is_dropped() {
+    // #2973: the payment frame moves to a process of its own, as a frame that navigates to
+    // another site does: the engine attaches a new session for it and says nothing more.
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    engine.emit(
+        "Target.attachedToTarget",
+        json!({"sessionId":"S-PAYMENT-FRAME","targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":"http://third.test/pay.html","attached":true},"waitingForDebugger":true}),
+        Some("S-PAGE-1"),
+    );
+    wait_for("the swap is known", || aim_now(&browser) != aim);
+
+    let moved = browser.person_input(&move_to(&aim, 120.0, 215.0));
+
+    assert_eq!(moved, Err(Refusal::Missed));
+    assert!(engine.sent("Input.dispatchMouseEvent").is_empty());
+}
+
+#[test]
 fn a_value_typed_key_by_key_leaves_no_part_of_it_in_any_later_answer() {
     let (browser, engine) = browser();
     browser.take_over();

@@ -756,6 +756,81 @@ fn a_chat_has_drafts_only_while_its_folder_holds_a_theme_folder() {
     assert!(!drafts::has_drafts(&places.plane, &drafting));
 }
 
+#[cfg(unix)]
+#[test]
+fn a_chat_whose_drafts_folder_is_a_link_has_no_drafts() {
+    let places = Places::new();
+    let id = chat();
+    let elsewhere = places.plane.join("elsewhere");
+    put(&elsewhere.join("dusk"), &dark("Elsewhere", json!({})));
+    let linked = drafts::folder_of(&places.plane, &id).unwrap();
+    std::fs::create_dir_all(linked.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &linked).unwrap();
+    assert!(!drafts::has_drafts(&places.plane, &id));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_draft_folder_that_is_a_link_is_no_draft_of_its_chat() {
+    let places = Places::new();
+    let id = chat();
+    let elsewhere = places.plane.join("elsewhere");
+    put(&elsewhere, &dark("Elsewhere", json!({})));
+    let chat_folder = drafts::folder_of(&places.plane, &id).unwrap();
+    std::fs::create_dir_all(&chat_folder).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, chat_folder.join("dusk")).unwrap();
+    assert!(!drafts::has_drafts(&places.plane, &id));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chat_has_no_drafts_through_a_link_on_the_way_to_its_folder() {
+    let places = Places::new();
+    let id = chat();
+    let real = drafts::folder_of(&places.plane, &id).unwrap();
+    let drafts_folder = real.parent().unwrap().to_path_buf();
+    let elsewhere = places.plane.join("elsewhere-drafts");
+    put(
+        &elsewhere.join(&id).join("dusk"),
+        &dark("Elsewhere", json!({})),
+    );
+    std::fs::create_dir_all(drafts_folder.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &drafts_folder).unwrap();
+    assert!(!drafts::has_drafts(&places.plane, &id));
+}
+
+#[test]
+fn a_chat_with_more_stray_entries_than_are_looked_at_counts_as_having_drafts() {
+    // Where `has_drafts` cannot tell, the close asks: a draft listed after more stray files than
+    // it looks at is never closed quietly, whatever order the folder lists them in.
+    let places = Places::new();
+    let (drafting, cluttered) = (chat(), chat());
+    places.start(Some("alpha"), &drafting, "dusk");
+    let folder = drafts::folder_of(&places.plane, &drafting).unwrap();
+    for n in 0..150 {
+        std::fs::write(folder.join(format!("stray-{n}.txt")), "x").unwrap();
+    }
+    assert!(drafts::has_drafts(&places.plane, &drafting));
+    let only_strays = drafts::folder_of(&places.plane, &cluttered).unwrap();
+    std::fs::create_dir_all(&only_strays).unwrap();
+    for n in 0..=drafts::MOST_ENTRIES_LOOKED_AT {
+        std::fs::write(only_strays.join(format!("stray-{n}.txt")), "x").unwrap();
+    }
+    assert!(drafts::has_drafts(&places.plane, &cluttered));
+}
+
+#[test]
+fn a_chat_with_a_few_stray_files_and_no_theme_folder_has_no_drafts() {
+    let places = Places::new();
+    let id = chat();
+    let folder = drafts::folder_of(&places.plane, &id).unwrap();
+    std::fs::create_dir_all(&folder).unwrap();
+    for n in 0..3 {
+        std::fs::write(folder.join(format!("stray-{n}.txt")), "x").unwrap();
+    }
+    assert!(!drafts::has_drafts(&places.plane, &id));
+}
+
 #[test]
 fn a_start_record_that_is_not_a_plain_file_counts_as_changed() {
     let places = Places::new();

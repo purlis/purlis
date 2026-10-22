@@ -1,0 +1,67 @@
+[
+ {
+  "AppArmorProfile": "docker-default",
+  "Config": {
+   "Image": "localhost:5000/pool-stand-in@sha256:ab3a14b089182d23307fffa8885fdf74bb5b0ccc4e0da0fda04ecca6cae5195e",
+   "Labels": {
+    "purlis.runner": "host-ipc-8250"
+   },
+   "User": "10001:10001"
+  },
+  "HostConfig": {
+   "Binds": null,
+   "CapAdd": null,
+   "CapDrop": [
+    "ALL"
+   ],
+   "CgroupnsMode": "private",
+   "DeviceRequests": null,
+   "Devices": [],
+   "IpcMode": "host",
+   "Memory": 4294967296,
+   "MemorySwap": 4294967296,
+   "NanoCpus": 2000000000,
+   "NetworkMode": "bridge",
+   "OomKillDisable": null,
+   "PidMode": "",
+   "PidsLimit": 1024,
+   "PortBindings": {},
+   "Privileged": false,
+   "PublishAllPorts": false,
+   "ReadonlyRootfs": true,
+   "Runtime": "runc",
+   "SecurityOpt": [
+    "no-new-privileges",
+    "label=disable"
+   ],
+   "Tmpfs": {
+    "/tmp": "rw,nosuid,nodev,noexec,size=1024m"
+   },
+   "UTSMode": "",
+   "UsernsMode": "",
+   "VolumesFrom": null
+  },
+  "Id": "253bab2350993002be56bb967a2e3c2d09c0ba0f64f4f1c8844ad7594d7fb800",
+  "MountLabel": "",
+  "Mounts": [
+   {
+    "Destination": "/home/purlis",
+    "Driver": "local",
+    "Mode": "z",
+    "Name": "purlis-runner-host-ipc-8250-home",
+    "Propagation": "",
+    "RW": true,
+    "Type": "volume"
+   }
+  ],
+  "NetworkSettings": {
+   "Networks": {
+    "bridge": {}
+   }
+  },
+  "ProcessLabel": "",
+  "State": {
+   "Running": true
+  }
+ }
+]

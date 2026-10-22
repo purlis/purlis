@@ -1059,6 +1059,27 @@ fn recorded(host: &str, case: &str) -> serde_json::Value {
         }
         "podman-rootless-host-users" => include_str!("hosts/podman-rootless-host-users.json"),
         "podman-rootless-host-network" => include_str!("hosts/podman-rootless-host-network.json"),
+        "podman-rootless-made-oci" => include_str!("hosts/podman-rootless-made-oci.json"),
+        "podman-rootless-device-oci" => include_str!("hosts/podman-rootless-device-oci.json"),
+        "podman-rootless-host-folder-oci" => {
+            include_str!("hosts/podman-rootless-host-folder-oci.json")
+        }
+        "docker-apparmor-host-ipc" => include_str!("hosts/docker-apparmor-host-ipc.json"),
+        "docker-apparmor-host-uts" => include_str!("hosts/docker-apparmor-host-uts.json"),
+        "docker-apparmor-host-cgroups" => include_str!("hosts/docker-apparmor-host-cgroups.json"),
+        "docker-apparmor-host-folder" => include_str!("hosts/docker-apparmor-host-folder.json"),
+        "docker-apparmor-device" => include_str!("hosts/docker-apparmor-device.json"),
+        "podman-rootful-host-ipc" => include_str!("hosts/podman-rootful-host-ipc.json"),
+        "podman-rootful-host-uts" => include_str!("hosts/podman-rootful-host-uts.json"),
+        "podman-rootful-host-cgroups" => include_str!("hosts/podman-rootful-host-cgroups.json"),
+        "podman-rootful-host-folder" => include_str!("hosts/podman-rootful-host-folder.json"),
+        "podman-rootful-device" => include_str!("hosts/podman-rootful-device.json"),
+        "podman-rootless-host-ipc" => include_str!("hosts/podman-rootless-host-ipc.json"),
+        "podman-rootless-host-uts" => include_str!("hosts/podman-rootless-host-uts.json"),
+        "podman-rootless-host-cgroups" => include_str!("hosts/podman-rootless-host-cgroups.json"),
+        "podman-rootless-host-folder" => include_str!("hosts/podman-rootless-host-folder.json"),
+        "podman-rootless-device" => include_str!("hosts/podman-rootless-device.json"),
+        "podman-rootless-store" => include_str!("hosts/podman-rootless-store.json"),
         other => panic!("nothing is recorded as {other}"),
     };
     serde_json::from_str(text).unwrap()
@@ -1148,7 +1169,17 @@ fn a_loosened_container_is_refused_on_every_host_it_was_measured_on() {
             "seccomp-unconfined",
             "host-users",
             "host-network",
+            "host-ipc",
+            "host-uts",
+            "host-cgroups",
+            "host-folder",
+            "device",
         ] {
+            // Rootless Podman writes a device only in its runtime's config, which
+            // `rootless_podmans_runtime_config_is_held_to_the_pools_own` holds (#2895).
+            if case == "device" && host == "podman-rootless" {
+                continue;
+            }
             // Podman's own user namespace is the machine's: `--userns host` is the pool's own
             // container, word for word (measured 2026-10-20).
             if case == "host-users" && host.starts_with("podman") {
@@ -1502,4 +1533,128 @@ fn a_runners_version_is_asked_of_its_own_purlis_once_its_container_passes_the_ch
     );
     fake.set("paired", "something else\n");
     assert!(fake.docker().version_of(&made).is_err());
+}
+
+/// The pool's runner as rootless Podman's runtime was asked to make it, on the run that recorded
+/// `hosts/podman-rootless-*-oci.json`: its container's id read from what was recorded.
+fn rootless_runner(name: &str, oci: &serde_json::Value) -> Made {
+    let id = oci["mounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|mount| mount["source"].as_str())
+        .find_map(|source| source.split("/overlay-containers/").nth(1))
+        .and_then(|rest| rest.split('/').next())
+        .unwrap()
+        .to_owned();
+    Made {
+        container: ContainerId::new(&id).unwrap(),
+        runner: Runner::new(
+            name,
+            Image::pinned(&format!("localhost:5000/pool-stand-in@{DIGEST}")).unwrap(),
+            User::new(10001, 10001).unwrap(),
+            "/home/purlis",
+        )
+        .unwrap(),
+    }
+}
+
+/// Where rootless Podman kept that run's container, and its runtime config's path for `made`.
+fn rootless_store(made: &Made) -> (PodmanStore, std::path::PathBuf) {
+    let store = podman_store(&recorded("podman-rootless", "store")).unwrap();
+    let config = store
+        .graph_root
+        .join("overlay-containers")
+        .join(made.container.as_str())
+        .join("userdata/config.json");
+    (store, config)
+}
+
+/// Rootless Podman writes a device it was given nowhere `inspect` reads, only as a mount in what
+/// it asked its runtime for (measured 2026-10-21, #2895). So on rootless Podman that, too, is
+/// held to the pool's own: its devices none, and its mounts the runtime's own, the container's
+/// own files from its own folders of Podman's storage, and its home's volume from Podman's
+/// volumes, by exactly those paths.
+#[test]
+fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
+    let own = recorded("podman-rootless", "made-oci");
+    let made = rootless_runner("measured-8364", &own);
+    let (store, config) = rootless_store(&made);
+    assert_eq!(check_oci(&own, &made, &config, &store), Ok(()));
+    for (case, name) in [
+        ("device-oci", "device-8364"),
+        ("host-folder-oci", "host-folder-8364"),
+    ] {
+        let oci = recorded("podman-rootless", case);
+        let made = rootless_runner(name, &oci);
+        let (store, config) = rootless_store(&made);
+        assert!(
+            check_oci(&oci, &made, &config, &store).is_err(),
+            "{case} passed"
+        );
+    }
+    let changed = |change: &dyn Fn(&mut serde_json::Value)| {
+        let mut oci = own.clone();
+        change(&mut oci);
+        check_oci(&oci, &made, &config, &store)
+    };
+    // A device named for the runtime.
+    assert!(
+        changed(&|oci| oci["linux"]["devices"] = serde_json::json!([{"path": "/dev/fuse"}]))
+            .is_err()
+    );
+    // A folder of the machine with `/userdata/` in its path, bound where the container's own is.
+    let at = |to: &'static str, from: &'static str| {
+        move |oci: &mut serde_json::Value| {
+            for mount in oci["mounts"].as_array_mut().unwrap() {
+                if mount["destination"] == to {
+                    mount["source"] = from.into();
+                }
+            }
+        }
+    };
+    assert!(changed(&at("/dev/shm", "/home/runner/elsewhere/userdata/shm")).is_err());
+    assert!(
+        changed(&at(
+            "/etc/hosts",
+            "/tmp/x/overlay-containers/other/userdata/hosts"
+        ))
+        .is_err()
+    );
+    // A home of a volume outside Podman's own volumes.
+    assert!(
+        changed(&at(
+            "/home/purlis",
+            "/tmp/volumes/purlis-runner-measured-8364-home/_data"
+        ))
+        .is_err()
+    );
+    // A config of another container, of another shape, or with no mounts.
+    let elsewhere = store
+        .graph_root
+        .join("overlay-containers/other/userdata/config.json");
+    assert!(check_oci(&own, &made, &elsewhere, &store).is_err());
+    assert!(check_oci(&serde_json::json!({}), &made, &config, &store).is_err());
+}
+
+/// A runtime config that is no file, such as a FIFO a reader would wait on for ever, is refused
+/// at once; and one that is not on this machine, as a Podman machine keeps it in its VM, says so.
+#[test]
+fn a_runtime_config_that_is_no_file_or_not_here_is_refused_and_said() {
+    let dir = tempfile::tempdir().unwrap();
+    let fifo = dir.path().join("config.json");
+    assert!(
+        crate::forklock::status(std::process::Command::new("mkfifo").arg(&fifo))
+            .unwrap()
+            .success()
+    );
+    let started = std::time::Instant::now();
+    let refused = read_oci(&fifo).unwrap_err();
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert!(refused.0.contains("not a file"), "{refused}");
+    let gone = read_oci(std::path::Path::new(
+        "/var/home/core/.local/share/containers/storage/overlay-containers/x/userdata/config.json",
+    ))
+    .unwrap_err();
+    assert!(gone.0.contains("Podman machine"), "{gone}");
 }
