@@ -16,6 +16,7 @@ import { dropMembershipTitle } from "./actions";
 import { RemoveFromWorkspace } from "./RemoveFromWorkspace";
 import { SettingActions, type RowIds } from "./settings/components";
 import { hearUnapplied, holdUnapplied, unappliedKey, unappliedOf } from "./unappliedRepos";
+import { Button } from "./ui/button/Button";
 
 /**
  * What Settings › Repos' picker changed in a workspace's membership, heard by the "Not cloned
@@ -126,26 +127,22 @@ export function useWorkspaceRepos(
         ))}
         <SettingActions>
           {failed.map(([repo]) => (
-            <button
+            <Button
               key={repo}
-              type="button"
+              isDisabled={applying}
+              onPress={() => void cloneRepos(plane, workspace, [repo]).then(read)}
               className="panel-view"
-              tabIndex={0}
-              disabled={applying}
-              onClick={() => void cloneRepos(plane, workspace, [repo]).then(read)}
             >
               Retry {repo}
-            </button>
+            </Button>
           ))}
-          <button
-            type="button"
+          <Button
+            isDisabled={applying || (adding.length === 0 && removing.length === 0)}
+            onPress={() => void apply()}
             className="panel-view"
-            tabIndex={0}
-            disabled={applying || (adding.length === 0 && removing.length === 0)}
-            onClick={() => void apply()}
           >
             {applyWords(adding.length, removing.length)}
-          </button>
+          </Button>
         </SettingActions>
       </div>
     ),
@@ -219,17 +216,15 @@ export function useNotClonedHere(
                 <li key={repo}>
                   <span className="repo">{repo}</span>
                   <SettingActions>
-                    <button
-                      type="button"
-                      className="ends-it"
-                      tabIndex={0}
+                    <Button
+                      variant="danger"
                       aria-label={dropMembershipTitle(repo)}
-                      disabled={busy}
+                      isDisabled={busy}
                       title={busy ? `${repo} is being cloned.` : undefined}
-                      onClick={() => setAsking(repo)}
+                      onPress={() => setAsking(repo)}
                     >
                       Remove from workspace…
-                    </button>
+                    </Button>
                   </SettingActions>
                 </li>
               );

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { inForce, searchDecorations } from "./theme/theme";
+import { IconButton } from "./ui/button/Button";
 
 /** Where a find is: the match it is on (from 0, or -1 for none or past what is marked), and how
  *  many there are. */
@@ -155,15 +156,27 @@ export function FindBar({
       <span className="pane-find-count" role="status" aria-live="polite">
         {told(results)}
       </span>
-      <button type="button" aria-label="Previous match" onClick={previous}>
-        <ChevronUp size={14} aria-hidden />
-      </button>
-      <button type="button" aria-label="Next match" onClick={next}>
-        <ChevronDown size={14} aria-hidden />
-      </button>
-      <button type="button" aria-label="Close find" onClick={onClose}>
-        <X size={14} aria-hidden />
-      </button>
+      <IconButton
+        size="sm"
+        variant="ghost"
+        aria-label="Previous match"
+        onPress={previous}
+        icon={<ChevronUp size={14} aria-hidden />}
+      />
+      <IconButton
+        size="sm"
+        variant="ghost"
+        aria-label="Next match"
+        onPress={next}
+        icon={<ChevronDown size={14} aria-hidden />}
+      />
+      <IconButton
+        size="sm"
+        variant="ghost"
+        aria-label="Close find"
+        onPress={onClose}
+        icon={<X size={14} aria-hidden />}
+      />
     </div>
   );
 }

@@ -618,11 +618,11 @@ appearance and option values, and no option value can bring a consent surface be
   (an answer's button, Allow's and Keep blocked's alike, at rest and under the pointer) and on
   `danger.wash` over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
 - **Allow is distinguishable from Keep blocked**: on every ask of the two they carry equal
-  weight. Keep blocked is the plain `.ui-button`, edged in `border.strong`; each Allow is
-  `.ui-button-grants`, on the same `control.base` ground, edged in `accent.base` and led by an
+  weight. Keep blocked is the plain `Button`, edged in `border.strong`; each Allow is
+  `variant="grants"`, on the same `control.base` ground, edged in `accent.base` and led by an
   open lock, a cue that is not colour. The two edges are at least 0.1 apart in OKLab as the theme
   writes them, and `accent.base` clears 3:1 on `control.base` and on `control.hover`, so the edge
-  that tells them apart is seen. `.ui-button-primary` stays the answer purlis suggests and is
+  that tells them apart is seen. `variant="primary"` stays the answer purlis suggests and is
   never a grant's;
 - **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
   is a `danger.*` token;
@@ -1489,12 +1489,11 @@ closed manifest (`purlis_core::theme::parts`, printed by `purlis theme parts`), 
 outside its bound and any size inside a state, holds the floors per part and state, and writes
 one stylesheet keyed on `data-scope`, `data-part`, `data-variant` and React Aria's state
 attributes, which `theme.ts` puts in the `parts` layer, above `components` and below `forced`.
-A theme that names no parts writes nothing there, so the controls' own classes draw it.
-`primitives/controls.css` is the family default the engine measures against, held to it by
-`parts_tests.rs`. The button family's rules also reach its class (`.ui-button`, with each
-variant's class and the native state), so a theme's parts draw on today's markup; a size or a
-border width never reaches `.ui-button-sm` or `.ui-button-row > .ui-button`, and a
-variant that is not consent never reaches a button that also carries a consent variant's class. `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
+A theme that names no parts writes nothing there, so the family's own stylesheet draws it.
+`ui/button/button.css` is the family default the engine measures against, held to it by
+`parts_tests.rs`. A size or a border width a theme sets is the family's md size and never
+reaches a button at sm or lg or in a wrapping row, and a variant's rule reaches only a button of
+that variant (#2904). `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
 
 ### The control baseline
 
@@ -1581,13 +1580,14 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   and a strip's cap on a tab are each that box's own.
 - **`controls.guard.test.ts`** fails on a control that does not wear its class
   (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
-  `asChild` (`ui-button`, or a row, segment or menu row), an `<input>` or `<textarea>`
+  `asChild` (a row, segment or menu row; a button of the button family is `Button`, never a
+  native `<button>`), an `<input>` or `<textarea>`
   (`ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
   trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
   (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
   `block-size` or `min-block-size` set on a control is `--size-control`, and one set on a strip
   or a pane header is `--size-chrome`. A control is `--size-chrome` only as the small form: a
-  `.ui-button-sm` or `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
+  `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
   field of several lines is a whole number of controls. A control is what the rule's subject
   names (each selector of a list on its own, a nested rule as its full selector, an `:is()` or
   `:where()` as each selector in it): a `button`, `select`, `textarea` or non-toggle `input`, a

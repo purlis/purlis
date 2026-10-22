@@ -42,8 +42,8 @@ use serde_json::{Value, json};
 
 use super::super::kept::Kept;
 use super::super::keys::command_of;
-use super::super::tree::NodeKey;
-use super::{ACTIVE_ELEMENT, READ_VALUE};
+use super::super::tree::{NodeKey, Snapshot};
+use super::{ACTIVE_ELEMENT, FOCUSED_HERE, READ_VALUE};
 use super::{Browser, Session, refusal};
 use crate::cdp::CallError;
 use crate::drive::{
@@ -83,6 +83,19 @@ pub(crate) struct Typing {
     order: Vec<NodeKey>,
     /// The mouse buttons the person holds down, as the engine's bits.
     held: i64,
+    /// The field the person's last key was blanked and read for, while the page showed the
+    /// document number it was blanked under (#2295): a key into it while it keeps the focus
+    /// needs no new read of the page.
+    focus: Option<Focused>,
+}
+
+/// A field already blanked: its page's target and element, the page's read it was blanked in,
+/// and the page's document number then.
+#[derive(Clone)]
+struct Focused {
+    field: (String, NodeKey),
+    read: std::sync::Arc<Snapshot>,
+    shows: u64,
 }
 
 thread_local! {
@@ -153,6 +166,8 @@ impl Browser {
             self.inner.purlis_drives.store(false, Ordering::SeqCst);
             lease.epoch
         };
+        // A field blanked in an earlier turn is asked about again from the page itself.
+        lock(&self.typing).focus = None;
         // Whatever waits for the page wakes now, and finds itself cut.
         self.inner.changed.notify_all();
         epoch
@@ -167,6 +182,7 @@ impl Browser {
             return self.epoch();
         }
         self.keep_typing_out();
+        lock(&self.typing).focus = None;
         // What a login the person cut had filled is emptied before the agent has the page.
         self.clear_cut_logins();
         let mut lease = lock(&self.lease);
@@ -282,16 +298,23 @@ impl Browser {
             return Err(Refusal::NotDriving);
         }
         let target = self.target(None)?;
-        let session = {
+        let (session, moved_on) = {
             let state = lock(&self.inner.state);
-            if state.aim(&target).as_ref() != Some(input.aim()) {
+            let now = state.aim(&target).ok_or(Refusal::Missed)?;
+            if now.page != input.aim().page || now.document < input.aim().document {
                 return Err(Refusal::Missed);
             }
-            state
+            let session = state
                 .page(&target)
                 .and_then(|page| page.session.clone())
-                .ok_or(Refusal::Missed)?
+                .ok_or(Refusal::Missed)?;
+            (session, now.document != input.aim().document)
         };
+        // Some frame of the page loaded another document since the person saw it: the input
+        // goes on only where it lands on what they saw (#2638).
+        if moved_on && !self.lands_on_what_was_seen(&target, &session, input)? {
+            return Err(Refusal::Missed);
+        }
         match input {
             PersonInput::Key {
                 down,
@@ -304,17 +327,33 @@ impl Browser {
                 let text = (*down).then(|| typed(key, *modifiers)).flatten();
                 let edits = *down && edits(key, *modifiers);
                 let field = if edits {
-                    match self.blank_what_has_focus(None) {
-                        Ok(field) => Some(field),
-                        Err(Refusal::NothingFocused) => {
-                            // Nothing the tree shows has the focus: unless the document has
-                            // nothing focused either, the key waits.
-                            if self.focus_unseen(&session, &target) {
-                                return Err(Refusal::FocusUnseen);
+                    // The field the last key went to, still focused, is blanked already: only
+                    // the document is asked what has the focus (#2295).
+                    match self.still_focused(&target) {
+                        Some(focused) => Some((focused.field, focused.read)),
+                        None => match self.blank_what_has_focus(None) {
+                            Ok((field, read)) => {
+                                let read = std::sync::Arc::new(read);
+                                let shows = lock(&self.inner.state)
+                                    .page(&target)
+                                    .map_or(0, |page| page.shows);
+                                lock(&self.typing).focus = Some(Focused {
+                                    field: field.clone(),
+                                    read: std::sync::Arc::clone(&read),
+                                    shows,
+                                });
+                                Some((field, read))
                             }
-                            None
-                        }
-                        Err(why) => return Err(why),
+                            Err(Refusal::NothingFocused) => {
+                                // Nothing the tree shows has the focus: unless the document has
+                                // nothing focused either, the key waits.
+                                if self.focus_unseen(&session, &target) {
+                                    return Err(Refusal::FocusUnseen);
+                                }
+                                None
+                            }
+                            Err(why) => return Err(why),
+                        },
                     }
                 } else {
                     None
@@ -381,6 +420,7 @@ impl Browser {
             } => {
                 // A press may send what was typed away (a form's button): it is read first.
                 if *kind == MouseKind::Pressed {
+                    lock(&self.typing).focus = None;
                     lock(&self.typing).end_run(&target);
                     self.keep_typing_out();
                 }
@@ -534,6 +574,144 @@ impl Browser {
                 Ok(String::new())
             }
             Err(_) => Err(Refusal::FieldUnread),
+        }
+    }
+
+    /// The field the person's last key went to, where it still has the focus of a document
+    /// that has the focus, on `target`'s page as it was when the field was blanked (#2295); asked
+    /// of the field's own document in purlis's world, never of the page's tree.
+    fn still_focused(&self, target: &str) -> Option<Focused> {
+        let focused = lock(&self.typing).focus.clone()?;
+        let session = {
+            let state = lock(&self.inner.state);
+            let page = state.page(target)?;
+            if focused.field.0 != target || page.shows != focused.shows {
+                return None;
+            }
+            page.frames.get(&focused.field.1.frame)?.session.clone()
+        };
+        let key = &focused.field.1;
+        let still = self.focused_in(&session, &key.frame) == Some(key.backend);
+        if !still {
+            lock(&self.typing).focus = None;
+        }
+        still.then_some(focused)
+    }
+
+    /// The engine's id for the element that has the focus in `frame`'s document (held by
+    /// `session`), where that document has the focus; `None` where it has not, or cannot say.
+    /// Asked in purlis's own world (#2295).
+    pub(super) fn focused_in(&self, session: &str, frame: &str) -> Option<i64> {
+        let on = Some(session);
+        self.in_world(session, frame, |world| {
+            let found = self.devtools().call(
+                "Runtime.evaluate",
+                json!({ "expression": FOCUSED_HERE, "uniqueContextId": world.unique }),
+                on,
+            )?;
+            let Some(object) = found.pointer("/result/objectId").and_then(Value::as_str) else {
+                return Ok(Value::Null);
+            };
+            let described =
+                self.devtools()
+                    .call("DOM.describeNode", json!({ "objectId": object }), on);
+            let _ =
+                self.devtools()
+                    .call("Runtime.releaseObject", json!({ "objectId": object }), on);
+            described
+        })
+        .ok()?
+        .pointer("/node/backendNodeId")
+        .and_then(Value::as_i64)
+    }
+
+    /// Whether `input` lands on a document of `target`'s page that has not moved on since the
+    /// person saw it (#2638). A key lands in the document that has the focus (the page's own
+    /// where nothing does, and the document has nothing focused either); a move in the document
+    /// under its point. A press, a release or the wheel never goes on while the page has moved
+    /// on; and where a frame of the page went since, nothing under a point is known to be what
+    /// they saw.
+    fn lands_on_what_was_seen(
+        &self,
+        target: &str,
+        session: &str,
+        input: &PersonInput,
+    ) -> Result<bool, Refusal> {
+        let seen = input.aim().document;
+        match input {
+            PersonInput::Key { .. } => {
+                let snapshot = self.snapshot_of(target)?;
+                let reached = match snapshot.focused() {
+                    // Nothing the tree shows has the focus: unless the document has nothing
+                    // focused either, the focus may be in a frame purlis has not read.
+                    [] if self.focus_unseen(session, target) => return Ok(false),
+                    [] => target.to_owned(),
+                    [one] => one.frame.clone(),
+                    // As a key's field is found (#2295): the one its document names.
+                    many => match self.the_one_focused(target, many) {
+                        Some(one) => one.frame,
+                        None => return Ok(false),
+                    },
+                };
+                Ok(!lock(&self.inner.state).moved_at(target, seen, &reached, false))
+            }
+            // A press, a release or the wheel waits for a view of the page as it is: what a
+            // frame that moved on draws may be moved under the point between the check and the
+            // event. Only a move goes on.
+            PersonInput::Mouse { kind, .. } if *kind != MouseKind::Moved => Ok(false),
+            PersonInput::Mouse { x, y, .. } => {
+                if lock(&self.inner.state)
+                    .page(target)
+                    .is_none_or(|page| page.gone > seen)
+                {
+                    return Ok(false);
+                }
+                let Some((reached, owner)) = self.frame_under(session, *x, *y) else {
+                    return Ok(false);
+                };
+                Ok(!lock(&self.inner.state).moved_at(target, seen, &reached, owner))
+            }
+        }
+    }
+
+    /// The frame whose document is under (`x`, `y`) of the page `session` holds, and whether
+    /// what is there is a frame's element, whose inside may be any frame within it; `None`
+    /// where the engine cannot say.
+    fn frame_under(&self, session: &str, x: f64, y: f64) -> Option<(String, bool)> {
+        let at = self
+            .devtools()
+            .call(
+                "DOM.getNodeForLocation",
+                // As the engine routes the event: a box the pointer passes through is not hit.
+                json!({ "x": x.round(), "y": y.round(), "includeUserAgentShadowDOM": true, "ignorePointerEventsNone": false }),
+                Some(session),
+            )
+            .ok()?;
+        let frame = at.get("frameId")?.as_str()?.to_owned();
+        let backend = at.get("backendNodeId")?.as_i64()?;
+        let node = self
+            .devtools()
+            .call(
+                "DOM.describeNode",
+                json!({ "backendNodeId": backend }),
+                Some(session),
+            )
+            .ok()?;
+        match node.pointer("/node/frameId").and_then(Value::as_str) {
+            // A frame's element: what is under the point is its document, or one inside it.
+            Some(inside) => Some((inside.to_owned(), true)),
+            // An element that holds a document and names none: what is under it is not known.
+            None if node
+                .pointer("/node/nodeName")
+                .and_then(Value::as_str)
+                .is_some_and(|name| {
+                    ["IFRAME", "FRAME", "OBJECT", "EMBED", "FENCEDFRAME"]
+                        .contains(&name.to_ascii_uppercase().as_str())
+                }) =>
+            {
+                None
+            }
+            None => Some((frame, false)),
         }
     }
 

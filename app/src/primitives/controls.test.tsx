@@ -144,112 +144,6 @@ describe("the primitives stylesheet", () => {
   });
 });
 
-describe("the button", () => {
-  const VARIANTS = ["", "ui-button-primary", "ui-button-ghost", "ui-button-danger"];
-
-  function Buttons({ onPress }: { onPress: (name: string) => void }) {
-    return (
-      <>
-        {VARIANTS.map((variant) => (
-          <button
-            key={variant}
-            type="button"
-            tabIndex={0}
-            className={`ui-button ${variant}`.trim()}
-            onClick={() => onPress(variant || "secondary")}
-          >
-            Save {variant || "secondary"}
-          </button>
-        ))}
-        <button
-          type="button"
-          tabIndex={0}
-          className="ui-button ui-button-ghost ui-button-sm"
-          onClick={() => onPress("small")}
-        >
-          Close
-        </button>
-      </>
-    );
-  }
-
-  it("is one control height in every variant, the chrome height small, with the outside ring", () => {
-    render(<Buttons onPress={() => {}} />);
-    for (const variant of VARIANTS) {
-      heldToTheTokens(screen.getByRole("button", { name: `Save ${variant || "secondary"}` }));
-    }
-    heldToTheTokens(screen.getByRole("button", { name: "Close" }), {
-      height: "var(--size-chrome)",
-    });
-  });
-
-  it("draws each variant on its own ground, from the tokens", () => {
-    render(<Buttons onPress={() => {}} />);
-    const ground = (name: string) => drawnWith(screen.getByRole("button", { name }), "background");
-    expect(ground("Save secondary")).toBe("var(--control-base)");
-    expect(ground("Save ui-button-primary")).toBe("var(--accent-surface)");
-    expect(ground("Save ui-button-ghost")).toBe("transparent");
-    expect(ground("Save ui-button-danger")).toBe("var(--control-base)");
-    expect(drawnWith(screen.getByRole("button", { name: "Save ui-button-danger" }), "color")).toBe(
-      "var(--danger-base)",
-    );
-  });
-
-  it("draws a grant as plain as the secondary, edged in the accent (ADR 0097 §6)", () => {
-    render(
-      <button type="button" tabIndex={0} className="ui-button ui-button-grants">
-        Allow
-      </button>,
-    );
-    const grant = screen.getByRole("button", { name: "Allow" });
-    heldToTheTokens(grant);
-    expect(drawnWith(grant, "background")).toBe("var(--control-base)");
-    expect(drawnWith(grant, "color")).toBe("var(--text-primary)");
-    expect(drawnWith(grant, "border-color")).toBe("var(--accent-base)");
-    expect(drawnWith(grant, "background", { hover: true })).toBe("var(--control-hover)");
-  });
-
-  it("is reached by Tab and pressed by Enter and Space", async () => {
-    const user = userEvent.setup();
-    const pressed: string[] = [];
-    render(<Buttons onPress={(name) => pressed.push(name)} />);
-    await user.tab();
-    expect(screen.getByRole("button", { name: "Save secondary" })).toHaveFocus();
-    await user.keyboard("{Enter}");
-    await user.tab();
-    await user.keyboard(" ");
-    expect(pressed).toEqual(["secondary", "ui-button-primary"]);
-  });
-
-  it("as a toggle, is said pressed and stands on the accent while it is, under the pointer too", async () => {
-    function Toggle() {
-      const [on, setOn] = useState(false);
-      return (
-        <button
-          type="button"
-          tabIndex={0}
-          className="ui-button ui-button-sm"
-          aria-pressed={on}
-          onClick={() => setOn((was) => !was)}
-        >
-          Changed only
-        </button>
-      );
-    }
-    const user = userEvent.setup();
-    render(<Toggle />);
-    const toggle = screen.getByRole("button", { name: "Changed only", pressed: false });
-    expect(drawnWith(toggle, "background")).toBe("var(--control-base)");
-    await user.tab();
-    await user.keyboard(" ");
-    expect(screen.getByRole("button", { name: "Changed only", pressed: true })).toBe(toggle);
-    expect(drawnWith(toggle, "background")).toBe("var(--accent-surface)");
-    expect(drawnWith(toggle, "border-color")).toBe("var(--accent-base)");
-    expect(drawnWith(toggle, "background", { hover: true })).toBe("var(--tab-active)");
-    heldToTheTokens(toggle, { height: "var(--size-chrome)" });
-  });
-});
-
 describe("the field", () => {
   it("is one control height with the outside ring, named by its label, and typed into", async () => {
     const user = userEvent.setup();
@@ -496,9 +390,7 @@ describe("the menu", () => {
   function Opener({ onGo }: { onGo: (to: string) => void }) {
     return (
       <Menu.Root modal={false}>
-        <Menu.Trigger className="ui-button ui-button-ghost" tabIndex={0}>
-          More
-        </Menu.Trigger>
+        <Menu.Trigger tabIndex={0}>More</Menu.Trigger>
         <Menu.Portal>
           <Menu.Content className="ui-menu more-menu" aria-label="More">
             <Menu.Item className="ui-menu-item" onSelect={() => onGo("rename")}>
@@ -563,9 +455,7 @@ describe("the menu", () => {
   function Noted() {
     return (
       <Menu.Root modal={false}>
-        <Menu.Trigger className="ui-button ui-button-ghost" tabIndex={0}>
-          More
-        </Menu.Trigger>
+        <Menu.Trigger tabIndex={0}>More</Menu.Trigger>
         <Menu.Portal>
           <Menu.Content className="ui-menu item-menu" aria-label="More">
             <Menu.Label className="ui-menu-label ui-text-label">This chat</Menu.Label>

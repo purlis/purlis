@@ -192,6 +192,10 @@ pub(crate) const ACTIVE_ELEMENT: &str = r"(() => {
   return at && at !== document.body && at !== document.documentElement ? at.tagName : '';
 })()";
 
+/// The expression that answers the element that has the focus, where the document it runs in has
+/// the focus, or `null` (#2295). Run in purlis's own world, not by value.
+pub(crate) const FOCUSED_HERE: &str = "document.hasFocus() ? document.activeElement : null";
+
 /// The first [`MOST_TITLE_CHARS`] of `title`.
 fn kept_title(title: &str) -> String {
     title.chars().take(MOST_TITLE_CHARS).collect()
@@ -247,6 +251,9 @@ struct Frame {
     name: String,
     url: String,
     generation: u64,
+    /// The page's document number when this frame last loaded another document, or when it
+    /// was first seen (#2638).
+    loaded: u64,
 }
 
 struct Page {
@@ -262,6 +269,8 @@ struct Page {
     /// What the page shows, as a number that changes each time it or any frame in it loads
     /// another document, or a frame in it goes (#2014): the document a frame's aim names.
     shows: u64,
+    /// The document number at which a frame of it last went, 0 if none has (#2638).
+    gone: u64,
     frames: HashMap<String, Frame>,
     /// The page that opened this one, if one did.
     opener: Option<String>,
@@ -607,6 +616,50 @@ impl State {
         })
     }
 
+    /// Whether what `target`'s page shows has moved on since the document number `seen`, at
+    /// the frame `reached` (#2638): that frame, or one around it, loaded another document since,
+    /// or, `with_inside`, one inside it did. A frame not known now has moved on.
+    fn moved_at(&self, target: &str, seen: u64, reached: &str, with_inside: bool) -> bool {
+        let Some(page) = self.page(target) else {
+            return true;
+        };
+        let Some(frame) = page.frames.get(reached) else {
+            return true;
+        };
+        // The frame and every frame around it.
+        let mut at = Some((reached, frame));
+        let mut steps = 0;
+        while let Some((_, frame)) = at {
+            steps += 1;
+            if frame.loaded > seen || steps > page.frames.len() {
+                return true;
+            }
+            at = frame
+                .parent
+                .as_deref()
+                .and_then(|parent| page.frames.get_key_value(parent))
+                .map(|(id, frame)| (id.as_str(), frame));
+        }
+        // Every frame inside it, where what is under a point may be any of them.
+        with_inside
+            && page.frames.iter().any(|(id, frame)| {
+                frame.loaded > seen && id != reached && {
+                    let mut up = frame.parent.as_deref();
+                    let mut steps = 0;
+                    loop {
+                        steps += 1;
+                        match up {
+                            Some(parent) if parent == reached => break true,
+                            Some(parent) if steps <= page.frames.len() => {
+                                up = page.frames.get(parent).and_then(|f| f.parent.as_deref());
+                            }
+                            _ => break false,
+                        }
+                    }
+                }
+            })
+    }
+
     fn info(&self, target: &str) -> Option<PageInfo> {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
@@ -644,12 +697,14 @@ impl State {
             .get("parentId")
             .and_then(Value::as_str)
             .map(str::to_owned);
+        let shown = page.shows;
         let entry = page.frames.entry(id.to_owned()).or_insert_with(|| Frame {
             session: session.to_owned(),
             parent: None,
             name: String::new(),
             url: String::new(),
             generation,
+            loaded: shown,
         });
         if parent.is_some() {
             entry.parent = parent;
@@ -664,6 +719,7 @@ impl State {
         if navigated {
             page.shows = generation;
             entry.generation = generation;
+            entry.loaded = generation;
             if id == target {
                 page.url = text("url");
             }
@@ -695,6 +751,7 @@ impl State {
             page.frames.remove(id);
         }
         page.shows = shows;
+        page.gone = shows;
         for id in &gone {
             self.refs.forget_frame(id);
             self.excluded.retain(|key| &key.frame != id);
@@ -1179,10 +1236,46 @@ impl Browser {
         let key = match snapshot.focused() {
             [] => return Err(Refusal::NothingFocused),
             [one] => one.clone(),
-            _ => return Err(Refusal::FocusUnclear),
+            // The tree marks more than one element focused (a real engine may mark a field's
+            // inner editor, or its document, with it): the one its document says has the
+            // focus is the one (#2295).
+            many => self
+                .the_one_focused(&target, many)
+                .ok_or(Refusal::FocusUnclear)?,
         };
         let read = self.blank_node(&target, key.clone())?;
         Ok(((target, key), read))
+    }
+
+    /// Of `many`, the elements the tree marks focused on `target`'s page, the one its own
+    /// document says has the focus, where exactly one is.
+    fn the_one_focused(&self, target: &str, many: &[NodeKey]) -> Option<NodeKey> {
+        let mut frames: Vec<&str> = many.iter().map(|key| key.frame.as_str()).collect();
+        frames.sort_unstable();
+        frames.dedup();
+        let mut found = Vec::new();
+        for frame in frames {
+            let session = lock(&self.inner.state)
+                .page(target)?
+                .frames
+                .get(frame)?
+                .session
+                .clone();
+            if let Some(backend) = self.focused_in(&session, frame) {
+                found.extend(
+                    many.iter()
+                        .filter(|key| key.frame == frame && key.backend == backend)
+                        .cloned(),
+                );
+            }
+        }
+        // One element the tree lists twice is still one.
+        found.sort_by(|a, b| (&a.frame, a.backend).cmp(&(&b.frame, b.backend)));
+        found.dedup();
+        match found.as_slice() {
+            [one] => Some(one.clone()),
+            _ => None,
+        }
     }
 
     fn blank_node(&self, target: &str, key: NodeKey) -> Result<Snapshot, Refusal> {
@@ -3260,6 +3353,7 @@ impl Inner {
                                 settle: Settle::new(now),
                                 scrubbed: kept,
                                 shows: 0,
+                                gone: 0,
                                 frames: HashMap::new(),
                                 opener,
                             });

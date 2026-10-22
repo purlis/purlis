@@ -114,7 +114,7 @@ describe("the delete-vault dialog", () => {
         .getAllByRole("button")
         .map((one) => one.textContent),
     ).toEqual(["Cancel", "Delete vault"]);
-    expect(button).toHaveClass("ends-it");
+    expect(button).toHaveAttribute("data-variant", "danger");
   });
 
   it("puts the keyboard in the name box, and Escape deletes nothing", async () => {

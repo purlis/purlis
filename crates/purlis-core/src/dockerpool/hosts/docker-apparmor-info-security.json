@@ -1,0 +1,5 @@
+[
+ "name=apparmor",
+ "name=seccomp,profile=builtin",
+ "name=cgroupns"
+]

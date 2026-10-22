@@ -1,13 +1,27 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The Skill studio's reads** (SK-2, #2765; SK-4, #2767): every skill a chat in a project
-//! gets, at its root or in one workspace, with its level, and every one left out with why, as
-//! `purlis_core::skills::in_the_studio` works them out; and Share, which makes a local skill
-//! shared. Behind the `skill-studio` flag until its finish line (#2786).
+//! **The Skill studio's reads** (SK-2, #2765; SK-4, #2767; SK-5, #2768): every skill a chat in a
+//! project gets, at its root, in one workspace or as one persona, with its level, and every one
+//! left out with why, as `purlis_core::skills::in_the_studio` works them out; Share, which makes
+//! a local skill shared; and a persona's `skills:` list, which its page adds to and takes from.
+//! Behind the `skill-studio` flag until its finish line (#2786).
 
 use serde::Serialize;
 use specta::Type;
+
+/// The catalogue row that opens the Skill studio on one scope's chats is this, then the scope's
+/// key (`app/src/skillStudio.ts`).
+pub(crate) const STUDIO_IN: &str = "skills.studio:";
+
+/// What a persona's scope key starts with, before its name. A workspace's key is its plain name,
+/// which never holds the `/`.
+pub(crate) const PERSONA_SCOPE_KEY: &str = "persona/";
+
+/// The catalogue row that opens the Skill studio on a chat as `persona`.
+pub(crate) fn studio_as(persona: &str) -> String {
+    format!("{STUDIO_IN}{PERSONA_SCOPE_KEY}{persona}")
+}
 
 /// The level a skill comes from, as the studio draws it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -16,6 +30,9 @@ pub enum Level {
     BuiltIn,
     Project,
     Workspace,
+    Persona,
+    /// A harness skill: the harness's own, which purlis never hands over.
+    Installed,
 }
 
 impl From<purlis_core::skills::Origin> for Level {
@@ -24,6 +41,8 @@ impl From<purlis_core::skills::Origin> for Level {
             purlis_core::skills::Origin::BuiltIn => Level::BuiltIn,
             purlis_core::skills::Origin::Project => Level::Project,
             purlis_core::skills::Origin::Workspace => Level::Workspace,
+            purlis_core::skills::Origin::Persona => Level::Persona,
+            purlis_core::skills::Origin::Harness => Level::Installed,
             // A level a later slice adds is drawn as the project's until the studio names it.
             _ => Level::Project,
         }
@@ -51,8 +70,16 @@ pub struct StudioSkill {
     pub left_out: Option<String>,
     /// What it does and when to use it: its frontmatter's `description`.
     pub description: String,
-    /// Its folder, relative to the project where it is inside it.
+    /// Its folder, relative to the project where it is inside it; empty for an installed skill.
     pub folder: String,
+    /// How a persona's skills name it: `purlis:<name>` for a built-in skill, `<plugin>:<name>`
+    /// for a plugin's, else its name (#2768). What Add and Remove send.
+    pub written: String,
+    /// Whether the persona the studio shows names it, so Remove can take it out.
+    pub named: bool,
+    /// What is said of an installed skill the persona names that purlis cannot check this
+    /// machine for, or `None`.
+    pub unchecked: Option<String>,
 }
 
 /// What the studio shows: whether it is on, whose chat it shows, and its skills by name.
@@ -61,31 +88,46 @@ pub struct Studio {
     pub on: bool,
     /// The workspace whose chats it shows, or `None` for a chat at the project's root.
     pub workspace: Option<String>,
+    /// The persona whose chats it shows, which brings its skills into every workspace, or
+    /// `None` for a chat on no persona (SK-5).
+    pub persona: Option<String>,
     /// Every workspace of the project, which it can be shown for.
     pub workspaces: Vec<String>,
     pub skills: Vec<StudioSkill>,
 }
 
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
-/// `workspace`, with the built-in skills in `built_in`: nothing while the flag is off. Its rows
-/// are the command line's (`purlis_core::skills::studio_rows`).
+/// `workspace`, as `persona` or on none, with the built-in skills in `built_in`: nothing while
+/// the flag is off. Its rows are the command line's (`purlis_core::skills::studio_rows`).
 pub(crate) fn studio(
     root: &std::path::Path,
     built_in: Option<&std::path::Path>,
     on: bool,
     workspace: Option<&str>,
+    persona: Option<&str>,
 ) -> Studio {
     let workspace = workspace.map(str::to_owned);
+    let persona = persona.map(str::to_owned);
     if !on {
         return Studio {
             on,
             workspace,
+            persona,
             workspaces: Vec::new(),
             skills: Vec::new(),
         };
     }
-    let set = purlis_core::skills::in_the_studio(built_in, root, workspace.as_deref());
-    let skills = purlis_core::skills::studio_rows(&set, root)
+    let set = purlis_core::skills::in_the_studio(
+        built_in,
+        root,
+        workspace.as_deref(),
+        persona.as_deref(),
+    );
+    let names = persona
+        .as_deref()
+        .map(|persona| purlis_core::skills::names_of(root, persona))
+        .unwrap_or_default();
+    let skills = purlis_core::skills::studio_rows(&set, root, &names)
         .into_iter()
         .map(|row| StudioSkill {
             name: row.name,
@@ -97,6 +139,11 @@ pub(crate) fn studio(
             left_out: row.left_out,
             description: row.description,
             folder: row.folder,
+            written: row.written,
+            named: row.named,
+            unchecked: row
+                .unchecked
+                .then(|| purlis_core::skills::UNCHECKED.to_owned()),
         })
         .collect();
     let workspaces = purlis_core::workspaces::Plane::open(root)
@@ -105,6 +152,7 @@ pub(crate) fn studio(
     Studio {
         on,
         workspace,
+        persona,
         workspaces,
         skills,
     }
@@ -118,6 +166,8 @@ pub enum RunStart {
     SkillTool,
     /// The chat read the skill's `SKILL.md`.
     Read,
+    /// The chat loaded the skill with purlis's `skill_load` tool.
+    McpLoad,
     /// A start a newer purlis wrote.
     Unknown,
 }
@@ -128,6 +178,7 @@ impl From<purlis_core::skills::runs::StartedBy> for RunStart {
         match started_by {
             StartedBy::SkillTool => RunStart::SkillTool,
             StartedBy::Read => RunStart::Read,
+            StartedBy::McpLoad => RunStart::McpLoad,
             _ => RunStart::Unknown,
         }
     }
@@ -253,15 +304,16 @@ pub(crate) async fn set_skill_studio_on(on: bool) -> Result<bool, String> {
     .await
 }
 
-/// The Skill studio of the project, for a chat at its root or in `workspace`: every skill with
-/// its level, and why each left out is left out. On a blocking thread, as it reads the project's
-/// skill folders.
+/// The Skill studio of the project, for a chat at its root or in `workspace`, as `persona` or on
+/// none: every skill with its level, and why each left out is left out. On a blocking thread, as
+/// it reads the project's skill folders.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_studio(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     workspace: Option<String>,
+    persona: Option<String>,
 ) -> Result<Studio, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the project's skills", move || {
@@ -272,6 +324,7 @@ pub(crate) async fn skill_studio(
             built_in.as_deref(),
             purlis_core::skills::studio_on_here(),
             workspace.as_deref(),
+            persona.as_deref(),
         ))
     })
     .await
@@ -295,6 +348,76 @@ pub(crate) async fn skill_share(
         purlis_core::skills::share_here(held.root(), workspace.as_deref(), &name).map(|_| ())
     })
     .await
+}
+
+/// What a change to a persona's skills does, as the studio asks it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum PersonaSkillChange {
+    Add,
+    Remove,
+}
+
+impl From<PersonaSkillChange> for purlis_core::skills::persona::Change {
+    fn from(change: PersonaSkillChange) -> Self {
+        match change {
+            PersonaSkillChange::Add => Self::Add,
+            PersonaSkillChange::Remove => Self::Remove,
+        }
+    }
+}
+
+/// **Adds a skill to a persona's skills, or takes one out** (SK-5, #2768): Add and Remove in the
+/// Skill studio filtered to the persona. `written` is the skill as the studio's row writes it.
+/// Answers whether the persona's definition changed. Refused while the studio's flag is off.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn persona_skill(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    persona: String,
+    written: String,
+    change: PersonaSkillChange,
+) -> Result<bool, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("changing the persona's skills", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Err("The Skill studio is off on this machine.".to_owned());
+        }
+        let changed =
+            purlis_core::skills::persona::change(held.root(), &persona, &written, change.into())?;
+        if changed {
+            held.wrote(&["personas".to_owned()]);
+        }
+        Ok(changed)
+    })
+    .await
+}
+
+/// **The skills a chat's persona names that it started without** (SK-5, #2768): what its tab's
+/// Notice says, until it is put away. `None` for a chat that has every one.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chat_skills_missing(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+) -> Result<Option<crate::chats::SkillsMissing>, String> {
+    let held = planes.held(&plane)?;
+    Ok(held.chats().skills_missing(session))
+}
+
+/// Puts a chat's missing-skills Notice away.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn put_away_chat_skills_missing(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    session: u32,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    held.chats().put_away_skills_missing(session);
+    Ok(())
 }
 
 #[cfg(test)]

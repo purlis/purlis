@@ -13,6 +13,7 @@ import { commands, type PlaneId, type SessionRecordView } from "./bindings";
 import { jumpTo } from "./fileJump";
 import { codeSpans, recordRef, type RecordRef } from "./recordRefs";
 import { ToYourEditor } from "./editor/ToYourEditor";
+import { Button } from "./ui/button/Button";
 
 /**
  * **One session record, in a tab of its own** (SI-8d): what a chat wrote of its session when it
@@ -203,16 +204,15 @@ function withRefs(plane: PlaneId, place: string, repos: readonly string[]): Comp
           : undefined;
       if (ref === undefined) return <code className={className}>{children}</code>;
       return (
-        <button
-          type="button"
-          tabIndex={0}
-          className="record-ref"
+        <Button
+          variant="link"
           aria-label={`Open ${children}`}
           title={`Open ${ref.path} at line ${ref.line}`}
-          onClick={() => jumpTo({ plane, ...ref })}
+          onPress={() => jumpTo({ plane, ...ref })}
+          className="record-ref"
         >
           <code>{children}</code>
-        </button>
+        </Button>
       );
     },
   };

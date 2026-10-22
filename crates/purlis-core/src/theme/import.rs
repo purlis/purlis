@@ -28,7 +28,9 @@
 //! its kind's grammar is refused with a sentence that says where.
 //!
 //! A theme folder's own zip ([`SourceKind::Zip`], `super::archive`) is the other way in: it gives
-//! back the folder [`super::archive::export`] packed, file for file.
+//! back the folder [`super::archive::export`] packed, file for file. So is a design-tokens file
+//! ([`SourceKind::DesignTokens`], `super::design_tokens`): the W3C format 2025.10, from purlis's
+//! own export or a design tool's.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -63,6 +65,10 @@ pub enum SourceKind {
     Ghostty,
     /// A theme folder's zip, as `purlis theme export` writes one.
     Zip,
+    /// A W3C design-tokens file, format 2025.10 (#2926), as `purlis theme export --kind
+    /// design-tokens` writes one or a design tool does.
+    #[serde(rename = "design-tokens")]
+    DesignTokens,
 }
 
 impl SourceKind {
@@ -74,6 +80,7 @@ impl SourceKind {
         Self::Iterm,
         Self::Ghostty,
         Self::Zip,
+        Self::DesignTokens,
     ];
 
     /// Its name on the command line.
@@ -85,6 +92,7 @@ impl SourceKind {
             Self::Iterm => "iterm",
             Self::Ghostty => "ghostty",
             Self::Zip => "zip",
+            Self::DesignTokens => "design-tokens",
         }
     }
 
@@ -160,14 +168,38 @@ pub fn detect(file_name: &str, bytes: &[u8]) -> Option<SourceKind> {
         .unwrap_or_default();
     let text = std::str::from_utf8(bytes).ok();
     let scheme = || text.and_then(scheme_kind);
+    if file_name
+        .to_ascii_lowercase()
+        .ends_with(super::design_tokens::FILE_ENDING)
+    {
+        return Some(SourceKind::DesignTokens);
+    }
     match extension.as_str() {
         "zip" => return Some(SourceKind::Zip),
+        "tokens" => return Some(SourceKind::DesignTokens),
         "itermcolors" => return Some(SourceKind::Iterm),
         "yaml" | "yml" => return scheme(),
         "json" | "jsonc" => {
             return text.and_then(|text| {
+                // Only a design-tokens file may be larger than any other source: it is read,
+                // within its own bounds, by its import, never parsed whole here. Any other
+                // file that large is a VS Code theme's shape, whose import says it is too large.
+                if text.len() as u64 > MOST_SOURCE_BYTES {
+                    let tokens =
+                        text.contains("\"$value\"") || text.contains(super::design_tokens::VENDOR);
+                    return Some(if tokens {
+                        SourceKind::DesignTokens
+                    } else {
+                        SourceKind::Vscode
+                    });
+                }
                 let document = jsonc(text).ok()?;
-                if document.get("colors").is_some() || document.get("tokenColors").is_some() {
+                // Design tokens first: a tokens file's `colors` group holds tokens, where a
+                // VS Code theme's holds colours.
+                if super::design_tokens::looks_like(&document) {
+                    Some(SourceKind::DesignTokens)
+                } else if document.get("colors").is_some() || document.get("tokenColors").is_some()
+                {
                     Some(SourceKind::Vscode)
                 } else {
                     scheme()
@@ -242,6 +274,16 @@ pub fn import(kind: SourceKind, file_name: &str, bytes: &[u8]) -> Result<Importe
             left_out: Vec::new(),
         });
     }
+    if kind == SourceKind::DesignTokens {
+        let read = super::design_tokens::unpack(file_name, bytes)?;
+        return Ok(Imported {
+            kind,
+            name: read.name,
+            folder: read.folder,
+            files: read.files,
+            left_out: read.left_out,
+        });
+    }
     if bytes.len() as u64 > MOST_SOURCE_BYTES {
         return Err(format!(
             "{file_name} is larger than {} KiB, the most a theme to import may be",
@@ -256,7 +298,7 @@ pub fn import(kind: SourceKind, file_name: &str, bytes: &[u8]) -> Result<Importe
         SourceKind::Base16 | SourceKind::Base24 => scheme(text, kind)?,
         SourceKind::Iterm => iterm(text)?,
         SourceKind::Ghostty => ghostty(text)?,
-        SourceKind::Zip => unreachable!("read above"),
+        SourceKind::Zip | SourceKind::DesignTokens => unreachable!("read above"),
     };
     let stem = stem(file_name);
     let name: String = source
@@ -412,7 +454,7 @@ pub fn table(kind: SourceKind) -> Vec<(&'static str, &'static [&'static str])> {
         SourceKind::Base24 => &[BASE24_OWN, BASE16_SHARED],
         SourceKind::Iterm => &[ITERM],
         SourceKind::Ghostty => &[GHOSTTY],
-        SourceKind::Zip => &[],
+        SourceKind::Zip | SourceKind::DesignTokens => &[],
     };
     TOKENS
         .iter()
@@ -1114,7 +1156,7 @@ pub fn recipes(kind: SourceKind) -> Vec<(&'static str, Recipe)> {
         }
         SourceKind::Iterm => (ITERM_RECIPES, &["Foreground Color"], &[]),
         SourceKind::Ghostty => (GHOSTTY_RECIPES, &["foreground"], &[]),
-        SourceKind::Zip => (&[], &[], &[]),
+        SourceKind::Zip | SourceKind::DesignTokens => (&[], &[], &[]),
     };
     let mut out = own.to_vec();
     if !foreground.is_empty() {

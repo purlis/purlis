@@ -51,6 +51,7 @@ import { AnswerBar } from "./AnswerBar";
 import { EmptyState } from "./EmptyState";
 import { yourEditor } from "./yourEditor";
 import { setDraftHere } from "./themeDrafts";
+import { Button } from "./ui/button/Button";
 
 /**
  * What has contributed what to this window, and the question charter asks before anything new
@@ -200,9 +201,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
               two buttons sat in the middle, on an engine that will not tab to a `<button>`
               whose `tabindex` is not written down. Reviewing or removing an extension was a
               mouse-only act, on the one surface in the window that is about trust. */}
-          <button className="ui-button" type="button" tabIndex={0} onClick={() => void add()}>
-            Add an extension…
-          </button>
+          <Button onPress={() => void add()}>Add an extension…</Button>
 
           {/* What went wrong, drawn as trouble (#630). Not yet a live region: `Notice.guard`
               counts every one by file, and that guard is another lane's this round. */}
@@ -222,22 +221,8 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                   Open in your editor is where it is mended (#1296). A row of their own under
                   the sentence, not two buttons inside it (#1719). */}
               <SettingActions>
-                <button
-                  className="ui-button"
-                  type="button"
-                  tabIndex={0}
-                  onClick={() => void reread()}
-                >
-                  Read again
-                </button>
-                <button
-                  className="ui-button"
-                  type="button"
-                  tabIndex={0}
-                  onClick={() => void openRecord()}
-                >
-                  Open in your editor
-                </button>
+                <Button onPress={() => void reread()}>Read again</Button>
+                <Button onPress={() => void openRecord()}>Open in your editor</Button>
               </SettingActions>
             </>
           )}
@@ -293,16 +278,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                     {troubleSaid(trouble)}
                   </span>
                 ))}
-                {row.ask && (
-                  <button
-                    className="ui-button"
-                    type="button"
-                    tabIndex={0}
-                    onClick={() => setAsking(row.ask)}
-                  >
-                    Review
-                  </button>
-                )}
+                {row.ask && <Button onPress={() => setAsking(row.ask)}>Review</Button>}
                 {row.source === "app" ? (
                   // On or off the moment it is turned: the settings set's switch (#1860), named
                   // by the extension and the words beside it, which turn it too.
@@ -321,14 +297,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                     </label>
                   </span>
                 ) : (
-                  <button
-                    className="ui-button"
-                    type="button"
-                    tabIndex={0}
-                    onClick={() => void forget(row.id)}
-                  >
-                    Remove
-                  </button>
+                  <Button onPress={() => void forget(row.id)}>Remove</Button>
                 )}
               </li>
             ))}
@@ -354,9 +323,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
           )}
 
           <AnswerBar>
-            <button className="ui-button" type="button" tabIndex={0} onClick={onClose}>
-              Done
-            </button>
+            <Button onPress={onClose}>Done</Button>
           </AnswerBar>
         </Dialog.Content>
       </Dialog.Portal>

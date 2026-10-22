@@ -26,6 +26,8 @@ const FAINT: ReadonlySet<string> = new Set([
   ".pane-crumbs .crumb-sep",
   ".tab-task-sep",
   ".ui-tree-twist",
+  // A disabled button's words (#2897's palette rules, #2904).
+  '[data-scope="button"][data-part="root"][data-disabled]',
 ]);
 
 /** Informational words, each drawn in quiet: line numbers, placeholders, counts, paths, group

@@ -21,12 +21,28 @@ use tokio::process::{Child, ChildStdin, ChildStdout};
 /// The check made before each connection: `Err` with why, in words, refuses it.
 pub type BeforeEach = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
+/// What each run of the command is given, made just before it runs: its variables, those it is
+/// not handed from this process, and what has to be kept until it has ended (a folder made for
+/// it). `Err` with why, in words, refuses the connection.
+pub type Prepare = Arc<dyn Fn() -> Result<Prepared, String> + Send + Sync>;
+
+/// What [`Prepare`] made for one run.
+pub struct Prepared {
+    /// Each variable and its value.
+    pub env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+    /// The variables not handed on from this process.
+    pub cleared: Vec<std::ffi::OsString>,
+    /// Kept until the run has ended.
+    pub held: Box<dyn Send + Sync>,
+}
+
 /// A connector that runs `program` with `args` for each connection.
 #[derive(Clone)]
 pub struct CommandConnector {
     program: std::path::PathBuf,
     args: Vec<String>,
     before_each: BeforeEach,
+    prepare: Option<Prepare>,
 }
 
 impl CommandConnector {
@@ -39,7 +55,15 @@ impl CommandConnector {
             program: program.into(),
             args,
             before_each,
+            prepare: None,
         }
+    }
+
+    /// This connector, with each run given what `prepare` makes for it.
+    #[must_use]
+    pub fn preparing(mut self, prepare: Prepare) -> CommandConnector {
+        self.prepare = Some(prepare);
+        self
     }
 }
 
@@ -48,6 +72,7 @@ impl CommandConnector {
 /// this is dropped.
 pub struct Connected {
     _child: Child,
+    _held: Option<Box<dyn Send + Sync>>,
     stdout: ChildStdout,
     stdin: Option<ChildStdin>,
 }
@@ -63,7 +88,24 @@ impl Connector for CommandConnector {
                 .await
                 .map_err(std::io::Error::other)?
                 .map_err(std::io::Error::other)?;
-            let mut child = tokio::process::Command::new(&this.program)
+            let prepared = match this.prepare.clone() {
+                Some(prepare) => Some(
+                    tokio::task::spawn_blocking(move || prepare())
+                        .await
+                        .map_err(std::io::Error::other)?
+                        .map_err(std::io::Error::other)?,
+                ),
+                None => None,
+            };
+            let mut command = tokio::process::Command::new(&this.program);
+            let held = prepared.map(|prepared| {
+                command.envs(prepared.env);
+                for name in &prepared.cleared {
+                    command.env_remove(name);
+                }
+                prepared.held
+            });
+            let mut child = command
                 .args(&this.args)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
@@ -75,6 +117,7 @@ impl Connector for CommandConnector {
             };
             Ok(Connected {
                 _child: child,
+                _held: held,
                 stdout,
                 stdin: Some(stdin),
             })

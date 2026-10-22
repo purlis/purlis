@@ -4,6 +4,7 @@
 import { type ReactNode, useId, useLayoutEffect, useRef } from "react";
 import clsx from "clsx";
 import { ChevronLeft } from "lucide-react";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A page behind one of the welcome's doors** (#1812): Create a project, Get a project from
@@ -41,10 +42,9 @@ export function DoorPage({
     <section className={clsx("welcome", "welcome-page", className)} aria-labelledby={id}>
       <header className="welcome-page-head">
         {onBack && (
-          <button type="button" tabIndex={0} className="welcome-link" onClick={onBack}>
-            <ChevronLeft />
+          <Button variant="link" onPress={onBack} icon={<ChevronLeft />} className="welcome-link">
             Back
-          </button>
+          </Button>
         )}
         {/* `-1`: reached by the page appearing, never by Tab, which goes on to the acts. */}
         <h1 id={id} tabIndex={-1} ref={heading}>

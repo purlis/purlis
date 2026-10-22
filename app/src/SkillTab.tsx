@@ -14,6 +14,8 @@ export function startedBySaid(started: RunStart | null): string {
       return "The chat's Skill tool";
     case "read":
       return "The chat read the skill";
+    case "mcp-load":
+      return "The chat loaded the skill";
     case null:
       return "From before runs were recorded";
     default:

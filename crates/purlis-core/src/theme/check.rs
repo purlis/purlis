@@ -708,7 +708,7 @@ pub const PAIRS: &[Pair] = &[
     p("text.faint", "layer.project", 3.0),
     p("text.faint", "layer.workspace", 3.0),
     p("text.faint", "layer.chat", 3.0),
-    // An Allow (`.ui-button-grants`, ADR 0097 §6) is edged in the accent on the control's own
+    // An Allow (the button's `grants` variant, ADR 0097 §6) is edged in the accent on the control's own
     // ground, at rest and under the pointer: the edge is a control's outline, held to 3:1.
     p("accent.base", "control.base", 3.0),
     p("accent.base", "control.hover", 3.0),
@@ -752,7 +752,7 @@ pub struct Fit {
 /// **Every line that has to fit in its box.** The control's box is a field (`.ui-input`): it is
 /// `size.control` tall and its text is the window's words (`font-size.base`) on the body line
 /// (`line-height.body`, the `:root`'s). A button is as tall, and its label sits on a line of 1
-/// (`.ui-button`), so it fits wherever a field's text does; a strip's largest words are a tab's
+/// (`ui/button/button.css`), so it fits wherever a field's text does; a strip's largest words are a tab's
 /// title (`font-size.md`, `.tabs [role="tab"]`) on the body line.
 pub const FITS: &[Fit] = &[
     Fit {
@@ -832,6 +832,20 @@ pub enum Finding {
         floor: String,
         ratio: Option<f64>,
     },
+    /// A text tier under its floor on a ground it is drawn on (#2940), so the window draws it
+    /// as the nearest colour that clears it: `drawn`, from the theme's `written`. `ground` is
+    /// where it fell furthest under, at `ratio`, as written or, with `tinted`, only in a
+    /// workspace's tint; `clears` is `false` only where no lightness clears every ground.
+    TierFallsBack {
+        tier: &'static str,
+        written: String,
+        drawn: String,
+        ground: &'static str,
+        ratio: f64,
+        floor: f64,
+        tinted: bool,
+        clears: bool,
+    },
 }
 
 /// The check, as [`super::check`] describes it.
@@ -862,6 +876,21 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
                 part: one.part,
                 floor: one.floor,
                 ratio: one.ratio,
+            }),
+    );
+    // A text tier under its floor is drawn as the nearest colour that clears it (#2940).
+    findings.extend(
+        super::tiers::lifted(theme)
+            .into_iter()
+            .map(|one| Finding::TierFallsBack {
+                tier: one.tier,
+                written: one.written,
+                drawn: one.drawn,
+                ground: one.ground,
+                ratio: one.ratio,
+                floor: one.floor,
+                tinted: one.tinted,
+                clears: one.clears,
             }),
     );
     // A theme a workspace's colour does not tint is only ever drawn as it is.

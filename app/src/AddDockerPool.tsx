@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import type { PoolAdding, PoolLimitsShown } from "./bindings";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { addPool, stopAddingAPool, usePools } from "./pools";
+import { Button } from "./ui/button/Button";
 
 /**
  * **Add a Docker pool…** (#2679, spec #2041: a Docker pool in one step): its name, the runner
@@ -179,23 +180,12 @@ function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) 
             )}
 
             <SettingActions>
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={adding}
-              >
+              <Button variant="primary" type="submit" isDisabled={adding}>
                 {adding ? "Making its runner…" : "Add pool"}
-              </button>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                disabled={adding}
-                onClick={stopAddingAPool}
-              >
+              </Button>
+              <Button isDisabled={adding} onPress={stopAddingAPool}>
                 Cancel
-              </button>
+              </Button>
             </SettingActions>
           </form>
         </Dialog.Content>

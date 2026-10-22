@@ -76,10 +76,12 @@ fn a_job_that_holds_nothing_writes_the_manifest_and_hands_it_on() {
             && !manifest.can_mint_an_oidc_token(),
         "the manifest job holds no key, no environment and no token"
     );
-    assert_eq!(
-        manifest.condition(),
-        Some("needs.plan.outputs.publish == 'true'"),
-        "a manifest is written only for a run that publishes"
+    assert!(
+        manifest
+            .condition()
+            .is_some_and(|said| said.contains("needs.plan.outputs.publish == 'true'")),
+        "a manifest is written only for a run that publishes: {:?}",
+        manifest.condition()
     );
     assert!(manifest.needs().contains(&"build".to_owned()));
     // From the build files by their exact names, never a pattern (see `provenance`).

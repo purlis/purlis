@@ -73,6 +73,7 @@ mod hooks;
 mod host;
 mod inboxupdates;
 mod machineprofiles;
+mod personaskills;
 mod skillrun;
 mod skillstudio;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
@@ -126,6 +127,7 @@ mod repolist;
 mod restored;
 mod restoring;
 #[cfg(unix)]
+mod runnercode;
 mod runnerlinks;
 mod sandboxchoose;
 mod sandboxing;
@@ -2874,6 +2876,10 @@ fn commands() -> Builder<tauri::Wry> {
         .constant("SPECIMEN_BUSY", specimen::BUSY)
         // The event a link's close of chats with theme drafts reaches the window on (#2761).
         .constant("CLOSE_HANDED", themedrafts::CLOSE_HANDED)
+        // The Skill studio's catalogue row and a persona's scope key (#2768): named once for
+        // the persona page's summary row and the window's catalogue.
+        .constant("SKILL_STUDIO_IN", skillstudio::STUDIO_IN)
+        .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
 }
 
 /// Where the generated TypeScript lives.
@@ -3126,7 +3132,8 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
             // A window's link is relayed to a pool's runner this machine keeps (#2679).
             Some(config) => hosting
                 .heeding(purlis_core::halt::OnDisk(config.clone()))
-                .relaying_with(runnerlinks::relays_to(config)),
+                .relaying_with(runnerlinks::relays_to(config.clone()))
+                .draining_with(runnerlinks::drains_to(config)),
             None => hosting,
         };
         purlis_core::browsers::given_to(hosting)
@@ -3437,6 +3444,10 @@ pub fn run() {
             // The local project out of the config home a chat's sandbox denies (#1670), after
             // rename-local named the folders and before any project opens.
             firstrun::move_the_local_project();
+            // The copies of Docker's settings that runs which ended outright left behind
+            // (#2893): off the launch's path, and only those older than a day.
+            #[cfg(unix)]
+            std::thread::spawn(purlis_core::dockerpool::settings::sweep_at_start);
             // Each harness folder this machine uses becomes a profile in place, before any chat
             // starts (ADR 0095 §2, #2033): from the app's own environment, which its chats are
             // started from. Off in the scenario build, whose home is the person's.

@@ -4,6 +4,7 @@
 import { useRef, useState } from "react";
 import * as Dialog from "./overlays/dialog";
 import { Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /**
  * Renaming a workspace (charter#367), asked where the answer is given.
@@ -105,17 +106,10 @@ export function RenameWorkspace({
 
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
             <SettingActions>
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={!ready}
-              >
+              <Button variant="primary" type="submit" isDisabled={!ready}>
                 {renaming ? "Renaming…" : "Rename workspace"}
-              </button>
-              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-                Cancel
-              </button>
+              </Button>
+              <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
           </form>
         </Dialog.Content>

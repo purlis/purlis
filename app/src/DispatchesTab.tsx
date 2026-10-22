@@ -43,6 +43,7 @@ import {
   type DispatchWhen,
 } from "./dispatches";
 import { useWhileShown } from "./whileShown";
+import { Button } from "./ui/button/Button";
 
 /** How often the list is read again while a dispatch in it is still running, and the window is
  *  shown. */
@@ -312,24 +313,24 @@ export function DispatchesTab({
                 <tr data-testid={`dispatch-${row.id}`} data-outcome={row.outcome}>
                   <td>
                     <span className="dispatch-task">
-                      <button
-                        type="button"
-                        className="ui-button ui-button-ghost ui-button-sm dispatch-more"
-                        tabIndex={0}
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         aria-expanded={read === row.id}
                         aria-label={
                           read === row.id
                             ? `Hide the brief and report of ${row.task}`
                             : `Show the brief and report of ${row.task}`
                         }
-                        onClick={() => setRead(read === row.id ? undefined : row.id)}
+                        onPress={() => setRead(read === row.id ? undefined : row.id)}
+                        className="dispatch-more"
                       >
                         {read === row.id ? (
                           <ChevronDown className="node-icon" aria-hidden="true" />
                         ) : (
                           <ChevronRight className="node-icon" aria-hidden="true" />
                         )}
-                      </button>
+                      </Button>
                       <Task row={row} onShowChat={onShowChat} onOpenRecord={onOpenRecord} />
                     </span>
                   </td>
@@ -350,44 +351,41 @@ export function DispatchesTab({
                       <span className="dispatch-worktree" data-standing={row.worktree.standing}>
                         {worktreeSaid(row.worktree)}
                         {row.worktree.standing !== "merged" && onChanges !== undefined && (
-                          <button
-                            type="button"
-                            className="ui-button ui-button-sm dispatch-changes"
-                            tabIndex={0}
+                          <Button
+                            size="sm"
                             aria-label={`Review changes of ${row.task}`}
                             title={
                               row.worktree.standing === "kept"
                                 ? "Opens what its own branch changed, with Merge and Discard."
                                 : "Opens what is left of its own branch, with Delete branch where it is merged."
                             }
-                            onClick={() => onChanges(row.id, row.task)}
+                            onPress={() => onChanges(row.id, row.task)}
+                            className="dispatch-changes"
                           >
                             Review changes
-                          </button>
+                          </Button>
                         )}
                         {/* Its folder is there and the task has ended: the Changes tab's
                             Merge, asked the same way (#1534). */}
                         {row.worktree.discard && row.ended !== null && (
-                          <button
-                            type="button"
-                            className="ui-button ui-button-sm dispatch-discard"
-                            tabIndex={0}
+                          <Button
+                            size="sm"
                             aria-label={`Merge the branch of ${row.task}`}
-                            onClick={() => askToMerge(row)}
+                            onPress={() => askToMerge(row)}
+                            className="dispatch-discard"
                           >
                             Merge…
-                          </button>
+                          </Button>
                         )}
                         {row.worktree.discard && (
-                          <button
-                            type="button"
-                            className="ui-button ui-button-sm dispatch-discard"
-                            tabIndex={0}
+                          <Button
+                            size="sm"
                             aria-label={`Discard the branch folder of ${row.task}`}
-                            onClick={() => void askToDiscard(row)}
+                            onPress={() => void askToDiscard(row)}
+                            className="dispatch-discard"
                           >
                             Discard
-                          </button>
+                          </Button>
                         )}
                       </span>
                     )}

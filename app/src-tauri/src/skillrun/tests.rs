@@ -25,6 +25,8 @@ fn call(chat: u32, id: &str, skill: Option<&str>) -> ToolCall {
                 skill: skill.to_owned(),
                 run: RUN.to_owned(),
                 started_by: purlis_core::skills::runs::StartedBy::SkillTool,
+                workspace: None,
+                level: None,
             })
         }),
     }

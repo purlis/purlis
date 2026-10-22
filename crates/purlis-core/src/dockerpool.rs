@@ -28,6 +28,11 @@
 //! image and the user pinned when it was made. Anything else, a field missing or one that
 //! cannot be read included, refuses the link.
 //!
+//! **What each engine writes is measured** (#2680, `.github/workflows/docker-pool-hosts.yml`):
+//! Docker on an AppArmor host, and Podman, rootful and rootless, each write the same
+//! confinement in words of their own, recorded in `dockerpool/hosts/`, and the check holds each
+//! to its own. An SELinux host is not measured: what it writes (a process label) is refused.
+//!
 //! **Each runner has its own link key, pinned** ([`pair_args`]): the runner makes its key at
 //! its one pairing, inside the container, and the desktop keeps its public half with the
 //! runner's device id; a new container is a new runner with a new key.
@@ -476,10 +481,22 @@ impl Made {
     }
 }
 
+/// What the daemon's check says of the engine a container runs on (#2680).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Engine {
+    /// A rootless Podman, which loads no AppArmor profile for a container.
+    pub rootless: bool,
+}
+
 /// Whether `inspected`, what `docker inspect <container>` printed, is `made`'s container,
-/// running and confined exactly as [`Runner::create_args`] made it. Anything else is refused,
-/// with what differs: a field missing, or of another shape, included.
+/// running and confined exactly as [`Runner::create_args`] made it, on a rootful engine.
+/// Anything else is refused, with what differs: a field missing, or of another shape, included.
 pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> {
+    check_on(inspected, made, Engine::default())
+}
+
+/// [`check`], on the `engine` the daemon's check found ([`check_podman`]).
+pub fn check_on(inspected: &serde_json::Value, made: &Made, engine: Engine) -> Result<(), Refused> {
     let not = |what: &str| {
         refused(format!(
             "runner {}'s container {what}, so purlis does not link to it; remove the runner and \
@@ -525,6 +542,10 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
             .collect()
     };
 
+    // Podman writes its own shape of what Docker writes (#2680): told by the field Docker
+    // never writes, its OCI runtime's name. Each field below is held to the words of the one
+    // that wrote it, as `hosts/` recorded them.
+    let podman = one.get("OCIRuntime").is_some();
     if text("/Id")? != made.container.as_str() {
         return Err(not("is not the one pinned when it was made"));
     }
@@ -554,16 +575,38 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
             "has a security option of its own ({named}), where purlis keeps the runtime's defaults"
         )));
     }
-    if !matches!(text("/AppArmorProfile")?, "" | "docker-default") {
+    let apparmor = text("/AppArmorProfile")?;
+    let default_apparmor = if podman {
+        // `containers-default-<version>`, which rootful Podman loads on an AppArmor host; none
+        // only on rootless Podman, which cannot load one, and whose user namespace is the wall
+        // there (ADR 0089 §10).
+        (engine.rootless && apparmor.is_empty()) || is_containers_default(apparmor)
+    } else {
+        matches!(apparmor, "" | "docker-default")
+    };
+    if !default_apparmor {
         return Err(not("does not have the runtime's default AppArmor profile"));
+    }
+    // No SELinux host has been measured (#2680): a container one labels is refused until one is.
+    if !text("/ProcessLabel")?.is_empty() || !text("/MountLabel")?.is_empty() {
+        return Err(not(
+            "carries an SELinux label, and purlis has not been measured on an SELinux host yet",
+        ));
     }
     if !words("/HostConfig/CapAdd")?.is_empty() {
         return Err(not("has a capability added"));
     }
-    if !words("/HostConfig/CapDrop")?
-        .iter()
-        .any(|cap| cap.eq_ignore_ascii_case("ALL"))
-    {
+    // Podman writes `--cap-drop ALL` as each capability it would have given, and says what the
+    // container holds: none, effective or bounding.
+    let none_held = |pointer: &str| -> Result<bool, Refused> { Ok(list(pointer)?.is_empty()) };
+    let all_dropped = if podman {
+        none_held("/EffectiveCaps")? && none_held("/BoundingCaps")?
+    } else {
+        words("/HostConfig/CapDrop")?
+            .iter()
+            .any(|cap| cap.eq_ignore_ascii_case("ALL"))
+    };
+    if !all_dropped {
         return Err(not("keeps capabilities"));
     }
     if text("/HostConfig/NetworkMode")? != "bridge" {
@@ -574,7 +617,10 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
         ("/HostConfig/UTSMode", "host name"),
         ("/HostConfig/UsernsMode", "users"),
     ] {
-        if !text(pointer)?.is_empty() {
+        let mode = text(pointer)?;
+        // Podman writes a namespace of the container's own as `private`.
+        let own = mode.is_empty() || (podman && mode == "private" && what != "users");
+        if !own {
             return Err(not(&format!(
                 "shares its {what} with the machine or another container"
             )));
@@ -587,16 +633,39 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
              refused",
         ));
     }
-    if text("/HostConfig/CgroupnsMode")? != "private" {
+    let cgroupns = if podman {
+        text("/HostConfig/CgroupMode")?
+    } else {
+        text("/HostConfig/CgroupnsMode")?
+    };
+    if cgroupns != "private" {
         return Err(not(
             "shares the machine's cgroup namespace; purlis needs a Docker on cgroup v2 that \
              gives each container a cgroup namespace of its own (`--cgroupns private`)",
         ));
     }
-    if !list("/HostConfig/Devices")?.is_empty() || !list("/HostConfig/DeviceRequests")?.is_empty() {
+    // Podman writes no device requests at all.
+    let requests = if podman && one.pointer("/HostConfig/DeviceRequests").is_none() {
+        Vec::new()
+    } else {
+        list("/HostConfig/DeviceRequests")?
+    };
+    if !list("/HostConfig/Devices")?.is_empty() || !requests.is_empty() {
         return Err(not("is given a device of this machine"));
     }
-    if !list("/HostConfig/VolumesFrom")?.is_empty() || !list("/HostConfig/Binds")?.is_empty() {
+    // Podman writes the home's volume among the binds, with the options it mounts it with.
+    let binds = words("/HostConfig/Binds")?;
+    let binds_its_home_alone = if podman {
+        binds
+            == [format!(
+                "{}:{}:rw,rprivate,nosuid,nodev,rbind",
+                made.runner.volume(),
+                made.runner.home
+            )]
+    } else {
+        binds.is_empty()
+    };
+    if !list("/HostConfig/VolumesFrom")?.is_empty() || !binds_its_home_alone {
         return Err(not(
             "is given another container's or this machine's folders",
         ));
@@ -613,7 +682,9 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
         .pointer("/NetworkSettings/Networks")
         .and_then(serde_json::Value::as_object)
         .ok_or_else(|| unreadable("/NetworkSettings/Networks"))?;
-    if networks.len() != 1 || !networks.contains_key("bridge") {
+    // Podman's default bridge is the network it names `podman`.
+    let bridge = if podman { "podman" } else { "bridge" };
+    if networks.len() != 1 || !networks.contains_key(bridge) {
         return Err(not("is on a network other than Docker's default bridge"));
     }
     // Absent, `null` or empty: Docker writes none for a container made without one.
@@ -629,11 +700,16 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
         return Err(not("may write to its root file system"));
     }
     let limits = made.runner.limits;
+    // Podman writes the options it mounts it with after those it was given.
+    let tmp_options = if podman {
+        format!("{},rprivate,tmpcopyup", limits.tmp_options())
+    } else {
+        limits.tmp_options()
+    };
     let tmp_only = match one.pointer("/HostConfig/Tmpfs") {
         Some(serde_json::Value::Object(set)) => {
             set.len() == 1
-                && set.get("/tmp").and_then(serde_json::Value::as_str)
-                    == Some(limits.tmp_options().as_str())
+                && set.get("/tmp").and_then(serde_json::Value::as_str) == Some(tmp_options.as_str())
         }
         None | Some(serde_json::Value::Null) => false,
         Some(_) => return Err(unreadable("/HostConfig/Tmpfs")),
@@ -675,10 +751,16 @@ pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> 
         }
         None | Some(_) => return Err(unreadable("/HostConfig/OomKillDisable")),
     }
-    if !matches!(
-        text("/HostConfig/Runtime")?,
-        "runc" | "crun" | "io.containerd.runc.v2"
-    ) {
+    // Podman writes `oci` here and its runtime's own name beside it.
+    let standard_runtime = if podman {
+        text("/HostConfig/Runtime")? == "oci" && matches!(text("/OCIRuntime")?, "runc" | "crun")
+    } else {
+        matches!(
+            text("/HostConfig/Runtime")?,
+            "runc" | "crun" | "io.containerd.runc.v2"
+        )
+    };
+    if !standard_runtime {
         return Err(not("does not run on a standard container runtime"));
     }
     let mounts = list("/Mounts")?;
@@ -732,6 +814,32 @@ pub fn check_daemon(options: &serde_json::Value) -> Result<(), Refused> {
     }
 }
 
+/// Whether a Podman, by what `podman info --format '{{json .Host.Security}}'` printed
+/// (`security`), gives containers its default seccomp profile (#2680): seccomp on, and the
+/// profile Podman ships. Rootful and rootless alike; rootless is the isolation ADR 0089 §10
+/// prefers for a local runner. Anything else, a field missing included, is refused.
+pub fn check_podman(security: &serde_json::Value) -> Result<Engine, Refused> {
+    let rootless = security
+        .get("rootless")
+        .and_then(serde_json::Value::as_bool);
+    let seccomp = security
+        .get("seccompEnabled")
+        .and_then(serde_json::Value::as_bool);
+    let profile = security
+        .get("seccompProfilePath")
+        .and_then(serde_json::Value::as_str);
+    match (rootless, seccomp, profile) {
+        (Some(rootless), Some(true), Some(SECCOMP_DEFAULT_PODMAN)) => Ok(Engine { rootless }),
+        _ => Err(refused(
+            "this Podman does not give containers its default seccomp profile, so purlis makes \
+             no runner on it; set its seccomp profile back to its default",
+        )),
+    }
+}
+
+/// Where Podman keeps its default seccomp profile, as `podman info` names it.
+const SECCOMP_DEFAULT_PODMAN: &str = "/usr/share/containers/seccomp.json";
+
 /// Whether `inspected`, what `docker volume inspect <volume>` printed, is `made`'s home
 /// volume as Docker made it for the container: the `local` driver with no options, so its
 /// data is the volume's own and no folder of this machine.
@@ -761,6 +869,24 @@ pub fn check_volume(inspected: &serde_json::Value, made: &Made) -> Result<(), Re
     }
 }
 
+/// Whether `profile` is the AppArmor profile Podman loads for its containers, as it names it:
+/// `containers-default-<version>`, a version of digits and dots, and `-apparmor<digits>` after
+/// it where the distribution adds one (`containers-default-0.57.4-apparmor1`).
+fn is_containers_default(profile: &str) -> bool {
+    let Some(rest) = profile.strip_prefix("containers-default-") else {
+        return false;
+    };
+    let (version, suffix) = match rest.split_once("-apparmor") {
+        Some((version, number)) => (version, Some(number)),
+        None => (rest, None),
+    };
+    let a_version = version.starts_with(|c: char| c.is_ascii_digit())
+        && version.chars().all(|c| c.is_ascii_digit() || c == '.');
+    let a_suffix = suffix
+        .is_none_or(|number| !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()));
+    a_version && a_suffix
+}
+
 /// Whether a security option is `no-new-privileges`, as Docker takes and writes it.
 fn is_no_new_privileges(option: &str) -> bool {
     matches!(
@@ -770,10 +896,18 @@ fn is_no_new_privileges(option: &str) -> bool {
 }
 
 /// The `docker` command this machine runs (or a command that answers as it does, such as
-/// Podman's), by its path. purlis runs it directly, never through a shell; `DOCKER_HOST` and
-/// Docker's own configuration are the command's to read.
+/// Podman's), by its path. purlis runs it directly, never through a shell, and never with the
+/// person's own Docker settings: each run is given a checked copy of them and the engine pinned
+/// ([`settings`], #2752).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Docker(pub std::path::PathBuf);
+pub struct Docker {
+    program: std::path::PathBuf,
+    /// Where each run's copy of Docker's settings is made: `<data>/docker-settings`, unless
+    /// another folder is named (a test's).
+    settings_in: Option<std::path::PathBuf>,
+}
+
+pub mod settings;
 
 /// Where a `docker` command is looked for first: where Docker's installers put it, Docker
 /// Desktop's own, `/usr/local`'s, Homebrew's and the system's.
@@ -810,6 +944,55 @@ const DOCKER_IN_HOME: &[&str] = &[
 ];
 
 impl Docker {
+    /// The `docker` command at `program`.
+    pub fn at(program: impl Into<std::path::PathBuf>) -> Docker {
+        Docker {
+            program: program.into(),
+            settings_in: None,
+        }
+    }
+
+    /// This `docker`, with each run's copy of Docker's settings made in `folder`.
+    #[must_use]
+    pub fn with_settings_in(mut self, folder: impl Into<std::path::PathBuf>) -> Docker {
+        self.settings_in = Some(folder.into());
+        self
+    }
+
+    /// The command, by its path.
+    pub fn program(&self) -> &std::path::Path {
+        &self.program
+    }
+
+    /// **What one run of this `docker` is given** ([`settings::prepare`]): a checked copy of
+    /// Docker's settings, held until the returned value is dropped, the engine pinned and the
+    /// `PATH` its helpers are found on, with [`settings::CLEARED`] not handed on.
+    pub fn prepared(&self) -> Result<settings::Prepared, Refused> {
+        let settings_in = match &self.settings_in {
+            Some(folder) => folder.clone(),
+            None => crate::datahome::root()
+                .ok_or_else(|| refused("purlis has no data folder to keep docker's settings in"))?
+                .join(settings::DIR),
+        };
+        let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
+        // Docker's own folders, where every helper it is handed was found, and the system's.
+        let path = std::env::join_paths(settings::run_path()).unwrap_or_default();
+        let docker_config = crate::envvar::var_os("DOCKER_CONFIG").map(std::path::PathBuf::from);
+        let docker_host = crate::envvar::var("DOCKER_HOST");
+        let tmp = crate::envvar::var_os("TMPDIR").map(std::path::PathBuf::from);
+        let runtime = crate::envvar::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from);
+        settings::prepare(&settings::Source {
+            settings_in: &settings_in,
+            path,
+            home: home.as_deref(),
+            docker_config: docker_config.as_deref(),
+            docker_host: docker_host.as_deref(),
+            tmp: tmp.as_deref(),
+            runtime: runtime.as_deref(),
+            system: std::path::Path::new(settings::SYSTEM_SOCKET),
+        })
+    }
+
     /// **The `docker` command on this machine** (#2679): the first of the places Docker's
     /// installers put it (`DOCKER_INSTALLED`, then under `home`), else the first on `path`, of
     /// its absolute folders alone. A window started from the Finder has a `PATH` that names
@@ -845,7 +1028,7 @@ impl Docker {
             .find(|candidate| {
                 crate::secrets::run::which(&candidate.display().to_string(), None).is_some()
             })
-            .map(Docker)
+            .map(Docker::at)
             .ok_or_else(|| {
                 refused(
                     "purlis found no docker command on this machine; install Docker Desktop, or \
@@ -868,9 +1051,19 @@ impl Docker {
         home: Option<&std::path::Path>,
     ) -> Vec<std::path::PathBuf> {
         use std::path::{Path, PathBuf};
-        let folder_of = |file: &Path| file.parent().map(Path::to_path_buf);
-        let own = folder_of(&self.0);
-        let linked = self.0.canonicalize().ok().as_deref().and_then(folder_of);
+        // A folder named by a relative path is no folder Docker's installers put it in.
+        let folder_of = |file: &Path| {
+            file.parent()
+                .filter(|folder| folder.is_absolute())
+                .map(Path::to_path_buf)
+        };
+        let own = folder_of(&self.program);
+        let linked = self
+            .program
+            .canonicalize()
+            .ok()
+            .as_deref()
+            .and_then(folder_of);
         let installed = DOCKER_INSTALLED
             .iter()
             .filter_map(|at| folder_of(Path::new(at)));
@@ -905,13 +1098,13 @@ impl Docker {
     /// is kept only to be shown, up to [`MOST_SAID`], and never read to decide anything.
     fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
         use std::io::{Read, Write};
-        let mut command = std::process::Command::new(&self.0);
-        // Its credential helpers are found where it is (#2752), whatever `PATH` the window has.
-        let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
-        let searched =
-            self.helpers_searched(crate::envvar::var("PATH").as_deref(), home.as_deref());
-        if let Ok(joined) = std::env::join_paths(searched) {
-            command.env("PATH", joined);
+        let mut command = std::process::Command::new(&self.program);
+        // A checked copy of Docker's settings, the engine pinned, and its helpers found where it
+        // is (#2752), whatever the window's environment and Docker's own settings say.
+        let prepared = self.prepared()?;
+        command.envs(prepared.env.iter().map(|(name, value)| (name, value)));
+        for name in settings::CLEARED {
+            command.env_remove(name);
         }
         command
             .args(args)
@@ -922,8 +1115,12 @@ impl Docker {
             })
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
-        let mut child = crate::forklock::spawn(&mut command)
-            .map_err(|why| refused(format!("{} could not be run: {why}", self.0.display())))?;
+        let mut child = crate::forklock::spawn(&mut command).map_err(|why| {
+            refused(format!(
+                "{} could not be run: {why}",
+                self.program.display()
+            ))
+        })?;
         if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
             let _ = stdin.write_all(input.as_bytes());
         }
@@ -951,7 +1148,7 @@ impl Docker {
         }
         let status = child
             .wait()
-            .map_err(|why| refused(format!("{} did not finish: {why}", self.0.display())))?;
+            .map_err(|why| refused(format!("{} did not finish: {why}", self.program.display())))?;
         let said = said.and_then(|said| said.join().ok()).unwrap_or_default();
         if !status.success() {
             // Docker's own words say why (ADR 0078 §2: a connector's stderr is shown in full).
@@ -1021,13 +1218,23 @@ impl Docker {
         Ok((user, home.to_owned()))
     }
 
-    /// The daemon's security options, held to [`check_daemon`].
-    fn check_daemon(&self) -> Result<(), Refused> {
-        let options = self.json(
+    /// The daemon's security options, held to [`check_daemon`]; or, for a Podman, which has no
+    /// such field, its host's security, held to [`check_podman`] (#2680).
+    fn check_daemon(&self) -> Result<Engine, Refused> {
+        let docker = self.json(
             &["info", "--format", "{{json .SecurityOptions}}"],
             "docker info",
-        )?;
-        check_daemon(&options)
+        );
+        match docker {
+            Ok(options) => check_daemon(&options).map(|()| Engine::default()),
+            Err(why) => match self.json(
+                &["info", "--format", "{{json .Host.Security}}"],
+                "podman info",
+            ) {
+                Ok(security) if security.is_object() => check_podman(&security),
+                _ => Err(why),
+            },
+        }
     }
 
     /// Make and start `runner`'s container on a home volume made for it, and check it is
@@ -1119,12 +1326,12 @@ impl Docker {
     /// What Docker says of `made`'s container, its home volume and the daemon, held to
     /// [`check`], [`check_volume`] and [`check_daemon`].
     pub fn check(&self, made: &Made) -> Result<(), Refused> {
-        self.check_daemon()?;
+        let engine = self.check_daemon()?;
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
             "docker container inspect",
         )?;
-        check(&inspected, made)?;
+        check_on(&inspected, made, engine)?;
         let volume = made.runner.volume();
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
         check_volume(&inspected, made)

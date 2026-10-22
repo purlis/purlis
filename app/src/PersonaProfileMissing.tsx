@@ -6,6 +6,7 @@ import { commands, type PersonaProfile, type PlaneId } from "./bindings";
 import { Notice } from "./Notice";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
 import { HARNESSES } from "./settings/profiles";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A persona whose profile this machine does not have** (#2039, spec #2030 story 21, ADR 0095
@@ -130,14 +131,9 @@ export function PersonaProfileMissing({
               </p>
             )}
             <SettingActions>
-              <button
-                type="submit"
-                className="ui-button ui-button-primary"
-                tabIndex={0}
-                disabled={busy}
-              >
+              <Button variant="primary" type="submit" isDisabled={busy}>
                 {busy ? "Creating…" : "Create profile"}
-              </button>
+              </Button>
             </SettingActions>
           </form>
         )

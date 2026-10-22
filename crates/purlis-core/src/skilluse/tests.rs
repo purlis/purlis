@@ -27,6 +27,7 @@ fn opened(spans: &mut Spans, skill: &str) -> Open {
                 skill,
                 id: RUN,
                 started_by: StartedBy::SkillTool,
+                whose: &purlis_skills::runs::Whose::default(),
                 at_ms: 1_000,
                 tokens: None,
             },
@@ -127,6 +128,7 @@ fn a_runs_start_and_end_read_back_as_one_run_with_its_signals_and_never_a_verdic
             started_by: Some(StartedBy::SkillTool),
             started: "2026-05-04T11:32:17+00:00".to_owned(),
             device: "box".to_owned(),
+            copy: None,
             end: Some(End {
                 ended: Ended::Turn,
                 at: "2026-05-04T11:32:17+00:00".to_owned(),

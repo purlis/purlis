@@ -234,6 +234,8 @@ pub(crate) fn inspected() -> serde_json::Value {
         "State": { "Running": true },
         "Image": DIGEST,
         "AppArmorProfile": "",
+        "ProcessLabel": "",
+        "MountLabel": "",
         "HostConfig": {
             "Privileged": false,
             "SecurityOpt": ["no-new-privileges"],
@@ -664,7 +666,8 @@ impl FakeDocker {
     }
 
     pub(crate) fn docker(&self) -> Docker {
-        Docker(self.dir.path().join("docker"))
+        Docker::at(self.dir.path().join("docker"))
+            .with_settings_in(self.dir.path().join("settings"))
     }
 
     pub(crate) fn file(&self, name: &str) -> String {
@@ -1000,18 +1003,291 @@ fn docker_is_found_where_its_installers_put_it_before_the_path() {
     // Docker where an installer puts it, which a test cannot take away.
     match Docker::on_this_machine(Some(&path), Some(home.path())) {
         Err(refused) => assert!(refused.0.contains("install Docker"), "{refused}"),
-        Ok(found) => assert_eq!(Some(found.0), installed),
+        Ok(found) => assert_eq!(Some(found.program().to_path_buf()), installed),
     }
     stand_in::program(on_path.path(), "docker", "#!/bin/sh\n");
     std::fs::create_dir_all(home.path().join(".orbstack/bin")).unwrap();
     stand_in::program(&home.path().join(".orbstack/bin"), "docker", "#!/bin/sh\n");
     // The path comes last: an installer's place is taken before it.
     let found = Docker::on_this_machine(Some(&path), Some(home.path())).unwrap();
-    assert_ne!(found.0, on_path.path().join("docker"));
+    assert_ne!(found.program(), on_path.path().join("docker"));
     assert_eq!(
-        found.0,
+        found.program(),
         installed.unwrap_or_else(|| home.path().join(".orbstack/bin/docker"))
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The check, held to what each host it was measured on wrote (#2680): `hosts/`, recorded by
+// `.github/workflows/docker-pool-hosts.yml` from a container made the pool's way, and one
+// loosened each way, on Docker on an AppArmor host, rootful Podman and rootless Podman.
+// ---------------------------------------------------------------------------------------------
+
+/// What `host` wrote for `case`, as it was recorded.
+fn recorded(host: &str, case: &str) -> serde_json::Value {
+    let text = match format!("{host}-{case}").as_str() {
+        "docker-apparmor-made" => include_str!("hosts/docker-apparmor-made.json"),
+        "docker-apparmor-privileged" => include_str!("hosts/docker-apparmor-privileged.json"),
+        "docker-apparmor-capability" => include_str!("hosts/docker-apparmor-capability.json"),
+        "docker-apparmor-unconfined" => include_str!("hosts/docker-apparmor-unconfined.json"),
+        "docker-apparmor-host-pid" => include_str!("hosts/docker-apparmor-host-pid.json"),
+        "docker-apparmor-info-security" => include_str!("hosts/docker-apparmor-info-security.json"),
+        "podman-rootful-made" => include_str!("hosts/podman-rootful-made.json"),
+        "podman-rootful-privileged" => include_str!("hosts/podman-rootful-privileged.json"),
+        "podman-rootful-capability" => include_str!("hosts/podman-rootful-capability.json"),
+        "podman-rootful-unconfined" => include_str!("hosts/podman-rootful-unconfined.json"),
+        "podman-rootful-host-pid" => include_str!("hosts/podman-rootful-host-pid.json"),
+        "podman-rootful-info-security" => include_str!("hosts/podman-rootful-info-security.json"),
+        "podman-rootless-made" => include_str!("hosts/podman-rootless-made.json"),
+        "podman-rootless-privileged" => include_str!("hosts/podman-rootless-privileged.json"),
+        "podman-rootless-capability" => include_str!("hosts/podman-rootless-capability.json"),
+        "podman-rootless-unconfined" => include_str!("hosts/podman-rootless-unconfined.json"),
+        "podman-rootless-host-pid" => include_str!("hosts/podman-rootless-host-pid.json"),
+        "podman-rootless-info-security" => include_str!("hosts/podman-rootless-info-security.json"),
+        "docker-apparmor-seccomp-unconfined" => {
+            include_str!("hosts/docker-apparmor-seccomp-unconfined.json")
+        }
+        "docker-apparmor-host-users" => include_str!("hosts/docker-apparmor-host-users.json"),
+        "docker-apparmor-host-network" => include_str!("hosts/docker-apparmor-host-network.json"),
+        "podman-rootful-seccomp-unconfined" => {
+            include_str!("hosts/podman-rootful-seccomp-unconfined.json")
+        }
+        "podman-rootful-host-users" => include_str!("hosts/podman-rootful-host-users.json"),
+        "podman-rootful-host-network" => include_str!("hosts/podman-rootful-host-network.json"),
+        "podman-rootless-seccomp-unconfined" => {
+            include_str!("hosts/podman-rootless-seccomp-unconfined.json")
+        }
+        "podman-rootless-host-users" => include_str!("hosts/podman-rootless-host-users.json"),
+        "podman-rootless-host-network" => include_str!("hosts/podman-rootless-host-network.json"),
+        other => panic!("nothing is recorded as {other}"),
+    };
+    serde_json::from_str(text).unwrap()
+}
+
+/// The container `inspected` says it is, as the pool made it: its id, its runner's name, its
+/// image, and the pool's user, home and default limits.
+fn made_as_recorded(inspected: &serde_json::Value) -> Made {
+    let text = |pointer: &str| {
+        inspected
+            .pointer(pointer)
+            .and_then(serde_json::Value::as_str)
+            .unwrap()
+    };
+    Made {
+        container: ContainerId::new(text("/0/Id")).unwrap(),
+        runner: Runner::new(
+            text("/0/Config/Labels/purlis.runner"),
+            Image::pinned(text("/0/Config/Image")).unwrap(),
+            User::new(10001, 10001).unwrap(),
+            "/home/purlis",
+        )
+        .unwrap(),
+    }
+}
+
+fn checked(inspected: &serde_json::Value) -> Result<(), Refused> {
+    check(inspected, &made_as_recorded(inspected))
+}
+
+/// The engine each host was measured on, as its daemon's check says.
+fn engine_of(host: &str) -> Engine {
+    Engine {
+        rootless: host == "podman-rootless",
+    }
+}
+
+/// What `host` wrote, held to the check on the engine it was measured on.
+fn checked_on_its_engine(host: &str, inspected: &serde_json::Value) -> Result<(), Refused> {
+    check_on(inspected, &made_as_recorded(inspected), engine_of(host))
+}
+
+#[test]
+fn a_container_made_the_pools_way_passes_on_docker_with_apparmor_and_on_podman() {
+    for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
+        assert_eq!(
+            checked_on_its_engine(host, &recorded(host, "made")),
+            Ok(()),
+            "{host}"
+        );
+    }
+}
+
+/// A Podman container with no AppArmor profile is taken only on rootless Podman, which loads
+/// none, and Podman's own profile is taken only by the name Podman gives it.
+#[test]
+fn no_apparmor_profile_is_taken_only_on_rootless_podman() {
+    let rootless = recorded("podman-rootless", "made");
+    assert!(checked(&rootless).is_err(), "taken on a rootful engine");
+    let mut rootful = recorded("podman-rootful", "made");
+    rootful[0]["AppArmorProfile"] = "".into();
+    assert!(checked(&rootful).is_err());
+    for (profile, taken) in [
+        ("containers-default-0.57.4-apparmor1", true),
+        ("containers-default-0.57.4", true),
+        ("containers-default-1", true),
+        ("containers-default-", false),
+        ("containers-default-mine", false),
+        ("containers-default-0.57.4-apparmor", false),
+        ("containers-default-0.57.4-apparmor1-x", false),
+        ("containers-default-0.57.4-unconfined", false),
+    ] {
+        let mut one = recorded("podman-rootful", "made");
+        one[0]["AppArmorProfile"] = profile.into();
+        assert_eq!(checked(&one).is_ok(), taken, "{profile}");
+    }
+}
+
+#[test]
+fn a_loosened_container_is_refused_on_every_host_it_was_measured_on() {
+    for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
+        for case in [
+            "privileged",
+            "capability",
+            "unconfined",
+            "host-pid",
+            "seccomp-unconfined",
+            "host-users",
+            "host-network",
+        ] {
+            // Podman's own user namespace is the machine's: `--userns host` is the pool's own
+            // container, word for word (measured 2026-10-20).
+            if case == "host-users" && host.starts_with("podman") {
+                assert_eq!(
+                    checked_on_its_engine(host, &recorded(host, case)),
+                    Ok(()),
+                    "{host}"
+                );
+                continue;
+            }
+            assert!(
+                checked_on_its_engine(host, &recorded(host, case)).is_err(),
+                "{host}: a {case} container passed"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_podman_container_is_held_to_what_podman_writes_and_nothing_looser() {
+    let made = recorded("podman-rootful", "made");
+    for (what, pointer, value) in [
+        (
+            "an AppArmor profile of its own",
+            "/0/AppArmorProfile",
+            serde_json::json!("unconfined"),
+        ),
+        (
+            "Docker's AppArmor profile",
+            "/0/AppArmorProfile",
+            serde_json::json!("docker-default"),
+        ),
+        (
+            "a capability it keeps",
+            "/0/EffectiveCaps",
+            serde_json::json!(["CAP_SYS_ADMIN"]),
+        ),
+        (
+            "a capability it may gain",
+            "/0/BoundingCaps",
+            serde_json::json!(["CAP_SYS_ADMIN"]),
+        ),
+        (
+            "the machine's processes",
+            "/0/HostConfig/PidMode",
+            serde_json::json!("host"),
+        ),
+        (
+            "the machine's cgroups",
+            "/0/HostConfig/CgroupMode",
+            serde_json::json!("host"),
+        ),
+        (
+            "a folder of this machine",
+            "/0/HostConfig/Binds",
+            serde_json::json!([
+                "purlis-runner-measured-8198-home:/home/purlis:rw,rprivate,nosuid,nodev,rbind",
+                "/:/host:rw"
+            ]),
+        ),
+        (
+            "a home that may hold a device",
+            "/0/HostConfig/Binds",
+            serde_json::json!(["purlis-runner-measured-8198-home:/home/purlis:rw,rprivate,rbind"]),
+        ),
+        (
+            "the machine's network",
+            "/0/NetworkSettings/Networks",
+            serde_json::json!({"host": {}}),
+        ),
+        (
+            "a /tmp that runs programs",
+            "/0/HostConfig/Tmpfs",
+            serde_json::json!({
+                "/tmp": "rw,nosuid,nodev,size=1024m,rprivate,tmpcopyup"
+            }),
+        ),
+        (
+            "another runtime",
+            "/0/OCIRuntime",
+            serde_json::json!("kata"),
+        ),
+    ] {
+        let mut loosened = made.clone();
+        *loosened.pointer_mut(pointer).unwrap() = value;
+        assert!(
+            checked(&loosened).is_err(),
+            "a Podman container with {what} passed"
+        );
+    }
+    // Docker's own shape is held to Docker's words: a Docker container written as Podman
+    // writes a home is refused.
+    let mut docker = recorded("docker-apparmor", "made");
+    *docker.pointer_mut("/0/HostConfig/Binds").unwrap() = serde_json::json!([
+        "purlis-runner-measured-8419-home:/home/purlis:rw,rprivate,nosuid,nodev,rbind"
+    ]);
+    assert!(checked(&docker).is_err());
+}
+
+#[test]
+fn podman_with_its_default_seccomp_profile_makes_runners_rootful_or_rootless() {
+    assert_eq!(
+        check_daemon(&recorded("docker-apparmor", "info-security")),
+        Ok(())
+    );
+    for host in ["podman-rootful", "podman-rootless"] {
+        let security = recorded(host, "info-security");
+        assert_eq!(check_podman(&security), Ok(engine_of(host)), "{host}");
+        let mut no_seccomp = security.clone();
+        no_seccomp["seccompEnabled"] = serde_json::json!(false);
+        assert!(check_podman(&no_seccomp).is_err(), "{host}");
+        let mut its_own = security.clone();
+        its_own["seccompProfilePath"] = serde_json::json!("/etc/mine.json");
+        assert!(check_podman(&its_own).is_err(), "{host}");
+        let mut unread = security;
+        unread.as_object_mut().unwrap().remove("rootless");
+        assert!(check_podman(&unread).is_err(), "{host}");
+    }
+}
+
+/// An SELinux host labels each container (`ProcessLabel`, `MountLabel`), and no SELinux host
+/// has been measured (#2680): a container that carries a label is refused until one is, and so
+/// is one whose labels cannot be read.
+#[test]
+fn a_container_with_an_selinux_label_is_refused_until_such_a_host_is_measured() {
+    for field in ["ProcessLabel", "MountLabel"] {
+        let labelled = with(|one| one[field] = "system_u:system_r:container_t:s0:c1,c2".into());
+        let refused = check(&labelled, &made()).unwrap_err();
+        assert!(refused.0.contains("SELinux"), "{refused}");
+        let unread = with(|one| {
+            one.as_object_mut().unwrap().remove(field);
+        });
+        assert!(check(&unread, &made()).is_err(), "{field}");
+    }
+    for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
+        let mut labelled = recorded(host, "made");
+        labelled[0]["ProcessLabel"] = "system_u:system_r:container_t:s0:c1,c2".into();
+        assert!(checked_on_its_engine(host, &labelled).is_err(), "{host}");
+    }
 }
 
 /// Docker runs a registry's credential helper (`docker-credential-desktop`, `-osxkeychain`) by
@@ -1033,7 +1309,7 @@ fn docker_looks_for_a_credential_helper_where_docker_itself_is_found() {
     for holder in [".docker", ".orbstack", ".rd"] {
         std::fs::create_dir_all(home.path().join(holder)).unwrap();
     }
-    let docker = Docker(found.path().join("docker"));
+    let docker = Docker::at(found.path().join("docker"));
     let searched =
         docker.helpers_searched(Some("relative:/usr/bin:/opt/tools/bin"), Some(home.path()));
     let real = |path: &std::path::Path| path.canonicalize().unwrap();
@@ -1053,27 +1329,19 @@ fn docker_looks_for_a_credential_helper_where_docker_itself_is_found() {
     assert_eq!(searched, expected);
 }
 
-/// A helper beside `docker` answers, whatever `PATH` the window was opened with (#2752).
+/// A run of `docker` is given Docker's own folders and the system's as its `PATH` (#2752),
+/// whatever `PATH` the window was opened with: where every helper it is handed was found, so a
+/// window opened from the Finder finds them too.
 #[test]
-fn a_credential_helper_beside_docker_is_run_from_a_window_opened_from_the_finder() {
+fn a_run_of_docker_is_given_dockers_own_folders_as_its_path() {
     let dir = tempfile::tempdir().unwrap();
-    stand_in::program(
-        dir.path(),
-        "docker-credential-stand-in",
-        "#!/bin/sh\necho '[{\"Config\":{\"User\":\"10001:10001\",\"Env\":[\"HOME=/home/purlis\"]}}]'\n",
-    );
-    // As Docker does, by its name alone.
-    stand_in::program(
-        dir.path(),
-        "docker",
-        "#!/bin/sh\nexec docker-credential-stand-in\n",
-    );
-    assert_eq!(
-        Docker(dir.path().join("docker"))
-            .declared(&image())
-            .unwrap(),
-        (User::new(10001, 10001).unwrap(), "/home/purlis".to_owned())
-    );
+    stand_in::program(dir.path(), "docker", "#!/bin/sh\necho \"$PATH\"\n");
+    let said = Docker::at(dir.path().join("docker"))
+        .with_settings_in(dir.path().join("settings"))
+        .run(&["version".into()], None, MOST_INSPECTED)
+        .unwrap();
+    let expected = std::env::join_paths(settings::run_path()).unwrap();
+    assert_eq!(said.trim(), expected.to_str().unwrap());
 }
 
 #[test]
@@ -1097,6 +1365,40 @@ fn an_image_this_machine_does_not_hold_is_pulled_by_its_digest_before_it_is_read
     assert!(!fake.file("log").contains("pull"), "{}", fake.file("log"));
 }
 
+/// Every run of `docker` is given purlis's checked copy of Docker's settings, in a folder made
+/// for it that goes once it has run, and no context (#2752, the person's ruling of 2026-10-20).
+#[test]
+fn every_run_of_docker_is_given_a_checked_copy_of_its_settings_and_no_context() {
+    let dir = tempfile::tempdir().unwrap();
+    // The copy is kept aside to be read here, and never printed: it holds sign-ins.
+    let kept = dir.path().join("copy.json");
+    stand_in::program(
+        dir.path(),
+        "docker",
+        &format!(
+            "#!/bin/sh\necho \"$DOCKER_CONFIG\"\necho \"${{DOCKER_CONTEXT-unset}}\"\ncp \"$DOCKER_CONFIG/config.json\" '{}'\n",
+            kept.display()
+        ),
+    );
+    let settings_in = dir.path().join("settings");
+    let docker = Docker::at(dir.path().join("docker")).with_settings_in(&settings_in);
+    let said = docker
+        .run(&["version".into()], None, MOST_INSPECTED)
+        .unwrap();
+    let mut lines = said.lines();
+    let folder = std::path::PathBuf::from(lines.next().unwrap());
+    assert!(folder.starts_with(&settings_in), "{}", folder.display());
+    assert_eq!(lines.next(), Some("unset"));
+    let copy: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&kept).unwrap()).unwrap();
+    let keys: Vec<&String> = copy.as_object().unwrap().keys().collect();
+    for gone in ["cliPluginsExtraDirs", "plugins", "currentContext"] {
+        assert!(copy.get(gone).is_none(), "{keys:?}");
+    }
+    // The run's folder went with it.
+    assert!(!folder.exists());
+}
+
 /// A `docker`, or a helper's folder, in the home is taken only where the installer's folder
 /// that holds it is there as itself (#2752): not a link to somewhere else, and not another
 /// spelling of its name, which a chat could have made before its sandbox held the name.
@@ -1107,7 +1409,7 @@ fn a_home_candidate_is_taken_only_from_the_installers_own_folder() {
     let found = |home: &std::path::Path| {
         Docker::found_in(&[], Some("relative:"), Some(home))
             .ok()
-            .map(|docker| docker.0)
+            .map(|docker| docker.program().to_path_buf())
     };
     // The installer's own folder, as itself: taken.
     let own = tempfile::tempdir().unwrap();
@@ -1142,7 +1444,7 @@ fn a_home_candidate_is_taken_only_from_the_installers_own_folder() {
             home.display()
         );
         assert_eq!(found(home), installed, "{}", home.display());
-        let searched = Docker("/nonexistent/docker".into()).helpers_searched(None, Some(home));
+        let searched = Docker::at("/nonexistent/docker").helpers_searched(None, Some(home));
         assert!(
             !searched.contains(&home.join(".orbstack/bin")),
             "{}: {searched:?}",

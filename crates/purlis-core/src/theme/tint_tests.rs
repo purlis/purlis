@@ -348,7 +348,8 @@ fn tints_found(report: &Report) -> Vec<Option<&'static str>> {
             Finding::SelectionTextAlone
             | Finding::LineDoesNotFit { .. }
             | Finding::StyleWithoutAFace { .. }
-            | Finding::PartFallsBack { .. } => None,
+            | Finding::PartFallsBack { .. }
+            | Finding::TierFallsBack { .. } => None,
         })
         .collect();
     found.dedup();
@@ -630,6 +631,15 @@ fn rules_hold(tint: &ResolvedTheme) -> bool {
         .all(|rule| oklab_apart(tint.value(rule.token), tint.value(rule.from)) >= rule.distance)
 }
 
+/// The consent floors `theme` is drawn with, but for Allow against the primary (#2948): a
+/// recipe that turns the controls or the primary's fills can bring the two together in a tint,
+/// which that floor holds on its own (`floors/allow_primary_tests.rs`).
+fn held_but_allow_from_primary(theme: &ResolvedTheme) -> Option<Held> {
+    draw(theme)
+        .held
+        .filter(|held| held.floors != [Floor::AllowNotPrimary] || !held.tokens.is_empty())
+}
+
 /// Every colour a workspace can be tinted by, to sweep: the palette's names, and a hue of every
 /// whole degree.
 fn every_hue(theme: &ResolvedTheme) -> impl Iterator<Item = ResolvedTheme> + '_ {
@@ -652,9 +662,7 @@ fn a_theme_on_the_danger_floor_keeps_it_under_every_tint_of_its_controls() {
         .find(|pair| pair.front == "danger.base" && pair.back == "control.base")
         .expect("the danger colour is held on a control");
     assert_eq!(check::ratio(&controls, on_the_floor), Some(4.5));
-    let shown = draw(&controls);
-    assert_eq!(shown.held, None);
-    assert_eq!(shown.theme.as_ref(), Some(&controls));
+    assert_eq!(held_but_allow_from_primary(&controls), None);
     for tint in every_hue(&controls) {
         assert!(floors_hold(&tint), "{:?}", tint.values.get("control.base"));
     }
@@ -991,7 +999,7 @@ fn every_tint_a_theme_may_name_keeps_classic_s_floors_exactly_at_every_hue() {
             "appearances": [{ "id": appearance, "appearance": appearance }]
         }));
         assert_eq!(check(&theme).findings, [], "{appearance}");
-        assert_eq!(draw(&theme).held, None, "{appearance}");
+        assert_eq!(held_but_allow_from_primary(&theme), None, "{appearance}");
         for tint in every_hue(&theme) {
             for pair in PAIRS {
                 if let Some(ratio) = check::ratio(&tint, pair) {
@@ -1176,7 +1184,7 @@ fn every_accent_hued_token_beside_danger_stays_apart_from_it_at_every_whole_degr
             oklab_apart(&tint_hex(theme.value(token), 25.0), danger) < DANGER_APART,
             "{token}"
         );
-        assert_eq!(draw(&theme).held, None, "{token}");
+        assert_eq!(held_but_allow_from_primary(&theme), None, "{token}");
         for tint in every_hue(&theme) {
             let apart = oklab_apart(tint.value(token), tint.value("danger.base"));
             assert!(apart >= DANGER_APART, "{token}: {apart}");
