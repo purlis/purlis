@@ -87,17 +87,9 @@ describe("the primitives stylesheet", () => {
     const motion = new Set(MOTION_TOKENS.map(motionProperty));
     // Its own: a length one primitive works out once (`--ui-switch-track`), and the ones a view
     // may set for it (a menu row's `--ui-menu-indent` and a menu's least and most width,
-    // `--ui-menu-min` and `--ui-menu-max`; a leading icon's `--ui-input-lead-*`, which `App.css`
-    // declares for the Chats filter).
+    // `--ui-menu-min` and `--ui-menu-max`).
     const own = new Set([...CSS.matchAll(/^\s+(--[\w-]+):/gm)].map((hit) => hit[1]));
-    const fromViews = new Set([
-      "--ui-menu-indent",
-      "--ui-menu-min",
-      "--ui-menu-max",
-      "--ui-input-lead-at",
-      "--ui-input-lead-size",
-      "--ui-input-lead-text",
-    ]);
+    const fromViews = new Set(["--ui-menu-indent", "--ui-menu-min", "--ui-menu-max"]);
     for (const name of fromViews) expect(sheet("App.css")).toContain(`${name}:`);
     const fromRadix = new Set([
       "--radix-select-trigger-width",
@@ -141,46 +133,6 @@ describe("the primitives stylesheet", () => {
         .map((value) => `${selector} | ${value}`),
     );
     expect(loose).toEqual([]);
-  });
-});
-
-describe("the field", () => {
-  it("is one control height with the outside ring, named by its label, and typed into", async () => {
-    const user = userEvent.setup();
-    render(
-      <>
-        <label htmlFor="name">Name</label>
-        <input id="name" className="ui-input" tabIndex={0} />
-        <label htmlFor="notes">Notes</label>
-        <textarea id="notes" className="ui-input" tabIndex={0} />
-      </>,
-    );
-    const field = screen.getByRole("textbox", { name: "Name" });
-    heldToTheTokens(field);
-    await user.tab();
-    expect(field).toHaveFocus();
-    await user.keyboard("steward");
-    expect(field).toHaveValue("steward");
-    // Rows of text are at least three controls tall, and grow as a person drags them.
-    const notes = screen.getByRole("textbox", { name: "Notes" });
-    expect(drawnWith(notes, "block-size")).toBe("auto");
-    expect(drawnWith(notes, "min-block-size")).toBe("calc(var(--size-control) * 3)");
-  });
-});
-
-describe("a refused value", () => {
-  it("draws the field's edge in the danger colour, and only while it is refused", () => {
-    render(
-      <>
-        <input className="ui-input" aria-label="Colour" aria-invalid="true" readOnly />
-        <input className="ui-input" aria-label="Name" aria-invalid="false" readOnly />
-      </>,
-    );
-    const refused = screen.getByRole("textbox", { name: "Colour" });
-    expect(drawnWith(refused, "border-color")).toBe("var(--danger-base)");
-    expect(
-      drawnWith(screen.getByRole("textbox", { name: "Name" }), "border-color"),
-    ).toBeUndefined();
   });
 });
 

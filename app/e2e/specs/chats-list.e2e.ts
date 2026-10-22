@@ -364,7 +364,8 @@ describe("the Chats list in a narrow sidebar", () => {
       check("there was no left region to draw in", await draw(ONE_LINE, width, text), width);
       const seen = await browser.execute(() => {
         const section = document.querySelector('[data-raised="chats-list.e2e"]');
-        const box = section?.querySelector<HTMLInputElement>(".chats-filter-text");
+        // The element typed in, inside the field family's box (#2905).
+        const box = section?.querySelector<HTMLInputElement>(".chats-filter-box input");
         if (!section || !box) return null;
         const style = getComputedStyle(box);
         const outer = box.getBoundingClientRect();

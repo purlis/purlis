@@ -25,6 +25,7 @@ import {
   initialsOf,
 } from "./PersonaMark";
 import { inForce, tintVariables } from "./theme/theme";
+import { Form, TextField } from "./ui/field/Field";
 
 /**
  * **Pick a persona's icon and colour**, in its view. A pick is written to the persona's
@@ -182,44 +183,34 @@ export function PersonaMarkPicker({ plane, persona }: { plane: PlaneId; persona:
 /** What a colour typed by hand must look like before it is sent: the core reads the same. */
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
+/** What a colour typed by hand that is not one says, when the box is left or Enter is pressed. */
+export const NOT_A_COLOUR = "A colour is # and six hex digits, such as #7c5cff.";
+
 /**
- * Any colour, typed as `#rrggbb` and written at Enter. Something else is marked invalid and
- * nothing is sent. `held` is a colour the definition already has outside the palette.
+ * Any colour, typed as `#rrggbb` and written at Enter. Something else is said under the box, as
+ * the field family says a value it refuses (N26), and nothing is sent. `held` is a colour the
+ * definition already has outside the palette.
  */
 function HexColour({ held, onPick }: { held: string; onPick: (colour: string) => void }) {
   const [typed, setTyped] = useState(held);
-  const [invalid, setInvalid] = useState(false);
   return (
-    <form
+    <Form
       className="persona-mark-hex"
       onSubmit={(event) => {
         event.preventDefault();
-        const colour = typed.trim();
-        if (!HEX.test(colour)) {
-          setInvalid(true);
-          return;
-        }
-        setInvalid(false);
-        onPick(colour);
+        onPick(typed.trim());
       }}
     >
-      <input
-        className="ui-field ui-input"
-        type="text"
+      <TextField
         aria-label="Any colour, as #rrggbb"
         placeholder="#rrggbb"
-        spellCheck={false}
-        autoComplete="off"
         maxLength={7}
-        size={7}
+        columns={7}
         value={typed}
-        aria-invalid={invalid}
-        onChange={(event) => {
-          setTyped(event.target.value);
-          setInvalid(false);
-        }}
+        validate={(value) => (HEX.test(value.trim()) ? undefined : NOT_A_COLOUR)}
+        onChange={setTyped}
       />
-    </form>
+    </Form>
   );
 }
 

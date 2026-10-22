@@ -12,6 +12,7 @@ import { useChatsHere } from "./chatState";
 import { Choice, Field, SettingActions, SettingGroup, SettingRow } from "./settings/components";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { Button } from "./ui/button/Button";
+import { submitKeyShortcut, submits } from "./ui/field/submitKey";
 
 /**
  * The value that stands for "no persona at all".
@@ -260,6 +261,12 @@ export function StartChat({
     cancelled.current = true;
     onCancel();
   };
+  const startable = profile !== undefined && profile !== null && !starting && !blockedByPolicy;
+  const start = () => {
+    if (!profile) return;
+    if (picked?.harness) noteHarness(picked.harness.name);
+    onStart(profile, persona, showFooter, label, newBranch, withoutSandbox);
+  };
 
   return (
     // Escape starts nothing, and it is the dialog's own Escape rather than a listener on the
@@ -280,6 +287,17 @@ export function StartChat({
           // have always been. Turned off explicitly rather than left to the default, so a
           // reviewer sees it was decided rather than inherited.
           onInteractOutside={(e) => e.preventDefault()}
+          // **⌘⏎ starts the chat** (N26, Ctrl+Enter off macOS), from anywhere in the dialog: a
+          // chord, never a stray Return. Never an approval, and never a start without the
+          // sandbox: each grants the chat more than the sandbox gives, and a grant is only ever a
+          // press of its own button (ADR 0097 §6). Never from a list drawn outside the dialog
+          // (the profile picker's open list), whose keys are its own.
+          onKeyDown={(e) => {
+            if (!submits(e.nativeEvent) || !e.currentTarget.contains(e.target as Node)) return;
+            if (picked?.approval || withoutSandbox !== null || !startable) return;
+            e.preventDefault();
+            start();
+          }}
           onOpenAutoFocus={(e) => {
             // Cancel, and not the first thing in tab order: starting a chat runs a command
             // with nothing between the key and the exec, so it is never what a stray Return
@@ -542,7 +560,8 @@ export function StartChat({
           {/* **The dialog ends in its form's row** (#1719, `docs/design-system.md`): it holds a
               form that makes a chat, so its act stands first at the row's leading edge and
               Cancel after it, as New vault's and New workspace's do. Both are plain buttons and
-              there is no `<form>`: Return in the Name box never starts a command. Approving the
+              there is no `<form>`: Return in the Name box never starts a command; ⌘⏎ does,
+              as it sends every form's primary action (N26). Approving the
               command is this form's act, not a confirm that ends something (D-1719-3): the
               command is said above before the press (V69), and the chat it starts can be
               closed. */}
@@ -571,12 +590,9 @@ export function StartChat({
             ) : (
               <Button
                 variant="primary"
-                onPress={() => {
-                  if (!profile) return;
-                  if (picked?.harness) noteHarness(picked.harness.name);
-                  onStart(profile, persona, showFooter, label, newBranch, withoutSandbox);
-                }}
-                isDisabled={!profile || starting || blockedByPolicy}
+                onPress={start}
+                aria-keyshortcuts={submitKeyShortcut()}
+                isDisabled={!startable}
               >
                 {starting ? "Starting…" : startWord}
               </Button>
