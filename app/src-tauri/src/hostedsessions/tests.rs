@@ -2923,3 +2923,32 @@ fn a_window_that_restarts_quickly_is_relayed_with_its_name_on_a_second_try() {
         .call(reach())
         .expect("the window that came back takes its chat back");
 }
+
+#[test]
+fn a_hosts_origin_is_taken_only_as_an_origin_and_anything_else_is_none() {
+    // #2300: a runner's host could send any text; the chip is purlis's own words.
+    use super::an_origin;
+    let one = |said: &str| an_origin(Some(said.to_owned()));
+    assert_eq!(
+        one("http://localhost:5173").as_deref(),
+        Some("http://localhost:5173")
+    );
+    assert_eq!(
+        one("https://[::1]:8443").as_deref(),
+        Some("https://[::1]:8443")
+    );
+    for forged in [
+        "https://a.test on this Mac",
+        "https://bank.example\u{202e}",
+        "https://a.test/login?token=s3cret",
+        "https://ada@a.test",
+        "HTTPS://A.TEST",
+        "javascript:alert(1)",
+        "",
+    ] {
+        assert_eq!(one(forged), None, "{forged:?}");
+    }
+    let long = format!("https://{}.test", "a".repeat(300));
+    assert_eq!(one(&long), None, "an origin too long for any page");
+    assert_eq!(an_origin(None), None);
+}

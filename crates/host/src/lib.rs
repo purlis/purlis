@@ -70,6 +70,7 @@ mod serving;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
 
+pub use browsers::NotStarted as BrowserNotStarted;
 #[cfg(unix)]
 pub use browsers::{
     A_BROWSER_THE_PERSON_DRIVES, AN_ENDED_BROWSER, Browsers, FrameSink, INPUT_MISSED, LoginEnded,

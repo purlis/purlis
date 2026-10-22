@@ -570,12 +570,22 @@ fn no_host(why: &str) -> String {
 /// ended for good.
 pub type FrameSink = Box<dyn FnMut(Option<String>, bytes::Bytes) + Send>;
 
+/// Where a browser view's word of its page's origin goes (1.35, #2300): the origin, or `None`
+/// for no page, said where it changes and before the first image of each snapshot.
+pub type OriginSink = Box<dyn FnMut(Option<String>) + Send>;
+
+/// What a browser view is drawn into: its frames, and its page's origin.
+pub struct FrameSinks {
+    pub frames: FrameSink,
+    pub origins: OriginSink,
+}
+
 /// What a view's stream is drawn into: a pane's terminal, as text, or a browser view's canvas,
 /// a whole frame at a time.
 #[derive(Clone)]
 enum Draws {
     Text(Arc<Mutex<Sink>>),
-    Frames(Arc<Mutex<FrameSink>>),
+    Frames(Arc<Mutex<FrameSinks>>),
 }
 
 /// What draws one view: the pane's sink, and where its stream stands.
@@ -1025,10 +1035,14 @@ impl HostLink {
         self.id
     }
 
-    /// Draw browser view `view`'s frames into `sink`, each whole (#2012): its stream may already
-    /// be here.
-    pub(crate) fn draw_frames(&self, view: u32, sink: FrameSink) {
-        self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sink))));
+    /// Draw browser view `view`'s frames into `sink`, each whole (#2012), and its page's origin
+    /// into `origins` (#2300): its stream may already be here.
+    pub(crate) fn draw_frames(&self, view: u32, sink: FrameSink, origins: OriginSink) {
+        let sinks = FrameSinks {
+            frames: sink,
+            origins,
+        };
+        self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sinks))));
     }
 
     fn draw_into(&self, view: u32, sink: Draws) {
@@ -1340,7 +1354,7 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
 /// Draw one stream of a browser view (#2012): each whole frame handed over as it completes,
 /// and acknowledged once handed. A stream after the first starts on a whole frame too: the
 /// host's snapshot is the latest frame.
-async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<Mutex<FrameSink>>) {
+async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<Mutex<FrameSinks>>) {
     let view = reader.view().0;
     let mut frames = purlis_session_protocol::view::frames::Frames::default();
     let mut first = true;
@@ -1357,15 +1371,21 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
             reconnect(shared, Reconnect::Drawn(view));
         }
         for frame in whole {
-            use purlis_session_protocol::view::frames::{AIMED_JPEG, JPEG};
+            use purlis_session_protocol::view::frames::{AIMED_JPEG, JPEG, ORIGIN};
             match frame.format {
-                JPEG if !frame.image.is_empty() => (lock(sink))(None, frame.image),
+                JPEG if !frame.image.is_empty() => (lock(sink).frames)(None, frame.image),
                 // What it shows, as the window echoes it back with the person's input (#2014).
                 AIMED_JPEG => {
                     if let Some((aim, image)) = frame.aimed()
                         && !image.is_empty()
                     {
-                        (lock(sink))(Some(crate::browsers::aim_said(&aim)), image);
+                        (lock(sink).frames)(Some(crate::browsers::aim_said(&aim)), image);
+                    }
+                }
+                // Where its page is, its origin alone (#2300), as this window reads one.
+                ORIGIN => {
+                    if let Some(origin) = frame.origin() {
+                        (lock(sink).origins)(an_origin(origin));
                     }
                 }
                 _ => {}
@@ -1385,6 +1405,17 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
     if finish {
         finish_view(shared, view);
     }
+}
+
+/// **What a host said of a page's origin, as the window takes it** (#2300): an origin, exactly
+/// as [`purlis_session_protocol::browsing::origin_of`] writes one, or none. A view may be drawn
+/// from a runner's host (#2542), and the chip is purlis's own words outside the page: anything
+/// else a host sends (text, a path, a long string, a character that turns the line around) is
+/// read as no origin.
+pub(crate) fn an_origin(said: Option<String>) -> Option<String> {
+    said.filter(|origin| {
+        purlis_session_protocol::browsing::origin_of(origin).as_deref() == Some(origin.as_str())
+    })
 }
 
 /// Hand `text` to view `view`'s pane, if it still has one.
@@ -1418,7 +1449,7 @@ fn finish_view(shared: &Shared, view: u32) {
     };
     match sink {
         Some(Draws::Text(sink)) => (lock(&sink))(ENDED.to_owned()),
-        Some(Draws::Frames(sink)) => (lock(&sink))(None, bytes::Bytes::new()),
+        Some(Draws::Frames(sink)) => (lock(&sink).frames)(None, bytes::Bytes::new()),
         None => {}
     }
 }

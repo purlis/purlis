@@ -222,9 +222,18 @@ use crate::view::{Limits, Views};
 /// which a host that keeps its own projects holds where it keeps them. Both code commands are the
 /// window's alone, relayed for it. A host before 1.34 refuses each `unknown_command`, and a hold
 /// with no path `malformed`.
+///
+/// 1.35 added the page a browser view shows (#2300): an origin frame on the view's stream
+/// (`view::frames::ORIGIN`), the origin of the page the browser shows and nothing else of its
+/// address, sent where it changes and before the image in the view's snapshot. A view of a link
+/// before 1.35 is sent images alone.
+///
+/// 1.36 added a refusal code of its own for a browser whose engine cannot make its sandbox on
+/// the host's machine (#2899): `no_engine_sandbox`, its `why` the binary's words for it. A host
+/// before 1.36 refuses it `not_started` in the same words, which its window reads by them.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 34,
+    minor: 36,
 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
@@ -303,6 +312,10 @@ pub const DEVICE_FULL: &str = "device_full";
 /// it and adds it anew.
 pub const KEY_CHANGED: &str = "key_changed";
 
+/// The browser's engine cannot make its sandbox on the host's machine, and purlis never runs it
+/// without (1.36, #2899): nothing started. Its `why` says so in the binary's words.
+pub const NO_ENGINE_SANDBOX: &str = "no_engine_sandbox";
+
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
 pub const REFUSALS: &[&str] = &[
@@ -321,6 +334,7 @@ pub const REFUSALS: &[&str] = &[
     INPUT_MISSED,
     DEVICE_FULL,
     KEY_CHANGED,
+    NO_ENGINE_SANDBOX,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
