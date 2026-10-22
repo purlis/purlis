@@ -17,3 +17,9 @@
   the persona, where you add a skill by name or remove one. A chat whose persona names a skill
   this machine does not have shows a Notice naming it, and starts without it. Names written the
   old way, `charter:<skill>`, still mean purlis's own skill (#2768).
+- **The Skill studio lists each program's own skills and plugins** (#2769): Claude Code's,
+  Codex's and opencode's, in your own folders, in their plugins, and in a workspace's repos,
+  each with whose it is. Each can be turned off for this project's chats where the program
+  allows it, and says plainly where it does not. A project skill that a repo or a program also
+  has says that a chat gets both. With the studio on, Settings' Plugins group is a summary that
+  opens it.

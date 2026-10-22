@@ -118,6 +118,9 @@ export function skillStudioAs(persona: string): string {
   return `${SKILL_STUDIO_IN}${scopeKey(asPersona(persona))}`;
 }
 
+/** The catalogue row that opens the studio on a chat at the project's root (#2765). */
+export const SKILL_STUDIO_SHOW = "skills.studio";
+
 /** Whether `view` is the Skill studio. */
 export function isSkillStudio(view: ViewRef): boolean {
   return view.from === null && view.view === SKILL_STUDIO_VIEW.view;

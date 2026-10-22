@@ -5,6 +5,9 @@
 //! project gets, at its root, in one workspace or as one persona, with its level, and every one
 //! left out with why, as `purlis_core::skills::in_the_studio` works them out; Share, which makes
 //! a local skill shared; and a persona's `skills:` list, which its page adds to and takes from.
+//! And each harness's own (SK-6, #2769): its plugins, the skills it finds itself in the person's
+//! folders and in the workspace's clones, read only, each with a switch where the harness can
+//! leave it out, and every one that clashes with a skill purlis hands the chat.
 //! Behind the `skill-studio` flag until its finish line (#2786).
 
 use serde::Serialize;
@@ -33,6 +36,8 @@ pub enum Level {
     Persona,
     /// A harness skill: the harness's own, which purlis never hands over.
     Installed,
+    /// A repo's own, in a clone (SK-6).
+    Repo,
 }
 
 impl From<purlis_core::skills::Origin> for Level {
@@ -43,6 +48,7 @@ impl From<purlis_core::skills::Origin> for Level {
             purlis_core::skills::Origin::Workspace => Level::Workspace,
             purlis_core::skills::Origin::Persona => Level::Persona,
             purlis_core::skills::Origin::Harness => Level::Installed,
+            purlis_core::skills::Origin::Repo => Level::Repo,
             // A level a later slice adds is drawn as the project's until the studio names it.
             _ => Level::Project,
         }
@@ -89,6 +95,141 @@ pub struct StudioSkill {
     /// What is said of an installed skill the persona names that purlis cannot check this
     /// machine for, or `None`.
     pub unchecked: Option<String>,
+    /// Whose a skill from outside the plane is: "you", a plugin's, a repo's. `None` for the
+    /// plane's levels and the built-in skills (SK-6).
+    pub owner: Option<Owner>,
+    /// How a skill from outside the plane's harness can leave it out. `None` for the plane's
+    /// levels and the built-in skills, whose switches are their own.
+    pub switch: Option<SkillSwitch>,
+}
+
+/// Whose a skill from outside the plane is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum Owner {
+    /// The person's own.
+    You,
+    /// A plugin's, by its name.
+    Plugin { name: String },
+    /// A repo's, by its clone's name.
+    Repo { name: String },
+}
+
+impl From<purlis_core::skills::Owner> for Owner {
+    fn from(owner: purlis_core::skills::Owner) -> Owner {
+        match owner {
+            purlis_core::skills::Owner::You => Owner::You,
+            purlis_core::skills::Owner::Plugin(name) => Owner::Plugin { name },
+            purlis_core::skills::Owner::Repo(name) => Owner::Repo { name },
+        }
+    }
+}
+
+/// A harness, as the window and the core name one to each other: a profile's `kind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum HarnessKind {
+    Claude,
+    Opencode,
+    Codex,
+}
+
+impl From<purlis_core::harness::Harness> for HarnessKind {
+    fn from(harness: purlis_core::harness::Harness) -> HarnessKind {
+        match harness {
+            purlis_core::harness::Harness::ClaudeCode => HarnessKind::Claude,
+            purlis_core::harness::Harness::Opencode => HarnessKind::Opencode,
+            purlis_core::harness::Harness::Codex => HarnessKind::Codex,
+        }
+    }
+}
+
+impl From<HarnessKind> for purlis_core::harness::Harness {
+    fn from(kind: HarnessKind) -> purlis_core::harness::Harness {
+        match kind {
+            HarnessKind::Claude => purlis_core::harness::Harness::ClaudeCode,
+            HarnessKind::Opencode => purlis_core::harness::Harness::Opencode,
+            HarnessKind::Codex => purlis_core::harness::Harness::Codex,
+        }
+    }
+}
+
+/// How a harness can leave one of its own skills out of a chat.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SkillSwitch {
+    /// On its own: the studio draws a switch.
+    Alone,
+    /// Not on its own, and why, which the studio says in place of a switch.
+    Not { why: String },
+}
+
+/// What the project has a harness's plugin at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum PluginState {
+    On,
+    Off,
+    /// No layer names it: the harness decides, from its own settings.
+    NotSet,
+}
+
+/// One of a harness's plugins in the studio (SK-6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioPlugin {
+    /// The harness's own id for it, which the switch names.
+    pub id: String,
+    pub name: String,
+    /// Where purlis found it installed; empty where this machine has not installed it.
+    pub origin: String,
+    pub installed: bool,
+    /// What the project has it at, in the chats the studio shows.
+    pub state: PluginState,
+    /// Why purlis fixes it whatever the project says, or `None`: no switch is drawn for it.
+    pub pinned: Option<String>,
+}
+
+/// One harness in the studio (SK-6): its plugins and the skills it finds itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioHarness {
+    /// Which harness it is, which a switch names.
+    pub harness: HarnessKind,
+    pub title: String,
+    /// Why its plugins cannot be chosen for one chat, where they cannot: no plugin switch.
+    pub unsupported: Option<String>,
+    /// Why a plugin can only be turned off, where that is all it can be.
+    pub only_off: Option<String>,
+    /// Why its own record of what it installed could not be read, if it could not.
+    pub trouble: Option<String>,
+    pub plugins: Vec<StudioPlugin>,
+    /// The skills it finds itself, read only, each by the name it knows it by.
+    pub skills: Vec<StudioSkill>,
+}
+
+/// A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
+/// load, so the studio marks purlis's copy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioClash {
+    pub name: String,
+    /// The level of the plane's copy, and whether it is local.
+    pub level: Level,
+    pub local: bool,
+    /// The harness that loads the other copy, as a person reads its name.
+    pub harness: String,
+    /// The other copy: a harness's or a repo's, and whose.
+    pub outside: Level,
+    pub owner: Owner,
+    pub outcome: ClashOutcome,
+}
+
+/// What came of a clash.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClashOutcome {
+    /// Both copies load.
+    BothLoad,
+    /// The repo's narrower copy is the one the chat gets; the plane's is left out.
+    RepoWins,
 }
 
 /// What the studio shows: whether it is on, whose chat it shows, and its skills by name.
@@ -105,6 +246,10 @@ pub struct Studio {
     /// Every level a skill can be made at or moved to, with its words (#2770).
     pub levels: Vec<crate::skillchange::StudioLevel>,
     pub skills: Vec<StudioSkill>,
+    /// Each harness, with its plugins and its own skills (SK-6).
+    pub harnesses: Vec<StudioHarness>,
+    /// Every skill from outside the plane that has the name of a skill a chat gets, by name.
+    pub clashes: Vec<StudioClash>,
 }
 
 /// The studio of the project at `root`, for a chat at its root (`workspace` `None`) or in
@@ -116,6 +261,7 @@ pub(crate) fn studio(
     on: bool,
     workspace: Option<&str>,
     persona: Option<&str>,
+    env: &purlis_core::harness_plugin::Env<'_>,
 ) -> Studio {
     let workspace = workspace.map(str::to_owned);
     let persona = persona.map(str::to_owned);
@@ -127,6 +273,8 @@ pub(crate) fn studio(
             workspaces: Vec::new(),
             levels: Vec::new(),
             skills: Vec::new(),
+            harnesses: Vec::new(),
+            clashes: Vec::new(),
         };
     }
     let set = purlis_core::skills::in_the_studio(
@@ -177,8 +325,11 @@ pub(crate) fn studio(
             unchecked: row
                 .unchecked
                 .then(|| purlis_core::skills::UNCHECKED.to_owned()),
+            owner: None,
+            switch: None,
         })
         .collect();
+    let (harnesses, clashes) = harnesses(&set, root, workspace.as_deref(), env);
     let workspaces = purlis_core::workspaces::Plane::open(root)
         .workspaces()
         .unwrap_or_default();
@@ -189,7 +340,105 @@ pub(crate) fn studio(
         workspaces,
         levels: crate::skillchange::levels(root),
         skills,
+        harnesses,
+        clashes,
     }
+}
+
+/// A row of a skill from outside the plane, for the window: read only, with whose it is and how
+/// its harness can leave it out.
+fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
+    let (owner, switch) = match row.outside {
+        Some(purlis_core::skills::OutsideRow { owner, switch }) => (
+            Some(owner.into()),
+            Some(match switch {
+                purlis_core::skills::Switch::Alone => SkillSwitch::Alone,
+                purlis_core::skills::Switch::Not(why) => SkillSwitch::Not { why },
+            }),
+        ),
+        None => (None, None),
+    };
+    StudioSkill {
+        granted: None,
+        not_granted: None,
+        turned_off: false,
+        name: row.name,
+        level: row.origin.into(),
+        label: purlis_core::skills::level_shown(row.origin, row.local),
+        local: row.local,
+        grant: row.grant,
+        on: row.left_out.is_none(),
+        left_out: row.left_out,
+        description: row.description,
+        folder: row.folder,
+        written: row.written,
+        named: row.named,
+        unchecked: None,
+        owner,
+        switch,
+    }
+}
+
+/// Each harness in the studio, and every clash, for a chat whose plane skills are `set`.
+fn harnesses(
+    set: &purlis_core::skills::SkillSet,
+    root: &std::path::Path,
+    workspace: Option<&str>,
+    env: &purlis_core::harness_plugin::Env<'_>,
+) -> (Vec<StudioHarness>, Vec<StudioClash>) {
+    use purlis_core::harness_plugin;
+    let mut clashes: Vec<StudioClash> = Vec::new();
+    let all = purlis_core::skills::harnesses_in_the_studio(set, root, workspace, env);
+    let harnesses = all
+        .iter()
+        .map(|one| {
+            let adapter = one.group.adapter;
+            for clash in &one.set.clashes {
+                clashes.push(StudioClash {
+                    name: clash.name.clone(),
+                    level: clash.plane.origin.into(),
+                    local: clash.plane.local,
+                    harness: adapter.title().to_owned(),
+                    outside: clash.outside.into(),
+                    owner: clash.owner.clone().into(),
+                    outcome: match clash.outcome {
+                        purlis_core::skills::Outcome::BothLoad => ClashOutcome::BothLoad,
+                        purlis_core::skills::Outcome::RepoWins => ClashOutcome::RepoWins,
+                    },
+                });
+            }
+            StudioHarness {
+                harness: one.harness.into(),
+                title: adapter.title().to_owned(),
+                unsupported: harness_plugin::not_supported(adapter),
+                only_off: harness_plugin::only_off(adapter),
+                trouble: one.group.trouble.clone(),
+                plugins: one
+                    .group
+                    .plugins
+                    .iter()
+                    .filter(|it| it.installed || it.pinned.is_some())
+                    .map(|it| StudioPlugin {
+                        id: it.id.clone(),
+                        name: it.name.clone(),
+                        origin: it.origin.clone(),
+                        installed: it.installed,
+                        state: match it.wanted {
+                            Some(true) => PluginState::On,
+                            Some(false) => PluginState::Off,
+                            None => PluginState::NotSet,
+                        },
+                        pinned: it.pinned.map(str::to_owned),
+                    })
+                    .collect(),
+                skills: purlis_core::skills::outside_rows(one, root)
+                    .into_iter()
+                    .map(outside_shown)
+                    .collect(),
+            }
+        })
+        .collect();
+    (harnesses, clashes)
 }
 
 /// What started a skill run, as the Runs panel draws it.
@@ -359,6 +608,7 @@ pub(crate) async fn skill_studio(
             purlis_core::skills::studio_on_here(),
             workspace.as_deref(),
             persona.as_deref(),
+            &purlis_core::harness_plugin::Env::of(&[]),
         ))
     })
     .await
@@ -452,6 +702,63 @@ pub(crate) async fn put_away_chat_skills_missing(
     let held = planes.held(&plane)?;
     held.chats().put_away_skills_missing(session);
     Ok(())
+}
+
+/// What the studio's switch turns on or off for a harness: the core's `Switched`, spelled for
+/// the window. purlis-core keeps no UI typing crate (CLAUDE.md), so the window's copy of the type
+/// lives here and turns into the core's in one place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum StudioSwitched {
+    Plugin,
+    Skill,
+}
+
+impl From<StudioSwitched> for purlis_core::harness_plugin::Switched {
+    fn from(what: StudioSwitched) -> purlis_core::harness_plugin::Switched {
+        match what {
+            StudioSwitched::Plugin => purlis_core::harness_plugin::Switched::Plugin,
+            StudioSwitched::Skill => purlis_core::harness_plugin::Switched::Skill,
+        }
+    }
+}
+
+/// **Turns one of a harness's plugins or skills on or off** (SK-6, #2769) for the chats the
+/// studio shows: at the project's root on this machine alone (`charter.local.toml`), in a
+/// workspace in its own settings, as `purlis_core::harness_plugin::switch_in_the_studio` writes
+/// it. A chat started after it is handed the change.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_studio_switch(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+    harness: HarnessKind,
+    what: StudioSwitched,
+    id: String,
+    on: bool,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("turning it on or off", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Err("The Skill studio is not turned on on this machine.".to_owned());
+        }
+        let built_in = purlis_core::skills::built_in_names(
+            crate::bundled_plugin_here()
+                .and_then(|plugin| purlis_core::skills::in_bundle(&plugin))
+                .as_deref(),
+        );
+        purlis_core::harness_plugin::switch_in_the_studio(
+            held.root(),
+            workspace.as_deref(),
+            harness.into(),
+            what.into(),
+            &id,
+            on,
+            &built_in,
+        )
+    })
+    .await
 }
 
 #[cfg(test)]

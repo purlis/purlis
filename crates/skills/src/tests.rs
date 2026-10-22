@@ -1056,3 +1056,233 @@ fn a_persona_name_that_is_not_one_plain_name_has_no_folder() {
         Some(plane.root.join("personas/steward/skills.local"))
     );
 }
+
+// ---- harness and repo skills (SK-6, #2769) ------------------------------------------------
+
+fn outside(id: &str, origin: Origin, owner: Owner, off: bool) -> OutsideSkill {
+    OutsideSkill {
+        skill: Skill {
+            name: id.rsplit(':').next().unwrap_or(id).to_owned(),
+            description: format!("Does {id}."),
+            path: PathBuf::from(format!("/elsewhere/{id}/SKILL.md")),
+        },
+        origin,
+        id: id.to_owned(),
+        owner,
+        switch: Switch::Alone,
+        off,
+    }
+}
+
+fn repo(name: &str) -> Owner {
+    Owner::Repo(name.to_owned())
+}
+
+#[test]
+fn a_skill_from_outside_the_plane_is_listed_by_the_name_its_harness_knows_and_handed_by_none_of_purliss_routes()
+ {
+    let plane = Plane::new();
+    skill(&plane.project(), "deploy", &whole("deploy"));
+
+    let set = plane.set(None).with_outside(
+        Route::Plugin,
+        [
+            outside(
+                "figma:frame",
+                Origin::Harness,
+                Owner::Plugin("figma".to_owned()),
+                false,
+            ),
+            outside("review", Origin::Repo, repo("api"), false),
+        ],
+    );
+
+    assert_eq!(
+        effective(&set),
+        [
+            ("deploy", Origin::Project, false),
+            ("figma:frame", Origin::Harness, false),
+            ("review", Origin::Repo, false),
+        ]
+    );
+    let routes: Vec<Route> = set.effective.iter().map(|e| e.route).collect();
+    assert_eq!(routes, [Route::Plugin, Route::Own, Route::Own]);
+    let handed: Vec<&str> = set
+        .from_the_plane()
+        .map(|e| e.skill.name.as_str())
+        .collect();
+    assert_eq!(handed, ["deploy"], "purlis hands only the plane's own");
+    assert!(set.clashes.is_empty());
+}
+
+#[test]
+fn a_harness_skill_the_project_turned_off_is_left_out_saying_so() {
+    let plane = Plane::new();
+
+    let set = plane.set(None).with_outside(
+        Route::Plugin,
+        [outside("langfuse", Origin::Harness, Owner::You, true)],
+    );
+
+    assert!(set.effective.is_empty());
+    assert_eq!(
+        left_out(&set),
+        [(
+            "langfuse",
+            Origin::Harness,
+            false,
+            "turned off for this project's chats".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn on_a_plugin_route_a_repo_skill_of_a_plane_skills_name_loads_beside_it_and_is_marked() {
+    let plane = Plane::new();
+    skill(&plane.workspace("smart-ide"), "review", &whole("review"));
+
+    let set = plane.set(Some("smart-ide")).with_outside(
+        Route::Plugin,
+        [outside("review", Origin::Repo, repo("api"), false)],
+    );
+
+    assert_eq!(
+        effective(&set),
+        [
+            ("review", Origin::Workspace, false),
+            ("review", Origin::Repo, false)
+        ],
+        "the plane's copy is its own namespaced plugin, so both load"
+    );
+    assert_eq!(
+        set.clashes,
+        [Clash {
+            name: "review".to_owned(),
+            plane: At {
+                origin: Origin::Workspace,
+                local: false
+            },
+            outside: Origin::Repo,
+            owner: repo("api"),
+            outcome: Outcome::BothLoad,
+        }]
+    );
+}
+
+#[test]
+fn where_purlis_builds_what_the_harness_is_handed_the_narrower_repo_copy_wins() {
+    let plane = Plane::new();
+    skill(&plane.workspace("smart-ide"), "review", &whole("review"));
+
+    for route in [Route::Config, Route::Briefing] {
+        let set = plane
+            .set(Some("smart-ide"))
+            .with_outside(route, [outside("review", Origin::Repo, repo("api"), false)]);
+
+        assert_eq!(
+            effective(&set),
+            [("review", Origin::Repo, false)],
+            "{route:?}"
+        );
+        assert_eq!(
+            left_out(&set),
+            [(
+                "review",
+                Origin::Workspace,
+                false,
+                "hidden by the repo skill of this name".to_owned()
+            )],
+            "{route:?}"
+        );
+        assert_eq!(
+            set.from_the_plane().count(),
+            0,
+            "{route:?}: one copy reaches the chat"
+        );
+        assert_eq!(set.clashes[0].outcome, Outcome::RepoWins, "{route:?}");
+    }
+}
+
+#[test]
+fn a_harness_skill_is_wider_than_the_planes_so_both_load_on_every_route() {
+    let plane = Plane::new();
+    skill(&plane.project(), "review", &whole("review"));
+
+    let set = plane.set(None).with_outside(
+        Route::Config,
+        [outside("review", Origin::Harness, Owner::You, false)],
+    );
+
+    assert_eq!(set.from_the_plane().count(), 1);
+    assert_eq!(set.clashes[0].outcome, Outcome::BothLoad);
+}
+
+#[test]
+fn a_skill_turned_off_clashes_with_nothing_and_a_plugins_namespaced_skill_never_clashes() {
+    let plane = Plane::new();
+    skill(&plane.project(), "frame", &whole("frame"));
+
+    let set = plane.set(None).with_outside(
+        Route::Config,
+        [
+            outside("frame", Origin::Repo, repo("api"), true),
+            outside(
+                "figma:frame",
+                Origin::Harness,
+                Owner::Plugin("figma".to_owned()),
+                false,
+            ),
+        ],
+    );
+
+    assert!(set.clashes.is_empty(), "{:?}", set.clashes);
+    assert_eq!(set.from_the_plane().count(), 1);
+}
+
+#[test]
+fn a_built_in_skill_never_loses_to_a_repo_or_harness_copy_of_its_name_on_any_route() {
+    // SK-6 (#2769): a clone could otherwise replace purlis's own `secrets` on Codex and opencode.
+    let plane = Plane::new();
+    let built_in = plane.root.join("../plugin/skills");
+    skill(&built_in, "secrets", &whole("secrets"));
+    let set = || {
+        skill_set(
+            Some(&plane.root),
+            &Machine {
+                built_in: Some(&built_in),
+                kept_local: Some(&|_| Ok(())),
+                harness: None,
+            },
+            &Chat {
+                workspace: None,
+                persona: None,
+                names: &[],
+                turned_off: &[],
+                harness: HarnessSkills {
+                    route: Route::Plugin,
+                },
+            },
+        )
+    };
+
+    for route in [Route::Plugin, Route::Config, Route::Briefing] {
+        let got = set().with_outside(
+            route,
+            [
+                outside("secrets", Origin::Repo, repo("api"), false),
+                outside("secrets", Origin::Harness, Owner::You, false),
+            ],
+        );
+        assert_eq!(
+            effective(&got),
+            [("secrets", Origin::BuiltIn, false)],
+            "{route:?}"
+        );
+        let hidden: Vec<String> = got.left_out.iter().map(|l| l.reason.to_string()).collect();
+        assert_eq!(
+            hidden, ["hidden by purlis's built-in skill of this name"; 2],
+            "{route:?}"
+        );
+        assert!(got.clashes.is_empty(), "{route:?}");
+    }
+}
