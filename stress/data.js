@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792654679937,
+  "lastUpdate": 1792654697916,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -10812,6 +10812,42 @@ window.BENCHMARK_DATA = {
             "value": 649.8,
             "unit": "MB",
             "extra": "median of 6 samples: 623.1, 638.9, 648, 651.6, 653.1, 744.4 MB; window 391 MB, session host 258.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "98d906a7b16dd5313130080cc81c8d868aaebd38",
+          "message": "Hard contrast floor for the text grey tiers (#2968)\n\n* Hard contrast floor for the text grey tiers (#2940)\n\nA text tier under its floor on a ground it is drawn on is drawn as the\nnearest colour that clears it, after the consent floors, as written and\nin every workspace tint; the theme check names it (tier-falls-back).\nADR 0098 gets an amendment for section 5.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Hold a tier on the window's own surfaces where no lightness clears every ground (#2940)\n\nA tier that clears the window's own surfaces keeps its colour and the check\nnames the ground on the other side; a cheap first pass skips a theme that\nclears everything. ADR wording: hard floors are measured before the tier\nfloors.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T10:40:56+04:00",
+          "tree_id": "b31caa7cf58bc44982de75a3520ddd6bdc87c464",
+          "url": "https://github.com/purlis/purlis/commit/98d906a7b16dd5313130080cc81c8d868aaebd38"
+        },
+        "date": 1792654695795,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1506.8,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1323.4, 1506.8, 1670.3 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 665.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 620.2, 650.4, 664, 667.5, 668.3, 744.5 MB; window 388.7 MB, session host 277.1 MB"
           }
         ]
       }
