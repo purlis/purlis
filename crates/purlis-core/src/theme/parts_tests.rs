@@ -771,7 +771,7 @@ fn the_buttons_family_default_is_what_button_css_draws() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 2);
+    assert_eq!(manifest["version"], 3);
     for list in ["states", "properties"] {
         for one in manifest[list].as_array().unwrap() {
             assert_eq!(one["since"], 1, "{one}");
@@ -842,6 +842,41 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             .iter()
             .any(|one| one["name"] == "grants" && one["consent"] == true)
     );
+    assert_eq!(button["focused"], "[data-focus-visible]");
+    // The field families (#2905): a field and the two boxes it holds, none with a variant.
+    let family = |name: &str| {
+        manifest["families"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|one| one["name"] == name)
+            .unwrap_or_else(|| panic!("no {name}"))
+            .clone()
+    };
+    for (name, wanted) in [
+        ("field", &["root", "label", "help", "error"][..]),
+        ("text-input", &["root", "icon"][..]),
+        ("textarea", &["root"][..]),
+    ] {
+        let one = family(name);
+        assert_eq!(one["since"], 3, "{name}");
+        assert_eq!(one["variants"], json!([]), "{name}");
+        assert_eq!(one["focused"], "[data-focus-within]", "{name}");
+        let parts: Vec<&str> = one["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|part| part["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(parts, wanted, "{name}");
+    }
+    // A textarea is as tall as its lines: no height to set.
+    assert!(
+        !family("textarea")["parts"][0]["properties"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("height"))
+    );
 }
 
 #[test]
@@ -902,6 +937,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         2,
         "0d939a9f8ad769584b644227563214dcf5e8dfbeca21e3c5a27ba545bba1d46d",
+    ),
+    (
+        3,
+        "8a863447d8077fcb178637999fc6ed55bbb0fcca6ffaf9ff58b6ff0f7668d4d0",
     ),
 ];
 
@@ -1184,5 +1223,166 @@ fn a_grounds_alpha_is_read_as_drawn() {
         ));
         assert!(!plain.is_empty(), "{plain:?}");
         assert_eq!(written, plain);
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// The field families (#2905)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_family_with_no_variants_is_reached_by_its_part_alone() {
+    let sheet = sheet_of(json!({
+        "text-input.root.corner-radius": 8,
+        "text-input.root.hover.fill": "control.hover",
+        "field.help.text": "text.muted",
+    }));
+    assert!(
+        sheet.contains(":where([data-scope=\"text-input\"][data-part=\"root\"]) { border-radius: min(8px, calc(var(--purlis-part-height, var(--size-control)) / 2)); }"),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains(
+            "[data-scope=\"text-input\"][data-part=\"root\"][data-hovered]:not([data-disabled])"
+        ),
+        "{sheet}"
+    );
+    assert!(sheet.contains(
+        ":where([data-scope=\"field\"][data-part=\"root\"] [data-scope=\"field\"][data-part=\"help\"]) { color: var(--text-muted); }"
+    ));
+    assert!(!sheet.contains("data-variant"), "{sheet}");
+    // Only the families whose corners the theme sets are clamped to their own sizes.
+    assert!(sheet.contains(
+        ":where([data-scope=\"text-input\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }"
+    ));
+    assert!(!sheet.contains("[data-scope=\"button\"]"), "{sheet}");
+}
+
+#[test]
+fn a_field_has_the_focus_whenever_it_holds_the_caret() {
+    let sheet = sheet_of(json!({
+        "text-input.root.focused.border-colour": "accent.base",
+        "textarea.root.focused.border-colour": "accent.base",
+        "button.root.focused.border-colour": "accent.base",
+    }));
+    assert!(sheet.contains("[data-scope=\"text-input\"][data-part=\"root\"][data-focus-within]"));
+    assert!(sheet.contains("[data-scope=\"textarea\"][data-part=\"root\"][data-focus-within]"));
+    assert!(sheet.contains("[data-scope=\"button\"][data-part=\"root\"][data-focus-visible]"));
+}
+
+#[test]
+fn a_text_inputs_size_never_reaches_its_small_or_large_box() {
+    let sheet = sheet_of(json!({ "text-input.root.height": 30 }));
+    assert!(
+        sheet.contains("[data-scope=\"text-input\"][data-part=\"root\"]:not([data-size=\"sm\"], [data-size=\"lg\"])"),
+        "{sheet}"
+    );
+    let short = refusal(json!({ "text-input.root.height": "size.chrome" }));
+    assert!(
+        short
+            .iter()
+            .any(|one| one.starts_with("parts: text-input.root is 21px tall in comfortable")),
+        "{short:?}"
+    );
+    // A textarea is as tall as its lines; a height for it is no part purlis has.
+    let loaded = load(&with_parts(json!({ "textarea.root.height": 40 })));
+    assert!(!loaded.refused);
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.textarea.root.height is not a component part")),
+        "{:?}",
+        said(&loaded)
+    );
+}
+
+#[test]
+fn a_fields_help_that_breaks_its_floor_is_drawn_in_its_own_default() {
+    let loaded = load(&with_parts(json!({ "field.help.text": "surface.base" })));
+    let theme = loaded.theme.first();
+    let fallen = parts::fallen(theme);
+    assert_eq!(fallen.len(), 1, "{fallen:?}");
+    assert_eq!(fallen[0].part, "field.root");
+    assert!(fallen[0].floor.contains("the help's words"), "{fallen:?}");
+    let sheet = parts::stylesheet(theme);
+    // Its help goes back to the quiet tier and its error to the danger colour, and the field's
+    // root, which draws no colour of its own, is given none.
+    assert!(sheet.contains("color: var(--text-quiet);"), "{sheet}");
+    assert!(sheet.contains("color: var(--danger-text);"), "{sheet}");
+    assert!(!sheet.contains("background-color"), "{sheet}");
+}
+
+#[test]
+fn a_boxs_words_on_its_fill_are_held_to_their_floor() {
+    let loaded = load(&with_parts(
+        json!({ "text-input.root.fill": "text.primary" }),
+    ));
+    let fallen = parts::fallen(loaded.theme.first());
+    assert_eq!(
+        fallen
+            .iter()
+            .map(|one| one.part.as_str())
+            .collect::<Vec<_>>(),
+        ["text-input.root"]
+    );
+    // The prototype's look (R54): borderless on the window's fill. A border that is the box's
+    // only edge on its own ground must hold 3:1; with none, its words are what is measured.
+    let edged = load(&with_parts(
+        json!({ "text-input.root.fill": "surface.base" }),
+    ));
+    assert!(
+        parts::fallen(edged.theme.first())[0]
+            .floor
+            .contains("border contrasts 3:1")
+    );
+    let clear = load(&with_parts(json!({
+        "text-input.root.fill": "surface.base",
+        "text-input.root.border-width": 0,
+        "textarea.root.border-width": 0,
+    })));
+    let fell = parts::fallen(clear.theme.first());
+    assert!(fell.is_empty(), "{fell:?}");
+}
+
+#[test]
+fn the_field_families_default_is_what_field_css_draws() {
+    let css = include_str!("../../../../app/src/ui/field/field.css");
+    let token = |var: &str| -> String {
+        var.strip_prefix("var(--")
+            .and_then(|it| it.strip_suffix(')'))
+            .map(|name| {
+                vocabulary::TOKENS
+                    .iter()
+                    .find(|token| token.replace('.', "-") == name)
+                    .unwrap_or_else(|| panic!("--{name} is not a token"))
+                    .to_string()
+            })
+            .unwrap_or_else(|| var.to_owned())
+    };
+    let boxes = rule(
+        css,
+        "[data-scope=\"text-input\"][data-part=\"root\"],\n[data-scope=\"textarea\"][data-part=\"root\"]",
+    );
+    let held = parts::field_defaults_json();
+    assert_eq!(
+        held["box"]["fill"],
+        token(declared(boxes, "background-color").unwrap())
+    );
+    assert_eq!(
+        held["box"]["text"],
+        token(declared(boxes, "color").unwrap())
+    );
+    let border = declared(boxes, "border").and_then(|it| it.split_whitespace().last());
+    assert_eq!(held["box"]["border"], token(border.unwrap()));
+    for part in ["label", "help", "error"] {
+        let drawn = rule(
+            css,
+            &format!("[data-scope=\"field\"][data-part=\"{part}\"]"),
+        );
+        assert_eq!(
+            held[part],
+            token(declared(drawn, "color").unwrap()),
+            "the field's {part}"
+        );
     }
 }
