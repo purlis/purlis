@@ -12,6 +12,7 @@ import { PAGE, snippetOf } from "./PanelList";
 import { SettingActions } from "./settings/components";
 import { OffWhenReadOnly } from "./ReadOnlyLine";
 import { Button } from "./ui/button/Button";
+import { TextField } from "./ui/field/Field";
 
 /**
  * **A store's archive, in a tab of its own** (KN-4, D6): what the window's Delete — and
@@ -164,20 +165,19 @@ export function MemoryArchiveTab({
         </p>
       )}
       {searchable && (
-        <div className="panel-search ui-input-lead">
-          <Search className="ui-input-lead-icon" aria-hidden="true" />
-          <input
-            type="search"
-            className="ui-input"
-            value={query}
-            aria-label={`Search archived memories in ${scopeWord(scope)}`}
-            placeholder={`Search ${archived.length}`}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setLimit(PAGE);
-            }}
-          />
-        </div>
+        <TextField
+          className="panel-search"
+          type="search"
+          icon={<Search aria-hidden="true" />}
+          keepsFocus="memory-archive-search"
+          value={query}
+          aria-label={`Search archived memories in ${scopeWord(scope)}`}
+          placeholder={`Search ${archived.length}`}
+          onChange={(to) => {
+            setQuery(to);
+            setLimit(PAGE);
+          }}
+        />
       )}
       {archived.length === 0 ? (
         <EmptyState

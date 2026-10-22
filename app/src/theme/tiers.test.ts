@@ -28,6 +28,9 @@ const FAINT: ReadonlySet<string> = new Set([
   ".ui-tree-twist",
   // A disabled button's words (#2897's palette rules, #2904).
   '[data-scope="button"][data-part="root"][data-disabled]',
+  // An unavailable box's words (#2905).
+  '[data-scope="text-input"][data-part="root"][data-disabled]',
+  '[data-scope="textarea"][data-part="root"][data-disabled]',
 ]);
 
 /** Informational words, each drawn in quiet: line numbers, placeholders, counts, paths, group

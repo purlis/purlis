@@ -30,6 +30,7 @@ import { useLentMemoryStores } from "./MemoryEdits";
 import { MOVES_WHOLE, movesPublishSaid, storeLabel } from "./memoryMoves";
 import { OffWhenReadOnly, useReadOnlySaid } from "./ReadOnlyLine";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 // The body's editor is CodeMirror (#1862), a chunk of its own loaded the first time a memory is
 // edited, so the window's main bundle carries none (`tools/main-chunk-has-no-codemirror.mjs`).
@@ -178,7 +179,7 @@ export function MemoryTab({
     };
     const stale = editing.stale;
     return (
-      <form className="memory-editor" onSubmit={submit} aria-label={`Editing ${key}`}>
+      <Form className="memory-editor" onSubmit={submit} aria-label={`Editing ${key}`}>
         <Meta at={at} memory={memory} />
         <SettingRow
           label="Title"
@@ -278,7 +279,7 @@ export function MemoryTab({
             Cancel
           </Button>
         </SettingActions>
-      </form>
+      </Form>
     );
   }
 

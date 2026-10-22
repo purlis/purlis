@@ -6,6 +6,7 @@ import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { inForce, searchDecorations } from "./theme/theme";
 import { IconButton } from "./ui/button/Button";
+import { TextField } from "./ui/field/Field";
 
 /** Where a find is: the match it is on (from 0, or -1 for none or past what is marked), and how
  *  many there are. */
@@ -56,9 +57,8 @@ export function fromTheTerminal(search: SearchAddon): Finder {
  * the terminal holds — the screen and the scrollback the core keeps. Nothing here reads a
  * harness's output to decide anything; it only shows the operator where a word is.
  *
- * Native HTML and not a Radix primitive, by `docs/ui-primitives.md`'s own rule: a search field
- * and three buttons are elements the browser already has, and Radix has no primitive for a find
- * bar to take. `role="search"` is what names it as one.
+ * Drawn from the component families: the field family's search box and three icon buttons, one
+ * size for the bar. `role="search"` is what names it as one.
  *
  * It is a sibling of the terminal and never inside it — the rule `.pane-frame` holds for
  * everything charter draws over a pane — so a key typed here is the bar's and not the chat's:
@@ -138,21 +138,19 @@ export function FindBar({
 
   return (
     <div className="pane-find" role="search" aria-label={label}>
-      <span className="pane-find-box ui-input-lead">
-        <Search className="ui-input-lead-icon" aria-hidden="true" />
-        <input
-          ref={field}
-          type="search"
-          className="ui-input"
-          aria-label="Find"
-          placeholder="Find"
-          value={term}
-          spellCheck={false}
-          autoComplete="off"
-          onChange={(event) => typed(event.target.value)}
-          onKeyDown={key}
-        />
-      </span>
+      {/* One size for the bar: the box is as small as the buttons beside it. */}
+      <TextField
+        inputRef={field}
+        className="pane-find-box"
+        type="search"
+        size="sm"
+        icon={<Search aria-hidden="true" />}
+        aria-label="Find"
+        placeholder="Find"
+        value={term}
+        onChange={typed}
+        onKeyDown={key}
+      />
       <span className="pane-find-count" role="status" aria-live="polite">
         {told(results)}
       </span>

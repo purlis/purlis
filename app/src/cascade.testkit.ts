@@ -17,8 +17,8 @@
  *   drawn at its ordinary width, with motion and no narrowing query in force;
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
- * - `primitives/controls.css`, `ui/button/button.css` and then `primitives/overlays.css` are in
- *   the `components` layer,
+ * - `primitives/controls.css`, `ui/button/button.css`, `ui/field/field.css` and then
+ *   `primitives/overlays.css` are in the `components` layer,
  *   above `App.css`'s `charter` (`styles.css`), so a primitive's rule beats any of `App.css`'s that
  *   sets the same property, at any specificity;
  * - inside one layer, the winner is the highest specificity, then the last in the file.
@@ -106,26 +106,32 @@ function rulesOf(css: string, layer = 0, from = 0): Rule[] {
 }
 
 /** The window's cascade: `App.css`, and in the layer above it the collections, the control
- *  classes, the button family (#2904), the overlay surface and then the text roles, in the order
- *  `styles.css` imports them. */
+ *  classes, the button family (#2904), the field family (#2905), the overlay surface and then the
+ *  text roles, in the order `styles.css` imports them. */
 const COLLECTIONS = rulesOf(sheet("primitives/collections.css"), 1);
 const CONTROLS = rulesOf(sheet("primitives/controls.css"), 1, COLLECTIONS.length);
 const BUTTONS = rulesOf(sheet("ui/button/button.css"), 1, COLLECTIONS.length + CONTROLS.length);
+const FIELDS = rulesOf(
+  sheet("ui/field/field.css"),
+  1,
+  COLLECTIONS.length + CONTROLS.length + BUTTONS.length,
+);
 const OVERLAYS = rulesOf(
   sheet("primitives/overlays.css"),
   1,
-  COLLECTIONS.length + CONTROLS.length + BUTTONS.length,
+  COLLECTIONS.length + CONTROLS.length + BUTTONS.length + FIELDS.length,
 );
 const RULES = [
   ...rulesOf(sheet("App.css"), 0),
   ...COLLECTIONS,
   ...CONTROLS,
   ...BUTTONS,
+  ...FIELDS,
   ...OVERLAYS,
   ...rulesOf(
     sheet("primitives/text.css"),
     1,
-    COLLECTIONS.length + CONTROLS.length + BUTTONS.length + OVERLAYS.length,
+    COLLECTIONS.length + CONTROLS.length + BUTTONS.length + FIELDS.length + OVERLAYS.length,
   ),
 ];
 

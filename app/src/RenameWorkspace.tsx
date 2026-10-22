@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import * as Dialog from "./overlays/dialog";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * Renaming a workspace (charter#367), asked where the answer is given.
@@ -68,7 +69,7 @@ export function RenameWorkspace({
           }}
         >
           <Dialog.Title id="rename-workspace">Rename workspace {workspace}</Dialog.Title>
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               rename();
@@ -111,7 +112,7 @@ export function RenameWorkspace({
               </Button>
               <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

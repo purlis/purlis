@@ -8,6 +8,7 @@ import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { useNewerTrouble } from "./pickTrouble";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * Making a new project — a plane charter scaffolds — and the one decision it asks about.
@@ -147,7 +148,7 @@ export function NewProject({
             machine. Nothing is written into your repo.
           </p>
 
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               started();
@@ -192,7 +193,7 @@ export function NewProject({
               </Button>
               <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
-          </form>
+          </Form>
 
           {/* The two-directory form (ADR 0035), for a project of its own somewhere the operator
               chooses. Closed until asked for. */}
@@ -202,7 +203,7 @@ export function NewProject({
               A project of its own, in a folder you choose, holding workspaces, personas and the
               repos work happens in.
             </p>
-            <form
+            <Form
               onSubmit={(event) => {
                 event.preventDefault();
                 started();
@@ -318,7 +319,7 @@ export function NewProject({
                     main form's Cancel above is out of sight once this one is open and long. */}
                 <Button onPress={onCancel}>Cancel</Button>
               </SettingActions>
-            </form>
+            </Form>
           </details>
         </Dialog.Content>
       </Dialog.Portal>

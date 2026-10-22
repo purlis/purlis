@@ -4,6 +4,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import * as Popover from "./overlays/popover";
 import { RENAMES_ON_F2 } from "./actions";
+import { TextField } from "./ui/field/Field";
 
 /**
  * A chat tab's name, open for editing in place on the strip (charter-app#254).
@@ -108,17 +109,17 @@ export function TabRename({
   return (
     <Popover.Root open={refused !== undefined}>
       <Popover.Anchor asChild>
-        <input
+        {/* The field family's small box, in the tab's place. */}
+        <TextField
           className="tab-rename"
-          ref={box}
+          size="sm"
+          inputRef={box}
           value={typed}
           aria-label={`Rename chat ${name}`}
-          aria-invalid={refused !== undefined}
+          isInvalid={refused !== undefined}
           aria-describedby={refused === undefined ? undefined : whyId}
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => {
-            setTyped(event.target.value);
+          onChange={(to) => {
+            setTyped(to);
             setRefused(undefined);
           }}
           onKeyDown={key}
