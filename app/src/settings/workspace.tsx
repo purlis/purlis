@@ -31,6 +31,8 @@ import { THEME_GROUP, themeRows } from "./themeGallery";
 import { workspaceDispatchGroup } from "./dispatch";
 import { pluginsSummaryGroup, workspaceSkillsGroup } from "./skillsSummary";
 import { Button } from "../ui/button/Button";
+import { anyPoolKept, usePools } from "../pools";
+import { runsOnGroup } from "./runsOn";
 
 /**
  * **The Workspace level** (SE-20, #1170; V89b, V89e, V89h): one workspace's settings in the
@@ -63,6 +65,8 @@ export type WorkspaceRead = {
   iconThemes?: readonly ExtensionTheme[];
   /** The icon theme the core says the trees draw here, as a file picks it (#1145). */
   iconsDrawn?: string | null;
+  /** Whether this machine keeps a pool (#2046): only then is where its chats run offered. */
+  poolsKept?: boolean;
 };
 
 /** What the driver answers at the Workspace level. */
@@ -173,6 +177,10 @@ export function workspaceGroups(
       help: "The repos cloned in this workspace, and the ones it names that are not cloned here.",
       settings: [reposSetting(read), absentSetting(read)],
     },
+    // Where this workspace's chats run, once this machine keeps a pool (#2046).
+    ...[runsOnGroup(read.plane, read.workspace, read.poolsKept === true)].filter(
+      (group): group is SettingsGroup => group !== undefined,
+    ),
     // This workspace's own dispatch limits (#1440), kept in the project's file.
     workspaceDispatchGroup(read.plane, read.workspace),
     {
@@ -305,6 +313,8 @@ export function useWorkspaceLevel(plane: PlaneId, workspace: string): WorkspaceL
   // What the window draws here was asked again — by a write, or by an approval in the
   // Extensions dialog — so the sentence about it is asked again with it.
   const answers = useProjectThemeAnswers(plane, workspace);
+  // Read so the Runs on group comes once a pool is kept, and goes with the last (#2046).
+  usePools();
   useEffect(() => {
     if (answers > 0) readTheme();
   }, [answers, readTheme]);
@@ -334,6 +344,7 @@ export function useWorkspaceLevel(plane: PlaneId, workspace: string): WorkspaceL
       theme,
       iconThemes,
       iconsDrawn,
+      poolsKept: anyPoolKept(),
     },
   };
 }

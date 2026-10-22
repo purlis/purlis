@@ -73,8 +73,7 @@ pub(crate) fn begin(held: &Held, record: &Record) -> Begun {
     // A task the session host still runs from before this window is reattached, at work, and
     // never ended for what it could be resumed by (#2006).
     let launch = dispatchrestart::at_launch_beside(held.root(), record, &records, &|chat| {
-        chat.number
-            .is_some_and(|number| held.chats().left_running(number))
+        held.chats().left_running(chat)
     });
     for chat in &launch.not_resumed {
         tracing::info!(

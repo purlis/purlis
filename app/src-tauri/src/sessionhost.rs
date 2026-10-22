@@ -882,8 +882,9 @@ fn connect(
         let runtime = tokio::runtime::Handle::current();
         match open_link(&socket, &credential, ended, None).await {
             Ok(link) => {
-                let dial = dialing(socket, credential, runtime);
-                connection.ready(Arc::new(link), dial);
+                let dial = dialing(socket.clone(), credential.clone(), runtime.clone());
+                let relayed = relaying(socket, credential, runtime);
+                connection.ready_relaying(Arc::new(link), dial, relayed);
             }
             Err(why) => lost(why),
         }
@@ -897,13 +898,48 @@ async fn open_link(
     ended: impl FnOnce() + Send + 'static,
     naming: Option<purlis_session_protocol::browsing::Secret>,
 ) -> Result<HostLink, String> {
+    open_link_relayed(socket, credential, ended, naming, None).await
+}
+
+/// [`open_link`], the host relaying it to the runner of `pool` where one is named (`relay_to`,
+/// #2046).
+async fn open_link_relayed(
+    socket: &Path,
+    credential: &Credential,
+    ended: impl FnOnce() + Send + 'static,
+    naming: Option<purlis_session_protocol::browsing::Secret>,
+    pool: Option<&str>,
+) -> Result<HostLink, String> {
     let stream = tokio::net::UnixStream::connect(socket)
         .await
         .map_err(|why| format!("its socket did not answer: {why}"))?;
     let link = link::connect(stream, session::speaks(), Scope::LocalUi, credential)
         .await
         .map_err(|why| format!("it refused the window: {why}"))?;
-    HostLink::over_named(link, tokio::runtime::Handle::current(), ended, naming).await
+    HostLink::over_relayed(link, tokio::runtime::Handle::current(), ended, naming, pool).await
+}
+
+/// Opens one more link to the host that the host relays to a pool's runner (#2046): what
+/// [`Connection::relaying_to`] holds each project root on, for a workspace whose chats run on
+/// the pool.
+fn relaying(
+    socket: PathBuf,
+    credential: Credential,
+    runtime: tokio::runtime::Handle,
+) -> crate::hostedsessions::RelayedDial {
+    Arc::new(move |within, naming, pool: &str| {
+        let (socket, credential, pool) = (socket.clone(), credential.clone(), pool.to_owned());
+        crate::hostedsessions::open_within(&runtime, within, async move {
+            open_link_relayed(
+                &socket,
+                &credential,
+                || tracing::info!("purlis: a project's link to a pool's runner ended"),
+                naming,
+                Some(&pool),
+            )
+            .await
+        })
+    })
 }
 
 /// Opens one more link to the host, from any thread but the runtime's own: what

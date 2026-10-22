@@ -129,6 +129,8 @@ mod repolist;
 mod restored;
 mod restoring;
 #[cfg(unix)]
+mod routedsessions;
+#[cfg(unix)]
 mod runnercode;
 mod runnerlinks;
 mod sandboxchoose;

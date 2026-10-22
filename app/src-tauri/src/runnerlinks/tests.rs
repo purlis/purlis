@@ -353,3 +353,181 @@ fn a_start_is_refused_unless_its_runner_is_kept_and_not_draining() {
     assert!(drains(config.path(), "builds/builds"));
     assert!(!drains(config.path(), "builds/builds-11111111"));
 }
+
+/// **A project reaches a pool's runner through the window, for real** (#2046): the window's
+/// chats of a workspace set to the pool are routed to a link the desktop's host relays to the
+/// pool's runner through `docker exec`; the runner holds the project where it keeps it, and the
+/// window sends it the project's own repository, which the runner checks out there, less what is
+/// this machine's alone. It needs Docker and a runner image of this build named by digest in
+/// `DOCKER_POOL_TEST_IMAGE`; without the image it runs nothing and passes. The project keeps its
+/// git directory beside its tree, so it runs where a sandbox refuses a folder's own
+/// `.git/config`.
+#[test]
+fn a_project_reaches_a_pools_runner_through_the_window() {
+    use crate::host::SessionHost as _;
+    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
+        return;
+    };
+    let config = tempfile::tempdir().unwrap();
+    let docker = Docker::at(std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()))
+        .with_settings_in(config.path().join("docker-settings"));
+    let machine = a_machine(config.path(), docker.clone());
+    let name = format!(
+        "test-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let pool = Pool::new(&name, Image::pinned(&image).unwrap(), Set::default()).unwrap();
+    crate::dockerpools::add_on(&machine, &pool).expect("the pool is added and its runner paired");
+    let _removes = scopeguard(config.path().to_path_buf(), docker.clone(), name.clone());
+
+    // The project: a repository whose git directory is beside it, with a memory not saved yet
+    // and this machine's own state.
+    let top = tempfile::tempdir().unwrap();
+    let top = top.path().canonicalize().unwrap();
+    let root = top.join("project");
+    std::fs::create_dir_all(root.join("workspaces/app")).unwrap();
+    let git = |args: &[&str]| {
+        let out = purlis_core::forklock::output(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["-c", "commit.gpgsign=false", "-c", "user.name=T", "-c"])
+                .args(["user.email=t@example.invalid"])
+                .args(args),
+        )
+        .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    };
+    let gitdir = format!(
+        "--separate-git-dir={}",
+        top.join("project.gitdir").display()
+    );
+    git(&["init", "-q", "-b", "main", &gitdir, "."]);
+    std::fs::write(root.join(purlis_core::plane::MANIFEST), "").unwrap();
+    std::fs::write(root.join("workspaces/app/workspace.md"), "# app\n").unwrap();
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "a project"]);
+    std::fs::write(root.join("workspaces/app/memory.md"), "not saved yet\n").unwrap();
+    // This machine's state folder, where its vaults are kept.
+    std::fs::create_dir_all(root.join(".purlis")).unwrap();
+    std::fs::write(root.join(".purlis/this-machine.json"), "{}").unwrap();
+    purlis_core::machine::update(config.path(), |store| {
+        store.remember(&root, 1);
+        store.set_chats_run_on(&root, "app", Some(&name)).unwrap();
+    })
+    .unwrap();
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let host = runtime.block_on(async {
+        Hosting::running_with(Echo, StandIns::default()).relaying_with(relaying({
+            let machine = machine.clone();
+            move || Ok(machine.clone())
+        }))
+    });
+    let handle = runtime.handle().clone();
+    let link_to = {
+        let (host, handle) = (host.clone(), handle.clone());
+        move |naming, pool: Option<String>| {
+            let host = host.clone();
+            let inner = handle.clone();
+            crate::hostedsessions::open_within(&handle, PATIENCE, async move {
+                let link = a_link_of(host).await;
+                crate::hostedsessions::HostLink::over_relayed(
+                    link,
+                    inner,
+                    || {},
+                    naming,
+                    pool.as_deref(),
+                )
+                .await
+            })
+        }
+    };
+    let connection = Arc::new(crate::hostedsessions::Connection::default());
+    let window = link_to(None, None).expect("the window's own link");
+    let dial: crate::hostedsessions::Dial = {
+        let link_to = link_to.clone();
+        Arc::new(move |_within, naming| link_to(naming, None))
+    };
+    let relayed: crate::hostedsessions::RelayedDial = {
+        let link_to = link_to.clone();
+        Arc::new(move |_within, naming, pool: &str| link_to(naming, Some(pool.to_owned())))
+    };
+    connection.ready_relaying(Arc::new(window), dial, relayed);
+    let routed = crate::hostedsessions::routed(
+        Box::new(crate::hostedsessions::HostedSessions::new(
+            Arc::clone(&connection),
+            &root,
+        )),
+        &connection,
+        config.path(),
+        &root,
+    );
+
+    // The window's start of a chat in `app` holds the project on the runner, with its code.
+    let started = routed.open_named(
+        None,
+        &crate::host::Named {
+            workspace: Some("app".into()),
+            ..crate::hostedsessions::tests::by_its_names()
+        },
+        Default::default(),
+        &|_| {},
+    );
+    let id = purlis_core::scaffold::planefile::id_to_hold_by(&root).unwrap();
+    let made = purlis_core::runners::runner_for(config.path(), &name)
+        .unwrap()
+        .made;
+    let in_the_runner = |script: &str| {
+        let out =
+            purlis_core::forklock::output(std::process::Command::new(docker.program()).args([
+                "exec",
+                made.container.as_str(),
+                "sh",
+                "-c",
+                script,
+            ]))
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    let kept = format!("$(ls -d \"$HOME\"/.local/share/*/projects/{id})");
+    assert_eq!(
+        in_the_runner(&format!("cat {kept}/workspaces/app/memory.md")),
+        "not saved yet",
+        "the project is on the runner, uncommitted work and all ({:?})",
+        started.as_ref().err()
+    );
+    assert_eq!(
+        in_the_runner(&format!(
+            "test -e {kept}/.purlis && echo there || echo absent"
+        )),
+        "absent",
+        "nothing of this machine's state or vaults"
+    );
+    drop(routed);
+    runtime.shutdown_timeout(Duration::from_secs(5));
+}
+
+/// A `local-ui` link to `host`, served as the desktop's host serves each link it admits.
+async fn a_link_of(host: Hosting) -> link::Link {
+    let held = Credentials::mint().unwrap();
+    let (a, b) = tokio::io::duplex(256 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            held.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &held)
+    );
+    tokio::spawn(session::serve(served.unwrap(), Routed::new(host), None));
+    client.unwrap()
+}

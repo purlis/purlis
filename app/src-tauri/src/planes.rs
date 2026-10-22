@@ -2399,6 +2399,11 @@ impl Planes {
         self
     }
 
+    /// This machine's config home, where its pools are kept, where the app keeps one (#2679).
+    pub(crate) fn pools_in(&self) -> Option<PathBuf> {
+        self.pools_in.clone()
+    }
+
     /// This machine's network record, where the app keeps one (#1662).
     pub(crate) fn network(&self) -> Option<&purlis_core::sandboxblock::record::Record> {
         self.network.as_ref()
