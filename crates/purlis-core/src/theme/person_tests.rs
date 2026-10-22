@@ -451,3 +451,71 @@ fn of_two_colours_that_break_a_pair_the_one_that_breaks_it_is_left_out_and_both_
             || theme.value("text.primary") == classic_dark().value("text.primary")
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// Allow never takes the primary look through the person's colours (#2948's floor)
+// ---------------------------------------------------------------------------------------
+
+/// What the window draws with nothing picked, the person's `layer` over it: resolved, then the
+/// layer drawn and the consent floors held over it.
+fn resolved_under(layer: &Layer) -> Drawn {
+    resolve(
+        &Inputs {
+            pick: None,
+            theirs: None,
+            on: On::Every,
+            system: Appearance::Dark,
+            contrast: Contrast::Standard,
+        },
+        || std::sync::Arc::from(Vec::new()),
+    )
+    .under(layer)
+}
+
+/// The nearest Allow comes to the primary in `theme`, in any state.
+fn allow_from_primary(theme: &ResolvedTheme) -> f64 {
+    parts::allow_from_primary(theme)
+        .into_iter()
+        .map(|look| look.apart)
+        .fold(f64::INFINITY, f64::min)
+}
+
+#[test]
+fn no_colour_of_the_person_s_draws_allow_as_the_primary() {
+    let base = default_theme();
+    // Allow's fill as the primary's, the primary's as Allow's, and each under the pointer.
+    let cases = [
+        ("control.base", "accent.surface"),
+        ("accent.surface", "control.base"),
+        ("control.hover", "tab.active"),
+        ("tab.active", "control.hover"),
+    ];
+    for contrast in ["standard", "more"] {
+        for (token, like) in cases {
+            let layer = layer_of(json!({
+                "contrast": contrast,
+                "colours": { token: base.value(like) }
+            }));
+            let drawn = resolved_under(&layer);
+            let theme = drawn.theme.expect("drawn");
+            let apart = allow_from_primary(&theme);
+            assert!(
+                apart >= ALLOW_FROM_PRIMARY,
+                "{token} := {like} ({contrast}): Allow {apart} from the primary"
+            );
+            // The person's colour was either left out or held by the floor, and said either way.
+            let held = drawn
+                .held
+                .as_ref()
+                .is_some_and(|held| held.floors.contains(&Floor::AllowNotPrimary));
+            let left_out = drawn
+                .mine
+                .iter()
+                .any(|one| one.token.as_deref() == Some(token));
+            assert!(
+                held || left_out || theme.value(token) != base.value(like),
+                "{token} := {like} ({contrast}): drawn as asked with nothing said"
+            );
+        }
+    }
+}
