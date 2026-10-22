@@ -25,6 +25,7 @@ import { WorkspaceRemovalNotice } from "./WorkspaceRemovalNotice";
 import { ProposedChangeNotice } from "./ProposedChangeNotice";
 import { asksOf, isAnAsk, noticeKey } from "./sandboxBlocks";
 import { TaskPromptNotice } from "./TaskPromptNotice";
+import { SkillsChangedNotice } from "./SkillsChangedNotice";
 import { offItsPane, onItsPane } from "./inboxRules";
 import type { Shown } from "./bindings";
 import { type HandedFrom } from "./handedFrom";
@@ -470,6 +471,9 @@ export function ChatNotices({
       )}
       {restartSaid?.running && restartSaid.notYet === undefined && (
         <RestartingLine session={session} />
+      )}
+      {!restartSaid?.running && (
+        <SkillsChangedNotice plane={plane} session={session} onRestart={onRestart} />
       )}
       {restartSaid?.midTurn &&
         !restartSaid.byHand &&

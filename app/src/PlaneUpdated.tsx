@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 
 import type { Offer } from "./actions";
-import { commands, type PlaneId } from "./bindings";
+import { commands, type PlaneId, type PlaneUpdated } from "./bindings";
 
 /** The files each chat started on that have changed since, by session. */
 export type PlaneUpdates = Readonly<Record<number, readonly string[]>>;
@@ -27,18 +27,44 @@ export function usePlaneUpdated(plane: PlaneId, instructionsChanges: number): Pl
   const [updates, setUpdates] = useState<PlaneUpdates>({});
   useEffect(() => {
     let gone = false;
-    void commands
-      .chatsPlaneUpdated(plane)
-      .then((answer) => {
-        if (gone || answer.status !== "ok") return;
-        setUpdates(Object.fromEntries((answer.data ?? []).map((one) => [one.session, one.files])));
-      })
-      .catch(() => undefined);
+    void planeUpdatedAt(plane, instructionsChanges).then((all) => {
+      if (!gone)
+        setUpdates(
+          Object.fromEntries(
+            all.filter((one) => one.files.length > 0).map((one) => [one.session, one.files]),
+          ),
+        );
+    });
     return () => {
       gone = true;
     };
   }, [plane, instructionsChanges]);
   return updates;
+}
+
+/** The last ask of `chats_plane_updated`, by project, and the change it was asked at. */
+const asked = new Map<PlaneId, { at: number; answer: Promise<readonly PlaneUpdated[]> }>();
+
+/**
+ * **What `chats_plane_updated` says of `plane` at its `at`th change**, asked once for the
+ * readers that change draws at once: the tab marks here and each chat pane's skills-changed offer
+ * (`SkillsChangedNotice`, #2770) read one answer, so a pane adds no ask of its own. Nothing,
+ * where it cannot be asked.
+ */
+export function planeUpdatedAt(plane: PlaneId, at: number): Promise<readonly PlaneUpdated[]> {
+  const held = asked.get(plane);
+  if (held !== undefined && held.at === at) return held.answer;
+  const answer: Promise<readonly PlaneUpdated[]> = commands
+    .chatsPlaneUpdated(plane)
+    .then((said) => (said.status === "ok" ? (said.data ?? []) : []))
+    .catch(() => [])
+    .finally(() => {
+      // Shared while it is in flight, by the readers one change draws at once; a later reader
+      // asks again, so no answer outlives what it was about.
+      if (asked.get(plane)?.answer === answer) asked.delete(plane);
+    });
+  asked.set(plane, { at, answer });
+  return answer;
 }
 
 /**

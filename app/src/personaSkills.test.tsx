@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { PersonaSkillAdd, PersonaSkillRemove } from "./personaSkills";
+import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 
 afterEach(() => {
   cleanup();
@@ -63,7 +63,7 @@ describe("a persona's skills in the Skill studio", () => {
     expect(screen.getByTestId("persona-skill-name")).toHaveValue(":x");
   });
 
-  it("takes a named skill out", async () => {
+  it("takes a named skill out, as a studio row's Remove does", async () => {
     const asked: unknown[] = [];
     mockIPC((cmd, args) => {
       if (cmd === "persona_skill") {
@@ -72,30 +72,11 @@ describe("a persona's skills in the Skill studio", () => {
       }
       throw new Error(`unexpected ${cmd}`);
     });
-    const changed = vi.fn();
 
-    render(
-      <PersonaSkillRemove plane="p" persona="ops" written="purlis:handoff" onChanged={changed} />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Remove purlis:handoff from ops" }));
+    expect(await changePersonaSkill("p", "ops", "purlis:handoff", "remove")).toBeUndefined();
 
-    await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
     expect(asked).toEqual([
       { plane: "p", persona: "ops", written: "purlis:handoff", change: "remove" },
     ]);
-  });
-
-  it("is off on a read-only project", () => {
-    mockIPC(() => true);
-    render(
-      <PersonaSkillRemove
-        plane="p"
-        persona="ops"
-        written="deploy"
-        onChanged={() => {}}
-        readOnly="This project is read-only."
-      />,
-    );
-    expect(screen.getByRole("button", { name: "Remove deploy from ops" })).toBeDisabled();
   });
 });

@@ -1747,7 +1747,7 @@ export const commands = {
 	setSkillStudioOn: (on: boolean) => typedError<boolean, string>(__TAURI_INVOKE("set_skill_studio_on", { on })),
 	/**
 	 *  **Share** (#2767): moves the local skill `name` of the project's root (`workspace` `None`) or
-	 *  of `workspace` into that level's `skills/`, so the project's save commits it, or says why not.
+	 *  of `workspace` into that level's `skills/`, committed (#2770), or says why not.
 	 */
 	skillShare: (plane: PlaneId, workspace: string | null, name: string) => typedError<null, string>(__TAURI_INVOKE("skill_share", { plane, workspace, name })),
 	/**
@@ -1769,6 +1769,52 @@ export const commands = {
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	/**  Puts a chat's missing-skills Notice away. */
 	putAwayChatSkillsMissing: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_skills_missing", { plane, session })),
+	/**  The templates a new skill can start from. */
+	skillTemplates: () => __TAURI_INVOKE<SkillTemplate[]>("skill_templates"),
+	/**
+	 *  **The live lint** of `text`, a `SKILL.md` being edited for the skill `name`: each line the
+	 *  editor shows, none where a save would be taken.
+	 */
+	skillLint: (name: string, text: string) => __TAURI_INVOKE<string[]>("skill_lint", { name, text }),
+	/**  **Makes a skill** from `template` at `level`. */
+	skillNew: (plane: PlaneId, level: SkillLevel, name: string, description: string, template: SkillTemplateId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_new", { plane, level, name, description, template })),
+	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
+	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
+	/**
+	 *  **Saves an edit**: `now` as the skill's `SKILL.md`, only while it is still `was`, the text the
+	 *  editor opened.
+	 */
+	skillSave: (plane: PlaneId, level: SkillLevel, name: string, was: string, now: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_save", { plane, level, name, was, now })),
+	/**  **Renames a skill**, and every persona and skill that names it. */
+	skillRename: (plane: PlaneId, level: SkillLevel, name: string, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_rename", { plane, level, name, to })),
+	/**  Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill. */
+	skillMoveNeedsGrant: (from: SkillLevel, to: SkillLevel) => __TAURI_INVOKE<boolean>("skill_move_needs_grant", { from, to }),
+	/**  **Moves a skill** from `from` to `to`, with `grant` where it becomes a project skill. */
+	skillMove: (plane: PlaneId, from: SkillLevel, name: string, to: SkillLevel, grant: 
+/**  Chats at the project's root alone. */
+{ to: "root" } | 
+/**  Every workspace's chats too. */
+{ to: "all" } | 
+/**  The workspaces named. */
+{ to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_move", { plane, from, name, to, grant })),
+	/**  **Who uses a skill**: what Delete shows first. */
+	skillUsers: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillUsers, string>(__TAURI_INVOKE("skill_users", { plane, level, name })),
+	/**  **Deletes a skill**, so Restore can bring it back. */
+	skillDelete: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_delete", { plane, level, name })),
+	/**  The deleted skills Restore can bring back, newest first. */
+	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
+	/**
+	 *  **Restores** the deleted skill `id` names: the core's record of it, as [`skills_deleted`]
+	 *  handed it out.
+	 */
+	skillRestore: (plane: PlaneId, id: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_restore", { plane, id })),
+	/**  **Sets where the project skill `name` reaches.** */
+	skillGrant: (plane: PlaneId, name: string, grant: SkillGrant) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_grant", { plane, name, grant })),
+	/**
+	 *  **Turns the project skill `name` off, or back on, in `workspace`.** A refused "on" names the
+	 *  grant that would reach the workspace.
+	 */
+	skillTurn: (plane: PlaneId, workspace: string, name: string, on: boolean) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_turn", { plane, workspace, name, on })),
 	/**
 	 *  What discarding the folder of dispatch `id`'s own branch would take with it (#1453): every
 	 *  uncommitted file, every ignored one, and how many commits its branch holds that exist
@@ -5012,6 +5058,19 @@ export type DeclaredHarness = {
 	 *  has; level 2 is purlis's own and never a project's.
 	 */
 	acp: boolean,
+};
+
+/**  A deleted skill Restore can bring back. */
+export type DeletedSkill = {
+	/**
+	 *  What Restore is handed back: the core's own record of it, whole, which the window holds
+	 *  and never reads.
+	 */
+	id: string,
+	name: string,
+	level: SkillLevel,
+	/**  Its level as a person reads it: `project`, `local workspace ops`. */
+	label: string,
 };
 
 /**  Why a grant the person accepted before waits for a yes again. */
@@ -8637,6 +8696,11 @@ export type PlaneUpdated = {
 	 *  `personas/steward/persona.md`, …
 	 */
 	files: string[],
+	/**
+	 *  Whether its skills changed since it started, in a way its harness does not take in by
+	 *  itself (#2770): its pane offers a restart on the same conversation.
+	 */
+	skills: boolean,
 };
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
@@ -10365,6 +10429,51 @@ export type SidebarWorkspace = {
 };
 
 /**
+ *  What a change had to say beyond being done: that it was left for the next save, or that a
+ *  place naming the skill was left as it was. Empty for a change that only did what was asked.
+ */
+export type SkillChanged = {
+	notes: string[],
+};
+
+/**  Where a project skill reaches, as the studio sets it. */
+export type SkillGrant = 
+/**  Chats at the project's root alone. */
+{ to: "root" } | 
+/**  Every workspace's chats too. */
+{ to: "all" } | 
+/**  The workspaces named. */
+{ to: "only"; workspaces: string[] };
+
+/**
+ *  A level of the project's, as the studio names one: the project's root (`workspace` null) or a
+ *  workspace's, shared or kept on this machine.
+ */
+export type SkillLevel = {
+	workspace: string | null,
+	local: boolean,
+};
+
+/**  One template, as the New skill form offers it. */
+export type SkillTemplate = {
+	id: SkillTemplateId,
+	label: string,
+	about: string,
+};
+
+/**  A template a new skill can start from. */
+export type SkillTemplateId = "blank" | "steps";
+
+/**  Who uses a skill, as Delete shows before it deletes. */
+export type SkillUsers = {
+	/**  Whether chats at the project's root get it. */
+	root: boolean,
+	workspaces: string[],
+	personas: string[],
+	skills: string[],
+};
+
+/**
  *  The skills a chat's persona names that it started without (SK-5, #2768), each as the
  *  persona's `skills:` list writes it: what its tab's Notice says.
  */
@@ -10566,7 +10675,16 @@ export type Studio = {
 	persona: string | null,
 	/**  Every workspace of the project, which it can be shown for. */
 	workspaces: string[],
+	/**  Every level a skill can be made at or moved to, with its words (#2770). */
+	levels: StudioLevel[],
 	skills: StudioSkill[],
+};
+
+/**  A level a skill can be moved to or made at, and its words. */
+export type StudioLevel = {
+	level: SkillLevel,
+	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
+	label: string,
 };
 
 /**
@@ -10613,6 +10731,19 @@ export type StudioSkill = {
 	 *  skill of another level.
 	 */
 	grant: string | null,
+	/**  The same, for the studio's grant control to start from (#2770). */
+	granted: SkillGrant | null,
+	/**
+	 *  Whether the workspace the studio shows turned this project skill off (#2770): its switch
+	 *  turns it back on. `false` at the project's root.
+	 */
+	turned_off: boolean,
+	/**
+	 *  Where the studio shows a workspace's chats and this project skill's grant does not reach
+	 *  it: why it cannot be turned on there, and the grant that would reach it (#2770), the
+	 *  core's own sentence. `None` otherwise.
+	 */
+	not_granted: string | null,
 	/**  Whether the chat the studio shows gets it. */
 	on: boolean,
 	/**  Why it is left out, in one line, where it is. */

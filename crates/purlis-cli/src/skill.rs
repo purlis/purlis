@@ -1,16 +1,19 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis skill list | show | grant | share | runs` (SK-2, #2765; SK-4, #2767; SK-3, #2766):
-//! the skills a chat in this project gets, and why each other one is left out, as the Skill
-//! studio shows them; where a project skill reaches and what a workspace turned off; Share; and
-//! every run of a skill with its signals. Behind the `skill-studio` flag until its finish line
-//! (#2786).
+//! `purlis skill list | show | new | edit | mv | rm | restore | grant | share | runs` (SK-2,
+//! #2765; SK-4, #2767; SK-3, #2766; SK-7, #2770): the skills a chat in this project gets, and why
+//! each other one is left out, as the Skill studio shows them; making, editing, renaming, moving,
+//! deleting and restoring a skill, each one commit; where a project skill reaches and what a
+//! workspace turned off; Share; and every run of a skill with its signals. The same verbs the
+//! studio calls (`purlis_core::skills::verbs`). Behind the `skill-studio` flag until its finish
+//! line (#2786).
 
 use std::path::Path;
 
-use clap::Subcommand;
-use purlis_core::skills::{Grant, StudioRow};
+use clap::{Args, Subcommand, ValueEnum};
+use purlis_core::skills::verbs::{self, By, Level};
+use purlis_core::skills::{Grant, StudioRow, Template};
 use serde_json::{Value, json};
 
 use purlis_core::counts::counted;
@@ -72,6 +75,65 @@ pub enum SkillCommand {
         #[arg(long, group = "switch", requires = "workspace")]
         on: bool,
     },
+    /// Make a skill from a template, at the project's root or, with `-w`, in a workspace; with
+    /// `--local`, kept on this machine. A project skill starts granted to the root alone.
+    New {
+        /// Its name: lowercase letters, digits and hyphens.
+        name: String,
+        /// What it does and when to use it, in one line.
+        #[arg(long, short = 'd')]
+        description: String,
+        /// What it starts from.
+        #[arg(long, value_enum, default_value = "blank")]
+        template: TemplateArg,
+        #[command(flatten)]
+        at: At,
+    },
+    /// Edit a skill's SKILL.md: in `$VISUAL` or `$EDITOR`, or take the whole new text from
+    /// `--from` (`-` for stdin). Saved only while it is still a whole skill that keeps its name.
+    Edit {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// The file that holds the whole new text, or `-` for stdin.
+        #[arg(long, value_name = "FILE")]
+        from: Option<std::path::PathBuf>,
+        #[command(flatten)]
+        at: At,
+    },
+    /// Rename a skill (`--name`), or move it to another level (`--to`), or both. A rename
+    /// changes every persona and skill that names it; a move into the project's skills says
+    /// where it reaches with `--grant`.
+    Mv {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// Its new name.
+        #[arg(long = "name", value_name = "NEW")]
+        new: Option<String>,
+        /// The level it moves to: `root` (the project's) or a workspace's name.
+        #[arg(long, value_name = "LEVEL")]
+        to: Option<String>,
+        /// Keep it on this machine at the level it moves to.
+        #[arg(long, requires = "to")]
+        to_local: bool,
+        /// Where it reaches once it is a project skill: `root`, `all`, or workspace names.
+        #[arg(long, num_args = 1.., requires = "to")]
+        grant: Vec<String>,
+        #[command(flatten)]
+        at: At,
+    },
+    /// Delete a skill, after saying who uses it. `purlis skill restore` brings it back.
+    Rm {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        #[command(flatten)]
+        at: At,
+    },
+    /// Restore a deleted skill to the level it was deleted from; with no name, list the deleted
+    /// skills that can be restored.
+    Restore {
+        /// The deleted skill's name.
+        name: Option<String>,
+    },
     /// Share a local skill: move it from `skills.local/` into `skills/` at its level, so the
     /// next save commits it and the team gets it. With `-w`, that workspace's local skill.
     Share {
@@ -96,6 +158,49 @@ pub enum SkillCommand {
     },
 }
 
+/// The level a skill is at: the project's root, or a workspace; shared, or local.
+#[derive(Args)]
+pub struct At {
+    /// The workspace whose skill it is (default: the project's).
+    #[arg(short = 'w', long = "workspace")]
+    workspace: Option<String>,
+    /// A local skill, kept on this machine.
+    #[arg(long)]
+    local: bool,
+}
+
+impl At {
+    fn level(&self) -> Level {
+        match &self.workspace {
+            None => Level::project(),
+            Some(ws) => Level::workspace(ws),
+        }
+        .local(self.local)
+    }
+}
+
+/// A new skill's template, as the command line names it.
+#[derive(Clone, Copy, ValueEnum)]
+pub enum TemplateArg {
+    Blank,
+    Steps,
+}
+
+impl From<TemplateArg> for Template {
+    fn from(arg: TemplateArg) -> Template {
+        match arg {
+            TemplateArg::Blank => Template::Blank,
+            TemplateArg::Steps => Template::Steps,
+        }
+    }
+}
+
+/// What a chat is told when it asks to change a skill: a chat's change becomes a draft the
+/// person accepts in the studio (spec #2762 decisions 26 and 38), never a write.
+const FROM_A_CHAT: &str = "A chat does not change skills itself: its change becomes a draft the \
+                           person accepts in the Skill studio. Nothing was written. Run it from \
+                           a terminal, or ask the person to.";
+
 /// What a person is told when the flag is off.
 const NOT_ON: &str = "The Skill studio is not turned on on this machine yet. Turn it on in \
                       Settings › You › Previews, or set PURLIS_SKILL_STUDIO=1 to try it here.";
@@ -106,6 +211,27 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         return Ok(1);
     }
     let built_in = purlis_core::skills::built_in_here();
+    let writes = !matches!(
+        command,
+        SkillCommand::List { .. }
+            | SkillCommand::Show { .. }
+            | SkillCommand::Restore { name: None }
+            | SkillCommand::Runs { .. }
+    );
+    if writes
+        && purlis_core::envvar::var(purlis_core::active::SESSION_ID_ENV)
+            .is_some_and(|id| !id.is_empty())
+    {
+        voice::err(FROM_A_CHAT);
+        return Ok(1);
+    }
+    let mut said = |line: purlis_core::repocmd::Say| crate::speak(line);
+    let mut cx = verbs::Ctx {
+        plane: root,
+        built_in: built_in.as_deref(),
+        by: By::Command,
+        say: &mut said,
+    };
     let rows_for = |workspace: Option<&str>, persona: Option<&str>| {
         let set = purlis_core::skills::in_the_studio(built_in.as_deref(), root, workspace, persona);
         let names = persona
@@ -159,26 +285,144 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
             Ok(0)
         }
+        SkillCommand::New {
+            name,
+            description,
+            template,
+            at,
+        } => done(verbs::create(
+            &mut cx,
+            &at.level(),
+            &name,
+            &description,
+            template.into(),
+        )),
+        SkillCommand::Edit { name, from, at } => {
+            let level = at.level();
+            let (_, was) = match verbs::text_of(root, &level, &name) {
+                Ok(read) => read,
+                Err(why) => {
+                    voice::err(&why);
+                    return Ok(1);
+                }
+            };
+            let now = match new_text(from.as_deref(), &was) {
+                Ok(now) => now,
+                Err(why) => {
+                    voice::err(&why);
+                    return Ok(1);
+                }
+            };
+            done(verbs::edit(&mut cx, &level, &name, &was, &now))
+        }
+        SkillCommand::Mv {
+            name,
+            new,
+            to,
+            to_local,
+            grant,
+            at,
+        } => {
+            if new.is_none() && to.is_none() {
+                voice::err(
+                    "Say what changes: --name <new> renames it, --to <root|workspace> moves it.",
+                );
+                return Ok(2);
+            }
+            let level = at.level();
+            let mut name = name;
+            if let Some(new) = new {
+                if let Err(why) = verbs::rename(&mut cx, &level, &name, &new) {
+                    voice::err(&why);
+                    return Ok(1);
+                }
+                name = new;
+            }
+            let Some(to) = to else {
+                return Ok(0);
+            };
+            let target = level_to(&to, to_local);
+            let grant = if grant.is_empty() {
+                None
+            } else {
+                match Grant::from_words(&grant) {
+                    Ok(grant) => Some(grant),
+                    Err(why) => {
+                        voice::err(&format!(
+                            "{why}: --grant takes root, all, or workspace names"
+                        ));
+                        return Ok(2);
+                    }
+                }
+            };
+            if verbs::needs_grant(&level, &target) && grant.is_none() {
+                voice::err(&format!(
+                    "{}. Add --grant root, --grant all, or --grant <workspace>…",
+                    verbs::GRANT_NEEDED
+                ));
+                return Ok(2);
+            }
+            done(verbs::move_to(
+                &mut cx,
+                &level,
+                &name,
+                &target,
+                grant.as_ref(),
+            ))
+        }
+        SkillCommand::Rm { name, at } => {
+            let level = at.level();
+            match verbs::users(root, &level, &name) {
+                Ok(users) => say_users(&users),
+                Err(why) => {
+                    voice::err(&why);
+                    return Ok(1);
+                }
+            }
+            done(verbs::delete(&mut cx, &level, &name))
+        }
+        SkillCommand::Restore { name: None } => {
+            let deleted = verbs::deleted(root);
+            if deleted.is_empty() {
+                println!("No deleted skill can be restored here.");
+            }
+            for one in deleted {
+                println!("{}  {}", one.name, one.level);
+            }
+            Ok(0)
+        }
+        SkillCommand::Restore { name: Some(name) } => {
+            let Some(one) = verbs::deleted(root)
+                .into_iter()
+                .find(|one| one.name == name)
+            else {
+                voice::err(&format!(
+                    "No deleted skill named {name:?} can be restored: `purlis skill restore` lists those that can."
+                ));
+                return Ok(2);
+            };
+            done(verbs::restore(&mut cx, &one))
+        }
         SkillCommand::Grant {
             name,
             workspace: Some(workspace),
             on,
             ..
-        } => match purlis_core::skills::switch(root, &workspace, &name, on) {
+        } => match verbs::switch(&mut cx, &workspace, &name, on) {
             Ok(changed) => {
-                let state = if on { "on" } else { "off" };
-                if changed {
-                    voice::ok(&format!(
-                        "{name} is {state} in {workspace}. purlis save commits it where \
-                         {workspace} is LIVE."
-                    ));
-                } else {
+                if !changed {
+                    let state = if on { "on" } else { "off" };
                     voice::ok(&format!("{name} was already {state} in {workspace}."));
                 }
                 Ok(0)
             }
             Err(why) => {
                 voice::err(&why);
+                if on && why.contains("would reach it") {
+                    voice::info(&format!(
+                        "To grant it: purlis skill grant {name} {workspace}"
+                    ));
+                }
                 Ok(1)
             }
         },
@@ -194,13 +438,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     return Ok(2);
                 }
             };
-            match purlis_core::skills::grant(root, &name, &grant) {
-                Ok(_) => {
-                    voice::ok(&format!(
-                        "{name} is granted to {grant}. purlis save commits it."
-                    ));
-                    Ok(0)
-                }
+            match verbs::grant(&mut cx, &name, &grant) {
+                Ok(_) => Ok(0),
                 Err(why) => {
                     voice::err(&why);
                     Ok(1)
@@ -208,14 +447,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
         }
         SkillCommand::Share { name, workspace } => {
-            match purlis_core::skills::share_here(root, workspace.as_deref(), &name) {
-                Ok(folder) => {
-                    voice::ok(&format!(
-                        "{name} is shared: it is in {} now, and purlis save commits it.",
-                        voice::rel(root, &folder)
-                    ));
-                    Ok(0)
-                }
+            match verbs::share(&mut cx, workspace.as_deref(), &name) {
+                Ok(_) => Ok(0),
                 Err(why) => {
                     voice::err(&why);
                     Ok(1)
@@ -306,6 +539,103 @@ fn seconds(ms: u64) -> String {
         0..1_000 => format!("{ms} ms"),
         1_000..60_000 => format!("{} s", ms / 1_000),
         _ => format!("{} min {} s", ms / 60_000, ms % 60_000 / 1_000),
+    }
+}
+
+/// What a verb's answer comes to: 0 where it was done, 1 with its refusal said.
+fn done<T>(answer: Result<T, String>) -> Result<Code, String> {
+    match answer {
+        Ok(_) => Ok(0),
+        Err(why) => {
+            voice::err(&why);
+            Ok(1)
+        }
+    }
+}
+
+/// The new text of an edit: `--from`'s file or stdin, or what the person leaves in a copy of
+/// `was` opened in `$VISUAL` or `$EDITOR`.
+fn new_text(from: Option<&Path>, was: &str) -> Result<String, String> {
+    match from {
+        Some(path) if path == Path::new("-") => {
+            let mut text = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)
+                .map_err(|why| format!("stdin could not be read ({why})"))?;
+            Ok(text)
+        }
+        Some(path) => std::fs::read_to_string(path)
+            .map_err(|why| format!("{} could not be read ({why})", path.display())),
+        None => {
+            let editor = ["VISUAL", "EDITOR"]
+                .iter()
+                .find_map(|key| std::env::var(key).ok().filter(|v| !v.trim().is_empty()))
+                .ok_or_else(|| {
+                    "neither $VISUAL nor $EDITOR is set: give the new text with --from <file>"
+                        .to_owned()
+                })?;
+            // A copy of its own, made new so nothing already there is written through.
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|at| at.as_nanos())
+                .unwrap_or_default();
+            let copy =
+                std::env::temp_dir().join(format!("SKILL.{}.{stamp}.md", std::process::id()));
+            let made = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&copy)
+                .and_then(|mut file| std::io::Write::write_all(&mut file, was.as_bytes()));
+            made.map_err(|why| format!("no copy could be made to edit ({why})"))?;
+            let mut words = editor.split_whitespace();
+            let program = words.next().unwrap_or_default();
+            let status = std::process::Command::new(program)
+                .args(words)
+                .arg(&copy)
+                .status();
+            let text = std::fs::read_to_string(&copy);
+            let _ = std::fs::remove_file(&copy);
+            let status = status.map_err(|why| format!("{program} could not be started ({why})"))?;
+            if !status.success() {
+                return Err(format!("{program} exited {status}, so nothing was saved"));
+            }
+            text.map_err(|why| format!("the edited copy could not be read ({why})"))
+        }
+    }
+}
+
+/// The level `--to` and `--to-local` name.
+fn level_to(to: &str, local: bool) -> Level {
+    if to == "root" {
+        Level::project()
+    } else {
+        Level::workspace(to)
+    }
+    .local(local)
+}
+
+/// Who uses a skill, as `rm` says it before it deletes.
+fn say_users(users: &verbs::Users) {
+    let mut reach = Vec::new();
+    if users.root {
+        reach.push("chats at the project's root".to_owned());
+    }
+    reach.extend(users.workspaces.iter().map(|ws| format!("chats in {ws}")));
+    if !reach.is_empty() {
+        voice::info(&format!("Used by {}", reach.join(", ")));
+    }
+    if !users.personas.is_empty() {
+        voice::info(&format!(
+            "Named by {}: {}",
+            purlis_core::counts::counted(users.personas.len(), "persona", "personas"),
+            users.personas.join(", ")
+        ));
+    }
+    if !users.skills.is_empty() {
+        voice::info(&format!(
+            "Named by {}: {}",
+            purlis_core::counts::counted(users.skills.len(), "skill", "skills"),
+            users.skills.join(", ")
+        ));
     }
 }
 

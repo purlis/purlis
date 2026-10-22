@@ -1070,6 +1070,21 @@ pub(super) fn mix(top: &str, under: &str, opacity: f64) -> String {
     format!("#{mixed}")
 }
 
+/// Whether `hex` is drawn opaque: no alpha, or an alpha of `ff`.
+pub(super) fn is_opaque(hex: &str) -> bool {
+    let digits = long(hex);
+    digits.len() == 6
+        || digits
+            .get(6..8)
+            .is_some_and(|alpha| alpha.eq_ignore_ascii_case("ff"))
+}
+
+/// `hex` without its alpha: its colour drawn opaque.
+pub(super) fn solid(hex: &str) -> String {
+    let digits = long(hex);
+    format!("#{}", digits.get(..6).unwrap_or(&digits))
+}
+
 /// `wash` laid over the opaque `under`, as the screen draws it. An opaque `wash` is itself.
 pub(super) fn onto(wash: &str, under: &str) -> String {
     let top = long(wash);

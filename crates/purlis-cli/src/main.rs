@@ -64,7 +64,7 @@ mod whereworking;
 /// read them back; this is the one place they become the coloured line `charter/util.py`
 /// prints. `eprintln!("{line}")` would print the mark uncoloured, which is right in a pipe
 /// and wrong in a terminal.
-fn speak(line: purlis_core::repocmd::Say) {
+pub(crate) fn speak(line: purlis_core::repocmd::Say) {
     use purlis_core::repocmd::Say;
     match line {
         Say::Info(text) => voice::info(&text),
@@ -1055,7 +1055,11 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             WorkspaceCommand::List | WorkspaceCommand::Current | WorkspaceCommand::Recall { .. },
         )
         | Command::Persona(memory::PersonaCommand::List)
-        | Command::Skill(skill::SkillCommand::List { .. } | skill::SkillCommand::Show { .. })
+        | Command::Skill(
+            skill::SkillCommand::List { .. }
+            | skill::SkillCommand::Show { .. }
+            | skill::SkillCommand::Restore { name: None },
+        )
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
         | Command::Harness(HarnessCommand::List | HarnessCommand::Show { .. })
