@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792689368507,
+  "lastUpdate": 1792691652679,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21840,6 +21840,48 @@ window.BENCHMARK_DATA = {
             "value": 101.64659650000002,
             "unit": "ms",
             "extra": "median of 5 runs: 100.657, 100.671, 101.647, 101.695, 102.010 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "96052fd48dbb3dd2beec850d9abc95dde744e103",
+          "message": "Browsers: a key reads the page's tree at most once while another frame reloads (#2992)\n\n* Browsers: a key reads the page's tree at most once while another frame reloads (#2974)\n\nWhere a key lands and which field it blanks are found in one read of the\npage, and the field is blanked in a build of that read. The field the last\nkey went to stays known while its own frame has not moved on, so a key into\nit reads the tree not at all, however often another frame reloads.\n\nCloses #2974\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a key goes on into the field its landing was judged by (#2974)\n\nThe landing check hands on the still-focused field it judged, so the key does\nnot ask again. And a changelog fragment.\n\nRefs #2974\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T21:52:44+04:00",
+          "tree_id": "8879cf530392672f4394668e54cc23792501fc22",
+          "url": "https://github.com/purlis/purlis/commit/96052fd48dbb3dd2beec850d9abc95dde744e103"
+        },
+        "date": 1792691649341,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5324355000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.518, 0.532, 0.539, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7991485,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.493, 16.756, 16.799, 16.965, 17.283 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.946035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.322, 103.467, 103.946, 104.030, 104.231 ms"
           }
         ]
       }
