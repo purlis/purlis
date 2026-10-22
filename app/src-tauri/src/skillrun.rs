@@ -90,7 +90,7 @@ impl SkillRuns {
         let told = {
             let mut runs = self.runs();
             let reported = runs.report(&key, report, now_ms(), || None);
-            if reported.closed.is_empty() && reported.opened.is_none() {
+            if reported.closed.is_empty() && reported.opened.is_empty() {
                 return;
             }
             open_of(&runs, &key)
@@ -101,7 +101,7 @@ impl SkillRuns {
     /// **Use skill… typed `typed` into chat `chat`**, unsent (SK-12): its run opens, and the chip
     /// shows it, as the chat's next prompt does.
     pub fn typed(&self, chat: u32, typed: purlis_core::skillspan::Typed) {
-        self.runs().typed(&chat.to_string(), typed);
+        self.runs().typed(&chat.to_string(), typed, now_ms());
     }
 
     /// Chat `chat` is closed: a run open in it goes with it, and the window is told.

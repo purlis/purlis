@@ -230,7 +230,7 @@ export function PaneFrame({
                 state in it is read whole before anything else (`pane-crumbs.e2e.ts`); nor in a
                 narrow pane, for the same line. The palette and the tab's menu still have Use
                 skill… there. */}
-            {!crumbs && roomy && <SkillsChip plane={plane} session={session} />}
+            {!crumbs && roomy && <SkillsChip session={session} />}
             {harness && <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />}
             {from && <span className="pane-from">{from}</span>}
             {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}

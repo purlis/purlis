@@ -39,6 +39,7 @@ import type {
   MemoryScope,
   PanelBlock,
   RowAction,
+  SkillBudget,
   SubjectCurations,
 } from "./bindings";
 import { activityTitle, activityView } from "./activity";
@@ -54,6 +55,7 @@ import {
   skillStudioTitle,
   skillStudioView,
 } from "./skillStudio";
+import { budgetSaid, budgetShort } from "./UseSkill";
 import { backSaid } from "./chatState";
 import { handedOff, tasksOf, type ListedChat } from "./chatsTree";
 import { MAIN } from "./here";
@@ -706,6 +708,9 @@ export type Now = {
   vaults?: readonly string[];
   /** Whether the Skill studio's flag is on (#2765): its row is offered only then. */
   skillStudio?: boolean;
+  /** Each open chat's skill budget, by session, where it is known (#2775): what its Use skill…
+   *  row says, so a chat's budget is on its tab's menu wherever its pane leaves the chip out. */
+  skillBudgets?: Readonly<Record<number, SkillBudget>>;
   /**
    * The focused workspace's open todos, by slug and title (`Panels.todos`), one close and one
    * forget row each. Only the focused workspace's: the Todos panel is the one surface that
@@ -1904,9 +1909,17 @@ export function catalogue(now: Now): Offer[] {
       // A shell runs no tool with skills, as it has no profile to ask a persona on.
       if (chat === undefined || !(now.askable?.(chat) ?? false)) continue;
       const name = now.tabs.byId[tab].name;
+      const budget = now.skillBudgets?.[chat];
       offers.push({
-        ...can(usingSkillId(tab), "Use skill…", { verb: "useSkill", tab }),
-        note: `Chat ${name}: one of its skills, typed into it for you to send.`,
+        ...can(
+          usingSkillId(tab),
+          budget === undefined ? "Use skill…" : `Use skill… (${budgetShort(budget)})`,
+          { verb: "useSkill", tab },
+        ),
+        note:
+          budget === undefined
+            ? `Chat ${name}: one of its skills, typed into it for you to send.`
+            : `Chat ${name}: one of its skills, typed into it for you to send. ${budgetSaid(budget)}.`,
         ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
       });
     }

@@ -1487,9 +1487,9 @@ button.show-more:focus-visible {
 }
 
 /* **Use skill…** (`UseSkill.tsx`, #2775): the chat's skills to pick from, then the boxes of the
-   one picked. It fits the window and its list scrolls inside it; each row says the skill's
+   one picked, centred as every such dialog is. It fits the window and its list scrolls inside it; each row says the skill's
    name, its level, whether it is manual-only, and what it does. */
-.ui-dialog.use-skill {
+.warning.use-skill {
   width: min(34rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
 }

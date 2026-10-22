@@ -34,38 +34,53 @@ pub struct ChatSkill {
     pub label: String,
     /// What it does and when to use it.
     pub description: String,
-    /// Whether it is manual-only: run only when asked for by name, and free in the budget.
+    /// Whether it is manual-only: run only when asked for by name.
     pub manual: bool,
+    /// Whether it asks for anything before it is typed: the dialog's boxes, or none.
+    pub takes_arguments: bool,
     /// The arguments it takes, by name, in order: one box each in the dialog.
     pub arguments: Vec<String>,
     /// What to pass it, in one line, where it says: the one box of a skill that names none.
     pub hint: Option<String>,
 }
 
-/// Which part of a chat's skill budget its set is over.
+/// Which part of a chat's skill budget its set warns of: at four fifths of it or past it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
-pub enum BudgetOver {
+pub enum BudgetWarns {
     Skills,
     Chars,
     Both,
 }
 
+impl From<purlis_core::skills::Over> for BudgetWarns {
+    fn from(over: purlis_core::skills::Over) -> BudgetWarns {
+        match over {
+            purlis_core::skills::Over::Skills => BudgetWarns::Skills,
+            purlis_core::skills::Over::Chars => BudgetWarns::Chars,
+            purlis_core::skills::Over::Both => BudgetWarns::Both,
+        }
+    }
+}
+
 /// A chat's skill budget on its harness, and what its set spends of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillBudget {
-    /// Skills its listing holds: every one but the manual-only ones.
+    /// Skills its listing holds.
     pub skills: u32,
-    /// Characters of their descriptions.
+    /// Characters of what it lists of them.
     pub chars: u32,
-    /// Manual-only skills, which cost nothing.
+    /// Manual-only skills in the set.
     pub manual: u32,
+    /// Whether they cost nothing: the chat leaves them out of its listing. Where it does not
+    /// yet, they are counted in `skills` and `chars` (#2771).
+    pub manual_free: bool,
     /// The most skills the budget lists.
     pub most_skills: u32,
-    /// The most description characters it holds.
+    /// The most characters it holds.
     pub most_chars: u32,
-    /// What the chat warns of: the part it is over, or null within it.
-    pub over: Option<BudgetOver>,
+    /// What the chat warns of, or null below four fifths of both.
+    pub warns: Option<BudgetWarns>,
 }
 
 /// What Use skill… offers a chat, and its budget.
@@ -73,20 +88,37 @@ pub struct SkillBudget {
 pub struct ChatSkills {
     /// Whether the Skill studio is on: nothing is offered while it is off.
     pub on: bool,
-    /// The chat's harness, as a person calls it, or null for a chat on none purlis knows: such a
-    /// chat is offered nothing.
-    pub harness: Option<String>,
+    /// Whether the chat runs a tool purlis knows the skills of: one that does not is offered
+    /// nothing.
+    pub known: bool,
     /// Every skill of its set, by name.
     pub skills: Vec<ChatSkill>,
-    /// Its budget, where it has a harness.
+    /// Its budget, where it is known.
     pub budget: Option<SkillBudget>,
 }
 
-/// What the clipboard is said to hold where the skill could not be typed.
+impl ChatSkills {
+    /// Nothing offered: the studio is off (`on` false), or the chat runs no tool purlis knows.
+    fn none(on: bool) -> ChatSkills {
+        ChatSkills {
+            on,
+            known: false,
+            skills: Vec::new(),
+            budget: None,
+        }
+    }
+}
+
+/// What the clipboard is said to hold where the skill could not be typed, and the rule it is
+/// typed by: at the chat's prompt, on every harness ([`purlis_core::reference::at_its_prompt`]).
 const COPIED: crate::references::Copied = crate::references::Copied {
     on: "the skill is",
     it: "it is",
+    may: |_, now| purlis_core::reference::at_its_prompt(now),
 };
+
+/// Why a skill is typed into no chat that runs no tool purlis knows: the words Use skill… says.
+const NO_TOOL: &str = "This chat runs no tool purlis knows, so it has no skills to use here.";
 
 /// A count the window draws: a `u32`, as large as it gets.
 fn small(n: usize) -> u32 {
@@ -94,46 +126,32 @@ fn small(n: usize) -> u32 {
 }
 
 /// The skills of chat `session` of `held`, as the core works them out, or `None` for a chat that
-/// is not open or runs no harness purlis knows.
-fn of_the_chat(
-    held: &Held,
-    session: u32,
-) -> Option<(
-    purlis_core::harness::Harness,
-    purlis_core::skills::ChatSkills,
-)> {
+/// is not open or runs no tool purlis knows the skills of. One read of the chat.
+fn of_the_chat(held: &Held, session: u32) -> Option<purlis_core::skills::ChatSkills> {
     let chat = held.chats().skills_of(session)?;
-    let harness = chat.harness?;
     let built_in =
         crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
-    let skills = purlis_core::skills::of_a_chat(&purlis_core::skills::Running {
-        plane: held.root(),
-        workspace: chat.workspace.as_deref(),
-        persona: chat.persona.as_deref(),
-        harness,
-        built_in: built_in.as_deref(),
-        plane_skills: true,
-    });
-    Some((harness, skills))
+    Some(purlis_core::skills::for_use_skill(
+        &purlis_core::skills::Running {
+            plane: held.root(),
+            workspace: chat.workspace.as_deref(),
+            persona: chat.persona.as_deref(),
+            harness: chat.harness?,
+            built_in: built_in.as_deref(),
+            plane_skills: true,
+        },
+    ))
 }
 
-/// `skills`, for the window.
-pub(crate) fn shown(
-    harness: Option<purlis_core::harness::Harness>,
-    skills: Option<&purlis_core::skills::ChatSkills>,
-) -> ChatSkills {
+/// `skills`, for the window: none for a chat that runs no tool purlis knows.
+pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSkills {
     let Some(skills) = skills else {
-        return ChatSkills {
-            on: true,
-            harness: harness.map(|harness| harness.title().to_owned()),
-            skills: Vec::new(),
-            budget: None,
-        };
+        return ChatSkills::none(true);
     };
     let spent = skills.spent;
     ChatSkills {
         on: true,
-        harness: harness.map(|harness| harness.title().to_owned()),
+        known: true,
         skills: skills
             .offered
             .iter()
@@ -143,6 +161,7 @@ pub(crate) fn shown(
                 label: purlis_core::skills::level_shown(one.effective.origin, one.effective.local),
                 description: one.effective.skill.description.clone(),
                 manual: one.declared.manual,
+                takes_arguments: one.takes_arguments,
                 arguments: one.declared.arguments.clone(),
                 hint: one.declared.hint.clone(),
             })
@@ -151,13 +170,10 @@ pub(crate) fn shown(
             skills: small(spent.skills),
             chars: small(spent.chars),
             manual: small(spent.manual),
+            manual_free: spent.budget.manual_free,
             most_skills: small(spent.budget.skills),
             most_chars: small(spent.budget.chars),
-            over: spent.over().map(|over| match over {
-                purlis_core::skills::Over::Skills => BudgetOver::Skills,
-                purlis_core::skills::Over::Chars => BudgetOver::Chars,
-                purlis_core::skills::Over::Both => BudgetOver::Both,
-            }),
+            warns: spent.warns().map(BudgetWarns::from),
         }),
     }
 }
@@ -174,19 +190,9 @@ pub(crate) async fn chat_skills(
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the chat's skills", move || {
         if !purlis_core::skills::studio_on_here() {
-            return Ok(ChatSkills {
-                on: false,
-                harness: None,
-                skills: Vec::new(),
-                budget: None,
-            });
+            return Ok(ChatSkills::none(false));
         }
-        let harness = held
-            .chats()
-            .skills_of(session)
-            .and_then(|chat| chat.harness);
-        let skills = of_the_chat(&held, session).map(|(_, skills)| skills);
-        Ok(shown(harness, skills.as_ref()))
+        Ok(shown(of_the_chat(&held, session).as_ref()))
     })
     .await
 }
@@ -194,7 +200,7 @@ pub(crate) async fn chat_skills(
 /// **Types skill `skill` of chat `session`'s set into it, in its harness's syntax, with `values`
 /// for the arguments it declares in their order, and never sends it** — or copies it, with the
 /// reason, where it cannot be typed now. A skill that was typed has its run start, by Use
-/// skill…, as the chat's next prompt does.
+/// skill…, once a prompt shows it was sent.
 // On the window's thread, as every command that types into a chat is (`INPUT_ORDER`): what is
 // typed lands in the order it was sent, and the chat's session is reached as a reference's is.
 // The set is read from the skill folders here, as a reference reads its branch. Refused, in the
@@ -214,14 +220,13 @@ pub(crate) fn use_skill(
     if !purlis_core::skills::studio_on_here() {
         return Err("The Skill studio is not turned on on this machine.".to_owned());
     }
-    let (harness, skills) = of_the_chat(&held, session)
-        .ok_or_else(|| "purlis types a skill only into a chat on a harness it knows".to_owned())?;
-    let typing = skills.typed(harness, &skill, &values)?;
+    let skills = of_the_chat(&held, session).ok_or_else(|| NO_TOOL.to_owned())?;
+    let typing = skills.typed(&skill, &values)?;
     typed_and_held(&held, session, typing, &|text| clipboard.put_text(text))
 }
 
 /// `typing` typed into chat `session` of `held` unsent, or copied with the reason, with `copy`
-/// as the clipboard; a skill that was typed has its run held for the chat's next prompt.
+/// as the clipboard; a skill that was typed has its run held for the prompt it is sent in.
 pub(crate) fn typed_and_held(
     held: &std::sync::Arc<Held>,
     session: u32,
@@ -230,12 +235,7 @@ pub(crate) fn typed_and_held(
 ) -> Result<Handed, String> {
     let handed = crate::references::typed_or_copied(held, session, typing.text, COPIED, copy)?;
     if matches!(handed, Handed::Typed { .. }) {
-        held.hooks().skill_typed(
-            held.root(),
-            session,
-            &typing.known_as,
-            &purlis_core::reopen::mint(),
-        );
+        held.hooks().skill_typed(held.root(), session, typing.held);
     }
     Ok(handed)
 }

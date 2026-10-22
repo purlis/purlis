@@ -3,7 +3,7 @@
 
 use super::*;
 use purlis_core::harness::Harness;
-use purlis_core::skills::{Running, of_a_chat};
+use purlis_core::skills::{Running, for_use_skill};
 
 fn skill(dir: &std::path::Path, folder: &str, text: &str) {
     std::fs::create_dir_all(dir.join(folder)).unwrap();
@@ -31,23 +31,25 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
         "---\nname: release\ndescription: Releases.\nargument-hint: <version>\n\
          disable-model-invocation: true\n---\n",
     );
-    let skills = of_a_chat(&Running {
+    let skills = for_use_skill(&Running {
         plane: &root,
         workspace: None,
         persona: None,
-        harness: Harness::Codex,
+        harness: Harness::ClaudeCode,
         built_in: Some(&built_in),
         plane_skills: true,
     });
 
-    let shown = shown(Some(Harness::Codex), Some(&skills));
+    let shown = shown(Some(&skills));
 
     assert!(shown.on);
-    assert_eq!(shown.harness.as_deref(), Some("Codex"));
+    assert!(shown.known);
     let names: Vec<&str> = shown.skills.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names, ["handoff", "release", "review"]);
     let release = &shown.skills[1];
     assert!(release.manual);
+    assert!(release.takes_arguments, "it says what to pass");
+    assert!(!shown.skills[0].takes_arguments);
     assert_eq!(release.hint.as_deref(), Some("<version>"));
     assert_eq!(release.level, Level::Project);
     assert_eq!(release.label, "project");
@@ -60,16 +62,17 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
             manual: 1,
             most_skills: 30,
             most_chars: 6_000,
-            over: None,
+            manual_free: true,
+            warns: None,
         })
     );
 }
 
 #[test]
-fn a_chat_on_no_harness_purlis_knows_is_offered_nothing_and_has_no_budget() {
-    let shown = shown(None, None);
+fn a_chat_on_no_tool_purlis_knows_is_offered_nothing_and_has_no_budget() {
+    let shown = shown(None);
     assert!(shown.on);
-    assert_eq!(shown.harness, None);
+    assert!(!shown.known);
     assert!(shown.skills.is_empty());
     assert_eq!(shown.budget, None);
 }

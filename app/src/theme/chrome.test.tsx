@@ -583,7 +583,7 @@ const DIALOGS: Opened[] = [
           chat="claude 4"
           skills={{
             on: true,
-            harness: "Claude Code",
+            known: true,
             skills: [
               {
                 name: "review",
@@ -591,6 +591,7 @@ const DIALOGS: Opened[] = [
                 label: "project",
                 description: "Reviews a pull request.",
                 manual: false,
+                takes_arguments: true,
                 arguments: ["pr"],
                 hint: null,
               },
@@ -600,6 +601,7 @@ const DIALOGS: Opened[] = [
                 label: "workspace",
                 description: "Cuts a release.",
                 manual: true,
+                takes_arguments: false,
                 arguments: [],
                 hint: null,
               },
@@ -610,7 +612,8 @@ const DIALOGS: Opened[] = [
               manual: 1,
               most_skills: 30,
               most_chars: 6000,
-              over: "both",
+              manual_free: false,
+              warns: "both",
             },
           }}
           trouble="the chat is in the middle of a turn"

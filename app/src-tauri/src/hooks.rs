@@ -2340,18 +2340,13 @@ impl Hooks {
             .map_err(|why| why.to_string())
     }
 
-    /// **Use skill… typed `skill` into chat `number`**, unsent (SK-12): the run `run` opens as the
-    /// chat's next prompt does, in the event log and on the chat's tab alike, started by Use
-    /// skill…. Best effort: a log that is not open, or refused the line, starts no run there and
-    /// the chip still shows it, as a run is only ever a record of what the chat did.
-    pub fn skill_typed(&self, root: &Path, number: u32, skill: &str, run: &str) {
-        self.skill_runs.typed(
-            number,
-            purlis_core::skillspan::Typed {
-                skill: skill.to_owned(),
-                run: run.to_owned(),
-            },
-        );
+    /// **Use skill… typed a skill into chat `number`**, unsent (SK-12): `typed` is held for its
+    /// run, which opens once a prompt shows it was sent, in the event log and on the chat's tab
+    /// alike, started by Use skill…. Best effort: a log that is not open, or refused the line,
+    /// starts no run there and the chip still shows it, as a run is only ever a record of what
+    /// the chat did.
+    pub fn skill_typed(&self, root: &Path, number: u32, typed: purlis_core::skillspan::Typed) {
+        self.skill_runs.typed(number, typed.clone());
         let events = self
             .events
             .lock()
@@ -2361,8 +2356,7 @@ impl Hooks {
             && let Err(why) = events.record(Entry::SkillTyped {
                 plane: root.to_path_buf(),
                 number,
-                skill: skill.to_owned(),
-                run: run.to_owned(),
+                typed,
             })
         {
             tracing::warn!(

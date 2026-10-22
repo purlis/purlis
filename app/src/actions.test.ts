@@ -4307,6 +4307,25 @@ describe("Use skill… on a chat's tab (#2775)", () => {
     expect(menuOn({ on: "chat", tab: first }).above).toContain(usingSkillId(first));
   });
 
+  it("says the chat's budget on its row wherever it is known, near it or not", () => {
+    const budget = {
+      skills: 25,
+      chars: 1200,
+      manual: 0,
+      manual_free: true,
+      most_skills: 30,
+      most_chars: 6000,
+      warns: "skills" as const,
+    };
+    const offers = catalogue(
+      now({ tabs, askable: notAShell, skillStudio: true, skillBudgets: { 7: budget } }),
+    );
+    expect(by(offers, usingSkillId(chat))).toMatchObject({
+      title: "Use skill… (25 of 30 skills, near the budget)",
+      note: "Chat steward 3: one of its skills, typed into it for you to send. 25 skills of 30 · 1,200 of 6,000 characters.",
+    });
+  });
+
   it("opens the picker through the window's hands, and types nothing by itself", async () => {
     const hands = doing();
     const offers = catalogue(now({ tabs, askable: notAShell, skillStudio: true }));

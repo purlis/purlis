@@ -114,7 +114,14 @@ import {
   type ChatsForReferences,
   type Referenced,
 } from "./references";
-import { UseSkill, UseSkillOpener, type OpenUseSkill } from "./UseSkill";
+import {
+  SkillBudgetsHere,
+  UseSkill,
+  UseSkillOpener,
+  useChatSkillBudgets,
+  type OpenUseSkill,
+  type SkillBudgets,
+} from "./UseSkill";
 import { Explorer, type Spot } from "./Explorer";
 import {
   pieceFileTitle,
@@ -968,6 +975,13 @@ export const PlaneView = memo(function PlaneView({
   const vaultNames = useMemo(() => vaults.vaults?.map((one) => one.name), [vaults.vaults]);
   // Whether the Skill studio's flag is on (#2765): its palette row is offered only then.
   const studioOn = useSkillStudioOn();
+  /** Every chat open here, by session, in strip order: whose skill budgets the window holds. */
+  const chatSessions = useMemo(
+    () => [...new Set(tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)))],
+    [tabs],
+  );
+  /** Each open chat's skill budget (#2775): the chip on its pane and its tab's menu row. */
+  const [skillBudgets, setSkillBudget] = useChatSkillBudgets(plane, chatSessions, studioOn);
   const reloadVaults = vaults.reload;
   /** Whether the vault picker is up. */
   const [pickingVault, setPickingVault] = useState(false);
@@ -6064,17 +6078,18 @@ export const PlaneView = memo(function PlaneView({
       void commands
         .chatSkills(plane, session)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
-        .then((said) =>
+        .then((said) => {
+          if (said.status === "ok") setSkillBudget(session, said.data.budget);
           setUsingSkill((was) =>
             was?.session !== session
               ? was
               : said.status === "ok"
                 ? { ...was, skills: said.data }
                 : { ...was, trouble: said.error },
-          ),
-        );
+          );
+        });
     },
-    [plane],
+    [plane, setSkillBudget],
   );
   /** Use skill…, from a chat tab's menu or the palette. */
   const useSkill = useCallback(
@@ -7125,6 +7140,7 @@ export const PlaneView = memo(function PlaneView({
             sidePanels,
             profiles: profileNames,
             skillStudio: studioOn,
+            skillBudgets,
             readOnly: readOnlySaid,
             places,
           }),
@@ -7182,6 +7198,7 @@ export const PlaneView = memo(function PlaneView({
       memoryStores,
       profileNames,
       studioOn,
+      skillBudgets,
     ],
   );
 
@@ -8543,6 +8560,7 @@ export const PlaneView = memo(function PlaneView({
       personas={personaMarks}
       askPersona={openAskPersona}
       useSkill={openUseSkill}
+      skillBudgets={skillBudgets}
       brief={openBrief}
       answer={openAnswer}
     >
@@ -9612,6 +9630,7 @@ function Lent({
   personas,
   askPersona,
   useSkill,
+  skillBudgets,
   brief,
   answer,
   children,
@@ -9637,6 +9656,8 @@ function Lent({
   askPersona: OpenAskPersona;
   /** Opens Use skill… for a chat (`useOpenUseSkill`, #2775). */
   useSkill: OpenUseSkill;
+  /** Each open chat's skill budget, for the chip on its pane (#2775). */
+  skillBudgets: SkillBudgets;
   /** Opens the Brief panel for a task (`useOpenBrief`, #1494). */
   brief: OpenBrief;
   /** Opens the Answer dialog for a task's question (`useOpenAnswer`, #1551). */
@@ -9656,9 +9677,11 @@ function Lent({
                       <ReloadPersonaMarks.Provider value={personas.reload}>
                         <AskPersonaOpener value={askPersona}>
                           <UseSkillOpener value={useSkill}>
-                            <BriefOpener value={brief}>
-                              <AnswerOpener value={answer}>{children}</AnswerOpener>
-                            </BriefOpener>
+                            <SkillBudgetsHere.Provider value={skillBudgets}>
+                              <BriefOpener value={brief}>
+                                <AnswerOpener value={answer}>{children}</AnswerOpener>
+                              </BriefOpener>
+                            </SkillBudgetsHere.Provider>
                           </UseSkillOpener>
                         </AskPersonaOpener>
                       </ReloadPersonaMarks.Provider>

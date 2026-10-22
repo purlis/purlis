@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext, memo, useContext, useEffect, useRef, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Sparkles, TriangleAlert } from "lucide-react";
 import * as Dialog from "./overlays/dialog";
 import { useFocusBack } from "./EndingChat";
@@ -17,37 +17,45 @@ import {
   type SkillBudget,
 } from "./bindings";
 
-/** The budget in a line: `12 skills · 3,400 of 6,000 characters`. */
+/** The budget in a line: `12 skills of 30 · 3,400 of 6,000 characters`, and the manual-only
+ *  skills: free where the chat leaves them out, and counted, still listed, where it does not
+ *  yet (#2771). */
 export function budgetSaid(budget: SkillBudget): string {
   const chars = `${budget.chars.toLocaleString("en-US")} of ${budget.most_chars.toLocaleString("en-US")} characters`;
   const skills = `${counted(budget.skills, "skill", "skills")} of ${budget.most_skills}`;
-  const manual =
+  const manual = counted(budget.manual, "manual-only skill", "manual-only skills");
+  const free =
     budget.manual === 0
       ? ""
-      : ` · ${counted(budget.manual, "manual-only skill", "manual-only skills")} free`;
-  return `${skills} · ${chars}${manual}`;
+      : budget.manual_free
+        ? ` · ${manual} free`
+        : ` · ${manual} still listed on this chat (#2771)`;
+  return `${skills} · ${chars}${free}`;
+}
+
+/** The budget in a few words, for a chat tab's menu row: `12 of 30 skills`, and that it is near
+ *  or past the budget where it warns. */
+export function budgetShort(budget: SkillBudget): string {
+  const short = `${budget.skills} of ${budget.most_skills} skills`;
+  return budget.warns === null ? short : `${short}, near the budget`;
 }
 
 /**
- * What the chat warns of where its set is past the budget, or nothing within it: which part is
- * over, and what that means for the chat.
+ * What the chat warns of where its set is at four fifths of the budget or past it, or nothing
+ * below: which part, and what can be done.
  */
-export function overSaid(budget: SkillBudget): string | undefined {
+export function warnsSaid(budget: SkillBudget): string | undefined {
   const what =
-    budget.over === "both"
-      ? "too many skills and too much description"
-      : budget.over === "skills"
-        ? "too many skills"
-        : budget.over === "chars"
-          ? "too much description"
+    budget.warns === "both"
+      ? "skills and their descriptions are"
+      : budget.warns === "skills"
+        ? "skills are"
+        : budget.warns === "chars"
+          ? "skills' descriptions are"
           : undefined;
   if (what === undefined) return undefined;
-  return `This chat lists ${what} for purlis's skill budget, so some may be cut from what it reads. Make some skills manual-only, or turn some off for this workspace.`;
+  return `This chat's ${what} near or past purlis's skill budget, past which some are hidden from what it reads. Make some skills manual-only, or turn some off for this workspace.`;
 }
-
-/** Whether a skill asks for anything before it is typed. */
-export const takesArguments = (skill: ChatSkill) =>
-  skill.arguments.length > 0 || skill.hint !== null;
 
 /** The skills whose name or description holds every word of `query`, in their order. */
 export function skillsMatching(skills: readonly ChatSkill[], query: string): ChatSkill[] {
@@ -70,7 +78,8 @@ export function skillsMatching(skills: readonly ChatSkill[], query: string): Cha
  * why (the core's sentence).
  *
  * A manual-only skill is listed with the others and marked: it runs only when it is asked for by
- * name, which is what this does, and it costs nothing in the budget.
+ * name, which is what this does. It costs nothing in the budget where the chat leaves it out of
+ * its listing, and is counted where it does not yet (#2771).
  */
 export function UseSkill({
   chat,
@@ -100,7 +109,7 @@ export function UseSkill({
   const listed = skills?.skills ?? [];
   const shown = skillsMatching(listed, query);
   const budget = skills?.budget ?? null;
-  const warning = budget === null ? undefined : overSaid(budget);
+  const warning = budget === null ? undefined : warnsSaid(budget);
 
   // The first box of whatever is on screen takes the keys: the filter, or the first argument.
   useEffect(() => {
@@ -109,7 +118,7 @@ export function UseSkill({
 
   const pick = (skill: ChatSkill) => {
     if (busy) return;
-    if (!takesArguments(skill)) {
+    if (!skill.takes_arguments) {
       onUse(skill.name, []);
       return;
     }
@@ -128,7 +137,7 @@ export function UseSkill({
         <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
           ref={content}
-          className="ui-dialog use-skill"
+          className="ui-dialog warning use-skill"
           data-testid="use-skill"
           aria-describedby={undefined}
           onInteractOutside={(e) => e.preventDefault()}
@@ -171,7 +180,7 @@ export function UseSkill({
                 <p className="honest">Reading this chat&apos;s skills…</p>
               ) : listed.length === 0 ? (
                 <p className="honest" data-testid="use-skill-none">
-                  {skills.harness === null
+                  {!skills.known
                     ? "This chat runs no tool purlis knows, so it has no skills to use here."
                     : "This chat has no skills. Open Skill studio from the palette to see why any skill is left out."}
                 </p>
@@ -268,37 +277,73 @@ export function useOpenUseSkill(): OpenUseSkill {
   return useContext(Opener);
 }
 
+/** Each open chat's skill budget, by session: read once a chat is open, and again as Use skill…
+ *  reads its skills. A session that is not here has none known yet. */
+export type SkillBudgets = Readonly<Record<number, SkillBudget>>;
+
+/** The budgets of a project's chats, for the chip on each pane (`SkillsChip`). */
+export const SkillBudgetsHere = createContext<SkillBudgets>({});
+
+/** How many skills a chat's set holds, whatever its listing leaves out. */
+export const skillsInTheSet = (budget: SkillBudget) =>
+  budget.skills + (budget.manual_free ? budget.manual : 0);
+
+/**
+ * **The skill budgets of chats `sessions` of `plane`** (#2775), read once each while the Skill
+ * studio is on, and how to set one read elsewhere (Use skill… reads a chat's skills as it opens).
+ * The one place a window holds them: the chip on each pane and each chat tab's menu row draw it.
+ */
+export function useChatSkillBudgets(
+  plane: PlaneId,
+  sessions: readonly number[],
+  on: boolean,
+): [SkillBudgets, (session: number, budget: SkillBudget | null) => void] {
+  const [budgets, setBudgets] = useState<SkillBudgets>({});
+  const asked = useRef(new Set<number>());
+  const set = useCallback((session: number, budget: SkillBudget | null) => {
+    setBudgets((was) => {
+      if (budget !== null) return { ...was, [session]: budget };
+      if (!(session in was)) return was;
+      return Object.fromEntries(
+        Object.entries(was).filter(([one]) => Number(one) !== session),
+      ) as SkillBudgets;
+    });
+  }, []);
+  const key = sessions.join(",");
+  useEffect(() => {
+    if (!on) {
+      // Read again, all of them, once the studio is on again.
+      asked.current.clear();
+      return;
+    }
+    for (const session of key === "" ? [] : key.split(",").map(Number)) {
+      if (asked.current.has(session)) continue;
+      asked.current.add(session);
+      void commands
+        .chatSkills(plane, session)
+        .then((said) => set(session, said.status === "ok" ? said.data.budget : null))
+        .catch(() => undefined);
+    }
+  }, [key, on, plane, set]);
+  return [on ? budgets : NO_BUDGETS, set];
+}
+
+/** No chat's budget known: what the window holds while the Skill studio is off. */
+const NO_BUDGETS: SkillBudgets = {};
+
 /**
  * **The Skills chip on a chat's pane** (#2775), in its top line beside the gauge: the chat's
- * skill budget at a glance, in the warning colour where its set is past it, and the way to Use
- * skill… for this chat. Read when the pane shows the chat. Nothing while the Skill studio is off,
- * or for a chat purlis knows no skills of.
+ * skill budget at a glance, in the warning look where its set is near or past it, and the way to
+ * Use skill… for this chat. Its budget is the window's ({@link SkillBudgetsHere}). Nothing while
+ * the Skill studio is off, or for a chat purlis knows no skills of; where the pane leaves the chip
+ * out, the chat tab's menu row says the budget.
  */
-export const SkillsChip = memo(function SkillsChip({
-  plane,
-  session,
-}: {
-  plane: PlaneId;
-  session: number;
-}) {
+export const SkillsChip = memo(function SkillsChip({ session }: { session: number }) {
   const on = useSkillStudioOn();
   const open = useOpenUseSkill();
-  const [budget, setBudget] = useState<SkillBudget | null>(null);
-  useEffect(() => {
-    if (!on) return;
-    let live = true;
-    void commands
-      .chatSkills(plane, session)
-      .then((said) => {
-        if (live) setBudget(said.status === "ok" ? said.data.budget : null);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [on, plane, session]);
-  if (!on || budget === null) return null;
-  const warning = overSaid(budget);
+  const budget = useContext(SkillBudgetsHere)[session];
+  if (!on || budget === undefined) return null;
+  const warning = warnsSaid(budget);
   const said = `${budgetSaid(budget)}. Use one of this chat's skills.`;
   return (
     <Button
@@ -318,7 +363,7 @@ export const SkillsChip = memo(function SkillsChip({
       }
       onPress={() => open(session)}
     >
-      {counted(budget.skills + budget.manual, "skill", "skills")}
+      {counted(skillsInTheSet(budget), "skill", "skills")}
     </Button>
   );
 });

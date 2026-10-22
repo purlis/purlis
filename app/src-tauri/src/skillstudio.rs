@@ -43,8 +43,6 @@ impl From<purlis_core::skills::Origin> for Level {
             purlis_core::skills::Origin::Workspace => Level::Workspace,
             purlis_core::skills::Origin::Persona => Level::Persona,
             purlis_core::skills::Origin::Harness => Level::Installed,
-            // A level a later slice adds is drawn as the project's until the studio names it.
-            _ => Level::Project,
         }
     }
 }

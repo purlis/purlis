@@ -27,7 +27,6 @@ export const SAID = {
   answer: "Answer its question",
   activity: "Activity",
   network: "Network",
-  useSkill: "Use skill…",
   restart: "Restart",
   restartMidTurn: "Restart when this turn ends",
   startFresh: "Start fresh",
