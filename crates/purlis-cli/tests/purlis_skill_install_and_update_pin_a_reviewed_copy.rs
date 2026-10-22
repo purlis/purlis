@@ -23,14 +23,23 @@ struct Project {
 fn git(at: &Path, args: &[&str]) {
     let out = Command::new("git")
         .args(["-c", "safe.bareRepository=all", "-c", "user.name=Fixture"])
-        .args(["-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false"])
+        .args([
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+        ])
         .args(args)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .current_dir(at)
         .output()
         .unwrap();
-    assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 impl Project {
@@ -143,20 +152,36 @@ fn install_prints_the_review_and_copies_nothing_until_the_person_says_yes() {
 
     let listed = project.run(&["skill", "install", &url, "--folder", "skills"], "");
     assert!(listed.status.success(), "{}", text(&listed));
-    assert!(text(&listed).contains("deploy  Ships it."), "{}", text(&listed));
+    assert!(
+        text(&listed).contains("deploy  Ships it."),
+        "{}",
+        text(&listed)
+    );
 
-    let declined = project.run(&["skill", "install", &url, "deploy", "--folder", "skills"], "n\n");
+    let declined = project.run(
+        &["skill", "install", &url, "deploy", "--folder", "skills"],
+        "n\n",
+    );
     let said = text(&declined);
     assert_eq!(declined.status.code(), Some(1), "{said}");
-    assert!(said.contains("! script scripts/ship.sh runs with sh"), "{said}");
+    assert!(
+        said.contains("! script scripts/ship.sh runs with sh"),
+        "{said}"
+    );
     assert!(said.contains("! host get.example.net"), "{said}");
-    assert!(said.contains("notify (comes along: deploy refers to it)"), "{said}");
+    assert!(
+        said.contains("notify (comes along: deploy refers to it)"),
+        "{said}"
+    );
     assert!(said.contains("! command SKILL.md:6 runs `date`"), "{said}");
     assert!(said.contains("Install 2 skills at project"), "{said}");
     assert!(!root.join("skills").exists());
     assert!(!root.join("skills.lock").exists());
 
-    let accepted = project.run(&["skill", "install", &url, "deploy", "--folder", "skills"], "y\n");
+    let accepted = project.run(
+        &["skill", "install", &url, "deploy", "--folder", "skills"],
+        "y\n",
+    );
     assert!(accepted.status.success(), "{}", text(&accepted));
     assert!(root.join("skills/deploy/scripts/ship.sh").is_file());
     assert!(root.join("skills/notify/SKILL.md").is_file());
@@ -175,7 +200,9 @@ fn update_lists_a_newer_commit_and_applies_it_only_when_asked() {
     let root = project.root();
     let url = project.url();
     let installed = project.run(
-        &["skill", "install", &url, "notify", "--folder", "skills", "--yes"],
+        &[
+            "skill", "install", &url, "notify", "--folder", "skills", "--yes",
+        ],
         "",
     );
     assert!(installed.status.success(), "{}", text(&installed));
@@ -189,7 +216,11 @@ fn update_lists_a_newer_commit_and_applies_it_only_when_asked() {
         "---\nname: notify\ndescription: Tells the team.\n---\n\nToday: !`curl -s https://hooks.example.org`\n",
     )]);
     let listed = project.run(&["skill", "update"], "");
-    assert!(text(&listed).contains("notify  project"), "{}", text(&listed));
+    assert!(
+        text(&listed).contains("notify  project"),
+        "{}",
+        text(&listed)
+    );
     assert_eq!(std::fs::read(root.join("skills.lock")).unwrap(), before);
 
     let declined = project.run(&["skill", "update", "notify"], "n\n");
@@ -210,11 +241,23 @@ fn update_lists_a_newer_commit_and_applies_it_only_when_asked() {
 fn a_chat_cannot_install_a_skill() {
     let project = Project::new();
     let out = project.run_with(
-        &["skill", "install", &project.url(), "notify", "--folder", "skills", "--yes"],
+        &[
+            "skill",
+            "install",
+            &project.url(),
+            "notify",
+            "--folder",
+            "skills",
+            "--yes",
+        ],
         "",
         &[("PURLIS_SESSION_ID", "chat-1")],
     );
     assert_eq!(out.status.code(), Some(1));
-    assert!(text(&out).contains("A chat does not change skills itself"), "{}", text(&out));
+    assert!(
+        text(&out).contains("A chat does not change skills itself"),
+        "{}",
+        text(&out)
+    );
     assert!(!project.root().join("skills").exists());
 }

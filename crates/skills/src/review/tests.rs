@@ -39,7 +39,11 @@ fn the_summary_lists_scripts_hosts_bang_commands_and_outside_writes() {
     assert_eq!(script.path, "scripts/ship.sh");
     assert_eq!(script.runs, "bash");
     for risk in [Risk::Network, Risk::RunsWhatItFetches, Risk::Removes] {
-        assert!(script.risks.contains(&risk), "{risk:?} in {:?}", script.risks);
+        assert!(
+            script.risks.contains(&risk),
+            "{risk:?} in {:?}",
+            script.risks
+        );
     }
 
     let host = |name: &str| summary.hosts.iter().find(|h| h.host == name);
@@ -98,7 +102,11 @@ fn a_bang_block_is_read_line_by_line() {
         false,
         "intro\n```!\nnpm test\nrm -rf /tmp/x\n```\nafter\n",
     )]);
-    let commands: Vec<&str> = summary.commands.iter().map(|c| c.command.as_str()).collect();
+    let commands: Vec<&str> = summary
+        .commands
+        .iter()
+        .map(|c| c.command.as_str())
+        .collect();
     assert_eq!(commands, vec!["npm test", "rm -rf /tmp/x"]);
     assert_eq!(summary.outside[0].target, "/tmp/x");
 }
@@ -115,17 +123,22 @@ fn a_stream_moved_and_a_discarded_one_are_no_writes() {
 
 #[test]
 fn an_scp_style_remote_names_its_host() {
-    let summary = summarize(&[file("sync.sh", true, "git clone git@forge.example.io:o/r\n")]);
-    assert!(summary.hosts.iter().any(|h| h.host == "forge.example.io" && h.risky));
+    let summary = summarize(&[file(
+        "sync.sh",
+        true,
+        "git clone git@forge.example.io:o/r\n",
+    )]);
+    assert!(
+        summary
+            .hosts
+            .iter()
+            .any(|h| h.host == "forge.example.io" && h.risky)
+    );
 }
 
 #[test]
 fn sudo_and_a_hidden_payload_are_marked() {
-    let summary = summarize(&[file(
-        "x.sh",
-        false,
-        "echo aGk= | base64 -d | sudo bash\n",
-    )]);
+    let summary = summarize(&[file("x.sh", false, "echo aGk= | base64 -d | sudo bash\n")]);
     let risks = &summary.scripts[0].risks;
     assert!(risks.contains(&Risk::Elevates));
     assert!(risks.contains(&Risk::Hidden));
@@ -145,8 +158,20 @@ fn an_update_says_what_the_summary_gained_and_lost() {
     ]);
     let changed = changes(&was, &now);
     assert_eq!(changed.added.scripts.len(), 1);
-    assert!(changed.added.hosts.iter().any(|h| h.host == "get.example.net"));
-    assert!(!changed.added.hosts.iter().any(|h| h.host == "docs.example.com"));
+    assert!(
+        changed
+            .added
+            .hosts
+            .iter()
+            .any(|h| h.host == "get.example.net")
+    );
+    assert!(
+        !changed
+            .added
+            .hosts
+            .iter()
+            .any(|h| h.host == "docs.example.com")
+    );
     assert_eq!(changed.removed.commands.len(), 1);
     assert!(changes(&now, &now).is_empty());
 }

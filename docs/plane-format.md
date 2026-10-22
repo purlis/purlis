@@ -1450,7 +1450,7 @@ outside the project and removes it when the flow ends, so it adds none of them (
   at `refs/purlis/fetched` (and the pinned one at `refs/purlis/pinned` for an update's diff).
   Never checked out: its tree is read with `ls-tree` and `cat-file`.
 - **Status:** **purlis only** (#2773).
-- **Tier:** Machine — **transient**: made for one browse, review, install or update and removed
+- **Tier:** Machine, device-bound, transient — made for one browse, review, install or update and removed
   when it ends.
 - **Written by:** `purlis_core::skills::source::fetch`, through purlis's hardened git: no hook,
   no submodule, `transfer.fsckObjects` on, and a private source's credential handed to its one

@@ -31,12 +31,18 @@ fn a_lockfile_names_each_level_by_its_folder_and_reads_back_as_written() {
     let root = tmp.path();
     let lock = Lockfile {
         version: VERSION,
-        skills: vec![entry(Level::workspace("ops").local(true)), entry(Level::project())],
+        skills: vec![
+            entry(Level::workspace("ops").local(true)),
+            entry(Level::project()),
+        ],
     };
     write(root, FILE, None, &lock).unwrap();
     let text = std::fs::read_to_string(root.join(FILE)).unwrap();
     assert!(text.contains("\"level\": \"skills\""), "{text}");
-    assert!(text.contains("\"level\": \"workspaces/ops/skills.local\""), "{text}");
+    assert!(
+        text.contains("\"level\": \"workspaces/ops/skills.local\""),
+        "{text}"
+    );
     let read_back = read(root, FILE).unwrap();
     assert_eq!(read_back.lock.skills.len(), 2);
     assert_eq!(read_back.lock.skills[0].level.0, Level::project());
@@ -64,5 +70,8 @@ fn a_lockfile_that_is_a_link_is_never_read_or_written_through() {
     std::os::unix::fs::symlink(root.join("elsewhere"), root.join(FILE)).unwrap();
     assert!(read(root, FILE).is_err());
     assert!(write(root, FILE, None, &Lockfile::default()).is_err());
-    assert_eq!(std::fs::read_to_string(root.join("elsewhere")).unwrap(), "{\"version\":1}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("elsewhere")).unwrap(),
+        "{\"version\":1}"
+    );
 }

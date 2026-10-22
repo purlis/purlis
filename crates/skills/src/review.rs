@@ -327,9 +327,9 @@ fn risks_of(line: &str) -> Vec<Risk> {
     if said.contains(&"eval") || piped_into_a_runner(line) {
         risks.push(Risk::RunsWhatItFetches);
     }
-    let removes = said.windows(2).any(|pair| {
-        pair[0] == "rm" && pair[1].starts_with('-') && pair[1].contains(['r', 'R'])
-    });
+    let removes = said
+        .windows(2)
+        .any(|pair| pair[0] == "rm" && pair[1].starts_with('-') && pair[1].contains(['r', 'R']));
     if removes {
         risks.push(Risk::Removes);
     }
@@ -454,7 +454,9 @@ fn hosts_in(line: &str) -> Vec<String> {
         if let Some((user, rest)) = word.split_once('@')
             && !user.is_empty()
             && !user.contains("://")
-            && user.chars().all(|c| c.is_ascii_alphanumeric() || "-_".contains(c))
+            && user
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_".contains(c))
             && let Some((host, _)) = rest.split_once(':')
         {
             push(host);

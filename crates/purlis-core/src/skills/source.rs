@@ -336,7 +336,10 @@ pub fn remove(cx: &mut Ctx<'_>, url: &str, branch: Option<&str>) -> Result<bool,
         });
         list.len() != before
     })?;
-    cx.done(format!("{} is no longer a skill source here", listed.source));
+    cx.done(format!(
+        "{} is no longer a skill source here",
+        listed.source
+    ));
     if !listed.local {
         cx.commit(&[which.file_at(plane).to_owned()], "skill source remove");
     }
@@ -521,7 +524,10 @@ fn complaint(run: &git::Run) -> String {
         .map(str::trim)
         .find(|line| !line.is_empty())
         .unwrap_or("git gave no reason");
-    crate::shown::short(line.trim_start_matches("fatal: ").trim_start_matches("error: "))
+    crate::shown::short(
+        line.trim_start_matches("fatal: ")
+            .trim_start_matches("error: "),
+    )
 }
 
 /// **A source fetched at one commit**, read from its object store.
@@ -572,7 +578,12 @@ pub fn fetch(plane: &Path, source: &Source, at: Option<&str>) -> Result<Fetched,
             complaint(&run)
         ));
     }
-    let resolved = scratch.git(&["rev-parse", "--verify", "--end-of-options", "refs/purlis/fetched^{commit}"])?;
+    let resolved = scratch.git(&[
+        "rev-parse",
+        "--verify",
+        "--end-of-options",
+        "refs/purlis/fetched^{commit}",
+    ])?;
     let commit = resolved.out.trim().to_owned();
     if !resolved.ok() || !is_commit(&commit) {
         return Err(format!("{source} answered no commit"));
@@ -584,7 +595,10 @@ pub fn fetch(plane: &Path, source: &Source, at: Option<&str>) -> Result<Fetched,
             "{source} no longer offers the commit that was reviewed: review it again"
         ));
     }
-    let listing = scratch.git_raw(&["ls-tree", "-r", "-z", "-l", "--full-tree", &commit], Vec::new())?;
+    let listing = scratch.git_raw(
+        &["ls-tree", "-r", "-z", "-l", "--full-tree", &commit],
+        Vec::new(),
+    )?;
     if listing.code != Some(0) {
         return Err(format!("{source}'s files could not be listed"));
     }
@@ -688,7 +702,10 @@ impl Fetched {
         if oids.is_empty() {
             return Ok(Vec::new());
         }
-        let input: Vec<u8> = oids.iter().flat_map(|oid| format!("{oid}\n").into_bytes()).collect();
+        let input: Vec<u8> = oids
+            .iter()
+            .flat_map(|oid| format!("{oid}\n").into_bytes())
+            .collect();
         let run = self.scratch.git_raw(&["cat-file", "--batch"], input)?;
         if run.code != Some(0) {
             return Err(format!("{}'s files could not be read", self.source));
@@ -702,11 +719,14 @@ impl Fetched {
                 .ok_or_else(|| format!("{}'s files could not be read", self.source))?;
             let header = String::from_utf8_lossy(&rest[..end]).into_owned();
             let mut fields = header.split(' ');
-            let (Some(named), Some("blob"), Some(size)) = (fields.next(), fields.next(), fields.next())
+            let (Some(named), Some("blob"), Some(size)) =
+                (fields.next(), fields.next(), fields.next())
             else {
                 return Err(format!("{}'s file {oid} is not there", self.source));
             };
-            let size: usize = size.parse().map_err(|_| "a file's size could not be read".to_owned())?;
+            let size: usize = size
+                .parse()
+                .map_err(|_| "a file's size could not be read".to_owned())?;
             if named != *oid || rest.len() < end + 1 + size + 1 {
                 return Err(format!("{}'s files could not be read", self.source));
             }
@@ -758,7 +778,11 @@ impl Fetched {
             .filter_map(|dir| {
                 self.entries
                     .iter()
-                    .find(|e| e.path.len() == dir.len() + 1 && e.path.starts_with(dir) && e.path.last().is_some_and(|n| n == purlis_skills::FILE))
+                    .find(|e| {
+                        e.path.len() == dir.len() + 1
+                            && e.path.starts_with(dir)
+                            && e.path.last().is_some_and(|n| n == purlis_skills::FILE)
+                    })
                     .map(|e| e.oid.as_str())
             })
             .collect();
@@ -786,9 +810,15 @@ impl Fetched {
         // unclear.
         let names: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
         found.retain(|f| names.iter().filter(|n| **n == f.name).count() == 1);
-        for name in names.iter().filter(|n| names.iter().filter(|m| m == n).count() > 1) {
+        for name in names
+            .iter()
+            .filter(|n| names.iter().filter(|m| m == n).count() > 1)
+        {
             if !not.iter().any(|(folder, _)| folder == name) {
-                not.push((name.clone(), "two folders of the source name this skill".to_owned()));
+                not.push((
+                    name.clone(),
+                    "two folders of the source name this skill".to_owned(),
+                ));
             }
         }
         (found, not)
@@ -888,10 +918,16 @@ fn review_of(
     let texts = texts_of(files);
     let summary = summary_of(files);
     let marked = |path: &str| {
-        summary.scripts.iter().any(|s| s.path == path && !s.risks.is_empty())
+        summary
+            .scripts
+            .iter()
+            .any(|s| s.path == path && !s.risks.is_empty())
             || summary.commands.iter().any(|c| c.path == path)
             || summary.outside.iter().any(|o| o.path == path)
-            || summary.hosts.iter().any(|h| h.risky && h.files.iter().any(|f| f == path))
+            || summary
+                .hosts
+                .iter()
+                .any(|h| h.risky && h.files.iter().any(|f| f == path))
     };
     let mut lint: Vec<String> = files
         .iter()
@@ -951,7 +987,10 @@ fn referenced(files: &[SourceFile], texts: &[Option<String>]) -> Vec<String> {
                 .chars()
                 .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
                 .collect();
-            if !name.is_empty() && purlis_skills::change::name_problem(&name).is_none() && !out.contains(&name) {
+            if !name.is_empty()
+                && purlis_skills::change::name_problem(&name).is_none()
+                && !out.contains(&name)
+            {
                 out.push(name);
             }
         }
@@ -974,17 +1013,18 @@ impl Fetched {
                 continue;
             }
             let Some(one) = found.iter().find(|f| f.name == name) else {
-                return Err(format!(
-                    "{} holds no skill named {name:?}",
-                    self.source
-                ));
+                return Err(format!("{} holds no skill named {name:?}", self.source));
             };
             let files = self.files_of(&one.dir)?;
-            for other in referenced(&files, &texts_of(&files)) {
-                if other != name && held.contains(&other) {
-                    queue.push((other, Some(name.clone())));
-                }
-            }
+            // Each skill it refers to is reviewed next, so one that was also named is still
+            // marked as brought along, and an install's second review reads the same.
+            let mut next: Vec<(String, Option<String>)> = referenced(&files, &texts_of(&files))
+                .into_iter()
+                .filter(|other| *other != name && held.contains(other))
+                .map(|other| (other, Some(name.clone())))
+                .collect();
+            next.append(&mut queue);
+            queue = next;
             let left = tree::left_in(&self.left, &one.dir);
             skills.push(review_of(one, &files, left, by, &held));
         }
@@ -1101,7 +1141,12 @@ pub fn install(
     for skill in &review.skills {
         cx.not_built_in(&skill.name)?;
         verbs::free_at(plane, level, &skill.name, &skill.name)?;
-        if held.lock.skills.iter().any(|one| one.is(level, &skill.name)) {
+        if held
+            .lock
+            .skills
+            .iter()
+            .any(|one| one.is(level, &skill.name))
+        {
             return Err(format!(
                 "the {level} skills already have {} installed: update it instead",
                 skill.name
@@ -1154,7 +1199,10 @@ pub fn install(
         made.push(folder);
     }
     lock::write(plane, lock_file, held.was.as_deref(), &lock)?;
-    let mut paths: Vec<String> = made.iter().map(|folder| verbs::rel(plane, folder)).collect();
+    let mut paths: Vec<String> = made
+        .iter()
+        .map(|folder| verbs::rel(plane, folder))
+        .collect();
     if level.at == verbs::At::Project
         && !level.local
         && let Some(grant) = grant.filter(|g| **g != Grant::Root)
@@ -1240,12 +1288,15 @@ fn edited(plane: &Path, locked: &Locked) -> Option<Vec<String>> {
     Some(changed)
 }
 
+/// A source by its URL and branch, as the lockfile names one.
+type SourceKey = (String, Option<String>);
+
 /// **Asks each source of an installed skill for its newest commit** — its refs alone, nothing
 /// fetched or written — and answers each skill whose pin is older, and each that could not be
 /// asked.
 pub fn updates(plane: &Path) -> (Vec<Offer>, Vec<Unasked>) {
     let (locked, _) = lock::every(plane);
-    let mut asked: Vec<((String, Option<String>), Result<String, String>)> = Vec::new();
+    let mut asked: Vec<(SourceKey, Result<String, String>)> = Vec::new();
     let mut offers = Vec::new();
     let mut unasked = Vec::new();
     for one in &locked {
@@ -1338,9 +1389,10 @@ fn locked_at(plane: &Path, level: &Level, name: &str) -> Result<(lock::Read, usi
 /// The files `fetched` holds at the folder `folder` (`/` between its parts) of the commit at
 /// `at`, read with the review's own rules.
 fn files_at(fetched: &Fetched, at: &str, folder: &str) -> Result<Vec<SourceFile>, String> {
-    let listing = fetched
-        .scratch
-        .git_raw(&["ls-tree", "-r", "-z", "-l", "--full-tree", at], Vec::new())?;
+    let listing = fetched.scratch.git_raw(
+        &["ls-tree", "-r", "-z", "-l", "--full-tree", at],
+        Vec::new(),
+    )?;
     if listing.code != Some(0) {
         return Err("the pinned commit's files could not be listed".to_owned());
     }
@@ -1386,7 +1438,9 @@ fn file_changes(was: &[SourceFile], now: &[SourceFile]) -> Vec<FileChange> {
             None => out.push(FileChange {
                 path: file.path(),
                 change: Changed::Added,
-                diff: text(file).map(|t| review::line_diff("", &t)).unwrap_or_default(),
+                diff: text(file)
+                    .map(|t| review::line_diff("", &t))
+                    .unwrap_or_default(),
             }),
             Some(old) if old.bytes != file.bytes || old.executable != file.executable => {
                 out.push(FileChange {
@@ -1406,7 +1460,9 @@ fn file_changes(was: &[SourceFile], now: &[SourceFile]) -> Vec<FileChange> {
             out.push(FileChange {
                 path: old.path(),
                 change: Changed::Removed,
-                diff: text(old).map(|t| review::line_diff(&t, "")).unwrap_or_default(),
+                diff: text(old)
+                    .map(|t| review::line_diff(&t, ""))
+                    .unwrap_or_default(),
             });
         }
     }
@@ -1422,15 +1478,19 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
     let source = source_of(plane, locked);
     let fetched = fetch(plane, &source, None)?;
     if fetched.commit == locked.commit {
-        return Err(format!("{name} is pinned to its source's newest commit already"));
+        return Err(format!(
+            "{name} is pinned to its source's newest commit already"
+        ));
     }
     let dir = tree::folder_parts(&locked.source.folder)
         .ok_or_else(|| format!("{:?} is no folder", locked.source.folder))?;
     let (found, _) = fetched.skills();
-    let one = found
-        .iter()
-        .find(|f| f.dir == dir)
-        .ok_or_else(|| format!("the source no longer holds {name} at {}", locked.source.folder))?;
+    let one = found.iter().find(|f| f.dir == dir).ok_or_else(|| {
+        format!(
+            "the source no longer holds {name} at {}",
+            locked.source.folder
+        )
+    })?;
     if one.name != name {
         return Err(format!(
             "the source renamed {name} to {}: install it under its new name",
@@ -1445,7 +1505,17 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
         .scratch
         .network(
             &handing,
-            &["fetch", "--quiet", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head", "--depth=1", "--", &source.url, &pinned_spec],
+            &[
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                "--no-recurse-submodules",
+                "--no-write-fetch-head",
+                "--depth=1",
+                "--",
+                &source.url,
+                &pinned_spec,
+            ],
         )
         .ok()
         .filter(git::Run::ok)
@@ -1468,7 +1538,13 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
         }
     };
     let held_names: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
-    let review = review_of(one, &now, tree::left_in(&fetched.left, &one.dir), None, &held_names);
+    let review = review_of(
+        one,
+        &now,
+        tree::left_in(&fetched.left, &one.dir),
+        None,
+        &held_names,
+    );
     Ok(UpdateReview {
         name: name.to_owned(),
         level: level.clone(),
@@ -1486,7 +1562,12 @@ pub fn update_review(plane: &Path, level: &Level, name: &str) -> Result<UpdateRe
 /// newer commit fetched again and checked against the reviewed digest, each of its files written
 /// over the copy, each file the old commit had and the newer one does not removed, and the pin
 /// moved, as one commit.
-pub fn update(cx: &mut Ctx<'_>, level: &Level, name: &str, accepted: &Accepted) -> Result<PathBuf, String> {
+pub fn update(
+    cx: &mut Ctx<'_>,
+    level: &Level,
+    name: &str,
+    accepted: &Accepted,
+) -> Result<PathBuf, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
     let (held, at) = locked_at(plane, level, name)?;
@@ -1499,7 +1580,12 @@ pub fn update(cx: &mut Ctx<'_>, level: &Level, name: &str, accepted: &Accepted) 
     let one = found
         .iter()
         .find(|f| f.dir == dir && f.name == name)
-        .ok_or_else(|| format!("the source no longer holds {name} at {}", locked.source.folder))?;
+        .ok_or_else(|| {
+            format!(
+                "the source no longer holds {name} at {}",
+                locked.source.folder
+            )
+        })?;
     let files = fetched.files_of(&one.dir)?;
     let files_wrote = wrote(&files);
     let digest = digest_of(&files_wrote);

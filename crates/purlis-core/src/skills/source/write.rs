@@ -7,6 +7,10 @@
 //! replaced one renamed over only while it is still a plain file. Nothing is followed, and
 //! nothing is removed but the names this write made or a lockfile says an install made.
 
+/// The files an installed skill holds now: each one's path inside its folder, whether it is
+/// executable, and its bytes.
+pub(super) type Held = Vec<(Vec<String>, bool, Vec<u8>)>;
+
 /// One file to write: its path inside the skill's folder, whether it is executable, its bytes.
 pub(super) struct File<'a> {
     pub parts: &'a [String],
@@ -20,7 +24,9 @@ mod unix {
     use std::path::Path;
 
     use rustix::fd::OwnedFd;
-    use rustix::fs::{AtFlags, FileType, Mode, OFlags, fchmod, mkdirat, openat, renameat, statat, unlinkat};
+    use rustix::fs::{
+        AtFlags, FileType, Mode, OFlags, fchmod, mkdirat, openat, renameat, statat, unlinkat,
+    };
 
     use super::File;
     use crate::skills::verbs::store::{FOLDER, open_dir};
@@ -70,13 +76,17 @@ mod unix {
     /// empty by then. A name that is no longer what was made is left.
     fn undo(skill: &OwnedFd, files: &[Vec<String>], folders: &[Vec<String>]) {
         for path in files.iter().rev() {
-            let Some((leaf, parents)) = path.split_last() else { continue };
+            let Some((leaf, parents)) = path.split_last() else {
+                continue;
+            };
             if let Ok(at) = open_in(skill, parents) {
                 let _ = unlinkat(&at, leaf.as_str(), AtFlags::empty());
             }
         }
         for path in folders.iter().rev() {
-            let Some((leaf, parents)) = path.split_last() else { continue };
+            let Some((leaf, parents)) = path.split_last() else {
+                continue;
+            };
             if let Ok(at) = open_in(skill, parents) {
                 let _ = unlinkat(&at, leaf.as_str(), AtFlags::REMOVEDIR);
             }
@@ -170,8 +180,12 @@ mod unix {
             }
         }
         for path in gone {
-            let Some((leaf, parents)) = path.split_last() else { continue };
-            let Ok(here) = open_in(&skill, parents) else { continue };
+            let Some((leaf, parents)) = path.split_last() else {
+                continue;
+            };
+            let Ok(here) = open_in(&skill, parents) else {
+                continue;
+            };
             if statat(&here, leaf.as_str(), AtFlags::SYMLINK_NOFOLLOW)
                 .is_ok_and(|stat| FileType::from_raw_mode(stat.st_mode) == FileType::RegularFile)
             {
@@ -189,7 +203,7 @@ mod unix {
         folder: &[String],
         most: u64,
         most_files: usize,
-    ) -> Option<Vec<(Vec<String>, bool, Vec<u8>)>> {
+    ) -> Option<super::Held> {
         use std::io::Read as _;
         let skill = open_dir(plane, folder, usize::MAX).ok()?;
         let mut out = Vec::new();
@@ -279,7 +293,7 @@ mod elsewhere {
         _: &[String],
         _: u64,
         _: usize,
-    ) -> Option<Vec<(Vec<String>, bool, Vec<u8>)>> {
+    ) -> Option<super::Held> {
         None
     }
 }

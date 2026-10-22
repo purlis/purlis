@@ -23,8 +23,24 @@ fn a_plain_name_is_printable_ascii_and_never_a_way_out() {
         assert!(plain_name(good), "{good}");
     }
     for bad in [
-        "", ".", "..", "a/b", "a\\b", "c:", "x.", "x ", ".git", ".GIT", ".Git", "git~1",
-        ".gitattributes", ".GitModules", ".gitignore", "caf\u{e9}", "a\u{0}b", "tab\t",
+        "",
+        ".",
+        "..",
+        "a/b",
+        "a\\b",
+        "c:",
+        "x.",
+        "x ",
+        ".git",
+        ".GIT",
+        ".Git",
+        "git~1",
+        ".gitattributes",
+        ".GitModules",
+        ".gitignore",
+        "caf\u{e9}",
+        "a\u{0}b",
+        "tab\t",
     ] {
         assert!(!plain_name(bad), "{bad:?}");
     }

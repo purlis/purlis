@@ -31,7 +31,9 @@ pub(crate) fn edit(
         .or_insert_with(|| toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new()))
         .as_array_of_tables_mut()
         .ok_or_else(|| {
-            format!("{TABLE} in {file} is not written as [[{TABLE}]] tables, so nothing was written")
+            format!(
+                "{TABLE} in {file} is not written as [[{TABLE}]] tables, so nothing was written"
+            )
         })?;
     if !how(list) {
         return Ok(false);

@@ -349,7 +349,9 @@ pub(crate) async fn skill_source_add(
     let held = planes.held(&plane)?;
     crate::off_the_window("adding the skill source", move || {
         flag_on()?;
-        heard(held.root(), |cx| source::add(cx, &source.core(), source.local))
+        heard(held.root(), |cx| {
+            source::add(cx, &source.core(), source.local)
+        })
     })
     .await
 }

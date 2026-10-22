@@ -559,7 +559,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             };
             print!("{}", update_text(&update));
-            if !yes && !asked(&format!("Update {name} to {}?", source::short(&update.newer))) {
+            if !yes
+                && !asked(&format!(
+                    "Update {name} to {}?",
+                    source::short(&update.newer)
+                ))
+            {
                 voice::info("Nothing was changed.");
                 return Ok(1);
             }
@@ -686,7 +691,9 @@ fn install(
         match Grant::from_words(grant) {
             Ok(grant) => Some(grant),
             Err(why) => {
-                voice::err(&format!("{why}: --grant takes root, all, or workspace names"));
+                voice::err(&format!(
+                    "{why}: --grant takes root, all, or workspace names"
+                ));
                 return Ok(2);
             }
         }
@@ -713,9 +720,17 @@ fn install(
         .all(|one| one.source.url != source.url || one.source.branch != source.branch)
         && let Err(why) = source::add(cx, source, level.local)
     {
-        voice::warn(&format!("The source was not added to this project's sources: {why}"));
+        voice::warn(&format!(
+            "The source was not added to this project's sources: {why}"
+        ));
     }
-    done(source::install(cx, source, level, &review.accepted(), grant.as_ref()))
+    done(source::install(
+        cx,
+        source,
+        level,
+        &review.accepted(),
+        grant.as_ref(),
+    ))
 }
 
 /// Asks `question` on the terminal and answers whether the person said yes. No answer is no.
@@ -730,23 +745,42 @@ fn asked(question: &str) -> bool {
 fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> String {
     let mut out = String::new();
     if summary.is_empty() {
-        out.push_str(&format!("{pad}Instructions only: no scripts, hosts, ! commands or outside writes.\n"));
+        out.push_str(&format!(
+            "{pad}Instructions only: no scripts, hosts, ! commands or outside writes.\n"
+        ));
     }
     for one in &summary.scripts {
         let mark = if one.risks.is_empty() { " " } else { "!" };
         let risks: Vec<String> = one.risks.iter().map(ToString::to_string).collect();
-        let risks = if risks.is_empty() { String::new() } else { format!(": {}", risks.join(", ")) };
-        out.push_str(&format!("{pad}{mark} script {} runs with {}{risks}\n", one.path, one.runs));
+        let risks = if risks.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", risks.join(", "))
+        };
+        out.push_str(&format!(
+            "{pad}{mark} script {} runs with {}{risks}\n",
+            one.path, one.runs
+        ));
     }
     for one in &summary.hosts {
         let mark = if one.risky { "!" } else { " " };
-        out.push_str(&format!("{pad}{mark} host {} (in {})\n", one.host, one.files.join(", ")));
+        out.push_str(&format!(
+            "{pad}{mark} host {} (in {})\n",
+            one.host,
+            one.files.join(", ")
+        ));
     }
     for one in &summary.commands {
-        out.push_str(&format!("{pad}! command {}:{} runs `{}`\n", one.path, one.line, one.command));
+        out.push_str(&format!(
+            "{pad}! command {}:{} runs `{}`\n",
+            one.path, one.line, one.command
+        ));
     }
     for one in &summary.outside {
-        out.push_str(&format!("{pad}! writes {} ({}:{})\n", one.target, one.path, one.line));
+        out.push_str(&format!(
+            "{pad}! writes {} ({}:{})\n",
+            one.target, one.path, one.line
+        ));
     }
     out
 }
@@ -765,7 +799,10 @@ fn review_text(review: &source::Review) -> String {
             .as_deref()
             .map(|by| format!(" (comes along: {by} refers to it)"))
             .unwrap_or_default();
-        out.push_str(&format!("\n{}{brought}: {}\n", skill.name, skill.description));
+        out.push_str(&format!(
+            "\n{}{brought}: {}\n",
+            skill.name, skill.description
+        ));
         out.push_str(&summary_text(&skill.summary, "  "));
         for line in &skill.lint {
             out.push_str(&format!("  lint: {line}\n"));
@@ -776,7 +813,10 @@ fn review_text(review: &source::Review) -> String {
             out.push_str(&format!("  {mark} {} ({} bytes)\n", file.path, file.size));
         }
         for left in &skill.left_out {
-            out.push_str(&format!("    not installed: {} ({})\n", left.path, left.why));
+            out.push_str(&format!(
+                "    not installed: {} ({})\n",
+                left.path, left.why
+            ));
         }
     }
     out.push_str(
@@ -796,7 +836,9 @@ fn update_text(update: &source::UpdateReview) -> String {
         source::short(&update.newer)
     );
     if !update.from_pin {
-        out.push_str("The pinned commit is no longer in the source: compared with the copy here.\n");
+        out.push_str(
+            "The pinned commit is no longer in the source: compared with the copy here.\n",
+        );
     }
     if update.changes.is_empty() {
         out.push_str("The summary does not change.\n");
@@ -813,7 +855,10 @@ fn update_text(update: &source::UpdateReview) -> String {
         ));
     }
     for file in &update.files {
-        out.push_str(&format!("\n{} ({:?})\n{}", file.path, file.change, file.diff));
+        out.push_str(&format!(
+            "\n{} ({:?})\n{}",
+            file.path, file.change, file.diff
+        ));
     }
     out
 }
