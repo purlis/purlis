@@ -4469,6 +4469,18 @@ impl Form {
             Self::ClaudeCode(_) => None,
         }
     }
+
+    /// **No workspace's folder of `planes` is made, moved or removed by the chat** (#2046),
+    /// where the harness's sandbox can hold a folder's entry alone (Seatbelt). Claude Code's
+    /// holds what is below a name too, so it holds each workspace's manifest by its path and
+    /// name ([`workspace_manifests_held`]) and nothing more.
+    pub fn hold_workspace_folders(&mut self, planes: Vec<PathBuf>) {
+        match self {
+            Self::Codex(wrap) => wrap.planes = planes,
+            Self::Opencode(wrap) => wrap.planes = planes,
+            Self::ClaudeCode(_) => {}
+        }
+    }
 }
 
 /// `compiled`, by `compile`, for a chat in the plane at `root` on `machine`, with every path
@@ -4492,7 +4504,8 @@ fn compile_checked(
     if let Some(refused) = covering(&compiled.denied.paths, &ground) {
         return Err(refused.placed_in(root));
     }
-    let form = compile(compiled).map_err(NotStarted::Uncompilable)?;
+    let mut form = compile(compiled).map_err(NotStarted::Uncompilable)?;
+    form.hold_workspace_folders(workspace_folder_planes(root, compiled.level));
     // Held again only where the compiler added denials of its own (#2570): a harness whose own
     // sandbox holds the policy (Claude Code) denies exactly the neutral list, which the check
     // above has just held to this ground.
@@ -4504,6 +4517,39 @@ fn compile_checked(
         return Err(refused.placed_in(root));
     }
     Ok((form, denied))
+}
+
+/// **The plane roots whose workspace folders a chat of the plane at `root` never makes, moves or
+/// removes** (#2046): its own, and at the floor, where it writes every folder, every plane this
+/// machine remembers (`machine.json`). A project this machine does not know keeps its
+/// workspaces' manifests held by name alone ([`seatbelt::workspace_manifests_regex`]).
+fn workspace_folder_planes(root: &Path, level: Level) -> Vec<PathBuf> {
+    let mut planes = vec![root.to_path_buf()];
+    // A store outside a fenced build's fence is no store of its own: nothing more is known.
+    let store = crate::machine::config_root_unheld().filter(|config_root| {
+        !cfg!(feature = "fenced") || crate::fence::inside(config_root, &crate::fence::fence())
+    });
+    if level == Level::Floor
+        && let Some(config_root) = store
+    {
+        let store = crate::machine::read(&config_root).store;
+        let known = store
+            .recents
+            .iter()
+            .map(|recent| recent.plane.clone())
+            .chain(
+                store
+                    .windows
+                    .iter()
+                    .flat_map(|window| window.planes.clone()),
+            );
+        for plane in known {
+            if !planes.contains(&plane) {
+                planes.push(plane);
+            }
+        }
+    }
+    planes
 }
 
 /// A harness's compiler.

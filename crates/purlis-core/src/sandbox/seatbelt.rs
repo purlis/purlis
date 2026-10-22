@@ -458,11 +458,6 @@ pub fn profile(
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
     }
-    // No workspace's folder is made, moved or removed (#2046), so no workspace's manifest is
-    // moved out of its path to be written.
-    for rule in workspace_folder_rules()? {
-        line(rule);
-    }
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
     for rule in vaults_everywhere_rules()? {
         line(rule);
@@ -589,12 +584,11 @@ pub fn every_project_rules() -> Result<Vec<String>, &'static str> {
         let regex = format!("^/(.*/)?{}$", either_case(&escaped(manifest)));
         rules.push(format!("(deny file-write* (regex {}))", string(&regex)?));
     }
-    // And every workspace's manifest (#2046), in any case, and the folders it is found by.
+    // And every workspace's manifest (#2046), in any case.
     rules.push(format!(
         "(deny file-write* (regex {}))",
         string(&workspace_manifests_regex())?
     ));
-    rules.extend(workspace_folder_rules()?);
     Ok(rules)
 }
 
@@ -608,23 +602,40 @@ pub fn workspace_manifests_regex() -> String {
     )
 }
 
-/// The pattern a project's `workspaces` folder and each workspace's folder in it match, the
-/// entries alone, in any case (#2046): `…/workspaces` and `…/workspaces/<workspace>`.
-pub fn workspace_folders_regex() -> String {
-    format!(
-        "^/(.*/)?{}(/[^/]+)?$",
-        either_case(&escaped(super::WORKSPACES))
-    )
+/// The pattern plane `root`'s `workspaces` folder and each workspace's folder in it match, the
+/// entries alone, in any case (#2046): `<root>/workspaces` and `<root>/workspaces/<workspace>`,
+/// under each name the kernel gives the root.
+pub fn workspace_folders_regexes(root: &Path) -> Vec<String> {
+    super::kernel_names(root)
+        .iter()
+        .map(|name| {
+            format!(
+                "^{}/{}(/[^/]+)?$",
+                either_case(&escaped(&name.display().to_string())),
+                either_case(&escaped(super::WORKSPACES))
+            )
+        })
+        .collect()
 }
 
-/// **No workspace's folder is made, moved or removed by a chat, at either level** (#2046): its
-/// manifest is held by its path, and a folder moved aside would take it out of that path to be
-/// written and back. The entries alone: what is in a workspace is written as ever.
-pub fn workspace_folder_rules() -> Result<Vec<String>, &'static str> {
-    Ok(vec![format!(
-        "(deny file-write* (regex {}))",
-        string(&workspace_folders_regex())?
-    )])
+/// **No workspace's folder of `planes` is made, moved or removed by a chat** (#2046): a
+/// workspace's manifest is held by its path, and a folder moved aside would take it out of that
+/// path to be written and back. Directories alone, and their entries alone: what is in a
+/// workspace is written as ever, and a folder called `workspaces` anywhere else is any folder.
+pub fn workspace_folder_rules(planes: &[PathBuf]) -> Result<Vec<String>, &'static str> {
+    let mut rules = Vec::new();
+    for plane in planes {
+        for regex in workspace_folders_regexes(plane) {
+            let rule = format!(
+                "(deny file-write* (require-all (vnode-type DIRECTORY) (regex {})))",
+                string(&regex)?
+            );
+            if !rules.contains(&rule) {
+                rules.push(rule);
+            }
+        }
+    }
+    Ok(rules)
 }
 
 /// **No project's vaults are read, at either level** (#2071): the vaults and the fingerprint key

@@ -10,10 +10,13 @@ the person. *Decided by the steward on 2026-10-21 under those rulings.*
      (`purlis_core::sandbox::workspace_manifests_held`), beside the project's manifests;
    - at the floor, every project's by pattern, `…/workspaces/<any>/workspace.json` in any case
      (`seatbelt::workspace_manifests_regex`, and the same glob in Claude Code's settings);
-   - and, for Seatbelt at both levels, the folder entries `…/workspaces` and
-     `…/workspaces/<any>`, in any case (`seatbelt::workspace_folder_rules`): no workspace's
-     folder is made, moved or removed by a chat, so no manifest is moved out of its path to be
-     written. What is in a workspace is written as ever.
+   - and, for Seatbelt at both levels, a plane's `workspaces` folder and each workspace's
+     folder in it, the directory entries alone, under both of the plane root's kernel names and
+     in any case (`seatbelt::workspace_folder_rules`): the chat's own plane in the full sandbox,
+     and at the floor every plane this machine remembers in `machine.json`. No such folder is
+     made, moved or removed by a chat, so no manifest is moved out of its path to be written.
+     What is in a workspace is written as ever, and a folder called `workspaces` anywhere else
+     is any folder.
 2. **What a chat's asks need, the app writes.** A chat's `purlis clone` is made by the app, which
    records the repo in the workspace's manifest (the clone ask of §2). A new workspace is made by
    the app too (`WorkspaceCreate`), and so is a chat's `purlis workspace snapshot` of its own

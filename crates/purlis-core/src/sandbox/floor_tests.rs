@@ -1148,12 +1148,8 @@ fn no_projects_vault_is_read_at_the_full_sandbox_either() {
         assert!(profile.contains(&rule), "{rule} is not in the full profile");
     }
     // Nor does the full sandbox take on the floor's every-project write rules: it writes no
-    // other project in the first place. The one both hold is the workspace folders' (#2046).
-    let shared = seatbelt::workspace_folder_rules().expect("rules");
+    // other project in the first place.
     for rule in seatbelt::every_project_rules().expect("rules") {
-        if shared.contains(&rule) {
-            continue;
-        }
         assert!(!profile.contains(&rule), "{rule}");
     }
     let claude = match decided(Harness::ClaudeCode, &root, &machine) {
@@ -1663,14 +1659,24 @@ fn no_chat_writes_a_workspaces_manifest_at_the_floor_or_in_the_full_sandbox() {
 }
 
 #[test]
-fn no_workspaces_folder_is_moved_aside_and_back_at_either_level() {
+fn no_planes_workspace_folder_is_moved_aside_and_any_other_workspaces_folder_is_written() {
     let (_dir, root) = project();
     std::fs::create_dir_all(root.join("workspaces/alpha")).expect("a workspace");
     let machine = machine_with(Path::new("/opt/none"));
-    let rules = seatbelt::workspace_folder_rules().expect("rules");
+    let rules = seatbelt::workspace_folder_rules(std::slice::from_ref(&root)).expect("rules");
+    assert!(
+        rules
+            .iter()
+            .all(|rule| rule.contains("(vnode-type DIRECTORY)")),
+        "{rules:?}"
+    );
 
-    // The floor, and the full sandbox, both carry the folders' rule.
-    let floor = wrapped_floor(Harness::Codex, &root, &machine, &[], None);
+    // The plane's own, at the floor and in the full sandbox, as a chat is given them.
+    let at_the_floor = floor_of(decided(Harness::Codex, &root, &machine));
+    let Form::Codex(floor_wrap) = at_the_floor.form() else {
+        panic!("not Codex's form");
+    };
+    let floor = codex::floor_profile(floor_wrap, &[], None).expect("a profile");
     std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("on");
     let compiled = match decided(Harness::Codex, &root, &machine) {
         Some(Decided::Sandboxed(applied)) => applied,
@@ -1686,24 +1692,41 @@ fn no_workspaces_folder_is_moved_aside_and_back_at_either_level() {
     }
 
     // `mv workspaces/late /p/aside`, write `/p/aside/workspace.json`, `mv /p/aside
-    // workspaces/late`: each move names a folder entry the rule holds, so the first is refused,
-    // and the write in between is never of a manifest's path.
-    let folders = regex::Regex::new(&seatbelt::workspace_folders_regex()).expect("a regex");
+    // workspaces/late`: the first move names a folder entry the rule holds, so it is refused.
+    let held: Vec<regex::Regex> = seatbelt::workspace_folders_regexes(&root)
+        .iter()
+        .map(|one| regex::Regex::new(one).expect("a regex"))
+        .collect();
+    let matched = |path: &str| held.iter().any(|one| one.is_match(path));
     let p = root.display().to_string();
-    for held in [
+    for entry in [
         format!("{p}/workspaces/late"),
         format!("{p}/workspaces"),
         format!("{p}/Workspaces/Late"),
-        "/elsewhere/workspaces/other".to_owned(),
     ] {
-        assert!(folders.is_match(&held), "{held} is not held");
+        assert!(matched(&entry), "{entry} is not held");
     }
-    // What is in a workspace is written as ever.
+    // What is in a workspace, a repository's own `workspaces` folder, and a test's plane in a
+    // temporary folder are written as ever.
+    let tmp = std::env::temp_dir().display().to_string();
     for free in [
         format!("{p}/workspaces/alpha/web"),
-        format!("{p}/workspaces/alpha/memory/a-lesson.md"),
+        format!("{p}/workspaces/alpha/web/src/workspaces"),
+        format!("{p}/workspaces/alpha/web/src/workspaces/rename.rs"),
+        "/Users/dev/repo/app/src-tauri/src/workspaces".to_owned(),
+        format!("{tmp}/x/workspaces/alpha"),
         format!("{p}/aside"),
     ] {
-        assert!(!folders.is_match(&free), "{free} is held");
+        assert!(!matched(&free), "{free} is held");
+    }
+    // No rule holds a `workspaces` folder by its name alone.
+    for profile in [&floor, &full] {
+        assert!(
+            !profile.contains(
+                &seatbelt::string("^/(.*/)?[wW][oO][rR][kK][sS][pP][aA][cC][eE][sS](/[^/]+)?$")
+                    .expect("a string")
+            ),
+            "a folder called workspaces anywhere is held"
+        );
     }
 }
