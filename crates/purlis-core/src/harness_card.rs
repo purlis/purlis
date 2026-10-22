@@ -69,7 +69,7 @@ struct Words {
 /// capability a declaration answers, then what charter does with a chat once it is open. A
 /// test holds this to [`harness_declaration::CAPABILITIES`], so a capability charter starts
 /// reading cannot be left off the card.
-const LINES: [Words; 10] = [
+const LINES: [Words; 11] = [
     Words {
         id: HOOKS,
         label: "Tells purlis whether it is working, waiting or done",
@@ -115,6 +115,12 @@ const LINES: [Words; 10] = [
         label: "Takes plugins for one chat alone",
         without: "cannot take plugins for one chat alone, so the plugins chosen for this \
                   project are not handed to it",
+    },
+    Words {
+        id: crate::harness_declaration::MCP_SERVERS,
+        label: "Takes purlis's tools for its chats",
+        without: "cannot be handed purlis's tools, so its chats have no todos, memory or skills \
+                  from purlis",
     },
     Words {
         id: READY_TO_TYPE,

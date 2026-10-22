@@ -579,6 +579,17 @@ pub(super) fn oklab_of(hex: &str) -> Option<Vec3> {
     parse(hex).map(|(rgb, _)| oklab(rgb))
 }
 
+/// **`hex` at the OKLab lightness `lightness`** (#2940): its hue kept, its chroma lowered only as
+/// far as the screen needs, its alpha kept, each channel rounded to its nearest byte. `None` for
+/// a value that is not a colour. What the tier floors walk a grey along.
+pub(super) fn at_lightness(hex: &str, lightness: f64) -> Option<String> {
+    let (rgb, alpha) = parse(hex)?;
+    let [_, a, b] = oklab(rgb);
+    let shade = shown(lightness.clamp(0.0, 1.0), a.hypot(b), degrees(b.atan2(a)));
+    let [r, g, b] = shade.map(|v| (gamma(v) * 255.0).round().clamp(0.0, 255.0) as u8);
+    Some(format!("#{r:02x}{g:02x}{b:02x}{alpha}"))
+}
+
 /// WCAG's relative luminance of a colour in linear sRGB.
 fn luminance([r, g, b]: Vec3) -> f64 {
     0.2126 * r + 0.7152 * g + 0.0722 * b

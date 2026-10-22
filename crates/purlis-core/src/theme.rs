@@ -97,6 +97,7 @@ mod published;
 pub mod reload;
 mod resolve;
 mod schema;
+mod tiers;
 mod tint;
 mod typed;
 pub mod vocabulary;
@@ -108,7 +109,7 @@ pub use archive::{
     unpack,
 };
 pub use check::{FAINT, FITS, Finding, Fit, PAIRS, Pair, Report, TEXT_TIERS, TIER_GROUNDS};
-pub use floors::{ALLOW_APART, DANGER_APART, Floor, Held};
+pub use floors::{ALLOW_APART, ALLOW_FROM_PRIMARY, DANGER_APART, Floor, Held};
 pub use fonts::{
     BOLD, CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES,
     MOST_FONT_BYTES, Measured, NORMAL, SETTLED, Style, StyleDrawn, served, styles_drawn,
@@ -132,6 +133,7 @@ pub use placed::{Placed, PlacedIn};
 pub use published::{SCHEMA_FILE, SCHEMA_URL};
 pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
+pub use tiers::Lifted;
 pub use tint::{
     ACCENT_KIN, APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, hue_of,
     tint_hex, tint_hex_within, tinted,

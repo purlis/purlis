@@ -70,12 +70,7 @@ impl ServerHandler for Server {
                 chattools::SERVER,
                 env!("CARGO_PKG_VERSION"),
             ))
-            .with_instructions(
-                "purlis's tools for this chat: the todos, memory, session records and changes \
-                 of the workspace it works in, a question for the operator, a real browser \
-                 the person watches (the browser_ tools), and the theme specimen \
-                 (theme_preview).",
-            )
+            .with_instructions(instructions())
     }
 
     async fn list_tools(
@@ -83,11 +78,19 @@ impl ServerHandler for Server {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
+        // The skill tools (SK-13), only while the `skill-studio` flag lets the plane's skills
+        // into a chat: behind it until its finish line (#2786).
+        let skills: &[chattools::Tool] = if purlis_core::skills::studio_on_here() {
+            &purlis_core::skilltools::TOOLS
+        } else {
+            &[]
+        };
         Ok(ListToolsResult::with_all_items(
             chattools::TOOLS
                 .iter()
                 .chain(purlis_core::browsertools::TOOLS.iter())
                 .chain(purlis_core::themepreview::TOOLS.iter())
+                .chain(skills.iter())
                 .map(tool)
                 .collect(),
         ))
@@ -132,6 +135,12 @@ impl ServerHandler for Server {
                         )
                     });
             return Ok(done_with(said, attached));
+        }
+        // The chat's own skills (SK-13): read, found or loaded, over its own skill set.
+        if purlis_core::skilltools::is_one(name) && purlis_core::skills::studio_on_here() {
+            let name = name.to_owned();
+            let args = request.arguments.clone().unwrap_or_default();
+            return Ok(done(blocking(move || skill_tool(&name, &args)).await));
         }
         if !chattools::TOOLS.iter().any(|t| t.name == name) {
             return Err(ErrorData::invalid_params(
@@ -212,6 +221,65 @@ impl ServerHandler for Server {
             .await,
         ))
     }
+}
+
+/// What the server tells the harness it is for: its tools, and for a chat on the skills'
+/// `Mcp` route the one line that says how its skills are reached
+/// ([`purlis_core::skilltools::briefing`]): a harness that runs none of purlis's hooks is briefed
+/// by nothing else.
+fn instructions() -> String {
+    let mut said = "purlis's tools for this chat: the todos, memory, session records and changes \
+                    of the workspace it works in, a question for the operator, a real browser \
+                    the person watches (the browser_ tools), and the theme specimen \
+                    (theme_preview)."
+        .to_owned();
+    if purlis_core::skills::studio_on_here()
+        && let Ok(here) = crate::Here::read()
+        && let Some(line) = purlis_core::skilltools::briefing(route_here(&here))
+    {
+        said.push_str("\n\n");
+        said.push_str(line);
+    }
+    said
+}
+
+/// The chat's harness, by the word the app named it with.
+fn this_harness() -> Option<String> {
+    purlis_core::envvar::var(purlis_core::hookwire::HARNESS_ENV).filter(|kind| !kind.is_empty())
+}
+
+/// The route this chat's skills take, by its harness and the project's harness declarations.
+fn route_here(here: &crate::Here) -> Option<purlis_core::skills::Route> {
+    purlis_core::skills::route_of(
+        this_harness().as_deref(),
+        &purlis_core::harness_declaration::read(here.plane.root()),
+    )
+}
+
+/// One of the skill tools, for the chat where it works now; a load's run is opened as a hook
+/// opens one ([`purlis_core::skilltools::start_run`]).
+fn skill_tool(
+    name: &str,
+    args: &serde_json::Map<String, serde_json::Value>,
+) -> Result<String, String> {
+    let here = crate::Here::read()?;
+    let workspace = here.workspace_if_any(None);
+    let persona = here.active_persona(None);
+    let harness = this_harness();
+    let built_in = purlis_core::skills::built_in_here();
+    let chat = purlis_core::skilltools::Asking {
+        plane: here.plane.root(),
+        workspace: workspace.as_deref(),
+        persona: persona.as_deref(),
+        harness: harness.as_deref(),
+        route: route_here(&here),
+        built_in: built_in.as_deref(),
+    };
+    purlis_core::skilltools::call(&chat, name, args, &|skill| {
+        crate::hooks::with_hook("", None, |hook| {
+            purlis_core::skilltools::start_run(hook, skill);
+        });
+    })
 }
 
 /// `Err` with why, where the project this chat works in is one this purlis cannot write

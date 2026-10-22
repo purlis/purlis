@@ -33,12 +33,14 @@
 use std::path::{Path, PathBuf};
 
 mod grant;
+mod load;
 mod read;
 mod reference;
 pub mod runs;
 mod share;
 
 pub use grant::{Grant, grant_of, set_grant};
+pub use load::{Loaded, Narrowing, POINTER, by_name, find, load};
 pub use read::{DIR_IN_BUNDLE, frontmatter, in_bundle, listing, read};
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
@@ -66,6 +68,10 @@ pub enum Route {
     /// The harness has no way to take a skills directory for one chat, so the chat's
     /// `SessionStart` briefing lists each skill with the path to its `SKILL.md`.
     Briefing,
+    /// The harness has MCP and no skill format: the chat finds its skills with purlis's
+    /// `skill_find` and loads one with `skill_load`, and is told so in one line, [`POINTER`]
+    /// (ADR 0063 as amended 2026-10-20, the fallback route).
+    Mcp,
 }
 
 /// Where a skill in a chat's set comes from: its level.

@@ -2260,9 +2260,25 @@ pub struct ToolCall {
     pub skill: Option<Box<SkillStarted>>,
 }
 
+/// `at` in milliseconds since 1970, the clock every line's `at_ms` is on; 0 for a time before it.
+pub fn ms_since_1970(at: std::time::SystemTime) -> u64 {
+    at.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|since| u64::try_from(since.as_millis()).ok())
+        .unwrap_or_default()
+}
+
+/// The word a [`ToolCall`] line carries in [`ToolCall::tool_hook`] when purlis's own MCP server,
+/// not a hook, says the chat loaded a skill with `skill_load` (SK-13, #2776): a line with the
+/// [`SkillStarted`] the load opens, sent the way a tool hook sends its line, so the host opens the
+/// run through the one [`crate::skillspan::Tracker`] every start goes through. It is counted as
+/// the tool call it is, recorded as `hook.skill-load`.
+pub const SKILL_LOAD: &str = "skill-load";
+
 /// **A skill run a tool call starts** (SK-3, #2766), as the hook found it from the harness's
 /// own words ([`crate::harness::HarnessAdapter::skill_start`]): the Skill tool's skill, or the
-/// skill whose `SKILL.md` a briefed chat read. The host opens the run under the id the hook
+/// skill whose `SKILL.md` a briefed chat read; or the skill purlis's MCP server loaded
+/// ([`SKILL_LOAD`]). The host opens the run under the id the hook
 /// minted, where its turn has not started that skill already ([`crate::skillspan`]).
 ///
 /// It comes from a chat's side of the channel, so the host reads it as a claim: a name is
@@ -2275,6 +2291,17 @@ pub struct SkillStarted {
     /// The run's id: a ULID the hook minted.
     pub run: String,
     pub started_by: purlis_skills::runs::StartedBy,
+    /// The workspace the chat worked in, or none at the plane root (SK-13): with [`Self::level`],
+    /// which copy of the skill the run is of.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    /// The copy of the skill, by its level, where the start knew it.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "purlis_skills::runs::level_or_none"
+    )]
+    pub level: Option<purlis_skills::runs::Level>,
 }
 
 impl ToolCall {

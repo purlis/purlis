@@ -102,7 +102,9 @@ fn danger_words_that_vanish_into_the_danger_surface_are_drawn_as_purlis_s_and_th
     assert_eq!(drawn.value("accent.base"), "#4fa3e0");
     let held = held.expect("the floor was held");
     assert_eq!(held.theme, "Ember");
-    assert_eq!(held.floors, [Floor::Danger]);
+    // Its blue accent also brings the primary's fill near Allow's at a hue a workspace's own
+    // colour can take, which is drawn untinted there (#2948).
+    assert_eq!(held.floors, [Floor::Danger, Floor::AllowNotPrimary]);
     assert_eq!(held.tokens, ["danger.surface", "danger.text"]);
     assert_eq!(consent_failures(&drawn), []);
 }
@@ -286,7 +288,8 @@ fn a_theme_of_one_colour_everywhere_is_drawn_clearing_every_consent_floor() {
                 Floor::AllowApart,
                 Floor::Danger,
                 Floor::DangerApart,
-                Floor::StateMarks
+                Floor::StateMarks,
+                Floor::AllowNotPrimary
             ]
         );
         let drawn = drawn.theme.expect("drawn");

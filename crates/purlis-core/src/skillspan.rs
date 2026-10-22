@@ -12,7 +12,7 @@
 //! nothing. Runs are kept by a key the caller chooses: the event log's writer keys them by the
 //! chat's run, the window by the chat's number.
 
-use purlis_skills::runs::{Call, Closed, Ended, Heard, Open, Spans, Start, StartedBy};
+use purlis_skills::runs::{Call, Closed, Ended, Heard, Open, Spans, Start, StartedBy, Whose};
 
 /// The hook words of a call that failed: `posttoolusefailure` and its kin.
 const FAILED: &str = "posttoolusefailure";
@@ -117,6 +117,21 @@ impl Tracker {
         {
             return None;
         }
+        // The workspace is a claim too: one plain, readable name, or the copy is not known.
+        let workspace = started.workspace.as_deref().map(str::trim);
+        let whose = match workspace {
+            Some(ws)
+                if ws.is_empty()
+                    || ws.contains(['/', '\\'])
+                    || crate::shown::readable(ws, crate::shown::DISPLAY_LIMIT) != ws =>
+            {
+                Whose::default()
+            }
+            _ => Whose {
+                workspace: workspace.map(str::to_owned),
+                level: started.level,
+            },
+        };
         self.spans
             .open(
                 key,
@@ -124,6 +139,7 @@ impl Tracker {
                     skill: &skill,
                     id: &started.run,
                     started_by: started.started_by,
+                    whose: &whose,
                     at_ms,
                     tokens: tokens(),
                 },
