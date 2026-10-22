@@ -903,6 +903,62 @@ fn a_click_while_a_frame_of_the_page_went_is_dropped() {
     assert!(typed.is_ok(), "{typed:?}");
 }
 
+/// How many times the page's own tree was read (each read of the page reads every frame's).
+fn page_reads(engine: &super::Engine) -> usize {
+    engine
+        .sent("Accessibility.getFullAXTree")
+        .iter()
+        .filter(|s| s.params["frameId"] == "PAGE-1")
+        .count()
+}
+
+/// The payment frame loads document `n` of a rotating advert.
+fn the_payment_frame_loads(engine: &super::Engine, n: u32) {
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","loaderId":format!("ADVERT-{n}"),"url":format!("http://other.test/advert-{n}.html"),"name":"payment"}}),
+        Some("S-PAYMENT"),
+    );
+}
+
+#[test]
+fn a_key_reads_the_pages_tree_at_most_once_while_another_frame_reloads() {
+    // #2974: the payment frame loads another document before every key.
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    let mut n = 0;
+    let mut reloads = |browser: &super::Browser| {
+        n += 1;
+        let before = aim_now(browser);
+        the_payment_frame_loads(&engine, n);
+        wait_for("the advert's new document is known", || {
+            aim_now(browser) != before
+        });
+    };
+
+    // The first key into the field reads the tree once: where it lands and what to blank.
+    reloads(&browser);
+    let reads = page_reads(&engine);
+    browser.person_input(&key(&aim, "x", true)).unwrap();
+    assert_eq!(page_reads(&engine) - reads, 1, "the first key");
+
+    // While the field keeps the focus, a key reads it not at all.
+    let field = engine
+        .sent("DOM.resolveNode")
+        .last()
+        .map(|s| s.params["backendNodeId"].as_i64().unwrap())
+        .unwrap();
+    super::super::lock(&engine.model).focused_backend = Some(field);
+    for _ in 0..3 {
+        reloads(&browser);
+        let reads = page_reads(&engine);
+        browser.person_input(&key(&aim, "y", true)).unwrap();
+        assert_eq!(page_reads(&engine), reads, "a key into the same field");
+    }
+    assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), 4);
+}
+
 #[test]
 fn a_move_onto_a_frame_swapped_into_a_process_of_its_own_since_is_dropped() {
     // #2973: the payment frame moves to a process of its own, as a frame that navigates to

@@ -128,6 +128,11 @@ describe("forced colours", () => {
     );
     expect(focus?.declarations.get("outline-style")).toBe("solid");
     expect(focus?.declarations.get("outline-color")).toBe("Highlight");
+    // Forced colours replace colour, not geometry: the ring keeps the theme's width and offset,
+    // which the window's own focus rule gives it (#2867).
+    expect(focus?.declarations.has("outline-width")).toBe(false);
+    expect(focus?.declarations.has("outline-offset")).toBe(false);
+    expect(focus?.declarations.get("outline")).toBeUndefined();
     const reached = focus?.selectors.join(" ") ?? "";
     for (const stop of [
       "button",
