@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792693323968,
+  "lastUpdate": 1792693341636,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -11564,6 +11564,42 @@ window.BENCHMARK_DATA = {
             "value": 680.7,
             "unit": "MB",
             "extra": "median of 6 samples: 624.9, 667.9, 680.4, 680.9, 681.6, 790.3 MB; window 403.6 MB, session host 277 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "76f07d09d3fec02db9dc82f033489312a54dae37",
+          "message": "Theme: every focus ring reads the focus-ring tokens (#3019)\n\n* Theme: every focus ring reads the focus-ring tokens\n\nEvery focus ring in App.css takes its width from --focus-ring-width and\nits offset from --focus-ring-offset or --focus-ring-inset (half of one\nfor the 1px offsets), equal to Purlis Classic's literals. A new guard,\nfocusRing.guard.test.ts, keeps it so; the forced-colours sheet keeps\nthe system's ring. The 2px note leaves themes.md and the theme skill\n(#2867).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme: forced colours keep the theme's focus-ring width\n\nForced colours replace colour, not geometry: the forced-colours focus\nrule sets only the ring's style and colour, and the window's own rule\ngives its width and offset from focus-ring.*. forced-colors.test.ts\nholds that it sets none; the focus-ring guard now reads every sheet\n(#2867 review).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T21:14:23+04:00",
+          "tree_id": "8f10bcb430fb1d140d638d7a06e0ab4b1aa9d8de",
+          "url": "https://github.com/purlis/purlis/commit/76f07d09d3fec02db9dc82f033489312a54dae37"
+        },
+        "date": 1792693339849,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1619,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1454.4, 1619, 1654.7 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 669.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 640.8, 661.9, 669.6, 670.1, 671.9, 772.2 MB; window 409 MB, session host 260.8 MB"
           }
         ]
       }
