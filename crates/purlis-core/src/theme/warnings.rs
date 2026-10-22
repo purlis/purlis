@@ -191,6 +191,40 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 None,
                 *ratio,
             ),
+            Finding::TierFallsBack {
+                tier,
+                written,
+                drawn,
+                ground,
+                ratio,
+                floor,
+                tinted,
+                clears,
+            } => {
+                let tint = if *tinted { " in a workspace tint" } else { "" };
+                let as_drawn = if drawn == written {
+                    format!("{tier} is drawn as written")
+                } else {
+                    format!("{tier} is drawn as {drawn}, not {written}")
+                };
+                (
+                    if *clears {
+                        format!(
+                            "{as_drawn}: {ratio:.2} on {ground}{tint}, under {floor}, so purlis \
+                             draws the nearest colour that clears it"
+                        )
+                    } else {
+                        format!(
+                            "{as_drawn}: no colour clears every ground, so purlis holds it on the \
+                             window's own surfaces; it is {ratio:.2} on {ground}{tint}, under \
+                             {floor}"
+                        )
+                    },
+                    None,
+                    None,
+                    None,
+                )
+            }
         };
         let at = match found
             .iter()

@@ -822,6 +822,20 @@ pub enum Finding {
         floor: String,
         ratio: Option<f64>,
     },
+    /// A text tier under its floor on a ground it is drawn on (#2940), so the window draws it
+    /// as the nearest colour that clears it: `drawn`, from the theme's `written`. `ground` is
+    /// where it fell furthest under, at `ratio`, as written or, with `tinted`, only in a
+    /// workspace's tint; `clears` is `false` only where no lightness clears every ground.
+    TierFallsBack {
+        tier: &'static str,
+        written: String,
+        drawn: String,
+        ground: &'static str,
+        ratio: f64,
+        floor: f64,
+        tinted: bool,
+        clears: bool,
+    },
 }
 
 /// The check, as [`super::check`] describes it.
@@ -852,6 +866,21 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
                 part: one.part,
                 floor: one.floor,
                 ratio: one.ratio,
+            }),
+    );
+    // A text tier under its floor is drawn as the nearest colour that clears it (#2940).
+    findings.extend(
+        super::tiers::lifted(theme)
+            .into_iter()
+            .map(|one| Finding::TierFallsBack {
+                tier: one.tier,
+                written: one.written,
+                drawn: one.drawn,
+                ground: one.ground,
+                ratio: one.ratio,
+                floor: one.floor,
+                tinted: one.tinted,
+                clears: one.clears,
             }),
     );
     // A theme a workspace's colour does not tint is only ever drawn as it is.

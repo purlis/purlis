@@ -166,6 +166,8 @@ pub enum RunStart {
     SkillTool,
     /// The chat read the skill's `SKILL.md`.
     Read,
+    /// The chat loaded the skill with purlis's `skill_load` tool.
+    McpLoad,
     /// A start a newer purlis wrote.
     Unknown,
 }
@@ -176,6 +178,7 @@ impl From<purlis_core::skills::runs::StartedBy> for RunStart {
         match started_by {
             StartedBy::SkillTool => RunStart::SkillTool,
             StartedBy::Read => RunStart::Read,
+            StartedBy::McpLoad => RunStart::McpLoad,
             _ => RunStart::Unknown,
         }
     }

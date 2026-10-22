@@ -332,6 +332,12 @@ names:
   same theme, measured on what a person reads as the look as it shows on each surface;
 - danger's words stay apart from the accent and from the primary's words.
 
+**A theme's tokens alone keep Allow apart from the primary** (#2948): the button family's
+defaults, drawn from the theme's tokens, are measured the same way, at rest and in each state, as
+written and in each of the theme's own tints. A theme whose tokens bring the two together is
+drawn with purlis's own fill for the primary, and Allow's own fill only when that is not enough,
+under the consent floors' Notice.
+
 A consent variant that breaks one draws its family default there, and where that is not enough,
 so does the variant it is held apart from. Allow's lock is the window's, and no property reaches
 it.
@@ -353,7 +359,14 @@ numbers, placeholders, counts, paths and group labels; none of it is exempt, and
 takes faint. The check measures every text tier at 4.5:1 and faint at 3:1 on every ground a
 part draws them on: the window, a field, the status bar, a panel, a card, the row under the
 pointer, the editor's code, the selected row, the tab in front and a control, at rest and
-under the pointer. **A tier the layer below draws in the grey of the tier above it follows
+under the pointer. **No theme draws a tier under its floor** (ruling #2803·3, ADR 0098's
+amendment of 2026-10-21): a tier that falls under it on one of those grounds, as written or in a
+workspace tint, is drawn as the nearest colour that clears it, the theme's own colour walked
+along its lightness with its hue kept, and the check says so as a `tier-falls-back` warning
+beside the pair's own. A lifted tier can read as loud as the tier above it: the floor comes
+before the order. Where no lightness clears every ground (a dark window with a light code
+ground), the floor is held on the window's own surfaces, a tier that already clears them keeps
+its colour, and the check names the ground on the other side. **A tier the layer below draws in the grey of the tier above it follows
 that tier** (ADR 0097's amendment of 2026-10-21): over Purlis Classic, whose quiet and faint are
 its muted, a theme that names `text.muted` and not `text.quiet` draws quiet in its muted, and one
 that names no `text.faint` draws faint in its quiet. So a theme written before the tiers draws
@@ -407,7 +420,8 @@ each layer under it as a warning names them, its ratio and the tint it was found
   is the author's call; the theme is drawn.
 - **Consent floors** (an ask contrasts with its surface, Allow is distinguishable from Keep
   blocked, the danger colours contrast with what they are drawn on, danger is distinguishable
-  from primary, the state marks meet the mark floor) hold in every combination. A combination
+  from primary, the state marks meet the mark floor, Allow is distinguishable from the primary)
+  hold in every combination. A combination
   that breaks one, an option value's included, is drawn with purlis's own values for those
   tokens and the rest as written, and the window says so in a Notice.
 - **Hard floors** are the few rules that keep the window readable whatever a theme says, each

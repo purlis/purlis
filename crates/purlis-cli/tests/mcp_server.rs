@@ -195,6 +195,105 @@ fn a_harness_lists_charter_s_tools() {
     );
 }
 
+/// `goose`, a harness the project declares, which takes MCP servers and has no adapter.
+const GOOSE: &str = "name = \"goose\"\ntitle = \"Goose\"\nprogram = \"goose\"\n\n[session]\n\n\
+                     [terminal]\nready_to_type = \"raw-and-quiet\"\n\n[levels]\n\n\
+                     [capabilities]\nmcp_servers = \"yes\"\n";
+
+/// A project with one skill at its root, `deploy`, and the Skill studio's flag on for its
+/// server, the harness named `harness`.
+fn with_a_skill(harness: &str) -> (tempfile::TempDir, Server) {
+    let p = project();
+    std::fs::write(p.path().join(purlis_core::plane::MANIFEST), "").expect("manifest");
+    let deploy = p.path().join("skills/deploy");
+    std::fs::create_dir_all(&deploy).expect("a skill");
+    std::fs::write(
+        deploy.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Ship the service.\n---\n\nShip it.\n",
+    )
+    .expect("SKILL.md");
+    std::fs::create_dir_all(p.path().join("harnesses")).expect("harnesses/");
+    std::fs::write(p.path().join("harnesses/goose.toml"), GOOSE).expect("a declaration");
+    // Granted to every workspace, so the chat in `alpha` has it.
+    std::fs::write(p.path().join("skills/deploy.toml"), "grant = \"all\"\n").expect("a grant");
+    let server = Server::start_with(
+        p.path(),
+        "alpha",
+        &[
+            ("PURLIS_SKILL_STUDIO", "1".as_ref()),
+            (purlis_core::hookwire::HARNESS_ENV, harness.as_ref()),
+        ],
+    );
+    (p, server)
+}
+
+#[test]
+fn with_the_studio_on_a_harness_with_no_skill_format_is_told_its_skills_are_over_mcp() {
+    // SK-13: the fallback route's one line, in what the server tells the harness at its start.
+    let (p, mut server) = with_a_skill("goose");
+    let hello = server.initialize(false);
+    let instructions = hello["result"]["instructions"].as_str().unwrap_or_default();
+    assert!(
+        instructions.contains(purlis_core::skills::POINTER),
+        "{instructions}"
+    );
+    let listed = server.request("tools/list", json!({}));
+    let names: Vec<&str> = listed["result"]["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .collect();
+    assert!(
+        names.ends_with(&["skill_list", "skill_runs", "skill_find", "skill_load"]),
+        "{names:?}"
+    );
+
+    let loaded = text(&server.call("skill_load", json!({ "name": "deploy" })));
+    assert!(
+        loaded.starts_with("Loaded the skill `deploy` (project)."),
+        "{loaded}"
+    );
+    assert!(loaded.ends_with("Ship it.\n"), "{loaded}");
+    // No app listens: the load's run is in the project's skill log, started by the load.
+    let runs = purlis_core::skilluse::runs(p.path());
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    assert_eq!(
+        runs[0].started_by,
+        Some(purlis_core::skills::runs::StartedBy::McpLoad)
+    );
+    let ran = text(&server.call("skill_runs", json!({})));
+    assert!(ran.contains("`deploy`, started by mcp-load"), "{ran}");
+}
+
+#[test]
+fn a_harness_with_a_route_of_its_own_or_none_is_not_told_the_line() {
+    // The three keep their routes; a harness no declaration says takes MCP has no route.
+    for harness in ["claude-code", "codex", "opencode", "undeclared"] {
+        let (_p, mut server) = with_a_skill(harness);
+        let hello = server.initialize(false);
+        let instructions = hello["result"]["instructions"].as_str().unwrap_or_default();
+        assert!(
+            !instructions.contains(purlis_core::skills::POINTER),
+            "{harness}: {instructions}"
+        );
+        let found = text(&server.call("skill_find", json!({ "query": "ship" })));
+        assert!(found.contains("`deploy` (project)"), "{harness}: {found}");
+    }
+}
+
+#[test]
+fn with_the_studio_off_there_is_no_skill_tool() {
+    let p = project();
+    let mut server = Server::start(p.path(), "alpha");
+    server.initialize(false);
+    let answer = server.request(
+        "tools/call",
+        json!({ "name": "skill_list", "arguments": {} }),
+    );
+    assert!(answer["error"].is_object(), "{answer}");
+}
+
 #[test]
 fn theme_preview_with_no_app_says_the_app_draws_the_specimen_and_the_session_goes_on() {
     // #2330: the theme specimen is drawn by the app, in a window of its own; a chat no app

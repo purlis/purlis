@@ -20,7 +20,7 @@
 
 use std::path::{Path, PathBuf};
 
-use purlis_skills::runs::{Closed, Ended, Open, StartedBy};
+use purlis_skills::runs::{Closed, Ended, Level, Open, StartedBy};
 
 /// The directory under `personas/` — `skilluse.DIR_NAME`.
 pub const DIR_NAME: &str = "_skills";
@@ -52,17 +52,20 @@ pub fn started(
     let persona = persona
         .map(crate::memstore::py_strip)
         .filter(|p| !p.is_empty());
-    crate::dispatch::append(
-        &path_for(root, when, device),
-        root,
-        &serde_json::json!({
-            "persona": persona,
-            "run": run.id,
-            "skill": skill,
-            "started_by": run.started_by,
-            "ts": crate::dispatch::stamp(when),
-        }),
-    )
+    let mut row = serde_json::json!({
+        "persona": persona,
+        "run": run.id,
+        "skill": skill,
+        "started_by": run.started_by,
+        "ts": crate::dispatch::stamp(when),
+    });
+    // Which copy it is of, where the start knew it (SK-13): its level, and the workspace the
+    // chat worked in, null at the plane root.
+    if let Some(level) = run.level {
+        row["level"] = level.word().into();
+        row["workspace"] = run.workspace.into();
+    }
+    crate::dispatch::append(&path_for(root, when, device), root, &row)
 }
 
 /// A skill run's start, as [`started`] logs it: the run the event log's writer opened, or the
@@ -72,6 +75,10 @@ pub struct Starting<'a> {
     pub id: &'a str,
     pub skill: &'a str,
     pub started_by: StartedBy,
+    /// The workspace the chat worked in, `None` at the plane root.
+    pub workspace: Option<&'a str>,
+    /// The copy of the skill, by its level, where the start knew it.
+    pub level: Option<Level>,
 }
 
 impl<'a> From<&'a Open> for Starting<'a> {
@@ -80,6 +87,20 @@ impl<'a> From<&'a Open> for Starting<'a> {
             id: &open.id,
             skill: &open.skill,
             started_by: open.started_by,
+            workspace: open.whose.workspace.as_deref(),
+            level: open.whose.level,
+        }
+    }
+}
+
+impl<'a> From<&'a crate::hookwire::SkillStarted> for Starting<'a> {
+    fn from(started: &'a crate::hookwire::SkillStarted) -> Self {
+        Starting {
+            id: &started.run,
+            skill: &started.skill,
+            started_by: started.started_by,
+            workspace: started.workspace.as_deref(),
+            level: started.level,
         }
     }
 }
@@ -136,6 +157,9 @@ pub struct Run {
     pub started: String,
     /// The device whose log holds it.
     pub device: String,
+    /// Which copy of the skill it is of, and where it ran, or `None` for a row that does not say
+    /// (written before SK-13, or by a start that could not tell): such a run is no copy's.
+    pub copy: Option<RunCopy>,
     /// How it ended and what it counted, once its end is logged.
     pub end: Option<End>,
 }
@@ -150,6 +174,14 @@ impl Run {
                 .split_once(':')
                 .is_some_and(|(_, leaf)| leaf == name)
     }
+}
+
+/// Which copy of a skill a run is of, and where it ran (SK-13).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct RunCopy {
+    /// The workspace the chat worked in, or `None` at the plane root.
+    pub workspace: Option<String>,
+    pub level: Level,
 }
 
 /// How a skill run ended, and its signals: never a pass or a fail.
@@ -185,6 +217,8 @@ struct Row {
     asks: Option<u64>,
     tokens: Option<u64>,
     parent: Option<String>,
+    level: Option<String>,
+    workspace: Option<String>,
 }
 
 /// **Every skill run the plane's skill log holds**, newest first: each start with its end
@@ -224,6 +258,14 @@ pub fn runs(root: &Path) -> Vec<Run> {
                     started_by: row.started_by,
                     started: row.ts.unwrap_or_default(),
                     device: device.clone(),
+                    copy: row
+                        .level
+                        .as_deref()
+                        .and_then(Level::parse)
+                        .map(|level| RunCopy {
+                            workspace: row.workspace.filter(|ws| !ws.is_empty()),
+                            level,
+                        }),
                     end: None,
                 }),
                 (None, Some(id), Some(ended)) => {

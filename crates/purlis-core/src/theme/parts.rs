@@ -559,7 +559,7 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
 
 /// **The distance in OKLab below which a person sees one colour** (`floors.rs`'s scale): how
 /// near Allow's fill is held to Keep blocked's.
-const SEEN: f64 = 0.02;
+pub(super) const SEEN: f64 = 0.02;
 
 /// How much nearer the primary than the family's defaults a consent variant may be drawn: none,
 /// beyond what rounding a colour moves.
@@ -600,6 +600,70 @@ fn look_apart(theme: &ResolvedTheme, family: &Family, a: &Drawn, b: &Drawn, word
 
 /// The variant every family's suggested answer is drawn in.
 const PRIMARY: &str = "primary";
+
+/// **Allow against the primary as a theme's tokens draw them** (#2948): one measure for each
+/// state an answer that grants is drawn in. The token-level floor ([`super::floors`]) holds it.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct AllowLook {
+    /// The state, `None` at rest.
+    pub state: Option<State>,
+    /// How far apart the two looks are drawn ([`look_apart`]).
+    pub apart: f64,
+    /// The primary's fill token, then Allow's: what a floor that fails draws as purlis's own.
+    pub fills: [&'static str; 2],
+}
+
+/// The grounds every family with an answer that grants is drawn on: what its fills are measured
+/// over.
+pub(super) fn allow_grounds() -> impl Iterator<Item = &'static str> {
+    MANIFEST
+        .iter()
+        .filter(|family| {
+            family
+                .variants
+                .iter()
+                .any(|variant| variant.consent == Some(Consent::Grants))
+        })
+        .flat_map(|family| family.grounds.iter().copied())
+}
+
+/// **How far Allow is drawn from the primary by the family defaults alone**, in `theme`: for
+/// every family with an answer that grants, at rest and in each state whose look differs from
+/// it, measured as the parts check measures looks ([`look_apart`]): the fills as each shows on
+/// every ground the family is drawn on, the nearest ground counting, and the edges where they
+/// stand out. A selected toggle is left out: an answer that grants is never a toggle.
+pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
+    let mut found = Vec::new();
+    for family in MANIFEST {
+        let Some(grants) = family
+            .variants
+            .iter()
+            .find(|variant| variant.consent == Some(Consent::Grants))
+        else {
+            continue;
+        };
+        let mut seen: Vec<(Drawn, Drawn)> = Vec::new();
+        for state in std::iter::once(None).chain(
+            STATES
+                .into_iter()
+                .filter(|state| !matches!(state, State::Selected | State::Disabled))
+                .map(Some),
+        ) {
+            let allow = drawn(&[], family, grants.name, state);
+            let primary = drawn(&[], family, PRIMARY, state);
+            if seen.contains(&(allow.clone(), primary.clone())) {
+                continue;
+            }
+            found.push(AllowLook {
+                state,
+                apart: look_apart(theme, family, &allow, &primary, false),
+                fills: [primary.fill, allow.fill],
+            });
+            seen.push((allow, primary));
+        }
+    }
+    found
+}
 
 /// A variant's button colours as the engine holds them, for the test that holds them to
 /// `controls.css`: at rest, under the pointer, and selected.

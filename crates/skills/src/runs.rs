@@ -20,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use crate::Skill;
+use crate::{Origin, Skill};
 
 /// What started a skill run (decision 60).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -32,17 +32,21 @@ pub enum StartedBy {
     /// The chat read a known `SKILL.md`: how a chat briefed on its skills starts one, as the
     /// chat's adapter reads it.
     Read,
+    /// The chat loaded the skill through purlis's own `skill_load` tool (SK-13): an exact start
+    /// on every harness, said by purlis's MCP server rather than read from the harness.
+    McpLoad,
     /// A start a newer purlis wrote, which this one does not know. It never opens a run.
     #[serde(other)]
     Unknown,
 }
 
 impl StartedBy {
-    /// The word a run records: `skill-tool`, `read` or `unknown`.
+    /// The word a run records: `skill-tool`, `read`, `mcp-load` or `unknown`.
     pub fn word(self) -> &'static str {
         match self {
             Self::SkillTool => "skill-tool",
             Self::Read => "read",
+            Self::McpLoad => "mcp-load",
             Self::Unknown => "unknown",
         }
     }
@@ -52,6 +56,7 @@ impl StartedBy {
         Some(match word {
             "skill-tool" => Self::SkillTool,
             "read" => Self::Read,
+            "mcp-load" => Self::McpLoad,
             _ => return None,
         })
     }
@@ -93,6 +98,67 @@ impl Ended {
             _ => return None,
         })
     }
+}
+
+/// **Which copy of a skill a run is of**: its level, and whether it is the local copy (ADR 0099).
+/// With the workspace the chat worked in, it tells one copy's runs from another's of the same
+/// name, so a chat is shown the runs of its own copies alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Level {
+    pub origin: Origin,
+    pub local: bool,
+}
+
+impl Level {
+    /// The word a run records, the level a person is shown ([`crate::level_shown`]):
+    /// `built-in`, `installed`, `project`, `persona`, `workspace`, and `local …` of a level that
+    /// has local skills.
+    pub fn word(self) -> String {
+        crate::level_shown(self.origin, self.local)
+    }
+
+    /// The level `word` names, or none for a word this purlis does not know (a newer purlis's).
+    pub fn parse(word: &str) -> Option<Self> {
+        let (local, rest) = match word.strip_prefix("local ") {
+            Some(rest) => (true, rest),
+            None => (false, word),
+        };
+        let origin = match rest {
+            "built-in" if !local => Origin::BuiltIn,
+            "installed" if !local => Origin::Harness,
+            "project" => Origin::Project,
+            "workspace" => Origin::Workspace,
+            "persona" => Origin::Persona,
+            _ => return None,
+        };
+        Some(Self { origin, local })
+    }
+}
+
+impl serde::Serialize for Level {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.word())
+    }
+}
+
+/// Reads a level's word as [`Level::parse`] does, for a `#[serde(deserialize_with)]` field: a
+/// word this purlis does not know is no level, never a line refused.
+pub fn level_or_none<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Level>, D::Error> {
+    let word: Option<String> = serde::Deserialize::deserialize(deserializer)?;
+    Ok(word.as_deref().and_then(Level::parse))
+}
+
+/// Where a skill run happened and which copy it is of: what a run's start carries so that its
+/// runs are told apart by copy (SK-13).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Whose {
+    /// The workspace the chat worked in, or `None` for a chat at the plane root.
+    pub workspace: Option<String>,
+    /// The copy of the skill, where the start knew it; `None` for one it could not tell (a
+    /// harness's own skill), whose runs belong to no copy of the plane's.
+    pub level: Option<Level>,
 }
 
 /// What a span counted while it was open: signals, never a pass or a fail (decision 24).
@@ -140,6 +206,8 @@ pub struct Open {
     /// The span it opened inside, where it is a child.
     pub parent: Option<String>,
     pub started_by: StartedBy,
+    /// Where it ran, and which copy of the skill it is of.
+    pub whose: Whose,
     /// When it opened, in milliseconds since 1970.
     pub at_ms: u64,
     /// The chat's tokens as its harness last said them when it opened, where it said any.
@@ -164,6 +232,7 @@ pub struct Start<'a> {
     pub skill: &'a str,
     pub id: &'a str,
     pub started_by: StartedBy,
+    pub whose: &'a Whose,
     pub at_ms: u64,
     pub tokens: Option<u64>,
 }
@@ -193,6 +262,7 @@ impl Spans {
             id: start.id.to_owned(),
             parent,
             started_by: start.started_by,
+            whose: start.whose.clone(),
             at_ms: start.at_ms,
             tokens_at_start: start.tokens,
             signals: Signals::default(),
