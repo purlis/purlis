@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792696170632,
+  "lastUpdate": 1792696186205,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -11636,6 +11636,42 @@ window.BENCHMARK_DATA = {
             "value": 669.8,
             "unit": "MB",
             "extra": "median of 6 samples: 640.8, 661.9, 669.6, 670.1, 671.9, 772.2 MB; window 409 MB, session host 260.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7c7bae7459ce32a3a4559d65a220c5b14f1a76cd",
+          "message": "Browsers: a browser view's chip names the page, and its rows say who drives (#2300) (#2833)\n\n* Browsers: a browser view's chip names the page, and its rows say who drives (#2300)\n\nSession protocol 1.35: a browser view's stream carries the origin of the\npage it shows, cut in the host from the engine's own record of the page,\nsent where it changes and in each snapshot. The chip and a row's tooltip\nname it; never a path, query or title. A chat's browser row and thumbnail\nsay when the person drives it, and when purlis is signing in.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the window takes only a real origin, and two logins keep the mark (#2300)\n\nWhat a host sends as a page's origin is taken only where it is one,\nexactly as origin_of writes it and at most 255 bytes; anything else is no\norigin. Two logins at once in one browser each hold its purlis mark.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the chip's origin on top of 1.34, the tests main added watching with it (#2300)\n\nThe rebase onto #2830's 1.34 keeps 1.35 for the origin frame, names it in\nthe frame fixture's promise, and gives the views main's tests open an\norigin sink.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Settings: a way in a test left standing never fires after its window is gone\n\nA way into Settings retries on a timer for up to two seconds (#1206).\nEvery test now forgets it after it runs, and the watch on the person's\nnext move does nothing where there is no window, so a retry that\noutlives a torn-down test window no longer throws (seen on #2833's web\nrun from TitleBar.test.tsx).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T22:20:56+04:00",
+          "tree_id": "8f4d6d34760a3ed069a9ab29ff476ddab9d27d9f",
+          "url": "https://github.com/purlis/purlis/commit/7c7bae7459ce32a3a4559d65a220c5b14f1a76cd"
+        },
+        "date": 1792696184468,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1530.3,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1413.4, 1530.3, 1775.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 687.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 648.8, 671.8, 689.5, 687.7, 688.2, 772.5 MB; window 403.8 MB, session host 283.6 MB"
           }
         ]
       }
