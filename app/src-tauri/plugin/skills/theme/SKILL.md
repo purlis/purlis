@@ -137,8 +137,8 @@ tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fa
 **Still square, whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a
 tab's `×` closer, the settings gear on a strip, and every list and tree row but the palette's.
 Tell the person when they ask for rounder tabs or rows: the theme cannot round those yet. The
-focus ring tokens reach the shared controls and list rows; every other focus ring, the strip
-tabs', the closer's and the gear's among them, is 2px whatever `focus-ring.*` says.
+focus ring tokens reach every focus ring, the strip tabs', the closer's and the gear's among
+them.
 
 **One part of one control** is a component part, in a top-level `parts` object:
 `"button.root.corner-radius": "full"` rounds every button to a pill, and

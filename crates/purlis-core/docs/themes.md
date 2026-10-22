@@ -173,9 +173,9 @@ over the appearance as its colours are.
 | `radius.full` | px | 0–9999 | 9999 | 9999 | pills: counts, toggle tracks |
 | `size.control` | px at 14px | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
 | `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
-| `focus-ring.width` | px | 1–4 | 2 | 2 | the focus ring of controls and list rows, and the selected row's edge |
-| `focus-ring.offset` | px | 0–4 | 2 | 2 | a control's ring, outside it |
-| `focus-ring.inset` | px | −4–0 | −2 | −2 | a list row's or a segment's ring, inside it |
+| `focus-ring.width` | px | 1–4 | 2 | 2 | every focus ring, and the selected row's edge |
+| `focus-ring.offset` | px | 0–4 | 2 | 2 | a ring outside its element: a control's, a card's |
+| `focus-ring.inset` | px | −4–0 | −2 | −2 | a ring inside its element: a list row's, a tab's, a segment's |
 | `elevation.raised-y` | px at 14px | 0–8 | 2 | 2 | how far a raised bar's shadow falls: the find bar |
 | `elevation.raised-blur` | px at 14px | 0–24 | 8 | 8 | how soft that shadow is |
 | `elevation.overlay-y` | px at 14px | 0–16 | 8 | 8 | how far an overlay's shadow falls: dialogs, popovers, menus, tooltips |
@@ -192,9 +192,10 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 
 The project strip sits in the title bar, whose height no token reaches yet. **Still square,
 whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a tab's `×` closer, the
-settings gear on a strip, and every list and tree row but the palette's. **The focus
-ring tokens reach the shared controls and list rows; every other focus ring is 2px**, whatever
-`focus-ring.*` says: the strip tabs, a tab's `×` closer and the strip gear among them.
+settings gear on a strip, and every list and tree row but the palette's. **The focus ring
+tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and the strip gear's
+among them; a ring that sits half as far out or in draws half the offset. Only forced colours
+draw the system's ring instead.
 
 ### Density's compact layer
 

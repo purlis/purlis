@@ -1550,8 +1550,9 @@ What a tab on the three strips draws, and in what (the operator's asks of 2026-1
 
 ### The guards, and the lists that only shrink
 
-Three guards beside `designSet.guard.test.ts` keep the window from drifting again (#1837; the
-third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
+Four guards beside `designSet.guard.test.ts` keep the window from drifting again (#1837; the
+third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920; the fourth holds
+the focus rings, #2867):
 
 - **`geometry.guard.test.ts`** fails on a literal **padding**, **margin**, **gap**, **corner**,
   **font size** or **offset** (`top`, `right`, `bottom`, `left`, `inset` and its forms), a
@@ -1620,6 +1621,16 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   2026-10-17), an activity tab is
   the square of its column, and two icon or confirm buttons outside a strip are drawn at the
   small control height.
+- **`focusRing.guard.test.ts`** fails on a focus ring that does not read the focus-ring tokens
+  (#2867): in a rule for a focused element (`:focus`, `:focus-visible`, `:focus-within`,
+  `[data-focus-visible]`) or in a component's or a script's style, an `outline` or
+  `outline-width` is `var(--focus-ring-width)`, and an `outline-offset` reads
+  `--focus-ring-offset` (outside), `--focus-ring-inset` (inside) or `--focus-ring-width`, a whole
+  share or multiple of one allowed. A written length, a width keyword (`thin`) or a Tailwind
+  `outline-<n>` fails; a ring taken away (`none`, `0`) passes. A ring that sits half as far out
+  or in as the token says is `calc(var(--focus-ring-offset) / 2)` or
+  `calc(var(--focus-ring-inset) / 2)`. The forced-colours sheet is not read: no theme token
+  reaches it, so its ring is the system's.
 
 Each started with **an allowance list of the offenders the window had when it landed**,
 grouped by file and one entry per line. The geometry and type lists reached zero with #2319
