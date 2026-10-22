@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { PlaneId } from "./bindings";
@@ -31,6 +32,31 @@ describe("a project's close question mark", () => {
     const { marked, onAsking } = window();
     const { result } = renderHook(() => useCloseQuestion(PLANE, false, onAsking));
     await act(() => result.current.counted(async () => "closed"));
+    expect(result.current.up).toBe(false);
+    expect(marked.has(PLANE)).toBe(false);
+  });
+
+  it("is cleared by a quiet close under StrictMode too", async () => {
+    const { marked, onAsking } = window();
+    const { result } = renderHook(() => useCloseQuestion(PLANE, false, onAsking), {
+      wrapper: StrictMode,
+    });
+    expect(marked.has(PLANE)).toBe(false);
+    await act(() => result.current.counted(async () => "closed"));
+    expect(result.current.up).toBe(false);
+    expect(marked.has(PLANE)).toBe(false);
+  });
+
+  it("is cleared by a close that throws, which still throws", async () => {
+    const { marked, onAsking } = window();
+    const { result } = renderHook(() => useCloseQuestion(PLANE, false, onAsking));
+    await act(async () => {
+      await expect(
+        result.current.counted(async () => {
+          throw new Error("the core refused");
+        }),
+      ).rejects.toThrow("the core refused");
+    });
     expect(result.current.up).toBe(false);
     expect(marked.has(PLANE)).toBe(false);
   });

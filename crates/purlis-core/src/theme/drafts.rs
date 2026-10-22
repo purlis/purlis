@@ -762,8 +762,9 @@ pub const MOST_ENTRIES_LOOKED_AT: usize = 2 * super::folders::MOST_FOLDERS + 1;
 /// **Whether `chat` has a theme draft** in the plane at `plane` (#2761): its drafts folder holds a
 /// folder named as a theme folder is. Only that is looked at, never what the draft says, so the
 /// answer costs the same whatever the draft holds, and at most [`MOST_ENTRIES_LOOKED_AT`] entries
-/// are looked at. A link on the way, at the chat's folder or in place of a theme folder counts as
-/// none.
+/// are looked at. **Where it cannot tell, it answers yes**, so the close asks: a folder with more
+/// entries than that and no theme folder among the first of them, or an entry that cannot be
+/// read. A link on the way, at the chat's folder or in place of a theme folder counts as none.
 pub fn has_drafts(plane: &Path, chat: &str) -> bool {
     let Some(folder) = folder_of(plane, chat) else {
         return false;
@@ -774,15 +775,23 @@ pub fn has_drafts(plane: &Path, chat: &str) -> bool {
     {
         return false;
     }
-    std::fs::read_dir(&folder).is_ok_and(|listed| {
-        listed
-            .filter_map(Result::ok)
-            .take(MOST_ENTRIES_LOOKED_AT)
-            .any(|entry| {
-                entry.file_type().is_ok_and(|kind| kind.is_dir())
-                    && entry.file_name().to_str().is_some_and(super::is_folder_id)
-            })
-    })
+    let Ok(listed) = std::fs::read_dir(&folder) else {
+        return false;
+    };
+    for (looked, entry) in listed.enumerate() {
+        if looked == MOST_ENTRIES_LOOKED_AT {
+            return true;
+        }
+        let Ok(entry) = entry else {
+            return true;
+        };
+        if entry.file_type().is_ok_and(|kind| kind.is_dir())
+            && entry.file_name().to_str().is_some_and(super::is_folder_id)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// The most chats' drafts folders one [`sweep`] looks at.

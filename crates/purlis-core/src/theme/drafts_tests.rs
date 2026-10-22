@@ -800,6 +800,38 @@ fn a_chat_has_no_drafts_through_a_link_on_the_way_to_its_folder() {
 }
 
 #[test]
+fn a_chat_with_more_stray_entries_than_are_looked_at_counts_as_having_drafts() {
+    // Where `has_drafts` cannot tell, the close asks: a draft listed after more stray files than
+    // it looks at is never closed quietly, whatever order the folder lists them in.
+    let places = Places::new();
+    let (drafting, cluttered) = (chat(), chat());
+    places.start(Some("alpha"), &drafting, "dusk");
+    let folder = drafts::folder_of(&places.plane, &drafting).unwrap();
+    for n in 0..150 {
+        std::fs::write(folder.join(format!("stray-{n}.txt")), "x").unwrap();
+    }
+    assert!(drafts::has_drafts(&places.plane, &drafting));
+    let only_strays = drafts::folder_of(&places.plane, &cluttered).unwrap();
+    std::fs::create_dir_all(&only_strays).unwrap();
+    for n in 0..=drafts::MOST_ENTRIES_LOOKED_AT {
+        std::fs::write(only_strays.join(format!("stray-{n}.txt")), "x").unwrap();
+    }
+    assert!(drafts::has_drafts(&places.plane, &cluttered));
+}
+
+#[test]
+fn a_chat_with_a_few_stray_files_and_no_theme_folder_has_no_drafts() {
+    let places = Places::new();
+    let id = chat();
+    let folder = drafts::folder_of(&places.plane, &id).unwrap();
+    std::fs::create_dir_all(&folder).unwrap();
+    for n in 0..3 {
+        std::fs::write(folder.join(format!("stray-{n}.txt")), "x").unwrap();
+    }
+    assert!(!drafts::has_drafts(&places.plane, &id));
+}
+
+#[test]
 fn a_start_record_that_is_not_a_plain_file_counts_as_changed() {
     let places = Places::new();
     let id = chat();

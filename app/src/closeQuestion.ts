@@ -30,6 +30,8 @@ export function useCloseQuestion(
     onAsking(plane, up);
     return () => onAsking(plane, false);
   }, [onAsking, plane, up, settled]);
+  // `counted` is the view's own: it is never kept past the view's unmount, after which the mark
+  // it sets would not be cleared.
   const counted = useCallback(
     async <T>(close: () => Promise<T>): Promise<T> => {
       onAsking?.(plane, true);
