@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792693360486,
+  "lastUpdate": 1792697491966,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21924,6 +21924,48 @@ window.BENCHMARK_DATA = {
             "value": 101.332856,
             "unit": "ms",
             "extra": "median of 5 runs: 100.372, 101.231, 101.333, 101.523, 103.076 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4ad85cd9b5307463baf3b753d2349d6a1a1a3995",
+          "message": "Browsers: the engine's sandbox refusal has a refusal code of its own (#2975)\n\n* Browsers: the engine's sandbox refusal has a refusal code of its own (#2899)\n\nSession protocol 1.36: a browser whose engine cannot make its sandbox on the\nhost's machine is refused `no_engine_sandbox`, in the binary's words. The\nbinary says which kind of failure it was (`BrowserNotStarted`), so the host\nmatches no sentence. The window reads the code, and still reads a host\nbefore 1.36 by its sentence. The fixture records the refusal.\n\nCloses #2899\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the window takes the sandbox sentence from any host (#2899)\n\nA relaying host may pass the words on without the code.\n\nRefs #2899\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T23:29:41+04:00",
+          "tree_id": "8ad3a43da558917e7bfc01f888bdef753b40b2cd",
+          "url": "https://github.com/purlis/purlis/commit/4ad85cd9b5307463baf3b753d2349d6a1a1a3995"
+        },
+        "date": 1792697489764,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5265015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.513, 0.514, 0.527, 0.527, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.1860665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.447, 16.665, 17.186, 17.571, 17.612 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.673157,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.679, 103.776, 104.673, 106.027, 106.835 ms"
           }
         ]
       }
