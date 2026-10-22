@@ -13,6 +13,7 @@ import {
   tabNames,
 } from "../reach.js";
 import { projectInFront, runningIn } from "../running.js";
+import { ask as askTheCore } from "../switching.js";
 
 /**
  * **Draft skills in the Skill studio** (SK-9, #2772), in the built app against the real core, with
@@ -55,18 +56,23 @@ function drafted(state: string, id: string, name: string, chat: number): void {
   );
 }
 
-/** Waits until the strip has more tabs than `before`; else fails with what the window says. */
-async function untilATabOpens(before: number, what: string): Promise<void> {
+/**
+ * Waits until the strip has more tabs than `before`; else fails with the core's refusal, asked
+ * again by `again` (the same command the press sent), so a red run says why.
+ */
+async function untilATabOpens(
+  before: number,
+  what: string,
+  again: () => Promise<unknown>,
+): Promise<void> {
   try {
     await browser.waitUntil(async () => (await tabNames()).length > before, { timeout: 30_000 });
   } catch {
-    const said = await browser.execute(() =>
-      [...document.querySelectorAll('[role="alert"], [role="status"]')]
-        .map((one) => (one.textContent ?? "").trim())
-        .filter((text) => text !== "")
-        .join(" | "),
+    const why = await again().then(
+      () => "asked again, it started",
+      (err: unknown) => String(err),
     );
-    throw new Error(`${what}. The window says: ${said}`);
+    throw new Error(`${what}: ${why}`);
   }
 }
 
@@ -130,7 +136,15 @@ describe("draft skills in the Skill studio", function () {
     const triesBefore = tries(state);
     const tabsBefore = (await tabNames()).length;
     await (await $(`aria/Try ${ACCEPTED}`)).click();
-    await untilATabOpens(tabsBefore, "Try it opened no scratch chat");
+    await untilATabOpens(tabsBefore, "Try it opened no scratch chat", () =>
+      askTheCore("skill_draft_try", {
+        plane,
+        id: ACCEPTED_ID,
+        profile: null,
+        columns: 80,
+        rows: 24,
+      }),
+    );
     const laid = tries(state).filter((one) => !triesBefore.includes(one));
     expect(laid.length).toBe(1);
     await endTheSessionsStartedSince(wereRunning);
@@ -155,7 +169,14 @@ describe("draft skills in the Skill studio", function () {
     await ask.waitForClickable({ timeout: 20_000 });
     const tabsBefore = (await tabNames()).length;
     await ask.click();
-    await untilATabOpens(tabsBefore, "Ask a chat to draft a skill opened no chat");
+    await untilATabOpens(tabsBefore, "Ask a chat to draft a skill opened no chat", () =>
+      askTheCore("skill_draft_chat", {
+        plane,
+        level: { workspace: "alpha", local: false },
+        columns: 80,
+        rows: 24,
+      }),
+    );
     await endTheSessionsStartedSince(wereRunning);
   });
 });
