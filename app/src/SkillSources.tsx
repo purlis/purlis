@@ -86,13 +86,14 @@ export function SkillSources({
     void commands
       .skillSources(plane)
       .then((answer) => {
-        if (live && answer.status === "ok") setSources(answer.data);
+        if (live && answer.status === "ok" && Array.isArray(answer.data)) setSources(answer.data);
       })
       .catch(() => undefined);
     void commands
       .skillUpdates(plane)
       .then((answer) => {
-        if (live && answer.status === "ok") setUpdates(answer.data);
+        if (live && answer.status === "ok" && Array.isArray(answer.data?.offers))
+          setUpdates(answer.data);
       })
       .catch(() => undefined);
     return () => {
@@ -151,8 +152,7 @@ export function SkillSources({
         <ul className="skill-updates" aria-label="Updates">
           {updates.offers.map((offer) => (
             <li key={`${offer.label}\u0000${offer.name}`} data-testid={`update-${offer.name}`}>
-              <code>{offer.name}</code> · {offer.label}: a newer commit,{" "}
-              {shortCommit(offer.newer)}
+              <code>{offer.name}</code> · {offer.label}: a newer commit, {shortCommit(offer.newer)}
               {offer.edited && " (edited here since it was installed)"}{" "}
               <Button
                 size="sm"
@@ -195,9 +195,7 @@ export function SkillSources({
               isDisabled={busy}
               aria-label={`Remove ${source.label}`}
               onPress={() =>
-                done("The source was not removed", () =>
-                  commands.skillSourceRemove(plane, source),
-                )
+                done("The source was not removed", () => commands.skillSourceRemove(plane, source))
               }
             >
               Remove
