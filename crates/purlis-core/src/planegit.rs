@@ -2617,7 +2617,7 @@ pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Si
     }
     let named: Vec<String> = paths
         .iter()
-        .filter(|path| stageable(root, path))
+        .filter(|path| !kept_out(path) && stageable(root, path))
         .cloned()
         .collect();
     if named.is_empty() {
@@ -2629,8 +2629,37 @@ pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Si
     let literal: Vec<String> = named.iter().map(|path| literally(path)).collect();
     let mut add: Vec<&str> = vec!["add", "-A", "--"];
     add.extend(literal.iter().map(String::as_str));
-    add.extend(&SAVE_STAGES[4..]);
+    // **An exclude pathspec makes `git add -A` skip an untracked file named beside it** (git
+    // 2.50, measured for #2772: `add -A -- :(literal)a/new :(exclude,glob)x/**` leaves `a/new`
+    // untracked), so a new file a skill change names would miss its commit. A path inside what
+    // the excludes keep out is never named ([`kept_out`]), and the excludes are passed only where
+    // a named folder could hold it.
+    if named.iter().any(|path| could_hold_kept_out(root, path)) {
+        add.extend(&SAVE_STAGES[4..]);
+    }
     save_staging(request, trigger, &claim, &add, say)
+}
+
+/// Whether `path` (plane-relative) is inside what a save never stages ([`SAVE_STAGES`]'
+/// excludes): a level's `skills.local/`, or a throwaway piece.
+fn kept_out(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    matches!(
+        parts.as_slice(),
+        ["skills.local", ..]
+            | ["workspaces", ".throwaway", ..]
+            | ["workspaces", _, "skills.local", ..]
+    )
+}
+
+/// Whether `path` (plane-relative) is a folder that could hold what a save never stages: the
+/// plane's root, `workspaces/` or one workspace's folder.
+fn could_hold_kept_out(root: &Path, path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+    matches!(
+        parts.as_slice(),
+        [] | ["."] | ["workspaces"] | ["workspaces", _]
+    ) && root.join(path).is_dir()
 }
 
 /// Whether `path` (plane-relative) can be named to `git add -A`: git tracks something under it,

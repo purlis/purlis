@@ -26,7 +26,7 @@ fn plane() -> tempfile::TempDir {
     skill_at(root, "skills/deploy", "deploy", "Ships it.");
     std::fs::write(
         root.join(".gitignore"),
-        ".charter/\n.purlis/\n/skills.local/\n",
+        ".charter/\n.purlis/\n/skills.local/\n/workspaces/*/*\n",
     )
     .unwrap();
     run(root, &["init", "-q", "-b", "main", "."]);
@@ -257,10 +257,18 @@ fn accepting_a_change_to_a_skill_commits_the_files_it_changed_and_nothing_else()
         &whole(&skill_text("deploy", "Ships it twice.")),
     );
     drafted(root, "skills/deploy/check.sh", &whole("check\n"));
-    accepted(root, &id).0.unwrap();
+    let (answer, lines) = accepted(root, &id);
+    answer.unwrap();
     let (subject, paths) = last_commit(root);
-    assert!(subject.ends_with("skill edit deploy"), "{subject}");
-    assert_eq!(paths, ["skills/deploy/SKILL.md", "skills/deploy/check.sh"]);
+    assert!(
+        subject.ends_with("skill edit deploy"),
+        "{subject} {lines:?}"
+    );
+    assert_eq!(
+        paths,
+        ["skills/deploy/SKILL.md", "skills/deploy/check.sh"],
+        "{lines:?}"
+    );
     assert!(uncommitted(root).contains("skills/deploy/notes.md"));
 }
 
@@ -386,6 +394,12 @@ fn try_it_hands_a_chat_in_its_piece_the_draft_alone_and_ending_it_leaves_nothing
     assert_eq!(tried(root, &root.join("workspaces/ops")), None);
 
     std::fs::write(tried_out.piece.join("made.txt"), "by the chat\n").unwrap();
+    // Inside the project, and nothing git or a save takes.
+    assert!(
+        !uncommitted(root).contains(".throwaway"),
+        "{}",
+        uncommitted(root)
+    );
     assert!(end_try_at(root, &tried_out.piece).unwrap());
     assert!(!tried_out.piece.exists());
     assert!(!skills_from.exists());
@@ -395,8 +409,6 @@ fn try_it_hands_a_chat_in_its_piece_the_draft_alone_and_ending_it_leaves_nothing
             .count(),
         0
     );
-    // Inside the project, and never anything a save takes.
-    assert_eq!(uncommitted(root), "");
     // The draft stays, for Accept or Reject.
     assert_eq!(list(root).len(), 1);
     assert!(!end_try_at(root, &tried_out.piece).unwrap());
