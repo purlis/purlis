@@ -8402,7 +8402,6 @@ button.show-more:focus-visible {
 
 .skill-compat-widens {
   color: var(--danger-text);
-  font-weight: 600;
 }
 
 .skill-compat-badge > summary {
