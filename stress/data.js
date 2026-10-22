@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792674519857,
+  "lastUpdate": 1792677586142,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -11240,6 +11240,42 @@ window.BENCHMARK_DATA = {
             "value": 678.7,
             "unit": "MB",
             "extra": "median of 6 samples: 632.7, 662.2, 677.6, 679.9, 680.8, 757.9 MB; window 405.6 MB, session host 273.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ab77a409553f658e94581320675916775becb285",
+          "message": "Sandbox: Podman's run state is held where XDG_RUNTIME_DIR is unset (#2896) (#3035)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T17:04:19+04:00",
+          "tree_id": "4dcd3de646abb699005d69611528a093f9307229",
+          "url": "https://github.com/purlis/purlis/commit/ab77a409553f658e94581320675916775becb285"
+        },
+        "date": 1792677583752,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1606,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1330.2, 1606, 1699.4 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 651.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 613.9, 637.5, 649.8, 653.8, 654.4, 747.4 MB; window 396.7 MB, session host 255.2 MB"
           }
         ]
       }
