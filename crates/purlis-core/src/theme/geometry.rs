@@ -219,6 +219,33 @@ pub const STEPS: &[Step] = &[
         21.0,
         18.0,
     ),
+    // The window's geometry (#2805, #2913): the gap between its regions, a region panel's
+    // corners and the hairline between regions. Purlis Classic draws flush: no gap, square
+    // corners, and the hairline it always drew.
+    step(
+        "window.gutter",
+        "--window-gutter",
+        Px,
+        (0.0, 16.0),
+        0.0,
+        0.0,
+    ),
+    step(
+        "panel.corner-radius",
+        "--panel-corner-radius",
+        Px,
+        (0.0, 24.0),
+        0.0,
+        0.0,
+    ),
+    step(
+        "panel.border-width",
+        "--panel-border-width",
+        Px,
+        (0.0, 2.0),
+        1.0,
+        1.0,
+    ),
     // The focus ring: never thinner than a hairline, so it stays visible.
     step(
         "focus-ring.width",

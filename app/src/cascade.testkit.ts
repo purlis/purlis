@@ -17,8 +17,9 @@
  *   drawn at its ordinary width, with motion and no narrowing query in force;
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
- * - `primitives/controls.css`, `ui/button/button.css`, `ui/field/field.css` and then
- *   `primitives/overlays.css` are in the `components` layer,
+ * - `primitives/controls.css`, `ui/button/button.css`, `ui/field/field.css`, the window's own
+ *   families (`ui/panel`, `ui/empty-state`, `ui/status`) and then `primitives/overlays.css` are in
+ *   the `components` layer,
  *   above `App.css`'s `charter` (`styles.css`), so a primitive's rule beats any of `App.css`'s that
  *   sets the same property, at any specificity;
  * - inside one layer, the winner is the highest specificity, then the last in the file.
@@ -116,10 +117,18 @@ const FIELDS = rulesOf(
   1,
   COLLECTIONS.length + CONTROLS.length + BUTTONS.length,
 );
+/** The window's own families (#2913), after the field's, in `styles.css`'s order. */
+const SHELL = rulesOf(
+  ["ui/panel/panel.css", "ui/empty-state/empty-state.css", "ui/status/status.css"]
+    .map(sheet)
+    .join("\n"),
+  1,
+  COLLECTIONS.length + CONTROLS.length + BUTTONS.length + FIELDS.length,
+);
 const OVERLAYS = rulesOf(
   sheet("primitives/overlays.css"),
   1,
-  COLLECTIONS.length + CONTROLS.length + BUTTONS.length + FIELDS.length,
+  COLLECTIONS.length + CONTROLS.length + BUTTONS.length + FIELDS.length + SHELL.length,
 );
 const RULES = [
   ...rulesOf(sheet("App.css"), 0),
@@ -127,11 +136,17 @@ const RULES = [
   ...CONTROLS,
   ...BUTTONS,
   ...FIELDS,
+  ...SHELL,
   ...OVERLAYS,
   ...rulesOf(
     sheet("primitives/text.css"),
     1,
-    COLLECTIONS.length + CONTROLS.length + BUTTONS.length + FIELDS.length + OVERLAYS.length,
+    COLLECTIONS.length +
+      CONTROLS.length +
+      BUTTONS.length +
+      FIELDS.length +
+      SHELL.length +
+      OVERLAYS.length,
   ),
 ];
 

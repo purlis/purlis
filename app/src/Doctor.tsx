@@ -22,6 +22,7 @@ import {
 import { AnswerBar } from "./AnswerBar";
 import { said, useSwitches } from "./switchClock";
 import { Button } from "./ui/button/Button";
+import { StatusItem, StatusVerdict } from "./ui/status/StatusItem";
 
 /**
  * **`charter doctor`, from inside the window** — the last of ADR 0038's named gaps.
@@ -656,11 +657,9 @@ export function Health({
       }}
     >
       <Dialog.Trigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={`status-doctor doctor-tone-${tone}`}
+        <StatusItem
           data-testid="status-doctor"
+          tone={tone === "unknown" ? "quiet" : undefined}
           aria-label={label}
           title={label}
           icon={
@@ -672,11 +671,13 @@ export function Health({
             )
           }
         >
-          Doctor{" "}
+          Doctor
           {/* The count, in its verdict's colour and in words, so the colour is never the only
               thing that says it; nothing at all when nothing is wrong (qw357). */}
-          {said !== undefined && <span className="doctor-said">{said}</span>}
-        </Button>
+          {said !== undefined && (
+            <StatusVerdict tone={tone === "fail" ? "failed" : "waiting"}>{said}</StatusVerdict>
+          )}
+        </StatusItem>
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="ui-scrim" />
@@ -772,7 +773,7 @@ export function Health({
           <SwitchesTimed />
           {report && (
             <p className="doctor-path">
-              <span className="status-label">This app&apos;s PATH</span>{" "}
+              <span className="ui-text-meta">This app&apos;s PATH</span>{" "}
               {report.path === null ? (
                 <span className="none">none — the app was started with no PATH at all</span>
               ) : (

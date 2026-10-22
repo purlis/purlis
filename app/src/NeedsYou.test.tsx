@@ -92,7 +92,8 @@ describe("the muted hand: a chat that cannot say it is waiting (charter-app#52, 
     const hand = screen.getByRole("button", {
       name: "Nothing has asked for you, but shell 2 can't tell purlis it's waiting",
     });
-    expect(hand).toHaveClass("muted");
+    expect(hand).toHaveAttribute("data-tone", "quiet");
+    expect(hand).toHaveAttribute("data-variant", "pill");
     expect(hand).toHaveAttribute("title", hand.getAttribute("aria-label"));
     expect(hand).toHaveTextContent(/^$/);
     expect(hand).toHaveAttribute("tabindex", "0");
@@ -118,7 +119,8 @@ describe("the muted hand: a chat that cannot say it is waiting (charter-app#52, 
     render(<NeedsYouButton count={1} quiet={quiet} onInbox={() => {}} />);
 
     const hand = screen.getByRole("button", { name: "1 thing waits on you" });
-    expect(hand).not.toHaveClass("muted");
+    expect(hand).not.toHaveAttribute("data-tone");
+    expect(hand).toHaveAttribute("data-variant", "waiting");
     expect(hand).toHaveTextContent("1");
   });
 });
@@ -132,7 +134,7 @@ describe("the muted hand: a chat that cannot say it is waiting (charter-app#52, 
  * 4.5:1. jsdom computes no colour, so this reads the rules.
  */
 describe("the needs-you count's colours", () => {
-  const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8").replace(
+  const css = readFileSync(join(process.cwd(), "src/ui/status/status.css"), "utf8").replace(
     /\/\*[\s\S]*?\*\//g,
     "",
   );
@@ -140,28 +142,28 @@ describe("the needs-you count's colours", () => {
     new RegExp(
       `(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`,
     ).exec(css)?.[1] ?? "";
+  const ROOT = '[data-scope="status-item"][data-part="root"]';
+  const WAITING = `${ROOT}[data-variant="waiting"]`;
 
-  it("never writes the button's words in needs-you.base", () => {
-    expect(rule(".needs-you-button")).toMatch(/(?:^|[;\s])color:\s*var\(--text-primary\)/);
-    expect(rule(".needs-you-button")).not.toMatch(/(?:^|[;\s])color:\s*var\(--needs-you-base\)/);
+  it("never writes the pill's words in needs-you.base", () => {
+    expect(rule(ROOT)).toMatch(/(?:^|[;\s])color:\s*var\(--text-primary\)/);
+    expect(css).not.toMatch(/\[data-part="label"\][^{]*\{[^}]*color:\s*var\(--needs-you-base\)/);
+    // The hand is a mark, held to 3:1, and may take it.
+    expect(rule(`${WAITING} > [data-part="icon"]`)).toMatch(/color:\s*var\(--needs-you-base\)/);
   });
 
   it("draws the faint hand in the muted text token, and no colour of its own", () => {
-    expect(rule(".needs-you-button.muted,\n.needs-you-button.muted svg")).toMatch(
-      /^\s*color:\s*var\(--text-muted\);\s*$/,
-    );
+    expect(rule(`${ROOT}[data-tone="quiet"]`)).toMatch(/^\s*color:\s*var\(--text-muted\);\s*$/);
   });
 
-  it("draws no coloured border on the button (charter-app#249)", () => {
-    expect(rule(".needs-you-button")).toMatch(/border:\s*none/);
-    // A corner is geometry, not a colour: `border-radius` reads a core token.
-    expect(rule(".needs-you-button")).not.toMatch(
-      /border(?![a-z-]*radius)[a-z-]*:[^;]*var\(--(?!border-subtle)/,
-    );
+  it("draws no coloured border on the pill (charter-app#249)", () => {
+    expect(rule(ROOT)).toMatch(/border:\s*0 solid transparent/);
+    expect(css).not.toMatch(/border-color:\s*var\(--needs-you/);
   });
 
   it("fills the number with needs-you.base under needs-you.text, the measured pair", () => {
-    expect(rule(".needs-you-number")).toMatch(/background:\s*var\(--needs-you-base\)/);
-    expect(rule(".needs-you-number")).toMatch(/(?:^|[;\s])color:\s*var\(--needs-you-text\)/);
+    const count = rule(`${WAITING} > [data-part="count"]`);
+    expect(count).toMatch(/background-color:\s*var\(--needs-you-base\)/);
+    expect(count).toMatch(/(?:^|[;\s])color:\s*var\(--needs-you-text\)/);
   });
 });

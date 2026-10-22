@@ -26,6 +26,9 @@
  *   slider (`range`) or colour well (`color`) `<input>`.
  * - `purlis/dialog-family` (warning until the dialog family moves): a `role="dialog"`.
  * - `purlis/tooltip-family` (warning until the tooltip family moves): a native `title=`.
+ * - `purlis/panel-family`, `purlis/panel-section-family`, `purlis/empty-state-family` and
+ *   `purlis/status-item-family` (errors: these families have moved, #2913): each family's old
+ *   classes, and its `data-scope` written by hand, which only its wrapper draws.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -78,8 +81,9 @@ const attributeOf = (node, name) =>
 const classWordsOf = (attribute) =>
   [...classStrings(attribute?.value)].flatMap(([, text]) => text.split(/\s+/)).filter(Boolean);
 
-/** The button family's members, which hand a `title` on to their element as a native tooltip. */
-const BUTTONS = new Set(["Button", "IconButton", "ToggleButton"]);
+/** The members of a family that hand a `title` on to their element as a native tooltip: the
+ *  button family's, and the status item family's. */
+const BUTTONS = new Set(["Button", "IconButton", "ToggleButton", "StatusItem", "StatusCell"]);
 
 const buttonFamily = {
   meta: {
@@ -238,6 +242,100 @@ const tooltipFamily = unmoved({
   },
 });
 
+/**
+ * **A family that has moved** (#2913): its old styling classes are an error outside `src/ui`, and
+ * so is its `data-scope` written by hand, since only its wrapper draws it. `classes` are whole
+ * words of a `className`, or a prefix where one ends in `*`.
+ */
+function moved({ description, scopes, classes, message }) {
+  const named = (word) =>
+    classes.some((one) => (one.endsWith("*") ? word.startsWith(one.slice(0, -1)) : word === one));
+  return {
+    meta: {
+      type: "problem",
+      docs: { description },
+      messages: {
+        oldClass: `\`{{word}}\` is the old class of ${message}`,
+        scope: `\`data-scope="{{scope}}"\` is drawn by its family's wrapper only: ${message}`,
+      },
+      schema: [],
+    },
+    create(context) {
+      return {
+        JSXAttribute(node) {
+          if (node.name.name === "className") {
+            for (const [at, text] of classStrings(node.value))
+              for (const word of text.split(/\s+/).filter(Boolean))
+                if (named(word))
+                  context.report({ node: at, messageId: "oldClass", data: { word } });
+            return;
+          }
+          if (
+            node.name.name === "data-scope" &&
+            node.value?.type === "Literal" &&
+            scopes.includes(node.value.value)
+          )
+            context.report({ node, messageId: "scope", data: { scope: node.value.value } });
+        },
+      };
+    },
+  };
+}
+
+const panelFamily = moved({
+  description: "A region panel is the shared Panel family",
+  scopes: ["panel"],
+  classes: [],
+  message:
+    "a region panel: draw it as `<Panel>`, or give a library's panel `panelRoot(variant)`, from `ui/panel/Panel` (#2913).",
+});
+
+const panelSectionFamily = moved({
+  description: "A panel's section and its title are the shared panel section family",
+  scopes: ["panel-section"],
+  classes: ["sidebar-title", "panel-head"],
+  message:
+    "a panel's section: draw it as `<PanelSection>`, `<PanelSectionHead>` and `<PanelSectionTitle>` from `ui/panel/Panel` (#2913).",
+});
+
+const emptyStateFamily = moved({
+  description: "An empty state is the shared EmptyState family",
+  scopes: ["empty-state"],
+  classes: ["empty-state", "empty-state-*"],
+  message: "an empty state: draw it as `<EmptyState>` from `ui/empty-state/EmptyState` (#2913).",
+});
+
+const statusItemFamily = moved({
+  description: "A status bar item or a status pill is the shared status item family",
+  scopes: ["status-item", "status-bar"],
+  classes: [
+    "status-line",
+    "status-context",
+    "status-health",
+    "status-cell",
+    "status-label",
+    "status-glyph",
+    "status-workspace",
+    "status-project",
+    "status-project-*",
+    "status-count",
+    "status-unknown",
+    "status-badge",
+    "status-update",
+    "status-pin",
+    "status-doctor",
+    "status-alerts",
+    "doctor-said",
+    "doctor-tone-*",
+    "needs-you-button",
+    "needs-you-number",
+    "title-about",
+    "title-kill-switch",
+  ],
+  message:
+    "a status item: draw it as `<StatusItem>` or `<StatusCell>` from `ui/status/StatusItem`, on a `<StatusBar>` (`ui/status/StatusBar`) where it is the bar's (#2913).",
+});
+
 export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
@@ -247,5 +345,9 @@ export const purlisUi = {
     "choice-family": choiceFamily,
     "dialog-family": dialogFamily,
     "tooltip-family": tooltipFamily,
+    "panel-family": panelFamily,
+    "panel-section-family": panelSectionFamily,
+    "empty-state-family": emptyStateFamily,
+    "status-item-family": statusItemFamily,
   },
 };

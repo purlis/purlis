@@ -567,6 +567,50 @@ family moves.
   textarea, a form sent by ⌘⏎, and a filter that keeps its caret while its list redraws, each
   walked by the keyboard and checked by axe in Chromium and WebKit.
 
+## The window's own families: panels, sections, empty states and status items
+
+**Every region panel, panel section, empty state and status item is drawn by its family** (#2913,
+spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
+(`purlis/panel-family`, `purlis/panel-section-family`, `purlis/empty-state-family`,
+`purlis/status-item-family`): a screen wears none of their old classes and never writes their
+`data-scope` itself.
+
+| Family | Wrapper | Parts | Variants |
+| --- | --- | --- | --- |
+| Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel (`ui/panel/Panel.tsx`) | `root` | `side`, `content`, `bottom` |
+| Panel section | `PanelSection`, `PanelSectionHead`, `PanelSectionTitle` (`ui/panel/Panel.tsx`) | `root`, `head`, `title` | `default` |
+| Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
+| Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
+
+- **The window's geometry is the theme's** (#2805): the gap between the regions is
+  `window.gutter`, a panel's corners `panel.corner-radius`, and the hairline between two flush
+  regions `panel.border-width`. Purlis Classic's are 0, 0 and 1, so it draws flush as it always
+  did; Purlis floats its panels 8 apart with 12px corners and no hairline, one step lighter than
+  the frame (its theme's `panel.root.fill: surface.raised`). The regions draw the
+  gutter (`App.css`, `.regions`), the panel family the corners and the ground.
+- **A section's title** is the label's capitals in the secondary tier, its mark in the title's
+  colour. Where it sits (its margin) is its view's; the line between two sections is a separator.
+- **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
+  purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
+  first from the side's left), and the person may hide any item from the bar's menu (a right
+  click, or the menu key or Shift F10 on an item) and show it again there; what is hidden is kept
+  in the layout file under `status`. One item the keyboard reaches cannot be hidden (Notices), so
+  the menu always opens from one, and when it closes the keyboard is back on the item it was
+  opened from. A press runs the item's command: purlis's own items are `StatusItem`s whose press
+  is the command, and an item given as data names a command the bar runs through `onCommand`.
+  An item that comes and goes sits on its end's inner side, so its arrival moves no neighbour;
+  a long project name gives way first (`shrinks`), and a line after an item is the bar's
+  separator part (`separated`).
+- **Status pills** at the title bar's right (R115) are `StatusItem`s in the `pill`, `waiting` or
+  `accent` variant: at least 24px tall and wide in CSS px at every text size and density, full
+  corners, 12px words. `StatusItem` shares the button family's press (`ui/pressable.tsx`). The `waiting` pill
+  stands on the amber wash, `wash.warning`, with its hand and count in the needs-you colours. A `tone` (`waiting`,
+  `failed`, `success`, `quiet`, `accent`, `danger`) colours an item's icon beside its words, never
+  instead of them.
+- **Stories hold them** (`Panel.stories.tsx`, `EmptyState.stories.tsx`, `StatusItem.stories.tsx`):
+  panels flush and floating, a section with its action, each empty state, the pills and the bar
+  with its menu, each walked by the keyboard and checked by axe in Chromium and WebKit.
+
 ## The control classes
 
 **Each kind of control is one CSS class, drawn only from the tokens** (ADR 0094 §4, #1834). The

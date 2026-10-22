@@ -32,7 +32,7 @@
  */
 import { Fragment, useEffect, useRef, useState } from "react";
 import { FileDiff as FileDiffMark, LoaderCircle } from "lucide-react";
-import { EmptyState } from "../EmptyState";
+import { EmptyState } from "../ui/empty-state/EmptyState";
 import { commands, type PlaneId, type WhatChanged } from "../bindings";
 import type { Place } from "../pieceViews";
 import { MergeViewer } from "./LightEditor";
@@ -191,11 +191,16 @@ function Compared({ path, read }: { path: string; read: Read }) {
   const name = path.slice(path.lastIndexOf("/") + 1);
   if (read.kind === "reading")
     return (
-      <EmptyState mark={LoaderCircle} headline={`Comparing ${path}…`} size="panel" role="status" />
+      <EmptyState
+        mark={LoaderCircle}
+        headline={`Comparing ${path}…`}
+        variant="panel"
+        role="status"
+      />
     );
   if (read.kind === "refused")
     return (
-      <EmptyState headline={read.why} size="panel" role="status" testid="piece-diff-trouble" />
+      <EmptyState headline={read.why} variant="panel" role="status" testid="piece-diff-trouble" />
     );
   const { diff, base } = read.shown;
   const said = noLine(name, read.shown, base ?? "its last commit");
@@ -206,7 +211,7 @@ function Compared({ path, read }: { path: string; read: Read }) {
           mark={FileDiffMark}
           headline={`${name} is a binary file, so its lines are not compared`}
           body={TO_YOUR_EDITOR}
-          size="panel"
+          variant="panel"
           role="status"
           testid="piece-diff-trouble"
         />
@@ -217,7 +222,7 @@ function Compared({ path, read }: { path: string; read: Read }) {
           mark={FileDiffMark}
           headline={`${name} is ${sized(diff.bytes)}, past what the comparison draws (2 MiB)`}
           body={TO_YOUR_EDITOR}
-          size="panel"
+          variant="panel"
           role="status"
           testid="piece-diff-trouble"
         />
@@ -228,7 +233,7 @@ function Compared({ path, read }: { path: string; read: Read }) {
           mark={FileDiffMark}
           headline={said.headline}
           body={said.body}
-          size="panel"
+          variant="panel"
           role="status"
           testid="piece-diff-trouble"
         />

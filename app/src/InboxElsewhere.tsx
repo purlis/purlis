@@ -12,6 +12,7 @@ import { Notice } from "./Notice";
 import type { Needing, Quiet } from "./NeedsYou";
 import { PersonaMark } from "./PersonaMark";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { PanelSectionTitle } from "./ui/panel/Panel";
 
 /**
  * **What waits on the person where this project's asks registry cannot see** (#1695): what the
@@ -104,7 +105,9 @@ export function OtherProjects({
 }) {
   return (
     <section className="inbox-chat inbox-elsewhere" aria-label={OTHER_PROJECTS}>
-      <h3 className="inbox-chain sidebar-title">{OTHER_PROJECTS}</h3>
+      <PanelSectionTitle level={3} className="inbox-chain">
+        {OTHER_PROJECTS}
+      </PanelSectionTitle>
       <ul>
         {others.map((one) => (
           <RovingFocusGroup.Item asChild tabStopId={hereKey(one.plane)} key={one.plane}>

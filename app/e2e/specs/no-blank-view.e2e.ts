@@ -103,10 +103,13 @@ async function panelOf(bar: string, view: string): Promise<Body | null> {
       const panel = id ? document.getElementById(id) : null;
       if (!panel) return null;
       const box = panel.getBoundingClientRect();
-      const empty = [...panel.querySelectorAll(".empty-state")].some(
+      const empty = [
+        ...panel.querySelectorAll('[data-scope="empty-state"][data-part="root"]'),
+      ].some(
         (one) =>
-          (one.querySelector(".empty-state-headline")?.textContent ?? "").trim() !== "" &&
-          one.getBoundingClientRect().height > 0,
+          (
+            one.querySelector('[data-scope="empty-state"][data-part="headline"]')?.textContent ?? ""
+          ).trim() !== "" && one.getBoundingClientRect().height > 0,
       );
       return {
         words: (panel as HTMLElement).innerText.trim(),
@@ -134,10 +137,11 @@ async function viewTab(title: string): Promise<Body | null> {
       .map((one) => (one as HTMLElement).innerText.trim())
       .join(" ")
       .trim();
-    const empty = [...pane.querySelectorAll(".empty-state")].some(
+    const empty = [...pane.querySelectorAll('[data-scope="empty-state"][data-part="root"]')].some(
       (one) =>
-        (one.querySelector(".empty-state-headline")?.textContent ?? "").trim() !== "" &&
-        one.getBoundingClientRect().height > 0,
+        (
+          one.querySelector('[data-scope="empty-state"][data-part="headline"]')?.textContent ?? ""
+        ).trim() !== "" && one.getBoundingClientRect().height > 0,
     );
     return {
       words,

@@ -103,7 +103,7 @@ describe("the window's keyboard reach", () => {
         // not the chevron on its line (P-13, #1741).
         ["bottom-left", '.panel-half[data-side="left"]:not([hidden])'],
         ["bottom-right", '.panel-half[data-side="right"]:not([hidden])'],
-        ["status line", ".status-line"],
+        ["status line", '[data-testid="status-line"]'],
       ];
       const stops = [...document.querySelectorAll<HTMLElement>("[tabindex]")].filter(
         (el) => el.tabIndex >= 0 && !el.hasAttribute("disabled") && el.closest("[hidden]") === null,
@@ -181,7 +181,7 @@ describe("the window's keyboard reach", () => {
 
   it("shows the focused pane's controls only once the keyboard is on them", async () => {
     // The pointer off the panes, so hover is not what answers.
-    await $(".status-line").moveTo();
+    await $('[data-testid="status-line"]').moveTo();
     const seen = await browser.execute(() => {
       const doing = document.querySelector<HTMLElement>(
         ".pane-frame:has(.pane.focused) .pane-doing",

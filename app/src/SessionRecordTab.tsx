@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import { LoaderCircle } from "lucide-react";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
 import { ExternalLink } from "./ReleaseNotes";
 import { Facts } from "./Views";

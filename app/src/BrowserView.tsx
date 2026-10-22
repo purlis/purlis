@@ -30,7 +30,7 @@ import {
 import { addressChip, originOfAddress, takeGoWhenShown, thisDevice } from "./browsers";
 import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { programsOf, useChatBrowsers } from "./chatBrowsers";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice, type NoticeAction, NoticePaneRow } from "./Notice";
 import { Select } from "./primitives/Select";
 import { useProjectShown } from "./projectShown";

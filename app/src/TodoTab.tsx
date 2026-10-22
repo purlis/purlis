@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import { LoaderCircle } from "lucide-react";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { COMPONENTS } from "./SessionRecordTab";
 import { Facts } from "./Views";
 import { commands, type PlaneId, type TodoView } from "./bindings";

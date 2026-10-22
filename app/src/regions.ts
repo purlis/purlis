@@ -17,6 +17,7 @@ import { CHATS_LIST, type ChatsListPrefs } from "./chatsListPrefs";
 import { YOUR_EDITOR } from "./yourEditor";
 import { APPEARANCE, type Appearance } from "./appearance";
 import { NOTIFICATIONS, type NotificationPrefs } from "./notificationPrefs";
+import { STATUS_BAR, type StatusBarPrefs } from "./statusBarPrefs";
 import { EXPLORER_SECTIONS, type SectionId } from "./explorerSections";
 import { SCREEN_READER } from "./screenReader";
 import { forgetGroups } from "./settings/links";
@@ -525,6 +526,7 @@ const LAYOUT_PREFS = [
   EXPLORER_SECTIONS,
   SCREEN_READER,
   NOTIFICATIONS,
+  STATUS_BAR,
 ] as const satisfies readonly {
   readonly key: PrefField;
 }[];
@@ -563,6 +565,8 @@ type Document = {
   /** When the asks' notifications keep quiet (`notificationPrefs.ts`, #1989), when it is not
    *  the default. The core reads it too (`asknotify.rs`). */
   notifications?: NotificationPrefs;
+  /** The status items the person hid (`statusBarPrefs.ts`, #2913), when any is. */
+  status?: StatusBarPrefs;
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

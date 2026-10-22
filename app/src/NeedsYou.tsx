@@ -9,6 +9,7 @@ import type { State } from "./chatState";
 import type { PersonaMarkData } from "./PersonaMark";
 import { useArrived } from "./lib/arrived";
 import { moveAlong } from "./tabSequence";
+import { StatusItem } from "./ui/status/StatusItem";
 
 /** The word beside a chat's name. */
 const WORDS: Record<State, string> = {
@@ -226,21 +227,21 @@ export function NeedsYouButton({
       }}
     >
       {!none && (
-        // `tabIndex={0}`: WebKit leaves a `<button>` out of the tab sequence unless its
-        // `tabindex` is written down (`docs/ui-primitives.md`, charter-app#186), and Tauri's
-        // drag handler stops at it either way because it is a `<button>`.
-        <button
-          type="button"
-          className={`needs-you-button${asking ? "" : " muted"}${arrived && asking ? " arrived" : ""}`}
+        // A status pill (R115): what waits on the person, its hand and its count in the
+        // needs-you colours; the faint hand (nothing asked, but a chat that cannot say so is
+        // open) is the plain pill in the quiet tone, which reads as "purlis cannot vouch for
+        // this" and never as a request.
+        <StatusItem
+          variant={asking ? "waiting" : "pill"}
+          tone={asking ? undefined : "quiet"}
           data-testid="needs-you-button"
-          tabIndex={0}
+          data-arrived={arrived && asking ? "" : undefined}
           aria-label={said}
           title={said}
-          onClick={onInbox}
-        >
-          <Hand aria-hidden="true" />
-          {asking && <span className="needs-you-number">{count}</span>}
-        </button>
+          onPress={onInbox}
+          icon={<Hand aria-hidden="true" />}
+          count={asking ? count : undefined}
+        />
       )}
     </span>
   );
