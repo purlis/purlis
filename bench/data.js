@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792675647458,
+  "lastUpdate": 1792677306751,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21630,6 +21630,48 @@ window.BENCHMARK_DATA = {
             "value": 102.26863,
             "unit": "ms",
             "extra": "median of 5 runs: 101.874, 102.119, 102.269, 102.341, 103.031 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "43ab7ee3792e06e892f2cefa67f18cd043889879",
+          "message": "Docker pool: the live check also covers host IPC, UTS, cgroups, a host folder and a device (#2895) (#2999)\n\n* Docker pool: the live check also loosens IPC, host name, cgroups, a host folder and a device (#2895)\n\nA loosening an engine cannot make is said with its words rather than\nfailing the job.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Docker pool live check: Podman's OCI config is recorded beside its inspect (#2895)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Docker pool: rootless Podman's runtime config is held to the pool's own; five more loosenings measured (#2895)\n\nRootless Podman writes a device it was given only as a mount in its\nruntime config, so on rootless Podman Docker::check reads that config and\nholds its devices and mounts to the pool's own. The recorded copies of the\nfive new loosenings on each host are held to the check.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Docker pool: rootless Podman's runtime config is tied to the container's own folders and read without waiting (#2895)\n\nEach container file must come from exactly the container's own folder of\nPodman's storage or run state, and the home from exactly Podman's own\nvolumes, as podman info names them; the config must be that container's\nown. It is opened without blocking and read only as a file, and one in a\nPodman machine's VM is refused saying so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T17:37:39+04:00",
+          "tree_id": "dcb4420a0259deb137c821b16747f38dae5359fb",
+          "url": "https://github.com/purlis/purlis/commit/43ab7ee3792e06e892f2cefa67f18cd043889879"
+        },
+        "date": 1792677303036,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5282640000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.518, 0.528, 0.545, 0.551 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.1851405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.360, 17.035, 17.185, 17.243, 17.297 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.44132150000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.640, 104.289, 104.441, 104.856, 105.651 ms"
           }
         ]
       }
