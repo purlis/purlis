@@ -89,7 +89,8 @@ describe("Use skill…", function () {
       async () => {
         for (const row of await $$('[data-testid="use-skill-row"]')) {
           if ((await row.getText()).includes(SKILL)) {
-            await row.click();
+            // The skill's name is the row's button; the rest of the row says what it is.
+            await (await row.$("button")).click();
             return true;
           }
         }
