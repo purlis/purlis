@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792703359272,
+  "lastUpdate": 1792706340789,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -11816,6 +11816,42 @@ window.BENCHMARK_DATA = {
             "value": 669.6,
             "unit": "MB",
             "extra": "median of 6 samples: 633.8, 658.1, 667.3, 671.9, 672.5, 760.7 MB; window 411.2 MB, session host 258.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d95dc0c5dca63aeca7aef2fcae4d617009366eb5",
+          "message": "Browsers: the first key into a field of a large page reads only the tree around it (#2993)\n\n* Browsers: the first key into a field of a large page reads only the tree around it (#2967)\n\nThe person's first key into the first field of a page blanks the element\nwith the document's focus from the tree around it alone\n(`Accessibility.getPartialAXTree`), where that tree marks it focused and it\nholds no frame; every later field is found in the whole tree, so a code\ntyped a box at a time is kept out whole. The engine's tree is readied as\nthe person takes over. The large-page test holds the first key to 50 ms.\n\nRefs #2967\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: only a field takes the partial read, and the engine keeps its tree while the person drives (#2967)\n\n- The tree around the focused element is read only for a field a person\n  types into, by role or tag, and never for an element that holds a\n  document of its own.\n- The accessibility domain is enabled at the take-over and disabled at the\n  hand-back.\n- Doc comments back on their own functions; a changelog fragment.\n\nRefs #2967\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the large-page test types a second after the take-over, as a person does (#2967)\n\nRefs #2967\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the engine's tree is not readied at the take-over; the first key is said, not held (#2967)\n\nEnabling the accessibility domain at the take-over was measured on macOS\nreal Chrome and did not bring the first key under 50 ms (448 ms a second\nafter the take-over), so D-2967-2 is dropped. The large-page test says the\nfirst key's time (250 to 450 ms, from 23 to 46 s) and holds the keys after\nit to the bound. The ADR note records the measurement.\n\nRefs #2967\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T01:12:38+04:00",
+          "tree_id": "7c04c5ce0792ae22e1152bc81dff65cc592a0bc2",
+          "url": "https://github.com/purlis/purlis/commit/d95dc0c5dca63aeca7aef2fcae4d617009366eb5"
+        },
+        "date": 1792706338497,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1539.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1391.7, 1539.2, 1678.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 683.5,
+            "unit": "MB",
+            "extra": "median of 6 samples: 633.7, 661.9, 678.5, 688.4, 689.5, 795.3 MB; window 415.9 MB, session host 267.6 MB"
           }
         ]
       }
