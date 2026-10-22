@@ -41,7 +41,10 @@ fn project() -> support::Fixture {
     let f = support::plane_with_clone("svc");
     let files: [(&str, &str); 6] = [
         (".gitignore", "/workspaces/*/*\n/.purlis/\n/.charter/\n"),
-        ("workspaces/alpha/workspace.json", "{\"name\": \"alpha\", \"repos\": []}\n"),
+        (
+            "workspaces/alpha/workspace.json",
+            "{\"name\": \"alpha\", \"repos\": []}\n",
+        ),
         (".claude/skills/deploy/SKILL.md", DEPLOY),
         (".claude/skills/review/SKILL.md", REVIEW),
         (".claude/skills/review/notes/token.md", NOTES),
@@ -206,12 +209,18 @@ fn every_chat_keeps_its_skills_on_every_program_and_the_clone_loses_its_copy() {
             had.difference(has).collect::<Vec<_>>()
         );
         for moved in ["deploy", "review"] {
-            assert!(has.contains(moved), "a {harness:?} chat at the {place}: {has:?}");
+            assert!(
+                has.contains(moved),
+                "a {harness:?} chat at the {place}: {has:?}"
+            );
         }
         if *harness == Harness::Codex {
             assert!(!had.contains("deploy"), "Codex never read .claude/skills");
         } else {
-            assert_eq!(had, has, "a {harness:?} chat at the {place} gets the same skills");
+            assert_eq!(
+                had, has,
+                "a {harness:?} chat at the {place} gets the same skills"
+            );
         }
     }
 }
@@ -234,13 +243,20 @@ fn a_second_run_changes_nothing() {
 fn a_plane_with_changes_not_committed_is_refused_and_nothing_is_written() {
     purlis_core::unsteered!();
     let f = project();
-    std::fs::write(f.plane.join("personas/ops/persona.md"), "---\nrole: Mine\n---\n").unwrap();
+    std::fs::write(
+        f.plane.join("personas/ops/persona.md"),
+        "---\nrole: Mine\n---\n",
+    )
+    .unwrap();
     let at = head(&f.plane);
 
     let why = refused(apply(&f.plane));
 
     assert!(why.contains("changes that are not committed"), "{why}");
-    assert!(why.contains("the move must be a commit of its own"), "{why}");
+    assert!(
+        why.contains("the move must be a commit of its own"),
+        "{why}"
+    );
     assert_eq!(head(&f.plane), at);
     assert!(f.plane.join(".claude/skills/deploy/SKILL.md").is_file());
     assert!(!f.plane.join("skills").exists());
@@ -250,11 +266,22 @@ fn a_plane_with_changes_not_committed_is_refused_and_nothing_is_written() {
 fn a_chat_and_a_machine_without_the_preview_are_refused() {
     purlis_core::unsteered!();
     let f = project();
-    let in_a_chat = |name: &str| (name == purlis_core::active::SESSION_ID_ENV).then(|| "s1".to_owned());
+    let in_a_chat =
+        |name: &str| (name == purlis_core::active::SESSION_ID_ENV).then(|| "s1".to_owned());
 
-    let why = refused(project_skills::apply_in(&f.plane, Some(&built_in()), &in_a_chat, true));
+    let why = refused(project_skills::apply_in(
+        &f.plane,
+        Some(&built_in()),
+        &in_a_chat,
+        true,
+    ));
     assert_eq!(why, project_skills::FROM_A_CHAT);
-    let why = refused(project_skills::apply_in(&f.plane, Some(&built_in()), &|_| None, false));
+    let why = refused(project_skills::apply_in(
+        &f.plane,
+        Some(&built_in()),
+        &|_| None,
+        false,
+    ));
     assert_eq!(why, project_skills::STUDIO_OFF);
     assert!(!f.plane.join("skills").exists());
 }
@@ -272,7 +299,10 @@ fn a_skill_a_chat_would_lose_is_refused_before_anything_moves() {
 
     let why = refused(apply(&f.plane));
 
-    assert!(why.contains("the skill handoff in .claude/skills/hand-off"), "{why}");
+    assert!(
+        why.contains("the skill handoff in .claude/skills/hand-off"),
+        "{why}"
+    );
     assert!(why.contains("a built-in skill has this name"), "{why}");
     assert_eq!(head(&f.plane), head_was);
     assert_eq!(f.status(&f.plane), "");
@@ -285,18 +315,27 @@ fn what_a_move_cannot_carry_is_refused() {
     let f = project();
     std::fs::write(f.plane.join(".claude/skills/deploy/draft.md"), "draft\n").unwrap();
     let why = refused(apply(&f.plane));
-    assert!(why.contains("holds files git does not track (.claude/skills/deploy/draft.md)"), "{why}");
+    assert!(
+        why.contains("holds files git does not track (.claude/skills/deploy/draft.md)"),
+        "{why}"
+    );
     assert!(!f.plane.join("skills").exists());
 
     // A link, committed.
     let f = project();
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink("../../README.md", f.plane.join(".claude/skills/review/link.md"))
-            .unwrap();
+        std::os::unix::fs::symlink(
+            "../../README.md",
+            f.plane.join(".claude/skills/review/link.md"),
+        )
+        .unwrap();
         f.commit(&f.plane, "a link");
         let why = refused(apply(&f.plane));
-        assert!(why.contains(".claude/skills/review/link.md is a link"), "{why}");
+        assert!(
+            why.contains(".claude/skills/review/link.md is a link"),
+            "{why}"
+        );
         assert!(!f.plane.join("skills").exists());
     }
 }

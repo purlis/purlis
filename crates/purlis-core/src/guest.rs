@@ -119,7 +119,8 @@ fn mirrors(plane: &Path) -> Vec<&'static str> {
 /// [`crate::worktree::listing::exists`]), or it is under a root the plane is no longer copied
 /// from ([`mirrors`]).
 fn stopped_having(plane: &Path, rel: &str) -> bool {
-    !under(&mirrors(plane), rel) || crate::worktree::listing::exists(&plane.join(rel)) == Some(false)
+    !under(&mirrors(plane), rel)
+        || crate::worktree::listing::exists(&plane.join(rel)) == Some(false)
 }
 
 /// The delimiters of charter's managed block in a checkout's `info/exclude`.

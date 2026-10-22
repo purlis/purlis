@@ -737,7 +737,10 @@ fn fix_project_skills_by_name_moves_the_skills_in_one_commit() {
         said.contains("✓ moved .claude/skills/deploy to skills/deploy, granted to every workspace"),
         "{said}"
     );
-    assert!(said.contains("skill references under purlis's name"), "{said}");
+    assert!(
+        said.contains("skill references under purlis's name"),
+        "{said}"
+    );
     assert!(said.contains("requires `project-skills`"), "{said}");
     assert!(said.contains("✓ committed"), "{said}");
     assert!(said.contains("To undo it: `git revert "), "{said}");
@@ -765,7 +768,10 @@ fn fix_project_skills_is_refused_while_the_skill_studio_is_off() {
     );
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(said.contains("Settings › You › Previews"), "{said}");
-    assert!(root.join(".claude/skills/deploy/SKILL.md").is_file(), "{said}");
+    assert!(
+        root.join(".claude/skills/deploy/SKILL.md").is_file(),
+        "{said}"
+    );
     assert!(!root.join("skills").exists(), "{said}");
 }
 
@@ -773,10 +779,18 @@ fn fix_project_skills_is_refused_while_the_skill_studio_is_off() {
 #[test]
 fn bare_fix_never_moves_the_projects_skills() {
     let (_d, root) = plane_with_claude_skills();
-    let out = doctor_with(&root, &root.join("home"), &["--fix"], &[("PURLIS_SKILL_STUDIO", "1")]);
+    let out = doctor_with(
+        &root,
+        &root.join("home"),
+        &["--fix"],
+        &[("PURLIS_SKILL_STUDIO", "1")],
+    );
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(!said.contains("project-skills"), "{said}");
-    assert!(root.join(".claude/skills/deploy/SKILL.md").is_file(), "{said}");
+    assert!(
+        root.join(".claude/skills/deploy/SKILL.md").is_file(),
+        "{said}"
+    );
 }
 
 // ---- persona-agents (#1451) -----------------------------------------------------------------

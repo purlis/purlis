@@ -43,8 +43,14 @@ fn the_message_lists_each_move() {
     };
     let body = body(&plan);
     assert!(body.starts_with(&format!("{SUBJECT}\n\n")), "{body}");
-    assert!(body.contains("- .claude/skills/deploy -> skills/deploy\n"), "{body}");
-    assert!(body.contains("- .claude/skills/review -> skills/review\n"), "{body}");
+    assert!(
+        body.contains("- .claude/skills/deploy -> skills/deploy\n"),
+        "{body}"
+    );
+    assert!(
+        body.contains("- .claude/skills/review -> skills/review\n"),
+        "{body}"
+    );
 }
 
 #[test]

@@ -213,7 +213,10 @@ fn plan(root: &Path, built_in: Option<&Path>, tracked: &[String]) -> Result<Plan
     carried(root)?;
     let mut folders: Vec<String> = Vec::new();
     for path in &ours {
-        let inside = path.strip_prefix(FROM).unwrap_or(path).trim_start_matches('/');
+        let inside = path
+            .strip_prefix(FROM)
+            .unwrap_or(path)
+            .trim_start_matches('/');
         match inside.split_once('/') {
             Some((folder, _)) => {
                 if !folders.iter().any(|f| f == folder) {
@@ -339,9 +342,13 @@ fn clashes(
         };
         let name = skill.name;
         let why = if built_in.contains(&name) {
-            Some("a built-in skill has this name, and a built-in skill is never replaced".to_owned())
+            Some(
+                "a built-in skill has this name, and a built-in skill is never replaced".to_owned(),
+            )
         } else if project.contains(&name) {
-            Some(format!("the project's skills in {TO}/ already have a skill of this name"))
+            Some(format!(
+                "the project's skills in {TO}/ already have a skill of this name"
+            ))
         } else {
             skills
                 .iter()
@@ -566,7 +573,10 @@ fn references(root: &Path, built_in: Option<&Path>) -> Vec<String> {
             };
             let missing = set.left_out.iter().find(|left| {
                 left.name == *name
-                    && matches!(left.reason, Reason::NotOnThisMachine | Reason::NoSuchBuiltIn)
+                    && matches!(
+                        left.reason,
+                        Reason::NotOnThisMachine | Reason::NoSuchBuiltIn
+                    )
             });
             if let Some(left) = missing {
                 all = false;
@@ -594,7 +604,9 @@ fn references(root: &Path, built_in: Option<&Path>) -> Vec<String> {
 fn after(plan: &Plan, sha: Option<&str>) -> Vec<String> {
     let mut said = vec![match sha {
         Some(sha) => format!("✓ committed {sha}: {SUBJECT}"),
-        None => format!("✓ committed: {SUBJECT} (git could not name the commit; `git log -1` shows it)"),
+        None => {
+            format!("✓ committed: {SUBJECT} (git could not name the commit; `git log -1` shows it)")
+        }
     }];
     if plan.folders.is_empty() {
         return said;
@@ -644,7 +656,8 @@ fn body(plan: &Plan) -> String {
 
 /// Whether `path` is `root/…`.
 fn under(path: &str, root: &str) -> bool {
-    path.strip_prefix(root).is_some_and(|rest| rest.starts_with('/'))
+    path.strip_prefix(root)
+        .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// Whether `path` is a `.md` file inside a skill folder of the plane: in `.claude/skills/`, the
