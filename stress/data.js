@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792671648445,
+  "lastUpdate": 1792674499262,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5494,6 +5494,42 @@ window.BENCHMARK_DATA = {
             "value": 373.9,
             "unit": "MB",
             "extra": "median of 6 samples: 352.6, 416.5, 392.4, 373.5, 374.4, 235 MB; window 167.6 MB, session host 209.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0292ad71d9e74b574ab9320876d21c5c66bbd2a4",
+          "message": "Field family: text input, textarea, inline validation (#3021)\n\n* Theme parts: the field families at manifest version 3 (#2905)\n\nThe parts manifest gains field (root, label, help, error), text-input\n(root, icon) and textarea (root), the first families with no variants:\ntheir keys name the part alone, their one look is measured and falls back\nas a variant's is, and a part's words may have a default of their own (a\nfield's help in the quiet tier, its error in the danger colour). The\nfocused state is keyed per family: a field whenever it holds the caret.\nA text input's size is its md size and never reaches sm or lg; corner\nclamps are written only for families whose corners a theme sets. The\ndefaults are held to app/src/ui/field/field.css, the published schema is\nregenerated, and ADR 0103 gets an amendment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Field family: text input, textarea, inline validation and ⌘⏎ (#2905)\n\nEvery box a person types in is the field family's TextField or TextArea\n(app/src/ui/field), on React Aria: label, box, help and error as one,\nvalidated inline on blur and checked again before its form is sent. The\nfamily's Form sends its primary action on ⌘⏎ (Ctrl+Enter off macOS) from\nanywhere in it, never a grant or what cannot be undone, and every native\nform in the window is now one; Start a chat starts on ⌘⏎ and never\napproves a command by it. A filter given keepsFocus keeps the keyboard\nand its caret when it is drawn again (R168). Sizes sm/md/lg as the\nbutton's, lg only for a list's main filter; one size per row.\n\nEvery call site moves: the settings set's text and list fields, the\nfilters and searches, the find bar, the address bar, the palette's box,\nthe Inbox's boxes, the todo box, the vault and forge token boxes (which\nhold their own words, out of React state and the page's markup), a\npersona's skill and colour boxes, a task's answer and a tab's rename.\npurlis/field-family is an error; select and choice inputs get warning\nrules of their own. .ui-input and .ui-input-lead are gone. ADR 0104 gets\nan amendment; docs, guards and stories follow.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Field family review round: chord, error line, secret boxes, states (#2905)\n\n- ⌘⏎ sends only a primary or secondary answer, never from what a portal\n  draws outside the form; Start a chat's ⌘⏎ never starts a chat without\n  the sandbox, nor from its open profile list.\n- A field that can be refused keeps its error's line, empty and hidden\n  from assistive tech until it says something, so a refusal moves nothing.\n- Blur validates only a box whose words changed; the settings set never\n  writes a value its check refuses.\n- A secret's box is never given its words: a type error, and a guard that\n  names each one.\n- Each family names its own states (manifest v3 re-pinned), the own-words\n  box marks them, and the field families are measured on every ground a\n  control stands on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Settings editors e2e measures a list field's box, the family's around its textarea (#2905)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Answer-question e2e reads the answer's refusal from the field's error line (#2905)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-22T16:32:31+04:00",
+          "tree_id": "851fbdff8d2b682ca48a597bcc168bb304a8e368",
+          "url": "https://github.com/purlis/purlis/commit/0292ad71d9e74b574ab9320876d21c5c66bbd2a4"
+        },
+        "date": 1792674497624,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 987,
+            "unit": "MB",
+            "extra": "median of 3 samples: 925, 987, 1085 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 331.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 264.5, 326.8, 337.7, 336.7, 337.7, 223.9 MB; window 149.9 MB, session host 181.6 MB"
           }
         ]
       }
