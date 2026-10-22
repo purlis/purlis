@@ -69,9 +69,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Purlis Classic: no gutter, square corners, panels flush. */
+/** Purlis Classic's geometry: no gutter, square corners, panels flush with their hairline. */
 export const Flush: Story = {
-  args: {},
+  args: {
+    geometry: {
+      "--window-gutter": "0px",
+      "--panel-corner-radius": "0px",
+      "--panel-border-width": "1px",
+    } as CSSProperties,
+  },
   play: async ({ canvas }) => {
     const side = canvas.getByRole("region", { name: "Side" });
     await expect(side).toHaveAttribute("data-variant", "side");
@@ -79,7 +85,8 @@ export const Flush: Story = {
   },
 };
 
-/** The Purlis theme's geometry: panels 8 apart, 12px corners, no hairline. */
+/** The Purlis theme's geometry, whatever theme the story is drawn in: panels 8 apart, 12px
+ *  corners, no hairline. */
 export const Floating: Story = {
   args: {
     geometry: {
