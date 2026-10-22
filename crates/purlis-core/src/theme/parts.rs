@@ -67,7 +67,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::{Map, Value, json};
 
-use super::check::{contrast, onto};
+use super::check::{contrast, is_opaque, onto, solid};
 use super::geometry::{self, Geometry};
 use super::tint;
 use super::vocabulary::{PLATFORM, TOKENS};
@@ -343,7 +343,8 @@ pub struct Family {
     pub since: u32,
     pub parts: &'static [Part],
     pub variants: &'static [Variant],
-    /// The surfaces it is drawn on, which a see-through fill shows.
+    /// The surfaces it is drawn on, which a see-through fill shows: every one the window draws it
+    /// on, found from the components (`app/src/theme/grounds.test.ts`).
     pub grounds: &'static [&'static str],
     /// The selectors of the roots drawn at another of the family's sizes, or in a row that keeps
     /// their size (a button in a wrapping row): a part's size never reaches them.
@@ -439,7 +440,24 @@ pub const MANIFEST: &[Family] = &[Family {
             consent: None,
         },
     ],
-    grounds: &["surface.base", "surface.raised", "surface.overlay"],
+    // Every surface a button is drawn on in the window, as `app/src/theme/grounds.test.ts` finds
+    // them from the components; that test fails until a new one is listed here.
+    grounds: &[
+        "surface.base",
+        "surface.raised",
+        "surface.overlay",
+        "surface.sunken",
+        "surface.deep",
+        "border.subtle",
+        "tab.active",
+        "danger.surface",
+        "danger.wash",
+        "layer.project",
+        "layer.workspace",
+        "layer.chat",
+        "layer.selected",
+        "terminal.background",
+    ],
     keeps_size: &[
         "[data-size=\"sm\"]",
         "[data-size=\"lg\"]",
@@ -560,10 +578,8 @@ fn look_apart(theme: &ResolvedTheme, family: &Family, a: &Drawn, b: &Drawn, word
     let shown = |fill: &str, ground: &str| {
         hex(theme, fill).map_or_else(|| ground.to_owned(), |fill| onto(fill, ground))
     };
-    let fills = family
-        .grounds
+    let fills = grounds(theme, family)
         .iter()
-        .filter_map(|ground| hex(theme, ground))
         .filter_map(|ground| {
             let (x, y) = (shown(a.fill, ground), shown(b.fill, ground));
             Some(tint::distance(tint::oklab_of(&x)?, tint::oklab_of(&y)?))
@@ -1290,16 +1306,44 @@ fn hex<'a>(theme: &'a ResolvedTheme, token: &str) -> Option<&'a str> {
     (value != PLATFORM && !value.is_empty()).then_some(value)
 }
 
+/// **The family's grounds as `theme` draws them**, never none: each opaque one as it is, its
+/// alpha read as drawn, and a wash laid over each opaque one, since a wash is drawn over what is
+/// under it. With no opaque ground, each is measured as its colour drawn opaque; with no ground
+/// purlis can read, on black and on white, the strictest.
+fn grounds(theme: &ResolvedTheme, family: &Family) -> Vec<String> {
+    let given: Vec<&str> = family
+        .grounds
+        .iter()
+        .filter_map(|ground| hex(theme, ground))
+        .collect();
+    let under: Vec<String> = given
+        .iter()
+        .filter(|one| is_opaque(one))
+        .map(|one| solid(one))
+        .collect();
+    if under.is_empty() {
+        let drawn: Vec<String> = given.iter().map(|one| solid(one)).collect();
+        return if drawn.is_empty() {
+            vec!["#000000".to_owned(), "#ffffff".to_owned()]
+        } else {
+            drawn
+        };
+    }
+    let mut drawn = under.clone();
+    for one in given.iter().filter(|one| !is_opaque(one)) {
+        drawn.extend(under.iter().map(|below| onto(one, below)));
+    }
+    drawn
+}
+
 /// The lowest contrast `front` has on `fill` over each of the family's grounds.
 fn lowest(theme: &ResolvedTheme, family: &Family, fill: &str, front: &str) -> Option<f64> {
     let front = hex(theme, front)?;
-    family
-        .grounds
+    grounds(theme, family)
         .iter()
-        .filter_map(|ground| {
-            let ground = hex(theme, ground)?;
-            let back = hex(theme, fill).map_or_else(|| ground.to_owned(), |f| onto(f, ground));
-            Some(contrast(&onto(front, &back), &back))
+        .map(|ground| {
+            let back = hex(theme, fill).map_or_else(|| ground.clone(), |f| onto(f, ground));
+            contrast(&onto(front, &back), &back)
         })
         .reduce(f64::min)
         .map(|ratio| (ratio * 100.0).floor() / 100.0)
@@ -1396,10 +1440,10 @@ fn unreadable(
     if let Some(border) = edge(rules, family, variant, look) {
         let fill = hex(theme, look.fill);
         let on_its_ground = fill.is_none_or(|fill| {
-            family
-                .grounds
-                .iter()
-                .any(|ground| hex(theme, ground).is_some_and(|g| g.eq_ignore_ascii_case(fill)))
+            !is_opaque(fill)
+                || grounds(theme, family)
+                    .iter()
+                    .any(|ground| ground.eq_ignore_ascii_case(&solid(fill)))
         });
         if on_its_ground
             && let Some(ratio) = lowest(theme, family, look.fill, border)

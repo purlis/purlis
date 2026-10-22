@@ -1127,3 +1127,62 @@ fn parts_apply_bench() {
         "parts apply (stylesheet and fallen of one theme): {each:?} per theme, drawn {digest:016x}"
     );
 }
+
+#[test]
+fn a_parts_words_are_held_on_every_ground_its_family_is_drawn_on() {
+    // A ghost button is see-through, so its words are read on whatever it is drawn on: a
+    // Notice's trouble line puts buttons on the danger surface, and a wash is read laid over the
+    // surface under it.
+    let words = json!({ "button.root.ghost.text": "text.secondary" });
+    let as_given = fallen_parts(&with_tokens_and_parts(json!({}), words.clone()));
+    assert!(as_given.is_empty(), "{as_given:?}");
+    for (ground, hex) in [("danger.surface", "#8a8980"), ("danger.wash", "#c9c8c0c0")] {
+        let fallen = fallen_parts(&with_tokens_and_parts(
+            json!({ ground: hex }),
+            words.clone(),
+        ));
+        assert!(
+            fallen.contains(&"button.root.ghost".to_owned()),
+            "{ground}: {fallen:?}"
+        );
+    }
+}
+
+#[test]
+fn a_grounds_alpha_is_read_as_drawn() {
+    // Every ground written with an alpha that draws it opaque is the same ground, so a part is
+    // held on it exactly as on the ground written without one.
+    let mut grounds = serde_json::Map::new();
+    for (token, hex) in [
+        ("surface.base", "#191917"),
+        ("surface.raised", "#1b1b19"),
+        ("surface.overlay", "#1f1f1c"),
+        ("surface.sunken", "#111110"),
+        ("surface.deep", "#141413"),
+        ("border.subtle", "#2f2f2b"),
+        ("tab.active", "#1f3530"),
+        ("danger.surface", "#2a1a1a"),
+        ("layer.project", "#141413"),
+        ("layer.workspace", "#191917"),
+        ("layer.chat", "#1d1d1b"),
+        ("layer.selected", "#2a2a26"),
+    ] {
+        grounds.insert(token.to_owned(), Value::from(format!("{hex}ff")));
+    }
+    for parts in [
+        json!({
+            "button.root.primary.fill": "transparent",
+            "button.root.primary.border-colour": "focus.ring",
+            "button.root.primary.hover.fill": "control.hover",
+        }),
+        json!({ "button.root.ghost.text": "surface.overlay" }),
+    ] {
+        let plain = fallen_parts(&with_tokens_and_parts(json!({}), parts.clone()));
+        let written = fallen_parts(&with_tokens_and_parts(
+            Value::Object(grounds.clone()),
+            parts,
+        ));
+        assert!(!plain.is_empty(), "{plain:?}");
+        assert_eq!(written, plain);
+    }
+}
