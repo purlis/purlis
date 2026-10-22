@@ -35,12 +35,20 @@ function nameEntry(source: string, constant: string): { write: string; reads: st
 
 describe("the built-in themes' ids", () => {
   it("are purlis-dark and purlis-light, and the window comes up in the dark one", () => {
-    expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-dark", "purlis-light"]);
-    expect(BUILT_IN["purlis-dark"].appearance).toBe("dark");
-    expect(BUILT_IN["purlis-light"].appearance).toBe("light");
+    // `purlis-dark` and `purlis-light` name Purlis's dark and light; `purlis-classic` Classic.
+    expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-classic", "purlis-dark", "purlis-light"]);
+    expect([BUILT_IN["purlis-dark"].name, BUILT_IN["purlis-dark"].appearance]).toEqual([
+      "Purlis",
+      "dark",
+    ]);
+    expect([BUILT_IN["purlis-light"].name, BUILT_IN["purlis-light"].appearance]).toEqual([
+      "Purlis",
+      "light",
+    ]);
     // Purlis Classic's dark by its pick id; the window comes up in Purlis's (#3034).
-    expect(CLASSIC_THEME).toBe(BUILT_IN["purlis-dark"]);
-    expect(DEFAULT_THEME.name).toBe("Purlis");
+    expect(CLASSIC_THEME).toBe(BUILT_IN["purlis-classic"]);
+    expect(CLASSIC_THEME.name).toBe("Purlis Classic");
+    expect(DEFAULT_THEME).toEqual(BUILT_IN["purlis-dark"]);
   });
 
   it("name a built-in for each old id: which theme an old id draws is the core's", () => {

@@ -27,7 +27,7 @@ async function specimen(appearance: "dark" | "light"): Promise<{ picture: Pictur
   const answer = await browser.executeAsync(
     (shown: string, done: (out: { ok?: unknown; trouble?: string }) => void) => {
       void window.__TAURI__.core
-        .invoke("theme_specimen", { theme: "purlis-classic", appearance: shown })
+        .invoke("theme_specimen", { theme: "purlis", appearance: shown })
         .then((ok) => done({ ok }))
         .catch((e: unknown) => done({ trouble: String(e) }));
     },
@@ -40,16 +40,17 @@ async function specimen(appearance: "dark" | "light"): Promise<{ picture: Pictur
 const pixels = (picture: Picture): Pixels => readPng(Buffer.from(picture.png, "base64"));
 
 /** The theme's own `surface.base`, as the window holds it, in `[r, g, b]`. */
-async function surfaceOf(name: string): Promise<number[]> {
+async function surfaceOf(pick: string): Promise<number[]> {
+  // The window is handed each built-in by the pick that names it (#3034).
   const hex = await browser.execute((theme: string) => {
     const given = (
       window as unknown as Record<
         string,
-        { built_in: { name: string; values: Record<string, string> }[] }
+        { built_in: Record<string, { values: Record<string, string> }> }
       >
     ).__CHARTER_AT_CREATION__;
-    return given.built_in.find((one) => one.name === theme)?.values["surface.base"] ?? "";
-  }, name);
+    return given.built_in[theme]?.values["surface.base"] ?? "";
+  }, pick);
   return [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
 }
 

@@ -883,7 +883,7 @@ describe("Appearance (charter-app#281)", () => {
 
   it("says why the project's pick falls back here", async () => {
     const why =
-      "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this workspace — so the built-in purlis-dark is drawn";
+      "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this workspace — so the built-in theme, Purlis, is drawn";
     core(ALPHA, undefined, {
       ...NO_THEME,
       picked: "solarized/Solarized Dark",

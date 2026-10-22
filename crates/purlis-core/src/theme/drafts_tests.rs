@@ -180,6 +180,14 @@ fn a_new_draft_extends_the_default_purlis_and_is_drawn() {
     let drafted = drafts::drafted(read, None, None, Appearance::Dark, Contrast::Standard);
     assert!(drafted.broken.is_empty() && drafted.refused.is_empty());
     assert!(drafted.drawn.is_some() && drafted.good.is_some());
+    // Drawn as Purlis, its parent, and not a fallback.
+    let drawn = drafted.drawn.unwrap();
+    let theme = drawn.theme.as_ref().expect("a theme is drawn");
+    assert_eq!(
+        theme.value("surface.base"),
+        purlis().first().value("surface.base")
+    );
+    assert_eq!(theme.fonts, purlis().first().fonts);
 }
 
 #[test]

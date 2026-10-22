@@ -495,7 +495,7 @@ describe("the theme, in Appearance (charter-app#273)", () => {
     picked: "solarized/Solarized Dark",
     file: "charter.toml",
     draws: "purlis-dark",
-    why: "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in purlis-dark is drawn",
+    why: "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in theme, Purlis, is drawn",
   };
 
   it("offers the built-ins, following the system, and every approved extension's themes", async () => {
@@ -539,7 +539,7 @@ describe("the theme, in Appearance (charter-app#273)", () => {
 
     await waitFor(() =>
       expect(group).toHaveTextContent(
-        "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in purlis-dark is drawn",
+        "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in theme, Purlis, is drawn",
       ),
     );
   });

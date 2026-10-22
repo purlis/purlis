@@ -316,8 +316,8 @@ to change that changes one value rather than hunting for the second one.
 
 purlis ships two themes: **Purlis**, the default (below, #3034), and **Purlis Classic**, the
 alternative, one theme folder with a dark and a light appearance
-(`crates/purlis-core/src/theme/built-in/purlis-classic/theme.json`), picked as `purlis-classic`,
-`purlis-dark` and `purlis-light`. Both appearances are drawn in **Verdigris** (#1838, the operator's D1 and D4 on #1832): a slightly desaturated teal
+(`crates/purlis-core/src/theme/built-in/purlis-classic/theme.json`), picked as
+`purlis-classic` with an appearance. Both appearances are drawn in **Verdigris** (#1838, the operator's D1 and D4 on #1832): a slightly desaturated teal
 accent on warm-grey neutrals. It is calm and technical, easy on the eyes in a long session, and
 not the blue most developer tools use.
 
@@ -353,9 +353,12 @@ in Settings.
 `themeIds.test.ts` holds the two tables to each other and fails on an old id spelled anywhere
 else in the window; `no_old_name_is_spelled_outside_the_name_module` does the same for the Rust.
 A file that still names an old id is shown in Settings under the renamed theme's label. Nothing
-rewrites the file; the next pick made in Settings writes the new id. Every one of these ids, and
-the old `system` id, keeps naming Purlis Classic now that Purlis is the default: a pick stored
-by one is a choice of Classic, and draws Classic.
+rewrites the file; the next pick made in Settings writes the new id. Now that Purlis is the
+default (#3034), `purlis-dark` and `purlis-light`, and their old ids, name Purlis's dark and
+light (`theme::shipped_pick`): they were written as the default's dark or light, so they draw the
+default's. Settings no longer offers them, and labels a file that holds one. The old `system` id
+follows the system with the person's own theme, else Purlis. Only `purlis-classic` names
+Classic.
 
 ### Purlis, the default theme
 
@@ -371,9 +374,11 @@ chose a theme, the window draws Purlis's dark (`theme::DEFAULT`, `theme::default
 high-contrast dark when the system asks for more contrast, and a pick that cannot be drawn draws
 it too. The window is handed it as it is created (`default_theme` beside Classic's appearances,
 `windowprefs.rs`). The gallery and `purlis theme list` show it first, then Purlis Classic, and
-a new theme draft extends it. A choice already stored is never rewritten: a pick of Purlis
-Classic by any id it has had keeps drawing Classic, and a token a theme does not name still
-falls back to Classic's of its appearance, so a theme written before the switch draws as it did.
+a new theme draft extends it. No stored value is rewritten; how one is read is the table under
+**The ids** above: `purlis-classic` draws Classic, and every other built-in id draws Purlis. A
+token a theme does not name still falls back to Classic's of its appearance, so a theme written
+before the switch draws as it did. A workspace's colour dims only the tokens a tint rule holds
+apart from danger (`tint::chroma_for`); its strip keeps the colour's full hue in Purlis too.
 No built-in theme ships as a preview now; each built-in theme's entry in `purlis theme list
 --json` keeps its `"preview"` key, false for both. The component stories and their screenshot
 baselines draw Purlis's dark by default, from `app/src/theme/handed.purlis.json`, which a test

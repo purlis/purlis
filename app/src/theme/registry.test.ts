@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BUILT_IN_ICONS } from "./icons";
-import { BUILT_IN } from "./theme";
+import { BUILT_IN, CLASSIC } from "./theme";
 
 /**
  * The registry's answer to "what has contributed what to this window" has to include the themes
@@ -31,7 +31,12 @@ describe("charter's own themes", () => {
     expect(declared, `BUILT_IN_THEMES was not found in ${CORE}`).not.toBeNull();
 
     const named = [...(declared?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((hit) => hit[1]);
-    expect(named.sort()).toEqual(Object.keys(BUILT_IN).sort());
+    // Each names a built-in the window is handed, beside Purlis Classic by its own id (#3034).
+    expect(named.sort()).toEqual(
+      Object.keys(BUILT_IN)
+        .filter((id) => id !== CLASSIC)
+        .sort(),
+    );
   });
 });
 

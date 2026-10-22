@@ -1273,8 +1273,8 @@ _Avoid_: beta theme, experimental theme, preview (that is drawing a theme in the
 
 **Purlis Classic**:
 The look purlis had before Purlis became the default (#3034), kept unchanged as the alternative
-built-in theme, in a dark and a light appearance. A choice of it, by any id it has had, keeps
-drawing it.
+built-in theme, in a dark and a light appearance, picked by its id, `purlis-classic`. The ids
+`purlis-dark` and `purlis-light` name Purlis's dark and light.
 _Avoid_: purlis-dark, purlis-light (those are old ids), legacy theme, old theme
 
 ### Saving

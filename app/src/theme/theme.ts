@@ -54,7 +54,7 @@ import {
   systemReducesMotion,
   type Motion,
 } from "./motion";
-import { apartChroma, hueOf, tintHex, type Apart } from "./tint";
+import { apartChroma, chromaFor, hueOf, tintHex, type Apart } from "./tint";
 
 /**
  * Every token, in the order a theme file is easiest to read in.
@@ -517,16 +517,17 @@ export function property(token: Token): string {
  */
 export const AT_CREATION = "__CHARTER_AT_CREATION__";
 
-/** Purlis Classic's appearances, as the core resolved them and handed them to the window, dark
- *  first, by the ids a pick names them by (`purlis-dark`, `purlis-light`). The window always has
- *  them; a page opened without them is not purlis's window. */
-function handedBuiltIns(): Theme[] {
+/** **The built-in appearances, by the pick that names each**, as the core resolved them and
+ *  handed them to the window (`windowprefs::handed_built_ins`): `purlis-dark` and
+ *  `purlis-light`, Purlis's dark and light (#3034), and `purlis-classic`, Purlis Classic's dark.
+ *  The window always has them; a page opened without them is not purlis's window. */
+function handedBuiltIns(): Record<string, Theme> {
   const given = (globalThis as Record<string, unknown>)[AT_CREATION] as
     { built_in?: unknown } | undefined;
   const themes = given?.built_in;
-  if (!Array.isArray(themes) || themes.length === 0)
+  if (typeof themes !== "object" || themes === null || Array.isArray(themes))
     throw new Error("purlis's window was opened without the themes its core hands it");
-  return themes as Theme[];
+  return themes as Record<string, Theme>;
 }
 
 /** The default theme's appearance, Purlis's dark (#3034), as the core handed it: what the window
@@ -540,14 +541,20 @@ function handedDefault(): Theme {
   return theme as Theme;
 }
 
-const [DARK, LIGHT] = handedBuiltIns();
+/** Purlis's own id (`purlis_core::theme::PURLIS`): the default theme. */
+export const PURLIS = "purlis";
 
-/** Purlis Classic's two appearances, by the name a theme file or a setting names them by. A pick
- *  of either is a choice of Classic, and draws it. */
-export const BUILT_IN: Record<string, Theme> = {
-  [DARK.name]: DARK,
-  [LIGHT.name]: LIGHT,
-};
+/** Purlis Classic's own id (`purlis_core::theme::CLASSIC`): the alternative, and the one id that
+ *  names it. A pick of it draws its first appearance, the dark one, unless it names another. */
+export const CLASSIC = "purlis-classic";
+
+/** The built-in appearances a pick names, by the pick: what a project switch draws in the frame
+ *  it is made. `purlis-dark` and `purlis-light` were written as the default's dark or light, and
+ *  draw Purlis's (#3034); Settings no longer offers them, and labels a file that holds one. */
+export const BUILT_IN: Readonly<Record<string, Theme>> = handedBuiltIns();
+
+/** Purlis's dark and light by the ids a file may still hold, as Settings labels them. */
+export const OLD_PICKS: readonly string[] = ["purlis-dark", "purlis-light"];
 
 /**
  * **The alias table** (#1838, the #1719 theme-id item): each id a built-in had before the
@@ -558,21 +565,16 @@ export const BUILT_IN: Record<string, Theme> = {
  * spells an old id. It goes when the rename's compatibility window closes (ADR 0091).
  */
 export const THEME_ALIASES: Readonly<Record<string, string>> = {
-  "charter-dark": DARK.name,
-  "charter-light": LIGHT.name,
+  "charter-dark": "purlis-dark",
+  "charter-light": "purlis-light",
 };
 
 /** The theme the window comes up in when nothing has said otherwise: Purlis's dark (#3034,
  *  `purlis_core::theme::default_theme`). */
 export const DEFAULT_THEME: Theme = handedDefault();
 
-/** Purlis Classic's own id (`purlis_core::theme::CLASSIC`): a pick of it draws its first
- *  appearance, the dark one, as the engine's `built_in` answers. Not an old id, so not in
- *  {@link THEME_ALIASES}. */
-export const CLASSIC = "purlis-classic";
-
-/** What a pick of {@link CLASSIC} draws: Purlis Classic's first appearance, its dark. */
-export const CLASSIC_THEME: Theme = DARK;
+/** What a pick of {@link CLASSIC} draws with no appearance named: Purlis Classic's dark. */
+export const CLASSIC_THEME: Theme = BUILT_IN[CLASSIC];
 
 /** The pick that follows the operating system's appearance, as a project's `[theme] use` holds it
  *  (charter-app#273; `purlis_core::extension::project::theme::SYSTEM`). */
@@ -641,8 +643,10 @@ const tints = new WeakMap<Theme, Map<string, Theme>>();
 
 /**
  * `theme` with `tokens` turned to the hue `colour` gives in it, every rule the engine hands it
- * held (`tint.apartChroma`): the accent apart from danger, and Allow's edge from Keep blocked's. The theme itself for no colour, one with no hue, no
- * hue held apart, or no tokens.
+ * held (`tint.apartChroma`): the accent apart from danger, and Allow's edge from Keep blocked's,
+ * the sides of a rule given less colour where they must be and left untinted where no amount
+ * holds them, every other token at the hue's full colour (`tint.chromaFor`, #3034). The theme
+ * itself for no colour, one with no hue, or no tokens.
  */
 function tintedAs(
   theme: Theme,
@@ -670,13 +674,14 @@ function tintedAs(
     }))
     .filter((rule) => rule.tokenTinted || rule.fromTinted);
   const most = apartChroma(rules, hue);
-  if (most === undefined) return theme;
   const values = { ...theme.values };
   for (const one of tokens) {
     const value = theme.values[one as Token];
+    // Only the sides of a rule are held to `most`; a side no amount holds is drawn untinted.
+    const chroma = chromaFor(one, most, theme.tint.apart);
     // Only a colour turns: a value left to the platform (`platform`) is drawn as it is.
-    if (typeof value === "string" && value.startsWith("#"))
-      values[one as Token] = tintHex(value, hue, most);
+    if (chroma !== undefined && typeof value === "string" && value.startsWith("#"))
+      values[one as Token] = tintHex(value, hue, chroma);
   }
   const tint = { ...theme, values };
   made.set(key, tint);

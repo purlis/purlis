@@ -144,7 +144,7 @@ fn an_extension_theme_whose_extension_the_project_turned_off_falls_back_with_a_r
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this \
-             project — so the built-in purlis is drawn"
+             project — so the built-in theme, Purlis, is drawn"
         )
     );
 }
@@ -162,7 +162,7 @@ fn an_extension_theme_this_machine_has_not_approved_falls_back_with_a_reason() {
         got.why.as_deref(),
         Some(
             "charter.local.toml picks “Solarized Dark” from solarized, but this machine has not \
-             approved solarized — so the built-in purlis is drawn"
+             approved solarized — so the built-in theme, Purlis, is drawn"
         )
     );
 }
@@ -175,7 +175,7 @@ fn an_extension_theme_from_an_extension_not_installed_falls_back_with_a_reason()
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Dark” from solarized, but solarized is not installed \
-             on this machine — so the built-in purlis is drawn"
+             on this machine — so the built-in theme, Purlis, is drawn"
         )
     );
 }
@@ -193,7 +193,7 @@ fn a_theme_the_extension_does_not_contribute_falls_back_when_the_survey_says_so(
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Light” from solarized, but solarized contributes no \
-             theme called “Solarized Light” — so the built-in purlis is drawn"
+             theme called “Solarized Light” — so the built-in theme, Purlis, is drawn"
         )
     );
     // Asked without a survey, the pick stands: the window only holds what a survey found.
@@ -380,7 +380,7 @@ fn a_workspaces_extension_theme_falls_back_when_the_workspace_turned_that_extens
         got.why.as_deref(),
         Some(
             "workspaces/alpha/workspace.json picks “Solarized Dark” from solarized, but \
-             solarized is off in this workspace — so the built-in purlis is drawn"
+             solarized is off in this workspace — so the built-in theme, Purlis, is drawn"
         )
     );
     // And the project's pick, when the workspace turned its extension off, says the same.
@@ -395,7 +395,7 @@ fn a_workspaces_extension_theme_falls_back_when_the_workspace_turned_that_extens
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this \
-             workspace — so the built-in purlis is drawn"
+             workspace — so the built-in theme, Purlis, is drawn"
         )
     );
 }

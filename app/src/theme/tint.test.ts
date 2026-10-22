@@ -21,7 +21,8 @@ import {
   type Theme,
   type Token,
 } from "./theme";
-import { apartChroma, hueOf, oklabDistance, tintHex } from "./tint";
+import { classicAppearances } from "./handed.testkit";
+import { apartChroma, chromaFor, hueOf, oklabDistance, tintHex } from "./tint";
 
 /**
  * **A workspace's colour** (charter-app#281): a hue that tints the tokens the theme's recipe
@@ -90,6 +91,13 @@ describe("the core's copy of the tint", () => {
       }[];
     };
     expect(cases.tints.length).toBeGreaterThan(100);
+    // Which tokens a tint holds to the chroma that keeps the rules: the sides of a rule, and no
+    // other (#3034).
+    for (const { token, held } of (cases as unknown as { held: { token: string; held: boolean }[] })
+      .held)
+      expect(chromaFor(token, 0.01, CLASSIC_THEME.tint.apart), token).toBe(
+        held ? 0.01 : Number.POSITIVE_INFINITY,
+      );
     for (const { colour, hue } of cases.hues) {
       if (hue === null) expect(hueIn(CLASSIC_THEME, colour), colour).toBeUndefined();
       else expect(hueIn(CLASSIC_THEME, colour), colour).toBeCloseTo(hue, 9);
@@ -145,8 +153,10 @@ describe("a tint", () => {
     },
   );
 
-  it.each(Object.keys(BUILT_IN))("gives %s's accent the colour's hue", (name) => {
-    const theme = BUILT_IN[name];
+  // Purlis Classic's: in Purlis, red, orange and pink keep the accent apart from danger by
+  // drawing it untinted, and their strip in the colour (`purlis_tests.rs`, #3034).
+  it.each(["dark", "light"])("gives Purlis Classic %s's accent the colour's hue", (id) => {
+    const theme = classicAppearances().find((one) => one.id === id)?.theme as Theme;
     for (const { name: colour, hue } of theme.tint.hues) {
       const accent = tinted(theme, colour).values["accent.base"];
       // Within a few degrees: the hex is rounded to eight bits a channel.
@@ -274,12 +284,17 @@ describe("a theme's own recipe", () => {
     ]);
   });
 
-  it("draws a colour untinted when no amount of colour keeps the accent apart from danger", () => {
+  it("draws only the sides of a rule untinted when no amount of colour keeps them apart", () => {
     const grey = {
       ...CLASSIC_THEME,
       values: { ...CLASSIC_THEME.values, "accent.base": "#777777", "danger.base": "#777777" },
     };
-    expect(tinted(grey, "red")).toBe(grey);
+    const tint = tinted(grey, "red");
+    // The accent and its kin stay as written; the strip's shades still take red (#3034).
+    for (const token of ["accent.base", "accent.surface", "focus.ring", "tab.active"] as const)
+      expect(tint.values[token], token).toBe(grey.values[token]);
+    const red = hueIn(grey, "red") ?? Number.NaN;
+    expect(apart(hueOf(tint.values["layer.chat"]) ?? Number.NaN, red)).toBeLessThan(6);
   });
 
   it("leaves a value left to the platform as it is", () => {

@@ -463,24 +463,17 @@ fn classic_keeps_today_s_tint_wherever_the_accent_was_already_apart_from_danger(
     for theme in built_ins() {
         for (colour, hue) in PALETTE {
             if tinted(theme, colour) != today(theme, hue) {
-                held.push(format!("{} {colour}", theme.name));
+                held.push(format!("{} {colour}", theme.id));
             }
         }
     }
     // Only the light appearance's red, orange and pink brought the accent near danger.
-    assert_eq!(
-        held,
-        [
-            "purlis-light red",
-            "purlis-light orange",
-            "purlis-light pink"
-        ]
-    );
+    assert_eq!(held, ["light red", "light orange", "light pink"]);
 }
 
 #[test]
 fn a_held_colour_keeps_its_hue_and_gives_only_as_little_colour_as_it_must() {
-    let light = built_in("purlis-light").unwrap();
+    let light = classic().of(Appearance::Light).unwrap();
     for (colour, at) in [("red", 25.0), ("orange", 55.0), ("pink", 350.0)] {
         let most = apart_chroma(light, at).expect("a chroma apart from danger");
         assert!(most.is_finite(), "{colour}");
@@ -595,7 +588,7 @@ fn a_theme_whose_accent_meets_danger_under_one_tint_is_drawn_with_them_apart_the
 }
 
 #[test]
-fn a_colour_no_amount_of_chroma_keeps_apart_from_danger_is_drawn_untinted() {
+fn a_colour_no_amount_of_chroma_keeps_apart_from_danger_leaves_the_rules_sides_untinted() {
     // The accent and danger one grey: every tint of the accent is within the floor of it.
     let theme = drawn(&json!({
         "name": "Grey",
@@ -605,7 +598,33 @@ fn a_colour_no_amount_of_chroma_keeps_apart_from_danger_is_drawn_untinted() {
         }]
     }));
     assert_eq!(apart_chroma(&theme, 25.0), None);
-    assert_eq!(tinted(&theme, "red"), theme);
+    let tint = tinted(&theme, "red");
+    // The sides of a rule are drawn as written; the strip's shades still take red (#3034).
+    for token in theme.tint.tabs() {
+        if held_apart(token) {
+            assert_eq!(tint.value(token), theme.value(token), "{token}");
+        }
+    }
+    let red = theme.tint.hue("red").expect("red");
+    assert!(apart(hue(tint.value("layer.chat")), red) < 6.0);
+}
+
+#[test]
+fn a_tint_holds_only_the_sides_of_a_rule_as_the_shared_fixture_says() {
+    // The shared fixture's `held`: each token the recipe turns, and whether a tint gives it less
+    // colour to keep the rules (#3034). `tint.ts`' `chromaFor` reads the same.
+    let cases: Value = serde_json::from_str(TINT_CASES).unwrap();
+    for case in cases["held"].as_array().unwrap() {
+        let token = case["token"].as_str().unwrap();
+        let held = case["held"].as_bool().unwrap();
+        assert_eq!(held_apart(token), held, "{token}");
+        let want = if held {
+            Some(0.01)
+        } else {
+            Some(f64::INFINITY)
+        };
+        assert_eq!(chroma_for(token, Some(0.01)), want, "{token}");
+    }
 }
 
 /// A theme whose accent is read against its controls from its own side of the middle, a dark
@@ -906,8 +925,8 @@ fn allow_and_keep_blocked_stay_apart_at_a_custom_colour_between_two_named_ones()
 #[test]
 fn both_apart_rules_hold_at_every_whole_degree_of_a_custom_colour() {
     let themes = [
-        built_in("purlis-dark").unwrap().clone(),
-        built_in("purlis-light").unwrap().clone(),
+        classic().first().clone(),
+        classic().of(Appearance::Light).unwrap().clone(),
         edges_meet_under_tint(),
         only_keep_blocked_s_edge_tinted(),
     ];
@@ -1032,7 +1051,9 @@ fn purlis_classic_s_tints_are_these() {
     // the nearest byte: most of these moved by one step of one or two channels, and light red
     // and pink's accent by two steps of red, where that rounding let the accent keep one more
     // (red) or one less (pink) step of colour apart from danger. The operator ruled for the
-    // rounding on 2026-10-19.
+    // rounding on 2026-10-19. Since #3034 only the tokens a rule holds apart from danger are
+    // given less colour: light red, orange and pink's link and first chart series, which no rule
+    // measures, take the colour's full hue.
     const CLASSIC: [(&str, &str, [&str; 11]); 16] = [
         (
             "purlis-dark",
@@ -1102,16 +1123,16 @@ fn purlis_classic_s_tints_are_these() {
             "purlis-light",
             "red",
             [
-                "#7b5350", "#fde8e5", "#7b5350", "#f9dbd6", "#fde1df", "#7b5350", "#7b5350",
-                "#7b5350", "#feeae7", "#fef4f2", "#ffffff",
+                "#7b5350", "#fde8e5", "#7b5350", "#f9dbd6", "#fde1df", "#7b5350", "#8b4b47",
+                "#8b4b47", "#feeae7", "#fef4f2", "#ffffff",
             ],
         ),
         (
             "purlis-light",
             "orange",
             [
-                "#7d5438", "#fbe9df", "#7d5438", "#f5ddcc", "#f8e4d5", "#7d5438", "#7d5438",
-                "#7d5438", "#feebdd", "#fff4ee", "#ffffff",
+                "#7d5438", "#fbe9df", "#7d5438", "#f5ddcc", "#f8e4d5", "#7d5438", "#86502b",
+                "#86502b", "#feebdd", "#fff4ee", "#ffffff",
             ],
         ),
         (
@@ -1158,13 +1179,18 @@ fn purlis_classic_s_tints_are_these() {
             "purlis-light",
             "pink",
             [
-                "#804e67", "#fae8ef", "#804e67", "#f6dae6", "#f9e1ec", "#804e67", "#804e67",
-                "#804e67", "#fee9f1", "#fff3f8", "#ffffff",
+                "#804e67", "#fae8ef", "#804e67", "#f6dae6", "#f9e1ec", "#804e67", "#854b68",
+                "#854b68", "#fee9f1", "#fff3f8", "#ffffff",
             ],
         ),
     ];
     for (name, colour, values) in CLASSIC {
-        let theme = built_in(name).unwrap();
+        // Classic's appearances, by the ids its tints were first pinned under.
+        let theme = if name == "purlis-dark" {
+            classic().first()
+        } else {
+            classic().of(Appearance::Light).unwrap()
+        };
         let tint = tinted(theme, colour);
         let drawn: Vec<&str> = TINTED.iter().map(|token| tint.value(token)).collect();
         assert_eq!(drawn, values, "{name} {colour}");

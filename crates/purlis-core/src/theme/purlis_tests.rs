@@ -225,7 +225,7 @@ fn a_style_drawn_with_no_face_of_its_own_is_named() {
 }
 
 #[test]
-fn it_is_the_default_and_a_pick_of_purlis_classic_keeps_drawing_classic() {
+fn it_is_the_default_and_every_stored_pick_but_purlis_classic_draws_it() {
     assert_eq!(Pick::parse(PURLIS), Some(Pick::BuiltIn(PURLIS)));
     assert_eq!(DEFAULT, PURLIS);
     assert_eq!(default_theme(), purlis().first());
@@ -238,16 +238,21 @@ fn it_is_the_default_and_a_pick_of_purlis_classic_keeps_drawing_classic() {
         (sharp.name.as_str(), sharp.id.as_str()),
         ("Purlis", "dark-high-contrast")
     );
-    // A choice of Purlis Classic stored by any id it has had keeps drawing Classic: by its own,
-    // by its appearances' ids, by the ids they had before the rename, and the old `system`.
-    for (stored, appearance, drawn) in [
-        (CLASSIC, None, "purlis-dark"),
-        (CLASSIC, Some("light"), "purlis-light"),
-        ("purlis-dark", None, "purlis-dark"),
-        ("purlis-light", None, "purlis-light"),
-        ("charter-dark", None, "purlis-dark"),
-        ("charter-light", None, "purlis-light"),
-        ("system", None, "purlis-dark"),
+    // Each stored value, read as the operator ruled (#3034): `purlis-dark`, `purlis-light`, the
+    // ids they had before the rename and the old `system` were picks of the default's dark,
+    // light or following the system, so they draw Purlis's; only `purlis-classic` draws Classic.
+    // At every level, in the standard contrast and in more; no file is rewritten.
+    let dark = ("Purlis", "dark", "dark-high-contrast");
+    let light = ("Purlis", "light", "light");
+    for (stored, appearance, (name, standard, more)) in [
+        (CLASSIC, None, ("Purlis Classic", "dark", "dark")),
+        (CLASSIC, Some("light"), ("Purlis Classic", "light", "light")),
+        (CLASSIC, Some("system"), ("Purlis Classic", "dark", "dark")),
+        ("purlis-dark", None, dark),
+        ("charter-dark", None, dark),
+        ("purlis-light", None, light),
+        ("charter-light", None, light),
+        ("system", None, dark),
     ] {
         for level in 0..5 {
             let choice = Choice::new(stored, appearance);
@@ -273,12 +278,12 @@ fn it_is_the_default_and_a_pick_of_purlis_classic_keeps_drawing_classic() {
                     ..Levels::default()
                 },
             };
-            for contrast in [Contrast::Standard, Contrast::More] {
-                let got = drawn_for(&levels, contrast);
-                assert_eq!(name_of(&got), drawn, "{stored} {appearance:?} at {level}");
-                assert!(
-                    classic().appearances.contains(got.theme.as_ref().unwrap()),
-                    "{stored}"
+            for (contrast, id) in [(Contrast::Standard, standard), (Contrast::More, more)] {
+                let got = drawn_for(&levels, contrast).theme.unwrap();
+                assert_eq!(
+                    (got.name.as_str(), got.id.as_str()),
+                    (name, id),
+                    "{stored} {appearance:?} at {level}, {contrast:?}"
                 );
             }
         }
@@ -303,10 +308,6 @@ fn it_is_the_default_and_a_pick_of_purlis_classic_keeps_drawing_classic() {
         "light"
     );
     assert_eq!(light.project_choice.unwrap().told(), PURLIS);
-}
-
-fn name_of(drawn: &Drawn) -> &str {
-    drawn.theme.as_ref().map_or("", |it| it.name.as_str())
 }
 
 #[test]
@@ -499,4 +500,155 @@ fn light_is_dark_reflected_by_its_one_rule() {
     assert_eq!(light.typed, dark.typed);
     assert_eq!(light.geometry, dark.geometry);
     assert_eq!(light.motion, dark.motion);
+}
+
+#[test]
+fn the_old_system_id_follows_the_system_with_the_person_s_own_theme_else_purlis() {
+    // #2615 kept, #3034: `system` is the person's own theme when they have one, else Purlis,
+    // following the operating system.
+    let system = Levels {
+        project_default: Choice::new("system", None),
+        ..Levels::default()
+    };
+    let drawn = |theirs: Option<&Theme>, os: Appearance, contrast| {
+        resolve_levels(
+            &LevelInputs {
+                levels: &system,
+                folders: &Folders::of(None, None, None),
+                theirs,
+                on: On::Every,
+                system: os,
+                contrast,
+            },
+            no_survey,
+        )
+    };
+    let light = drawn(None, Appearance::Light, Contrast::Standard);
+    assert!(light.follows_system);
+    let light = light.theme.unwrap();
+    assert_eq!(
+        (light.name.as_str(), light.id.as_str()),
+        ("Purlis", "light")
+    );
+    let dark = drawn(None, Appearance::Dark, Contrast::More).theme.unwrap();
+    assert_eq!(dark.id, "dark-high-contrast");
+    let mine = load(&serde_json::json!({
+        "name": "Mine",
+        "appearances": [
+            { "id": "dark", "appearance": "dark" },
+            { "id": "light", "appearance": "light" }
+        ]
+    }))
+    .theme;
+    let theirs = drawn(Some(&mine), Appearance::Light, Contrast::Standard);
+    assert!(theirs.theirs);
+    assert_eq!(theirs.theme.unwrap().name, "Mine");
+}
+
+#[test]
+fn a_pick_that_cannot_be_drawn_draws_the_default_for_the_contrast_asked() {
+    // An extension's theme that is not in force, and a theme folder that is refused, draw Purlis
+    // as nothing chosen does: its high-contrast dark when more contrast is asked for (#3034).
+    let gone = Levels {
+        project_choice: Choice::new("acme/Night", None),
+        ..Levels::default()
+    };
+    let more = drawn_for(&gone, Contrast::More);
+    assert_eq!(more.complaints.len(), 1, "{:?}", more.complaints);
+    assert_eq!(more.theme.as_ref(), Some(default_for(Contrast::More)));
+    assert_eq!(
+        drawn_for(&gone, Contrast::Standard).theme.as_ref(),
+        Some(default_theme())
+    );
+}
+
+/// **How Purlis draws each workspace colour** (#3034), as numbers: per appearance and palette
+/// colour, the most chroma the accent and its kin are given to stay apart from danger
+/// (`apart_chroma`: no limit, an amount, or `None`, drawn untinted), the accent drawn, and the
+/// workspace strip's shade, which keeps the colour's full hue whatever the accent is given. A
+/// change to Purlis's tokens has to say here what it does to workspace colours.
+#[test]
+fn purlis_draws_each_workspace_colour_as_these_numbers_and_every_strip_keeps_its_hue() {
+    let want: &[(&str, &str, Option<f64>, &str, &str)] = &[
+        ("dark", "red", Some(0.015), "#b1a4a2", "#251212"),
+        ("dark", "orange", Some(0.02), "#b1a59b", "#22140b"),
+        ("dark", "yellow", Some(f64::INFINITY), "#bea643", "#1c1706"),
+        ("dark", "green", Some(f64::INFINITY), "#70b773", "#0e1a0f"),
+        ("dark", "teal", Some(f64::INFINITY), "#17bab2", "#031b19"),
+        ("dark", "blue", Some(f64::INFINITY), "#71aaf1", "#0e1824"),
+        ("dark", "purple", Some(f64::INFINITY), "#bc97e7", "#1c1423"),
+        ("dark", "pink", Some(0.015), "#afa4a9", "#23121b"),
+        ("light", "red", None, "#554691", "#fef6f4"),
+        ("light", "orange", None, "#554691", "#fff6f0"),
+        ("light", "yellow", Some(f64::INFINITY), "#625001", "#fdf8e1"),
+        ("light", "green", Some(f64::INFINITY), "#165e20", "#eafdea"),
+        ("light", "teal", Some(f64::INFINITY), "#015b59", "#e0fefa"),
+        ("light", "blue", Some(f64::INFINITY), "#1d5291", "#f3f8ff"),
+        ("light", "purple", Some(f64::INFINITY), "#654189", "#faf6fe"),
+        ("light", "pink", None, "#554691", "#fff5f9"),
+        ("dark-high-contrast", "red", None, "#c3baf5", "#251212"),
+        ("dark-high-contrast", "orange", None, "#c3baf5", "#22140b"),
+        (
+            "dark-high-contrast",
+            "yellow",
+            Some(f64::INFINITY),
+            "#d1c183",
+            "#1c1706",
+        ),
+        (
+            "dark-high-contrast",
+            "green",
+            Some(f64::INFINITY),
+            "#9ecd9d",
+            "#0e1a0f",
+        ),
+        (
+            "dark-high-contrast",
+            "teal",
+            Some(f64::INFINITY),
+            "#7bd0c9",
+            "#031b19",
+        ),
+        (
+            "dark-high-contrast",
+            "blue",
+            Some(f64::INFINITY),
+            "#9dc4f7",
+            "#0e1824",
+        ),
+        (
+            "dark-high-contrast",
+            "purple",
+            Some(f64::INFINITY),
+            "#cfb7ef",
+            "#1c1423",
+        ),
+        ("dark-high-contrast", "pink", None, "#c3baf5", "#23121b"),
+    ];
+    let mut got = Vec::new();
+    for one in &purlis().appearances {
+        for hue in &one.tint.hues {
+            let tint = tinted(one, &hue.name);
+            got.push((
+                one.id.as_str(),
+                hue.name,
+                apart_chroma(one, hue.hue),
+                tint.value("accent.base").to_owned(),
+                tint.value("layer.workspace").to_owned(),
+            ));
+            // Every colour tints the strip, whatever its accent is given.
+            assert_ne!(
+                tint.value("layer.workspace"),
+                one.value("layer.workspace"),
+                "{} {}",
+                one.id,
+                hue.name
+            );
+        }
+    }
+    let got: Vec<(&str, &str, Option<f64>, &str, &str)> = got
+        .iter()
+        .map(|(id, name, most, accent, strip)| (*id, *name, *most, accent.as_str(), strip.as_str()))
+        .collect();
+    assert_eq!(got, want);
 }

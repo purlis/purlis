@@ -55,7 +55,7 @@ pub mod turns;
 /// The tool's name.
 pub const TOOL: &str = "theme_preview";
 
-/// Purlis Classic's id: today's look, whose two appearances are the two built-ins.
+/// Purlis Classic's id: the alternative built-in theme, a dark and a light appearance.
 pub const PURLIS_CLASSIC: &str = theme::CLASSIC;
 
 /// How wide the specimen page is laid out, in CSS pixels.
@@ -164,8 +164,8 @@ fn choice_properties() -> Value {
         "theme": {
             "type": "string",
             "description": "The theme's id: purlis, Purlis, the default; purlis-classic, \
-                            Purlis Classic, the alternative; one of Purlis Classic's appearances by id \
-                            (purlis-dark, purlis-light); a theme folder by its name (dusk), or \
+                            Purlis Classic, the alternative; purlis-dark or purlis-light, \
+                            Purlis's dark or light; a theme folder by its name (dusk), or \
                             with its level (workspace:dusk, project:dusk, \
                             machine:dusk); draft:<folder>, this chat's own theme draft; or an \
                             extension's theme (<extension>/<theme>).",
@@ -358,10 +358,10 @@ fn appearance(given: Option<&Value>) -> Result<(Option<Appearance>, bool), Strin
 
 /// The ids a specimen may be drawn in, as a sentence's end.
 fn known() -> String {
-    let ids: Vec<&str> = theme::built_ins().iter().map(|t| t.name.as_str()).collect();
+    let ids = crate::extension::BUILT_IN_THEMES;
     format!(
         "{} (the default: dark, light or {HIGH_CONTRAST_DARK}), {PURLIS_CLASSIC} (dark or light), \
-         or {}; a theme folder by its name (dusk), or \
+         or {} (Purlis's dark or light); a theme folder by its name (dusk), or \
          with its level (workspace:dusk, project:dusk, machine:dusk); {DRAFT}:<folder>, this \
          chat's own theme draft; or an extension's theme (<extension>/<theme>), each as `purlis \
          theme list` names it",
@@ -374,7 +374,7 @@ fn known() -> String {
 /// works.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Named<'a> {
-    /// Purlis Classic, Purlis, or one of Purlis Classic's appearances by its id.
+    /// Purlis Classic, Purlis, or Purlis's dark or light by `purlis-dark` or `purlis-light`.
     BuiltIn,
     /// A theme folder: `name`, of `level` when the id names one (else the nearest within reach),
     /// and of the workspace `workspace` when it names one (`workspace:<workspace>:<folder>`).
@@ -426,8 +426,8 @@ pub fn named(id: &str) -> Option<Named<'_>> {
 }
 
 /// **The resolved theme a built-in's `specimen` is drawn in**, by the theme engine, or why there
-/// is none: Purlis Classic and Purlis in the appearance asked, and Purlis Classic's appearances
-/// by their own ids.
+/// is none: Purlis Classic and Purlis in the appearance asked, and Purlis's dark and light by
+/// `purlis-dark` and `purlis-light` (#3034).
 pub fn chosen(specimen: &Specimen) -> Result<&'static ResolvedTheme, String> {
     if specimen.theme == PURLIS_CLASSIC || specimen.theme == theme::PURLIS {
         let shipped = theme::shipped(&specimen.theme).unwrap_or_else(theme::classic);
@@ -452,13 +452,19 @@ pub fn chosen(specimen: &Specimen) -> Result<&'static ResolvedTheme, String> {
         ));
     };
     if specimen.high_contrast {
-        return Err(no_high_contrast(&specimen.theme));
+        // `purlis-dark` names Purlis's dark, which more contrast draws as its high-contrast dark.
+        return theme::purlis()
+            .appearances
+            .iter()
+            .find(|one| one.high_contrast && one.appearance == found.appearance)
+            .ok_or_else(|| no_high_contrast(&specimen.theme));
     }
     match specimen.appearance {
         Some(asked) if asked != found.appearance => Err(format!(
-            "`{}` has only a {} appearance: ask for {PURLIS_CLASSIC} with appearance `{}`",
+            "`{}` has only a {} appearance: ask for {} with appearance `{}`",
             specimen.theme,
             word(found.appearance),
+            theme::PURLIS,
             word(asked)
         )),
         _ => Ok(found),

@@ -234,10 +234,10 @@ fn the_persons_own_theme_json_drawn_is_said_with_what_following_does_with_it() {
             note: Some("Owl has only a dark appearance, so following the system stays dark".into()),
         })
     );
-    // With no theme of the person's, the old id draws Purlis Classic's card.
+    // With no theme of the person's, the old id draws the default's card, Purlis (#3034).
     let shown = gallery_of(&place, None);
     assert_eq!(shown.theirs, None);
-    assert_eq!(shown.chosen.as_deref(), Some("purlis-classic"));
+    assert_eq!(shown.chosen.as_deref(), Some("purlis"));
 }
 
 #[test]

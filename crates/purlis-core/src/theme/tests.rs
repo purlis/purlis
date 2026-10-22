@@ -13,11 +13,11 @@ use super::*;
 use crate::extension::project::theme::Pick;
 
 fn dark() -> &'static ResolvedTheme {
-    built_in("purlis-dark").expect("the dark built-in")
+    classic().first()
 }
 
 fn light() -> &'static ResolvedTheme {
-    built_in("purlis-light").expect("the light built-in")
+    classic().of(Appearance::Light).unwrap()
 }
 
 /// A theme file as one arrives from disk: parsed JSON and nothing more.
@@ -42,9 +42,17 @@ fn said(resolved: &Resolved) -> Vec<String> {
 // ---------------------------------------------------------------------------------------
 
 #[test]
-fn the_built_ins_are_the_registry_s_and_the_window_comes_up_in_the_dark_one() {
-    let ids: Vec<&str> = built_ins().iter().map(|it| it.name.as_str()).collect();
-    assert_eq!(ids, crate::extension::BUILT_IN_THEMES);
+fn the_registry_s_ids_name_purlis_s_dark_and_light_and_the_window_comes_up_in_the_dark_one() {
+    // `purlis-dark` and `purlis-light` name the default's dark and light (#3034).
+    let named: Vec<(&str, &str)> = crate::extension::BUILT_IN_THEMES
+        .iter()
+        .map(|id| {
+            let one = built_in(id).expect("a built-in");
+            (one.name.as_str(), one.id.as_str())
+        })
+        .collect();
+    assert_eq!(named, [("Purlis", "dark"), ("Purlis", "light")]);
+    assert!(built_ins().iter().all(|it| it.name == "Purlis Classic"));
     // The window comes up in the default, Purlis's dark (#3034).
     assert_eq!(default_theme(), purlis().first());
     assert_eq!(dark().appearance, Appearance::Dark);
@@ -128,7 +136,7 @@ fn an_old_id_is_read_as_the_renamed_built_in_keeping_its_appearance() {
         ("charter-dark", "purlis-dark"),
         ("charter-light", "purlis-light"),
     ] {
-        assert_eq!(built_in(old).map(|it| it.name.as_str()), Some(now));
+        assert_eq!(built_in(old), built_in(now), "{old}");
     }
     for id in ["system", "solarized/Solarized Dark", "", "toString"] {
         assert!(built_in(id).is_none(), "{id}");
@@ -436,6 +444,8 @@ fn a_duration_is_a_whole_number_of_milliseconds_up_to_the_ceiling() {
         let resolved = load(&json!({ "name": "x", "appearance": "dark", "tokens": {},
             "motion": { "duration.quick": bad } }));
         assert_eq!(resolved.complaints.len(), 1, "{bad}");
+        // Refused whole: the default, Purlis, is drawn in its place, its motion with it.
+        assert!(resolved.refused, "{bad}");
         assert_eq!(resolved.theme.first().motion, default_theme().motion);
     }
 }
@@ -486,6 +496,8 @@ fn a_bad_motion_value_refuses_the_theme_and_names_the_value() {
 #[test]
 fn motion_that_is_not_an_object_or_names_no_token_is_said() {
     let resolved = load(&json!({ "name": "x", "appearance": "dark", "motion": [1, 2] }));
+    // Refused whole: the default, Purlis, is drawn in its place, its motion with it.
+    assert!(resolved.refused);
     assert_eq!(resolved.theme.first().motion, default_theme().motion);
     assert!(
         said(&resolved).contains(&"motion is an object of motion token names to values".to_owned())
@@ -634,25 +646,23 @@ fn name_of(drawn: &Drawn) -> Option<&str> {
 
 #[test]
 fn a_built_in_pick_draws_that_built_in_by_any_id_it_has_had() {
-    for (pick, name) in [
-        ("purlis-light", "purlis-light"),
-        ("charter-light", "purlis-light"),
-        ("purlis-dark", "purlis-dark"),
+    // `purlis-dark` and `purlis-light`, by any id they have had, draw Purlis's (#3034);
+    // `purlis-classic` draws Classic.
+    for (pick, name, id) in [
+        ("purlis-light", "Purlis", "light"),
+        ("charter-light", "Purlis", "light"),
+        ("purlis-dark", "Purlis", "dark"),
+        ("purlis-classic", "Purlis Classic", "dark"),
     ] {
-        assert_eq!(
-            name_of(&drawn(Some(pick), Some(classic()), On::Every)),
-            Some(name)
-        );
+        let got = drawn(Some(pick), Some(classic()), On::Every).theme.unwrap();
+        assert_eq!((got.name.as_str(), got.id.as_str()), (name, id), "{pick}");
     }
 }
 
 #[test]
-fn following_the_system_draws_the_built_in_of_its_appearance_and_says_it_follows() {
+fn following_the_system_draws_the_default_s_appearance_of_its_tag_and_says_it_follows() {
     let pick = Pick::System;
-    for (system, name) in [
-        (Appearance::Light, "purlis-light"),
-        (Appearance::Dark, "purlis-dark"),
-    ] {
+    for (system, name) in [(Appearance::Light, "Purlis"), (Appearance::Dark, "Purlis")] {
         let it = resolve(
             &Inputs {
                 pick: Some(&pick),

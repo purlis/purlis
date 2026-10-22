@@ -368,12 +368,15 @@ fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
             // draws them; a degree with no chroma that holds the tint apart is drawn untinted.
             let mut drawn = theme.clone();
             for (degree, most) in (0_u32..).zip(chromas.of(theme).to_vec()) {
-                let Some(most) = most else {
-                    continue;
-                };
                 for token in &turned {
+                    let chroma = tint::chroma_for(token, most);
                     if let Some(value) = drawn.values.get_mut(token) {
-                        *value = tint::tint_hex_within(theme.value(token), f64::from(degree), most);
+                        *value = chroma.map_or_else(
+                            || theme.value(token).to_owned(),
+                            |chroma| {
+                                tint::tint_hex_within(theme.value(token), f64::from(degree), chroma)
+                            },
+                        );
                     }
                 }
                 found.extend(allow_near_primary(&drawn, true));

@@ -36,16 +36,18 @@ async function ask<T>(command: string, args?: Record<string, unknown>): Promise<
   return answer.value as T;
 }
 
-/** What the page draws now: its appearance and, from the built-ins it was handed, the
- *  `window.background` of each. */
+/** What the page draws now: its appearance and, from the default theme's dark and light it was
+ *  handed (`purlis-dark`, `purlis-light`, #3034), the `window.background` of each. */
 async function drawn(): Promise<{ appearance: string; backgrounds: Record<string, string> }> {
   return browser.execute(() => {
     const handed = (window as unknown as Record<string, unknown>).__CHARTER_AT_CREATION__ as {
-      built_in?: { appearance: string; values: Record<string, string> }[];
+      built_in?: Record<string, { appearance: string; values: Record<string, string> }>;
     };
     const backgrounds: Record<string, string> = {};
-    for (const theme of handed?.built_in ?? [])
-      backgrounds[theme.appearance] ??= theme.values["window.background"];
+    for (const pick of ["purlis-dark", "purlis-light"]) {
+      const theme = handed?.built_in?.[pick];
+      if (theme !== undefined) backgrounds[theme.appearance] = theme.values["window.background"];
+    }
     return { appearance: document.documentElement.style.colorScheme, backgrounds };
   });
 }

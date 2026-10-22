@@ -2116,11 +2116,11 @@ fn project_theme_of(
         })
         .collect();
     let icons_why = theme::resolve_icons(&on, Some(&icons), said).why;
-    // The built-in themes whole, each drawing its first appearance (#2709), the default first
-    // (#3034), then Purlis Classic's two appearances by their own ids.
+    // The built-in themes whole, each drawing its first appearance (#2709), the default first.
+    // `purlis-dark` and `purlis-light` are no longer offered: a file that holds one draws
+    // Purlis's dark or light, and Settings labels it (#3034).
     let mut options: Vec<ThemeOption> = [purlis_core::theme::PURLIS, purlis_core::theme::CLASSIC]
         .into_iter()
-        .chain(extension::BUILT_IN_THEMES)
         .map(|name| ThemeOption {
             value: name.to_owned(),
             label: if purlis_core::theme::is_preview(name) {
@@ -2920,9 +2920,10 @@ mod tests {
             || unreachable!(),
             |_| None,
         );
+        // The old `system` id follows the system with the default, Purlis (#3034).
         assert_eq!(
-            system.theme.map(|it| it.name).as_deref(),
-            Some("purlis-light")
+            system.theme.map(|it| (it.name, it.appearance)),
+            Some(("Purlis".to_owned(), "light".to_owned()))
         );
         assert!(system.follows_system);
     }
@@ -3135,8 +3136,6 @@ mod tests {
             vec![
                 ("purlis", "purlis (built in)"),
                 ("purlis-classic", "purlis-classic (built in)"),
-                ("purlis-dark", "purlis-dark (built in)"),
-                ("purlis-light", "purlis-light (built in)"),
                 ("system", "Follow the system"),
                 ("solarized/Solarized Dark", "Solarized Dark (Solarized)"),
             ]
@@ -3148,7 +3147,7 @@ mod tests {
             theme.why.as_deref(),
             Some(
                 "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this \
-                 project — so the built-in purlis is drawn"
+                 project — so the built-in theme, Purlis, is drawn"
             )
         );
         assert_eq!(

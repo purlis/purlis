@@ -35,9 +35,9 @@ struct AtCreation {
     /// The person's own theme, resolved by the core: what the first frame is drawn in when it
     /// is in force.
     theme: TheirTheme,
-    /// Purlis Classic's appearances by the ids a pick names them by, resolved: what a pick of
+    /// The built-in appearances a pick names, by the pick ([`handed_built_ins`]): what a pick of
     /// one draws without asking the core.
-    built_in: Vec<WindowTheme>,
+    built_in: std::collections::BTreeMap<String, WindowTheme>,
     /// The default theme's appearance, Purlis's dark (#3034): what the window draws when nothing
     /// else was handed.
     default_theme: WindowTheme,
@@ -358,10 +358,7 @@ fn at_creation_from(
     let follows_system = first.follows_system;
     let at = AtCreation {
         theme: TheirTheme::of(theirs, &layer),
-        built_in: theme::built_ins()
-            .iter()
-            .map(|one| built_in_under(one, &layer))
-            .collect(),
+        built_in: handed_built_ins(&layer),
         default_theme: built_in_under(theme::default_theme(), &layer),
         person,
         layout,
@@ -377,6 +374,27 @@ fn at_creation_from(
         follows_system,
         person: layer,
     }
+}
+
+/// **What `theme.ts` reads from the creation global as its module loads**, and throws without:
+/// every page that loads it is handed each (`creation_script_from` here, `specimen.rs`'s), and a
+/// test holds both to this list.
+pub(crate) const HANDED_AT_LOAD: [&str; 2] = ["built_in", "default_theme"];
+
+/// **The built-in appearances a window is handed, by the pick that names each** (#3034):
+/// `purlis-dark` and `purlis-light`, Purlis's dark and light, and `purlis-classic`, Purlis
+/// Classic's first appearance, each under the person's `layer`. What a pick of one draws in the
+/// frame it is made, without asking the core.
+pub(crate) fn handed_built_ins(
+    layer: &theme::Layer,
+) -> std::collections::BTreeMap<String, WindowTheme> {
+    purlis_core::extension::BUILT_IN_THEMES
+        .iter()
+        .chain([&theme::CLASSIC])
+        .filter_map(|pick| {
+            theme::built_in(pick).map(|one| ((*pick).to_owned(), built_in_under(one, layer)))
+        })
+        .collect()
 }
 
 /// A built-in theme as the window is handed it: as it is, or with the person's colours and
@@ -609,12 +627,12 @@ mod tests {
             theme::built_in_for(theme::Appearance::Dark).value("surface.base")
         );
         let built: Vec<&str> = at["built_in"]
-            .as_array()
+            .as_object()
             .expect("the built-ins")
-            .iter()
-            .filter_map(|one| one["name"].as_str())
+            .keys()
+            .map(String::as_str)
             .collect();
-        assert_eq!(built, purlis_core::extension::BUILT_IN_THEMES);
+        assert_eq!(built, ["purlis-classic", "purlis-dark", "purlis-light"]);
     }
 
     #[test]
@@ -673,7 +691,7 @@ mod tests {
         }
         // A light accent reads on the dark built-ins; on a light one it would put words under
         // their floor, so the theme's own is drawn there.
-        for one in at["built_in"].as_array().expect("the built-ins") {
+        for one in at["built_in"].as_object().expect("the built-ins").values() {
             let drawn = &one["values"]["accent.base"];
             if one["appearance"] == "dark" {
                 assert_eq!(drawn, accent, "{}", one["name"]);
@@ -699,10 +717,10 @@ mod tests {
             assert_eq!(frame["more"], true);
         }
         assert_eq!(created.person.contrast, theme::Least::More);
-        let classic = &at["built_in"][0]["values"];
+        let classic = &at["built_in"]["purlis-classic"]["values"];
         assert_ne!(
             classic["text.muted"],
-            theme::built_ins()[0].value("text.muted"),
+            theme::classic().first().value("text.muted"),
             "muted words are raised to 7:1"
         );
     }
@@ -710,27 +728,79 @@ mod tests {
     #[test]
     fn with_nothing_of_the_person_s_the_built_ins_are_handed_as_they_are() {
         let at = defined(&creation_script_from(&TheirsKept::new(), None));
-        let handed: Vec<WindowTheme> = theme::built_ins().iter().map(WindowTheme::from).collect();
+        let handed = handed_built_ins(&theme::Layer::default());
         assert_eq!(at["built_in"], serde_json::to_value(&handed).unwrap());
+        let classic = WindowTheme::from(theme::classic().first());
+        assert_eq!(handed["purlis-classic"], classic);
         assert_eq!(at["person"]["contrast"], "standard");
         assert_eq!(at["person"]["motion"], "system");
     }
 
     #[test]
-    fn the_window_is_handed_the_default_purlis_s_dark_beside_classic_s_appearances() {
-        // #3034: Purlis is the default, and Classic's appearances stay handed by their pick ids.
+    fn the_window_is_handed_the_default_and_each_built_in_by_the_pick_that_names_it() {
+        // #3034: Purlis is the default; `purlis-dark` and `purlis-light` name its dark and
+        // light, and `purlis-classic` names Classic.
         let at = defined(&creation_script_from(&TheirsKept::new(), None));
-        let default = serde_json::to_value(WindowTheme::from(theme::purlis().first())).unwrap();
-        assert_eq!(at["default_theme"], default);
-        assert_eq!(at["default_theme"]["name"], "Purlis");
-        assert_eq!(at["built_in"][0]["name"], "purlis-dark");
-        assert_eq!(at["built_in"][1]["name"], "purlis-light");
+        let of = |one: &theme::ResolvedTheme| serde_json::to_value(WindowTheme::from(one)).unwrap();
+        assert_eq!(at["default_theme"], of(theme::purlis().first()));
+        let purlis = theme::purlis();
+        assert_eq!(at["built_in"]["purlis-dark"], of(purlis.first()));
+        assert_eq!(
+            at["built_in"]["purlis-light"],
+            of(purlis.of(theme::Appearance::Light).unwrap())
+        );
+        assert_eq!(
+            at["built_in"]["purlis-classic"],
+            of(theme::classic().first())
+        );
+        assert_eq!(at["built_in"].as_object().unwrap().len(), 3);
+    }
+
+    /// **Every page that loads the window's theme module is handed what it reads at load**
+    /// (#3034): the module throws without one, so the window and the theme specimen's page are
+    /// each held to [`HANDED_AT_LOAD`], and the list to what `theme.ts` reads and throws without.
+    #[test]
+    fn every_creation_script_carries_each_key_the_theme_module_reads_at_load() {
+        let module = include_str!("../../src/theme/theme.ts");
+        assert_eq!(
+            module.matches("was opened without").count(),
+            HANDED_AT_LOAD.len(),
+            "theme.ts throws at load without a key HANDED_AT_LOAD does not name"
+        );
+        for key in HANDED_AT_LOAD {
+            assert!(module.contains(&format!("given?.{key}")), "{key}");
+        }
+        let window = defined(&creation_script_from(&TheirsKept::new(), None));
+        let specimen = crate::specimen::creation_script(&crate::specimen::Handed {
+            theme: WindowTheme::from(theme::default_theme()),
+            tint: None,
+            faces: Vec::new(),
+        });
+        let specimen: serde_json::Value = {
+            let line = specimen
+                .lines()
+                .find(|line| line.contains(&format!("\"{GLOBAL}\"")))
+                .expect("the creation global");
+            let from = line.find("Object.freeze(").expect("frozen") + "Object.freeze(".len();
+            let to = line.rfind(") })").expect("closed");
+            serde_json::from_str(&line[from..to]).expect("JSON")
+        };
+        for key in HANDED_AT_LOAD {
+            assert!(
+                window.get(key).is_some_and(|it| !it.is_null()),
+                "window {key}"
+            );
+            assert!(
+                specimen.get(key).is_some_and(|it| !it.is_null()),
+                "specimen {key}"
+            );
+        }
     }
 
     /// **The story harness is handed Purlis as the core hands it** (#3034): Storybook's page and
     /// a unit test's jsdom have no core, so `app/src/theme/handed.purlis.json` holds each of
-    /// Purlis's appearances, by its id, as a [`WindowTheme`], and this holds the file to the
-    /// engine. Run with
+    /// Purlis's appearances, by its id, as a [`WindowTheme`], and the id of the one the window
+    /// comes up in (`default`), and this holds the file to the engine. Run with
     /// `PURLIS_WRITE_HANDED=1` to write it again after Purlis changes.
     #[test]
     fn the_story_harness_is_handed_purlis_as_the_core_hands_it() {
@@ -738,11 +808,17 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../src/theme/handed.purlis.json"
         );
-        let handed: Vec<serde_json::Value> = theme::purlis()
+        let appearances: Vec<serde_json::Value> = theme::purlis()
             .appearances
             .iter()
             .map(|one| serde_json::json!({ "id": one.id, "theme": WindowTheme::from(one) }))
             .collect();
+        // The default's own appearance by its id: what a story is drawn in when it names none.
+        assert_eq!(theme::shipped(theme::DEFAULT), Some(theme::purlis()));
+        let handed = serde_json::json!({
+            "default": theme::default_theme().id,
+            "appearances": appearances,
+        });
         let text = format!(
             "{}\n",
             serde_json::to_string_pretty(&handed).expect("a theme is plain data")
@@ -775,8 +851,9 @@ mod tests {
     fn a_resolved_theme_is_handed_in_one_shape_whatever_hands_it() {
         // The creation script's built-ins are `WindowTheme`s, as `theme_in_force`'s answer is.
         let at = defined(&creation_script_from(&TheirsKept::new(), None));
-        let one = serde_json::to_value(WindowTheme::from(&theme::built_ins()[0])).unwrap();
-        assert_eq!(at["built_in"][0], one);
+        let one = serde_json::to_value(WindowTheme::from(theme::default_theme())).unwrap();
+        assert_eq!(at["built_in"]["purlis-dark"], one);
+        assert_eq!(at["default_theme"], one);
     }
 
     #[test]
@@ -1033,7 +1110,7 @@ mod tests {
 
     #[test]
     fn a_window_on_a_workspace_is_created_in_the_theme_its_level_chooses() {
-        let places = Places::new("[theme]\nuse = \"purlis-dark\"\n");
+        let places = Places::new("[theme]\nuse = \"purlis-classic\"\n");
         Places::put(&places.plane.join("workspaces/alpha/themes"), "team", TEAM);
         theme::choices::set(
             &places.config,
@@ -1044,10 +1121,9 @@ mod tests {
         let on = places.on(Some("alpha"));
         let created = places.created(Some(&on), Some(Contrast::Standard));
         assert_eq!(created.native.background, [0xab, 0xcd, 0xef]);
-        // At the plane root the project's own is drawn: its stored pick of Purlis Classic's
-        // dark, which stays Classic now that Purlis is the default (#3034).
+        // At the plane root the project's own is drawn: its pick of Purlis Classic.
         let root = places.created(Some(&places.on(None)), Some(Contrast::Standard));
-        let classic = theme::built_in("purlis-dark").expect("Classic dark");
+        let classic = theme::classic().first();
         assert_eq!(root.native, classic.native());
         assert_ne!(root.native, theme::default_theme().native());
     }
@@ -1330,7 +1406,7 @@ mod tests {
         assert_eq!(at["layout"]["found"], false);
         assert_eq!(at["theme"]["found"], false);
         assert_eq!(at["theme"]["theme"], serde_json::Value::Null);
-        assert_eq!(at["built_in"].as_array().map(Vec::len), Some(2));
+        assert_eq!(at["built_in"].as_object().map(|it| it.len()), Some(3));
     }
 
     /// **A project at the font budget**: 64 font files, 32 MiB, in three theme folders, the one

@@ -47,7 +47,7 @@ fn dark(tokens: Value, more: Value) -> Value {
 }
 
 fn classic_dark() -> &'static ResolvedTheme {
-    built_in("purlis-dark").expect("Classic's dark appearance")
+    classic().first()
 }
 
 // ---------------------------------------------------------------------------------------

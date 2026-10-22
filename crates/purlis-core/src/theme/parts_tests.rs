@@ -613,10 +613,7 @@ fn danger_never_takes_the_primary_look() {
 fn the_consent_floors_hold_in_every_workspace_tint() {
     // Keep blocked's edge is the accent at the opposite hue: apart from Allow's as written, and
     // drawn alike in a workspace whose colour turns both to its own hue.
-    let accent = built_in("purlis-dark")
-        .unwrap()
-        .value("accent.base")
-        .to_owned();
+    let accent = classic().first().value("accent.base").to_owned();
     let opposite = tint_hex(&accent, (hue_of(&accent).unwrap() + 180.0) % 360.0);
     let loaded = load(&json!({
         "name": "Tinted", "extends": "purlis-classic",

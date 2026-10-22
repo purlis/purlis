@@ -7,30 +7,32 @@
 //! [`crate::extension::project::theme::resolve`]; this answers what that pick, and everything
 //! else this machine has, draw:
 //!
-//! 1. **What the project picked**: an appearance of Purlis Classic by the id a pick names it by;
-//!    `system`, the person's own theme, else Purlis Classic, following the operating system; or
+//! 1. **What the project picked**: a built-in by its id (`purlis-dark` and `purlis-light` name
+//!    Purlis's dark and light, #3034); `system`, the person's own theme, else Purlis, following
+//!    the operating system; or
 //!    the extension theme it names, which is drawn only while the project has that extension on
 //!    and this machine approved it. A pick that cannot be drawn draws the default.
 //! 2. With no pick, **the person's own theme file**, the one theme they wrote for this machine.
 //!    A project's pick is more specific than a machine's file, which is why it comes first.
 //! 3. With neither, the first theme from an extension the project has on, or the default,
 //!    Purlis ([`super::DEFAULT`], #3034), in its high-contrast dark when more contrast is asked
-//!    for. A pick of Purlis Classic, by any id it has had, draws Classic.
+//!    for. Purlis Classic is drawn only where a pick names it by its id, `purlis-classic`.
 //!
 //! **Following the system works with any theme that has a dark and a light appearance**: the
 //! window is told it follows, and asks again when the system turns. [`follow`] of a theme with
 //! only one appearance draws that one, and [`Drawn::note`] says that following the system stays
 //! there, which Settings › Theme says on a theme's card (#2331). **The old `system` id is no
-//! special case** (#2615): it names the person's own theme, else Purlis Classic, followed as any
+//! special case** (#2615): it names the person's own theme, else Purlis, followed as any
 //! theme is, so a `theme.json` of one appearance stays in it; [`Drawn::theirs`] says the person's
 //! own theme is drawn, and Settings › Theme says so with what following does with it. With no
-//! `system` pick a theme draws its first appearance, as Purlis Classic draws its dark. With no
+//! `system` pick a theme draws its first appearance, as Purlis draws its dark. With no
 //! pick, the first extension theme in force that is not refused is drawn.
 //!
 //! **More contrast picks an appearance tagged high contrast** (#2328): when the operating system
 //! asks for more contrast ([`Inputs::contrast`]), each answer that draws an appearance of a tag
 //! draws the theme's appearance of that tag tagged high contrast instead, when it has one. A
-//! built-in pick names its appearance, and Purlis Classic has none tagged high contrast.
+//! pick of `purlis-dark` draws Purlis's high-contrast dark then, as nothing chosen does; Purlis
+//! Classic has no appearance tagged high contrast.
 //!
 //! **The consent floors hold for every source** (ADR 0097 §6): whatever is drawn is drawn by
 //! [`draw`], so a pick, the person's own theme, an extension's and a built-in all clear them.
@@ -42,8 +44,8 @@
 use std::sync::Arc;
 
 use super::{
-    Appearance, Complaint, Contrast, Held, PURLIS, Resolved, ResolvedTheme, Theme, built_in,
-    classic, default_for, default_theme, shipped,
+    Appearance, Complaint, Contrast, Held, Resolved, ResolvedTheme, Theme, default_for, purlis,
+    shipped_pick,
 };
 use crate::extension::project::theme::Pick;
 
@@ -265,20 +267,20 @@ pub fn follow(theme: &Theme, system: Appearance, contrast: Contrast) -> Drawn {
 pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) -> Drawn {
     match inputs.pick {
         // `system` is the spec's old id for "the picked theme, following the OS": the person's
-        // own theme, the machine's level, else Purlis Classic, followed as any theme is (#2615).
+        // own theme, the machine's level, else the default, Purlis (#3034), followed as any theme
+        // is (#2615).
         Some(Pick::System) => {
-            let theme = inputs.theirs.unwrap_or_else(|| classic());
+            let theme = inputs.theirs.unwrap_or_else(|| purlis());
             return Drawn {
                 theirs: inputs.theirs.is_some(),
                 ..Drawn::following(theme, inputs.system, inputs.contrast)
             };
         }
         Some(Pick::BuiltIn(id)) => {
-            // Purlis draws its high-contrast appearance when more contrast is asked for.
-            return match shipped(id) {
-                Some(theme) if *id == PURLIS => Drawn::of(theme.first_for(inputs.contrast)),
-                _ => Drawn::of(built_in(id).unwrap_or_else(default_theme)),
-            };
+            // In the appearance its id implies (`purlis-light`, #3034), else its first: Purlis's
+            // high-contrast dark when more contrast is asked for.
+            let (theme, implied) = shipped_pick(id).unwrap_or((purlis(), None));
+            return super::levels::appear(theme, implied, inputs.system, inputs.contrast);
         }
         Some(Pick::Extension { .. }) => {}
         // A theme folder is a level's: [`super::resolve_levels`] reads the levels' folders, and
@@ -288,7 +290,7 @@ pub fn resolve(inputs: &Inputs<'_>, offered: impl FnOnce() -> Arc<[Offered]>) ->
                 complaints: vec![Complaint::said(format!(
                     "\"{name}\" is not a theme purlis has"
                 ))],
-                ..Drawn::of(default_theme())
+                ..Drawn::of(default_for(inputs.contrast))
             };
         }
         None => {

@@ -10,9 +10,9 @@ repository's `docs/design-system.md`, and its schema is `docs/schema/theme.v2.sc
 
 - **Built in**: Purlis, `purlis`, the default, with a dark, a light and a high-contrast dark
   appearance; and Purlis Classic, `purlis-classic`, the alternative, with a dark and a light
-  appearance. Where nothing chose a theme, Purlis is drawn. The ids Classic's appearances have
-  had (`purlis-dark`, `purlis-light`, `charter-dark`, `charter-light`) still name Classic, so a
-  choice of one keeps drawing it.
+  appearance. Where nothing chose a theme, Purlis is drawn. `purlis-dark` and `purlis-light`
+  (and `charter-dark`, `charter-light`) name Purlis's dark and light, as `system` follows the
+  system with Purlis; only `purlis-classic` names Classic.
 - **Your own**, at the machine level: `theme.json` in purlis's config folder
   (`$PURLIS_CONFIG_HOME`, else `$XDG_CONFIG_HOME`, else `~/.config`, then `purlis/`), whose id
   is `mine`, and each theme folder in that folder's `themes/`, whose id is `machine:<folder>`.

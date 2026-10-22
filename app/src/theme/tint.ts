@@ -109,6 +109,22 @@ export function apartChroma(rules: readonly Rule[], hue: number): number | undef
   return undefined;
 }
 
+/**
+ * **The most chroma a tint gives `token`** when {@link apartChroma} answers `most`
+ * (`purlis_core::theme::chroma_for`, #3034): `most` for a side of one of the `rules` the theme
+ * hands (`undefined`, untinted, where no amount holds them), and no limit for every other token,
+ * which no rule measures, so a workspace's strip keeps its colour's full hue.
+ */
+export function chromaFor(
+  token: string,
+  most: number | undefined,
+  rules: readonly Apart[],
+): number | undefined {
+  return rules.some((rule) => rule.token === token || rule.from === token)
+    ? most
+    : Number.POSITIVE_INFINITY;
+}
+
 /** How far two theme colours are in OKLab, their alpha left out. */
 export function oklabDistance(a: string, b: string): number {
   return apartIn(oklab(parse(a).rgb), oklab(parse(b).rgb));

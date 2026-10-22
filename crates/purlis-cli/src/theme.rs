@@ -788,7 +788,7 @@ fn export(
     wrapping: theme::Wrapping,
     force: bool,
 ) -> ExitCode {
-    let packed = if asked == theme::PURLIS {
+    let packed = if asked != theme::CLASSIC && theme::built_in(asked).is_some() {
         let files = theme::purlis_files();
         wrapping
             .pack(PURLIS_COPY, &files)
@@ -798,7 +798,7 @@ fn export(
                 files: files.len(),
                 left_out: Vec::new(),
             })
-    } else if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
+    } else if asked == theme::CLASSIC {
         let files = theme::Files::from([(
             theme::THEME_JSON.to_owned(),
             theme::CLASSIC_THEME_JSON.as_bytes().to_vec(),
@@ -1097,8 +1097,8 @@ fn id_of(
 ) -> Option<String> {
     use extension::project::theme::Pick;
     Some(match Pick::parse(&choice.theme)? {
-        Pick::BuiltIn(id) if id == theme::PURLIS => theme::PURLIS.to_owned(),
-        Pick::BuiltIn(_) => theme::CLASSIC.to_owned(),
+        Pick::BuiltIn(id) if id == theme::CLASSIC => theme::CLASSIC.to_owned(),
+        Pick::BuiltIn(_) => theme::PURLIS.to_owned(),
         Pick::Extension { id, name } => format!("{id}/{name}"),
         Pick::System => {
             let theirs = theme::read_theirs(here.config).theme;
@@ -1106,7 +1106,7 @@ fn id_of(
                 one.of(theme::Appearance::Dark).is_some()
                     && one.of(theme::Appearance::Light).is_some()
             });
-            if both { MINE } else { theme::CLASSIC }.to_owned()
+            if both { MINE } else { theme::PURLIS }.to_owned()
         }
         Pick::Folder(name) => {
             let from = choice.from.filter(|level| *level >= reach)?;
@@ -1286,16 +1286,16 @@ fn extensions(config: &Path) -> Vec<Found> {
     found
 }
 
-/// The theme `asked` names: Purlis by its id, Purlis Classic by its id or any id its appearances
-/// have had, the person's own, a level's theme folder by `<level>:<folder>`, an extension's by
+/// The theme `asked` names: Purlis by its id or by `purlis-dark`, `purlis-light` or an id either
+/// had (#3034), Purlis Classic by its id, the person's own, a level's theme folder by `<level>:<folder>`, an extension's by
 /// `<extension>/<theme>`, or else a theme file or a theme folder by its path. `Err` when there
 /// is none, with what reading a level had to say.
 fn find(here: Here<'_>, asked: &str) -> Result<Found, Vec<Complaint>> {
-    if asked == theme::PURLIS {
-        return Ok(Found::purlis());
-    }
-    if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
+    if asked == theme::CLASSIC {
         return Ok(Found::classic());
+    }
+    if theme::built_in(asked).is_some() {
+        return Ok(Found::purlis());
     }
     // A level's id is never an extension's (it holds no `/`) nor a folder name: it is asked
     // before a path of the same spelling, which `./` names.

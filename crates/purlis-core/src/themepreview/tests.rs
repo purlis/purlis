@@ -34,9 +34,9 @@ fn purlis_classic_is_drawn_in_the_appearance_asked_for() {
     let dark = chosen(&specimen("purlis-classic", Some(Appearance::Dark))).expect("dark");
     let light = chosen(&specimen("purlis-classic", Some(Appearance::Light))).expect("light");
     let first = chosen(&specimen("purlis-classic", None)).expect("its first");
-    assert_eq!(dark.name, "purlis-dark");
-    assert_eq!(light.name, "purlis-light");
-    assert_eq!(first.name, "purlis-dark");
+    assert_eq!(dark, theme::classic().first());
+    assert_eq!(light, theme::classic().of(Appearance::Light).unwrap());
+    assert_eq!(first, theme::classic().first());
 }
 
 #[test]
@@ -54,14 +54,16 @@ fn a_specimen_is_drawn_as_the_window_draws_its_theme_with_the_consent_floors_hel
 }
 
 #[test]
-fn an_appearance_is_named_by_its_own_id_and_by_the_id_it_had_before_the_rename() {
+fn purlis_s_dark_and_light_are_named_by_their_old_ids_too() {
+    // `purlis-dark` and `purlis-light`, and the ids they had, name Purlis's (#3034).
+    let purlis = theme::purlis();
     assert_eq!(
-        chosen(&specimen("purlis-light", None)).map(|t| t.name.as_str()),
-        Ok("purlis-light")
+        chosen(&specimen("purlis-light", None)),
+        Ok(purlis.of(Appearance::Light).unwrap())
     );
     assert_eq!(
-        chosen(&specimen("charter-dark", Some(Appearance::Dark))).map(|t| t.name.as_str()),
-        Ok("purlis-dark")
+        chosen(&specimen("charter-dark", Some(Appearance::Dark))),
+        Ok(purlis.first())
     );
 }
 
@@ -69,7 +71,10 @@ fn an_appearance_is_named_by_its_own_id_and_by_the_id_it_had_before_the_rename()
 fn an_appearance_a_one_appearance_theme_lacks_is_refused_naming_the_one_that_has_it() {
     let why = chosen(&specimen("purlis-light", Some(Appearance::Dark))).expect_err("refused");
     assert!(why.contains("only a light appearance"), "{why}");
-    assert!(why.contains("purlis-classic"), "{why}");
+    assert!(
+        why.contains("ask for purlis with appearance `dark`"),
+        "{why}"
+    );
 }
 
 #[test]
@@ -800,7 +805,12 @@ fn purlis_is_drawn_in_its_high_contrast_dark_when_that_is_asked_for() {
 
 #[test]
 fn a_theme_with_no_high_contrast_appearance_is_refused_naming_the_one_that_has_it() {
-    for theme in ["purlis-classic", "purlis-dark"] {
+    // `purlis-dark` names Purlis's dark, which has one (#3034).
+    assert_eq!(
+        chosen(&sharp("purlis-dark")).map(|one| one.id.as_str()),
+        Ok("dark-high-contrast")
+    );
+    for theme in ["purlis-classic", "purlis-light"] {
         let why = chosen(&sharp(theme)).expect_err("refused");
         assert!(why.contains("no high-contrast appearance"), "{why}");
         assert!(

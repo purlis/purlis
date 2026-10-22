@@ -60,11 +60,11 @@ unzip -o "$TMPDIR/purlis.zip" -d "$TMPDIR/purlis"
 
 The format and the check are documented in full: `purlis docs show themes`. Keep it small:
 `"extends": "purlis"` and only what differs. When the person wants Purlis Classic's look as the
-start, extend `purlis-classic` instead, and read its file the same way. Put each colour in the `palette` once and
-name it from the tokens. Most of a look is `surface.*`, `text.*`, `border.*`, `accent.base`,
-`accent.surface`, `focus.ring`, `layer.selected`, `list.selected`, `list.selected-edge`, the
-`terminal.*` colours and its shape (below). A theme with a `dark` and a `light` appearance
-follows the system.
+start, extend `purlis-classic` instead, and read its file the same way. Put each colour in the
+`palette` once and name it from the tokens. Most of a look is `surface.*`, `text.*`,
+`border.*`, `accent.base`, `accent.surface`, `focus.ring`, `layer.selected`, `list.selected`,
+`list.selected-edge`, the `terminal.*` colours and its shape (below). A theme with a `dark` and
+a `light` appearance follows the system.
 
 **The selected tab is `layer.selected`**, on all three strips; keep it apart from
 `list.selected`. `tab.active` is not a tab: it colours menu highlights and button hovers.

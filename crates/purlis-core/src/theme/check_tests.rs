@@ -8,7 +8,7 @@
 use serde_json::{Value, json};
 
 use super::super::{
-    Checked, Density, FITS, Finding, Floor, PAIRS, Report, ResolvedTheme, Style, built_in,
+    Appearance, Checked, Density, FITS, Finding, Floor, PAIRS, Report, ResolvedTheme, Style,
     built_ins, check, check_every, classic, draw, load, purlis, warnings_said,
 };
 
@@ -81,11 +81,13 @@ const DANGER_GROUNDS: [&str; 4] = [
 ];
 
 fn classic_dark() -> &'static ResolvedTheme {
-    built_in("purlis-dark").expect("Classic's dark appearance")
+    classic().first()
 }
 
 fn classic_light() -> &'static ResolvedTheme {
-    built_in("purlis-light").expect("Classic's light appearance")
+    classic()
+        .of(Appearance::Light)
+        .expect("Classic's light appearance")
 }
 
 /// A format 2 theme with one dark appearance that sets `tokens`, and `more` beside it: its
