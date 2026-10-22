@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792653671555,
+  "lastUpdate": 1792656143149,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21336,6 +21336,48 @@ window.BENCHMARK_DATA = {
             "value": 102.03848450000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.872, 101.655, 102.038, 102.189, 102.354 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "70f1880e02176beb556ee2ae79bd192d6290ccd4",
+          "message": "Theme parts: complete the button family's grounds (#2962)\n\n* Theme parts: the button family's grounds are every surface it is drawn on (#2959)\n\nThe button family's manifest entry lists every surface the window\ndraws a button on, and app/src/theme/grounds.test.ts finds them from\nthe components: each button's surrounding backgrounds, out to the first\ndrawn at rest, through the components that render it and the children\nthey place. The test fails until the manifest lists a ground it finds.\n\nThe parts check reads the grounds through one helper, and lays a wash\nover each opaque ground before it measures on it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Grounds test: a tag that is no component gives no children places (#2959)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme parts: a ground's alpha is read as drawn; the grounds test reads more and says what it cannot (#2959)\n\nThe parts check reads a ground's opacity from its alpha value, so an\nopaque ground written with an alpha is the same ground, and its list\nof grounds is never empty: with no opaque ground each is measured as\nits colour drawn opaque, and with none at all on black and on white.\n\nThe grounds test reads every sheet under src/, rules on a tag or an\nattribute inside the classes they are scoped by, and never takes a\nclass inside :has() as the element painted. It fails on a background\nin an element's own style, and on a background rule it cannot tie to\nan element unless that rule is listed with why no button is on it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Grounds test: say why a current table row is no ground (#2959)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Grounds test: read the button family's members as buttons (#2959)\n\nButton, IconButton and ToggleButton from app/src/ui/button each draw a\nbutton wherever they stand, and the family's own stylesheet on its\nwrapper's attributes is never a ground. A button the family now draws\non the terminal's background makes it a ground of the family.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T11:33:28+04:00",
+          "tree_id": "142d8a3d2f79347c87720ee1f8f608794cd0a8b4",
+          "url": "https://github.com/purlis/purlis/commit/70f1880e02176beb556ee2ae79bd192d6290ccd4"
+        },
+        "date": 1792656141670,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5172414999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.516, 0.517, 0.520, 0.530 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0674885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.880, 17.051, 17.067, 17.100, 17.120 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.93542350000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.617, 102.696, 102.935, 103.221, 104.865 ms"
           }
         ]
       }
