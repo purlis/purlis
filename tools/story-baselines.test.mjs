@@ -16,7 +16,7 @@ import { crc32 } from "node:zlib";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { gather, problems, take } from "./story-baselines.mjs";
+import { gather, picturedCells, problems, take } from "./story-baselines.mjs";
 
 /** A chunk of a PNG: its length, type, data and CRC. */
 function chunk(type, data) {
@@ -49,9 +49,12 @@ function png(width = 2, height = 2, extra = Buffer.alloc(0)) {
 }
 
 const PNG = png();
-// Vitest names a picture by the story id with each run of dashes made one.
+// Vitest names a picture by the story id with each run of dashes made one, then its cell.
 const SHOT =
-  "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-radios";
+  "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-radios_purlis_dark";
+
+/** The cells pictures are taken in (`app/.storybook/pictured.json`). */
+const CELLS = ["purlis_dark", "purlis-classic_light"];
 
 /** Storybook's index (`storybook index`) of the stories with these ids in these files. */
 function indexOf(stories) {
@@ -80,6 +83,51 @@ test("baselines drawn in the Linux image, beside their stories, pass", () => {
     [`${SHOT}-chromium-linux.png`]: PNG,
     [`${SHOT}-webkit-linux.png`]: PNG,
   });
+  assert.deepEqual(problems(app, INDEX, CELLS), []);
+});
+
+test("a story has a baseline in each pictured cell, named by its theme and appearance", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-chromium-linux.png`]: PNG,
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-radios_purlis-classic_light-webkit-linux.png":
+      PNG,
+  });
+  assert.deepEqual(problems(app, INDEX, CELLS), []);
+});
+
+test("a baseline of a cell no picture is taken in is obsolete, naming its cell", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-radios_purlis_dark-high-contrast-webkit-linux.png":
+      PNG,
+  });
+  const found = problems(app, INDEX, CELLS);
+  assert.equal(found.length, 1);
+  assert.match(
+    found[0],
+    /settings-choice-radios_purlis_dark-high-contrast .*pictured cell/,
+  );
+});
+
+test("a baseline named for no cell is refused", () => {
+  const app = tree({
+    "src/settings/Choice.stories.tsx": "",
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-radios-webkit-linux.png":
+      PNG,
+  });
+  const found = problems(app, INDEX, CELLS);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /<story id>_<theme>_<appearance>/);
+});
+
+test("the pictured cells are read from the app's matrix", () => {
+  const app = tree({
+    ".storybook/pictured.json": JSON.stringify(CELLS),
+    "src/settings/Choice.stories.tsx": "",
+    [`${SHOT}-webkit-linux.png`]: PNG,
+  });
+  assert.deepEqual(picturedCells(app), CELLS);
   assert.deepEqual(problems(app, INDEX), []);
 });
 
@@ -88,7 +136,7 @@ test("a baseline drawn on another platform is refused, naming it", () => {
     "src/settings/Choice.stories.tsx": "",
     [`${SHOT}-chromium-darwin.png`]: PNG,
   });
-  const found = problems(app, INDEX);
+  const found = problems(app, INDEX, CELLS);
   assert.equal(found.length, 1);
   assert.match(found[0], /chromium-darwin\.png/);
   assert.match(found[0], /pinned image/);
@@ -96,7 +144,7 @@ test("a baseline drawn on another platform is refused, naming it", () => {
 
 test("a baseline whose story file is gone is refused", () => {
   const app = tree({ [`${SHOT}-webkit-linux.png`]: PNG });
-  const found = problems(app, INDEX);
+  const found = problems(app, INDEX, CELLS);
   assert.equal(found.length, 1);
   assert.match(found[0], /Choice\.stories\.tsx/);
 });
@@ -107,7 +155,9 @@ test("gather copies every baseline under its path, and nothing else", () => {
     [`${SHOT}-webkit-linux.png`]: PNG,
   });
   const out = mkdtempSync(join(tmpdir(), "story-baselines-out-"));
-  assert.deepEqual(gather(app, INDEX, out), [`${SHOT}-webkit-linux.png`]);
+  assert.deepEqual(gather(app, INDEX, out, CELLS), [
+    `${SHOT}-webkit-linux.png`,
+  ]);
   assert.deepEqual(readFileSync(join(out, `${SHOT}-webkit-linux.png`)), PNG);
   assert.equal(existsSync(join(out, "src/settings/Choice.stories.tsx")), false);
 });
@@ -219,12 +269,12 @@ test("a baseline whose story is gone from its file is refused, naming the story"
   const app = tree({
     "src/settings/Choice.stories.tsx": "",
     [`${SHOT}-chromium-linux.png`]: PNG,
-    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-checkboxes-webkit-linux.png":
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-checkboxes_purlis_dark-webkit-linux.png":
       PNG,
   });
-  const found = problems(app, INDEX);
+  const found = problems(app, INDEX, CELLS);
   assert.equal(found.length, 1);
-  assert.match(found[0], /story settings-choice-checkboxes /);
+  assert.match(found[0], /story settings-choice-checkboxes_purlis_dark /);
   assert.match(found[0], /Choice\.stories\.tsx/);
 });
 
@@ -232,12 +282,12 @@ test("a baseline is its own story's: one named for a story of another file is re
   const app = tree({
     "src/settings/Choice.stories.tsx": "",
     "src/settings/Other.stories.tsx": "",
-    "src/settings/__screenshots__/Other.stories.tsx/settings-choice-radios-webkit-linux.png":
+    "src/settings/__screenshots__/Other.stories.tsx/settings-choice-radios_purlis_dark-webkit-linux.png":
       PNG,
   });
-  const found = problems(app, INDEX);
+  const found = problems(app, INDEX, CELLS);
   assert.equal(found.length, 1);
-  assert.match(found[0], /story settings-choice-radios /);
+  assert.match(found[0], /story settings-choice-radios_purlis_dark /);
 });
 
 test("a baseline of a story that is not run as a test is refused", () => {
@@ -248,33 +298,35 @@ test("a baseline of a story that is not run as a test is refused", () => {
   const index = indexOf([
     ["settings-choice--radios", "src/settings/Choice.stories.tsx", ["dev"]],
   ]);
-  const found = problems(app, index);
+  const found = problems(app, index, CELLS);
   assert.equal(found.length, 1);
-  assert.match(found[0], /story settings-choice-radios /);
+  assert.match(found[0], /story settings-choice-radios_purlis_dark /);
 });
 
 test("an index that is not Storybook's is refused", () => {
   const app = tree({ "src/settings/Choice.stories.tsx": "" });
-  assert.throws(() => problems(app, {}), /not a story index/);
-  assert.throws(() => gather(app, null, app), /not a story index/);
+  assert.throws(() => problems(app, {}, CELLS), /not a story index/);
+  assert.throws(() => gather(app, null, app, CELLS), /not a story index/);
 });
 
 test("gather leaves out the baselines of stories that are gone", () => {
   const gone =
-    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-gone-webkit-linux.png";
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-gone_purlis_dark-webkit-linux.png";
   const app = tree({
     "src/settings/Choice.stories.tsx": "",
     [`${SHOT}-webkit-linux.png`]: PNG,
     [gone]: PNG,
   });
   const out = mkdtempSync(join(tmpdir(), "story-baselines-out-"));
-  assert.deepEqual(gather(app, INDEX, out), [`${SHOT}-webkit-linux.png`]);
+  assert.deepEqual(gather(app, INDEX, out, CELLS), [
+    `${SHOT}-webkit-linux.png`,
+  ]);
   assert.equal(existsSync(join(out, gone)), false);
 });
 
 test("take deletes every baseline that was not drawn, and nothing else", () => {
   const gone =
-    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-gone-webkit-linux.png";
+    "src/settings/__screenshots__/Choice.stories.tsx/settings-choice-gone_purlis_dark-webkit-linux.png";
   const otherPlatform = `${SHOT}-webkit-darwin.png`;
   const drawn = tree({ [`${SHOT}-chromium-linux.png`]: PNG });
   const app = tree({

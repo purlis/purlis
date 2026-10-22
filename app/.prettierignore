@@ -8,3 +8,6 @@ src/uiRpc.ts
 
 # The Chats list as the component draws it, written by `src/ChatsList.fixture.test.tsx`.
 e2e/fixtures
+
+# The built-in themes the stories draw, written by the app crate's `storythemes` test.
+.storybook/built-in-themes.json

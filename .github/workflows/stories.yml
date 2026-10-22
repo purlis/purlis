@@ -4,10 +4,12 @@
 name: stories
 
 # Every component story run as a test (#2901, `docs/component-stories.md`): in real Chromium and
-# real WebKit, failing on a story that does not render, on a `play` function that fails (its
-# keyboard path), on any axe violation at WCAG 2.2 AA with `target-size` on, and on a picture
-# that is not its baseline. A baseline whose story is gone, or no longer runs as a test, fails it
-# too, naming the story: `stories-baselines.yml` deletes it.
+# real WebKit, in each cell of the theme matrix (#2945, `app/.storybook/matrix.ts`: each
+# appearance of Purlis Classic and Purlis, in each density), failing on a story that does not
+# render, on a `play` function that fails (its keyboard path), on any axe violation at WCAG 2.2
+# AA with `target-size` on, and on a picture that is not its baseline. A baseline whose story is
+# gone, or no longer runs as a test in a pictured cell, fails it too, naming the story:
+# `stories-baselines.yml` deletes it.
 #
 # **One pinned image draws and compares every picture.** A picture differs by its machine's
 # fonts and rasteriser, so it is taken nowhere but in Playwright's own image for the Playwright
@@ -68,7 +70,8 @@ jobs:
           npx storybook index --disable-telemetry --quiet -c .storybook \
             -o "$RUNNER_TEMP/stories-index.json"
           node ../tools/story-baselines.mjs check "$RUNNER_TEMP/stories-index.json"
-      # Each browser on its own, so each failure can say which browser it failed in. The
+      # Each browser on its own, so each failure can say which browser it failed in; every cell
+      # of the matrix is a project of its own, `stories <cell> (<browser>)`. The
       # failures are kept by `tools/story-failures.mjs`'s reporter rather than Vitest's JSON
       # one, which keeps an error's stack alone: WebKit's does not repeat the message.
       - name: The stories, in Chromium and in WebKit
@@ -76,7 +79,7 @@ jobs:
           failed=0
           for browser in chromium webkit; do
             PURLIS_STORY_REPORT="$RUNNER_TEMP/stories-$browser.json" \
-              npx vitest run --project "stories ($browser)" \
+              npx vitest run --project "stories * ($browser)" \
               --reporter=default --reporter=../tools/story-failures.mjs || failed=1
           done
           exit "$failed"
