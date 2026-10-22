@@ -620,4 +620,23 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
       "the repo api has a skill of this name too, and opencode chats there get the repo's copy alone",
     );
   });
+
+  it("renames the project's copy from the clash mark, through the studio's own Rename", async () => {
+    const asked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "skill_rename") {
+        asked.push(args);
+        return { notes: [] };
+      }
+      if (cmd === "skill_studio") return withClaudeCode(false);
+      if (cmd === "skills_deleted") return [];
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const clash = await screen.findByTestId("clash-review");
+    within(clash).getByRole("button", { name: "Rename the project's copy" }).click();
+    const form = await screen.findByRole("form", { name: "Rename review" });
+    expect(within(form).getByLabelText("New name")).toBeInTheDocument();
+  });
 });

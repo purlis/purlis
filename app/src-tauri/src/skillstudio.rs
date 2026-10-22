@@ -442,8 +442,6 @@ fn harnesses(
     (harnesses, clashes)
 }
 
-
-
 /// What started a skill run, as the Runs panel draws it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]

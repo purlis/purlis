@@ -18,8 +18,8 @@ pub use purlis_skills::{
     At, BUILT_IN_PREFIXES, Chat, Clash, DIR_IN_BUNDLE, Effective, FromHarness, Grant,
     HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing, Narrowing, OnMachine, Origin, Outcome,
     OutsideSkill, Owner, POINTER, PROJECT_DIR, Reason, Reference, Reload, Route, Skill, SkillSet,
-    Stamp, Switch, beside, grant_of, in_bundle,
-    level_dir, level_shown, listing, named, persona_dir, read, set_grant, share,
+    Stamp, Switch, beside, grant_of, in_bundle, level_dir, level_shown, listing, named,
+    persona_dir, read, set_grant, share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -713,6 +713,7 @@ pub fn stamp_of(
         plane,
         workspace,
         linked: None,
+        repo: &[],
     };
     let set = ask(None, Some(at), persona, harness.skills(), None);
     Stamp::of(&set, harness.skills_reload())

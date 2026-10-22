@@ -597,11 +597,11 @@ export function SkillStudioTab({
         </tbody>
       </table>
       <SkillStudioHarnesses
-          plane={plane}
-          workspace={workspace}
-          harnesses={studio.harnesses}
-          onSwitched={() => setSwitched((n) => n + 1)}
-        />
+        plane={plane}
+        workspace={workspace}
+        harnesses={studio.harnesses}
+        onSwitched={() => setSwitched((n) => n + 1)}
+      />
       {restorable}
     </div>
   );

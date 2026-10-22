@@ -10447,13 +10447,6 @@ export type SidebarWorkspace = {
 	live: boolean,
 };
 
-/**  How a harness can leave one of its own skills out of a chat. */
-export type SkillSwitch = 
-/**  On its own: the studio draws a switch. */
-{ kind: "alone" } | 
-/**  Not on its own, and why, which the studio says in place of a switch. */
-{ kind: "not"; why: string };
-
 /**
  *  What a change had to say beyond being done: that it was left for the next save, or that a
  *  place naming the skill was left as it was. Empty for a change that only did what was asked.
@@ -10479,6 +10472,13 @@ export type SkillLevel = {
 	workspace: string | null,
 	local: boolean,
 };
+
+/**  How a harness can leave one of its own skills out of a chat. */
+export type SkillSwitch = 
+/**  On its own: the studio draws a switch. */
+{ kind: "alone" } | 
+/**  Not on its own, and why, which the studio says in place of a switch. */
+{ kind: "not"; why: string };
 
 /**  One template, as the New skill form offers it. */
 export type SkillTemplate = {
@@ -10706,7 +10706,7 @@ export type Studio = {
 	skills: StudioSkill[],
 	/**  Each harness, with its plugins and its own skills (SK-6). */
 	harnesses: StudioHarness[],
-	/**  Every harness or repo skill that has the name of a skill a chat gets, by name. */
+	/**  Every skill from outside the plane that has the name of a skill a chat gets, by name. */
 	clashes: StudioClash[],
 };
 
@@ -10743,6 +10743,13 @@ export type StudioHarness = {
 	skills: StudioSkill[],
 };
 
+/**  A level a skill can be moved to or made at, and its words. */
+export type StudioLevel = {
+	level: SkillLevel,
+	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
+	label: string,
+};
+
 /**  One of a harness's plugins in the studio (SK-6). */
 export type StudioPlugin = {
 	/**  The harness's own id for it, which the switch names. */
@@ -10755,13 +10762,6 @@ export type StudioPlugin = {
 	state: PluginState,
 	/**  Why purlis fixes it whatever the project says, or `None`: no switch is drawn for it. */
 	pinned: string | null,
-};
-
-/**  A level a skill can be moved to or made at, and its words. */
-export type StudioLevel = {
-	level: SkillLevel,
-	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
-	label: string,
 };
 
 /**
@@ -10842,13 +10842,13 @@ export type StudioSkill = {
 	 */
 	unchecked: string | null,
 	/**
-	 *  Whose a harness or repo skill is: "you", a plugin's name, a repo's name. `None` for the
+	 *  Whose a skill from outside the plane is: "you", a plugin's, a repo's. `None` for the
 	 *  plane's levels and the built-in skills (SK-6).
 	 */
 	owner: Owner | null,
 	/**
-	 *  How a harness or repo skill's harness can leave it out. `None` for the plane's levels
-	 *  and the built-in skills, whose switches are their own.
+	 *  How a skill from outside the plane's harness can leave it out. `None` for the plane's
+	 *  levels and the built-in skills, whose switches are their own.
 	 */
 	switch: SkillSwitch | null,
 };

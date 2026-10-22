@@ -397,9 +397,11 @@ impl Harness {
             crate::skills::Route::Briefing => crate::skills::Reload::Bodies,
             // `skill_find` and `skill_load` work the chat's set out at each call (SK-13).
             crate::skills::Route::Mcp => crate::skills::Reload::Everything,
-            crate::skills::Route::Plugin | crate::skills::Route::Config => {
-                crate::skills::Reload::Nothing
-            }
+            // `Own` is no harness's route: it is how a harness takes its own skills, which purlis
+            // hands nothing of.
+            crate::skills::Route::Plugin
+            | crate::skills::Route::Config
+            | crate::skills::Route::Own => crate::skills::Reload::Nothing,
         }
     }
 
