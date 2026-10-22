@@ -1478,46 +1478,12 @@ button.show-more:focus-visible {
   opacity: 1;
 }
 
-/* **A chat's skills** (`SkillsChip`, #2775): how many it lists, and Use skill… for it. Quiet,
-   as the harness beside it is; in the warning colour, with its mark, while the chat's set is
-   past its skill budget, which its tooltip says. Under the line's own class, so these win over
-   the button's (`primitives/controls.css`), which load after this sheet. */
+/* **A chat's skills** (`SkillsChip`, #2775): how many it lists, and Use skill… for it, drawn by
+   the button family (ghost, or warning-soft while the chat's set is past its skill budget). Its
+   place on the line only: it never pushes the line wider than it is. */
 .pane-chips > .pane-skills {
-  display: inline-flex;
-  /* The first of the line to give way in a narrow pane: a breadcrumb's state is read whole
-     before a count of skills is (\`pane-crumbs.e2e.ts\`). */
-  flex: 0 100 auto;
+  flex: 0 1 auto;
   min-width: 0;
-  overflow: hidden;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 0 var(--space-2);
-  font-size: var(--font-size-xs);
-  white-space: nowrap;
-  color: var(--text-muted);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  opacity: 0.92;
-  cursor: pointer;
-}
-
-.pane-chips > .pane-skills:hover,
-.pane-chips > .pane-skills:focus-visible {
-  color: var(--text-primary);
-  opacity: 1;
-}
-
-.pane-chips > .pane-skills.over {
-  color: var(--state-waiting);
-  border-color: var(--state-waiting);
-  opacity: 1;
-}
-
-.pane-chips > .pane-skills > svg {
-  flex: none;
-  inline-size: 1em;
-  block-size: 1em;
 }
 
 /* **Use skill…** (`UseSkill.tsx`, #2775): the chat's skills to pick from, then the boxes of the
@@ -1562,15 +1528,9 @@ button.show-more:focus-visible {
 .use-skill-row {
   display: grid;
   grid-template-columns: auto auto 1fr;
+  align-items: center;
   gap: 0 var(--space-2);
-  width: 100%;
-  height: auto;
-  padding: var(--space-2);
-  text-align: start;
-}
-
-.use-skill-name {
-  font-weight: var(--font-weight-strong);
+  padding: var(--space-1) 0;
 }
 
 .use-skill-level,

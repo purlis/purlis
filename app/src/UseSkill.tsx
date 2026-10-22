@@ -6,6 +6,7 @@ import { Sparkles, TriangleAlert } from "lucide-react";
 import * as Dialog from "./overlays/dialog";
 import { useFocusBack } from "./EndingChat";
 import { Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
 import { useSkillStudioOn } from "./skillStudio";
 import {
@@ -179,20 +180,19 @@ export function UseSkill({
               ) : (
                 <ul className="use-skill-list" aria-label="Skills">
                   {shown.map((skill) => (
-                    <li key={skill.name}>
-                      <button
-                        type="button"
-                        tabIndex={0}
-                        className="ui-button ui-button-ghost use-skill-row"
-                        data-testid="use-skill-row"
-                        disabled={busy}
-                        onClick={() => pick(skill)}
+                    <li key={skill.name} className="use-skill-row" data-testid="use-skill-row">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="use-skill-name"
+                        isDisabled={busy}
+                        onPress={() => pick(skill)}
                       >
-                        <span className="use-skill-name">{skill.name}</span>
-                        <span className="use-skill-level">{skill.label}</span>
-                        {skill.manual && <span className="use-skill-manual">manual only</span>}
-                        <span className="use-skill-description">{skill.description}</span>
-                      </button>
+                        {skill.name}
+                      </Button>
+                      <span className="use-skill-level">{skill.label}</span>
+                      {skill.manual && <span className="use-skill-manual">manual only</span>}
+                      <span className="use-skill-description">{skill.description}</span>
                     </li>
                   ))}
                 </ul>
@@ -203,9 +203,7 @@ export function UseSkill({
                 </p>
               )}
               <SettingActions>
-                <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-                  Cancel
-                </button>
+                <Button onPress={onCancel}>Cancel</Button>
               </SettingActions>
             </>
           ) : (
@@ -244,22 +242,10 @@ export function UseSkill({
                 </p>
               )}
               <SettingActions>
-                <button
-                  className="ui-button ui-button-primary"
-                  type="submit"
-                  tabIndex={0}
-                  disabled={busy}
-                >
+                <Button variant="primary" type="submit" isDisabled={busy}>
                   {busy ? "Typing…" : "Type it"}
-                </button>
-                <button
-                  className="ui-button"
-                  type="button"
-                  tabIndex={0}
-                  onClick={() => setPicked(undefined)}
-                >
-                  Back
-                </button>
+                </Button>
+                <Button onPress={() => setPicked(undefined)}>Back</Button>
               </SettingActions>
             </form>
           )}
@@ -315,21 +301,24 @@ export const SkillsChip = memo(function SkillsChip({
   const warning = overSaid(budget);
   const said = `${budgetSaid(budget)}. Use one of this chat's skills.`;
   return (
-    <button
-      type="button"
-      tabIndex={0}
-      className={`ui-button ui-button-ghost ui-button-sm pane-skills${warning === undefined ? "" : " over"}`}
+    <Button
+      variant={warning === undefined ? "ghost" : "warning-soft"}
+      size="sm"
+      className="pane-skills"
       data-testid="pane-skills"
+      data-over={warning === undefined ? undefined : ""}
       title={warning === undefined ? said : `${warning} ${said}`}
       aria-label={warning === undefined ? said : `${warning} ${said}`}
-      onClick={() => open(session)}
+      icon={
+        warning === undefined ? (
+          <Sparkles aria-hidden="true" />
+        ) : (
+          <TriangleAlert aria-hidden="true" />
+        )
+      }
+      onPress={() => open(session)}
     >
-      {warning === undefined ? (
-        <Sparkles aria-hidden="true" />
-      ) : (
-        <TriangleAlert aria-hidden="true" />
-      )}
-      <span>{counted(budget.skills + budget.manual, "skill", "skills")}</span>
-    </button>
+      {counted(budget.skills + budget.manual, "skill", "skills")}
+    </Button>
   );
 });

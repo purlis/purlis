@@ -77,7 +77,7 @@ describe("Use skill…", () => {
 
   it("types a skill that takes nothing at once", () => {
     const onUse = opened(skills([skill("deploy")]));
-    fireEvent.click(screen.getByTestId("use-skill-row"));
+    fireEvent.click(within(screen.getByTestId("use-skill-row")).getByRole("button"));
     expect(onUse).toHaveBeenCalledWith("deploy", []);
   });
 
@@ -85,7 +85,7 @@ describe("Use skill…", () => {
     const onUse = opened(
       skills([skill("review", { arguments: ["pr", "focus"], hint: "<pr> [focus]" })]),
     );
-    fireEvent.click(screen.getByTestId("use-skill-row"));
+    fireEvent.click(within(screen.getByTestId("use-skill-row")).getByRole("button"));
     expect(screen.getByRole("heading").textContent).toBe("Use review");
     const boxes = screen.getAllByRole("textbox");
     expect(boxes).toHaveLength(2);
@@ -98,7 +98,7 @@ describe("Use skill…", () => {
 
   it("gives a skill that only says what to pass one box with that hint", () => {
     const onUse = opened(skills([skill("triage", { hint: "[issue number]" })]));
-    fireEvent.click(screen.getByTestId("use-skill-row"));
+    fireEvent.click(within(screen.getByTestId("use-skill-row")).getByRole("button"));
     expect(screen.getAllByRole("textbox")).toHaveLength(1);
     expect(screen.getByText("[issue number]")).toBeTruthy();
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "12" } });
@@ -159,7 +159,7 @@ describe("the Skills chip on a chat's pane", () => {
     );
     const chip = await screen.findByTestId("pane-skills");
     expect(chip.textContent).toBe("4 skills");
-    expect(chip.className).not.toMatch(/\bover\b/);
+    expect(chip.hasAttribute("data-over")).toBe(false);
     fireEvent.click(chip);
     expect(open).toHaveBeenCalledWith(4);
   });
@@ -168,7 +168,7 @@ describe("the Skills chip on a chat's pane", () => {
     answering({ ...BUDGET, over: "chars" });
     render(<SkillsChip plane="p" session={4} />);
     const chip = await screen.findByTestId("pane-skills");
-    expect(chip.className).toMatch(/\bover\b/);
+    expect(chip.hasAttribute("data-over")).toBe(true);
     expect(chip.getAttribute("aria-label")).toMatch(/too much description/);
   });
 });

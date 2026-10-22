@@ -38,6 +38,7 @@ const OTHER_FAMILIES = {
     "plane-updated",
     "pane-brief",
     "pane-harness",
+    "pane-skills",
     "task-end",
     "strip-offer",
     // The title bar's chips and pills, and the status items.
