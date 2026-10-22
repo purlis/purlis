@@ -56,6 +56,9 @@ fn project() -> support::Fixture {
         std::fs::write(at, text).unwrap();
     }
     support::git(&f.plane, &["init", "-q", "-b", "main", "."]);
+    // The fix commits through purlis's own git runner, which reads the repository's identity.
+    support::git(&f.plane, &["config", "user.name", "charter tests"]);
+    support::git(&f.plane, &["config", "user.email", "tests@example.invalid"]);
     support::git(&f.plane, &["add", "-A"]);
     support::git(&f.plane, &["commit", "-q", "-m", "a project with skills"]);
     guest::wire(&f.plane, &f.clone);
@@ -346,6 +349,9 @@ fn a_project_with_nothing_to_move_says_so() {
     let f = support::plane_with_clone("svc");
     std::fs::write(f.plane.join(".gitignore"), "/workspaces/*/*\n").unwrap();
     support::git(&f.plane, &["init", "-q", "-b", "main", "."]);
+    // The fix commits through purlis's own git runner, which reads the repository's identity.
+    support::git(&f.plane, &["config", "user.name", "charter tests"]);
+    support::git(&f.plane, &["config", "user.email", "tests@example.invalid"]);
     support::git(&f.plane, &["add", "-A"]);
     support::git(&f.plane, &["commit", "-q", "-m", "empty"]);
     let at = head(&f.plane);

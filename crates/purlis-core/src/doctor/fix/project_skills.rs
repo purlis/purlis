@@ -618,8 +618,8 @@ fn after(plan: &Plan, sha: Option<&str>) -> Vec<String> {
         }
     ));
     said.push(format!(
-        "  Clones get no copy of {FROM} from now on: purlis takes out the copies it made the \
-         next time a chat starts in each one."
+        "  Clones get no copy of {FROM} from now on, and the copies made there are taken \
+         out the next time a chat starts in each one."
     ));
     said.push(format!(
         "  A teammate gets these skills with a purlis that has the `{}` feature and the Skill \

@@ -35,6 +35,6 @@
   old `charter:<skill>` names to `purlis:<skill>`, all in one commit that `git revert` undoes. It
   checks that every chat keeps its skills first, and changes nothing if one would lose one.
   Claude Code and opencode chats keep exactly the skills they had, and Codex chats get them too.
-  Clones stop getting a copy of `.claude/skills`, and purlis takes out the copies it made. It
+  Clones stop getting a copy of `.claude/skills`, and the copies made there are taken out. It
   says what it changed, and which skills a persona names that no chat can get. It needs the
   Skill studio switched on, and refuses while the project has changes that are not committed.
