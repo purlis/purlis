@@ -168,6 +168,17 @@ impl HarnessAdapter for ClaudeCode {
             .map(|skill| SkillStart::Named(skill.to_owned()))
     }
 
+    /// Claude Code's `Skill` tool, by the plugin the skill came in: `purlis:<name>` for a
+    /// built-in skill, `skills:<name>` for the plane's ([`crate::skills::LINKED_PLUGIN`]). Claude
+    /// Code applies a skill's `disallowed-tools` and its fork when it starts the skill itself.
+    fn narrowed_start(&self, name: &str, origin: crate::skills::Origin) -> Option<String> {
+        let plugin = match origin {
+            crate::skills::Origin::BuiltIn => crate::names::PLUGIN_NAME.write,
+            _ => crate::skills::LINKED_PLUGIN,
+        };
+        Some(format!("{plugin}:{name}"))
+    }
+
     /// `permissions.<bucket>` of `.claude/settings.json`, or with `local` of
     /// `.claude/settings.local.json`, which git does not carry. Every rule
     /// [`crate::guardcmd::as_rule`] writes is one Claude Code reads.

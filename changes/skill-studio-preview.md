@@ -7,7 +7,9 @@
   out (#2765). Each time a chat uses a skill, its tab shows the skill and the tool calls made
   so far until the turn ends, and the skill's own tab lists every run with what happened inside
   it: tool calls, errors, refusals, asks, tokens and time (#2766). `purlis skill runs` prints
-  them.
+  them. A chat can also list, find and load its own skills and see their recent runs, so a
+  chat program that has no skills of its own still gets yours. Loading a skill counts as a run,
+  and the run says the chat loaded it (#2776).
 - **A persona brings its skills into every workspace** (Skill studio preview). A persona's own
   skills, and the skills its definition names, reach every chat as that persona, in any
   workspace, whatever the workspace was granted; the persona's copy wins over a workspace's or

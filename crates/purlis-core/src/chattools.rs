@@ -99,11 +99,14 @@ pub const DISPATCH_READ: &str = "dispatch_read";
 /// and [`DISPATCH_READ`] (#2084), which reads one of those tasks alone, the same answer
 /// `purlis dispatch read` gives, also allowed by its command line; and
 /// [`crate::themepreview::TOOL`] (#2330), which returns only pictures of the theme specimen's
-/// sample content (ADR 0064, amended 2026-10-17).
+/// sample content (ADR 0064, amended 2026-10-17); and the four skill tools
+/// ([`crate::skilltools`], SK-13), which read the chat's own skill set and its runs, or load one
+/// of its skills (ADR 0063 as amended 2026-10-20): `skill_load` writes nothing but the start of
+/// the run it opens, in the plane's skill log.
 /// Named one by one, never derived from [`Tool::read_only`]: `ask_operator` is marked
 /// read-only too and still asks, and a tool added later is asked about until someone rules it
 /// in here. Writes are never in this list.
-pub const PRE_ALLOWED: [&str; 9] = [
+pub const PRE_ALLOWED: [&str; 13] = [
     "todo_list",
     "memory_search",
     "session_record_list",
@@ -113,6 +116,10 @@ pub const PRE_ALLOWED: [&str; 9] = [
     DISPATCH_LIST,
     DISPATCH_READ,
     crate::themepreview::TOOL,
+    crate::skilltools::SKILL_LIST,
+    crate::skilltools::SKILL_RUNS,
+    crate::skilltools::SKILL_FIND,
+    crate::skilltools::SKILL_LOAD,
 ];
 
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat
@@ -252,11 +259,11 @@ pub struct Tool {
     pub read_only: bool,
 }
 
-fn no_arguments() -> Value {
+pub(crate) fn no_arguments() -> Value {
     json!({ "type": "object", "properties": {}, "additionalProperties": false })
 }
 
-fn one_string(key: &str, description: &str) -> Value {
+pub(crate) fn one_string(key: &str, description: &str) -> Value {
     json!({
         "type": "object",
         "properties": { key: { "type": "string", "description": description } },

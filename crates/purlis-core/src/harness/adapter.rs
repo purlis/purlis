@@ -138,6 +138,16 @@ pub trait HarnessAdapter: Sync {
         let _ = (tool, input);
         None
     }
+
+    /// **What a chat of this harness types to start `name`, a skill of its set from `origin`,
+    /// with the harness's own skill tool, where that start applies what the skill narrows**
+    /// (SK-13; ADR 0063 as amended 2026-10-20, §2): the one way a skill `skill_load` is asked for
+    /// keeps its narrowing. `None` for a harness whose own start cannot apply it, the default:
+    /// a load there says "narrowing not applied". Pure.
+    fn narrowed_start(&self, name: &str, origin: crate::skills::Origin) -> Option<String> {
+        let _ = (name, origin);
+        None
+    }
 }
 
 /// What a finished tool call says about a skill starting, in a harness's own words (SK-3): the

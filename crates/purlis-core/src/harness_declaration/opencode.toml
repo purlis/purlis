@@ -62,3 +62,4 @@ keeps_conversations_by_directory = "no: opencode finds a session by its id from 
 reports_waiting = "yes"
 resumes_by_id = "yes"
 per_chat_plugins = "no: opencode has no switch that turns one plugin off"
+mcp_servers = "yes"

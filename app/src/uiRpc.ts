@@ -7846,6 +7846,8 @@ export type RunStart =
 "skill-tool" | 
 /**  The chat read the skill's `SKILL.md`. */
 "read" | 
+/**  The chat loaded the skill with purlis's `skill_load` tool. */
+"mcp-load" | 
 /**  A start a newer purlis wrote. */
 "unknown";
 

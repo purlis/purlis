@@ -83,14 +83,20 @@ fn drawn_refusal(value: &str, most: usize) -> Option<String> {
 
 /// Every harness capability charter reads today (ADR 0073 §6). A ticket that reads a new one
 /// adds it here and to `docs/plane-format.md`.
-pub const CAPABILITIES: [&str; 6] = [
+pub const CAPABILITIES: [&str; 7] = [
     "reports_its_process",
     "reports_its_start_before_the_first_prompt",
     "keeps_conversations_by_directory",
     "reports_waiting",
     "resumes_by_id",
     "per_chat_plugins",
+    MCP_SERVERS,
 ];
+
+/// The capability that says a harness takes MCP servers: a chat on it can be handed purlis's
+/// own, and a harness purlis has no adapter for then gets its skills through it (ADR 0063 as
+/// amended 2026-10-20, [`crate::skills::route_of`]).
+pub const MCP_SERVERS: &str = "mcp_servers";
 
 /// Where a declaration came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -120,6 +120,22 @@ impl Harness {
             .find(|harness| harness.declared().name == kind)
     }
 
+    /// **The harness of a chat that names `kind`** in [`crate::hookwire::HARNESS_ENV`], where
+    /// purlis ships it: by the registry's name the chat carries (`claude-code`,
+    /// [`crate::profiles::Kind::registry`]) or by its kind's word. The one rule for a chat that
+    /// names none: it is a terminal's own Claude Code, with purlis's plugin. A kind purlis ships
+    /// no adapter for is none.
+    pub fn of_chat(kind: Option<&str>) -> Option<Self> {
+        let Some(kind) = kind else {
+            return Some(Self::ClaudeCode);
+        };
+        let word = crate::profiles::KINDS
+            .iter()
+            .find(|known| known.registry == kind)
+            .map_or(kind, |known| known.word);
+        Self::of_kind(word)
+    }
+
     /// This harness's built-in declaration (FD-14b, #966): every fact measured on it is read
     /// from there, and only what arms it (its adapter) is code.
     pub fn declared(self) -> &'static crate::harness_declaration::Declaration {
@@ -1003,6 +1019,11 @@ mod tests {
                 "mcp__purlis__dispatch_list",
                 "mcp__purlis__dispatch_read",
                 "mcp__purlis__theme_preview",
+                // The chat's own skills, read or loaded (SK-13).
+                "mcp__purlis__skill_list",
+                "mcp__purlis__skill_runs",
+                "mcp__purlis__skill_find",
+                "mcp__purlis__skill_load",
                 // And the browser tools, on the chat's browser Ask (#2245).
                 "mcp__purlis__browser_open",
                 "mcp__purlis__browser_navigate",
@@ -1518,6 +1539,10 @@ mod tests {
                 "mcp__purlis__dispatch_list",
                 "mcp__purlis__dispatch_read",
                 "mcp__purlis__theme_preview",
+                "mcp__purlis__skill_list",
+                "mcp__purlis__skill_runs",
+                "mcp__purlis__skill_find",
+                "mcp__purlis__skill_load",
                 "mcp__purlis__browser_open",
                 "mcp__purlis__browser_navigate",
                 "mcp__purlis__browser_snapshot",

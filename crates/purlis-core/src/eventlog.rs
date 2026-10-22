@@ -1319,9 +1319,14 @@ fn spooled_as(mut body: serde_json::Value, seq: Option<u64>) -> serde_json::Valu
 fn tool_kind(call: &crate::hookwire::ToolCall) -> String {
     match phase(&call.tool_hook) {
         Some(_) => format!("hook.{}", call.tool_hook),
+        None if call.tool_hook == crate::hookwire::SKILL_LOAD => SKILL_LOADED.to_owned(),
         None => UNKNOWN_HOOK.to_owned(),
     }
 }
+
+/// The kind a skill purlis's MCP server loaded is recorded under (SK-13, #2776): the tool call
+/// that loaded it, just after the `skill.started` of the run it opened.
+pub const SKILL_LOADED: &str = "hook.skill-load";
 
 /// The kind a tool hook word charter does not answer is recorded under, so a line cannot mint
 /// a kind of its own: the word goes in the body, shortened.
@@ -1803,7 +1808,7 @@ impl Recorder {
             "decision": call.decision.word(),
             "hook_ms": call.hook_ms,
         });
-        if phase(&call.tool_hook).is_none() {
+        if tool_kind(call) == UNKNOWN_HOOK {
             body["word"] =
                 crate::shown::readable(&call.tool_hook, crate::shown::DISPLAY_LIMIT).into();
         }

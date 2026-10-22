@@ -1872,8 +1872,7 @@ fn tell_the_host_about_the_tool_call(
         agent: hookwire::sub_agent(data["agent_id"].as_str(), &purlis_core::envvar::var),
         at_ms: std::time::SystemTime::now()
             .checked_sub(took)
-            .and_then(|began| began.duration_since(std::time::UNIX_EPOCH).ok())
-            .and_then(|since| u64::try_from(since.as_millis()).ok())
+            .map(hookwire::ms_since_1970)
             .unwrap_or_default(),
         skill,
     };
