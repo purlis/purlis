@@ -169,8 +169,9 @@ fn an_opencode_chat_is_handed_a_manual_only_skill_without_its_description_and_no
         "opencode lists only a skill with a description, and still runs one by name"
     );
     let deploy = fs::read_to_string(skills.join("deploy/SKILL.md")).unwrap();
-    assert!(!deploy.contains("allowed-tools"), "{deploy}");
-    assert!(!deploy.contains("hooks"), "{deploy}");
+    assert!(!deploy.contains("\nallowed-tools:"), "{deploy}");
+    assert!(!deploy.contains("\nhooks:"), "{deploy}");
+    assert!(deploy.contains("\ndisallowed-tools: Write\n"), "{deploy}");
     assert_eq!(
         fs::read_link(skills.join("review")).unwrap(),
         here.plane.join("skills/review")
@@ -223,6 +224,7 @@ fn a_set_laid_out_again_after_its_skill_changed_is_a_new_folder() {
 
 #[test]
 fn each_harness_badge_says_what_applies_what_is_left_out_and_what_is_carried_over() {
+    purlis_core::unsteered!();
     let text = format!(
         "---\nname: deploy\ndescription: Deploys it.\nmodel: opus\ndisable-model-invocation: true\n{WIDENS}---\n"
     );
@@ -258,6 +260,7 @@ fn each_harness_badge_says_what_applies_what_is_left_out_and_what_is_carried_ove
 
 #[test]
 fn a_manual_only_skill_costs_nothing_on_every_harness() {
+    purlis_core::unsteered!();
     for harness in Harness::ALL {
         assert!(harness.skill_budget().manual_free, "{harness:?}");
     }
