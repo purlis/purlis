@@ -375,7 +375,7 @@ describe("the explorer", () => {
       // The Search view, on the left, and not a tab.
       const view = await $('[role="tabpanel"][data-view="search"]');
       await view.waitForDisplayed({ timeout: 20_000 });
-      const box = await view.$('[role="searchbox"][aria-label="Search the files"]');
+      const box = await view.$('input[type="search"][aria-label="Search the files"]');
       await box.waitForDisplayed({ timeout: 20_000 });
       await expect($('[role="combobox"][aria-label="Where to search"]')).toHaveAttribute(
         "data-value",

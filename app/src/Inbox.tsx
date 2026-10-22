@@ -63,6 +63,7 @@ import { capMarks } from "./combiningMarks";
 import { AskWrites } from "./AskWrites";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Form, TextField } from "./ui/field/Field";
 
 /** What an empty Inbox says (I-12). */
 export const NOTHING_WAITS = "Nothing is waiting on you";
@@ -756,16 +757,14 @@ function Ask({
       <WithWrites ask={ask} onDrawn={onChangeDrawn}>
         {shape.reason && (
           <Stop id={`${key}:reason`}>
-            <input
-              type="text"
-              className="ui-input inbox-reason"
+            <TextField
+              className="inbox-reason"
               aria-label={`Why you keep it blocked, told to ${who}`}
               value={reason}
               placeholder="Why keep it blocked? (optional, the chat is told)"
               maxLength={REASON_TYPED_MOST}
-              autoComplete="off"
               spellCheck
-              onChange={(event) => setReason(event.target.value)}
+              onChange={setReason}
               onKeyDown={keepHomeAndEnd}
             />
           </Stop>
@@ -932,7 +931,7 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
       .finally(() => setBusy(false));
   };
   return (
-    <form
+    <Form
       className="inbox-reply"
       onSubmit={(event) => {
         event.preventDefault();
@@ -941,16 +940,14 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
     >
       {/* A stop of the list too, so ↑ and ↓ reach it; Home and End there are the box's own. */}
       <Stop id={`${stop}:reply`}>
-        <input
-          ref={box}
-          type="text"
-          className="ui-input"
+        <TextField
+          inputRef={box}
+          className="inbox-reply-box"
           aria-label={`Reply to ${who}`}
           value={text}
           placeholder="Your reply"
-          autoComplete="off"
           spellCheck
-          onChange={(event) => setText(event.target.value)}
+          onChange={setText}
           onKeyDown={keepHomeAndEnd}
         />
       </Stop>
@@ -964,7 +961,7 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
           {said}
         </p>
       )}
-    </form>
+    </Form>
   );
 }
 

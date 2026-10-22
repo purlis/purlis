@@ -8,6 +8,7 @@ import { Choice, Field, SettingActions, SettingRow } from "./settings/components
 import { VaultSignIn } from "./VaultSignIn";
 import { PROVIDERS } from "./vaultProviders";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * Making a vault, asked where the answer is given — `NewWorkspace`'s shape, for `charter vault
@@ -80,7 +81,7 @@ export function NewVault({
             on <code>{plane}</code>, for this machine only
           </p>
 
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               create();
@@ -141,7 +142,7 @@ export function NewVault({
                 </SettingActions>
               </>
             )}
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

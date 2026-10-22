@@ -224,7 +224,9 @@ describe("one line at one height", () => {
     render(<Page />);
 
     expect(drawnWith(screen.getByLabelText("Mode"), "block-size")).toBe("var(--size-control)");
-    expect(drawnWith(screen.getByLabelText("Branch"), "block-size")).toBe("var(--size-control)");
+    // The box is the field family's: its box is a control tall (#2905).
+    const branch = screen.getByLabelText("Branch").parentElement as Element;
+    expect(drawnWith(branch, "block-size")).toBe("var(--size-control)");
     expect(drawnWith(screen.getByRole("button", { name: "Reset" }), "block-size")).toBe(
       "var(--size-control)",
     );

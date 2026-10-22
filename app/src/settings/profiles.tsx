@@ -9,6 +9,7 @@ import { Choice, Field, SettingActions, SettingRow } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { askProfileSignIn } from "./links";
 import { Button } from "../ui/button/Button";
+import { Form } from "../ui/field/Field";
 
 /**
  * **You › Profiles** (#2034, ADR 0095): this machine's own profiles, each available in every
@@ -424,7 +425,7 @@ const add: LiveSetting = {
     return {
       grouped: true,
       control: (ids) => (
-        <form
+        <Form
           role="group"
           aria-labelledby={ids.labelledBy}
           aria-describedby={ids.describedBy}
@@ -477,7 +478,7 @@ const add: LiveSetting = {
               Add profile
             </Button>
           </SettingActions>
-        </form>
+        </Form>
       ),
     };
   },

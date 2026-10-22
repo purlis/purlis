@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLentMemoryStores } from "./MemoryEdits";
 import { useReadOnlySaid } from "./ReadOnlyLine";
 import {
@@ -36,6 +36,7 @@ import {
 import type { WorkspaceState } from "./workspaceState";
 import { isPanelView, panelKeyOf, panelView, type OwnViewId, type ViewId } from "./sideViews";
 import type { PanelTab } from "./ActivityBar";
+import { Form, TextField } from "./ui/field/Field";
 
 /**
  * One view of the right region: **what is asking for you** (ADR 0038).
@@ -494,7 +495,6 @@ function AddTodo({
   const [text, setText] = useState("");
   const [trouble, setTrouble] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const refusal = useId();
   /** Why the project is read-only, when it is (#826): a todo is committed, so the box is off,
    *  with the sentence as its tooltip. */
   const readOnly = useReadOnlySaid();
@@ -509,33 +509,26 @@ function AddTodo({
   };
   return (
     <>
-      <form
+      <Form
         className="panel-search"
         onSubmit={(event) => {
           event.preventDefault();
           void add();
         }}
       >
-        <input
-          className="ui-input"
+        <TextField
           value={text}
           aria-label={`New todo in ${workspace}`}
-          aria-describedby={trouble === undefined ? undefined : refusal}
+          error={trouble}
           placeholder={`Add a todo to ${workspace}…`}
-          autoComplete="off"
           // Read-only rather than disabled while it is sent: a disabled box drops the keyboard,
           // and the next todo is typed into the same box.
-          readOnly={busy}
-          disabled={readOnly !== undefined}
+          isReadOnly={busy}
+          isDisabled={readOnly !== undefined}
           title={readOnly}
-          onChange={(event) => setText(event.target.value)}
+          onChange={setText}
         />
-      </form>
-      {trouble !== undefined && (
-        <p className="trouble" role="alert" id={refusal}>
-          {trouble}
-        </p>
-      )}
+      </Form>
     </>
   );
 }
