@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792650993547,
+  "lastUpdate": 1792652185240,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21252,6 +21252,48 @@ window.BENCHMARK_DATA = {
             "value": 105.048464,
             "unit": "ms",
             "extra": "median of 5 runs: 104.501, 104.538, 105.048, 106.699, 106.760 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "98d906a7b16dd5313130080cc81c8d868aaebd38",
+          "message": "Hard contrast floor for the text grey tiers (#2968)\n\n* Hard contrast floor for the text grey tiers (#2940)\n\nA text tier under its floor on a ground it is drawn on is drawn as the\nnearest colour that clears it, after the consent floors, as written and\nin every workspace tint; the theme check names it (tier-falls-back).\nADR 0098 gets an amendment for section 5.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Hold a tier on the window's own surfaces where no lightness clears every ground (#2940)\n\nA tier that clears the window's own surfaces keeps its colour and the check\nnames the ground on the other side; a cheap first pass skips a theme that\nclears everything. ADR wording: hard floors are measured before the tier\nfloors.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T10:40:56+04:00",
+          "tree_id": "b31caa7cf58bc44982de75a3520ddd6bdc87c464",
+          "url": "https://github.com/purlis/purlis/commit/98d906a7b16dd5313130080cc81c8d868aaebd38"
+        },
+        "date": 1792652182568,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5428125,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.514, 0.532, 0.543, 0.546, 0.557 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.102191500000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.655, 16.780, 17.102, 17.290, 17.429 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.3134045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.491, 102.559, 103.313, 104.380, 104.896 ms"
           }
         ]
       }
