@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792652185240,
+  "lastUpdate": 1792653671555,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21294,6 +21294,48 @@ window.BENCHMARK_DATA = {
             "value": 103.3134045,
             "unit": "ms",
             "extra": "median of 5 runs: 102.491, 102.559, 103.313, 104.380, 104.896 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c98436bb109dfeede3de60ecf4c92cbb4858ea32",
+          "message": "SK-7: create, edit, rename, move and delete skills, each one commit (#2932)\n\n* SK-7: create, edit, rename, move and delete skills, each one commit (#2770)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-7: a chat on the MCP route takes every skill change in by itself\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T11:10:09+04:00",
+          "tree_id": "23b6aa28f28400b6101e4afebc9b8c04a7dd58c7",
+          "url": "https://github.com/purlis/purlis/commit/c98436bb109dfeede3de60ecf4c92cbb4858ea32"
+        },
+        "date": 1792653668859,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6638379999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.628, 0.648, 0.664, 0.666, 0.668 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.680477500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.362, 16.596, 16.680, 16.890, 16.896 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.03848450000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.872, 101.655, 102.038, 102.189, 102.354 ms"
           }
         ]
       }
