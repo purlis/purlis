@@ -131,7 +131,9 @@ describe("draft skills in the Skill studio", function () {
       timeout: 30_000,
       timeoutMsg: "the try's throwaway folder outlived its chat",
     });
+    // The scratch chat's tab was in front: the studio is brought back.
     await focusWorkspace("alpha");
+    await runFromThePalette("Open Skill studio", "skills.studio");
 
     await (await $(`aria/Accept ${ACCEPTED}`)).click();
     await $(`[data-testid="skill-${ACCEPTED}"]`).waitForExist({ timeout: 20_000 });
