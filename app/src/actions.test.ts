@@ -656,6 +656,8 @@ describe("the one list of actions", () => {
       "Your settings: Text",
       "Your settings: Theme",
       "Your settings: Density and fonts",
+      "Your settings: Motion and contrast",
+      "Your settings: Your colours",
       "Your settings: Editor",
       "Your settings: Chats list",
       "Your settings: Notifications",
@@ -2416,8 +2418,9 @@ describe("the palette at fifty chats", () => {
     // 914 since #2331: Settings › Theme at You, Project and Workspace. 915 since #2023: Your
     // settings: Browsers. 916 since #2176: New browser. 917 since #2679: Add a Docker pool….
     // Your settings: Pools is offered only once this machine keeps a pool. 918 since #2765:
-    // Your settings: Previews (Open Skill studio is offered only while its flag is on).
-    expect(offers).toHaveLength(918);
+    // Your settings: Previews (Open Skill studio is offered only while its flag is on). 920
+    // since #2925: Your settings: Motion and contrast, and Your colours.
+    expect(offers).toHaveLength(920);
   });
 
   /**

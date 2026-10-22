@@ -85,6 +85,7 @@ pub mod geometry;
 mod hard;
 mod icons;
 mod import;
+mod least;
 pub mod levels;
 mod native;
 mod opened;
@@ -123,6 +124,7 @@ pub use import::{
     Files, Imported, LeftOut, MOST_SOURCE_BYTES, Recipe, SCOPES, SourceKind, TOWARD_STEPS, detect,
     folder_name, import, recipes, recipes_markdown, scopes_markdown, table, table_markdown,
 };
+pub use least::{Least, MARKS_MORE, WORDS_MORE};
 pub use levels::{Choice, Folders, FoundFolder, Level, LevelInputs, Levels, resolve_levels};
 pub use native::{Native, first_frame};
 pub use options::{
@@ -184,6 +186,8 @@ mod native_tests;
 mod options_tests;
 #[cfg(test)]
 mod parts_tests;
+#[cfg(test)]
+mod person_tests;
 #[cfg(test)]
 mod placed_tests;
 #[cfg(test)]
@@ -280,6 +284,10 @@ pub struct ResolvedTheme {
     /// theme that names none, which draws every family as its default.
     #[serde(skip)]
     pub parts: parts::Parts,
+    /// The contrast it is drawn for, at least (#2925): more when the person asked for it, which
+    /// raised its colours ([`least::raise`]) and raises its parts' reading floors.
+    #[serde(skip)]
+    pub least: Least,
 }
 
 impl ResolvedTheme {
@@ -588,6 +596,7 @@ fn built_in_of(text: &str) -> Theme {
                 options: Vec::new(),
                 tint: Tint::default(),
                 parts: parts::Parts::new(),
+                least: Least::Standard,
             }
         })
         .collect();
@@ -948,6 +957,7 @@ fn load_format_1(from: &serde_json::Map<String, Value>) -> Resolved {
             options: Vec::new(),
             tint: Tint::default(),
             parts: parts::Parts::new(),
+            least: Least::Standard,
         }),
         complaints: notes,
         refused: false,

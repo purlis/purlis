@@ -46,6 +46,12 @@ impl HarnessAdapter for Opencode {
     ///
     /// No plugin choice: opencode has no switch that turns one plugin off.
     ///
+    /// **A skill the project turned off** (SK-6, #2769) is denied in the same config's
+    /// `permission.skill`, by its name: a denied skill is left out of the list the model is
+    /// shown (`Skill.available` in `skill/index.ts`, opencode 1.18.33; measured through
+    /// `OPENCODE_PERMISSION`, the same merge), and a call to it is refused. opencode merges
+    /// objects key by key, so the operator's own rules stand beside it.
+    ///
     /// Its skills are its set's ([`crate::skills::for_chat`]): the built-in skills' directory,
     /// and the `skills/` of the folder of links to the plane's that the host laid out
     /// ([`crate::skills::linked`]), are handed to the shim as its option, which adds them to the skills opencode discovers for
@@ -57,7 +63,7 @@ impl HarnessAdapter for Opencode {
         &self,
         kit: Kit<'_>,
         _cwd: Option<&std::path::Path>,
-        _plugins: &crate::harness_plugin::Chosen,
+        plugins: &crate::harness_plugin::Chosen,
         sandbox: Sandbox<'_>,
     ) -> StateHooks {
         let Some(shim) = kit
@@ -81,6 +87,7 @@ impl HarnessAdapter for Opencode {
                         &skill_dirs(kit),
                         Some(kit.binary),
                         sandbox.applied().is_some(),
+                        &crate::skills::skills_off_for(kit, Harness::Opencode, plugins),
                     ),
                 ),
                 (crate::opencode::PURE_ENV.to_owned(), "0".to_owned()),
@@ -331,5 +338,49 @@ mod tests {
             serde_json::json!({"type": "local", "command": ["/bin/charter", "mcp"], "enabled": true})
         );
         assert!(config["plugin"].is_array(), "{config}");
+    }
+
+    #[test]
+    fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name() {
+        // SK-6 (#2769): opencode's `permission.skill` goes by the name alone, so a built-in
+        // skill's name is never denied, whatever a file says.
+        let bundle = tempfile::tempdir().expect("a bundle");
+        let shim = crate::opencode::shim_in(bundle.path());
+        std::fs::create_dir_all(shim.parent().expect("a parent")).expect("dirs");
+        std::fs::write(&shim, "").expect("the shim");
+        let secrets = bundle.path().join("skills/secrets");
+        std::fs::create_dir_all(&secrets).expect("a built-in skill");
+        std::fs::write(
+            secrets.join("SKILL.md"),
+            "---\nname: secrets\ndescription: Keeps secrets.\n---\n",
+        )
+        .expect("its SKILL.md");
+        let chosen = crate::harness_plugin::Chosen {
+            plugins: std::collections::BTreeMap::new(),
+            skills_off: ["review".to_owned(), "secrets".to_owned()].into(),
+        };
+        let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
+            Kit {
+                skills: None,
+                binary: std::path::Path::new("/bin/charter"),
+                plugin: Some(bundle.path()),
+                persona: None,
+            },
+            None,
+            &chosen,
+            None,
+        ) else {
+            panic!("armed per session");
+        };
+        let config = env
+            .iter()
+            .find(|(name, _)| name == crate::opencode::CONFIG_ENV)
+            .map(|(_, value)| value)
+            .expect("the session config");
+        let config: serde_json::Value = serde_json::from_str(config).expect("JSON");
+        assert_eq!(
+            config["permission"],
+            serde_json::json!({ "skill": { "review": "deny" } })
+        );
     }
 }

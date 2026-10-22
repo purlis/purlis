@@ -28,6 +28,7 @@ import { accountsGroup } from "./accounts";
 import { notificationsGroup } from "./notifications";
 import { profilesGroup } from "./profiles";
 import { THEME_GROUP, themeRows } from "./themeGallery";
+import { minimumContrast, reduceMotion, yourColours } from "./youLook";
 
 /**
  * **The You level's groups** (V89h): Text and Editor, which were the Preferences tab's
@@ -61,6 +62,18 @@ export function youGroups(plane?: string): SettingsGroup[] {
       label: "Density and fonts",
       help: "How tightly the window is laid out, and the fonts it is drawn in, on this machine, whatever the theme.",
       settings: [density, fontOverride("ui"), fontOverride("mono"), fontOverride("terminal")],
+    },
+    {
+      id: "you.motion",
+      label: "Motion and contrast",
+      help: "How much the window moves, and how much contrast it holds, on this machine, whatever the theme. Each adds to your system's own setting.",
+      settings: [reduceMotion, minimumContrast],
+    },
+    {
+      id: "you.colours",
+      label: "Your colours",
+      help: "Colours of your own, drawn over every theme on this machine. The contrast floors and the consent marks still hold.",
+      settings: [yourColours],
     },
     {
       id: "you.editor",

@@ -610,6 +610,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_restore",
     "skill_grant",
     "skill_turn",
+    // A harness's plugin or skill turned on or off in the Skill studio (#2769): it writes this
+    // machine's project file, or the workspace's settings. The person's own press in their
+    // window.
+    "skill_studio_switch",
     // Why browsers cannot start for the engine's sandbox, and choosing this machine's Chrome
     // for every browser (#2835): which program runs as the person's browsers' engine is theirs
     // to choose, in their window.

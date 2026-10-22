@@ -41,6 +41,7 @@ pub const KEY: &str = "settings";
 pub const READ: &[&str] = &[
     project::TABLE,
     crate::harness_plugin::TABLE,
+    crate::harness_plugin::SKILLS_TABLE,
     project::theme::TABLE,
     SKILLS,
 ];
@@ -410,6 +411,20 @@ pub fn save(
         .into_iter()
         .filter(|why| !standing.contains(why))
         .collect();
+    // A built-in skill's name in `settings.harness_skills` (SK-6, #2769), as the project's files
+    // refuse it.
+    if let Some(table) = table_of(&doc) {
+        refused.extend(
+            crate::harness_plugin::built_in_refused(
+                &table,
+                &file,
+                "settings.",
+                &crate::skills::built_in_names_here(),
+            )
+            .into_iter()
+            .map(|one| one.why),
+        );
+    }
     // As the project save reads the manifest: as written, then through its escapes (#1315).
     if let Some(kind) = crate::secretshape::kind_as_read(
         Some(crate::secretshape::Structured::Json),

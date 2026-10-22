@@ -23,8 +23,13 @@
 //! narrowest wins: persona over workspace over project, local over shared, and a built-in
 //! skill's name is never taken. Every skill is handed to a harness from where it lies, and none
 //! gets a copy. A harness skill is the harness's to load: the set only says when one the persona
-//! names is not on this machine ([`Machine::harness`]). Repo skills arrive in a later slice
-//! behind the `skill-studio` flag.
+//! names is not on this machine ([`Machine::harness`]). purlis never writes one.
+//!
+//! **Harness and repo skills** (SK-6, #2769): what a harness finds itself, in the person's own
+//! folders and plugins or in a clone a chat works in, is no level of the plane's. purlis-core
+//! finds them ([`OutsideSkill`]) and [`SkillSet::with_outside`] lists them beside the plane's, read only,
+//! each with whose it is, whether the project turned it off, and any plane skill it clashes
+//! with. purlis hands none of them: the harness reads them where they lie.
 //!
 //! **Harness-agnostic.** The crate knows no harness by name. A chat's harness is described by
 //! what it can do with skills ([`HarnessSkills`]), which purlis-core's harness declaration
@@ -47,7 +52,7 @@ pub use budget::{Budget, Over, Spent};
 pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_of, set_grant};
 pub use load::{Loaded, Narrowing, POINTER, by_name, find, load};
-pub use read::{DIR_IN_BUNDLE, frontmatter, in_bundle, listing, read};
+pub use read::{DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read};
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
 pub use share::{named, share};
@@ -79,6 +84,9 @@ pub enum Route {
     /// `skill_find` and loads one with `skill_load`, and is told so in one line, [`POINTER`]
     /// (ADR 0063 as amended 2026-10-20, the fallback route).
     Mcp,
+    /// The harness finds it itself, where it lies: a harness or repo skill ([`OutsideSkill`]). purlis
+    /// hands it nothing, and can only ask the harness to leave it out.
+    Own,
 }
 
 /// Where a skill in a chat's set comes from: its level.
@@ -95,13 +103,16 @@ pub enum Origin {
     /// workspace (SK-5, #2768).
     Persona,
     /// The harness's own: in the person's harness folders or a harness plugin. The harness loads
-    /// it, never purlis, so the set holds one only as left out: one the persona names that this
-    /// machine does not have.
+    /// it, never purlis: the set holds one the persona names that this machine does not have as
+    /// left out, and one purlis-core found as an [`OutsideSkill`] (SK-6, ADR 0099 §1).
     Harness,
+    /// A repo's own: a skill a clone holds where its harness looks, such as its
+    /// `.claude/skills`. Read only, and owned by the repo (SK-6).
+    Repo,
 }
 
 impl Origin {
-    /// The level a person is shown: `built-in`, `project`, `workspace`.
+    /// The level a person is shown: `built-in`, `project`, `workspace`, `harness`, `repo`.
     pub fn level(self) -> &'static str {
         match self {
             Self::BuiltIn => "built-in",
@@ -109,7 +120,14 @@ impl Origin {
             Self::Workspace => "workspace",
             Self::Persona => "persona",
             Self::Harness => "installed",
+            Self::Repo => "repo",
         }
+    }
+
+    /// Whether a skill of this origin is one of the plane's own levels, which purlis hands a
+    /// chat by its route: a project, a workspace or a persona skill.
+    pub fn of_the_plane(self) -> bool {
+        matches!(self, Self::Project | Self::Workspace | Self::Persona)
     }
 }
 
@@ -230,6 +248,12 @@ pub enum Reason {
     /// A built-in skill the chat's persona names, that no built-in skill is: a typo, or a name
     /// from another version of purlis.
     NoSuchBuiltIn,
+    /// A harness or repo skill the project turned off for this harness's chats, which purlis
+    /// asks the harness to leave out.
+    OffForTheHarness,
+    /// A harness or repo skill named as one of purlis's built-in skills, which never loses to
+    /// any other copy (SK-6): the chat is handed purlis's.
+    HiddenByBuiltIn,
 }
 
 /// What a folder lacks to be a whole skill.
@@ -288,6 +312,8 @@ impl std::fmt::Display for Reason {
             Self::NoSuchBuiltIn => {
                 f.write_str("its persona names it, and purlis has no built-in skill of this name")
             }
+            Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
+            Self::HiddenByBuiltIn => f.write_str("hidden by purlis's built-in skill of this name"),
         }
     }
 }
@@ -303,6 +329,9 @@ pub struct SkillSet {
     /// Every harness skill the chat's persona names that its harness loads by itself, in the
     /// order its `skills:` list names them (SK-5). purlis never hands one over.
     pub from_the_harness: Vec<FromHarness>,
+    /// Every skill from outside the plane that has the name of a skill purlis hands the chat, by name
+    /// ([`SkillSet::with_outside`]), and what came of it.
+    pub clashes: Vec<Clash>,
 }
 
 /// A harness skill a chat's persona names, which the chat's harness loads by itself.
@@ -312,6 +341,77 @@ pub struct FromHarness {
     /// Whether purlis saw it on this machine. `false` where it could not look: a plugin whose
     /// skills it cannot list, or a set worked out without looking at the harness.
     pub checked: bool,
+}
+
+/// **A skill from outside the plane** (SK-6, #2769): one a harness finds itself, in the
+/// person's own folders or its plugins (a harness skill), or in a clone a chat works in (a repo
+/// skill). purlis-core finds it; purlis lists it and never writes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutsideSkill {
+    pub skill: Skill,
+    /// [`Origin::Harness`] or [`Origin::Repo`].
+    pub origin: Origin,
+    /// The name the harness knows it by, which a project turns it off by: its `name`, or
+    /// `<plugin>:<name>` for a skill a plugin brings.
+    pub id: String,
+    pub owner: Owner,
+    /// How the harness can leave it out of a chat.
+    pub switch: Switch,
+    /// Whether the project turned it off for this harness's chats.
+    pub off: bool,
+}
+
+/// Whose a skill from outside the plane is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Owner {
+    /// The person's own, in their folders for the harness.
+    You,
+    /// A plugin's, by the name the harness gives it.
+    Plugin(String),
+    /// A repo's, by the name of its clone.
+    Repo(String),
+}
+
+/// How a harness can leave one of its own skills out of a chat, as its adapter says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Switch {
+    /// On its own, for one chat.
+    Alone,
+    /// Not on its own, and the sentence that says why and what can, such as its plugin: the
+    /// studio says it plainly rather than draw a switch that does nothing.
+    Not(String),
+}
+
+/// Where a copy of a skill sits in the plane: its level, and whether it is a local skill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct At {
+    pub origin: Origin,
+    pub local: bool,
+}
+
+/// **A skill from outside the plane with the name of one purlis hands the chat** (ADR 0099 §3,
+/// decision 51), and what came of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Clash {
+    pub name: String,
+    /// The plane's copy.
+    pub plane: At,
+    /// The other copy: [`Origin::Harness`] or [`Origin::Repo`].
+    pub outside: Origin,
+    pub owner: Owner,
+    pub outcome: Outcome,
+}
+
+/// What came of a [`Clash`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// Both load: the harness reads its own whatever purlis says, and purlis hands its copy too
+    /// (Claude Code, whose plane skills come as their own namespaced plugin; or a harness skill,
+    /// which is wider than the plane's copy).
+    BothLoad,
+    /// The repo's copy is the narrower one and purlis left its own out, so the chat gets one
+    /// copy of the name (decision 51): where purlis builds what the harness is handed.
+    RepoWins,
 }
 
 impl SkillSet {
@@ -332,11 +432,116 @@ impl SkillSet {
     }
 
     /// The effective skills that come from the plane, by name: what a route hands over beside
-    /// the built-in directory (ADR 0063 as amended 2026-10-20). Each has one name in the set.
+    /// the built-in directory (ADR 0063 as amended 2026-10-20). Each has one name in the set. A
+    /// harness or repo skill is never among them: the harness reads those itself.
     pub fn from_the_plane(&self) -> impl Iterator<Item = &Effective> {
         self.effective
             .iter()
-            .filter(|effective| effective.origin != Origin::BuiltIn)
+            .filter(|effective| effective.origin.of_the_plane())
+    }
+
+    /// **The set, with the skills from outside the plane beside what purlis hands** (SK-6,
+    /// #2769): each one on, by [`Route::Own`], unless the project turned it off, when it is left
+    /// out saying so. Where one has the name of a skill purlis hands the chat, the narrowest copy
+    /// wins wherever purlis chooses (decision 51): a repo skill is narrower than the plane's, and
+    /// on a route where purlis builds what the harness is handed ([`Route::Config`],
+    /// [`Route::Briefing`]) the plane's copy is left out, hidden by the repo's. Otherwise both
+    /// load: a harness skill is the person's own and wider, and on [`Route::Plugin`] the plane's
+    /// copies come as their own namespaced plugin. Either way the pair is a [`Clash`]. Two
+    /// outside skills of one id are both listed: the harness has them both.
+    #[must_use]
+    pub fn with_outside(
+        mut self,
+        route: Route,
+        outside: impl IntoIterator<Item = OutsideSkill>,
+    ) -> Self {
+        for one in outside {
+            let handed = (!one.off)
+                .then(|| {
+                    self.effective
+                        .iter()
+                        .position(|e| e.route != Route::Own && e.skill.name == one.id)
+                })
+                .flatten();
+            let folder = one
+                .skill
+                .path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
+            // A built-in skill never loses to any other copy: purlis's is the one handed, and
+            // the other is listed as hidden by it, whatever the route.
+            if handed.is_some_and(|at| self.effective[at].origin == Origin::BuiltIn) {
+                self.left_out.push(LeftOut {
+                    name: one.id,
+                    origin: one.origin,
+                    local: false,
+                    folder,
+                    reason: Reason::HiddenByBuiltIn,
+                });
+                continue;
+            }
+            if let Some(at) = handed {
+                let plane = &self.effective[at];
+                let outcome = if one.origin == Origin::Repo && route != Route::Plugin {
+                    Outcome::RepoWins
+                } else {
+                    Outcome::BothLoad
+                };
+                self.clashes.push(Clash {
+                    name: one.id.clone(),
+                    plane: At {
+                        origin: plane.origin,
+                        local: plane.local,
+                    },
+                    outside: one.origin,
+                    owner: one.owner.clone(),
+                    outcome,
+                });
+                if outcome == Outcome::RepoWins {
+                    let hidden = self.effective.remove(at);
+                    self.left_out.push(LeftOut {
+                        name: hidden.skill.name,
+                        origin: hidden.origin,
+                        local: hidden.local,
+                        folder: hidden
+                            .skill
+                            .path
+                            .parent()
+                            .map(Path::to_path_buf)
+                            .unwrap_or_default(),
+                        reason: Reason::NameTaken {
+                            by: Origin::Repo,
+                            local: false,
+                        },
+                    });
+                }
+            }
+            if one.off {
+                self.left_out.push(LeftOut {
+                    name: one.id,
+                    origin: one.origin,
+                    local: false,
+                    folder,
+                    reason: Reason::OffForTheHarness,
+                });
+            } else {
+                self.effective.push(Effective {
+                    skill: Skill {
+                        name: one.id,
+                        ..one.skill
+                    },
+                    route: Route::Own,
+                    origin: one.origin,
+                    local: false,
+                });
+            }
+        }
+        self.effective
+            .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
+        widest_first(&mut self.left_out);
+        self.clashes.sort_by(|a, b| a.name.cmp(&b.name));
+        self
     }
 }
 
@@ -583,6 +788,7 @@ fn rank(origin: Origin, local: bool) -> u8 {
         Origin::Workspace => 2,
         Origin::Persona => 3,
         Origin::Harness => 4,
+        Origin::Repo => 5,
     };
     level * 2 + u8::from(local)
 }

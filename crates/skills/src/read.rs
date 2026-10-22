@@ -13,7 +13,7 @@ use crate::{Missing, Skill};
 pub const DIR_IN_BUNDLE: &str = "skills";
 
 /// A skill's file inside its folder.
-const FILE: &str = "SKILL.md";
+pub const FILE: &str = "SKILL.md";
 
 /// The skills directory inside the bundled plugin at `plugin`, when it is there.
 pub fn in_bundle(plugin: &Path) -> Option<PathBuf> {
@@ -38,7 +38,14 @@ pub(crate) fn scan(dir: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
 fn whole(folder: &Path) -> Result<Skill, Missing> {
     let path = folder.join(FILE);
     let text = std::fs::read_to_string(&path).map_err(|_| Missing::File)?;
-    let pairs = frontmatter(&text);
+    parsed(&text, path)
+}
+
+/// **The skill a `SKILL.md` whose text is `text` holds**, at `path`, or what it lacks: by the
+/// same rule every skill folder is read by. For a caller that read the file itself, through a
+/// handle that follows no link (purlis-core's harness and repo skills, SK-6).
+pub fn parsed(text: &str, path: PathBuf) -> Result<Skill, Missing> {
+    let pairs = frontmatter(text);
     let value = |key: &str| {
         pairs
             .iter()

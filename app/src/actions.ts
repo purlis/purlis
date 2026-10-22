@@ -47,6 +47,7 @@ import { chatNetworkTitle, chatNetworkView } from "./chatNetwork";
 import { DISPATCHES_TITLE, DISPATCHES_VIEW } from "./dispatches";
 import {
   SKILL_STUDIO_IN,
+  SKILL_STUDIO_SHOW,
   SKILL_STUDIO_TITLE,
   SKILL_STUDIO_VIEW,
   asPersona,
@@ -1345,8 +1346,8 @@ export const usingSkillId = (tab: number) => `tab.useskill:${tab}`;
 
 /** The catalogue's id for the row that opens the project's Dispatches tab (#1452). */
 export const DISPATCHES_SHOW = "dispatches.show";
-/** The Skill studio (#2765), offered only while its flag is on. */
-export const SKILL_STUDIO_SHOW = "skills.studio";
+/** The Skill studio (#2765), offered only while its flag is on: `skillStudio.ts` spells it. */
+export { SKILL_STUDIO_SHOW };
 
 /** An offer that can run, spelled once so `reason` cannot drift from `available`. */
 function can(id: string, title: string, does: Does, name?: string): Offer {

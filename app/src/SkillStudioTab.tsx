@@ -18,6 +18,7 @@ import {
 } from "./bindings";
 import { counted } from "./dispatches";
 import { EmptyState } from "./EmptyState";
+import { clashSaid, SkillStudioHarnesses } from "./SkillStudioHarnesses";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Notice } from "./Notice";
 import { SkillRowActions } from "./SkillRowActions";
@@ -105,6 +106,7 @@ export function SkillStudioTab({
   const [doing, setDoing] = useState<Doing>();
   const [busy, setBusy] = useState(false);
   const [deleted, setDeleted] = useState<readonly DeletedSkill[]>([]);
+  const [switched, setSwitched] = useState(0);
   const { workspace, persona } = whoseChats(scope);
   const on = studio?.on === true;
   useEffect(() => {
@@ -119,7 +121,7 @@ export function SkillStudioTab({
     return () => {
       live = false;
     };
-  }, [plane, workspace, persona, changed, done]);
+  }, [plane, workspace, persona, changed, done, switched]);
   useEffect(() => {
     let live = true;
     if (!on) return;
@@ -335,6 +337,12 @@ export function SkillStudioTab({
             testid="skill-studio-empty"
           />
         )}
+        <SkillStudioHarnesses
+          plane={plane}
+          workspace={workspace}
+          harnesses={studio.harnesses}
+          onSwitched={() => setSwitched((n) => n + 1)}
+        />
         {restorable}
       </div>
     );
@@ -460,6 +468,34 @@ export function SkillStudioTab({
                 </td>
                 <td>
                   {skill.on ? (skill.unchecked ?? "On") : `Left out: ${skill.left_out ?? ""}`}
+                  {skill.on && skill.level === "built-in" && (
+                    <span className="honest"> It ships with purlis, and cannot be turned off.</span>
+                  )}
+                  {studio.clashes
+                    .filter(
+                      (clash) =>
+                        clash.name === skill.name &&
+                        clash.level === skill.level &&
+                        clash.local === skill.local,
+                    )
+                    .map((clash) => (
+                      <span
+                        key={`${clash.harness}\u0000${clash.outcome}`}
+                        className="honest"
+                        data-testid={`clash-${skill.name}`}
+                      >
+                        {` Also: ${clashSaid(clash)}. `}
+                        {level !== null && (
+                          <Button
+                            size="sm"
+                            isDisabled={busy}
+                            onPress={() => setDoing({ what: "rename", skill, level })}
+                          >
+                            Rename the project's copy
+                          </Button>
+                        )}
+                      </span>
+                    ))}
                   {skill.not_granted !== null && (
                     <span className="honest" data-testid={`not-granted-${skill.name}`}>
                       {" "}
@@ -560,6 +596,12 @@ export function SkillStudioTab({
           })}
         </tbody>
       </table>
+      <SkillStudioHarnesses
+        plane={plane}
+        workspace={workspace}
+        harnesses={studio.harnesses}
+        onSwitched={() => setSwitched((n) => n + 1)}
+      />
       {restorable}
     </div>
   );

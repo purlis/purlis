@@ -299,6 +299,7 @@ macro_rules! app_commands {
                 skillchange::skill_restore,
                 skillchange::skill_grant,
                 skillchange::skill_turn,
+                skillstudio::skill_studio_switch,
                 useskill::chat_skills,
                 useskill::use_skill,
                 dispatches::dispatch_worktree_loss,

@@ -1816,6 +1816,13 @@ export const commands = {
 	 */
 	skillTurn: (plane: PlaneId, workspace: string, name: string, on: boolean) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_turn", { plane, workspace, name, on })),
 	/**
+	 *  **Turns one of a harness's plugins or skills on or off** (SK-6, #2769) for the chats the
+	 *  studio shows: at the project's root on this machine alone (`charter.local.toml`), in a
+	 *  workspace in its own settings, as `purlis_core::harness_plugin::switch_in_the_studio` writes
+	 *  it. A chat started after it is handed the change.
+	 */
+	skillStudioSwitch: (plane: PlaneId, workspace: string | null, harness: HarnessKind, what: StudioSwitched, id: string, on: boolean) => typedError<null, string>(__TAURI_INVOKE("skill_studio_switch", { plane, workspace, harness, what, id, on })),
+	/**
 	 *  **The skills chat `session` has, as Use skill… offers them, and its skill budget**: nothing
 	 *  while the Skill studio is off. On a blocking thread, as it reads the project's skill folders.
 	 */
@@ -2694,7 +2701,7 @@ export const commands = {
 	themeInForce: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null, kept: boolean | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at, kept })),
+} | null, kept: boolean | null, person: string | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force", { pick, on, light, moreContrast, reread, at, kept, person })),
 	/**
 	 *  **The theme in force at a project and workspace, with no window** (#2697): what
 	 *  [`theme_in_force`] answers for the same question, read the same way, and served on a link.
@@ -2708,7 +2715,7 @@ export const commands = {
 	themeInForceAt: (pick: string | null, on: string[] | null, light: boolean, moreContrast: boolean, reread: boolean, at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at })),
+} | null, person: string | null) => typedError<ThemeInForce, string>(__TAURI_INVOKE("theme_in_force_at", { pick, on, light, moreContrast, reread, at, person })),
 	/**
 	 *  **The bytes of one font a theme in force brings** (#2326): the face whose digest is `asset`,
 	 *  read again by the core's theme engine from inside the theme's folder, under its cap, and only
@@ -2718,8 +2725,10 @@ export const commands = {
 	 */
 	themeFont: (asset: string) => typedError<string, string>(__TAURI_INVOKE("theme_font", { asset })),
 	/**
-	 *  **The person's density and font override, read by the core's theme engine** (#2326): what
-	 *  the window draws over every theme once Settings changed them. The window keeps them in its
+	 *  **The person's density, font override, motion, contrast and colours, read by the core's theme
+	 *  engine** (#2326, #2925): what the window draws over every theme once Settings changed them.
+	 *  The colours and the contrast are drawn by the engine into each theme the window then asks
+	 *  for: the window hands them with each ask. The window keeps them in its
 	 *  layout file beside the text sizes, and is handed the same at creation. `appearance` is the
 	 *  layout's `appearance` as JSON text.
 	 */
@@ -2778,7 +2787,7 @@ export const commands = {
 	themeCardDrawn: (at: {
 	plane: PlaneId,
 	workspace: string | null,
-} | null, theme: string, from: string | null, appearance: string | null, light: boolean, moreContrast: boolean) => typedError<{
+} | null, theme: string, from: string | null, appearance: string | null, light: boolean, moreContrast: boolean, person: string | null) => typedError<{
 	/**
 	 *  The theme to draw; `null` keeps the one the window draws (an extension theme that is not
 	 *  JSON at all, which nothing picked).
@@ -2819,7 +2828,12 @@ export const commands = {
 	 *  way. `None` when no chat there has one, or the theme as kept was asked for.
 	 */
 	draft: WindowDraft | null,
-} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast })),
+	/**
+	 *  What drawing the person's own colours over this theme left out (#2925): each colour that
+	 *  would put a pair under its floor here, said once. Empty when none was.
+	 */
+	mine: string[],
+} | null, string>(__TAURI_INVOKE("theme_card_drawn", { at, theme, from, appearance, light, moreContrast, person })),
 	/**
 	 *  **The person's machine default** (#2331, level 5): `theme` and `appearance` as a pick names
 	 *  them, and `from`, the level of the theme folder it picks (#2516), kept beside `machine.json`
@@ -4990,6 +5004,13 @@ export type ChosenInstruction = {
 	text: string,
 };
 
+/**  What came of a clash. */
+export type ClashOutcome = 
+/**  Both copies load. */
+"both-load" | 
+/**  The repo's narrower copy is the one the chat gets; the plane's is left out. */
+"repo-wins";
+
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
 export type CloseHanded = {
 	plane: PlaneId,
@@ -6842,6 +6863,9 @@ export type HarnessGlance = {
 	cannot_type: string | null,
 };
 
+/**  A harness, as the window and the core name one to each other: a profile's `kind`. */
+export type HarnessKind = "claude" | "opencode" | "codex";
+
 /**  One plugin, in one project. */
 export type HarnessPlugin = {
 	/**  The harness's own id for it. */
@@ -6877,6 +6901,11 @@ export type HarnessPlugins = {
 	 *  a project's choice to the chats it starts.
 	 */
 	unsupported: string | null,
+	/**
+	 *  "<harness> is handed a plugin only to turn it off — <why>" (SK-6, #2769), where a chat
+	 *  can be handed a plugin turned off and not one turned on: Codex's.
+	 */
+	only_off: string | null,
 	/**
 	 *  Where charter read what it has installed: the file or directory, as this app's own
 	 *  environment names it. A profile that points the harness elsewhere is listed against its
@@ -7207,7 +7236,9 @@ export type LeftOut = {
 /**  The level a skill comes from, as the studio draws it. */
 export type Level = "built-in" | "project" | "workspace" | "persona" | 
 /**  A harness skill: the harness's own, which purlis never hands over. */
-"installed";
+"installed" | 
+/**  A repo's own, in a clone (SK-6). */
+"repo";
 
 /**  A level the file says that waits for your Confirm. */
 export type LevelWaiting = {
@@ -7983,6 +8014,15 @@ export type OwnBranch = {
 	left: LeftBranch | null,
 };
 
+/**  Whose a skill from outside the plane is. */
+export type Owner = 
+/**  The person's own. */
+{ kind: "you" } | 
+/**  A plugin's, by its name. */
+{ kind: "plugin"; name: string } | 
+/**  A repo's, by its clone's name. */
+{ kind: "repo"; name: string };
+
 /**  One owner in the picker. */
 export type OwnerRow = {
 	/**  The login or the group's full path: what the creation is asked for. */
@@ -8201,6 +8241,18 @@ export type PersonInForce = {
 	 *  wrote it.
 	 */
 	fonts: { [key in string]: string },
+	/**  `system` or `reduced` (#2925): `reduced` turns every motion off, whatever the system says. */
+	motion: string,
+	/**
+	 *  `standard` or `more` (#2925): `more` draws a theme's high-contrast appearance and raises
+	 *  the floors, which the engine does to every theme it answers the window with.
+	 */
+	contrast: string,
+	/**
+	 *  The person's colour for each token they set (#2925), as the engine read it: what Settings
+	 *  shows. The engine draws them over each theme, held to its floors.
+	 */
+	colours: { [key in string]: string },
 	complaints: string[],
 };
 
@@ -8732,6 +8784,11 @@ export type PlaneUpdated = {
 	 */
 	skills: boolean,
 };
+
+/**  What the project has a harness's plugin at. */
+export type PluginState = "on" | "off" | 
+/**  No layer names it: the harness decides, from its own settings. */
+"not-set";
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
 export type PoolAdding = {
@@ -10507,6 +10564,13 @@ export type SkillLevel = {
 	local: boolean,
 };
 
+/**  How a harness can leave one of its own skills out of a chat. */
+export type SkillSwitch = 
+/**  On its own: the studio draws a switch. */
+{ kind: "alone" } | 
+/**  Not on its own, and why, which the studio says in place of a switch. */
+{ kind: "not"; why: string };
+
 /**  One template, as the New skill form offers it. */
 export type SkillTemplate = {
 	id: SkillTemplateId,
@@ -10731,6 +10795,43 @@ export type Studio = {
 	/**  Every level a skill can be made at or moved to, with its words (#2770). */
 	levels: StudioLevel[],
 	skills: StudioSkill[],
+	/**  Each harness, with its plugins and its own skills (SK-6). */
+	harnesses: StudioHarness[],
+	/**  Every skill from outside the plane that has the name of a skill a chat gets, by name. */
+	clashes: StudioClash[],
+};
+
+/**
+ *  A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
+ *  load, so the studio marks purlis's copy.
+ */
+export type StudioClash = {
+	name: string,
+	/**  The level of the plane's copy, and whether it is local. */
+	level: Level,
+	local: boolean,
+	/**  The harness that loads the other copy, as a person reads its name. */
+	harness: string,
+	/**  The other copy: a harness's or a repo's, and whose. */
+	outside: Level,
+	owner: Owner,
+	outcome: ClashOutcome,
+};
+
+/**  One harness in the studio (SK-6): its plugins and the skills it finds itself. */
+export type StudioHarness = {
+	/**  Which harness it is, which a switch names. */
+	harness: HarnessKind,
+	title: string,
+	/**  Why its plugins cannot be chosen for one chat, where they cannot: no plugin switch. */
+	unsupported: string | null,
+	/**  Why a plugin can only be turned off, where that is all it can be. */
+	only_off: string | null,
+	/**  Why its own record of what it installed could not be read, if it could not. */
+	trouble: string | null,
+	plugins: StudioPlugin[],
+	/**  The skills it finds itself, read only, each by the name it knows it by. */
+	skills: StudioSkill[],
 };
 
 /**  A level a skill can be moved to or made at, and its words. */
@@ -10738,6 +10839,20 @@ export type StudioLevel = {
 	level: SkillLevel,
 	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
 	label: string,
+};
+
+/**  One of a harness's plugins in the studio (SK-6). */
+export type StudioPlugin = {
+	/**  The harness's own id for it, which the switch names. */
+	id: string,
+	name: string,
+	/**  Where purlis found it installed; empty where this machine has not installed it. */
+	origin: string,
+	installed: boolean,
+	/**  What the project has it at, in the chats the studio shows. */
+	state: PluginState,
+	/**  Why purlis fixes it whatever the project says, or `None`: no switch is drawn for it. */
+	pinned: string | null,
 };
 
 /**
@@ -10817,7 +10932,24 @@ export type StudioSkill = {
 	 *  machine for, or `None`.
 	 */
 	unchecked: string | null,
+	/**
+	 *  Whose a skill from outside the plane is: "you", a plugin's, a repo's. `None` for the
+	 *  plane's levels and the built-in skills (SK-6).
+	 */
+	owner: Owner | null,
+	/**
+	 *  How a skill from outside the plane's harness can leave it out. `None` for the plane's
+	 *  levels and the built-in skills, whose switches are their own.
+	 */
+	switch: SkillSwitch | null,
 };
+
+/**
+ *  What the studio's switch turns on or off for a harness: the core's `Switched`, spelled for
+ *  the window. purlis-core keeps no UI typing crate (CLAUDE.md), so the window's copy of the type
+ *  lives here and turns into the core's in one place.
+ */
+export type StudioSwitched = "plugin" | "skill";
 
 /**  What one subject is offered. */
 export type SubjectCurations = {
@@ -11144,6 +11276,11 @@ export type ThemeInForce = {
 	 *  way. `None` when no chat there has one, or the theme as kept was asked for.
 	 */
 	draft: WindowDraft | null,
+	/**
+	 *  What drawing the person's own colours over this theme left out (#2925): each colour that
+	 *  would put a pair under its floor here, said once. Empty when none was.
+	 */
+	mine: string[],
 };
 
 /**  One theme a project may pick, as the Theme select lists it. */

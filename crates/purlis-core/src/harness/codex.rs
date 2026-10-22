@@ -31,6 +31,36 @@ fn listed(kit: Kit<'_>) -> Vec<(String, String)> {
     env
 }
 
+/// The `-c` flags that hand a Codex chat the plugins and skills the project turned off: one
+/// `plugins."<id>".enabled=false` per plugin, then one `skills.config` holding every skill.
+/// Each key and name is quoted as TOML quotes it, so no id can end the value early.
+fn chosen_flags(plugins: &crate::harness_plugin::Chosen, skills_off: &[String]) -> Vec<String> {
+    let mut args = Vec::new();
+    for (id, on) in &plugins.plugins {
+        if !on {
+            args.push("-c".to_owned());
+            args.push(format!(
+                "plugins.{}.enabled=false",
+                crate::extension::project::toml_key(id)
+            ));
+        }
+    }
+    if !skills_off.is_empty() {
+        let entries: Vec<String> = skills_off
+            .iter()
+            .map(|name| {
+                format!(
+                    "{{name={},enabled=false}}",
+                    toml::Value::String(name.clone())
+                )
+            })
+            .collect();
+        args.push("-c".to_owned());
+        args.push(format!("skills.config=[{}]", entries.join(",")));
+    }
+    args
+}
+
 impl HarnessAdapter for Codex {
     fn harness(&self) -> Harness {
         Harness::Codex
@@ -91,9 +121,14 @@ impl HarnessAdapter for Codex {
     /// Python charter's Codex plugin, and now rides on the same `-c` flags as the state
     /// hooks, from the same registry ([`crate::plugin::CODEX`] out of [`crate::hookreg`]).
     ///
-    /// And no plugin: Codex 0.147.0 takes a plugin's `enabled` from its `config.toml`
-    /// alone and ignores the same key given with `-c` (measured, charter-app#274), so
-    /// `plugins` is empty for it and nothing here would carry it.
+    /// **A plugin the project turned off, by `-c`** (SK-6, #2769): `-c
+    /// 'plugins."<id>".enabled=false'` each, which codex-cli 0.163.0 takes for one session
+    /// (measured, [`crate::harness_plugin::CODEX`]); 0.147.0 did not. Only off: Codex takes a
+    /// plugin turned on that way as nothing, so `plugins` holds no `true` for it
+    /// ([`crate::harness_plugin::chosen`]). **And a skill the project turned off**, by one `-c
+    /// 'skills.config=[{name="<name>",enabled=false},…]'`, which reaches a plugin's skill
+    /// (`<plugin>:<skill>`) too, and is added to the entries of the operator's own
+    /// `config.toml` rather than replacing them (both measured on 0.163.0).
     ///
     /// Its skills ride on the `SessionStart` hook above: Codex can take no skills
     /// directory for one session ([`Harness::skills`]), so the chat is started with the
@@ -110,11 +145,15 @@ impl HarnessAdapter for Codex {
         &self,
         kit: Kit<'_>,
         _cwd: Option<&std::path::Path>,
-        _plugins: &crate::harness_plugin::Chosen,
+        plugins: &crate::harness_plugin::Chosen,
         _sandbox: Sandbox<'_>,
     ) -> StateHooks {
         let mut args = session_flags(kit.binary);
         args.extend(permission_flag(kit.binary));
+        args.extend(chosen_flags(
+            plugins,
+            &crate::skills::skills_off_for(kit, Harness::Codex, plugins),
+        ));
         // charter's MCP server (HP-7), for this session beside the operator's own servers.
         args.extend(["-c".to_owned(), crate::chattools::codex_flag(kit.binary)]);
         StateHooks::ThisSessionOnly {

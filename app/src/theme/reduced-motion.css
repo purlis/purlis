@@ -1,0 +1,24 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The one global switch for reduced motion** (R152, #2925). When the system asks for less
+   motion, or the person turned motion off in purlis's own settings, `theme.ts` writes
+   `data-motion="reduced"` on the root (`motion.ts`, `MOTION_ATTRIBUTE`), and every duration is
+   already `0ms`. This sheet stops what a token does not reach: no element transitions, and every
+   animation, keyframe or not, plays its whole run in no time, once, so it is drawn in its
+   resting state and a component that waits for its end still hears it.
+
+   It is in the first layer, `theme` (`styles.css`): an important declaration in an earlier layer
+   wins over one in every later layer, so no view, control, part or utility can turn motion back
+   on. It holds no colour and no length, and it is the only rule that reads the attribute. */
+
+:root[data-motion="reduced"],
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}

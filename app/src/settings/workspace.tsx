@@ -29,7 +29,7 @@ import { asked, fileSetting, useSettingsDriver, type Driven, type Wrote } from "
 import type { FileSetting, LiveSetting, SettingsGroup } from "./groups";
 import { THEME_GROUP, themeRows } from "./themeGallery";
 import { workspaceDispatchGroup } from "./dispatch";
-import { workspaceSkillsGroup } from "./skillsSummary";
+import { pluginsSummaryGroup, workspaceSkillsGroup } from "./skillsSummary";
 import { Button } from "../ui/button/Button";
 
 /**
@@ -213,16 +213,19 @@ export function workspaceGroups(
     },
     // Its chats' skills (#2767): a summary and the way into the Skill studio, behind its flag.
     ...(skillStudio ? [workspaceSkillsGroup(read.plane, read.workspace)] : []),
-    {
-      id: "workspace.plugins",
-      label: "Plugins",
-      help: "Which harness plugins the chats purlis starts in this workspace have on.",
-      settings: fromFile(
-        "workspace.plugins",
-        plugins.flatMap((one) => one.controls),
-      ),
-      notes: plugins.flatMap((one) => one.notes),
-    },
+    // Once the Skill studio is on, every plugin choice is the studio's (SK-6, decision 35).
+    skillStudio
+      ? pluginsSummaryGroup("workspace.plugins", read.harnesses, read.workspace)
+      : {
+          id: "workspace.plugins",
+          label: "Plugins",
+          help: "Which harness plugins the chats purlis starts in this workspace have on.",
+          settings: fromFile(
+            "workspace.plugins",
+            plugins.flatMap((one) => one.controls),
+          ),
+          notes: plugins.flatMap((one) => one.notes),
+        },
   ];
 }
 

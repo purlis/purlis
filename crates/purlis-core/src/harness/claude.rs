@@ -73,6 +73,14 @@ impl HarnessAdapter for ClaudeCode {
         };
         // Read for a sandboxed chat alone: one that is not keeps loading what it always did.
         let screened = sandbox.map(|_| project::screen(cwd));
+        // The skills it can be handed as turned off: never a built-in skill's, nor a plugin's
+        // ([`crate::skills::skills_off_for`]).
+        let handed = crate::harness_plugin::Chosen {
+            plugins: plugins.plugins.clone(),
+            skills_off: crate::skills::skills_off_for(kit, Harness::ClaudeCode, plugins)
+                .into_iter()
+                .collect(),
+        };
         let mut args = words(["--plugin-dir", &plugin.display().to_string()]);
         // The plane's skills, as a plugin of their own (ADR 0063 as amended 2026-10-20).
         if let Some(linked) = crate::skills::linked(&skills, kit) {
@@ -97,7 +105,7 @@ impl HarnessAdapter for ClaudeCode {
                         kit.binary,
                         cwd,
                         crate::footerclaim::status_line(cwd).free(),
-                        plugins,
+                        &handed,
                         sandbox,
                         &denied_tools(kit),
                         screened.as_ref(),
@@ -174,7 +182,7 @@ impl HarnessAdapter for ClaudeCode {
     /// 2026-10-20): a built-in one as purlis's plugin's, `purlis:<name>`, and one of the plane's
     /// as the folder of links' plugin's, `skills:<name>` ([`crate::skills::LINKED_PLUGIN`]). The
     /// namespaced name is the one that cannot be taken by a person's own skill of that name.
-    /// A harness skill is the person's own, loaded by Claude Code by its own name.
+    /// A harness or repo skill is loaded by Claude Code itself, by its own name.
     fn skill_name(&self, name: &str, origin: crate::skills::Origin) -> String {
         use crate::skills::Origin;
         match origin {
@@ -182,7 +190,7 @@ impl HarnessAdapter for ClaudeCode {
             Origin::Project | Origin::Workspace | Origin::Persona => {
                 format!("{}:{name}", crate::skills::LINKED_PLUGIN)
             }
-            Origin::Harness => name.to_owned(),
+            Origin::Harness | Origin::Repo => name.to_owned(),
         }
     }
 
@@ -384,6 +392,7 @@ fn settings(
     // session `enabledPlugins` wins over the project's and the user's for the keys it names,
     // and leaves every other plugin to them.
     let mut enabled: serde_json::Map<String, serde_json::Value> = plugins
+        .plugins
         .iter()
         .map(|(id, on)| (id.clone(), (*on).into()))
         .collect();
@@ -402,6 +411,23 @@ fn settings(
         "enabledPlugins".to_owned(),
         serde_json::Value::Object(enabled),
     );
+    // **The person's own skills the project turned off** (SK-6, #2769): `skillOverrides`, one
+    // name to `"off"` each, for this session alone. Measured on 2.1.304: `--settings
+    // '{"skillOverrides":{"langfuse":"off"}}'` took `langfuse` out of the init event's skills.
+    // It does not reach a plugin's skill (`<plugin>:<skill>`), which goes only with its plugin,
+    // so none is written, and nor is a built-in skill's name ([`crate::skills::skills_off_for`]).
+    // Not written at all where none is off, so the operator's own overrides stand.
+    let overrides: serde_json::Map<String, serde_json::Value> = plugins
+        .skills_off
+        .iter()
+        .map(|name| (name.clone(), "off".into()))
+        .collect();
+    if !overrides.is_empty() {
+        settings.insert(
+            "skillOverrides".to_owned(),
+            serde_json::Value::Object(overrides),
+        );
+    }
     // **Only where nothing else fills it.** The key is one value and the flag is the last
     // writer, so arming it where the operator has their own would stop theirs running
     // ([`crate::footerclaim`], measured on 2.1.280). Where charter does not arm it, the chat

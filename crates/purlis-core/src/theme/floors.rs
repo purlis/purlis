@@ -220,6 +220,34 @@ impl Held {
     }
 }
 
+/// **Two holds' answers as one** (#2925): what holding the floors put right over a theme, and
+/// then over the person's layer drawn on it, each floor and token named once.
+pub(super) fn joined(first: Option<Held>, then: Option<Held>) -> Option<Held> {
+    match (first, then) {
+        (None, then) => then,
+        (first, None) => first,
+        (Some(mut first), Some(then)) => {
+            for floor in then.floors {
+                if !first.floors.contains(&floor) {
+                    first.floors.push(floor);
+                }
+            }
+            for token in then.tokens {
+                if !first.tokens.contains(&token) {
+                    first.tokens.push(token);
+                }
+            }
+            for token in then.untinted {
+                if !first.untinted.contains(&token) {
+                    first.untinted.push(token);
+                }
+            }
+            first.floors.sort();
+            Some(first)
+        }
+    }
+}
+
 /// One failure: the floor, whether only a workspace's tint broke it, and the tokens it is
 /// between, a wash's ground included.
 struct Failure {
@@ -288,9 +316,11 @@ thread_local! {
 
 fn failures(theme: &ResolvedTheme, chromas: &mut Chromas) -> Vec<Failure> {
     let mut found = Vec::new();
+    // With more contrast asked for, every consent pair is held at its raised floor (#2925), in
+    // a tint as in the theme as written.
     let failing = |drawn: &ResolvedTheme, tinted: bool, (floor, pair): (Floor, &Pair)| {
         ratio(drawn, pair)
-            .is_some_and(|ratio| ratio < pair.floor)
+            .is_some_and(|ratio| ratio < drawn.least.floor(pair.floor))
             .then(|| Failure {
                 floor,
                 tinted,
@@ -446,7 +476,15 @@ pub(super) fn allow_apart(theme: &ResolvedTheme) -> f64 {
 /// Purlis Classic's values of its appearance for the tokens of the pairs that fail, and what was
 /// put right.
 pub(super) fn hold(theme: &ResolvedTheme) -> (ResolvedTheme, Option<Held>) {
-    let ours = built_in_for(theme.appearance);
+    // With more contrast asked for, purlis's own values are its own raised (#2925), so a token
+    // put back is put back at the raised floors.
+    let raised;
+    let ours = if theme.least == super::Least::More {
+        raised = super::least::raise(built_in_for(theme.appearance));
+        &raised
+    } else {
+        built_in_for(theme.appearance)
+    };
     let mut drawn = theme.clone();
     let mut floors = BTreeSet::new();
     let mut taken: BTreeSet<&'static str> = BTreeSet::new();

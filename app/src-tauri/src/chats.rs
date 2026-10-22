@@ -2859,7 +2859,7 @@ impl Chats {
             launch.how,
             // A chat on no profile has no project choice to carry: it runs as it always did,
             // with the pins alone.
-            &std::collections::BTreeMap::new(),
+            &purlis_core::harness_plugin::Chosen::new(),
             sandbox.as_ref(),
             unsandboxed.as_ref(),
             size,
