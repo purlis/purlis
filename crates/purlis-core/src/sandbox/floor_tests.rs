@@ -609,6 +609,44 @@ fn podmans_folders_are_never_written_by_a_chat() {
     );
 }
 
+/// Where `XDG_RUNTIME_DIR` is unset, as in an ssh session or one without systemd, Podman keeps
+/// its run state in `/tmp` by the person's user id, and those folders are held from every
+/// chat's writes instead (#2896).
+#[test]
+fn podmans_run_state_is_held_where_no_runtime_folder_is_named() {
+    let (_dir, root) = project();
+    let uid = rustix::process::getuid().as_raw();
+    let held = |env: &[(&str, &str)]| -> Vec<PathBuf> {
+        let machine = Machine {
+            env: crate::secrets::Env::of(env),
+            home: Some(PathBuf::from("/home/op")),
+            os: Os::Linux,
+        };
+        Denied::of(&root, &machine)
+            .paths
+            .into_iter()
+            .filter(|denial| denial.access == Access::Write)
+            .map(|denial| denial.path)
+            .collect()
+    };
+    let fallback = [
+        PathBuf::from(format!("/tmp/podman-run-{uid}")),
+        PathBuf::from(format!("/tmp/storage-run-{uid}")),
+        PathBuf::from(format!("/tmp/containers-user-{uid}")),
+    ];
+    let without = held(&[]);
+    for one in &fallback {
+        assert!(without.contains(one), "{} in {without:?}", one.display());
+    }
+    // With a runtime folder named, its own are held as before, and not the fallback.
+    let with = held(&[("XDG_RUNTIME_DIR", "/run/user/1000")]);
+    assert!(with.contains(&PathBuf::from("/run/user/1000/containers")));
+    assert!(with.contains(&PathBuf::from("/run/user/1000/libpod")));
+    for one in &fallback {
+        assert!(!with.contains(one), "{}", one.display());
+    }
+}
+
 /// The floor holds what reaches outside it (#2071 review): the profile applied for real, where
 /// this machine can apply one.
 #[cfg(target_os = "macos")]
