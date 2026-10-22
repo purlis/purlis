@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792677306751,
+  "lastUpdate": 1792681139295,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21672,6 +21672,48 @@ window.BENCHMARK_DATA = {
             "value": 104.44132150000002,
             "unit": "ms",
             "extra": "median of 5 runs: 103.640, 104.289, 104.441, 104.856, 105.651 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "35d7a225c9faa5f071ea4484870646be447b9179",
+          "message": "Runners: a workspace runs its chats on a pool's runner (#2046, 3/4) (#2843)\n\n* Runners: a workspace runs its chats on a pool's runner (#2046, 3/4)\n\n- RoutedSessions: each harness chat of a workspace set to a pool starts on\n  the pool's runner, by its names, over a link the desktop's host relays\n  to it; every command about it follows it there. Shells run here. A pool\n  this machine does not keep starts nothing, in words.\n- This machine's host deals every number, a runner chat's included, and\n  keeps the project's board for every chat.\n- The runner's branches come back as a runner chat ends and on the\n  window's focus (at most once a minute); Changes lists them per repo\n  with the commits not here yet.\n- A workspace's settings offer Runs on once a pool is kept; it writes\n  chatsRunOn on this machine alone, to a pool kept with its runner.\n- pools::runs_on replaces the start backstop.\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a project reaches a real pool's runner through the window\n\nThe window-level end-to-end, run when DOCKER_POOL_TEST_IMAGE names a\nrunner image of this build: a chat started in a workspace set to the pool\nis routed over a link the desktop's host relays through docker exec, and\nthe runner holds the project in <data>/projects/<id> with its uncommitted\nwork and none of this machine's state. A repository whose .git names its\ngit directory counts as one, for purlis's git runner to judge.\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: the setting keeps its lane, the panel reads the store outside its test seam\n\n- set_chats_run_on is in the pins lane and the write-sites table: it\n  writes this machine's store.\n- The repo panel reads which pool a workspace runs on in repo_states, so\n  its tests read no machine store.\n- A runner branch's row says its commits are not on this machine.\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: each host is heard for its own chats alone\n\n- Each pool's runner is heard through a hearing of its own (Relayed::for_a_pool), beside\n  this machine's host's: its links, secret execs, held asks and programs are its own, so a\n  desktop chat's secret exec runs on while a runner chat runs.\n- A hook line is heard only from the host its chat runs on: a pool's link never speaks for\n  a chat of this machine or another pool, and this machine's link never for a runner's\n  (Heard::chat, Heard::refuse).\n- A runner chat's pool is recorded before its start, kept only when the runner starts it\n  under the number dealt, and forgotten where the start fails.\n- A chat left running is asked of this machine's host and of the one pool its workspace\n  runs on (SessionHost::left_running_in).\n- A chat's end fetches its pool's branches once for chats that end together, one fetch at\n  a time, beside the focus fetch.\n- Changes draws a runner's branch and pool names inertly.\n- runnercode is unix-only again, as hostedsessions is.\n- Tests: hearing per link, a pool's line naming a desktop chat, the mapping before the\n  start, a pool asked only for its workspace's chats, coalesced fetches, an untracked\n  .env, and an inert branch name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Make the window's real-Docker test's Docker as main's Docker is made\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T18:57:35+04:00",
+          "tree_id": "f07c7961cdf2dab97e5169c47f9138e018daec7e",
+          "url": "https://github.com/purlis/purlis/commit/35d7a225c9faa5f071ea4484870646be447b9179"
+        },
+        "date": 1792681137034,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5389124999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.524, 0.526, 0.539, 0.542, 0.559 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0178715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.802, 16.969, 17.018, 17.060, 17.282 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.42887400000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.448, 103.865, 104.429, 105.035, 105.292 ms"
           }
         ]
       }
