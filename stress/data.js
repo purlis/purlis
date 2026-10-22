@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792706340789,
+  "lastUpdate": 1792709338341,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5782,6 +5782,42 @@ window.BENCHMARK_DATA = {
             "value": 372.3,
             "unit": "MB",
             "extra": "median of 6 samples: 357.6, 366.2, 379.6, 378.4, 379.4, 221.6 MB; window 169.5 MB, session host 202.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ba21b813dccb84767db04914d3cb6e2fdea082d3",
+          "message": "SK-21: move today's skills into the Skill studio without breaking anything (#2784) (#3045)\n\n* Skills: move a project's .claude/skills into the Skill studio in one commit (project-skills, #2784)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: format the project-skills migration and its tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: an unresolved persona reference is found by how its skills: list writes it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: the migration's tests commit with an identity, and its words name no command\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: the move follows the review of #3045\n\nA moved project's skills reach every chat whatever the flag says (the dispatcher's ruling).\nThe move checks every folder, every route, persona and clone chat, refuses a detached HEAD,\nan operation under way or a folder that is not the project's root, rolls the index back when\nthe commit fails, works through folder handles, rewrites only references, and speaks the\nwindow's words. The shared commit helpers move to fix/commit.rs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T01:49:10+04:00",
+          "tree_id": "8f2116d7fb8e3214edf1d23ae799ea0c00c65377",
+          "url": "https://github.com/purlis/purlis/commit/ba21b813dccb84767db04914d3cb6e2fdea082d3"
+        },
+        "date": 1792709335987,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 970,
+            "unit": "MB",
+            "extra": "median of 3 samples: 767, 970, 1074 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 389.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 423.5, 455.7, 395, 383.1, 383.3, 268 MB; window 201.4 MB, session host 187.8 MB"
           }
         ]
       }
