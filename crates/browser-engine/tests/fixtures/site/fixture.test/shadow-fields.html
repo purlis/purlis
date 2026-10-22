@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Fields in shadow roots</title></head>
+<body>
+  <x-field id="open" data-mode="open" data-label="Open note"></x-field>
+  <x-field id="closed" data-mode="closed" data-label="Closed note"></x-field>
+  <div id="sent"></div>
+  <p id="count">Sent: 0</p>
+  <script>
+    // Each field turns every letter typed into the next one (as an input method or an
+    // autocorrect may change what was typed), and on Enter posts what it holds outside its
+    // host and empties itself. The second field takes the focus once the first has posted.
+    const inputs = {};
+    let sent = 0;
+    customElements.define('x-field', class extends HTMLElement {
+      connectedCallback() {
+        const root = this.attachShadow({ mode: this.dataset.mode });
+        const input = document.createElement('input');
+        input.setAttribute('aria-label', this.dataset.label);
+        root.appendChild(input);
+        inputs[this.id] = input;
+        input.addEventListener('input', () => {
+          input.value = [...input.value].map((c) =>
+            /[a-y]/.test(c) ? String.fromCharCode(c.charCodeAt(0) + 1) : c).join('');
+        });
+        input.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return;
+          const line = document.createElement('p');
+          line.textContent = 'Posted ' + input.value;
+          document.getElementById('sent').appendChild(line);
+          input.value = '';
+          sent += 1;
+          document.getElementById('count').textContent = 'Sent: ' + sent;
+          if (this.id === 'open') inputs.closed.focus();
+        });
+      }
+    });
+    inputs.open.focus();
+  </script>
+</body></html>
