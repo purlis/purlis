@@ -87,8 +87,9 @@ impl Screencast {
     }
 
     /// A `Page.screencastFrame` event, from the event reader: handed over while shown, with
-    /// `aim`, what it showed (#2014), and acknowledged on the screencast's thread.
-    pub(crate) fn frame(&self, params: &Value, session: Option<&str>, aim: Aim) {
+    /// `aim`, what it showed (#2014), and `address`, the engine's record of its page's document
+    /// (#2300), and acknowledged on the screencast's thread.
+    pub(crate) fn frame(&self, params: &Value, session: Option<&str>, aim: Aim, address: String) {
         let Some(sink) = lock(&self.sink).clone() else {
             return;
         };
@@ -100,7 +101,7 @@ impl Screencast {
             return;
         };
         if let Ok(jpeg) = base64::engine::general_purpose::STANDARD.decode(data) {
-            sink(Painted { aim, jpeg });
+            sink(Painted { aim, address, jpeg });
         }
         self.ask(Ask::Frame {
             session: session.to_owned(),
