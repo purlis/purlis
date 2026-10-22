@@ -282,10 +282,10 @@ const PARTS: [RegExp, string][] = [
  *  row. */
 const NATIVE: Record<string, string[]> = {
   button: ["ui-row", "ui-tree-row", "ui-segmented-item", "ui-menu-item"],
-  // A field in a dialog's settings row is the settings set's own (`.ui-field`) until the set
-  // moves onto the primitives, so a dialog's fields never differ from one another.
-  input: ["ui-input", "ui-field"],
-  textarea: ["ui-input", "ui-field"],
+  // A box is the field family's (#2905), in a dialog's settings row too, so a native box left
+  // inside one is never right; a select in a settings row is the set's own (`.ui-field`).
+  input: [],
+  textarea: [],
   select: ["ui-select", "ui-field"],
 };
 

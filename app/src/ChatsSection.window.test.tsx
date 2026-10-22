@@ -1962,18 +1962,21 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     );
     expect(components(tree, "--ui-tree-step")).toBe("var(--space-5)");
     expect(components(row(tree, "steward 1"), "--ui-row-gap")).toBe("var(--space-3)");
-    // The filter: the shared field with a leading icon (#1856), handed the names' place for its
-    // text, after its hairline, and the marks' column and size for its glass.
+    // The filter: the field family's box with a leading glass (#1856, #2905), handed the marks'
+    // column and size for its glass, and the gap that starts its text at the names, past its
+    // hairline.
     const box = within(view).getByRole("searchbox");
-    expect(box).toHaveClass("ui-input");
     const holder = box.parentElement as Element;
-    expect(holder).toHaveClass("ui-input-lead");
-    expect(drawnWith(holder, "--ui-input-lead-text")).toBe("calc(var(--chats-name-at) - 1px)");
-    expect(drawnWith(holder, "--ui-input-lead-at")).toBe("var(--space-5)");
-    expect(drawnWith(holder, "--ui-input-lead-size")).toBe("var(--chats-mark)");
+    expect(holder).toHaveAttribute("data-scope", "text-input");
+    const field = holder.parentElement as Element;
+    expect(field).toHaveClass("chats-filter-box");
+    expect(drawnWith(field, "--text-input-start")).toBe("var(--space-5)");
+    expect(drawnWith(field, "--text-input-icon")).toBe("var(--chats-mark)");
+    expect(drawnWith(field, "--text-input-gap")).toBe(
+      "calc(var(--chats-name-at) - 1px - var(--space-5) - var(--chats-mark))",
+    );
     const glass = view.querySelector(".chats-filter-glass") as Element;
-    expect(glass).toHaveClass("ui-input-lead-icon");
-    expect(glass.getAttribute("aria-hidden")).toBe("true");
+    expect(glass.closest('[data-part="icon"]')).toHaveAttribute("aria-hidden", "true");
   });
 });
 

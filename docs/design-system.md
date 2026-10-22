@@ -1493,7 +1493,9 @@ A theme that names no parts writes nothing there, so the family's own stylesheet
 `ui/button/button.css` is the family default the engine measures against, held to it by
 `parts_tests.rs`. A size or a border width a theme sets is the family's md size and never
 reaches a button at sm or lg or in a wrapping row, and a variant's rule reaches only a button of
-that variant (#2904). `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
+that variant (#2904). `ui/field/field.css` is the field families' default (`field`,
+`text-input`, `textarea`, #2905), held to it the same way; a family with no variants is keyed on
+its part alone. `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
 
 ### The control baseline
 
@@ -1581,8 +1583,8 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
 - **`controls.guard.test.ts`** fails on a control that does not wear its class
   (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
   `asChild` (a row, segment or menu row; a button of the button family is `Button`, never a
-  native `<button>`), an `<input>` or `<textarea>`
-  (`ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
+  native `<button>`), an `<input>` or `<textarea>` (none: a box is the field family's
+  `TextField` or `TextArea`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
   trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
   (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
   `block-size` or `min-block-size` set on a control is `--size-control`, and one set on a strip

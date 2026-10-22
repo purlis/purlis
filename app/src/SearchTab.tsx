@@ -58,6 +58,7 @@ import { placeName } from "./pieceViews";
 import { Select } from "./primitives/Select";
 import type { ViewRef } from "./tabs";
 import { Button, ToggleButton } from "./ui/button/Button";
+import { TextField } from "./ui/field/Field";
 
 /** How long the query is still before it is asked. */
 const SETTLE = 250;
@@ -162,26 +163,23 @@ function SearchBody({
   return (
     <div className="search-tab">
       <header className="search-head">
-        <span className="search-query-box ui-input-lead">
-          <Search className="ui-input-lead-icon" aria-hidden="true" />
-          <input
-            ref={box}
-            type="search"
-            role="searchbox"
-            className="ui-input search-query"
-            aria-label="Search the files"
-            placeholder="Search the files"
-            spellCheck={false}
-            value={draft}
-            onChange={(e) => onDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowDown" || e.key === "Enter") {
-                e.preventDefault();
-                list.current?.focus();
-              }
-            }}
-          />
-        </span>
+        <TextField
+          inputRef={box}
+          className="search-query-box"
+          type="search"
+          icon={<Search aria-hidden="true" />}
+          keepsFocus="search-query"
+          aria-label="Search the files"
+          placeholder="Search the files"
+          value={draft}
+          onChange={onDraft}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown" || e.key === "Enter") {
+              e.preventDefault();
+              list.current?.focus();
+            }
+          }}
+        />
         <Switch on={ask.matching.matchCase} label="Match case" onPress={() => toggle("matchCase")}>
           <CaseSensitive aria-hidden="true" />
         </Switch>

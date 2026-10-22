@@ -230,7 +230,7 @@ describe("the Allowed list", () => {
     // The set's Field (#626): the row's control, which the row's label names by its id.
     const box = screen.getByRole("textbox");
     expect(box).toHaveAttribute("id", `g${FOLDERS}`);
-    expect(box).toHaveClass("ui-field");
+    expect(box.closest('[data-scope="field"]')).toHaveClass("ui-setting-box");
     expect(box).toHaveAttribute("placeholder", "/Users/you/tools/cache");
     await userEvent.type(box, "/opt/more");
     await userEvent.click(screen.getByRole("button", { name: "Add folder" }));

@@ -9,6 +9,7 @@ import { askSettingsLink, referrerElsewhere } from "./links";
 import { OutLink } from "./OutLink";
 import type { Collection, CollectionEntry, EntryField, Setting } from "./groups";
 import { Button } from "../ui/button/Button";
+import { Form } from "../ui/field/Field";
 
 /**
  * **A collection, drawn** (ST-3, V91e–g): each entry a heading with its Remove over its own rows,
@@ -506,7 +507,7 @@ function AddForm({
     }
   };
   return (
-    <form
+    <Form
       id={form}
       className="ui-collection-form"
       aria-label={`New ${noun}`}
@@ -560,7 +561,7 @@ function AddForm({
         </Button>
         <Button onPress={close}>Cancel</Button>
       </SettingActions>
-    </form>
+    </Form>
   );
 }
 
@@ -622,7 +623,7 @@ function RenameForm({
     else onDone(to.trim());
   };
   return (
-    <form
+    <Form
       id={form}
       className="ui-collection-form"
       aria-label={`Rename ${entry.label}`}
@@ -657,6 +658,6 @@ function RenameForm({
         )}
         <Button onPress={() => onDone(undefined)}>Cancel</Button>
       </SettingActions>
-    </form>
+    </Form>
   );
 }

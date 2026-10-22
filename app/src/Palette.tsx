@@ -27,6 +27,7 @@ import { SaidLink } from "./SaidLink";
 import { FileIcon } from "./FileIcon";
 import { useFileIcons } from "./projectTheme";
 import { iconFor } from "./theme/icons";
+import { TextField } from "./ui/field/Field";
 
 /**
  * The command palette: every action the window can do, reachable by typing.
@@ -515,16 +516,17 @@ export function Palette({
             theKeyboardIsBack();
           }}
         >
-          <label className="palette-ask" htmlFor="palette-query">
+          <label className="palette-ask" id="palette-ask" htmlFor="palette-query">
             {switcher ? switcherAsk : "Run an action"}
           </label>
-          <input
+          {/* The field family's box; its rows and their keys are the palette's own until the
+              combobox family moves (#2906). */}
+          <TextField
             id="palette-query"
-            ref={box}
-            className="ui-input palette-query"
-            type="text"
+            inputRef={box}
+            className="palette-query"
+            aria-labelledby="palette-ask"
             role="combobox"
-            autoComplete="off"
             aria-expanded="true"
             aria-controls={
               [rows.length > 0 && "palette-rows", fileRows.length > 0 && "palette-files"]
@@ -540,8 +542,8 @@ export function Palette({
                 : "Type to narrow"
             }
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
+            onChange={(to) => {
+              setQuery(to);
               // The aim goes back to `aim` on every keystroke: a row the arrows reached under
               // the last query is not the row that survived this one.
               setAt(undefined);
