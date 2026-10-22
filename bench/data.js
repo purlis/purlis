@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792672448606,
+  "lastUpdate": 1792674194096,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21546,6 +21546,48 @@ window.BENCHMARK_DATA = {
             "value": 101.330089,
             "unit": "ms",
             "extra": "median of 5 runs: 101.164, 101.275, 101.330, 101.511, 102.585 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5183dcd1999a7705415c13743494f5faaced5bac",
+          "message": "Design system doc: the core tokens table says what each token reaches (#3020)\n\n* Design system doc: the core tokens table says what each token reaches\n\nThe core tokens table keeps each token and Purlis Classic's value, and\npoints at themes.md's Geometry section for what each one reaches, in\nplace of a \"for\" column that had drifted from the CSS (#2853).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Design system doc: say which part of the geometry table a test holds\n\nThe core tokens section says geometry_tests.rs holds the table's\ntokens, units, bounds and values, and that the reach words are kept by\nhand; geometry.css points at themes.md's Geometry section for what each\ntoken reaches (#2853 review).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T17:01:48+04:00",
+          "tree_id": "f268b89219592a60df9617ae9da72729ff6e246c",
+          "url": "https://github.com/purlis/purlis/commit/5183dcd1999a7705415c13743494f5faaced5bac"
+        },
+        "date": 1792674191303,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5432945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.531, 0.537, 0.543, 0.545, 0.560 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3561295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.147, 16.302, 16.356, 16.405, 16.512 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5834495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.203, 101.458, 101.583, 102.034, 102.593 ms"
           }
         ]
       }
