@@ -77,7 +77,7 @@ pub(super) const PANEL: Family = Family {
 
 /// **The panel's colours as `app/src/ui/panel/panel.css` draws them**: the base surface, the
 /// window's words, the subtle hairline.
-fn panel_look(_variant: &str, _state: Option<State>) -> Look {
+fn panel_look(_variant: &str, _states: &[State]) -> Look {
     Look {
         fill: "surface.base",
         text: "text.primary",
@@ -134,7 +134,7 @@ pub(super) const PANEL_SECTION: Family = Family {
 
 /// **A section's colours as `panel.css` draws them**: no ground of its own, its title in the
 /// secondary tier.
-fn section_look(_variant: &str, _state: Option<State>) -> Look {
+fn section_look(_variant: &str, _states: &[State]) -> Look {
     Look {
         fill: TRANSPARENT,
         text: "text.secondary",
@@ -208,7 +208,7 @@ pub(super) const EMPTY_STATE: Family = Family {
 
 /// **An empty state's colours as `empty-state.css` draws them**: no ground, its sentence and its
 /// mark in the muted tier (its headline a tier up, which the floors measure as the lower).
-fn empty_look(_variant: &str, _state: Option<State>) -> Look {
+fn empty_look(_variant: &str, _states: &[State]) -> Look {
     Look {
         fill: TRANSPARENT,
         text: "text.muted",
@@ -295,7 +295,7 @@ pub(super) const STATUS_ITEM: Family = Family {
 
 /// **A status item's colours as `app/src/ui/status/status.css` draws them**, at rest and under
 /// the pointer.
-fn status_look(variant: &str, state: Option<State>) -> Look {
+fn status_look(variant: &str, states: &[State]) -> Look {
     let mut look = match variant {
         "pill" => Look {
             fill: TRANSPARENT,
@@ -318,7 +318,9 @@ fn status_look(variant: &str, state: Option<State>) -> Look {
             border: TRANSPARENT,
         },
     };
-    if state == Some(State::Hover) {
+    // Under the pointer, whatever else holds at once (pressed, the keyboard's focus): a status
+    // item draws no look of its own for those.
+    if states.contains(&State::Hover) {
         look.fill = if variant == "accent" {
             "list.selected"
         } else {

@@ -997,8 +997,8 @@ pub(super) fn field_defaults_json() -> Value {
 #[cfg(test)]
 pub(super) fn look_json(family_name: &str, variant: &str) -> Value {
     let family = family(family_name).expect("a family of the manifest");
-    let rest = (family.defaults)(variant, None);
-    let hover = (family.defaults)(variant, Some(State::Hover));
+    let rest = (family.defaults)(variant, &[]);
+    let hover = (family.defaults)(variant, &[State::Hover]);
     json!({ "fill": rest.fill, "text": rest.text, "border": rest.border, "hover": hover.fill })
 }
 
