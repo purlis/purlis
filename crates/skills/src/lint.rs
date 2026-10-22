@@ -303,7 +303,9 @@ fn functions(text: &str) -> Vec<String> {
                 None => line.split_once("()")?.0.trim(),
             };
             (!name.is_empty()
-                && name.chars().all(|c| c.is_ascii_alphanumeric() || "_-".contains(c)))
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "_-".contains(c)))
             .then(|| name.to_owned())
         })
         .collect()
@@ -329,7 +331,10 @@ fn shell_lines(text: &str) -> Vec<String> {
         }
         // A function's head, `name() {`, runs nothing; nor does a `case` arm's pattern.
         if let Some(at) = line.find("()")
-            && line[..at].trim().chars().all(|c| c.is_ascii_alphanumeric() || "_-".contains(c))
+            && line[..at]
+                .trim()
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_-".contains(c))
         {
             line = &line[at + 2..];
         }
@@ -371,14 +376,89 @@ fn shell_lines(text: &str) -> Vec<String> {
 
 /// What the shell runs no program for: its keywords and its builtins.
 const SHELL_OWN: &[&str] = &[
-    "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac",
-    "in", "function", "select", "time", "!", "{", "}", "[[", "]]", "[", "]", "test", "echo",
-    "printf", "cd", "export", "local", "return", "exit", "set", "unset", "shift", "read",
-    "source", ".", "eval", "exec", "trap", "wait", "true", "false", "break", "continue",
-    "declare", "typeset", "readonly", "let", "alias", "unalias", "type", "command", "builtin",
-    "hash", "pwd", "pushd", "popd", "getopts", "umask", "ulimit", "jobs", "fg", "bg", "kill",
-    "shopt", "mapfile", "readarray", "disown", "caller", "complete", "enable", "help", "logout",
-    "times", "dirs", "suspend", "fc", "history", ":", "noglob", "nohup", "sudo",
+    "if",
+    "then",
+    "else",
+    "elif",
+    "fi",
+    "for",
+    "while",
+    "until",
+    "do",
+    "done",
+    "case",
+    "esac",
+    "in",
+    "function",
+    "select",
+    "time",
+    "!",
+    "{",
+    "}",
+    "[[",
+    "]]",
+    "[",
+    "]",
+    "test",
+    "echo",
+    "printf",
+    "cd",
+    "export",
+    "local",
+    "return",
+    "exit",
+    "set",
+    "unset",
+    "shift",
+    "read",
+    "source",
+    ".",
+    "eval",
+    "exec",
+    "trap",
+    "wait",
+    "true",
+    "false",
+    "break",
+    "continue",
+    "declare",
+    "typeset",
+    "readonly",
+    "let",
+    "alias",
+    "unalias",
+    "type",
+    "command",
+    "builtin",
+    "hash",
+    "pwd",
+    "pushd",
+    "popd",
+    "getopts",
+    "umask",
+    "ulimit",
+    "jobs",
+    "fg",
+    "bg",
+    "kill",
+    "shopt",
+    "mapfile",
+    "readarray",
+    "disown",
+    "caller",
+    "complete",
+    "enable",
+    "help",
+    "logout",
+    "times",
+    "dirs",
+    "suspend",
+    "fc",
+    "history",
+    ":",
+    "noglob",
+    "nohup",
+    "sudo",
 ];
 
 /// The shell's words a command may start with before the program it runs: `if grep …`,

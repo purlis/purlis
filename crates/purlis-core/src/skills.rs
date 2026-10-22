@@ -16,11 +16,12 @@ use std::path::{Path, PathBuf};
 pub use purlis_skills::change::{Problem, Template, check};
 pub use purlis_skills::{
     Argument, At, BUILT_IN_PREFIXES, Budget, Chat, Clash, Compat, DIR_IN_BUNDLE, Declared,
-    Effective, Field, Finding, Fit, FromHarness, Honours, Level as LintLevel, ManualOnly, Given, Grant, HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing, Narrowing,
-    OnMachine, Origin, Outcome, OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference,
-    Reload, Route, Skill, SkillSet, Spent, Stamp, Switch, beside, compat, declared, grant_of,
-    handed_text, in_bundle, level_dir, level_shown, listing, manual_kept_out, named, persona_dir,
-    read, set_grant, share,
+    Effective, Field, Finding, Fit, FromHarness, Given, Grant, HarnessSkills, Honours, LOCAL_DIR,
+    LeftOut, Level as LintLevel, Machine, ManualOnly, Missing, Narrowing, OnMachine, Origin,
+    Outcome, OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference, Reload, Route,
+    Skill, SkillSet, Spent, Stamp, Switch, beside, compat, declared, grant_of, handed_text,
+    in_bundle, level_dir, level_shown, listing, manual_kept_out, named, persona_dir, read,
+    set_grant, share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -681,11 +682,12 @@ fn laid_out(folder: &Path, links: &[Handed<'_>]) -> bool {
                 None => std::fs::read_link(&at).ok().as_deref() == Some(one.folder),
                 Some(own) => {
                     std::fs::symlink_metadata(&at).is_ok_and(|meta| meta.is_dir())
-                        && std::fs::read_to_string(at.join(purlis_skills::FILE)).ok().as_deref()
+                        && std::fs::read_to_string(at.join(purlis_skills::FILE))
+                            .ok()
+                            .as_deref()
                             == Some(own.text.as_str())
                         && own.entries.iter().all(|entry| {
-                            std::fs::read_link(at.join(entry)).ok()
-                                == Some(one.folder.join(entry))
+                            std::fs::read_link(at.join(entry)).ok() == Some(one.folder.join(entry))
                         })
                 }
             }
@@ -1657,7 +1659,11 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 written,
                 unchecked: false,
                 outside: None,
-                compat: badges(&e.skill.path, e.origin != Origin::Repo && e.origin != Origin::Harness, &Harness::ALL),
+                compat: badges(
+                    &e.skill.path,
+                    e.origin != Origin::Repo && e.origin != Origin::Harness,
+                    &Harness::ALL,
+                ),
             }
         })
         .chain(set.from_the_harness.iter().map(|h| {

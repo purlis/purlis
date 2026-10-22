@@ -677,15 +677,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         (true, Some(ws), Some(cwd)) => crate::skills::repo_skills_of_chat(harness, root, ws, cwd),
         _ => Vec::new(),
     };
-    let linked = laid_out_on(
-        on,
-        root,
-        workspace.as_deref(),
-        persona,
-        kit,
-        harness,
-        &repo,
-    );
+    let linked = laid_out_on(on, root, workspace.as_deref(), persona, kit, harness, &repo);
     let skills = on.then_some(crate::skills::PlaneSkills {
         plane: root,
         workspace: workspace.as_deref(),

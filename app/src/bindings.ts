@@ -1772,10 +1772,11 @@ export const commands = {
 	/**  The templates a new skill can start from. */
 	skillTemplates: () => __TAURI_INVOKE<SkillTemplate[]>("skill_templates"),
 	/**
-	 *  **The live lint** of `text`, a `SKILL.md` being edited for the skill `name`: each line the
-	 *  editor shows, none where a save would be taken.
+	 *  **The live lint** of `text`, a `SKILL.md` being edited for the skill `name` at `level` of
+	 *  `plane` (SK-7; SK-8, #2771): each line the editor shows, checked against the project's skills
+	 *  and this machine's programs. Save waits only on one that blocks.
 	 */
-	skillLint: (name: string, text: string) => __TAURI_INVOKE<string[]>("skill_lint", { name, text }),
+	skillLint: (plane: PlaneId, level: SkillLevel, name: string, text: string) => typedError<SkillLintFinding[], string>(__TAURI_INVOKE("skill_lint", { plane, level, name, text })),
 	/**  **Makes a skill** from `template` at `level`. */
 	skillNew: (plane: PlaneId, level: SkillLevel, name: string, description: string, template: SkillTemplateId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_new", { plane, level, name, description, template })),
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
@@ -10604,6 +10605,16 @@ export type SidebarWorkspace = {
 	live: boolean,
 };
 
+/**  A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`. */
+export type SkillBroken = {
+	/**  Its name, or its folder's where it names none. */
+	name: string,
+	/**  Its level, as a person reads it: `project`, `local workspace`. */
+	level: string,
+	/**  Why, in one line. */
+	why: string,
+};
+
 /**  A chat's skill budget on its harness, and what its set spends of it. */
 export type SkillBudget = {
 	/**  Skills its listing holds. */
@@ -10613,8 +10624,9 @@ export type SkillBudget = {
 	/**  Manual-only skills in the set. */
 	manual: number,
 	/**
-	 *  Whether they cost nothing: the chat leaves them out of its listing. Where it does not
-	 *  yet, they are counted in `skills` and `chars` (#2771).
+	 *  Whether they cost nothing: the chat leaves them out of its listing, by its harness's own
+	 *  key or purlis's translation (SK-8). Where it cannot, they are counted in `skills` and
+	 *  `chars`.
 	 */
 	manual_free: boolean,
 	/**  The most skills the budget lists. */
@@ -10633,6 +10645,31 @@ export type SkillChanged = {
 	notes: string[],
 };
 
+/**
+ *  **A skill's compatibility badge on one harness** (SK-8, #2771; decision 18): how well it
+ *  fits, and the core's lines that say why.
+ */
+export type SkillCompat = {
+	harness: HarnessKind,
+	/**  The harness, as a person reads its name. */
+	title: string,
+	fit: SkillFit,
+	/**
+	 *  What the badge says, a line each: what applies, what is left out, what is carried over by
+	 *  purlis's equivalent, what is not applied.
+	 */
+	says: string[],
+};
+
+/**  How well a skill fits a harness, as its badge draws it (SK-8): the core's `Fit`. */
+export type SkillFit = 
+/**  Everything it asks for applies. */
+"full" | 
+/**  Something it asks for is left out, ignored or not applied. */
+"partial" | 
+/**  A harness or repo skill whose harness applies what widens the chat. */
+"widens";
+
 /**  Where a project skill reaches, as the studio sets it. */
 export type SkillGrant = 
 /**  Chats at the project's root alone. */
@@ -10650,6 +10687,20 @@ export type SkillLevel = {
 	workspace: string | null,
 	local: boolean,
 };
+
+/**  One line of the live lint (SK-8, #2771). */
+export type SkillLintFinding = {
+	level: SkillLintLevel,
+	/**  What it says, the core's sentence. */
+	says: string,
+};
+
+/**  How much a lint's finding stops, as the editor draws it: the core's `Level`. */
+export type SkillLintLevel = 
+/**  The skill is not whole: Save waits until it is. */
+"blocks" | 
+/**  Worth knowing, and Save does not wait on it. */
+"warns";
 
 /**  How a harness can leave one of its own skills out of a chat. */
 export type SkillSwitch = 
@@ -10678,15 +10729,19 @@ export type SkillUsers = {
 };
 
 /**
- *  The skills a chat's persona names that it started without (SK-5, #2768), each as the
- *  persona's `skills:` list writes it: what its tab's Notice says.
+ *  The skills a chat started without (SK-5, #2768; SK-8, #2771, decision 41): the ones its
+ *  persona names, each as the persona's `skills:` list writes it, and the ones that could not be
+ *  loaded. What its tab's Notice says.
  */
 export type SkillsMissing = {
-	persona: string,
+	/**  The persona the chat runs as, or `None` for a chat on no persona. */
+	persona: string | null,
 	/**  Installed skills this machine does not have for the chat's harness. */
 	missing: string[],
 	/**  Built-in skills purlis has none of: a typo, or a name from another version of purlis. */
 	no_built_in: string[],
+	/**  Skills the chat would have loaded that could not be loaded, each with why. */
+	broken: SkillBroken[],
 };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
@@ -11029,6 +11084,12 @@ export type StudioSkill = {
 	 *  levels and the built-in skills, whose switches are their own.
 	 */
 	switch: SkillSwitch | null,
+	/**
+	 *  Its compatibility badge on each harness that would load it (SK-8, #2771): every harness
+	 *  for a skill a chat gets from purlis, its own for one from outside the plane, none for a
+	 *  skill left out.
+	 */
+	compat: SkillCompat[],
 };
 
 /**

@@ -35,12 +35,17 @@ fn says(findings: &[Finding]) -> Vec<String> {
 }
 
 fn skill(more: &str, body: &str) -> String {
-    format!("---\nname: deploy\ndescription: Deploys the app to staging, then checks it.\n{more}---\n\n{body}\n")
+    format!(
+        "---\nname: deploy\ndescription: Deploys the app to staging, then checks it.\n{more}---\n\n{body}\n"
+    )
 }
 
 #[test]
 fn a_whole_skill_that_calls_what_this_machine_has_is_clean() {
-    let text = skill("", "Run !`git status` first, then use skills:review and purlis:secrets.");
+    let text = skill(
+        "",
+        "Run !`git status` first, then use skills:review and purlis:secrets.",
+    );
     assert_eq!(found(&text, &[], true), Vec::<Finding>::new());
 }
 
@@ -78,10 +83,15 @@ fn a_key_nothing_reads_warns() {
 
 #[test]
 fn what_would_widen_the_chat_is_said_left_out_of_a_skill_purlis_hands_and_widening_otherwise() {
-    let text = skill("allowed-tools: Bash\nhooks:\n  Stop:\n    - command: x\n", "");
+    let text = skill(
+        "allowed-tools: Bash\nhooks:\n  Stop:\n    - command: x\n",
+        "",
+    );
     let handed = says(&found(&text, &[], true));
     assert_eq!(handed.len(), 2, "{handed:?}");
-    assert!(handed[0].starts_with("its allowed-tools: would widen the chat, so purlis leaves it out"));
+    assert!(
+        handed[0].starts_with("its allowed-tools: would widen the chat, so purlis leaves it out")
+    );
     assert!(handed[1].starts_with("its hooks: would run commands in the chat"));
     let outside = says(&found(&text, &[], false));
     assert_eq!(
@@ -136,7 +146,10 @@ fn a_script_warns_of_its_interpreter_and_each_program_a_shell_script_runs() {
         ("scripts/run.sh".to_owned(), shell.to_owned()),
         ("scripts/check.py".to_owned(), python.to_owned()),
         ("scripts/x.js".to_owned(), node.to_owned()),
-        ("reference.md".to_owned(), "Run `kubectl` by hand.".to_owned()),
+        (
+            "reference.md".to_owned(),
+            "Run `kubectl` by hand.".to_owned(),
+        ),
     ];
     assert_eq!(
         says(&found(&skill("", ""), &others, true)),

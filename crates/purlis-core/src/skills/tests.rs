@@ -508,14 +508,30 @@ fn a_lay_out_that_never_finished_is_tidied_and_one_found_again_is_kept() {
     let tmp = tempfile::tempdir().unwrap();
     let (plane, kit) = a_host_on(tmp.path());
     let sets = kit.skill_sets.clone().unwrap();
-    let folder = crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit, Harness::ClaudeCode).unwrap();
+    let folder = crate::hoststart::plane_skills_laid_out(
+        true,
+        &plane,
+        None,
+        None,
+        &kit,
+        Harness::ClaudeCode,
+    )
+    .unwrap();
     let leftover = sets.join(format!(".{A}.x1Y2z3"));
     std::fs::create_dir_all(&leftover).unwrap();
     last_laid_out_long_ago(&leftover);
     last_laid_out_long_ago(&folder);
 
     // Found again by the next chat's start: used now, so kept.
-    let again = crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit, Harness::ClaudeCode).unwrap();
+    let again = crate::hoststart::plane_skills_laid_out(
+        true,
+        &plane,
+        None,
+        None,
+        &kit,
+        Harness::ClaudeCode,
+    )
+    .unwrap();
     assert_eq!(again, folder);
     let tidied = tidy(&sets).unwrap();
 
@@ -740,7 +756,17 @@ fn a_lay_out_into_sets_that_are_a_link_is_refused() {
     std::os::unix::fs::symlink(&outside, &sets).unwrap();
     kit.skill_sets = Some(sets);
 
-    assert!(crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit, Harness::ClaudeCode).is_none());
+    assert!(
+        crate::hoststart::plane_skills_laid_out(
+            true,
+            &plane,
+            None,
+            None,
+            &kit,
+            Harness::ClaudeCode
+        )
+        .is_none()
+    );
     assert_eq!(
         std::fs::read_dir(&outside).unwrap().count(),
         0,

@@ -242,7 +242,12 @@ pub(crate) async fn skill_lint(
 }
 
 /// [`skill_lint`]'s findings, for the window.
-fn findings(root: &std::path::Path, level: &Level, name: &str, text: &str) -> Vec<SkillLintFinding> {
+fn findings(
+    root: &std::path::Path,
+    level: &Level,
+    name: &str,
+    text: &str,
+) -> Vec<SkillLintFinding> {
     purlis_core::skills::lint(root, level, name, text)
         .into_iter()
         .map(|finding| SkillLintFinding {

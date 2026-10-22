@@ -186,7 +186,10 @@ fn a_codex_chat_is_briefed_on_a_manual_only_skill_by_its_name_and_file_alone() {
 
     let lookup = |name: &str| var(&env, name).map(str::to_owned);
     let text = purlis_core::skills::briefed(&here.plane, None, None, &lookup).expect("listed");
-    assert!(text.contains("- `review` — Does review for the team."), "{text}");
+    assert!(
+        text.contains("- `review` — Does review for the team."),
+        "{text}"
+    );
     assert!(!text.contains("Does release"), "{text}");
     let release = here.plane.join("skills/release/SKILL.md");
     assert!(
@@ -223,9 +226,8 @@ fn each_harness_badge_says_what_applies_what_is_left_out_and_what_is_carried_ove
     let text = format!(
         "---\nname: deploy\ndescription: Deploys it.\nmodel: opus\ndisable-model-invocation: true\n{WIDENS}---\n"
     );
-    let on = |harness: Harness| {
-        purlis_core::skills::compat(&text, true, &harness.skill_frontmatter())
-    };
+    let on =
+        |harness: Harness| purlis_core::skills::compat(&text, true, &harness.skill_frontmatter());
 
     let claude = on(Harness::ClaudeCode);
     assert_eq!(claude.fit, Fit::Partial);
@@ -249,11 +251,8 @@ fn each_harness_badge_says_what_applies_what_is_left_out_and_what_is_carried_ove
     }
 
     // A harness or repo skill purlis does not hand: it widens a Claude Code chat.
-    let outside = purlis_core::skills::compat(
-        &text,
-        false,
-        &Harness::ClaudeCode.skill_frontmatter(),
-    );
+    let outside =
+        purlis_core::skills::compat(&text, false, &Harness::ClaudeCode.skill_frontmatter());
     assert_eq!(outside.fit, Fit::Widens);
 }
 
