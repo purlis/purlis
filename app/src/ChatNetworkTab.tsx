@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { commands, type ChatNetwork, type PlaneId, type ReachedBy } from "./bindings";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { RefusedRows } from "./settings/NetworkLists";
 import { useSandboxCommands } from "./sandboxAsked";
 
@@ -71,7 +71,7 @@ export function ChatNetworkTab({ plane, session }: { plane: PlaneId; session?: n
         {network.local_ports != null && <p className="chat-network-local">{network.local_ports}</p>}
         {groups.length === 0 ? (
           <EmptyState
-            size="panel"
+            variant="panel"
             headline="It can reach no host on the internet"
             body="A host you allow from a refusal below is listed here, under why it can reach it."
             testid="chat-network-reaches-none"
@@ -117,7 +117,7 @@ export function ChatNetworkTab({ plane, session }: { plane: PlaneId; session?: n
         <h3>Refused</h3>
         {network.refused.length === 0 ? (
           <EmptyState
-            size="panel"
+            variant="panel"
             headline="Nothing was refused in the last 30 days"
             body="A connection its sandbox refuses is listed here, with Allow where it may be kept."
             testid="chat-network-refused-none"

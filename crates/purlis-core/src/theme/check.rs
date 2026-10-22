@@ -359,6 +359,8 @@ pub const PAIRS: &[Pair] = &[
     p("text.primary", "danger.wash", 4.5).over("surface.base"),
     // - The same, in a dialog: its refusal and its unrun command on the danger wash.
     p("text.primary", "danger.wash", 4.5).over("surface.overlay"),
+    // - What waits on the person, a status pill on the amber wash, on the title bar (#2913).
+    p("text.primary", "wash.warning", 4.5).over("surface.deep"),
     // - What a dialog is honest about (`.honest`): its words at the opacity it fades them to.
     p("text.primary", "surface.overlay", TEXT).faded(0.8),
     // - A task that is away draws its words on the terminal's own background.

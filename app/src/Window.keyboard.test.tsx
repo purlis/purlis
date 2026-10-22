@@ -379,11 +379,12 @@ describe("the window's tab order", () => {
       "button Open a project…",
       "button New project…",
       // …then the right-hand end: the needs-you button (charter-app#249), the kill switch (OV-1),
-      // then the app's own two.
+      // then the app's own two, the update pill inside About, which stays at the bar's end
+      // (#2913).
       "button 2 chats need you",
       "button Stop every chat and shell purlis started, in every project and window",
-      "button About purlis — what this version brought",
       "button Updates — … channel, nothing new known",
+      "button About purlis — what this version brought",
       // The workspace strip.
       "tab alpha32",
       // The focused workspace's settings gear (SE-23), for the same reason.

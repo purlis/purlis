@@ -17,7 +17,7 @@ import {
   type StudioSkill,
 } from "./bindings";
 import { counted } from "./dispatches";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { clashSaid, SkillStudioHarnesses } from "./SkillStudioHarnesses";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Notice } from "./Notice";

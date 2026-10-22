@@ -86,6 +86,7 @@ import { askSettingsLink } from "./settings/links";
 import { DISPATCH } from "./settings/dispatch";
 import { Button } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
+import { PanelSectionTitle } from "./ui/panel/Panel";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
 type ShownFacts = {
@@ -852,10 +853,9 @@ export function ChatsSection({
       {/* The title and the filter stay at the top of the section while its rows scroll. */}
       <div className="chats-head">
         <div className="chats-top">
-          <h2 className="sidebar-title ui-text-label" id="chats-title">
-            <MessagesSquare className="node-icon" aria-hidden="true" />
+          <PanelSectionTitle id="chats-title" mark={MessagesSquare}>
             Chats
-          </h2>
+          </PanelSectionTitle>
           {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
               DS-11): both status lines are always in the accessibility tree, so what they come
               to say is announced, and they stand beside the title, so saying it moves no row

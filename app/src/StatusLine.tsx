@@ -8,7 +8,9 @@ import { Health, type DoctorState } from "./Doctor";
 import { PinItem } from "./Updates";
 import type { FactBadge, PinReport } from "./bindings";
 import { ago } from "./ChangesView";
-import { Button } from "./ui/button/Button";
+import { StatusBar, type StatusContribution } from "./ui/status/StatusBar";
+import { StatusCell, StatusItem } from "./ui/status/StatusItem";
+import { hideStatusItem, useHiddenStatusItems } from "./statusBarPrefs";
 
 /**
  * **charter's status line**: one line at the very bottom of the window, under everything.
@@ -101,9 +103,13 @@ import { Button } from "./ui/button/Button";
  *   what it holds are on the left; Notices, the doctor and a drifting pin are on the right.
  *   The left end is the one that gives way in a narrow window: a count that goes off the end
  *   costs less than the Notices count doing so.
- * - **What can be pressed is a status item**, the set's small ghost button
- *   (`docs/ui-primitives.md`): no box, the chrome's height, the set's own hover and focus ring.
- *   An icon, a short word, then a count.
+ * - **What can be pressed is a status item** (`ui/status`, #2913): no box until the pointer
+ *   reaches it, 24px tall, the family's own hover and focus ring. An icon, a short word, then a
+ *   count. What only says something is a status cell: its words.
+ * - **It is the status bar's contribution model** (N28, `ui/status/StatusBar.tsx`): each item
+ *   says its id, its end and its priority, purlis's own and an extension's badges alike, and the
+ *   person can hide any item from the bar's menu and show it again there (`statusBarPrefs.ts`).
+ *   The line itself stays: what can be lost is an item, never the line.
  * - **The project is its name**, the last segment of its directory, and the whole directory is
  *   its tooltip, on hover and on keyboard focus.
  *
@@ -186,95 +192,158 @@ export function StatusLine({
 }) {
   const todos = todoCount(state);
   const pieces = pieceCount(state);
+  const hidden = useHiddenStatusItems();
+  // **Context**, on the left: where I am, highest first. It is what the line is for, and the end
+  // that gives way when the window is narrow, its last item first. **Health**, on the right: what
+  // wants a look, each an item that opens it. That end never gives way.
+  const items: StatusContribution[] = [
+    {
+      id: "purlis.project",
+      name: "Project",
+      side: "left",
+      priority: 100,
+      // The hairline that parts the project from the workspace inside it (qw357).
+      separated: true,
+      item: <ProjectItem plane={plane} />,
+    },
+    {
+      id: "purlis.workspace",
+      name: "Workspace",
+      side: "left",
+      priority: 90,
+      item:
+        where !== undefined ? (
+          <StatusCell icon={WORKSPACE_GLYPH} tone="accent" strong data-testid="status-where">
+            {where}
+          </StatusCell>
+        ) : (
+          // The plane answered and the window is on no workspace — a plane that holds none, or
+          // one whose workspaces all went away: said, because it is the answer. Or not yet read.
+          <StatusCell icon={WORKSPACE_GLYPH} tone="quiet" data-testid="status-where">
+            {read ? "no workspace" : "reading the project…"}
+          </StatusCell>
+        ),
+    },
+  ];
+  if (todos !== undefined)
+    items.push({
+      id: "purlis.todos",
+      name: "Todos",
+      side: "left",
+      priority: 80,
+      item: (
+        <StatusCell count={todos} data-testid="status-todos">
+          todo
+        </StatusCell>
+      ),
+    });
+  if (pieces !== undefined)
+    items.push({
+      id: "purlis.branches",
+      name: "Branches",
+      side: "left",
+      priority: 70,
+      item: (
+        <StatusCell count={pieces} data-testid="status-pieces">
+          branches
+        </StatusCell>
+      ),
+    });
+  if (workspaces !== undefined)
+    items.push({
+      id: "purlis.workspaces",
+      name: "Workspaces",
+      side: "left",
+      priority: 60,
+      item: (
+        <StatusCell count={workspaces} data-testid="status-workspaces">
+          ws
+        </StatusCell>
+      ),
+    });
+  // The line's rule and not the breadcrumb's: zero is dropped, because presence is the signal,
+  // and so is a count the project has not settled yet.
+  if (running !== undefined && running > 0)
+    items.push({
+      id: "purlis.running",
+      name: "Running chats",
+      side: "left",
+      // Last on its end: it comes and goes as chats run, and moves nothing when it does.
+      priority: 5,
+      item: (
+        <StatusCell data-testid="status-running">
+          {`${running} ${running === 1 ? "chat" : "chats"} running`}
+        </StatusCell>
+      ),
+    });
+  // An extension's badges: after purlis's own counts, because they are about where you are too
+  // and they are the least of it. Given as data, in the one model purlis's own items are in. A
+  // stale one is dimmed whole and says its age, so an old count never reads as a current one.
+  for (const badge of badges ?? [])
+    items.push({
+      id: `extension:${badge.extension}/${badge.id}`,
+      name: `${badge.label} (${badge.name})`,
+      side: "left",
+      priority: 40,
+      label: badge.label,
+      value: badge.stale ? `${badge.value} · ${ago(badge.age_seconds)}` : badge.value,
+      stale: badge.stale,
+      title: `${badge.label}, from ${badge.name}'s facts file — ${ago(badge.age_seconds)}`,
+      testid: `status-badge-${badge.extension}-${badge.id}`,
+    });
+  if (factNotes !== undefined && factNotes.length > 0)
+    items.push({
+      id: "purlis.extension-notes",
+      name: "Extension notes",
+      side: "left",
+      priority: 30,
+      item: (
+        <StatusCell tone="quiet" data-testid="status-fact-notes" title={factNotes.join("\n")}>
+          {`${factNotes.length} extension ${factNotes.length === 1 ? "note" : "notes"}`}
+        </StatusCell>
+      ),
+    });
+  items.push({
+    id: "purlis.notices",
+    name: "Notices",
+    side: "right",
+    priority: 30,
+    // The one item that always stays: the keyboard always has an item on the bar to open the
+    // bar's menu from, and so a way back to every item hidden.
+    hideable: false,
+    item: <AlertsButton alerts={alerts} />,
+  });
+  if (doctor)
+    items.push({
+      id: "purlis.doctor",
+      name: "Doctor",
+      side: "right",
+      priority: 20,
+      item: <Health doctor={doctor} onOpenSettings={onOpenSettings} />,
+    });
+  // The pin is drawn only when it drifts or could not be read (`PinItem`).
+  if (pin && (pin.pin?.drift === true || pin.trouble !== undefined))
+    items.push({
+      id: "purlis.pin",
+      name: "Pin",
+      side: "right",
+      // Inner on its end, so a pin that starts to drift moves neither Notices nor the doctor.
+      priority: 40,
+      item: <PinItem pin={pin.pin} trouble={pin.trouble} again={pin.again} />,
+    });
   return (
-    <footer className="status-line" aria-label="Status" data-testid="status-line">
-      {/* **Context**: where I am. It is what the line is for, and the end that gives way when
-          the window is narrow, its last cell first. */}
-      <span className="status-context">
-        <ProjectItem plane={plane} />
-
-        <span className="status-where">
-          <span className="status-glyph" aria-hidden="true">
-            ⬢
-          </span>{" "}
-          {where !== undefined ? (
-            <span className="status-workspace">{where}</span>
-          ) : read ? (
-            // The plane answered and the window is on no workspace — a plane that holds none,
-            // or one whose workspaces all went away. Said, because it is the answer.
-            <span className="none">no workspace</span>
-          ) : (
-            <span className="pending">reading the project…</span>
-          )}
-        </span>
-
-        {todos !== undefined && (
-          <span className="status-cell" data-testid="status-todos">
-            <span className="status-label">todo</span> {todos}
-          </span>
-        )}
-
-        {pieces !== undefined && (
-          <span className="status-cell" data-testid="status-pieces">
-            <span className="status-label">branches</span> {pieces}
-          </span>
-        )}
-
-        {workspaces !== undefined && (
-          <span className="status-cell" data-testid="status-workspaces">
-            <span className="status-label">ws</span> {workspaces}
-          </span>
-        )}
-
-        {/* The line's rule and not the breadcrumb's: zero is dropped, because presence is the
-            signal, and so is a count the project has not settled yet. */}
-        {running !== undefined && running > 0 && (
-          <span className="status-cell" data-testid="status-running">
-            {running} {running === 1 ? "chat" : "chats"} running
-          </span>
-        )}
-
-        {/* An extension's badges: after charter's own counts, because they are about where you
-            are too and they are the least of it — the row's order is its truncation order. A
-            stale one is dimmed whole and says its age, so an old count never reads as a current
-            one. */}
-        {badges?.map((badge) => (
-          <span
-            key={`${badge.extension}/${badge.id}`}
-            className={badge.stale ? "status-cell status-badge stale" : "status-cell status-badge"}
-            data-testid={`status-badge-${badge.extension}-${badge.id}`}
-            title={`${badge.label}, from ${badge.name}'s facts file — ${ago(badge.age_seconds)}`}
-          >
-            <span className="status-label">{badge.label}</span> {badge.value}
-            {badge.stale && <span className="status-age"> · {ago(badge.age_seconds)}</span>}
-          </span>
-        ))}
-
-        {factNotes !== undefined && factNotes.length > 0 && (
-          <span
-            className="status-cell status-fact-notes"
-            data-testid="status-fact-notes"
-            title={factNotes.join("\n")}
-          >
-            <span className="status-label">
-              {factNotes.length} extension {factNotes.length === 1 ? "note" : "notes"}
-            </span>
-          </span>
-        )}
-      </span>
-
-      {/* **Health**: what wants a look, each a status item that opens it. This end never gives
-          way. */}
-      <span className="status-health">
-        <AlertsButton alerts={alerts} />
-
-        {doctor && <Health doctor={doctor} onOpenSettings={onOpenSettings} />}
-
-        {pin && <PinItem pin={pin.pin} trouble={pin.trouble} again={pin.again} />}
-      </span>
-    </footer>
+    <StatusBar
+      aria-label="Status"
+      data-testid="status-line"
+      items={items}
+      hidden={hidden}
+      onHide={hideStatusItem}
+    />
   );
 }
+
+/** The mark before the workspace's name: purlis's own (`crates/purlis-core/src/footer.rs`). */
+const WORKSPACE_GLYPH = <span aria-hidden="true">⬢</span>;
 
 /**
  * A project's name: the last segment of its directory, as its tab on the title bar and a
@@ -303,17 +372,20 @@ function ProjectItem({ plane }: { plane: string }) {
     <Tooltip.Provider delayDuration={300}>
       <Tooltip.Root>
         <Tooltip.Trigger asChild>
-          <span
-            className="status-project"
+          <StatusCell
             tabIndex={0}
+            strong
+            shrinks
             data-testid="status-project"
             data-directory={plane}
+            icon={
+              <span role="img" aria-label="Project">
+                <FolderRoot aria-hidden="true" />
+              </span>
+            }
           >
-            <span className="status-project-mark" role="img" aria-label="Project">
-              <FolderRoot aria-hidden="true" />
-            </span>
-            <span className="status-project-name">{projectName(plane)}</span>
-          </span>
+            {projectName(plane)}
+          </StatusCell>
         </Tooltip.Trigger>
         <Tooltip.Portal>
           <Tooltip.Content className="ui-tooltip" side="top" align="start" sideOffset={4}>
@@ -357,30 +429,27 @@ export type Alerts = {
 function AlertsButton({ alerts }: { alerts?: Alerts }) {
   if (alerts === undefined) {
     return (
-      <Button
-        size="sm"
-        variant="ghost"
+      <StatusItem
         data-testid="status-alerts"
         isDisabled
         aria-label="Notices — nothing to open here"
         title="This status line has no Inbox behind it."
-        icon={<Bell aria-hidden="true" size="1em" />}
-        className="status-alerts"
+        icon={<Bell aria-hidden="true" />}
+        count="—"
       >
         Notices
-        <span className="status-unknown" aria-hidden="true">
-          —
-        </span>
-      </Button>
+      </StatusItem>
     );
   }
   const { count } = alerts;
   return (
-    <Button
-      size="sm"
-      variant="ghost"
+    <StatusItem
       data-testid="status-alerts"
       data-count={count ?? "unknown"}
+      // There are Notices: the bell takes the colour purlis's footer gives a warning, so the one
+      // item on the line that is asking for something looks it. The count's own pill stays the
+      // neutral one, because it is words and `state.waiting` is held to 3:1 as a mark.
+      tone={count !== undefined && count > 0 ? "waiting" : undefined}
       aria-label={
         count === undefined ? "Notices: not counted" : `Notices: ${count === 0 ? "none" : count}`
       }
@@ -390,22 +459,11 @@ function AlertsButton({ alerts }: { alerts?: Alerts }) {
           : "Open the Inbox: this project's Notices, and what waits on you"
       }
       onPress={alerts.open}
-      icon={<Bell aria-hidden="true" size="1em" />}
-      className="status-alerts"
+      icon={<Bell aria-hidden="true" />}
+      count={count === undefined ? "—" : count > 0 ? count : undefined}
     >
       Notices
-      {count === undefined ? (
-        <span className="status-unknown" aria-hidden="true">
-          —
-        </span>
-      ) : (
-        count > 0 && (
-          <span className="status-count" aria-hidden="true">
-            {count}
-          </span>
-        )
-      )}
-    </Button>
+    </StatusItem>
   );
 }
 

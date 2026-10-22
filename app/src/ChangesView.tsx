@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import type { FactCell, FactColumn, Piece, RepoState, RunnerBranch } from "./bindings";
 import { inertly } from "./sandboxBlocks";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { treeKey, type Row } from "./Explorer";
 import { Menued } from "./Menus";
 import type { Catalogued, Offer } from "./actions";
@@ -145,7 +145,7 @@ export function ChangesView({
           headline="No workspace focused"
           body="Focus a workspace, and the branch, changes and pipeline of each of its repos are listed here."
           mark={GitFork}
-          size="panel"
+          variant="panel"
           testid="changes-empty"
         />
       </section>
@@ -214,7 +214,7 @@ export function ChangesView({
           headline="No repos in this workspace"
           body="Each repo the workspace names is listed here: the branch it is on, its changes, the branches cut off it and its pipeline."
           mark={FolderGit2}
-          size="panel"
+          variant="panel"
           testid="changes-empty"
         />
       ) : (

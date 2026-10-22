@@ -12,7 +12,8 @@ import {
   type RepoSaving,
   type SaveEntry,
 } from "./bindings";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
+import { StatusItem } from "./ui/status/StatusItem";
 import {
   askWayOut,
   behindness,
@@ -478,7 +479,7 @@ export function SavingView({
           <h3 className="saving-recent">Recent saves</h3>
           {saving.journal.length === 0 ? (
             <EmptyState
-              size="panel"
+              variant="panel"
               headline="No saves recorded yet"
               body="Each save is listed here, the newest first, with what started it and how it ended."
               testid="saving-empty"
@@ -774,17 +775,19 @@ export function SaveIndicator({
   // "waiting": the mark is the alert, in the failed colour (ADR 0051, amended 2026-10-13).
   const Mark =
     stage === "blocked" || red ? CircleAlert : stage === "saved" ? CircleCheck : CircleDot;
+  // Words stay the pill's; only the mark takes the stage's colour.
+  const tone = stage === "blocked" || red ? "failed" : stage === "saved" ? "success" : "waiting";
   return (
     <span className="save-indicator" data-stage={stage} data-checks={red ? "failed" : undefined}>
-      <Button
-        size="sm"
-        variant="ghost"
+      <StatusItem
+        variant="pill"
+        tone={tone}
         aria-label={`Saving: ${said}`}
         title={said}
         onPress={onOpen}
-        className="save-indicator-where"
+        data-testid="save-indicator-where"
+        icon={<Mark aria-hidden="true" />}
       >
-        <Mark aria-hidden="true" />
         <span className="save-indicator-words">{words}</span>
         {/* What came in, as its own element the words' cap never cuts (charter#403). Its
             meaning is in the button's name and title, which say "N incoming" in full. */}
@@ -793,13 +796,12 @@ export function SaveIndicator({
             ↓{incoming}
           </span>
         )}
-      </Button>
+      </StatusItem>
       {/* The count as the Update button (qw348): pressing it brings the incoming commits in,
           from the Saving tab, where the progress and the result are said. */}
       {incoming > 0 && onUpdate !== undefined && (
-        <Button
-          size="sm"
-          variant="ghost"
+        <StatusItem
+          variant="pill"
           aria-label={updateSaid(incoming)}
           title={updateSaid(incoming)}
           isDisabled={busy}
@@ -807,24 +809,24 @@ export function SaveIndicator({
           className="save-indicator-incoming"
         >
           ↓{incoming}
-        </Button>
+        </StatusItem>
       )}
       {savable(saving) && (
-        <Button
-          size="sm"
-          variant="ghost"
+        <StatusItem
+          variant="pill"
           aria-label="Save the project"
           title={off ?? "Save the project"}
           isDisabled={busy || off !== undefined}
           onPress={onSave}
-          className="save-indicator-save"
-        >
-          {busy ? (
-            <LoaderCircle className="spinning" aria-hidden="true" />
-          ) : (
-            <Save aria-hidden="true" />
-          )}
-        </Button>
+          data-testid="save-indicator-save"
+          icon={
+            busy ? (
+              <LoaderCircle className="spinning" aria-hidden="true" />
+            ) : (
+              <Save aria-hidden="true" />
+            )
+          }
+        />
       )}
     </span>
   );

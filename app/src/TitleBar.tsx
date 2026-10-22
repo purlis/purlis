@@ -175,6 +175,9 @@ export function TitleBar({
         {/* First, because it is the one of the three that is about the operator's chats and
             not about the app — and it is nothing at all when nothing needs you. */}
         {needing && <NeedsYouButton {...needing} />}
+        {/* The kill switch (OV-1): about every chat in every window. First of the pills that
+            stay, so the words it takes once thrown ("Stopped · Re-arm") move none of them. */}
+        <KillSwitch />
         {/* Then the project in front's unsaved work: about the project, not the app, and the
             one thing on the bar the operator acts on as often as a chat that asks. */}
         {save && <SaveIndicator {...save} />}
@@ -189,10 +192,10 @@ export function TitleBar({
             />
           </span>
         )}
-        {/* The kill switch (OV-1): about every chat in every window, so it is here. */}
-        <KillSwitch />
-        <AboutCharter />
+        {/* The update pill comes and goes, so it is inside About, which stays at the bar's end
+            and never moves when an update is offered (#2913). */}
         {updates && <UpdateItem updates={updates} chats={chats} />}
+        <AboutCharter />
       </span>
     </header>
   );
