@@ -7,6 +7,7 @@ import type { SetupDone } from "./bindings";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { VaultSignIn } from "./VaultSignIn";
 import { PROVIDERS } from "./vaultProviders";
+import { Button } from "./ui/button/Button";
 
 /**
  * Making a vault, asked where the answer is given — `NewWorkspace`'s shape, for `charter vault
@@ -131,23 +132,12 @@ export function NewVault({
                 )}
 
                 <SettingActions>
-                  <button
-                    className="ui-button ui-button-primary"
-                    type="submit"
-                    tabIndex={0}
-                    disabled={!ready}
-                  >
+                  <Button variant="primary" type="submit" isDisabled={!ready}>
                     {making ? "Creating…" : "Create vault"}
-                  </button>
-                  <button
-                    className="ui-button"
-                    type="button"
-                    tabIndex={0}
-                    disabled={making}
-                    onClick={onCancel}
-                  >
+                  </Button>
+                  <Button isDisabled={making} onPress={onCancel}>
                     Cancel
-                  </button>
+                  </Button>
                 </SettingActions>
               </>
             )}

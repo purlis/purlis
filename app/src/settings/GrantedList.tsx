@@ -13,6 +13,7 @@ import { linkToGroup, openVault, settingsPlace, showPersona } from "./links";
 import { OutLink } from "./OutLink";
 import type { SettingsGroup } from "./groups";
 import { AddPort, BlockedLatelyList, OpenHostsList, useAllowedHere } from "./NetworkLists";
+import { Button } from "../ui/button/Button";
 
 /** The address of the Network page (#1662): a sub-page of Sandbox, where the Granted list of
  *  #1348 is now the Allowed list. */
@@ -192,17 +193,14 @@ function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: 
                 <span className="granted-locked"> Not in force. {one.locked}</span>
               )}
               {canRemove && (
-                <button
-                  type="button"
-                  tabIndex={0}
-                  // A project host's removal edits the committed file (#1759).
-                  disabled={one.level === "project" && readOnly !== undefined}
+                <Button
+                  isDisabled={one.level === "project" && readOnly !== undefined}
                   title={one.level === "project" ? readOnly : undefined}
                   aria-label={`Remove ${removed(one)}`}
-                  onClick={() => remove(one)}
+                  onPress={() => remove(one)}
                 >
                   Remove
-                </button>
+                </Button>
               )}
             </li>
           ))}
@@ -280,14 +278,9 @@ function GrantableFolders({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
         {(folders ?? []).map((folder) => (
           <li key={folder}>
             <code>{folder}</code>
-            <button
-              type="button"
-              tabIndex={0}
-              aria-label={`Remove ${folder}`}
-              onClick={() => remove(folder)}
-            >
+            <Button aria-label={`Remove ${folder}`} onPress={() => remove(folder)}>
               Remove
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
@@ -298,9 +291,9 @@ function GrantableFolders({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
         onChange={setTyped}
         placeholder="/Users/you/tools/cache"
       />
-      <button type="button" tabIndex={0} disabled={typed.trim() === ""} onClick={add}>
+      <Button isDisabled={typed.trim() === ""} onPress={add}>
         Add folder
-      </button>
+      </Button>
       {dropped.length > 0 && (
         <Notice
           cause={`grantable-dropped:${dropped.join(",")}`}
@@ -441,15 +434,12 @@ export function networkGroup(
                 aria-describedby={ids.describedBy}
               >
                 Who may dispatch to whom is listed and changed on the Dispatch page.
-                <button
-                  type="button"
-                  className="ui-setting-reset"
-                  tabIndex={0}
-                  // The same Settings tab, at its Dispatch page (`links.ts`).
-                  onClick={() => linkToGroup(settingsPlace("project", plane), DISPATCH)}
+                <Button
+                  size="sm"
+                  onPress={() => linkToGroup(settingsPlace("project", plane), DISPATCH)}
                 >
                   Open that page
-                </button>
+                </Button>
               </p>
             ),
           };

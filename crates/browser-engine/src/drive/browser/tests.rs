@@ -13,7 +13,9 @@ use std::time::Duration;
 use base64::Engine as _;
 use serde_json::{Value, json};
 
-use super::{ACTIVE_ELEMENT, Browser, DevTools, READ_VALUE, READY_STATE, SELECT_OPTIONS};
+use super::{
+    ACTIVE_ELEMENT, Browser, DevTools, FOCUSED_HERE, READ_VALUE, READY_STATE, SELECT_OPTIONS, TITLE,
+};
 use crate::WebAddress;
 use crate::cdp::{CallError, Closed, Event};
 use crate::drive::{
@@ -46,6 +48,17 @@ struct Model {
     /// Content quads by backend node id.
     quads: HashMap<i64, Vec<f64>>,
     ready: String,
+    /// The title each page's document has now, by target: what the engine last told of, unless
+    /// a test sets it with no word from the engine (#2753).
+    titles: HashMap<String, String>,
+    /// The element that has the focus, by its engine id, where the document has the focus
+    /// (#2295).
+    focused_backend: Option<i64>,
+    /// Whether a box the pointer passes through (`pointer-events: none`) of the page's own
+    /// document lies over the payment frame (#2638).
+    overlay: bool,
+    /// Whether the payment frame's element says no frame it holds (#2638).
+    frame_unnamed: bool,
     history: Value,
     screenshot: Vec<u8>,
     select: Value,
@@ -110,6 +123,18 @@ struct StandWorld {
 
 impl Engine {
     fn emit(&self, method: &str, params: Value, session: Option<&str>) {
+        if matches!(method, "Target.targetCreated" | "Target.targetInfoChanged")
+            && let (Some(target), Some(title)) = (
+                params
+                    .pointer("/targetInfo/targetId")
+                    .and_then(Value::as_str),
+                params.pointer("/targetInfo/title").and_then(Value::as_str),
+            )
+        {
+            super::lock(&self.model)
+                .titles
+                .insert(target.to_owned(), title.to_owned());
+        }
         if method == "Target.targetCreated"
             && let (Some(target), Some(url)) = (
                 params
@@ -264,6 +289,43 @@ impl Engine {
                 Ok(json!({ "nodes": model.ax.get(frame).cloned().unwrap_or(json!([])) }))
             }
             "DOM.getFrameOwner" => Ok(json!({"backendNodeId": 50, "nodeId": 0})),
+            // The payment frame's element is drawn at (100, 200), 200 by 60, as its box model
+            // says; anywhere else is the page's own document (#2638).
+            "DOM.getNodeForLocation" => {
+                let (x, y) = (
+                    p["x"].as_f64().unwrap_or(-1.0),
+                    p["y"].as_f64().unwrap_or(-1.0),
+                );
+                let through = p["ignorePointerEventsNone"] == true;
+                Ok(
+                    if (100.0..300.0).contains(&x)
+                        && (200.0..260.0).contains(&y)
+                        && super::lock(&self.model).overlay
+                        && through
+                    {
+                        // Asked to find boxes the pointer passes through, it finds the overlay.
+                        json!({"backendNodeId": 3, "frameId": "PAGE-1"})
+                    } else if (100.0..300.0).contains(&x) && (200.0..260.0).contains(&y) {
+                        json!({"backendNodeId": 50, "frameId": "PAGE-1"})
+                    } else {
+                        json!({"backendNodeId": 3, "frameId": "PAGE-1"})
+                    },
+                )
+            }
+            "DOM.describeNode"
+                if p["objectId"].is_null()
+                    && p["backendNodeId"] == 50
+                    && super::lock(&self.model).frame_unnamed =>
+            {
+                Ok(
+                    json!({"node":{"nodeId":0,"backendNodeId":50,"nodeType":1,"nodeName":"IFRAME","localName":"iframe","nodeValue":""}}),
+                )
+            }
+            "DOM.describeNode" if p["objectId"].is_null() => Ok(if p["backendNodeId"] == 50 {
+                json!({"node":{"nodeId":0,"backendNodeId":50,"nodeType":1,"nodeName":"IFRAME","localName":"iframe","nodeValue":"","frameId":"PAYMENT-FRAME"}})
+            } else {
+                json!({"node":{"nodeId":0,"backendNodeId":p["backendNodeId"],"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":""}})
+            }),
             "DOM.getBoxModel" => Ok(
                 json!({"model":{"content":[100,200,300,200,300,260,100,260],"padding":[100,200,300,200,300,260,100,260],"border":[100,200,300,200,300,260,100,260],"margin":[100,200,300,200,300,260,100,260],"width":200,"height":60}}),
             ),
@@ -311,6 +373,29 @@ impl Engine {
                     "loading"
                 };
                 Ok(json!({"result":{"type":"string","value":lie}}))
+            }
+            "Runtime.evaluate" if p["expression"] == FOCUSED_HERE => {
+                Ok(match super::lock(&self.model).focused_backend {
+                    Some(_) => {
+                        json!({"result":{"type":"object","subtype":"node","objectId":"FOCUSED"}})
+                    }
+                    None => json!({"result":{"type":"object","subtype":"null","value":null}}),
+                })
+            }
+            "DOM.describeNode" if p["objectId"] == "FOCUSED" => {
+                let backend = super::lock(&self.model).focused_backend;
+                Ok(
+                    json!({"node":{"nodeId":0,"backendNodeId":backend,"nodeType":1,"nodeName":"INPUT"}}),
+                )
+            }
+            "Runtime.evaluate" if p["expression"] == TITLE => {
+                let target = on.unwrap_or_default().trim_start_matches("S-");
+                let title = super::lock(&self.model)
+                    .titles
+                    .get(target)
+                    .cloned()
+                    .unwrap_or_default();
+                Ok(json!({"result":{"type":"string","value":title}}))
             }
             "Runtime.evaluate" if p["expression"] == ACTIVE_ELEMENT => {
                 Ok(json!({"result":{"type":"string","value":super::lock(&self.model).active}}))
@@ -538,6 +623,10 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
                 (71, vec![0.0, 900.0, 80.0, 900.0, 80.0, 920.0, 0.0, 920.0]),
             ]),
             ready: "complete".into(),
+            titles: HashMap::new(),
+            focused_backend: None,
+            overlay: false,
+            frame_unnamed: false,
             history: json!({"currentIndex":0,"entries":[{"id":1,"url":"http://fixture.test/frames.html","userTypedURL":"","title":"","transitionType":"typed"}]}),
             screenshot: white_png(),
             select: json!({"picked":["Blue"]}),
@@ -754,7 +843,7 @@ fn lays_read_more_out_below_a_list(engine: &Engine) {
     super::lock(&engine.model).drawn.insert(
         "S-PAGE-1".to_owned(),
         json!({
-            "strings": ["#document", "HTML", "BODY", "DIV", "A", "visible", "static", "auto", "block", "0px", "inline"],
+            "strings": ["#document", "HTML", "BODY", "DIV", "A", "visible", "static", "auto", "block", "0px", "inline", "none"],
             "documents": [{
                 "nodes": {
                     "parentIndex": [-1, 0, 1, 2, 3],
@@ -764,7 +853,7 @@ fn lays_read_more_out_below_a_list(engine: &Engine) {
                 "layout": {
                     "nodeIndex": [1, 2, 3, 4],
                     "bounds": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 100, 30], [40, 40, 20, 10]],
-                    "styles": [[5, 5, 6, 8, 9], [5, 5, 6, 8, 9], [7, 7, 6, 8, 9], [5, 5, 6, 10, 9]],
+                    "styles": [[5, 5, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 11, 11, 11, 11], [5, 5, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 11, 11, 11, 11], [7, 7, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 11, 11, 11, 11], [5, 5, 6, 10, 9, 9, 9, 9, 9, 9, 9, 9, 9, 11, 11, 11, 11]],
                 },
             }],
         }),
@@ -780,7 +869,7 @@ fn boxes_in_the_payment_frame_down_to(engine: &Engine, box_bottom: f64) {
     model.drawn.insert(
         "S-PAGE-1".to_owned(),
         json!({
-            "strings": ["#document", "HTML", "BODY", "DIV", "IFRAME", "visible", "static", "hidden", "block", "0px"],
+            "strings": ["#document", "HTML", "BODY", "DIV", "IFRAME", "visible", "static", "hidden", "block", "0px", "none"],
             "documents": [{
                 "nodes": {
                     "parentIndex": [-1, 0, 1, 2, 3],
@@ -790,7 +879,7 @@ fn boxes_in_the_payment_frame_down_to(engine: &Engine, box_bottom: f64) {
                 "layout": {
                     "nodeIndex": [1, 2, 3, 4],
                     "bounds": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 800, box_bottom], [100, 200, 200, 60]],
-                    "styles": [[5, 5, 6, 8, 9], [5, 5, 6, 8, 9], [7, 7, 6, 8, 9], [5, 5, 6, 8, 9]],
+                    "styles": [[5, 5, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10], [5, 5, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10], [7, 7, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10], [5, 5, 6, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10]],
                     "clientRects": [[0, 0, 800, 600], [0, 0, 800, 600], [0, 0, 800, box_bottom], [0, 0, 200, 60]],
                 },
             }],
@@ -799,7 +888,7 @@ fn boxes_in_the_payment_frame_down_to(engine: &Engine, box_bottom: f64) {
     model.drawn.insert(
         "S-PAYMENT".to_owned(),
         json!({
-            "strings": ["#document", "HTML", "BODY", "BUTTON", "visible", "static", "block", "0px", "inline-block"],
+            "strings": ["#document", "HTML", "BODY", "BUTTON", "visible", "static", "block", "0px", "inline-block", "none"],
             "documents": [{
                 "nodes": {
                     "parentIndex": [-1, 0, 1, 2],
@@ -809,7 +898,7 @@ fn boxes_in_the_payment_frame_down_to(engine: &Engine, box_bottom: f64) {
                 "layout": {
                     "nodeIndex": [1, 2, 3],
                     "bounds": [[0, 0, 200, 60], [0, 0, 200, 60], [10, 10, 20, 10]],
-                    "styles": [[4, 4, 5, 6, 7], [4, 4, 5, 6, 7], [4, 4, 5, 8, 7]],
+                    "styles": [[4, 4, 5, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 9, 9, 9, 9], [4, 4, 5, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 9, 9, 9, 9], [4, 4, 5, 8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 9, 9, 9, 9]],
                     "clientRects": [[0, 0, 200, 60], [0, 0, 200, 60], [0, 0, 20, 10]],
                 },
             }],
@@ -1188,6 +1277,98 @@ fn a_drag_cut_by_the_person_taking_over_is_cancelled_let_go_and_handed_back() {
 }
 
 #[test]
+fn a_drag_cut_before_the_engine_tells_of_its_own_drag_cancels_that_drag_once_it_does() {
+    // In this order: every move made with the button held, the person takes over, the drag
+    // stops waiting for the engine's word and ends, and only then does the engine say its own
+    // drag started (#2839).
+    let (browser, engine) = browser_with(Limits {
+        drag_starts_within: Duration::from_millis(50),
+        ..limits()
+    });
+    {
+        let mut model = super::lock(&engine.model);
+        model.native_drag = true;
+        model.drag_told_when_asked = true;
+    }
+    let browser = Arc::new(browser);
+    let volume = ref_of(&snapshot(&browser, 1), "- slider \"Volume\"");
+    let dragging = Arc::clone(&browser);
+    let call = std::thread::spawn(move || {
+        dragging.call(
+            &id(2),
+            Call::Drag {
+                from: volume,
+                to: DragTo::Offset { x: 40.0, y: -5.0 },
+            },
+        )
+    });
+    let held_moves = || {
+        engine
+            .sent("Input.dispatchMouseEvent")
+            .iter()
+            .filter(|s| s.params["type"] == "mouseMoved" && s.params["buttons"] == 1)
+            .count()
+    };
+    let started = std::time::Instant::now();
+    while held_moves() < super::DRAG_STEPS {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the drag never made its moves"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    browser.take_over();
+    assert!(call.join().unwrap().is_err());
+    assert!(
+        drag_kinds(&engine).is_empty(),
+        "no word yet, nothing to cancel"
+    );
+    assert!(drags_handed_back(&engine));
+    engine.tell_of_the_held_drag();
+    let told = std::time::Instant::now();
+    while drag_kinds(&engine).is_empty() {
+        assert!(
+            told.elapsed() < Duration::from_secs(5),
+            "the engine's late drag was never cancelled"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(drag_kinds(&engine), ["dragCancel"]);
+    let cancel = engine.sent("Input.dispatchDragEvent");
+    assert_eq!(cancel[0].params["data"]["items"][0]["data"], "card");
+    assert_eq!(cancel[0].session.as_deref(), Some("S-PAGE-1"));
+}
+
+#[test]
+fn a_drag_s_mark_goes_with_its_session() {
+    let (browser, engine) = browser();
+    super::lock(&browser.inner.state).cancels_late = Some(("S-PAYMENT".to_owned(), (1.0, 2.0)));
+    engine.emit(
+        "Target.detachedFromTarget",
+        json!({"sessionId":"S-PAYMENT","targetId":"PAYMENT-FRAME"}),
+        None,
+    );
+    let start = std::time::Instant::now();
+    while super::lock(&browser.inner.state).cancels_late.is_some() {
+        assert!(start.elapsed() < Duration::from_secs(5), "the mark stayed");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[test]
+fn a_word_of_the_engine_s_drag_while_no_drag_was_asked_for_is_not_acted_on() {
+    let (browser, engine) = browser();
+    engine.emit(
+        "Input.dragIntercepted",
+        json!({"data":{"items":[],"dragOperationsMask":1}}),
+        Some("S-PAGE-1"),
+    );
+    std::thread::sleep(Duration::from_millis(60));
+    snapshot(&browser, 1);
+    assert!(drag_kinds(&engine).is_empty());
+}
+
+#[test]
 fn a_drag_whose_browser_ends_on_the_way_is_handed_back() {
     let (browser, engine) = browser();
     super::lock(&engine.model).native_drag = true;
@@ -1418,6 +1599,208 @@ fn an_action_answers_once_its_late_data_has_arrived() {
         started.elapsed() >= Duration::from_millis(300),
         "it waited for the data"
     );
+}
+
+/// The listing of `browser`'s pages.
+fn pages_of(browser: &Browser, n: u32) -> Vec<crate::drive::PageInfo> {
+    match browser.call(&id(n), Call::Pages).unwrap().content {
+        Content::Pages(pages) => pages,
+        other => panic!("not pages: {other:?}"),
+    }
+}
+
+/// A second page, opened by the engine and attached to.
+fn a_second_page(browser: &Browser, engine: &Engine) {
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"More","url":"http://fixture.test/more.html","attached":false}}),
+        None,
+    );
+    let start = std::time::Instant::now();
+    while super::lock(&browser.inner.state)
+        .page("PAGE-7")
+        .is_none_or(|p| p.session.is_none())
+    {
+        assert!(start.elapsed() < Duration::from_secs(5), "never attached");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn a_page_whose_title_does_not_come_does_not_hold_the_listing_past_its_deadline() {
+    let (browser, engine) = browser();
+    a_second_page(&browser, &engine);
+    // Every page's renderer is stuck: each read takes 1.5 s, past the listing's whole second.
+    engine.on(|sent, _| {
+        if sent.method == "Runtime.evaluate" && sent.params["expression"] == TITLE {
+            std::thread::sleep(Duration::from_millis(1500));
+            return Some(Err(CallError::TimedOut));
+        }
+        None
+    });
+    let started = std::time::Instant::now();
+    let pages = pages_of(&browser, 1);
+    assert!(
+        started.elapsed() < Duration::from_millis(2500),
+        "{:?}",
+        started.elapsed()
+    );
+    let titles: Vec<&str> = pages.iter().map(|p| p.title.as_str()).collect();
+    assert_eq!(
+        titles,
+        ["Frames and fields", "More"],
+        "as the engine told them"
+    );
+    let reads = engine
+        .sent("Runtime.evaluate")
+        .iter()
+        .filter(|s| s.params["expression"] == TITLE)
+        .count();
+    assert_eq!(reads, 1, "no read is started past the deadline");
+}
+
+#[test]
+fn a_title_read_from_a_document_the_page_has_since_left_is_not_kept() {
+    let (browser, engine) = browser();
+    // The page loads another document while its title is read: the read is of the one before.
+    engine.on(|sent, engine| {
+        if sent.method == "Runtime.evaluate" && sent.params["expression"] == TITLE {
+            engine.emit(
+                "Page.frameNavigated",
+                json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-5","url":"http://fixture.test/more.html","name":"","securityOrigin":"http://fixture.test","mimeType":"text/html"},"type":"Navigation"}),
+                Some("S-PAGE-1"),
+            );
+            std::thread::sleep(Duration::from_millis(50));
+            return Some(Ok(json!({"result":{"type":"string","value":"The page before"}})));
+        }
+        None
+    });
+    assert_eq!(pages_of(&browser, 1)[0].title, "Frames and fields");
+}
+
+#[test]
+fn a_huge_title_is_cut_and_one_past_the_read_s_bound_keeps_the_title_told() {
+    let (browser, engine) = browser();
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-1".into(), "t".repeat(5000));
+    assert_eq!(
+        pages_of(&browser, 1)[0].title.chars().count(),
+        super::MOST_TITLE_CHARS
+    );
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-1".into(), "t".repeat(200_000));
+    // Past the read's bound the read fails, and the title kept is the last one read.
+    assert_eq!(
+        pages_of(&browser, 2)[0].title.chars().count(),
+        super::MOST_TITLE_CHARS
+    );
+}
+
+#[test]
+fn a_huge_title_the_tree_names_is_cut() {
+    let (browser, engine) = browser();
+    {
+        let mut model = super::lock(&engine.model);
+        for node in model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap() {
+            if node["role"]["value"] == "RootWebArea" {
+                node["name"]["value"] = json!("t".repeat(5000));
+            }
+        }
+    }
+    snapshot(&browser, 1);
+    let kept = super::lock(&browser.inner.state)
+        .page("PAGE-1")
+        .unwrap()
+        .title
+        .chars()
+        .count();
+    // The tree cuts a long name itself; the page keeps no more than a title's bound either way.
+    assert!(kept <= super::MOST_TITLE_CHARS, "{kept}");
+}
+
+#[test]
+fn a_title_a_script_set_is_listed_though_the_engine_never_told_of_it() {
+    let (browser, engine) = browser();
+    // The engine told of "Frames and fields" as the page opened, and of nothing since.
+    super::lock(&engine.model)
+        .titles
+        .insert("PAGE-1".into(), "Retitled by its script".into());
+    let listed = browser.call(&id(1), Call::Pages).unwrap();
+    let Content::Pages(pages) = &listed.content else {
+        panic!("{listed:?}")
+    };
+    assert_eq!(pages[0].title, "Retitled by its script");
+    assert_eq!(listed.page.unwrap().title, "Retitled by its script");
+}
+
+#[test]
+fn a_page_whose_title_cannot_be_read_keeps_the_title_the_engine_told_of() {
+    let (browser, engine) = browser();
+    engine.on(|sent, _| {
+        (sent.method == "Runtime.evaluate" && sent.params["expression"] == TITLE)
+            .then_some(Err(CallError::TimedOut))
+    });
+    let listed = browser.call(&id(1), Call::Pages).unwrap();
+    let Content::Pages(pages) = &listed.content else {
+        panic!("{listed:?}")
+    };
+    assert_eq!(pages[0].title, "Frames and fields");
+}
+
+#[test]
+fn a_page_settles_once_a_frame_with_a_request_open_detaches() {
+    let (browser, engine) = browser();
+    // A frame inside the page asks for data, and goes before the engine says it ended.
+    engine.emit(
+        "Page.frameAttached",
+        json!({"frameId":"ADS-FRAME","parentFrameId":"PAGE-1"}),
+        Some("S-PAGE-1"),
+    );
+    engine.emit(
+        "Network.requestWillBeSent",
+        json!({"requestId":"9.1","loaderId":"L9","frameId":"ADS-FRAME","request":{"url":"http://fixture.test/ads-data"},"type":"Fetch"}),
+        Some("S-PAGE-1"),
+    );
+    // What the page waits for, as its settling reads it now.
+    let waits = || {
+        super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .unwrap()
+            .settle
+            .waiting_for(std::time::Instant::now(), limits().quiet)
+    };
+    let until = |done: &dyn Fn(&[String]) -> bool, what: &str| {
+        let start = std::time::Instant::now();
+        while !done(&waits()) {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "{what}: {:?}",
+                waits()
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    };
+    until(
+        &|w| w.iter().any(|w| w.contains("ads-data")) && w.len() == 1,
+        "the request never counted alone",
+    );
+    let before = browser.call(&id(1), Call::Pages).unwrap();
+    assert!(
+        matches!(&before.settled, Settled::No(why) if why.iter().any(|w| w.contains("ads-data"))),
+        "{:?}",
+        before.settled
+    );
+    engine.emit(
+        "Page.frameDetached",
+        json!({"frameId":"ADS-FRAME","reason":"remove"}),
+        Some("S-PAGE-1"),
+    );
+    // The page settles a quiet while after the detach.
+    until(&|w| w.is_empty(), "the page never settled");
+    let after = browser.call(&id(2), Call::Pages).unwrap();
+    assert_eq!(after.settled, Settled::Yes);
 }
 
 #[test]
@@ -2296,6 +2679,60 @@ fn the_focused_element_in_shadow_content_is_blanked() {
     let text = snapshot(&browser, 1);
     assert!(!text.contains("Inside the shadow"), "{text}");
     assert!(text.contains("- textbox \"Name\""), "{text}");
+}
+
+#[test]
+fn of_two_elements_the_tree_marks_focused_the_one_its_document_says_has_the_focus_is_blanked() {
+    // #2295: a real engine may mark a field's inner editor, or its document, focused with it.
+    let (browser, engine) = browser();
+    focus_on(&engine, &[("PAGE-1", "8"), ("PAYMENT-FRAME", "3")]);
+    let backend = {
+        let model = super::lock(&engine.model);
+        model.ax["PAGE-1"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["nodeId"] == "8")
+            .and_then(|n| n["backendDOMNodeId"].as_i64())
+            .unwrap()
+    };
+    // Only the page's own document is asked here; the payment frame's says nothing.
+    engine.on(move |sent, _| {
+        (sent.method == "Runtime.evaluate"
+            && sent.params["expression"] == FOCUSED_HERE
+            && sent.session.as_deref() == Some("S-PAYMENT"))
+        .then(|| Ok(json!({"result":{"type":"object","subtype":"null","value":null}})))
+    });
+    super::lock(&engine.model).focused_backend = Some(backend);
+    assert!(browser.blank_focused(None).is_ok());
+    assert!(
+        engine
+            .sent("DOM.describeNode")
+            .iter()
+            .any(|s| s.params["objectId"] == "FOCUSED")
+    );
+}
+
+#[test]
+fn one_element_the_tree_lists_twice_as_focused_is_blanked() {
+    // A real engine may give one element two nodes of its tree (a field and its inner editor
+    // share the field's id): it is still one element (#2295).
+    let (browser, engine) = browser();
+    focus_on(&engine, &[("PAGE-1", "8"), ("PAGE-1", "4")]);
+    let backend = {
+        let mut model = super::lock(&engine.model);
+        let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+        let backend = nodes
+            .iter()
+            .find(|n| n["nodeId"] == "8")
+            .and_then(|n| n["backendDOMNodeId"].as_i64())
+            .unwrap();
+        let other = nodes.iter_mut().find(|n| n["nodeId"] == "4").unwrap();
+        other["backendDOMNodeId"] = json!(backend);
+        backend
+    };
+    super::lock(&engine.model).focused_backend = Some(backend);
+    assert!(browser.blank_focused(None).is_ok());
 }
 
 #[test]

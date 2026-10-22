@@ -22,7 +22,7 @@ pub mod opencode;
 #[cfg(test)]
 pub(crate) mod testing;
 
-pub use adapter::HarnessAdapter;
+pub use adapter::{HarnessAdapter, SkillStart};
 pub use claude::SMART_CLOSE_ALLOW;
 
 /// A harness session's id, held to a shape that cannot be read as a flag.
@@ -264,6 +264,10 @@ pub struct Kit<'a> {
     /// of that persona's own (#1451: its MCP servers and its denied tools,
     /// [`crate::personaverbs::chatstart`]). `None` for a chat on no persona.
     pub persona: Option<As<'a>>,
+    /// The plane whose skills the chat gets beside the built-in ones, and where it works in it
+    /// (ADR 0099): `None` while the `skill-studio` flag is off, and then a chat gets the built-in
+    /// skills alone, as it always did.
+    pub skills: Option<crate::skills::PlaneSkills<'a>>,
 }
 
 /// The persona a chat runs as, and the project that defines it.
@@ -544,6 +548,7 @@ mod tests {
         // would start without its own.
         let plugin = testing::bundled_plugin();
         let kit = Kit {
+            skills: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(&plugin),
             persona: None,
@@ -816,6 +821,7 @@ mod tests {
     /// The app's kit, with the plugin at `/app/plugin` and the binary at `binary`.
     fn kit(binary: &str) -> Kit<'_> {
         Kit {
+            skills: None,
             binary: std::path::Path::new(binary),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,
@@ -1223,6 +1229,7 @@ mod tests {
             serde_json::json!(["mcp"])
         );
         let no_plugin = Kit {
+            skills: None,
             plugin: None,
             ..kit("/bin/charter")
         };
@@ -1742,6 +1749,7 @@ mod tests {
         // Nothing is half-armed from a second place: the chat reads `unknown`.
         let hooks = Harness::ClaudeCode.state_hooks(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: None,
                 persona: None,
@@ -2166,6 +2174,7 @@ mod tests {
         .expect("the shim");
         let hooks = Harness::Opencode.state_hooks(
             Kit {
+                skills: None,
                 binary: std::path::Path::new(binary),
                 plugin: Some(plugin.path()),
                 persona: None,
@@ -2227,6 +2236,7 @@ mod tests {
         let plugin = testing::bundled_plugin();
         let env = env_of(Harness::Codex.state_hooks(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(&plugin),
                 persona: None,
@@ -2247,6 +2257,7 @@ mod tests {
         // tell the model about every skill twice.
         let plugin = testing::bundled_plugin();
         let kit = Kit {
+            skills: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(&plugin),
             persona: None,
@@ -2262,6 +2273,7 @@ mod tests {
         let plugin = testing::bundled_plugin();
         let env = env_of(Harness::Opencode.state_hooks(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(&plugin),
                 persona: None,
@@ -2288,6 +2300,7 @@ mod tests {
         let plugin = tempfile::tempdir().expect("a plugin directory with no shim");
         let hooks = Harness::Opencode.state_hooks(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(plugin.path()),
                 persona: None,

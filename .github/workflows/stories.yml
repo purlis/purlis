@@ -1,0 +1,98 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: stories
+
+# Every component story run as a test (#2901, `docs/component-stories.md`): in real Chromium and
+# real WebKit, failing on a story that does not render, on a `play` function that fails (its
+# keyboard path), on any axe violation at WCAG 2.2 AA with `target-size` on, and on a picture
+# that is not its baseline. A baseline whose story is gone, or no longer runs as a test, fails it
+# too, naming the story: `stories-baselines.yml` deletes it.
+#
+# **One pinned image draws and compares every picture.** A picture differs by its machine's
+# fonts and rasteriser, so it is taken nowhere but in Playwright's own image for the Playwright
+# version `app/package-lock.json` locks, and the job fails when the two disagree. The image is
+# named by its tag and its digest here and in `stories-baselines.yml`, which draws the baselines
+# this job compares with; the two must name the same digest (`tools/story-image.mjs`). A tag can
+# be pushed again, and a digest cannot, so a baseline is compared in the image it was drawn in.
+#
+# A baseline changes only through `stories-baselines.yml`, which a pull request's
+# `update-baselines` label starts. `workflow_dispatch` is how that job starts this one on the
+# commit it pushed: the `pull_request` run that push starts waits for a maintainer's approval.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: stories-${{ github.ref }}
+  # As in ci.yml: a newer push supersedes a PR's run, and every run on `main` is kept.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  stories:
+    name: stories (Chromium and WebKit, axe, keyboard, screenshots)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:7852dc5a7d72f5fe458a597d690f6c42fbc8e9e26ddfa95f8e6ef552558d9bbf
+      # An init that reaps, and the host's IPC namespace, which Chromium wants for its shared
+      # memory (Playwright's own advice for this image).
+      options: --init --ipc=host
+    env:
+      PURLIS_STORY_PICTURES: "1"
+      HOME: /root
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: The image is the Playwright the lockfile names, by its tag and its digest
+        run: node ../tools/story-image.mjs
+      # Storybook's own index says which stories there are; a baseline of any other is obsolete.
+      - name: Every baseline was drawn in this image, of a story there is
+        run: |
+          npx storybook index --disable-telemetry --quiet -c .storybook \
+            -o "$RUNNER_TEMP/stories-index.json"
+          node ../tools/story-baselines.mjs check "$RUNNER_TEMP/stories-index.json"
+      # Each browser on its own, so each failure can say which browser it failed in. The
+      # failures are kept by `tools/story-failures.mjs`'s reporter rather than Vitest's JSON
+      # one, which keeps an error's stack alone: WebKit's does not repeat the message.
+      - name: The stories, in Chromium and in WebKit
+        run: |
+          failed=0
+          for browser in chromium webkit; do
+            PURLIS_STORY_REPORT="$RUNNER_TEMP/stories-$browser.json" \
+              npx vitest run --project "stories ($browser)" \
+              --reporter=default --reporter=../tools/story-failures.mjs || failed=1
+          done
+          exit "$failed"
+      # One annotation per story that failed, the same in both browsers: its browser, its gate,
+      # the first line of why and the axe rules it broke. The reporter's own annotations name a
+      # line, and a failure axe raises after the story has none.
+      - name: The stories that failed, named
+        if: failure()
+        run: |
+          node ../tools/story-failures.mjs \
+            chromium "$RUNNER_TEMP/stories-chromium.json" webkit "$RUNNER_TEMP/stories-webkit.json"
+      - name: The pictures that differ, kept
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: story-pictures
+          path: app/.vitest/attachments/
+          if-no-files-found: ignore
+          retention-days: 7

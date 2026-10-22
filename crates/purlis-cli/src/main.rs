@@ -51,6 +51,7 @@ mod scan;
 mod secret;
 mod session;
 mod shellguard;
+mod skill;
 mod statusline;
 mod theme;
 mod themepreview;
@@ -268,6 +269,11 @@ enum Command {
     /// Personas: their memory.
     #[command(subcommand)]
     Persona(memory::PersonaCommand),
+
+    /// Skills: the ones a chat in this project gets, why each other one is left out, and every run
+    /// of one with its signals (behind the `skill-studio` flag).
+    #[command(subcommand)]
+    Skill(skill::SkillCommand),
 
     /// Read/write secrets in a vault; values stay out of the model.
     #[command(subcommand)]
@@ -796,6 +802,14 @@ fn serve() -> ExitCode {
 /// one finds the other serving and leaves it be.
 #[cfg(unix)]
 fn serve() -> ExitCode {
+    // A service: its standard error is its log, the journal or the container's (#2753), so the
+    // core's `info` is said there too, redacted as the app's log is.
+    purlis_core::applog::widen_for_a_service();
+    #[cfg(debug_assertions)]
+    if std::env::var_os(CORE_INFORMS_ON_PURPOSE_ENV).is_some() {
+        purlis_core::applog::inform_on_purpose();
+        return ExitCode::SUCCESS;
+    }
     let Some(config) = purlis_core::machine::config_root() else {
         voice::err("there is no home folder to keep the session host's credentials in");
         return ExitCode::FAILURE;
@@ -829,7 +843,7 @@ fn serve() -> ExitCode {
             |place| {
                 // The event log of this machine, opened as the host first holds a project.
                 let log = purlis_core::hookchannel::EventLog::on_this_machine();
-                purlis_core::browsers::given_to(
+                kept_in_the_data_home(purlis_core::browsers::given_to(
                     purlis_host::Hosting::kept(
                         &place.credentials,
                         Composes(purlis_core::hoststart::Kit::installed_beside_this_binary()),
@@ -842,8 +856,11 @@ fn serve() -> ExitCode {
                     // What a chat's end leaves, kept as the window's own host keeps it (#2494).
                     .recording_with(log)
                     // `purlis stop --all` is heard with no window there (#2190).
-                    .heeding(purlis_core::halt::OnDisk(config.clone())),
-                )
+                    .heeding(purlis_core::halt::OnDisk(config.clone()))
+                    // The projects it holds for its desktop, each in `<data>/projects/<id>`,
+                    // and the code the desktop moves in them over the link (#2046).
+                    .moving_code_with(purlis_core::codelink::Moves),
+                ))
             },
             pairing,
         ))
@@ -914,6 +931,21 @@ impl purlis_host::Compose for Composes {
             purlis_core::sandbox::Os::this(),
         )
     }
+}
+
+/// `purlis serve`'s host, keeping the projects it holds for its desktop in `<data>/projects`
+/// (#2046), where there is a data home.
+#[cfg(unix)]
+fn kept_in_the_data_home(hosting: purlis_host::Hosting) -> purlis_host::Hosting {
+    let Some(data) = purlis_core::datahome::root() else {
+        return hosting;
+    };
+    // A data home inside a work tree or a project keeps nothing (ADR 0075 §6).
+    if let Some(why) = purlis_core::datahome::refusal(&data) {
+        voice::err(&format!("this host keeps no projects of its own: {why}"));
+        return hosting;
+    }
+    hosting.keeping_projects_in(data.join(purlis_core::datahome::PROJECTS))
 }
 
 /// **How `purlis serve` starts a chat's confinement** (#2217): the core's start of the plan it
@@ -1023,6 +1055,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             WorkspaceCommand::List | WorkspaceCommand::Current | WorkspaceCommand::Recall { .. },
         )
         | Command::Persona(memory::PersonaCommand::List)
+        | Command::Skill(skill::SkillCommand::List { .. } | skill::SkillCommand::Show { .. })
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
         | Command::Harness(HarnessCommand::List | HarnessCommand::Show { .. })
@@ -1730,6 +1763,13 @@ const PANIC_ON_PURPOSE_ENV: &str = "CHARTER_TEST_HOOK_PANICS";
 #[cfg(debug_assertions)]
 const CORE_WARNS_ON_PURPOSE_ENV: &str = "CHARTER_TEST_CORE_WARNS";
 
+/// Set in a debug build, `purlis serve` raises one `info` line from `purlis-core` and ends
+/// before it serves: the test suite's way to watch where the core's `info` goes under a
+/// runner's host (#2753). Compiled out of a release build.
+#[cfg(debug_assertions)]
+#[cfg(unix)]
+const CORE_INFORMS_ON_PURPOSE_ENV: &str = "PURLIS_TEST_CORE_INFORMS";
+
 /// Set in a debug build, `purlis` says whose process group the gits it runs are in, and does
 /// nothing else: the test suite's way to hold that this command keeps them in its own
 /// ([`purlis_core::worktree::git::stay_in_the_callers_group`]). Compiled out of a release
@@ -1799,6 +1839,7 @@ fn tell_the_host_about_the_tool_call(
     payload: &str,
     answered: &hooks::Answered,
     took: std::time::Duration,
+    skill: Option<Box<hookwire::SkillStarted>>,
 ) {
     use std::io::Write as _;
     let Some(socket) = purlis_core::envvar::var_os(SOCKET_ENV) else {
@@ -1834,6 +1875,7 @@ fn tell_the_host_about_the_tool_call(
             .and_then(|began| began.duration_since(std::time::UNIX_EPOCH).ok())
             .and_then(|since| u64::try_from(since.as_millis()).ok())
             .unwrap_or_default(),
+        skill,
     };
     let token = hookwire::ChatToken::from_env();
     if let Err(why) = hookwire::deliver_tool(std::path::Path::new(&socket), token.as_ref(), &call) {
@@ -1962,7 +2004,7 @@ fn tell_the_host_about_a_crash(word: &str, unanswered: bool) {
     };
     let answered =
         hooks::Answered::exit(ExitCode::from(BLOCK), hookwire::Decision::Deny, Some(rule));
-    tell_the_host_about_the_tool_call(word, "", &answered, Duration::ZERO);
+    tell_the_host_about_the_tool_call(word, "", &answered, Duration::ZERO, None);
 }
 
 #[cfg(not(unix))]
@@ -1971,6 +2013,7 @@ fn tell_the_host_about_the_tool_call(
     _payload: &str,
     _answered: &hooks::Answered,
     _took: std::time::Duration,
+    _skill: Option<Box<hookwire::SkillStarted>>,
 ) {
 }
 
@@ -1995,7 +2038,7 @@ fn hook_on_disagreement(name: &str, disagree: &purlis_core::envvar::Disagreement
         hookwire::Decision::Deny,
         Some(DISAGREEING_NAMES_RULE),
     );
-    tell_the_host_about_the_tool_call(name, &payload(), &answered, Duration::ZERO);
+    tell_the_host_about_the_tool_call(name, &payload(), &answered, Duration::ZERO, None);
     answered.print()
 }
 
@@ -2049,7 +2092,14 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
             let answered = decide(&text);
             (text, answered)
         };
-        tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed());
+        // The skill run the call starts (SK-3): heard once, as the call came back, and
+        // never of a call the guard refused, which ran nothing.
+        let skill = (purlis_core::hookreg::find(name)
+            .is_some_and(purlis_core::hookreg::Handler::hears_a_call_come_back)
+            && answered.decision != hookwire::Decision::Deny)
+            .then(|| hooks::with_hook(&text, now, purlis_core::toolhooks::skill_started))
+            .flatten();
+        tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed(), skill);
         let taken = tell_the_host_about_blocks(name, &text);
         // A block word answers nothing of its own, so this is the one line it prints (#1631).
         // And what a git command the sandbox stopped partway left behind (qw349), in the
@@ -2076,7 +2126,7 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
         if purlis_core::envvar::var_os(SOCKET_ENV).is_some() {
             let text = payload();
             let answered = hooks::Answered::exit(ExitCode::SUCCESS, hookwire::Decision::None, None);
-            tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed());
+            tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed(), None);
         }
         return ExitCode::SUCCESS;
     }
@@ -2108,7 +2158,13 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
                 hookwire::Decision::Deny,
                 Some(UNKNOWN_HOOK_RULE),
             );
-            tell_the_host_about_the_tool_call(name.as_ref(), &payload(), &answered, Duration::ZERO);
+            tell_the_host_about_the_tool_call(
+                name.as_ref(),
+                &payload(),
+                &answered,
+                Duration::ZERO,
+                None,
+            );
         }
         return ExitCode::from(BLOCK);
     };
@@ -3323,6 +3379,7 @@ fn run(command: Command) -> Result<u8, String> {
         Command::Worktree(command) => return piece::run(&here, command),
         Command::Change(command) => return change::run(&here, command),
         Command::Curation(command) => return curation::run(here.plane.root(), command),
+        Command::Skill(command) => return skill::run(here.plane.root(), command),
         Command::Session(command) => return session::run(&here, command),
         Command::Workspace(WorkspaceCommand::Remember {
             text,

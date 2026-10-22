@@ -1,9 +1,9 @@
 # Themes
 
-A **theme** is how the window looks: every colour and every motion value, in each of its
-appearances (dark, light, high contrast). purlis's theme engine reads each theme, refuses one
-that breaks its grammar, decides which theme the window draws, and checks whether its words can
-be read. The window only draws what the engine hands it. The full format is in the
+A **theme** is how the window looks: every colour, every motion value and its shape and size,
+in each of its appearances (dark, light, high contrast). purlis's theme engine reads each theme,
+refuses one that breaks its grammar, decides which theme the window draws, and checks whether
+its words can be read. The window only draws what the engine hands it. The full format is in the
 repository's `docs/design-system.md`, and its schema is `docs/schema/theme.v2.schema.json`.
 
 ## Where a theme comes from
@@ -116,7 +116,245 @@ project or a LIVE workspace may commit them with its default theme, by each opti
 appearance and option values, so a theme has at most 64: the appearances times each option's
 number of values (a toggle has two). A theme past that is refused with its count.
 
+## Geometry
+
+A theme sets its shape and size as numbers: the spacing scale, the type scale, the weights, the
+line heights, the corners, the control and strip heights, the focus ring and the shadows. Each
+is a **geometry token** with a bound; a value outside it, a fraction where a whole number is due
+(every one but the line heights), or anything that is not a number refuses the theme with a
+sentence that names the bound. The engine writes what the window draws from the number. A
+theme names only what it changes; every other token keeps the value of the theme it extends,
+and Purlis Classic's when it extends none.
+
+**Geometry is set per appearance**, in each appearance's `tokens` beside its colours:
+
+```json
+"appearances": [
+  { "id": "dark", "appearance": "dark",
+    "tokens": { "radius.md": 7, "radius.lg": 10, "size.control": 26, "line-height.body": 1.55 } },
+  { "id": "light", "appearance": "light",
+    "tokens": { "radius.md": 7, "radius.lg": 10, "size.control": 26, "line-height.body": 1.55 } }
+]
+```
+
+An appearance that leaves a token out keeps the value of the appearance of the same id in the
+theme it extends, else Purlis Classic's. So a theme that rounds its corners in `dark` alone
+draws `light` as the theme it extends does, square if it extends Classic: name the tokens in
+every appearance. A theme option's value may set geometry too, within the same bounds, drawn
+over the appearance as its colours are.
+
+| Token | Unit | Bounds | Classic | Compact | What it reaches |
+|---|---|---|---|---|---|
+| `space.0` | px at 14px | 0–0 | 0 | 0 | no space: 0 in every theme |
+| `space.1` | px at 14px | 0–4 | 2 | 2 | padding, gaps and margins: the smallest step |
+| `space.2` | px at 14px | 1–8 | 4 | 3 | padding, gaps and margins |
+| `space.3` | px at 14px | 2–10 | 6 | 4 | padding, gaps and margins |
+| `space.4` | px at 14px | 4–12 | 8 | 6 | a control's side padding; padding, gaps and margins |
+| `space.5` | px at 14px | 6–16 | 12 | 8 | padding, gaps and margins |
+| `space.6` | px at 14px | 8–24 | 16 | 12 | padding, gaps and margins |
+| `space.7` | px at 14px | 12–32 | 24 | 16 | padding, gaps and margins |
+| `space.8` | px at 14px | 16–48 | 32 | 24 | the largest padding and margins, and the width of menus and tooltips (a share of it) |
+| `font-size.2xs` | px at 14px | 8–12 | 10 | 10 | the small levels control |
+| `font-size.xs` | px at 14px | 9–13 | 11 | 11 | the meta and label roles: badges, counts |
+| `font-size.sm` | px at 14px | 10–14 | 12 | 12 | the secondary role: secondary lines, help text |
+| `font-size.md` | px at 14px | 11–15 | 13 | 13 | the body role: a tab's title, dense lists, a menu's rows |
+| `font-size.base` | px at 14px | 12–18 | 14 | 14 | fields', buttons' and segmented controls' words, the heading role |
+| `font-size.lg` | px at 14px | 13–22 | 16 | 16 | the title role |
+| `font-size.xl` | px at 14px | 16–28 | 20 | 20 | the Welcome page's heading and its doors' marks |
+| `font-weight.regular` | weight | 300–500 | 400 | 400 | the body, secondary, meta and code roles, menu rows |
+| `font-weight.medium` | weight | 400–600 | 500 | 500 | a form's label: a setting's name, a choice's name |
+| `font-weight.strong` | weight | 500–800 | 600 | 600 | titles, headings, labels, a row's strong line |
+| `line-height.tight` | × text | 1–1.4 | 1.2 | 1.2 | a compact line: counts |
+| `line-height.body` | × text | 1.2–1.8 | 1.4 | 1.3 | the window's own line, and every line the fit checks hold |
+| `radius.sm` | px | 0–8 | 3 | 3 | labels, chips, crumbs, badges, checkboxes, error and report boxes |
+| `radius.md` | px | 0–10 | 4 | 4 | buttons, fields, selects, menu rows, Notices, the palette's rows, Inbox asks |
+| `radius.lg` | px | 0–14 | 6 | 6 | dialogs, popovers, menus, tooltips, segmented controls |
+| `radius.xl` | px | 0–18 | 8 | 8 | the Welcome page's doors, nothing else |
+| `radius.full` | px | 0–9999 | 9999 | 9999 | pills: counts, toggle tracks |
+| `size.control` | px at 14px | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
+| `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
+| `focus-ring.width` | px | 1–4 | 2 | 2 | the focus ring of controls and list rows, and the selected row's edge |
+| `focus-ring.offset` | px | 0–4 | 2 | 2 | a control's ring, outside it |
+| `focus-ring.inset` | px | −4–0 | −2 | −2 | a list row's or a segment's ring, inside it |
+| `elevation.raised-y` | px at 14px | 0–8 | 2 | 2 | how far a raised bar's shadow falls: the find bar |
+| `elevation.raised-blur` | px at 14px | 0–24 | 8 | 8 | how soft that shadow is |
+| `elevation.overlay-y` | px at 14px | 0–16 | 8 | 8 | how far an overlay's shadow falls: dialogs, popovers, menus, tooltips |
+| `elevation.overlay-blur` | px at 14px | 0–48 | 24 | 24 | how soft that shadow is |
+
+**The units.** *px at 14px* is a length in px at the window's default text size, written in rem,
+so it grows with the person's text-size setting. *px* is a length that does not grow: corners
+and the focus ring. *weight* is a font weight. *× text* is a line height, a share of the text's
+own size, and the only kind that takes a fraction. **Classic** is Purlis Classic's comfortable
+value, which a theme that extends nothing draws unless it names the token; **Compact** is
+Purlis Classic's compact value. The window's own text size is the person's text-size setting,
+not a token: words with no size of their own (a list row's, a paragraph's) follow it, and every
+*px at 14px* length grows with it.
+
+The project strip sits in the title bar, whose height no token reaches yet. **Still square,
+whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a tab's `×` closer, the
+settings gear on a strip, and every list and tree row but the palette's. **The focus
+ring tokens reach the shared controls and list rows; every other focus ring is 2px**, whatever
+`focus-ring.*` says: the strip tabs, a tab's `×` closer and the strip gear among them.
+
+### Density's compact layer
+
+Density is the person's setting, comfortable or compact, and every theme has both. A theme's
+top-level `compact` object holds what compact draws, for every appearance: geometry tokens and
+their numbers, held to the same bounds. It is layered over the `compact` of the theme it
+extends.
+
+```json
+"compact": { "size.control": 22, "radius.md": 5 }
+```
+
+What compact draws for each token (`compact_of` in the engine):
+
+- a token the `compact` layer names is drawn as it names it;
+- a token Purlis Classic's compact moves (its Compact differs from its Classic above:
+  `space.2` to `space.8`, `line-height.body`, `size.control`, `size.chrome`) is the smaller of
+  Classic's Compact and the appearance's own value, so compact is never looser than
+  comfortable;
+- every other token keeps the appearance's own value.
+
+So a theme with `radius.md` 7 keeps 7 in compact, and one with `size.control` 26 draws 24 there.
+
+### A line fits its box
+
+A theme can set each number inside its bound and still make a line taller than the box it is
+drawn in. The check holds two lines, in both densities:
+
+- a field's words: `font-size.base` × `line-height.body` within `size.control`;
+- a strip's tab title: `font-size.md` × `line-height.body` within `size.chrome`.
+
+Purlis Classic fits each with room:
+
+- comfortable: 14 × 1.4 = 19.6 within 28, and 13 × 1.4 = 18.2 within 21;
+- compact: 14 × 1.3 = 18.2 within 24, and 13 × 1.3 = 16.9 within 18.
+
+Compact is the tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and not
+compact (14 × 1.3 = 18.2, over 18). A line that does not fit is a `line-does-not-fit` warning that
+names its density (see [The theme check](#the-theme-check)); the theme is drawn. A button's label
+sits on a line of 1, so it fits wherever a field's words do. Every length here grows with the text
+size alike, so what fits at the default text size fits at every one.
+
+## Component parts
+
+A token reaches every control that draws from it. A **component part** reaches one named part of
+one component family: the button's root, its label, its icon. A theme sets parts in a top-level
+`parts` object of `theme.json`, for every appearance, beside its tokens:
+
+```json
+"parts": {
+  "button.root.corner-radius": "full",
+  "button.root.border-width": 0,
+  "button.root.primary.hover.fill": "accent.base",
+  "button.label.font-weight": 500
+}
+```
+
+`purlis theme parts` prints every family, part, variant, state and property there is, with each
+bound, as JSON: what the theme skill, the gallery and an editor read. The schema completes each
+key. A theme that extends another starts from its parent's parts and layers its own over them,
+key by key. A property typed in its CSS spelling (`border-color`) is told the name it means.
+
+**The key** is `<family>.<part>[.<variant>][.<state>].<property>`. The state at rest is implied: a
+key with no state is the part at rest, and in every state that does not set the property. A key
+with no variant reaches the part in every variant; one with a variant only that variant. The more
+a key names, the more it wins: a state over rest, then a variant over every variant. A key that
+names a family, part, variant, state or property purlis does not have is said and left out, as
+an unknown token is.
+
+| Family | Parts | Variants |
+|---|---|---|
+| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept); since version 2 `soft-accent`, `warning-soft` and `link` |
+
+The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
+keyboard is on it), `disabled` and `open`.
+
+| Property | Value | Bounds |
+|---|---|---|
+| `fill` | a semantic colour token, or `transparent` | |
+| `text` | a semantic colour token | |
+| `border-colour` | a semantic colour token, or `transparent` | |
+| `shadow` | `none`, `raised` or `overlay` | |
+| `border-width` | px | 0–4 |
+| `corner-radius` | one value or four (top left, top right, bottom right, bottom left): px, a `radius.*` token or `full` | 0–9999, drawn at most half the part's height; `full` is a pill at any height |
+| `padding` | one value, or two (block, inline): px at 14px or a `space.*` token | block 0–12, inline 0–32 |
+| `gap` | px at 14px or a `space.*` token | 0–16 |
+| `font-size` | px at 14px or a `font-size.*` token | 10–18 |
+| `font-weight` | a weight or a `font-weight.*` token | 300–700 |
+| `height` | px at 14px or a `size.*` token | 24–48 |
+
+**A colour names a semantic token**, never a hex or a palette name, so the palette, the
+appearances, the tints and the floors keep working for a part as they do for a token. A geometry
+token follows the person's density; a number is the same in both.
+
+**A state never changes size.** Inside a state only `fill`, `text`, `border-colour` and `shadow`
+may be set, so nothing moves when the pointer, a press, the keyboard or a choice reaches a part.
+A theme that sets any other property inside a state is refused, and the check says why.
+
+**A corner is clamped as it is drawn** to half the part's height, its variant's own height
+where the theme sets one, and `full` draws a pill at any height and density. **A control stays a target and its words fit**: in both densities a button
+the theme sizes is at least 24px tall, and its words (its font size on a line of 1), its block
+padding and its border, top and bottom, fit in its height. A theme that breaks either is refused
+with the density named: Purlis Classic's compact button is 24px, so 14px words and a 1px border
+leave room for 4px of padding above and below, not 6.
+
+**What a theme does not set is the family default**, which the window's own stylesheet draws from
+the global tokens. A theme that names no parts draws exactly as it did; the engine writes the
+parts a theme names as one stylesheet, keyed on the wrapper's `data-scope` and `data-part`, its
+`data-variant` and its state attribute, in the `parts` layer above the controls.
+
+A geometry token is held to the property's bound at the value the theme draws it at, in both
+densities: `"gap": "space.8"` is 32 comfortable, past a gap's 16, and refuses the theme.
+
+**The floors hold per part and per state.** In each variant and state a theme's parts change,
+the part's words contrast 4.5:1 with its fill, and its icon 3:1, on every surface the family is
+drawn on; a border that is the part's only edge, on a fill that is its ground or none, contrasts
+3:1. A part that breaks one draws its family default in that variant and state, and the check
+says each as a `part-falls-back` warning. A disabled control is exempt, as WCAG has it.
+
+**The consent floors hold whatever a theme changed** (ADR 0097 §6), as it is written and in
+every workspace tint, and two looks are compared by the colours they draw, never by the tokens'
+names:
+
+- an answer that grants (`grants`, the variant of an Allow or an Accept) keeps its accent edge:
+  its `border-width` 0 is refused, a theme that turns every border off still draws it, and its
+  edge contrasts 3:1 with its fill;
+- Allow is distinguishable from Keep blocked (`secondary`) by its edge, and as plain as Keep
+  blocked: in every state it is drawn on Keep blocked's fill;
+- no part draws Allow or danger nearer the primary than the family's defaults draw it in the
+  same theme, measured on what a person reads as the look as it shows on each surface;
+- danger's words stay apart from the accent and from the primary's words.
+
+A consent variant that breaks one draws its family default there, and where that is not enough,
+so does the variant it is held apart from. Allow's lock is the window's, and no property reaches
+it.
+
+**Sizes.** A size (`padding`, `gap`, `font-size`, `font-weight`, `height`, `border-width`) is
+the family's default size, md: it never reaches a button drawn at sm or lg, or one in a row that
+wraps, whose size the family keeps, and an sm or lg button's corners are clamped to its own
+height. A button names one variant, so a variant's rule reaches only a button of that variant.
+
+The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
+families with parts today: they are drawn as the note under [Geometry](#geometry) says.
+
 ## The theme check
+
+**The grey tiers** (#2902). A theme draws words in four tiers, `text.primary`,
+`text.secondary`, `text.muted` and `text.quiet`, and what is not words (a tab's ×, a separator,
+a pin, a chevron, and disabled words) in `text.faint`. Quiet is informational text: line
+numbers, placeholders, counts, paths and group labels; none of it is exempt, and none of it
+takes faint. The check measures every text tier at 4.5:1 and faint at 3:1 on every ground a
+part draws them on: the window, a field, the status bar, a panel, a card, the row under the
+pointer, the editor's code, the selected row, the tab in front and a control, at rest and
+under the pointer. **A tier the layer below draws in the grey of the tier above it follows
+that tier** (ADR 0097's amendment of 2026-10-21): over Purlis Classic, whose quiet and faint are
+its muted, a theme that names `text.muted` and not `text.quiet` draws quiet in its muted, and one
+that names no `text.faint` draws faint in its quiet. So a theme written before the tiers draws
+them as legibly as its muted words. Over a parent with tiers of its own (Purlis), a theme that
+changes only `text.muted` keeps the parent's quiet and faint; it names them to change them. A
+tint recipe names each token it tints, the tiers included.
 
 `purlis theme check <theme>` checks one theme, named by its id, by the path of a theme file, or
 by the path of a theme folder (a folder holding `theme.json`; the folders beside it are the
@@ -132,7 +370,7 @@ left out (1):
   text.primry is not a purlis token, so it is left out
 warnings (2):
   text.muted on surface.base: 2.38, under 4.5; in every workspace tint too, down to 2.38
-  text.muted on surface.hover, in the red, blue tints: down to 2.07, under 3
+  text.muted on surface.hover, in the red, blue tints: down to 2.07, under 4.5
 ```
 
 Then `consent floors:`, what the window draws of the theme. Every combination of appearance
@@ -308,12 +546,17 @@ over theme files only.
   it replaces; neither close is offered until it is answered. A close that ends several chats
   asks about the drafts of each, and Keep then asks who draws each theme it kept. Where purlis
   cannot tell whether a chat has a draft, the close is refused, with why. A chat is closed in
-  purlis's own window, and a link is told nothing of its drafts.
+  purlis's own window, and a link is told nothing of its drafts: a link's close of a chat that
+  has drafts is handed to the window, which asks Keep or Revert there and says a link asked,
+  never over a question already on screen.
 - **The drafts of a chat that is no longer open are deleted**: once purlis's record of the open
   chats no longer holds it (it was closed, or a launch did not reopen it), nothing names its
   drafts, and they go. Each chat's drafts folder names the clone whose purlis made it, and only
   that clone deletes it: clones that share one state folder (`$PURLIS_HOME`) keep each other's
-  drafts.
+  drafts. A drafts folder that names no clone is adopted only in the plane's own state folder,
+  never under `$PURLIS_HOME`: purlis records this clone as its owner, and deletes it once its
+  chat is gone. A `$PURLIS_HOME` another clone sets to this plane's own state folder counts as
+  this clone's own.
 - **Moving a theme up a level**: in Settings › Theme, **Use in the whole project** moves a
   workspace's theme folder to the project's `themes/`, and **Copy to my machine** copies a
   project's or a workspace's to your own, carrying only the font files you approved with the
@@ -366,7 +609,9 @@ itself never fetches the address; only your editor does.
   `palette:`);
 - an **iTerm2 colour preset** (`iterm`), an `.itermcolors` file;
 - a **Ghostty theme** (`ghostty`): its `key = value` lines;
-- a **theme folder's zip** (`zip`), as `purlis theme export` writes one.
+- a **theme folder's zip** (`zip`), as `purlis theme export` writes one;
+- a **W3C design-tokens file** (`design-tokens`), format 2025.10, as `purlis theme export --kind
+  design-tokens` or a design tool writes one: see [Design tokens](#design-tokens).
 
 The kind is told from the file's name and its first words; `--kind` says it when they do not.
 The new folder goes in `--into <folder>`, a `themes/` folder, or in your own themes' folder,
@@ -392,6 +637,15 @@ the theme is in /home/me/.config/purlis/themes/harbor: `purlis theme check /home
 - **Each kind goes through a fixed table** (below): each token takes the first of its source
   keys that the source has. A token no row fills is Purlis Classic's of the same appearance, as
   in any theme that leaves a token out.
+- **A source's own quiet and disabled greys take the grey tiers** (#2941), and no tier reads
+  louder than the one above it. A VS Code theme's line numbers are `text.quiet` and its
+  disabled words `text.faint`; its muted words take the louder of the two greys. A base16 or
+  base24 scheme's invisibles (`base03`) are `text.faint`, walked to the mark floor. A tier the
+  source has no grey for, or whose grey would read louder than the tier above it, is left out
+  and follows that tier (see [The theme check](#the-theme-check)): a VS Code theme's faint
+  follows its quiet, which follows its muted when it has no line numbers; a base16 or base24
+  scheme's quiet follows its muted, and so does its faint when the walk would take it past
+  muted; an iTerm2 preset's and a Ghostty theme's quiet and faint are their muted.
 - **Then each kind's recipes tune the tokens the table filled** (below each table), so the
   theme reads where the source's own colours allow it. A base16 scheme makes some roles one
   colour (ANSI black is the background; the selected row is the row under the pointer) and
@@ -445,7 +699,9 @@ A VS Code theme's `colors`:
 | `control.hover` | `toolbar.hoverBackground` |
 | `text.primary` | `editor.foreground`, `foreground` |
 | `text.secondary` | `descriptionForeground` |
-| `text.muted` | `disabledForeground`, `editorLineNumber.foreground` |
+| `text.muted` | `editorLineNumber.foreground`, `disabledForeground` |
+| `text.quiet` | `editorLineNumber.foreground` |
+| `text.faint` | `disabledForeground` |
 | `border.subtle` | `panel.border`, `sideBar.border`, `editorGroup.border` |
 | `border.strong` | `input.border`, `contrastBorder` |
 | `accent.base` | `button.background`, `focusBorder` |
@@ -515,11 +771,13 @@ A VS Code theme's `colors`:
 | `chart.8` | `terminal.ansiMagenta` |
 | `window.background` | `titleBar.activeBackground`, `editor.background` |
 
-Tuned after the table (#2589): a VS Code theme names a colour for nearly every role, and those are taken as they are. Selected text it leaves to the selection is the editor's words.
+Tuned after the table (#2589): a VS Code theme names a colour for nearly every role, and those are taken as they are. Selected text it leaves to the selection is the editor's words. Its muted words take the louder of its line numbers' grey and its disabled grey, and its faint follows quiet when the disabled grey reads louder than the line numbers.
 
 | Token | Tuned |
 |---|---|
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `editor.foreground`, `foreground` |
+| `text.muted` | the one of `editorLineNumber.foreground`, `disabledForeground` that reads most on `surface.base` |
+| `text.faint` | left out when it reads louder than `text.quiet` on `surface.base` |
 
 Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
 token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
@@ -559,6 +817,7 @@ about a context and fills none. A rule's `fontStyle` sets the token's italic and
 | `text.primary` | `base05` |
 | `text.secondary` | `base04` |
 | `text.muted` | `base03` |
+| `text.faint` | `base03` |
 | `border.subtle` | `base02` |
 | `border.strong` | `base03` |
 | `accent.base` | `base0d` |
@@ -643,6 +902,8 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
 | `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
 | `text.muted` | toward `base04`, then `base05` |
+| `text.faint` | toward `base04`, then `base05` |
+| `text.faint` | left out when it reads louder than `text.muted` on `surface.base` |
 | `syntax.comment` | toward `base04`, then `base05` |
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
@@ -716,6 +977,7 @@ Tuned after the table (#2589), in this order. base16 makes some roles one colour
 | `text.primary` | `base05` |
 | `text.secondary` | `base04` |
 | `text.muted` | `base03` |
+| `text.faint` | `base03` |
 | `border.subtle` | `base02` |
 | `border.strong` | `base03` |
 | `accent.base` | `base0d` |
@@ -800,6 +1062,8 @@ Tuned as a base16 scheme is, after the table (#2589):
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
 | `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
 | `text.muted` | toward `base04`, then `base05` |
+| `text.faint` | toward `base04`, then `base05` |
+| `text.faint` | left out when it reads louder than `text.muted` on `surface.base` |
 | `syntax.comment` | toward `base04`, then `base05` |
 | `terminal.ansi.bright-black` | toward `base04`, then `base05` |
 | `text.secondary` | toward `base05` |
@@ -1126,6 +1390,65 @@ root, is a link or is encrypted, a folder that is not a theme folder's id, two n
 filesystem writes as one file (in other case or other accents), and a zip whose end lists more
 entries than that are refused whole, and nothing of it is written. A zip holds at
 most 64 files, each at most 2 MiB (the most a font may be) and 16 MiB together.
+
+## Design tokens
+
+`theme.json` is the only format purlis reads a theme in. The W3C Design Tokens Community
+Group's format, version 2025.10, is a way in and out of it, so a design tool and purlis can
+exchange a theme's tokens: `purlis theme export <theme folder> --kind design-tokens` writes the
+folder as one design-tokens file, at `--to <file>` or as `<folder's name>.tokens.json` here, and
+`purlis theme import <file>.tokens.json` reads one back. **Exporting and then importing gives
+the same theme folder**: the same `theme.json`, its component parts and grey tiers included, and
+the same files beside it. Every built-in theme does, and the export is checked against the
+format's official schema in CI.
+
+```
+exported purlis-copy (12 files) to purlis-copy.tokens.json
+```
+
+What is a token:
+
+- **The palette** is the group `palette`, a `color` token for each colour.
+- **Each appearance** is the group `appearance.<id>`. A token's name is split at its dots into
+  groups (`text.muted` is `text` › `muted`). A colour that names a palette colour is a reference
+  to it (`{palette.label}`); one given as hex is the colour. A geometry token is a `dimension` in
+  `px`, a font weight a `fontWeight`, a line height a `number`. The motion is the group
+  `appearance.<id>.motion`: each duration a `duration` in `ms`, each easing a `cubicBezier`.
+- **The `compact` layer** is the group `compact`, typed as an appearance's geometry is.
+- A name that is a token and also starts other tokens' names is its group's `$root`.
+
+What the format has no type for (a flag, a word such as `platform` or the cursor's shape, a
+component part, an option, the tint, the fonts and icon set a theme names) is kept as
+`theme.json` writes it under the vendor key `dev.purlis.theme` in `$extensions`, which the
+format asks every tool to keep: on an appearance's group, its tag, `high-contrast` and its
+untyped values; on the file, the rest of `theme.json`. The files beside `theme.json` (a font, a
+licence, an icon set) travel there too, as base64.
+
+**Colours are hex.** A colour is written in `srgb` with its `hex`, and its `alpha` when it is not
+opaque. Reading, purlis takes a colour's `srgb` components or, in any other colour space or when
+a component is `none`, its `hex`; a colour with neither, and one whose components and hex are two
+colours, refuse the file with a sentence that names the token. A colour spelled another way than the format writes it
+(`#FFF`) keeps its spelling under the vendor key.
+
+**A file purlis did not write** is read by the same rules. Its `appearance.<id>` groups are the
+appearances; with none, the tokens at its top that purlis has names for (`surface.base`,
+`text.primary`) are one appearance, dark or light by its ground. A reference to its `palette`
+keeps the palette name, and any other reference is followed to the colour it ends at. A token
+no purlis token takes, a dimension in `rem`, a font weight given as a word, a JSON pointer
+(`$ref`) and a group's `$extends` are listed under `not taken`. A reference to a token that is
+not there, or round in a circle, refuses the file.
+
+Imports are bounded in size and work. A design-tokens file is at most 24 MiB and holds at most
+400,000 JSON values, counted before it is read, no number longer than 64 KiB and no more strings
+that long than the files it may carry; a number is taken when it is at most 32 characters long;
+a group's or a token's name is at most 64 bytes
+and a token's path, its groups' names and its own, at most 256; the `theme.json` it makes is at
+most 2 MiB, as a zip's is; it has at most 64 appearances; the files it carries are held to a
+zip's bounds (64 files, each at most 2 MiB, 16 MiB together, each where a theme folder keeps a
+file, no two a filesystem writes as one); its groups nest at most 32 deep and it holds at most
+50,000 groups and tokens. A file a newer purlis wrote, whose `dev.purlis.theme` version this one does not
+read, and one whose version is not a whole number, are refused with the version they have.
+A `.json` file with tokens in it is read as design tokens even when its top group is `colors`.
 
 ## Names every platform holds
 

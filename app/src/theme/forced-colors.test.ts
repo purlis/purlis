@@ -222,10 +222,8 @@ describe("forced colours", () => {
 
   it("tell what ends or destroys, and a ground that says something is wrong, by a shape", () => {
     for (const danger of [
-      ".ui-button-danger",
+      '[data-scope="button"][data-part="root"][data-variant="danger"]',
       ".ui-menu-item-danger",
-      ".answer .ends-it",
-      ".ui-setting-actions button.ends-it",
       '.title-kill-switch[data-stopped="yes"]',
       ".trouble",
       ".ui-inline-surface-trouble",

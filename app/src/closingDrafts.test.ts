@@ -4,9 +4,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { PlaneId, WindowDraft } from "./bindings";
-import { draftsOfClosing, settleClosingDrafts, type DraftsClient } from "./closingDrafts";
+import {
+  CLOSE_IS_THE_WINDOWS,
+  draftsOfClosing,
+  settleClosingDrafts,
+  type DraftsClient,
+} from "./closingDrafts";
 import { commands as linkCommands } from "./uiRpc";
-import { WINDOW_ONLY_SAID } from "./uiRpcLink";
+import { WINDOW_ONLY_SAID, windowOnly, windowOnlyResult } from "./uiRpcLink";
 
 /** What a close does about its chats' theme drafts (#2332, #2708). */
 
@@ -51,6 +56,28 @@ function windowClient(
       asked.push(`revert ${folder}`);
       return Promise.resolve({ status: "ok", data: null });
     },
+    handDraftsCloseToTheWindow: (_plane, sessions) => {
+      asked.push(`hand ${sessions.join(" ")}`);
+      return Promise.resolve({ status: "ok", data: null });
+    },
+  };
+}
+
+/** A link's client, as `uiRpc.ts` is one: the drafts are the window's, and the core takes the
+ *  hand (`taken`) or fails it. It answers nothing of what the chats have. */
+function linkClient(taken: boolean): DraftsClient & { asked: string[] } {
+  const asked: string[] = [];
+  return {
+    asked,
+    themeDraftsOfChat: windowOnlyResult,
+    themeDraftKeep: windowOnlyResult,
+    themeDraftRevert: windowOnly,
+    handDraftsCloseToTheWindow: (_plane, sessions) => {
+      asked.push(`hand ${sessions.join(" ")}`);
+      return Promise.resolve(
+        taken ? { status: "ok", data: null } : { status: "error", error: "no such project" },
+      );
+    },
   };
 }
 
@@ -64,6 +91,27 @@ describe("the theme drafts a close asks about", () => {
   it("are not asked on a link, whose close is refused in a window-only command's words", async () => {
     const found = await draftsOfClosing(linkCommands, PLANE, [3]);
     expect(found).toEqual({ ok: false, refused: WINDOW_ONLY_SAID });
+  });
+
+  it("on a link, hand the close to the window, which settles any drafts", async () => {
+    // #2761: the link is told the close is the window's, the same whatever its chats have, and
+    // keeps or reverts nothing.
+    const client = linkClient(true);
+    const found = await draftsOfClosing(client, PLANE, [3, 4]);
+    expect(found).toEqual({ ok: false, handed: CLOSE_IS_THE_WINDOWS });
+    expect(client.asked).toEqual(["hand 3 4"]);
+  });
+
+  it("on a link, refuse a close the core did not take, in a window-only command's words", async () => {
+    const client = linkClient(false);
+    const found = await draftsOfClosing(client, PLANE, [3]);
+    expect(found).toEqual({ ok: false, refused: WINDOW_ONLY_SAID });
+  });
+
+  it("in the window, are asked of the core and never handed", async () => {
+    const client = windowClient({ 3: [draft("dusk", 3)] });
+    await draftsOfClosing(client, PLANE, [3]);
+    expect(client.asked).toEqual(["drafts 3"]);
   });
 
   it("hold the close when purlis cannot tell", async () => {

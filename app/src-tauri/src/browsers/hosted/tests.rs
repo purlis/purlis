@@ -119,6 +119,21 @@ fn a_browser_the_window_opens_is_drawn_a_whole_frame_at_a_time() {
 }
 
 #[test]
+fn a_first_browser_start_past_the_hosts_usual_answer_time_still_starts() {
+    // The first start on a host downloads the engine inside it: it is waited for past the
+    // 30 seconds any other answer gets, as long as the download may take.
+    let window = window_of(StandInBrowsers::holding_starts, |hosting| hosting);
+    let opened = std::thread::scope(|scope| {
+        let opening = scope.spawn(|| window.browsers.open(&window.root));
+        until("the start is under way", || window.started.waiting() == 1);
+        std::thread::sleep(crate::hostedsessions::ANSWER_WITHIN + Duration::from_secs(2));
+        window.started.let_starts_go();
+        opening.join().unwrap()
+    });
+    assert!(opened.is_ok(), "{opened:?}");
+}
+
+#[test]
 fn two_clones_of_one_project_each_open_a_browser() {
     // #2178: one project id, two folders.
     let window = window();
@@ -266,8 +281,23 @@ fn a_start_refused_with_a_code_this_window_does_not_know_is_refused_in_the_hosts
     };
     match super::not_started(later, 3) {
         NotStarted::Failed(why) => assert_eq!(why, "this device runs at most 3 browsers at once"),
-        NotStarted::Full { .. } => panic!("a code it does not know is not device_full"),
+        other => panic!("a code it does not know is said in the host's words: {other:?}"),
     }
+}
+
+#[test]
+fn a_start_the_host_refused_for_the_engines_sandbox_is_not_started_for_it() {
+    // #2835: the host's words for it, whatever its code, are told apart from any failure.
+    use crate::chatbrowsers::NotStarted;
+    use purlis_session_protocol::session::Refusal;
+    let refused = Refusal {
+        code: "browser_failed".into(),
+        why: format!(
+            "the browser did not start: {}",
+            purlis_core::browsers::sandboxing::NO_ENGINE_SANDBOX
+        ),
+    };
+    assert_eq!(super::not_started(refused, 3), NotStarted::NoSandbox);
 }
 
 /// A key the person pressed, aimed at what a frame said it showed.

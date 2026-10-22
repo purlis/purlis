@@ -1483,6 +1483,121 @@ fn purlis_exports_as_a_copy_with_its_fonts_icons_and_licence() {
     }
 }
 
+/// A theme folder's files as the engine compares them: `theme.json` read as JSON, the rest as
+/// bytes.
+fn folder_as_read(folder: &Path) -> (String, Vec<(String, Vec<u8>)>) {
+    let files = folder_files(folder);
+    let theme: serde_json::Value = files
+        .iter()
+        .find(|(name, _)| name == "theme.json")
+        .map(|(_, bytes)| serde_json::from_slice(bytes).expect("theme.json is JSON"))
+        .expect("a theme.json");
+    let rest = files
+        .into_iter()
+        .filter(|(name, _)| name != "theme.json")
+        .collect();
+    // Written as text, so the comparison sees the keys' order too.
+    (serde_json::to_string(&theme).expect("JSON"), rest)
+}
+
+#[test]
+fn a_theme_folder_exported_as_design_tokens_imports_back_to_the_same_folder() {
+    let rig = Rig::new();
+    let folder = rig.dir.path().join("made/kept");
+    std::fs::create_dir_all(folder.join("icons")).expect("a folder");
+    std::fs::write(
+        folder.join("theme.json"),
+        r##"{ "name": "Kept", "palette": { "ink": "#101418" },
+              "appearances": [{ "id": "dark", "appearance": "dark",
+                                "tokens": { "surface.base": "ink", "caret": "platform" } }] }"##,
+    )
+    .expect("a theme");
+    std::fs::write(folder.join("LICENSE"), "made up for a test\n").expect("a licence");
+    std::fs::write(folder.join("icons/notes.json"), "{}").expect("a file");
+    let tokens = rig.dir.path().join("kept.tokens.json");
+    let back = rig.dir.path().join("back");
+
+    let exported = rig.run(&[
+        "export",
+        folder.to_str().expect("a path"),
+        "--kind",
+        "design-tokens",
+        "--to",
+        tokens.to_str().expect("a path"),
+    ]);
+    let imported = rig.run(&[
+        "import",
+        tokens.to_str().expect("a path"),
+        "--into",
+        back.to_str().expect("a path"),
+    ]);
+
+    assert_eq!(exported.code, 0, "{}", exported.err);
+    assert_eq!(
+        exported.out.lines().next().unwrap_or_default(),
+        format!("exported kept (3 files) to {}", tokens.display())
+    );
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&tokens).expect("read")).expect("JSON");
+    assert_eq!(
+        written["appearance"]["dark"]["surface"]["base"]["$value"], "{palette.ink}",
+        "a palette colour is a reference to the palette"
+    );
+    assert_eq!(imported.code, 0, "{}{}", imported.out, imported.err);
+    assert!(
+        imported
+            .out
+            .starts_with("imported Kept (design-tokens) into "),
+        "{}",
+        imported.out
+    );
+    assert_eq!(folder_as_read(&back.join("kept")), folder_as_read(&folder));
+}
+
+#[test]
+fn every_built_in_theme_exports_as_design_tokens_and_imports_back_the_same() {
+    for (id, copy) in [
+        ("purlis-classic", "purlis-classic-copy"),
+        ("purlis", "purlis-copy"),
+    ] {
+        let rig = Rig::new();
+        let back = rig.dir.path().join("back");
+
+        let exported = rig.run(&["export", id, "--kind", "design-tokens"]);
+        let tokens = rig.plane().join(format!("{copy}.tokens.json"));
+        let imported = rig.run(&[
+            "import",
+            tokens.to_str().expect("a path"),
+            "--into",
+            back.to_str().expect("a path"),
+        ]);
+
+        assert_eq!(exported.code, 0, "{id}: {}", exported.err);
+        assert_eq!(imported.code, 0, "{id}: {}{}", imported.out, imported.err);
+        let files = if id == "purlis" {
+            purlis_core::theme::purlis_files()
+        } else {
+            purlis_core::theme::Files::from([(
+                "theme.json".to_owned(),
+                purlis_core::theme::CLASSIC_THEME_JSON.as_bytes().to_vec(),
+            )])
+        };
+        let (theme, rest) = folder_as_read(&back.join(copy));
+        let expected: serde_json::Value =
+            serde_json::from_slice(&files["theme.json"]).expect("JSON");
+        assert_eq!(
+            theme,
+            serde_json::to_string(&expected).expect("JSON"),
+            "{id}'s theme.json"
+        );
+        let expected_rest: Vec<(String, Vec<u8>)> = files
+            .into_iter()
+            .filter(|(name, _)| name != "theme.json")
+            .collect();
+        assert_eq!(rest, expected_rest, "{id}'s files");
+    }
+}
+
 #[test]
 fn an_export_writes_its_name_here_and_never_over_a_file_without_force() {
     let rig = Rig::new();
@@ -2046,6 +2161,78 @@ fn the_check_names_each_level_that_chose_the_theme_with_its_values() {
     );
 }
 
+// ---------------------------------------------------------------------------------------
+// Component parts (#2903)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn theme_parts_prints_every_family_part_state_and_property_as_json() {
+    let rig = Rig::new();
+
+    let ran = rig.run(&["parts"]);
+
+    assert_eq!(ran.code, 0, "{}", ran.err);
+    let json = ran.json();
+    assert_eq!(json["schema"], 1);
+    assert_eq!(json["version"], 2);
+    assert_eq!(
+        json["theme_schema"]
+            .as_str()
+            .map(|url| url.ends_with("theme.v2.schema.json")),
+        Some(true)
+    );
+    assert_eq!(
+        json["grammar"],
+        "<family>.<part>[.<variant>][.<state>].<property>"
+    );
+    assert_eq!(json["families"][0]["name"], "button");
+    let corner = json["properties"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "corner-radius")
+        .expect("corner-radius");
+    assert_eq!(corner["in_state"], false);
+    assert_eq!(corner["bounds"]["or"][0], "full");
+}
+
+#[test]
+fn a_theme_that_rounds_the_button_is_drawn_and_a_size_inside_a_state_is_refused() {
+    let rig = Rig::new();
+    let themes = rig.machine_themes();
+    let pill = rig.folder(
+        &themes,
+        "pill",
+        &serde_json::json!({
+            "name": "Pill",
+            "extends": "purlis-classic",
+            "parts": { "button.root.corner-radius": "full" }
+        }),
+    );
+    let shifty = rig.folder(
+        &themes,
+        "shifty",
+        &serde_json::json!({
+            "name": "Shifty",
+            "extends": "purlis-classic",
+            "parts": { "button.root.selected.font-weight": 600 }
+        }),
+    );
+
+    let drawn = rig.run(&["check", pill.to_str().unwrap()]);
+    assert_eq!(drawn.code, 0, "{}{}", drawn.out, drawn.err);
+
+    let refused = rig.run(&["check", shifty.to_str().unwrap()]);
+    assert_eq!(refused.code, 1, "{}{}", refused.out, refused.err);
+    assert!(
+        refused
+            .out
+            .contains("parts.button.root.selected.font-weight is refused: a state never changes"),
+        "{}",
+        refused.out
+    );
+}
+
 // ---- the theme skill (#2333) ------------------------------------------------------------- //
 
 /// The theme skill purlis's plugin ships: a chat runs what it says.
@@ -2098,7 +2285,7 @@ fn every_theme_command_the_theme_skill_names_is_one_purlis_has_with_its_flags_an
         named.iter().map(|(command, _)| command.as_str()).collect();
     assert_eq!(
         commands.into_iter().collect::<Vec<_>>(),
-        ["check", "draft", "export", "import", "list"],
+        ["check", "draft", "export", "import", "list", "parts"],
         "the skill's create, edit, check and share paths each name their command: {named:?}"
     );
     let rig = Rig::new();
@@ -2192,7 +2379,7 @@ fn skill_geometry_rows(page: &str) -> Vec<(String, f64, f64, f64, f64)> {
     let mut rows = Vec::new();
     let mut lines = page
         .lines()
-        .skip_while(|line| !line.starts_with("| Tokens | Bounds | Classic | Compact |"))
+        .skip_while(|line| !line.starts_with("| Token | Bounds | Classic | Compact |"))
         .skip(2);
     for line in lines.by_ref().take_while(|line| line.starts_with('|')) {
         let cells: Vec<&str> = line.trim_matches('|').split(" | ").collect();
@@ -2221,33 +2408,87 @@ fn skill_geometry_rows(page: &str) -> Vec<(String, f64, f64, f64, f64)> {
 }
 
 #[test]
-fn the_theme_skill_s_geometry_table_names_every_token_with_the_engine_s_bounds_and_values() {
-    let mut rows = skill_geometry_rows(&theme_skill());
-    let mut steps: Vec<(String, f64, f64, f64, f64)> = purlis_core::theme::geometry::STEPS
+fn the_theme_skill_s_corners_and_heights_are_the_engine_s_bounds_and_values() {
+    // The skill keeps the corners and the heights; `purlis docs show themes` has every token,
+    // and core's test holds that table to STEPS whole.
+    let rows = skill_geometry_rows(&theme_skill());
+    let steps = &purlis_core::theme::geometry::STEPS;
+    let mut named: Vec<&str> = rows.iter().map(|row| row.0.as_str()).collect();
+    named.sort_unstable();
+    named.dedup();
+    assert_eq!(named.len(), rows.len(), "every token once: {rows:?}");
+    for (token, least, most, classic, compact) in &rows {
+        let step = steps
+            .iter()
+            .find(|one| one.token == token)
+            .unwrap_or_else(|| panic!("{token} is not a geometry token"));
+        assert_eq!(
+            (*least, *most, *classic, *compact),
+            (step.least, step.most, step.classic, step.compact),
+            "the skill's {token} is the engine's: its bounds, Classic's value and Classic's \
+             compact value"
+        );
+    }
+    for step in steps
         .iter()
-        .map(|one| {
-            (
-                one.token.to_owned(),
-                one.least,
-                one.most,
-                one.classic,
-                one.compact,
-            )
-        })
+        .filter(|one| one.token.starts_with("radius.") || one.token.starts_with("size."))
+    {
+        assert!(
+            named.contains(&step.token),
+            "the skill's table has every corner and height: {}",
+            step.token
+        );
+    }
+    // It points at the docs' Geometry section for the rest.
+    let skill = theme_skill()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        skill.contains("`purlis docs show themes` has every one in its Geometry section"),
+        "the skill points at the docs for the rest"
+    );
+    let docs = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../purlis-core/docs/themes.md"),
+    )
+    .expect("the themes docs");
+    assert!(docs.contains("\n## Geometry\n"), "the docs have it");
+    // The two rules it keeps inline: each line the check fits, and the tokens Classic's
+    // compact moves.
+    for fit in purlis_core::theme::FITS {
+        let named = format!(
+            "`{}` × `{}` within `{}`",
+            fit.size, fit.line_height, fit.height
+        );
+        assert!(skill.contains(&named), "the skill says {named}");
+    }
+    let moved: Vec<&str> = steps
+        .iter()
+        .filter(|one| one.compact != one.classic)
+        .map(|one| one.token)
         .collect();
-    // The table groups the tokens by what an author reaches for, corners first.
-    rows.sort_by(|a, b| a.0.cmp(&b.0));
-    steps.sort_by(|a, b| a.0.cmp(&b.0));
-    assert_eq!(
-        rows, steps,
-        "the skill's table is the engine's STEPS: every token once, with its bounds, Classic's \
-         value and Classic's compact value"
+    let spaces: Vec<&&str> = moved.iter().filter(|t| t.starts_with("space.")).collect();
+    let mut parts = vec![format!(
+        "`{}` to `{}`",
+        spaces.first().expect("a spacing step"),
+        spaces.last().expect("a spacing step")
+    )];
+    parts.extend(
+        moved
+            .iter()
+            .filter(|t| !t.starts_with("space."))
+            .map(|t| format!("`{t}`")),
+    );
+    let named = parts.join(", ");
+    assert!(
+        skill.contains(&named),
+        "the skill's compact rule names {named}"
     );
 }
 
 #[test]
 fn the_skill_s_geometry_scan_reads_one_value_per_token_in_order() {
-    let page = "x\n\n| Tokens | Bounds | Classic | Compact | What it reaches |\n|---|---|---|---|---|\n| `a.b` `a.c` | 0–4 px, −4–0 px | 2, −2 | 1, −1 | x |\n\nafter\n| `not.read` | 1–2 | 1 | 1 | y |\n";
+    let page = "x\n\n| Token | Bounds | Classic | Compact | What it reaches |\n|---|---|---|---|---|\n| `a.b` `a.c` | 0–4 px, −4–0 px | 2, −2 | 1, −1 | x |\n\nafter\n| `not.read` | 1–2 | 1 | 1 | y |\n";
     assert_eq!(
         skill_geometry_rows(page),
         vec![

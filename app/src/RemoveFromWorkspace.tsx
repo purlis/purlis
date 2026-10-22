@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import * as AlertDialog from "./overlays/alert-dialog";
 import { commands, type PlaneId } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * **Take a repo the workspace names, and this machine has not cloned, out of the workspace**
@@ -90,26 +91,13 @@ export function RemoveFromWorkspace({
           )}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                ref={cancel}
-                disabled={busy}
-                onClick={onClose}
-              >
+              <Button ref={cancel} isDisabled={busy} onPress={onClose}>
                 Cancel
-              </button>
+              </Button>
             </AlertDialog.Cancel>
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              disabled={busy}
-              onClick={() => void confirm()}
-            >
+            <Button variant="danger" isDisabled={busy} onPress={() => void confirm()}>
               {busy ? "Removing…" : "Remove from workspace"}
-            </button>
+            </Button>
           </AnswerBar>
         </AlertDialog.Content>
       </AlertDialog.Portal>

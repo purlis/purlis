@@ -220,7 +220,11 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
     // Last: the chat's skills, for a chat whose harness cannot load them (ADR 0063), as its skill
     // set holds them. Only such a chat is started with the variable, so a harness that loads
     // them is not told twice.
-    if let Some(skills) = crate::skills::briefed(ask.root, ask.env) {
+    let workspace = match place_of(ask) {
+        active::Place::PlaneRoot => None,
+        active::Place::Workspace(workspace) => Some(workspace),
+    };
+    if let Some(skills) = crate::skills::briefed(ask.root, workspace.as_deref(), ask.env) {
         parts.push(skills);
     }
     parts

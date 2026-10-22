@@ -4,6 +4,7 @@
 import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 import type { TextEditorHandle } from "../editor/TextEditor";
 import type { Shown } from "./fileControls";
+import { Button } from "../ui/button/Button";
 
 /** The editor, and the merge view a file changed on disk opens: CodeMirror, in a chunk of its
  *  own fetched when a file is first edited, never in the window's main bundle (#987). */
@@ -93,6 +94,7 @@ export function RawLinks({
         <button
           key={one.id}
           type="button"
+          className="ui-settings-raw-file"
           // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
           tabIndex={0}
           aria-current={one.id === editing ? "true" : undefined}
@@ -203,42 +205,30 @@ export function RawEditor({
         )}
       </Suspense>
       <div className="ui-raw-actions">
-        <button
-          type="button"
-          className="ui-button"
-          tabIndex={0}
-          disabled={!dirty || moved || saving}
-          onClick={() => void save()}
-        >
+        <Button isDisabled={!dirty || moved || saving} onPress={() => void save()}>
           {saving ? "Saving…" : `Save ${name}`}
-        </button>
+        </Button>
         {moved && (
-          <button
-            type="button"
-            className="ui-button"
-            tabIndex={0}
-            disabled={saving}
-            onClick={() => {
+          <Button
+            isDisabled={saving}
+            onPress={() => {
               // The edit, as one of the file as it now is: Save writes it over the file.
               onDraft((now) => now && { base, text: now.text });
               focus();
             }}
           >
             Keep my edit
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          className="ui-button"
-          tabIndex={0}
-          disabled={!(dirty || moved) || saving}
-          onClick={() => {
+        <Button
+          isDisabled={!(dirty || moved) || saving}
+          onPress={() => {
             onDraft(undefined);
             focus();
           }}
         >
           Discard
-        </button>
+        </Button>
       </div>
       {refused && (
         <div className="ui-setting-error" role="alert">

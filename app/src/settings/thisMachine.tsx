@@ -6,6 +6,7 @@ import { commands, type MachineProject, type ThisMachine } from "../bindings";
 import { Choice } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { channelMoved, readChannel, useUpdateChannel } from "../updateChannel";
+import { Button } from "../ui/button/Button";
 
 /**
  * **You › This machine** (ST-2, #1226; V91r): what this machine's store holds — its recent
@@ -220,16 +221,9 @@ type EntryAction = { action: string; label: string; onAction: () => void };
 
 function EntryButton({ action, label, onAction }: EntryAction) {
   return (
-    <button
-      type="button"
-      className="ui-setting-reset"
-      // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-      tabIndex={0}
-      aria-label={label}
-      onClick={onAction}
-    >
+    <Button size="sm" aria-label={label} onPress={onAction}>
       {action}
-    </button>
+    </Button>
   );
 }
 

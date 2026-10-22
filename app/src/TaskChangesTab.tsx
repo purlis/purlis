@@ -26,6 +26,7 @@ import {
   placeSaid,
   SHARED_SAID,
 } from "./taskChanges";
+import { Button } from "./ui/button/Button";
 
 /** A file's mark, as the explorer says it. */
 const MARKS: Record<TaskFile["mark"], string> = {
@@ -154,26 +155,20 @@ export function TaskChangesTab({
       )}
       {own?.left?.deletable === true && !read.running && (
         <div className="task-changes-acts">
-          <button
-            type="button"
-            tabIndex={0}
-            onClick={() => {
+          <Button
+            onPress={() => {
               setTold(undefined);
               if (own.left !== null) setDeleting({ tip: own.left.tip });
             }}
           >
             Delete branch…
-          </button>
+          </Button>
         </div>
       )}
       {own?.acts === true && (
         <div className="task-changes-acts">
-          <button type="button" tabIndex={0} onClick={askToMerge}>
-            Merge…
-          </button>
-          <button type="button" tabIndex={0} onClick={askToDiscard}>
-            Discard branch…
-          </button>
+          <Button onPress={askToMerge}>Merge…</Button>
+          <Button onPress={askToDiscard}>Discard branch…</Button>
         </div>
       )}
       {told !== undefined && (

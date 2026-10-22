@@ -1,6 +1,13 @@
 # The window's UI primitives
 
-**Radix UI. New UI is built from its primitives, not from hand-rolled markup.**
+**Component families on React Aria, and Radix UI until each family moves. New UI is built from
+them, not from hand-rolled markup.**
+
+Since #2904 (ADR 0104), every control of a moved family is drawn from its **component family** in
+`app/src/ui/<family>`, which wraps its React Aria primitive once; a screen never imports the
+primitives library, and lint holds it. The button family is the first: [The button
+family](#the-button-family). The families that have not moved still take their Radix primitive as
+the rest of this file says.
 
 This is a rule and not a preference, so the rest of this file is the reasons for it and the way
 to follow it.
@@ -11,7 +18,8 @@ _in_: a theme is a data file, every colour is a semantic token, and a literal an
 for what a copied-in shadcn/ui component has to satisfy.**
 
 **Where the rule is decided.** purlis **ADR 0037**, _charter takes the behaviour and keeps the
-look_, and its amendment of 2026-09-22, which settled the conflict this file used to flag. That
+look_, its amendment of 2026-09-22, which settled the conflict this file used to flag, and
+**ADR 0104**, which puts the families on React Aria behind one wrapper each. That
 record is authoritative; this file is its code-side expression, and where the two disagree this
 file is the defect.
 
@@ -457,6 +465,50 @@ here", a clone's "Asking git…"), so a sentence stands where the children's nam
 that must grow to its name rather than cut it (the explorer's, which scroll sideways) keeps its
 own `min-width: max-content` beside the class.
 
+## The button family
+
+**Every button, icon button and button drawn as a link is `Button`, `IconButton` or
+`ToggleButton`** (`app/src/ui/button/Button.tsx`, #2904, ADR 0104), on React Aria's `Button` and
+`ToggleButton`. No screen draws a `<button>` of its own for one, and none wears the old
+`.ui-button*` classes: `eslint.config.js` refuses both (`purlis/button-family`, an error). A raw
+`<button>` left is another family's control, said by its role or its family's class (the rule's
+`otherFamilies`).
+
+| Prop | Says |
+| --- | --- |
+| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence) |
+| `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
+| `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
+| `onPress`, `isDisabled`, `isSelected` | React Aria's own words; `onClick` still reaches a Radix trigger the button is the `asChild` of |
+| `className` | the button's place in its view (margin, width, flex, order), never a look |
+
+- **A row of buttons takes one size** (`ButtonRow`): every button in it is the row's size,
+  whatever it asks for, so a mixed row cannot be built. A row wraps by default (#1855): the
+  buttons go onto as many lines as they need, and one wider than the row breaks its words. A
+  Notice's line is a small `ButtonRow`, and a dialog's answers (`AnswerBar`) and a form's
+  (`SettingActions`) are buttons of the family.
+- **An answer that grants is `variant="grants"`** (ADR 0097 §6): as plain as Keep blocked beside
+  it, on the control's own ground, edged in the accent and led by an open lock the family draws
+  itself, hidden from a screen reader so the button's name stays its words. Allow never takes the
+  primary look, even where the source suggests it (the Inbox draws an Allow it would have
+  suggested as a grant).
+- **Drawn by its parts** (ADR 0103): the root carries `data-scope="button"`, `data-part="root"`,
+  `data-variant` and `data-size`; its words are `data-part="label"`, its icon
+  `data-part="icon"`. `app/src/ui/button/button.css` draws the family default from those and
+  React Aria's state attributes (`data-hovered`, `data-pressed`, `data-selected`,
+  `data-focus-visible`, `data-disabled`), and a theme's parts reach the same attributes. A state
+  changes a colour, a ground or a ring, never a size.
+- **The keyboard is React Aria's**: Tab reaches every button (the wrapper writes the `tabIndex`
+  WebKit needs, #190), Enter and Space press it, the ring shows only from the keyboard, 2px in
+  `focus.ring` at 2px outside it (R162), keyed on React Aria's `data-focus-visible` alone. A
+  disabled button is out of the tab sequence; one that is unavailable but keeps the focus
+  (`aria-disabled`, #1700) or busy (`aria-busy`) stays reachable. Both draw their words in the
+  faint tier, on their own ground and edge, and never as under the pointer or pressed: the
+  wrapper marks them `data-disabled`.
+- **Stories hold it** (`Button.stories.tsx`, `docs/component-stories.md`): each variant, size and
+  state, Allow beside Keep blocked, a row of one size, the icon buttons and a toggle, each walked
+  by the keyboard and checked by axe in Chromium and WebKit.
+
 ## The control classes
 
 **Each kind of control is one CSS class, drawn only from the tokens** (ADR 0094 §4, #1834). The
@@ -468,7 +520,6 @@ still the settings set's own until Settings moves onto the primitives.
 
 | Control           | Class and parts                                                                                                         | Variants                                                                                | On                                                                                                              |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Button            | `.ui-button`                                                                                                                  | secondary is `.ui-button` alone; `.ui-button-primary`, `.ui-button-ghost`, `.ui-button-danger`, `.ui-button-grants`; small `.ui-button-sm` | `<button>`, or a Radix trigger (`asChild` or its own button)                                                    |
 | Field             | `.ui-input`                                                                                                                | a `<textarea>` is at least three controls tall and grows when dragged; `.ui-list-field` is the row's width and grows with its lines | `<input>`, `<textarea>`                                                                                         |
 | Select            | `.ui-select`; its list is a `.ui-menu` of `.ui-menu-item`s                                                                       |                                                                                         | Radix Select's `Trigger` (`@radix-ui/react-select`), through `primitives/Select.tsx`; no native `<select>` remains |
 | Checkbox          | `.ui-checkbox`, its `Indicator` inside                                                                                     |                                                                                         | Radix Checkbox's `Root`                                                                                         |
@@ -489,34 +540,16 @@ it never runs under the icon, which takes no press. A view that lines the text u
 else hands the holder `--ui-input-lead-at`, `--ui-input-lead-size` and `--ui-input-lead-text`
 (the Chats filter, whose text starts where the chats' names do).
 
-**A row of buttons that wraps** is `.ui-button-row` (#1855), on what holds a few ways out where
-the room may be narrower than they are: a Notice's line, and the actions under one. It wraps the
-buttons onto as many lines as they need, and a `.ui-button` in it may break its words over lines
-when it alone is wider than the row, instead of being clipped: its height is then its least
-(`--size-control`, or `--size-chrome` for `.ui-button-sm`), not its only. Words before the buttons
-may stand in the row too. Every way out of a Notice is a `.ui-button-sm` in one (Dismiss is
-`.ui-button-ghost`), and so is "+N more" beside a pane's Notices. **An answer that grants is
-`.ui-button-grants`** (ADR 0097 §6): as plain as Keep blocked beside it, on the control's own
-ground, edged in the accent and led by an open lock (`primitives/Grants.tsx`, hidden from a
-screen reader, so the button's name stays its words). Allow and Keep blocked carry equal weight;
-`.ui-button-primary` stays the answer purlis suggests and is never a grant's. It is on every ask
-of the two: a sandbox Notice (and its scopes), a several-tasks one, a dispatch's, a refused
-vault's, a persona's grants and hosts, what a project expects, a proposed change's Apply (its
-Notice and its tab), the socket or service a sandbox block chooses, a profile's Approve and start,
-Settings' dispatch grants (each yes that grants, and its confirmation), and in the Inbox a
-permission prompt, a sandbox block, a browser's sites and an away refusal's Allow from now on. The consent floors keep the two looks apart in every theme; the order, the
-words and the keyboard are the ask's. A press on its way
-(`aria-busy`) keeps the button reachable and shows the pointer as working.
-
-**An answer that trusts text from outside is plain too** (#2591): the repository-instructions
-tab's Add to memory saves a repository's own words into memory, so it is a `.ui-button` beside
-Not now, with the same weight. It grants nothing, so it is not `.ui-button-grants`.
+**A button is the button family**, not a class: [The button family](#the-button-family). An
+answer that trusts text from outside is plain too (#2591): the repository-instructions tab's Add
+to memory saves a repository's own words into memory, so it is a secondary `Button` beside Not
+now, with the same weight. It grants nothing, so it is not `variant="grants"`.
 
 What every class holds to:
 
-- **One height.** A button, a field, a select and a segmented control are `--size-control`
-  tall (28px at the default text size); a small button and a small segmented control are
-  `--size-chrome` (21px), for strips and pane headers. A menu's row is at least a control tall.
+- **One height.** A field, a select and a segmented control are `--size-control` tall (28px at
+  the default text size); a small segmented control is `--size-chrome` (21px), for strips and
+  pane headers. A button's sizes are the family's. A menu's row is at least a control tall.
 - **A menu's row is one line, a control tall, and the menu scrolls.** Its words give way to an
   ellipsis and never wrap. A row with something under its words (`.ui-menu-note`,
   [Menus](#menus)) is as tall as the two say, and its height is never fixed.
@@ -532,7 +565,7 @@ What every class holds to:
   **outside** it at `--focus-ring-offset`. A segment's is **inside** it (`--focus-ring-inset`),
   because its group clips what is outside. A menu's row draws none: the row the keyboard is on is
   the highlighted one, as in every native menu, and the row under the pointer is too.
-- **A toggle button says `aria-pressed`** (DS-12): pressed, a `.ui-button` stands on
+- **A toggle button is `ToggleButton`** (DS-12): pressed, it says `aria-pressed` and stands on
   `accent.surface` behind an `accent.base` edge, as a chosen segment does, and stays so under the
   pointer (*Changed only*, *Show ignored files*, Search's switches, a file's *Source*).
 - **The keyboard is Radix's.** Nothing in a class changes behaviour: Tab reaches each control,
@@ -666,10 +699,9 @@ and its rows).
   `.more-menu` sets a menu's width. None of them draws a ground, a border, a corner, a shadow or a
   padding. The one size a view may hand the surface is `--ui-dialog-padding-end`: Ask {persona}
   keeps its answers at its bottom edge while it scrolls, so it takes its own bottom padding away.
-- **Inside, the shared controls.** Every button in a dialog or a popover is a `.ui-button`: the
-  form's submit, a question's default answer and Smart close are `.ui-button-primary`, an answer
-  that ends something (`ends-it`, D-1719-3) is `.ui-button-danger` too, and the rest are
-  secondary. A field is `.ui-input`, except a field in a dialog's settings row, which is the
+- **Inside, the shared controls.** Every button in a dialog or a popover is a `Button`: the
+  form's submit, a question's default answer and Smart close are `variant="primary"`, an answer
+  that ends something (D-1719-3) is `variant="danger"`, and the rest are secondary. A field is `.ui-input`, except a field in a dialog's settings row, which is the
   settings set's own `.ui-field` until the set moves onto the primitives, so a dialog's fields
   never differ from one another.
 - **A Notice is not an overlay.** It stands in its pane's row or in the Inbox, never over
@@ -685,7 +717,7 @@ and its rows).
 ground, border, corner and lift on each kind, the same padding on a dialog and a popover), that a
 dialog is still named by its title, keeps the keyboard and leaves on Escape, and that a popover
 opens from the keyboard. It reads every component's source too: each Radix overlay part wears its
-class, every native button inside an overlay's content wears `.ui-button` and every field its
+class, every button inside an overlay's content is the button family and every field its
 field class, and `App.css` draws no overlay surface and lifts nothing by a shadow of its own.
 
 ## Text roles
@@ -701,7 +733,7 @@ its role and writes no `font-size`, `font-weight` or `color` for it.
 | Heading   | `ui-text-heading`   | a section inside a view; a card's heading               | 14px                | strong (600)  | `text.primary`   |
 | Body      | `ui-text-body`      | what the surface is about: a row's name, an ask's words | 13px                | regular (400) | `text.primary`   |
 | Secondary | `ui-text-secondary` | where, who, a help line under a field                   | 12px                | regular (400) | `text.secondary` |
-| Meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                 | 11px                | regular (400) | `text.muted`     |
+| Meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                 | 11px                | regular (400) | `text.quiet`     |
 | Label     | `ui-text-label`     | a section label over a group; capitals, spaced `0.06em` | 11px                | strong (600)  | `text.secondary` |
 | Code      | `ui-text-code`      | a command, a path, a host                               | the role it sits in | regular (400) | inherited        |
 
@@ -1517,7 +1549,7 @@ component library gets added on.
 - **The status line is one bar of status items, and added no primitive** (qw357). The
   operator's _"notices and doctor buttons in bottom are not better UI integrated in bottom
   bar"_ was three hand-drawn boxed buttons (`.status-alerts`, `.status-doctor`, `.status-pin`).
-  Each is the set's small ghost button now (`.ui-button.ui-button-ghost.ui-button-sm`): flat,
+  Each is the family's small ghost button now (`<Button variant="ghost" size="sm">`): flat,
   the chrome's height, the set's hover and focus ring, with an icon, a short word and a count.
   - **Context on the left, health on the right.** The project and the workspace with its
     counts; then Notices, the doctor and a drifting pin. The left end gives way in a narrow
@@ -1895,7 +1927,7 @@ project's and are listed whatever the scope.
 | --------- | ------------------------------------ | ----------------- | ------------------ | ------ | ------------------ |
 | primary   | what needs you: the ask's words      | `inbox-primary`   | `--font-size-md`   | 600    | `--text-primary`   |
 | secondary | where: project · workspace · persona | `inbox-secondary` | `--font-size-sm`   | 400    | `--text-secondary` |
-| meta      | its kind, then its age, trailing     | `inbox-meta`      | `--font-size-xs`   | 400    | `--text-muted`     |
+| meta      | its kind, then its age, trailing     | `inbox-meta`      | `--font-size-xs`   | 400    | `--text-quiet`     |
 
 The kind is a mark and its words together (`KindMark`, `data-kind`): a decision in
 `--state-waiting`, an update that went wrong in `--state-failed`, anything else in the secondary

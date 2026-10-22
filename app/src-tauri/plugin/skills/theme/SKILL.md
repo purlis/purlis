@@ -78,8 +78,8 @@ Start from what the person gave you:
 - **A Figma frame**: read the frame's variables and colours with the Figma tools this chat has;
   without them, ask the person for a screenshot of the frame and work from that.
 - **An imported theme** (a VS Code colour theme, a base16 or base24 scheme, an iTerm2 or a
-  Ghostty palette, a theme folder's zip): import it into a folder of your own, then make that
-  folder the working copy:
+  Ghostty palette, a theme folder's zip, a W3C design-tokens file from a design tool): import
+  it into a folder of your own, then make that folder the working copy:
 
   ```bash
   purlis theme import <file> --into "$TMPDIR/purlis-theme-import"
@@ -99,16 +99,18 @@ A draft brings no font. A face is drawn only when the project approved that file
 folder, and the window shows the person a Notice for a face it refuses. Tell the person about
 each font you named that their folder does not already have.
 
-**Shape and size** are tokens beside the colours, set in each appearance (one that leaves them
-out keeps the theme it extends): a whole number (the line heights take decimals) inside its
-bounds, or the theme is refused. Offer them: the built-in Purlis theme sets `radius.md` 7,
-`radius.lg` 10, `radius.xl` 12, `size.control` 26, `size.chrome` 24 and `line-height.body` 1.55
-in all three of its appearances. The top-level `compact` holds what compact density draws. A
-token it leaves out keeps the appearance's own value, except the ones Classic's compact moves
-(`space.2` to `space.8`, `size.control`, `size.chrome`, `line-height.body`): those take the
-smaller of Classic's compact and the appearance's own.
+**Shape and size** are tokens beside the colours, set in each appearance (one that leaves them out
+keeps the theme it extends): a whole number (the line heights take decimals) inside its bounds, or
+the theme is refused. Offer them: the built-in Purlis theme sets `radius.md` 7, `radius.lg` 10,
+`radius.xl` 12, `size.control` 26, `size.chrome` 24 and `line-height.body` 1.55 in all three of its
+appearances. The top-level `compact` holds what compact density draws. A token it leaves out keeps
+the appearance's own value, except the ones Classic's compact moves (`space.2` to `space.8`,
+`line-height.body`, `size.control`, `size.chrome`): those take the smaller of Classic's compact and
+the appearance's own.
 
-| Tokens | Bounds | Classic | Compact | What it reaches |
+Most asks for another shape come down to the corners and the heights:
+
+| Token | Bounds | Classic | Compact | What it reaches |
 |---|---|---|---|---|
 | `radius.sm` | 0–8 px | 3 | 3 | labels, chips, crumbs, badges, checkboxes, error and report boxes |
 | `radius.md` | 0–10 px | 4 | 4 | buttons, fields, selects, menu rows, Notices, the palette's rows, Inbox asks |
@@ -117,12 +119,12 @@ smaller of Classic's compact and the appearance's own.
 | `radius.full` | 0–9999 px | 9999 | 9999 | pills: counts, toggle tracks |
 | `size.control` | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, the workspace strip |
 | `size.chrome` | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, every list and tree row |
-| `space.0` `space.1` `space.2` `space.3` `space.4` `space.5` `space.6` `space.7` `space.8` | 0–0, 0–4, 1–8, 2–10, 4–12, 6–16, 8–24, 12–32, 16–48 | 0, 2, 4, 6, 8, 12, 16, 24, 32 | 0, 2, 3, 4, 6, 8, 12, 16, 24 | padding, gaps, margins |
-| `font-size.2xs` `font-size.xs` `font-size.sm` `font-size.md` `font-size.base` `font-size.lg` `font-size.xl` | 8–12, 9–13, 10–14, 11–15, 12–18, 13–22, 16–28 | 10, 11, 12, 13, 14, 16, 20 | 10, 11, 12, 13, 14, 16, 20 | the type scale; `md` is a tab's title, `base` the window's words |
-| `font-weight.regular` `font-weight.medium` `font-weight.strong` | 300–500, 400–600, 500–800 | 400, 500, 600 | 400, 500, 600 | weights |
-| `line-height.tight` `line-height.body` | 1.0–1.4, 1.2–1.8 | 1.2, 1.4 | 1.2, 1.3 | line spacing |
-| `focus-ring.width` `focus-ring.offset` `focus-ring.inset` | 1–4 px, 0–4 px, −4–0 px | 2, 2, −2 | 2, 2, −2 | the focus ring |
-| `elevation.raised-y` `elevation.raised-blur` `elevation.overlay-y` `elevation.overlay-blur` | 0–8, 0–24, 0–16, 0–48 | 2, 8, 8, 24 | 2, 8, 8, 24 | shadows: raised surfaces, then overlays |
+
+`purlis docs show themes` has every one in its Geometry section: the spacing and type scales,
+the weights, the line heights, the focus ring and the shadows too, each with its unit, bounds,
+values and what it reaches. Read it before you set one this table leaves out. The window's own
+text size is the person's text-size setting, which no theme sets: point them at it when they
+ask for bigger words.
 
 Sizes are px at the default text size and grow with it; corners and the focus ring do not. The
 project strip sits in the title bar, whose height no token reaches yet.
@@ -134,7 +136,23 @@ tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fa
 
 **Still square, whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a
 tab's `×` closer, the settings gear on a strip, and every list and tree row but the palette's.
-Tell the person when they ask for rounder tabs or rows: the theme cannot round those yet.
+Tell the person when they ask for rounder tabs or rows: the theme cannot round those yet. The
+focus ring tokens reach the shared controls and list rows; every other focus ring, the strip
+tabs', the closer's and the gear's among them, is 2px whatever `focus-ring.*` says.
+
+**One part of one control** is a component part, in a top-level `parts` object:
+`"button.root.corner-radius": "full"` rounds every button to a pill, and
+`"button.root.primary.hover.fill": "accent.base"` changes only the primary under the pointer. Run
+`purlis theme parts` for every family, part, variant, state and property with its bounds before
+you write one. A part's colour names a semantic token (`accent.base`), never a hex or a palette
+name. Inside a state (`hover`, `pressed`, `selected`, `focused`, `disabled`, `open`) only `fill`,
+`text`, `border-colour` and `shadow` may be set: a state never changes size, and the theme is
+refused if it tries. A button stays at least 24px tall with its words fitting, in both densities,
+and a geometry token is held to the same bounds at the value the theme draws it at. Whatever the
+theme changes, Allow (`grants`) keeps its accent edge and Keep blocked's fill, and no part draws
+Allow or danger nearer the primary than the family does: a look that would is drawn as the
+family default. Only the button has parts so far; the note above still holds for tabs and
+rows.
 
 Done when the file is JSON with every value hex, a palette name, or a token's own type, and
 every shape and size inside its bounds.
@@ -199,6 +217,13 @@ Any id from the list, or the path of a theme file or folder. It writes nothing. 
 
   ```bash
   purlis theme export <id> --to "$TMPDIR/<folder>.zip"
+  ```
+
+- **To a design tool**: `--kind design-tokens` writes the folder as one W3C design-tokens file
+  (format 2025.10) instead, which `purlis theme import` also gives back the same:
+
+  ```bash
+  purlis theme export <id> --kind design-tokens --to "$TMPDIR/<folder>.tokens.json"
   ```
 
 - **With the team**: a project's theme is committed by the plane's next save.

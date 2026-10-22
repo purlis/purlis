@@ -44,6 +44,8 @@
 #[cfg(unix)]
 mod browsers;
 #[cfg(unix)]
+mod code;
+#[cfg(unix)]
 mod confining;
 #[cfg(unix)]
 mod connector;
@@ -74,9 +76,11 @@ pub use browsers::{
     NOT_DRIVING, NoBrowsers, NotActed, NotTaken, Screen, ScreenEnded, THUMBNAIL_EVERY,
 };
 #[cfg(unix)]
+pub use code::{Code, MovesNoCode, TRANSFER_WITHIN};
+#[cfg(unix)]
 pub use confining::{Askable, Confine, ConfinesNothing, Confining, Planned, Tell, ToConfine};
 #[cfg(unix)]
-pub use connector::{BeforeEach, CommandConnector, Connected};
+pub use connector::{BeforeEach, CommandConnector, Connected, Prepare, Prepared};
 #[cfg(unix)]
 pub use hearing::{Channel, HandOn, Hear, HearsNothing};
 #[cfg(unix)]
@@ -98,7 +102,7 @@ pub use recording::{Ended, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
 pub use relay::{Dial, Keep, Relay};
 #[cfg(unix)]
-pub use routing::{RelaysTo, Routed};
+pub use routing::{DrainsTo, RelaysTo, Routed};
 #[cfg(unix)]
 pub use serving::{
     Answering, HostError, LOCK, Pairing, Place, Unpairing, Window, serve, serve_answering,

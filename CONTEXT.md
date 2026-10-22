@@ -628,7 +628,7 @@ _Avoid_: masked, redacted, hidden (a page hides elements of its own)
 **Engine**:
 The program a browser runs on, one per browser: a pinned Chrome for Testing that purlis
 downloads on first use, checks against its manifest before it runs, and keeps current apart from
-purlis's own releases, or the machine's own Chrome when the person chooses it in Settings. The
+purlis's own releases, or the machine's own Chrome when the person chooses it (the Notice offers it where the pinned engine cannot make its sandbox, #2835). It always runs with its sandbox on. The
 session host drives it only over a pipe it holds, never a port, and it ends with its host.
 _Avoid_: Chromium (unless that project is meant), headless Chrome, driver (that is who acts on a
 browser)
@@ -980,6 +980,20 @@ title bar's ✋, which opens the **Inbox**, and each is counted in red on its ta
 show-more hiding it. **Ignore** clears a chat's items until the next one arrives (ADR 0076).
 _Avoid_: notification, alert (an alert is a **Notice**), waiting (for the state)
 
+**Component family**:
+One kind of control the window draws one way everywhere, such as the button (with the icon button
+and the toggle button), the field, the select or the dialog: its variants, its sizes and its
+keyboard, built once in `app/src/ui/<family>` and used by every screen. A screen never builds a
+control of a family by hand, and lint holds it (ADR 0104).
+_Avoid_: component library, design system (that is the tokens, the families and their rules
+together), widget, house component
+
+**Primitive wrapper**:
+The one file in a component family that wraps a React Aria primitive, the only place the
+primitives library is imported. It is where the family's variants, sizes and parts are set, and
+the seam a later change of library would cross (ADR 0104).
+_Avoid_: adapter, shim, HOC
+
 **Notice**:
 A standing line in a project's window about something that is true now, such as a pin to a
 workspace that is gone or a repo that could not be cloned. A Notice always offers a way out:
@@ -1169,6 +1183,21 @@ A toggle or a choice a theme offers, such as an accent or borders on or off, tha
 when picked. Its values are the person's choice. An option never sets a free number.
 _Avoid_: setting (that is the person's, for every theme), variant, preference
 
+**Component part**:
+A named, stable element of a component family, such as the button's root, label or icon, that a
+theme may set on its own: its fill, border, corners or size, within bounds, keyed
+`<family>.<part>[.<variant>][.<state>].<property>`. Each family declares its parts once, in the
+window's wrapper and in the theme engine's closed, versioned manifest (ADR 0103). The button's
+`grants` variant is the look of an answer that grants (an Allow, an Accept), not a grant itself.
+_Avoid_: part (bare, which is plain composition here), slot, sub-component, element
+
+**Design-tokens file**:
+A theme folder written in the W3C Design Tokens Community Group's format, version 2025.10
+(`.tokens.json`), for exchanging a theme with a design tool: `purlis theme export --kind
+design-tokens` writes one and `purlis theme import` reads one back to the same folder. It is a way
+in and out, never a theme format purlis draws from; `theme.json` is that.
+_Avoid_: token file (a theme's tokens live in `theme.json`), tokens export
+
 **Palette** (of a theme):
 A theme's named colours, which its tokens refer to by name, so one colour is changed once. The
 names belong to that theme alone.
@@ -1190,6 +1219,12 @@ What purlis says about a theme: format and bound errors, contrast findings by pa
 ratio, and hard-floor findings, for every appearance and option combination. A format error
 refuses the theme; a contrast finding is a warning.
 _Avoid_: theme lint, validation, audit
+
+**Grey tier**:
+One of the steps a theme draws its greys in: four for words (primary, secondary, muted and quiet,
+each held to 4.5:1) and faint for what is not words and for disabled words (held to 3:1), each
+measured on every ground a part draws it on. Quiet is informational text; it is never faint.
+_Avoid_: text colour (a tier is a rank, not a colour), dim, disabled colour
 
 **Theme draft**:
 A chat's unsaved changes to a theme, drawn only in that chat's workspace (the plane root for a
@@ -1408,7 +1443,9 @@ _Avoid_: built-ins (for core features), platform
 **Extension**:
 A directory the operator installs and approves on this machine, whose manifest declares what it
 contributes and which capabilities it asks for. Its program runs as the operator, one question
-at a time.
+at a time, except an extension that declares a **studio capability**, which runs confined in a
+chat's sandbox profile: it reads and writes only its own folder and what purlis hands it, and
+reaches only the hosts it declares, never a model provider's (ADR 0101).
 _Avoid_: plugin, add-on, module
 
 **Built-in extension**:
@@ -1418,9 +1455,43 @@ _Avoid_: bundled plugin, first-party plugin, core extension
 
 **Capability**:
 One thing purlis does for an extension that asked for it in its manifest and was approved,
-such as showing a badge or adding a CLI command. It describes purlis's conduct, never a limit
-on the extension.
+such as showing a badge or adding a CLI command. It describes purlis's conduct. It limits what
+the extension itself can do only for a **studio capability**, whose extension is confined
+(ADR 0101).
 _Avoid_: permission, grant (that is a runner's **Grant**), power
+
+**Studio capability**:
+One of the six capabilities the Skill studio is built from: SkillSource, Grader, SkillLint,
+SkillTemplate, StudioPanel and SkillRouter. Each has a built-in first user. An extension that
+declares one is confined, and they are experimental until the studio's finish line (ADR 0101).
+_Avoid_: studio extension point, skill capability
+
+**SkillSource**:
+The studio capability for a source of skills that is not git, such as a registry or an artifact
+store. It hands purlis a skill's folder at an immutable revision; the review, copy and pin are
+purlis's (ADR 0100). The built-in git source is its first user.
+
+**Grader**:
+The studio capability that is the extension form of a **grading framework**. It gets a skill and
+its fixtures and returns scores, and every chat it needs, a judge's included, is one purlis runs
+for it. The built-in runner is its first user.
+_Avoid_: eval engine, judge (a judge is a role a chat plays in a grade)
+
+**SkillLint**:
+The studio capability that adds findings to a skill's live lint and install review. It never
+edits a skill. The built-in lints are its first user.
+
+**SkillTemplate**:
+The studio capability that offers starting points for a new skill, which lands as a draft skill.
+The blank and starter templates are its first user.
+
+**StudioPanel**:
+The studio capability that adds a panel to a skill's tab, drawn with panel blocks. The Runs and
+Grades panels are its first user.
+
+**SkillRouter**:
+The studio capability that is the extension form of a **skill router** (ADR 0102). The built-in
+router is its first user.
 
 **Facts file**:
 A file an extension keeps in its own state directory, holding the values purlis shows for it
@@ -1517,13 +1588,125 @@ every harness. It cannot be turned off or edited. Each harness is handed the bui
 its own route, for the chat alone: Claude Code loads the plugin, opencode is told the directory
 through the shim, and a Codex chat is **briefed** on them, a list of names, descriptions and
 `SKILL.md` paths at `SessionStart` (ADR 0063).
-_Avoid_: purlis's skills, system skill, "Claude Code skills" for these; a copy of them anywhere
+_Avoid_: purlis's skills (every skill a person makes is a skill in purlis too), system skill,
+"Claude Code skills" for these; a copy of them anywhere
 
 **Skill set**:
 The skills one chat gets, each with the route its harness is handed it by and where it comes
 from, and every skill left out of it with a one-line reason. `purlis-skills` alone works it out
 (#2762); a harness adapter only turns it into argv, env and config.
 _Avoid_: loaded skills, available skills
+
+**Skill studio**:
+The one place where every skill a chat can get is listed, made, edited, installed, removed,
+observed and graded: a view tab, with each skill opening as its own. It is built behind the
+`skill-studio` flag until its **finish line** (spec #2762).
+_Avoid_: skill manager, skills page
+
+**Finish line** (of the Skill studio):
+The set of things that must all work before the Skill studio is shown to anyone. Until then it
+stays behind its flag.
+
+**Harness skill**:
+A skill a harness brings on its own, from the person's harness folders or from a harness plugin.
+purlis lists it and can turn it on or off for a project, but never edits it.
+_Avoid_: external skill, plugin skill
+
+**Repo skill**:
+A skill committed inside a repo a workspace clones, which the harness reads natively. purlis
+lists it and may turn it off, but never edits it.
+
+**Project skill**:
+A skill owned by the project, a folder in the plane's `skills/`. It is usable in chats at the
+**plane root**, and in a workspace's chats only where the project grants it (ADR 0099).
+
+**Workspace skill**:
+A skill owned by one workspace, in its `skills/`, usable only in that workspace's chats.
+
+**Persona skill**:
+A skill a persona loads wherever it runs, whether the persona owns it or names one owned
+elsewhere. It is not limited by the grants of the workspace it runs in.
+
+**Local skill**:
+A skill kept on the person's machine and not committed, so their team never gets it. Sharing it
+makes it an ordinary skill at the same level.
+_Avoid_: private skill, draft
+
+**Grant** (of a project skill):
+A project skill's statement of where it may be used: the plane root only (`root`, the
+default), every workspace (`all`), or a named list. A workspace can turn a granted skill off,
+never on one it was not granted (ADR 0099).
+_Avoid_: permission, share, scope
+
+**Manual-only skill**:
+A skill a harness never picks by itself. It runs only when it is asked for by name, and its
+description stays out of the chat's context.
+_Avoid_: hidden skill, disabled skill
+
+**Draft skill**:
+A new skill, or a change to one, waiting in the Skill studio for the person to accept. It is
+usually written by a chat.
+_Avoid_: pending skill, proposal
+
+**Deprecated skill**:
+A skill that still works but points to a replacement and is shown less.
+
+**Archived skill**:
+A skill kept in history that never loads until it is restored.
+
+**Pinned skill**:
+A skill a persona or workspace keeps always loaded, so no router hides it.
+
+**Skill owner**:
+A person named on a skill whose review a teammate's change needs on an org plane.
+
+**Skill source**:
+A git repository of skills, or a source an extension provides (SkillSource), that skills can be
+installed from. An installed skill is a pinned copy, updated only through a reviewed change
+(ADR 0100). It is not a **marketplace**.
+_Avoid_: marketplace, registry, feed
+
+**Marketplace**:
+The listing service of packs, extensions and personas (M47). A skill source is not a
+marketplace.
+
+**Skill run**:
+One use of a skill in a chat, from the moment it is invoked until the turn ends. What happens
+inside it counts toward the skill.
+_Avoid_: invocation, call, execution
+
+**Skill router**:
+What decides which skills a chat sees or can load for its task. One ships with purlis; others
+arrive as extensions.
+_Avoid_: skill selector, dispatcher (dispatch is persona work)
+
+**Skill budget**:
+How many skills, and how many characters of their descriptions, one chat's listing may hold on
+its harness. purlis sets it below each harness's own limit and shows it on the chat tab; past
+it, the skill router hides skills behind the index skill (ADR 0102).
+_Avoid_: context budget (for this), skill limit
+
+**Index skill**:
+An always-loaded skill a skill router shows whenever it hides any skill, listing every hidden
+skill by name and one line and saying that `skill_load` loads it (ADR 0102).
+_Avoid_: catalogue skill, skill menu
+
+**Grading framework**:
+A pluggable way of grading a skill. purlis ships one; others arrive as extensions.
+_Avoid_: eval engine, judge
+
+**Trigger test**:
+A grade of whether a harness picks the skill when it should and leaves it alone when it should
+not.
+
+**Outcome eval**:
+A grade of how well a skill does its job on fixture tasks.
+
+The skills' relationships: a **project skill** reaches a workspace only through a **grant**; a
+**persona skill** adds to what the chat has where it runs; when two levels hold a skill of the
+same name the narrower wins (persona, then workspace, then project, and local over shared), and
+a built-in skill's name is never taken; a **grading framework** produces **trigger tests** and
+**outcome evals**, and **skill runs** supply the live signals.
 
 **Vault**:
 A named set of secrets purlis keeps in the system keyring and hands to a command, never to

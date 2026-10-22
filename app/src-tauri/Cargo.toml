@@ -67,7 +67,9 @@ rfd = { version = "0.16", default-features = false }
 # The app moving itself (ADR 0042). Its signature check is an ordinary dependency
 # of the plugin, not a feature, so there is no build of it that skips verification.
 tauri-plugin-updater = "2"
-tokio = { version = "1", features = ["net", "time", "rt"] }
+tokio = { version = "1", features = ["fs", "io-util", "net", "time", "rt"] }
+# Where a bundle of a project's code is kept while it crosses to a runner (#2046), removed with it.
+tempfile.workspace = true
 # What the app notices goes to the diagnostic log `purlis_core::applog` installs (#647): a
 # file that rotates daily, and standard error. The version purlis-core uses.
 tracing = "0.1"
@@ -95,9 +97,9 @@ block2 = "0.6"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString", "NSValue"] }
 # The system's Increase contrast, read as a window is created (#2582, `syscontrast.rs`): two more
 # features of the same crate, no crate new to the tree (operator, 2026-10-18).
-# The window's colour, read back for the scenario tests (#2760, `nativewindow.rs`): the app's
-# windows, their colour and its sRGB form. More features of the same crate, none new to the tree.
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-foundation", "NSAccessibility", "NSApplication", "NSColor", "NSColorSpace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSResponder", "NSWindow", "NSWorkspace"] }
+# The window's colour, read back for the scenario tests (#2760), takes more of its features: the
+# `e2e` feature turns those on (#2836), since only that build reads it.
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAccessibility", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSWorkspace"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"] }
 
 # The desktop portal, asked on the session bus before GTK asks it (charter-app#24,
@@ -126,7 +128,21 @@ workspace = true
 # starts this binary from a checkout that sits inside the operator's own plane, so a config
 # that forgets to pin `$CHARTER_ROOT` resolves that plane and records into it — which is
 # charter-app#129. A fenced app dies at the first touch instead of quietly succeeding.
-e2e = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver", "purlis-core/fenced"]
+#
+# And the commands only a scenario test asks (`ipc_commands.rs`'s `e2e_only`, #2836), with what
+# they alone need: the window's colour read back on macOS (`nativewindow/drawn.rs`) takes the
+# app's windows, their colour and its sRGB form, more features of a crate already in the tree.
+e2e = [
+    "dep:tauri-plugin-wdio",
+    "dep:tauri-plugin-wdio-webdriver",
+    "purlis-core/fenced",
+    "objc2-app-kit/objc2-core-foundation",
+    "objc2-app-kit/NSApplication",
+    "objc2-app-kit/NSColor",
+    "objc2-app-kit/NSColorSpace",
+    "objc2-app-kit/NSResponder",
+    "objc2-app-kit/NSWindow",
+]
 
 [dev-dependencies]
 # Tauri's mock runtime, to invoke commands through the app's real ACL (`ipc.rs`, ADR 0052).
@@ -142,5 +158,8 @@ purlis-session-protocol = { path = "../../crates/session-protocol", features = [
 # A program that stands in for a terminal's, behind the session host (#1998).
 purlis-host = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
+# A screenshot's pixels, read to tell a value kept out was painted over (#2243): the version
+# purlis-browser-engine's tests read them with.
+png = "0.18"
 # A vault's clipboard clear is tested on tokio's paused clock, not a real minute.
 tokio = { version = "1", features = ["macros", "rt", "test-util", "time"] }

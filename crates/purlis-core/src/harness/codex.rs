@@ -4,7 +4,7 @@
 //! Codex's adapter (ADR 0073, FD-13): charter's hooks, armed on one session by Codex's own
 //! `-c hooks.<Event>=…` flags.
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox};
+use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
@@ -13,6 +13,23 @@ pub struct Codex;
 
 /// The one Codex adapter.
 pub static ADAPTER: Codex = Codex;
+
+/// What a Codex chat is started with for its `SessionStart` briefing to list its skills: the
+/// built-in skills' directory, and the plane's mark where its set holds any of the plane's.
+fn listed(kit: Kit<'_>) -> Vec<(String, String)> {
+    let set = crate::skills::for_chat(kit, Harness::Codex);
+    let Some(dir) = set.built_in_dir() else {
+        return Vec::new();
+    };
+    let mut env = vec![(
+        crate::skills::LISTED_ENV.to_owned(),
+        dir.display().to_string(),
+    )];
+    if set.from_the_plane().next().is_some() {
+        env.push((crate::skills::PLANE_LISTED_ENV.to_owned(), "1".to_owned()));
+    }
+    env
+}
 
 impl HarnessAdapter for Codex {
     fn harness(&self) -> Harness {
@@ -82,7 +99,9 @@ impl HarnessAdapter for Codex {
     /// directory for one session ([`Harness::skills`]), so the chat is started with the
     /// directory of the skills its set holds ([`crate::skills::for_chat`]) in
     /// [`crate::skills::LISTED_ENV`], which a Codex hook inherits, and the briefing lists
-    /// what its set holds ([`crate::skills::briefed`]).
+    /// what its set holds ([`crate::skills::briefed`]). Where the set holds the plane's skills,
+    /// [`crate::skills::PLANE_LISTED_ENV`] says so, and the briefing lists them too, each from
+    /// its folder in the plane.
     ///
     /// Its sandbox, where the plane turned it on, is not here: charter's wrap runs the whole
     /// line ([`crate::sandbox::Applied::line`], and [`crate::sandbox::codex`] has the
@@ -100,16 +119,7 @@ impl HarnessAdapter for Codex {
         args.extend(["-c".to_owned(), crate::chattools::codex_flag(kit.binary)]);
         StateHooks::ThisSessionOnly {
             args,
-            env: crate::skills::for_chat(kit, Harness::Codex)
-                .dir()
-                .map(|dir| {
-                    (
-                        crate::skills::LISTED_ENV.to_owned(),
-                        dir.display().to_string(),
-                    )
-                })
-                .into_iter()
-                .collect(),
+            env: listed(kit),
             cannot_report: vec!["notification"],
         }
     }
@@ -140,6 +150,17 @@ impl HarnessAdapter for Codex {
 
     fn guard_label(&self) -> &'static str {
         "codex"
+    }
+
+    /// Codex has no Skill tool: a chat briefed on its skills starts one by reading its
+    /// `SKILL.md`, in a shell command that only reads (decision 9;
+    /// [`purlis_skills::runs::is_a_plain_read`]). Its shell is `Bash` to a hook.
+    fn skill_start(&self, tool: &str, input: &serde_json::Value) -> Option<SkillStart> {
+        let command = (tool == "Bash")
+            .then(|| input_text(input, "command"))
+            .flatten()?;
+        purlis_skills::runs::is_a_plain_read(command)
+            .then(|| SkillStart::Reading(command.to_owned()))
     }
 
     /// None: Codex has no command-pattern permissions, so a rule has no file to go into, and
@@ -417,6 +438,7 @@ mod tests {
 
     fn kit() -> Kit<'static> {
         Kit {
+            skills: None,
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(std::path::Path::new("/app/plugin")),
             persona: None,

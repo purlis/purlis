@@ -6,6 +6,7 @@ import { commands, type TemplateChoice, type TemplateRow } from "./bindings";
 import { DoorPage } from "./DoorPage";
 import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** The radio values that are not a template's id, as the Create page has them. */
 const FITS = ":fits";
@@ -129,20 +130,18 @@ export function MakeItAProject({
       )}
 
       <SettingActions>
-        <button type="button" tabIndex={0} disabled={making} onClick={onBack}>
+        <Button isDisabled={making} onPress={onBack}>
           Not now
-        </button>
-        <button
-          type="button"
-          tabIndex={0}
-          disabled={making}
-          onClick={() => {
+        </Button>
+        <Button
+          isDisabled={making}
+          onPress={() => {
             setTried(true);
             onMake(path, choiceOf(template));
           }}
         >
           Make it a project
-        </button>
+        </Button>
       </SettingActions>
 
       {making && (

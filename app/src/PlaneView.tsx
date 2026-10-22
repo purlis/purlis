@@ -372,6 +372,7 @@ import {
 } from "./AskPersona";
 import { SandboxOffer } from "./SandboxOffer";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
+import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
@@ -393,6 +394,8 @@ import type {
 } from "./bindings";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
+import { useSkillStudioOn } from "./skillStudio";
+import { SkillRunsHere, skillOfRun, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
@@ -597,6 +600,8 @@ export const PlaneView = memo(function PlaneView({
   firstChatAsked,
   shellAsked,
   fileAsked,
+  closeAsked,
+  onAsking,
   awayRefused,
   onAway,
   waiting,
@@ -660,6 +665,12 @@ export const PlaneView = memo(function PlaneView({
   /** A file ⌘P found in THIS project (FM-7), opened in its file tab once per `at`; with a
    *  `line`, a jump to it (a search hit, FM-8), opened in the branch's file tab at that line. */
   fileAsked?: { place: Place; path: string; line?: number; at: number };
+  /** A link's close of chats with theme drafts, handed to THIS project (#2761), asked here once
+   *  per `at`: the chats it ends. */
+  closeAsked?: { sessions: readonly number[]; at: number; dropped: boolean };
+  /** Told whether THIS project has a close or a "Who draws it?" question up (#2761), so the
+   *  window asks no link's close over any project's question. */
+  onAsking?: (plane: PlaneId, up: boolean) => void;
   /** This project's dispatches refused while nobody was at their chat (#1507), which the
    *  window holds: updates in the Inbox (#1693), and a part of the away summary (#1551). */
   awayRefused?: readonly AwayRefusal[];
@@ -706,6 +717,8 @@ export const PlaneView = memo(function PlaneView({
    *  say that something over there needs you. */
   const chats = useChats(plane);
   const doings = useDoings(plane);
+  // The skill run open in each chat, for the chip on its tab (SK-3).
+  const skillRuns = useSkillRuns(plane);
   // **Only the shares this view draws from, each redrawing it only when it changes** (SC-3).
   // A chat's own state is not one of them: its tab, its explorer row and its pane read that
   // themselves, so a chat that only went from running to waiting redraws those and not this.
@@ -943,6 +956,8 @@ export const PlaneView = memo(function PlaneView({
    *  again after a write — a vault's own tab (charter-app#235). */
   const vaults = useVaults(plane);
   const vaultNames = useMemo(() => vaults.vaults?.map((one) => one.name), [vaults.vaults]);
+  // Whether the Skill studio's flag is on (#2765): its palette row is offered only then.
+  const studioOn = useSkillStudioOn();
   const reloadVaults = vaults.reload;
   /** Whether the vault picker is up. */
   const [pickingVault, setPickingVault] = useState(false);
@@ -7040,6 +7055,7 @@ export const PlaneView = memo(function PlaneView({
             away,
             sidePanels,
             profiles: profileNames,
+            skillStudio: studioOn,
             readOnly: readOnlySaid,
             places,
           }),
@@ -7096,6 +7112,7 @@ export const PlaneView = memo(function PlaneView({
       harnessCards,
       memoryStores,
       profileNames,
+      studioOn,
     ],
   );
 
@@ -7153,6 +7170,8 @@ export const PlaneView = memo(function PlaneView({
     ownTabs?: number;
     /** The closing chat's theme drafts (#2332), which the close asks Keep or Revert about. */
     drafts?: readonly WindowDraft[];
+    /** Whether a link asked for this close (#2761): the dialog says so. */
+    fromALink?: boolean;
   }>();
   /** The themes kept as their chat closed (#2332), each asked in turn who draws it (#2708). */
   const [keptOnClose, setKeptOnClose] = useState<readonly KeptOnClose[]>([]);
@@ -7174,8 +7193,8 @@ export const PlaneView = memo(function PlaneView({
    * was refused and nothing has happened yet. The palette reads this answer to say what a row
    * did, and "nothing to say" is the right thing to say about a question still on screen.
    */
-  const run = useCallback(
-    async (offer: Offer): Promise<Ran> => {
+  const askToEndNow = useCallback(
+    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
       if (offer.available && endsAChat(offer.does)) {
         const ending = chatsEndedBy(offer.does, now.current, askedByNow);
         // **A close ends no task** (#1488): the tasks whose panes a tab's close takes go back
@@ -7204,9 +7223,13 @@ export const PlaneView = memo(function PlaneView({
           };
         };
         // **The theme drafts of every chat the close ends** (#2332), which it asks Keep or Revert
-        // about; on a link, nothing is asked (#2708).
+        // about; on a link, nothing is asked (#2708), and a close with drafts waits in the
+        // window (#2761).
         const found = await draftsOfClosing(commands, plane, ending);
-        if (!found.ok) return { ok: false, refused: found.refused };
+        if (!found.ok)
+          return "handed" in found
+            ? { ok: true, said: found.handed }
+            : { ok: false, refused: found.refused };
         const drafts = found.drafts;
         if (ending.length !== 1) {
           // A close of several chats at once asks nothing about what each started: those
@@ -7221,6 +7244,7 @@ export const PlaneView = memo(function PlaneView({
             keeps: theirs.some((one) => one.running.length > 0),
             back,
             drafts,
+            fromALink,
           });
           return { ok: true };
         }
@@ -7253,13 +7277,91 @@ export const PlaneView = memo(function PlaneView({
         const ownTabs = tasksPlacedBelow(now.current, session, askedByNow).filter(
           (one) => one.placed === "tab",
         ).length;
-        setEndingChat({ offer, session, smart, running, closing, shows, back, ownTabs, drafts });
+        setEndingChat({
+          offer,
+          session,
+          smart,
+          running,
+          closing,
+          shows,
+          back,
+          ownTabs,
+          drafts,
+          fromALink,
+        });
         return { ok: true };
       }
       return carryOut(offer);
     },
     [askedByNow, carryOut, plane, setEndingChat],
   );
+  /** How many closes are being asked about and have no question drawn yet (#2761). */
+  const [closesLoading, setClosesLoading] = useState(0);
+  /**
+   * **A close counts as a question up from its first step** (#2761): the window is told at once,
+   * before the core is asked what the close would end, so a link's close that comes meanwhile is
+   * not asked over it.
+   */
+  const askToEnd = useCallback(
+    async (offer: Offer, fromALink: boolean): Promise<Ran> => {
+      if (!offer.available || !endsAChat(offer.does)) return askToEndNow(offer, fromALink);
+      onAsking?.(plane, true);
+      setClosesLoading((was) => was + 1);
+      try {
+        return await askToEndNow(offer, fromALink);
+      } finally {
+        setClosesLoading((was) => was - 1);
+      }
+    },
+    [askToEndNow, onAsking, plane],
+  );
+  const run = useCallback((offer: Offer) => askToEnd(offer, false), [askToEnd]);
+
+  /**
+   * **A link's close of chats with theme drafts, handed to this window** (#2761): asked here as
+   * the window's own close of the tab that holds them is, Keep or Revert first, and the dialog
+   * says a link asked. Nothing is asked while a question is on screen anywhere in the window
+   * (`closeHanded.ts`), so a link never changes what the person is answering; nor for chats no
+   * tab here holds alone, which the person closes here themselves. Either is said here.
+   */
+  const questionUp = endingChat !== undefined || keptOnClose.length > 0 || closesLoading > 0;
+  useEffect(() => {
+    if (onAsking === undefined) return;
+    onAsking(plane, questionUp);
+    return () => onAsking(plane, false);
+  }, [onAsking, plane, questionUp]);
+  /** Says, under the strip, why a link's close was not asked: once the ask is handled, as a
+   *  close's own answer is said once it is carried out. */
+  const sayNotAsked = useCallback((words: string) => {
+    void Promise.resolve().then(() => setReport({ from: "close-handed", refused: true, words }));
+  }, []);
+  const closeHandled = useRef(closeAsked?.at);
+  useEffect(() => {
+    if (closeAsked === undefined || closeHandled.current === closeAsked.at) return;
+    closeHandled.current = closeAsked.at;
+    if (closeAsked.dropped || questionUp) {
+      sayNotAsked(CLOSE_HANDED_NOT_ASKED);
+      return;
+    }
+    const asked = new Set(closeAsked.sessions);
+    const tab = now.current.order.find((id) =>
+      panesOf(now.current, id).some((one) => asked.has(one.session)),
+    );
+    const offer = tab === undefined ? undefined : by(`tab.close:${tab}`);
+    const ends =
+      offer === undefined || !offer.available || !endsAChat(offer.does)
+        ? []
+        : chatsEndedBy(offer.does, now.current, askedByNow);
+    if (
+      offer === undefined ||
+      ends.length !== asked.size ||
+      !ends.every((session) => asked.has(session))
+    ) {
+      sayNotAsked(CLOSE_HANDED_NOT_HERE);
+      return;
+    }
+    void askToEnd(offer, true);
+  }, [askToEnd, askedByNow, by, closeAsked, questionUp, sayNotAsked]);
 
   /**
    * **Keeps or reverts a closing chat's theme drafts** (#2332), as its close was answered, while
@@ -7422,6 +7524,14 @@ export const PlaneView = memo(function PlaneView({
       showView(activityView(session), activityTitle(nameOfNow.current(session)));
   });
   const activityFromChip = useCallback((session: number) => activityNow.current(session), []);
+  /** Opens a skill's tab on run `run`, from the chip of the run open in a tab's chat (SK-3). */
+  const openSkillRun = useCallback(
+    (used: string, run: string) => {
+      const skill = skillOfRun(used);
+      showView(skillView(skill, run), skill);
+    },
+    [showView],
+  );
 
   /**
    * **A tab on the strip was pressed.** One that is behind comes forward, on whatever it was
@@ -8192,6 +8302,12 @@ export const PlaneView = memo(function PlaneView({
         plane={plane}
         onReview={() => openSettingsAt({ group: "project.sandbox" })}
       />
+      {/* **The runner this project's chats run on answered with another key** (#2752): said
+          once for the project, where its pool is removed. */}
+      <RunnerKeyChangedNotice
+        plane={plane}
+        onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
+      />
       {/* **The project's Internet access presets changed** (#1385): told once to each
           teammate, so a preset that widens never widens unseen. */}
       <ProjectPresetsNotice
@@ -8350,6 +8466,7 @@ export const PlaneView = memo(function PlaneView({
       chats={chats}
       tasksBelow={tasksBelow}
       doings={doings}
+      skillRuns={skillRuns}
       references={referenceChats}
       memoryTargets={memoryTargets}
       readOnly={readOnlySaid}
@@ -8762,6 +8879,7 @@ export const PlaneView = memo(function PlaneView({
                 usedFromChip={usedFromChip}
                 stopAllOf={stopAllOf}
                 activityFromChip={activityFromChip}
+                openSkillRun={openSkillRun}
                 freshOf={freshOf}
                 freshMarkOf={freshMarkOf}
                 planeUpdates={planeUpdates}
@@ -9280,6 +9398,7 @@ export const PlaneView = memo(function PlaneView({
               back={endingChat.back}
               ownTabs={endingChat.ownTabs}
               drafts={endingChat.drafts}
+              fromALink={endingChat.fromALink}
               onEnd={(stop, keepDrafts) => {
                 const { offer: ending, session, drafts } = endingChat;
                 setEndingChat(undefined);
@@ -9402,6 +9521,7 @@ function Lent({
   chats,
   tasksBelow,
   doings,
+  skillRuns,
   references,
   memoryTargets,
   readOnly,
@@ -9417,6 +9537,8 @@ function Lent({
   tasksBelow: ReadonlyMap<number, TasksBelow>;
   /** What each working chat is doing, for the one line under its name (#1493). */
   doings: DoingsOf;
+  /** The skill run open in each chat, for the chip on its tab (SK-3). */
+  skillRuns: RunsOf;
   references: ChatsForReferences;
   /** The project's memory stores and LIVE workspaces, for the memory lists' Move (#1190). */
   memoryTargets: MemoryTargets;
@@ -9439,23 +9561,25 @@ function Lent({
     <ChatsHere.Provider value={chats}>
       <TasksBelowLent below={tasksBelow}>
         <DoingsHere.Provider value={doings}>
-          <ReferenceChats.Provider value={references}>
-            <MemoryStores.Provider value={memoryTargets}>
-              <ReadOnlySaid.Provider value={readOnly}>
-                <ReadOnlyMendable.Provider value={mendable}>
-                  <PersonaMarks.Provider value={personas.marks}>
-                    <ReloadPersonaMarks.Provider value={personas.reload}>
-                      <AskPersonaOpener value={askPersona}>
-                        <BriefOpener value={brief}>
-                          <AnswerOpener value={answer}>{children}</AnswerOpener>
-                        </BriefOpener>
-                      </AskPersonaOpener>
-                    </ReloadPersonaMarks.Provider>
-                  </PersonaMarks.Provider>
-                </ReadOnlyMendable.Provider>
-              </ReadOnlySaid.Provider>
-            </MemoryStores.Provider>
-          </ReferenceChats.Provider>
+          <SkillRunsHere.Provider value={skillRuns}>
+            <ReferenceChats.Provider value={references}>
+              <MemoryStores.Provider value={memoryTargets}>
+                <ReadOnlySaid.Provider value={readOnly}>
+                  <ReadOnlyMendable.Provider value={mendable}>
+                    <PersonaMarks.Provider value={personas.marks}>
+                      <ReloadPersonaMarks.Provider value={personas.reload}>
+                        <AskPersonaOpener value={askPersona}>
+                          <BriefOpener value={brief}>
+                            <AnswerOpener value={answer}>{children}</AnswerOpener>
+                          </BriefOpener>
+                        </AskPersonaOpener>
+                      </ReloadPersonaMarks.Provider>
+                    </PersonaMarks.Provider>
+                  </ReadOnlyMendable.Provider>
+                </ReadOnlySaid.Provider>
+              </MemoryStores.Provider>
+            </ReferenceChats.Provider>
+          </SkillRunsHere.Provider>
         </DoingsHere.Provider>
       </TasksBelowLent>
     </ChatsHere.Provider>
@@ -9736,6 +9860,14 @@ function chatsEndedBy(does: Offer["does"], tabs: Tabs, askedBy: AskedBy): number
   const going = panesOf(tabs, tab.id).find((one) => one.pane === tab.focused);
   return going === undefined ? [] : [going.session];
 }
+
+/** What the window says of a link's close that came while a question was on screen (#2761). */
+const CLOSE_HANDED_NOT_ASKED =
+  "A link asked to close chats here that have theme drafts while a question was on screen, so it was not asked: close them here, and answer Keep or Revert.";
+
+/** What the window says when a link's close names chats no tab here holds alone (#2761). */
+const CLOSE_HANDED_NOT_HERE =
+  "A link asked to close chats that have theme drafts, and no tab here holds just those chats: close them here, and answer Keep or Revert.";
 
 /** Why Smart close is not offered on a tab holding more than one chat. */
 const MORE_THAN_ONE_CHAT =

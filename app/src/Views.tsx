@@ -34,6 +34,7 @@ import {
   RefreshCw,
   Save,
   Send,
+  Sparkles,
   Settings2,
   UserRound,
 } from "lucide-react";
@@ -99,6 +100,10 @@ import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } f
 import { PROPOSED_CHANGE_VIEW } from "./proposedChangeOpen";
 import { ProposedChangeTab } from "./ProposedChangeTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
+import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf } from "./skillStudio";
+import { SkillStudioTab } from "./SkillStudioTab";
+import { SKILL_VIEW, isSkillTab, skillOfView } from "./skillRuns";
+import { SkillTab } from "./SkillTab";
 import {
   SAVING_VIEW,
   LICENCES_VIEW,
@@ -121,6 +126,7 @@ import {
   useViewChanged,
   type About,
 } from "./planeChanged";
+import { Button } from "./ui/button/Button";
 
 /** What `workspaceSettingsView` names Settings at a workspace's level (SE-20). */
 const WORKSPACE_SETTINGS = "workspace-settings";
@@ -272,6 +278,10 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [SESSION_VIEW]: History,
   /** The project's dispatches (#1452). */
   [DISPATCHES_VIEW.view]: Send,
+  /** Every skill a chat in the project gets, and why (#2765), behind its flag. */
+  [SKILL_STUDIO_VIEW.view]: Sparkles,
+  /** One skill's tab, with its runs (SK-3). */
+  [SKILL_VIEW]: Sparkles,
   /** One chat's Activity (#1495). */
   [ACTIVITY_VIEW]: Activity,
   /** One chat's Network (#1662). */
@@ -462,18 +472,15 @@ export function ViewPane({
           const key = view.key;
           const called = key === "" ? one.title : `${one.title} · ${key}`;
           return (
-            <button
+            <Button
+              size="sm"
               key={`${one.extension}/${one.id}`}
-              type="button"
-              className="panel-view"
-              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-              tabIndex={0}
               title={`Asks ${one.extension}, in a tab of its own`}
-              onClick={() => onOpenView({ from: one.extension, view: one.id, key }, called)}
+              onPress={() => onOpenView({ from: one.extension, view: one.id, key }, called)}
+              icon={<ChartColumn className="node-icon" aria-hidden="true" />}
             >
-              <ChartColumn className="node-icon" aria-hidden="true" />
               {one.title}
-            </button>
+            </Button>
           );
         })}
       </header>
@@ -488,14 +495,9 @@ export function ViewPane({
             headline={`${title} was open when purlis last quit`}
             body={`Showing it asks ${view.from}'s program again, and purlis does not do that until you say so.`}
             action={
-              <button
-                type="button"
-                className="ui-button ui-button-primary"
-                tabIndex={0}
-                onClick={onAsk}
-              >
+              <Button variant="primary" onPress={onAsk}>
                 {`Ask ${view.from}`}
-              </button>
+              </Button>
             }
             testid="view-waits"
           />
@@ -589,6 +591,25 @@ export function ViewPane({
             id={taskChanges}
             changed={changed + onDisk}
             onOpenView={onOpenView}
+          />
+        ) : isSkillStudio(view) ? (
+          /* The Skill studio (#2765): read from the project's skill folders, again when the
+             plane changes on disk; keyed by the workspace whose chats it shows (#2767). */
+          <SkillStudioTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            scope={scopeOf(view)}
+            changed={changed + onDisk}
+            onOpenView={onOpenView}
+          />
+        ) : isSkillTab(view) ? (
+          /* One skill's tab (SK-3): its runs, read again when the project changes on disk, and
+             the run its key names marked. */
+          <SkillTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            {...skillOfView(view)}
+            changed={changed + onDisk}
           />
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its
@@ -758,17 +779,14 @@ const OWN_ROWS: Record<string, (key: string) => string[]> = {
 function OfferButton({ offer, onPress }: { offer?: Offer; onPress?: (offer: Offer) => void }) {
   if (!offer || !onPress) return null;
   return (
-    <button
-      type="button"
-      className="panel-view"
-      // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-      tabIndex={0}
-      disabled={!offer.available}
+    <Button
+      size="sm"
+      isDisabled={!offer.available}
       title={offer.available ? offer.note : offer.reason}
-      onClick={() => onPress(offer)}
+      onPress={() => onPress(offer)}
     >
       {offer.title}
-    </button>
+    </Button>
   );
 }
 
@@ -891,16 +909,14 @@ function Answer({
 
   /** Refresh, for a kept view: its only way to be asked again. */
   const refresh = keeps ? (
-    <button
-      type="button"
-      className="panel-view view-refresh"
-      // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-      tabIndex={0}
-      onClick={askAgain}
+    <Button
+      size="sm"
+      onPress={askAgain}
+      icon={<RefreshCw className="node-icon" aria-hidden="true" />}
+      className="view-refresh"
     >
-      <RefreshCw className="node-icon" aria-hidden="true" />
       Refresh
-    </button>
+    </Button>
   ) : null;
 
   if (said === undefined) {
@@ -996,14 +1012,9 @@ function Answer({
                 const change =
                   list !== undefined && list.members.length > 0 ? list.change : undefined;
                 return change === undefined ? null : (
-                  <button
-                    type="button"
-                    className="panel-view change-push"
-                    tabIndex={0}
-                    onClick={() => setPushing(change)}
-                  >
+                  <Button size="sm" onPress={() => setPushing(change)} className="change-push">
                     Push {change}…
-                  </button>
+                  </Button>
                 );
               }
             : undefined

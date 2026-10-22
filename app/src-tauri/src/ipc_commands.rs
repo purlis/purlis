@@ -23,6 +23,12 @@
 //   `vault_setup_*` set-up, #1527): a credential going the other way is held to the same
 //   windows (ADR 0052's amendment of that date).
 //
+// And one more list, which is no class of the window's: `e2e_only`, what only a scenario test
+// asks (#2836). Those commands are compiled, registered and granted in the `e2e` build alone
+// (`--features e2e`, which no build anyone is given turns on), granted there as value-free. The
+// generated TypeScript is the other builds', so it never names them, and the specs call them
+// by name. A command goes here when nothing in the UI calls it.
+//
 // Plain macros and no items, so the file means the same thing inside a build script as inside
 // the crate. Paths are written `module::command`; the IPC knows a command by the last segment.
 
@@ -205,6 +211,7 @@ macro_rules! app_commands {
                 running_sessions,
                 chat_states,
                 chat_doings,
+                chat_skill_runs,
                 opened_chats,
                 chats_that_would_not_start,
                 retry_chat_that_did_not_start,
@@ -270,6 +277,14 @@ macro_rules! app_commands {
                 plane_root_panels,
                 session_record,
                 dispatches::dispatches,
+                skillstudio::skill_studio,
+                skillstudio::skill_runs,
+                skillstudio::skill_studio_on,
+                skillstudio::set_skill_studio_on,
+                skillstudio::skill_share,
+                skillstudio::persona_skill,
+                skillstudio::chat_skills_missing,
+                skillstudio::put_away_chat_skills_missing,
                 dispatches::dispatch_worktree_loss,
                 dispatches::dispatch_worktree_discard,
                 taskchanges::task_changes,
@@ -353,10 +368,14 @@ macro_rules! app_commands {
                 updates::set_update_channel,
                 browserlimits::browser_limits,
                 browserlimits::set_browser_limit,
+                enginesandbox::engine_sandbox,
+                enginesandbox::use_this_machines_chrome,
                 dockerpools::docker_pools,
                 dockerpools::add_docker_pool,
                 dockerpools::remove_docker_pool,
                 dockerpools::docker_pool_link,
+                dockerpools::docker_pool_version,
+                notheld::projects_not_held,
                 updates::check_for_update,
                 updates::install_update,
                 updates::restart_to_update,
@@ -384,6 +403,7 @@ macro_rules! app_commands {
                 themegallery::theme_open_folder,
                 themegallery::theme_chat,
                 themedrafts::theme_drafts_of_chat,
+                themedrafts::hand_drafts_close_to_the_window,
                 themedrafts::theme_draft_keep,
                 themedrafts::theme_draft_revert,
                 themedrafts::theme_drafts_revert_here,
@@ -491,7 +511,6 @@ macro_rules! app_commands {
                 windowprefs::use_built_in_theme,
                 windowprefs::use_default_layout,
                 nativewindow::draw_native_window,
-                nativewindow::native_window_drawn,
             ],
             vault_values: [
                 vaults::vault_secret_reveal,
@@ -509,6 +528,10 @@ macro_rules! app_commands {
                 // The clipboard's text, for a Paste pressed in a terminal's menu (ADR 0052
                 // amended 2026-10-14): what is on the clipboard may be a vault's value.
                 pasteread::clipboard_text,
+            ],
+            e2e_only: [
+                // The window's native appearance and colour, read back (#2328, #2760).
+                nativewindow::drawn::native_window_drawn,
             ],
         }
     };
@@ -528,7 +551,8 @@ macro_rules! command_name {
     };
 }
 
-/// The list's names, as `(value_free, vault_values)`: `app_commands!(command_names)`.
+/// The list's names, as `(value_free, vault_values)`: `app_commands!(command_names)`. Every
+/// build has these; `e2e_only` is [`e2e_command_names`]'s.
 #[allow(
     unused_macros,
     reason = "used by build.rs and by the crate's tests, not by the app"
@@ -536,11 +560,27 @@ macro_rules! command_name {
 macro_rules! command_names {
     (
         value_free: [$($($free:ident)::+),* $(,)?],
-        vault_values: [$($($value:ident)::+),* $(,)?] $(,)?
+        vault_values: [$($($value:ident)::+),* $(,)?],
+        e2e_only: [$($($e2e:ident)::+),* $(,)?] $(,)?
     ) => {
         (
             &[$(command_name!($($free)::+)),*] as &'static [&'static str],
             &[$(command_name!($($value)::+)),*] as &'static [&'static str],
         )
+    };
+}
+
+/// The names only the `e2e` build has: `app_commands!(e2e_command_names)`.
+#[allow(
+    unused_macros,
+    reason = "used by build.rs and by the crate's tests, not by the app"
+)]
+macro_rules! e2e_command_names {
+    (
+        value_free: [$($($free:ident)::+),* $(,)?],
+        vault_values: [$($($value:ident)::+),* $(,)?],
+        e2e_only: [$($($e2e:ident)::+),* $(,)?] $(,)?
+    ) => {
+        &[$(command_name!($($e2e)::+)),*] as &'static [&'static str]
     };
 }

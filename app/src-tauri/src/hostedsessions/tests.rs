@@ -16,6 +16,7 @@ use purlis_session_protocol::session::{self, Exit};
 
 use super::*;
 
+mod movingcode;
 mod upgrading;
 
 /// The window's connection to the host `hosting` serves as, over in-memory links, run on
@@ -1644,7 +1645,7 @@ impl purlis_host::Compose for ComposesConfined {
     }
 }
 
-fn by_its_names() -> Named {
+pub(crate) fn by_its_names() -> Named {
     Named {
         chat: None,
         run: None,
@@ -2145,6 +2146,39 @@ fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
     assert!(hosted.sessions.reconnecting().is_empty());
 }
 
+/// A runner that answered the relay with another key than the one pinned for it (#2752): its
+/// chats are dimmed as for any outage, and the window is told the key changed, so it says why.
+#[test]
+fn a_runner_whose_key_changed_leaves_its_chats_dimmed_and_says_so() {
+    let runs = StandIns::default();
+    let host = Between::new(
+        Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            runs.clone(),
+        ),
+        false,
+    );
+    let pushes = host.pushes.clone();
+    let hosted = hosted_in(host, runs);
+    let told = told_of_reconnecting(&hosted);
+    let (id, _seen) = a_drawn_chat(&hosted);
+
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "the runner answered with another key".into(),
+            key_changed: true,
+        })
+        .unwrap();
+    until("the window is told the runner's key changed", || {
+        *told.lock().unwrap()
+            == [
+                (vec![id], Reconnection::Reconnecting),
+                (vec![id], Reconnection::KeyChanged),
+            ]
+    });
+    assert_eq!(hosted.sessions.reconnecting(), [id]);
+}
+
 /// The window's link to its own host, which relays it to a runner whose host composes each
 /// harness chat in a confinement of its own (#2446): the window's sessions there, the runner's
 /// confinements, and what the runner ran.
@@ -2388,6 +2422,48 @@ fn a_project_the_runner_will_not_hold_again_is_said_to_be_not_held_in_the_runner
         .expect_err("no chat starts in a project the runner does not hold");
     assert!(refused.starts_with(NOT_HELD), "{refused}");
     assert!(refused.contains(NOT_THERE), "{refused}");
+}
+
+/// **A project the runner would not hold again is marked until a hold of it is taken** (#2846):
+/// the Pools group draws the mark, in the runner's words.
+#[test]
+fn a_project_the_runner_will_not_hold_again_is_marked_until_it_is_held() {
+    let (hosted, holds, between, project) = hosted_holding();
+    a_drawn_chat(&hosted);
+    let held = holds.tried();
+    holds.refusing.store(true, Ordering::Relaxed);
+    let marked = || {
+        crate::notheld::now(None)
+            .into_iter()
+            .find(|one| std::path::Path::new(&one.root) == hosted.root)
+    };
+    assert_eq!(marked(), None);
+
+    between
+        .pushes
+        .send(session::Pushed::NotHeld {
+            project,
+            why: NOT_THERE.into(),
+        })
+        .unwrap();
+    until("the window tries to hold the project again", || {
+        holds.tried() > held
+    });
+    until("the project is marked not held", || marked().is_some());
+    let mark = marked().unwrap();
+    assert!(mark.why.contains(NOT_THERE), "{mark:?}");
+    assert!(
+        !mark.why.starts_with(NOT_HELD),
+        "the runner's words alone: {mark:?}"
+    );
+
+    // The runner holds it again: a chat starts, and the mark goes.
+    holds.refusing.store(false, Ordering::Relaxed);
+    hosted
+        .sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("a chat starts in the project held again");
+    assert_eq!(marked(), None);
 }
 
 #[test]
@@ -2667,4 +2743,183 @@ fn a_window_that_comes_back_acts_on_its_runner_chats_confinement_again() {
         );
         std::thread::sleep(Duration::from_millis(50));
     }
+}
+
+/// A key's private half, kept so an identity can be made again for each link to the runner.
+struct KeptKey {
+    device: &'static str,
+    private: purlis_session_protocol::hostlink::Zeroizing<[u8; 32]>,
+}
+
+impl KeptKey {
+    fn new(device: &'static str) -> KeptKey {
+        KeptKey {
+            device,
+            private: purlis_session_protocol::hostlink::LinkKey::generate()
+                .unwrap()
+                .private_half()
+                .unwrap(),
+        }
+    }
+
+    fn identity(&self) -> purlis_session_protocol::hostlink::Identity {
+        purlis_session_protocol::hostlink::Identity {
+            device: self.device.into(),
+            key: purlis_session_protocol::hostlink::LinkKey::from_private(self.private.clone())
+                .unwrap(),
+        }
+    }
+
+    fn pinned(&self) -> purlis_session_protocol::hostlink::Pinned {
+        let identity = self.identity();
+        purlis_session_protocol::hostlink::Pinned {
+            device: identity.device,
+            key: identity.key.public(),
+        }
+    }
+}
+
+/// The runner's connector, in memory: each connection is answered by the runner's host.
+#[derive(Clone)]
+struct ToTheRunner {
+    runner_host: Hosting,
+    runner: Arc<KeptKey>,
+    desktop: purlis_session_protocol::hostlink::Pinned,
+}
+
+impl purlis_session_protocol::hostlink::Connector for ToTheRunner {
+    type Io = tokio::io::DuplexStream;
+
+    fn connect(
+        &self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = std::io::Result<Self::Io>> + Send + 'static>,
+    > {
+        let this = self.clone();
+        Box::pin(async move {
+            let (a, b) = tokio::io::duplex(256 * 1024);
+            tokio::spawn(async move {
+                if let Ok(answered) = purlis_session_protocol::hostlink::answer(
+                    b,
+                    purlis_session_protocol::hostlink::Handshake::THIS_BUILD,
+                    &this.runner.identity(),
+                    &this.desktop,
+                    purlis_session_protocol::hostlink::Liveness::default(),
+                )
+                .await
+                {
+                    let _ = session::serve(answered.link, this.runner_host.clone(), None).await;
+                }
+            });
+            Ok(a)
+        })
+    }
+}
+
+/// The desktop's host, relaying to `runner_host` as the runner it keeps as `builds`.
+fn a_desktop_relaying_to(runner_host: Hosting) -> Hosting {
+    let (desktop, runner) = (
+        Arc::new(KeptKey::new("01JA0DESKT0P00000000000000")),
+        Arc::new(KeptKey::new("01JB0RUNNER0000000000000000")),
+    );
+    let pinned = runner.pinned();
+    let connector = ToTheRunner {
+        runner_host,
+        runner,
+        desktop: desktop.pinned(),
+    };
+    let relays: purlis_host::RelaysTo = Arc::new(move |name: &str| {
+        if name != "builds" {
+            return Err(format!("no runner named {name} is kept on this machine"));
+        }
+        let (connector, desktop, pinned) =
+            (connector.clone(), Arc::clone(&desktop), pinned.clone());
+        Ok((
+            Arc::new(move || {
+                purlis_session_protocol::hostlink::keep_linked(
+                    connector.clone(),
+                    purlis_session_protocol::hostlink::Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    purlis_session_protocol::hostlink::Liveness::default(),
+                )
+            }) as purlis_host::Keep,
+            format!("{name}/{name}"),
+        ))
+    });
+    Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        StandIns::default(),
+    )
+    .relaying_with(relays)
+}
+
+/// **A window that restarts before its host has let go of its old link is relayed on a second
+/// try** (#2744), through the desktop's host as it serves each link (`Routed`): the old link
+/// still holds the window's name, so the first `relay_to` is refused; the window sends it once
+/// more a moment later, once the old link has ended, and takes its runner chat back on that
+/// link.
+#[test]
+fn a_window_that_restarts_quickly_is_relayed_with_its_name_on_a_second_try() {
+    const CONFINEMENT: &str = "01J9CNFNMNT00000000000000W2";
+    let runtime = a_runtime();
+    let runner = Hosting::confining(
+        ComposesConfined,
+        purlis_host::standin::StandInConfines::default(),
+        StandIns::default(),
+    );
+    let desktop = runtime.block_on(async move { a_desktop_relaying_to(runner) });
+    let config = tempfile::tempdir().unwrap();
+    let (_dir, root) = a_project();
+    let project = purlis_core::scaffold::planefile::id_to_hold_by(&root).unwrap();
+    let name = purlis_core::windownames::name_for(config.path(), &root, &[]).unwrap();
+    let naming = || {
+        Some(purlis_session_protocol::browsing::Secret::new(
+            name.expose().to_owned(),
+        ))
+    };
+    let hold = || session::Command::HoldProject {
+        project: project.clone(),
+        project_path: root.display().to_string(),
+    };
+    let reach = || session::Command::ReachOf {
+        confinement: CONFINEMENT.into(),
+    };
+    let relayed = |naming| {
+        let desktop = desktop.clone();
+        runtime.block_on(async move {
+            let link = a_bare_link_to(purlis_host::Routed::new(desktop), || {}).await?;
+            HostLink::over_relayed(
+                link,
+                tokio::runtime::Handle::current(),
+                || {},
+                naming,
+                Some("builds"),
+            )
+            .await
+        })
+    };
+
+    let first = relayed(naming()).expect("the window's link is relayed");
+    first.call(hold()).expect("the runner holds the project");
+    first
+        .call(session::Command::StartProgram(Box::new(
+            session::StartProgram {
+                confinement: Some(CONFINEMENT.into()),
+                ..session::StartProgram::of(&project, ProgramKind::Harness)
+            },
+        )))
+        .expect("composed on the runner");
+
+    // The window restarts: its old link ends a moment after the new one is first refused.
+    let going = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(100));
+        drop(first);
+    });
+    let again = relayed(naming()).expect("relayed on the second try");
+    going.join().unwrap();
+    again.call(hold()).expect("the runner holds the project");
+    again
+        .call(reach())
+        .expect("the window that came back takes its chat back");
 }

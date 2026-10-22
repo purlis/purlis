@@ -34,6 +34,9 @@ const harness = writeReportingShell(built("fake-harness"), built("charter"));
 const environment = theRunsEnvironment(plane, {
   SHELL: harness,
   CHARTER_PANIC_LOG: PANIC_LOG,
+  // The Skill studio's slices are built behind its flag (#2786), on as the dev channel's people
+  // see them, as in the base run: a skill run's chip (`specs/skill-runs.state.e2e.ts`).
+  PURLIS_SKILL_STUDIO: "1",
 });
 declareTheStateRunsProfile(plane, harness, environment);
 

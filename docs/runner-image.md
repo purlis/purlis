@@ -2,8 +2,9 @@
 
 A **runner** is the same session host as the person's own machine: `purlis serve`, on a
 machine with no window (spec #2041). In a pool, Docker on this machine or a cluster, each
-runner is a container started from a **runner image**. purlis's CI builds one for every
-green `main`. A team can also build its own, as long as it keeps the contract below.
+runner is a container started from a **runner image**. purlis builds one for every release it
+publishes, dev and stable, of the same version as the release's app. A team can also build its
+own, as long as it keeps the contract below.
 
 ## purlis's own image
 
@@ -20,6 +21,13 @@ green `main`. A team can also build its own, as long as it keeps the contract be
   a GitHub runner of that architecture, from the `purlis` binary compiled there the way the
   Linux release binary is: the pinned toolchain, `cargo auditable`, the `dev-release`
   profile, no cache. purlis's plugin is copied in beside it from the same commit.
+- **Its version:** each release (`release.yml`) calls `runner-image.yml` for the commit and the
+  version it publishes, so the image's `purlis --version` says the version its app announces,
+  a dev build's `<version>-dev.<run>` included (`PURLIS_VERSION_STAMP`). The release's update
+  manifest names the image by digest as `runnerImage`, signed with the updater's key (see
+  [Updating](updating.md#the-runner-image-a-release-names)). After an update, a Docker pool of
+  this image gets a runner of the new version beside its old one: new chats start on it, and
+  the old runner keeps its chats until they end, then is removed.
 - **Tags:** `sha-<commit>` for the commit it was built from, and `main` for the image of
   the latest commit. `main` only moves forward: when an older commit's run finishes after
   a newer one's, its image gets only its `sha-<commit>` tag. Tags can move, so a pool names
@@ -34,8 +42,40 @@ green `main`. A team can also build its own, as long as it keeps the contract be
   ```bash
   cosign verify ghcr.io/purlis/purlis-runner@sha256:<digest> \
     --certificate-identity https://github.com/purlis/purlis/.github/workflows/runner-image.yml@refs/heads/main \
+    --certificate-github-workflow-repository purlis/purlis \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
+
+  `runner-image.yml` is a workflow a release calls, so the certificate is checked to come from a
+  run in `purlis/purlis` itself, and not only to name the workflow.
+
+  The image of a stable release is signed on its tag: use
+  `runner-image.yml@refs/tags/v<version>` as the identity.
+
+- **Build provenance and an SBOM:** each published image carries SLSA build provenance,
+  attached to the image the release names (its multi-architecture index), and a CycloneDX SBOM
+  of each architecture's image. The SBOM lists the image's Ubuntu packages and the crates the
+  `purlis` binary was built from. Each is stored by GitHub and pushed to the registry beside
+  the image, and the run that pushed the image verifies each one before it ends, so a release
+  never names an image without them. To check them yourself, signed in to the registry
+  (`gh auth token | docker login ghcr.io -u <you> --password-stdin`):
+
+  ```bash
+  # Provenance: built by runner-image.yml in purlis/purlis, on a GitHub-hosted runner.
+  gh attestation verify oci://ghcr.io/purlis/purlis-runner@sha256:<digest> \
+    --repo purlis/purlis \
+    --signer-workflow purlis/purlis/.github/workflows/runner-image.yml \
+    --deny-self-hosted-runners
+
+  # The SBOM of one architecture's image: its digest is in `docker buildx imagetools inspect`.
+  gh attestation verify oci://ghcr.io/purlis/purlis-runner@sha256:<arch digest> \
+    --repo purlis/purlis \
+    --signer-workflow purlis/purlis/.github/workflows/runner-image.yml \
+    --predicate-type https://cyclonedx.org/bom \
+    --format json | jq '.[0].verificationResult.statement.predicate'
+  ```
+
+  Add `--source-digest <commit>` to check that it was built from a given commit.
 
 - **Checked:** each architecture's image is pushed untagged, by digest, and pulled back.
   The contract below then runs on exactly the bytes that were pushed. Nothing is tagged or
@@ -70,7 +110,7 @@ it starts the image's default command. It prints every problem it found, one to 
 | A user who is not root | `USER` is a user number other than 0 (`USER 10001:10001`), so a cluster can check `runAsNonRoot`. Inside the image, `id -u` is not 0. |
 | A home | `HOME` is an absolute path to a folder the user can write. purlis keeps its config and data under it, by the XDG base directory rules, and a kept claim's volume is mounted there. |
 | `/tmp` | Writable. The session host makes its socket's folder there (`/tmp/purlis-<uid>/`, closed to every other user) unless `XDG_RUNTIME_DIR` names a folder of the user's own. With a read-only root file system, mount a writable volume at `/tmp` and at `HOME`. A Docker pool runs every runner that way: a read-only root, its home on a volume of its own, and a `tmpfs` at `/tmp` mounted `noexec`, so nothing in the image may need to run a program from `/tmp`. |
-| The default command | `purlis serve`, run under an init that reaps processes (`tini`, `dumb-init`, `catatonit` or `docker-init`) as PID 1: `ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/purlis"]` and `CMD ["serve"]`. It prints `ready` within a minute. |
+| The default command | `purlis serve`, run under an init that reaps processes (`tini`, `dumb-init`, `catatonit` or `docker-init`) as PID 1: `ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/purlis"]` and `CMD ["serve"]`. It prints `ready` within a minute. Its standard error is its log: purlis's own `info` lines and up, and a library's warnings, each redacted as the app's log is, kept by whatever keeps the container's log. |
 | Tools | `git` and `bash` on `PATH`, and a certificate bundle at `/etc/ssl/certs/ca-certificates.crt`. |
 | No harness | No `claude`, `codex` or `opencode` on `PATH`. A runner gets exactly the harness version its profile pins (spec #2030). |
 
@@ -80,7 +120,7 @@ The check does not read these rows. The team building the image keeps them.
 
 | What | Why |
 |---|---|
-| The same version as the app | `/usr/local/bin/purlis` is the version the person's app runs. Its `--version` line ends in `(dev-release profile)` or `(release profile)`. Take the binary from purlis's image of that version, by digest. |
+| The same version as the app | `/usr/local/bin/purlis` is the version the person's app runs. Its `--version` line ends in `(dev-release profile)` or `(release profile)`. Take the binary from purlis's image of that version, by digest. purlis never moves a pool of a team's own image to another version: when the app updates, the pool's row in the window says its runner is behind, and the team builds the image again from the new version and adds the pool again. |
 | A matching C library | purlis's binary is built on Ubuntu 24.04 and needs glibc 2.39 or later. |
 | An architecture purlis builds | `amd64` or `arm64`. |
 | No secret | No credential, token or key is built into the image or set in its environment. What a runner chat needs comes from the person's desktop, one command at a time (spec #2041). |

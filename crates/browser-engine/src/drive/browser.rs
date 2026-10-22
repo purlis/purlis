@@ -150,6 +150,9 @@ enum Ends {
 /// The script that says whether a document has loaded: a constant, never the caller's words.
 pub(crate) const READY_STATE: &str = "document.readyState";
 
+/// The expression that reads a document's title (#2753), in purlis's own world.
+pub(crate) const TITLE: &str = "document.title";
+
 /// The script that answers once its document has drawn two frames (#2690): what a scroll moved
 /// is then drawn, and the browser routes input by where it is drawn now. A constant.
 pub(crate) const DRAWN_TWICE: &str =
@@ -189,8 +192,29 @@ pub(crate) const ACTIVE_ELEMENT: &str = r"(() => {
   return at && at !== document.body && at !== document.documentElement ? at.tagName : '';
 })()";
 
+/// The expression that answers the element that has the focus, where the document it runs in has
+/// the focus, or `null` (#2295). Run in purlis's own world, not by value.
+pub(crate) const FOCUSED_HERE: &str = "document.hasFocus() ? document.activeElement : null";
+
+/// The first [`MOST_TITLE_CHARS`] of `title`.
+fn kept_title(title: &str) -> String {
+    title.chars().take(MOST_TITLE_CHARS).collect()
+}
+
+/// The drag event that cancels the engine's own drag carrying `data`, at `at`.
+fn drag_cancel(at: (f64, f64), data: &Value) -> Value {
+    json!({ "type": "dragCancel", "x": at.0, "y": at.1, "modifiers": 0, "data": data })
+}
+
 /// How long the driver gives the engine to say whether a document has loaded.
 const READY_STATE_WITHIN: Duration = Duration::from_secs(2);
+/// How long listing the pages gives the engine to read every page's title from its document,
+/// all of them together (#2753): past it, the pages left keep the title the engine told of.
+const TITLES_WITHIN: Duration = Duration::from_secs(1);
+/// The most bytes the answer to one page's title read may take (#2753).
+const MOST_TITLE_BYTES: usize = 64 << 10;
+/// The most characters of a page's title kept, as the engine cuts the titles it tells of.
+const MOST_TITLE_CHARS: usize = 4096;
 /// How often a wait looks again.
 const POLL: Duration = Duration::from_millis(50);
 /// How often a wait for text reads the page again.
@@ -227,6 +251,9 @@ struct Frame {
     name: String,
     url: String,
     generation: u64,
+    /// The page's document number when this frame last loaded another document, or when it
+    /// was first seen (#2638).
+    loaded: u64,
 }
 
 struct Page {
@@ -242,6 +269,8 @@ struct Page {
     /// What the page shows, as a number that changes each time it or any frame in it loads
     /// another document, or a frame in it goes (#2014): the document a frame's aim names.
     shows: u64,
+    /// The document number at which a frame of it last went, 0 if none has (#2638).
+    gone: u64,
     frames: HashMap<String, Frame>,
     /// The page that opened this one, if one did.
     opener: Option<String>,
@@ -389,6 +418,9 @@ struct State {
     /// What the engine's own drag carries, once a drag of the agent's started one (#2136), by
     /// the session it started on.
     dragged: Option<(String, Value)>,
+    /// Where a drag of the agent's ended without the engine's word that its own drag started,
+    /// by session (#2839): a word that comes later is answered by cancelling that drag there.
+    cancels_late: Option<(String, (f64, f64))>,
 }
 
 impl State {
@@ -584,6 +616,50 @@ impl State {
         })
     }
 
+    /// Whether what `target`'s page shows has moved on since the document number `seen`, at
+    /// the frame `reached` (#2638): that frame, or one around it, loaded another document since,
+    /// or, `with_inside`, one inside it did. A frame not known now has moved on.
+    fn moved_at(&self, target: &str, seen: u64, reached: &str, with_inside: bool) -> bool {
+        let Some(page) = self.page(target) else {
+            return true;
+        };
+        let Some(frame) = page.frames.get(reached) else {
+            return true;
+        };
+        // The frame and every frame around it.
+        let mut at = Some((reached, frame));
+        let mut steps = 0;
+        while let Some((_, frame)) = at {
+            steps += 1;
+            if frame.loaded > seen || steps > page.frames.len() {
+                return true;
+            }
+            at = frame
+                .parent
+                .as_deref()
+                .and_then(|parent| page.frames.get_key_value(parent))
+                .map(|(id, frame)| (id.as_str(), frame));
+        }
+        // Every frame inside it, where what is under a point may be any of them.
+        with_inside
+            && page.frames.iter().any(|(id, frame)| {
+                frame.loaded > seen && id != reached && {
+                    let mut up = frame.parent.as_deref();
+                    let mut steps = 0;
+                    loop {
+                        steps += 1;
+                        match up {
+                            Some(parent) if parent == reached => break true,
+                            Some(parent) if steps <= page.frames.len() => {
+                                up = page.frames.get(parent).and_then(|f| f.parent.as_deref());
+                            }
+                            _ => break false,
+                        }
+                    }
+                }
+            })
+    }
+
     fn info(&self, target: &str) -> Option<PageInfo> {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
@@ -621,12 +697,14 @@ impl State {
             .get("parentId")
             .and_then(Value::as_str)
             .map(str::to_owned);
+        let shown = page.shows;
         let entry = page.frames.entry(id.to_owned()).or_insert_with(|| Frame {
             session: session.to_owned(),
             parent: None,
             name: String::new(),
             url: String::new(),
             generation,
+            loaded: shown,
         });
         if parent.is_some() {
             entry.parent = parent;
@@ -641,6 +719,7 @@ impl State {
         if navigated {
             page.shows = generation;
             entry.generation = generation;
+            entry.loaded = generation;
             if id == target {
                 page.url = text("url");
             }
@@ -649,12 +728,12 @@ impl State {
         }
     }
 
-    /// Forgets `frame` and every frame inside it.
-    fn frame_gone(&mut self, target: &str, frame: &str) {
+    /// Forgets `frame` and every frame inside it, and answers them.
+    fn frame_gone(&mut self, target: &str, frame: &str) -> Vec<String> {
         self.generations += 1;
         let shows = self.generations;
         let Some(page) = self.page_mut(target) else {
-            return;
+            return Vec::new();
         };
         let mut gone = vec![frame.to_owned()];
         let mut at = 0;
@@ -672,10 +751,12 @@ impl State {
             page.frames.remove(id);
         }
         page.shows = shows;
+        page.gone = shows;
         for id in &gone {
             self.refs.forget_frame(id);
             self.excluded.retain(|key| &key.frame != id);
         }
+        gone
     }
 }
 
@@ -685,6 +766,13 @@ enum FollowUp {
     Close(String),
     SetUp(String),
     Release(String),
+    /// The engine's own drag, told of only after the agent's drag that started it ended
+    /// (#2839): cancelled at where that drag ended.
+    CancelDrag {
+        session: String,
+        at: (f64, f64),
+        data: Value,
+    },
     /// A request held until the judge says whether it goes (#2018).
     Judge {
         paused: Paused,
@@ -1148,10 +1236,46 @@ impl Browser {
         let key = match snapshot.focused() {
             [] => return Err(Refusal::NothingFocused),
             [one] => one.clone(),
-            _ => return Err(Refusal::FocusUnclear),
+            // The tree marks more than one element focused (a real engine may mark a field's
+            // inner editor, or its document, with it): the one its document says has the
+            // focus is the one (#2295).
+            many => self
+                .the_one_focused(&target, many)
+                .ok_or(Refusal::FocusUnclear)?,
         };
         let read = self.blank_node(&target, key.clone())?;
         Ok(((target, key), read))
+    }
+
+    /// Of `many`, the elements the tree marks focused on `target`'s page, the one its own
+    /// document says has the focus, where exactly one is.
+    fn the_one_focused(&self, target: &str, many: &[NodeKey]) -> Option<NodeKey> {
+        let mut frames: Vec<&str> = many.iter().map(|key| key.frame.as_str()).collect();
+        frames.sort_unstable();
+        frames.dedup();
+        let mut found = Vec::new();
+        for frame in frames {
+            let session = lock(&self.inner.state)
+                .page(target)?
+                .frames
+                .get(frame)?
+                .session
+                .clone();
+            if let Some(backend) = self.focused_in(&session, frame) {
+                found.extend(
+                    many.iter()
+                        .filter(|key| key.frame == frame && key.backend == backend)
+                        .cloned(),
+                );
+            }
+        }
+        // One element the tree lists twice is still one.
+        found.sort_by(|a, b| (&a.frame, a.backend).cmp(&(&b.frame, b.backend)));
+        found.dedup();
+        match found.as_slice() {
+            [one] => Some(one.clone()),
+            _ => None,
+        }
     }
 
     fn blank_node(&self, target: &str, key: NodeKey) -> Result<Snapshot, Refusal> {
@@ -1285,6 +1409,7 @@ impl Browser {
             } => self.wait_for_text(page.as_ref(), &text, gone, within),
             Call::Pages => {
                 let target = self.target(None).ok();
+                self.read_titles();
                 let pages = {
                     let state = lock(&self.inner.state);
                     state
@@ -1321,6 +1446,51 @@ impl Browser {
                 Ok(self.answer_now(&target, Content::Nothing))
             }
             Call::Screenshot { page } => self.screenshot(page.as_ref()),
+        }
+    }
+
+    /// Reads each page's title from its document, in purlis's own world (#2753). The engine
+    /// tells of a title by `Target.targetInfoChanged`, and Chrome does not always send it after
+    /// a script sets `document.title`. Every read together is given [`TITLES_WITHIN`], a world
+    /// made for one included; a page not read by then, or whose answer is past
+    /// [`MOST_TITLE_BYTES`], keeps the title it has. A read is kept only while the page still
+    /// shows the document it was read from, and only its first [`MOST_TITLE_CHARS`].
+    fn read_titles(&self) {
+        let deadline = Instant::now() + TITLES_WITHIN;
+        let pages: Vec<(String, String, u64)> = lock(&self.inner.state)
+            .pages
+            .iter()
+            .filter_map(|p| Some((p.target.clone(), p.session.clone()?, p.shows)))
+            .collect();
+        for (target, session, shows) in pages {
+            if Instant::now() >= deadline {
+                break;
+            }
+            let read = self.in_world_by(&session, &target, deadline, |world| {
+                let left = deadline.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(CallError::TimedOut);
+                }
+                self.devtools().call_within_bounded(
+                    "Runtime.evaluate",
+                    json!({
+                        "expression": TITLE,
+                        "uniqueContextId": world.unique,
+                        "returnByValue": true,
+                    }),
+                    Some(&session),
+                    left,
+                    MOST_TITLE_BYTES,
+                )
+            });
+            if let Some(title) = read
+                .ok()
+                .and_then(|r| r.pointer("/result/value")?.as_str().map(kept_title))
+                && let Some(page) = lock(&self.inner.state).page_mut(&target)
+                && page.shows == shows
+            {
+                page.title = title;
+            }
         }
     }
 
@@ -1654,7 +1824,13 @@ impl Browser {
         let (text, document) = {
             let mut state = lock(&self.inner.state);
             let body = read(&snapshot, &mut state)?;
-            let page = state.page(target).ok_or(Refusal::NoPage)?;
+            let page = state.page_mut(target).ok_or(Refusal::NoPage)?;
+            // The tree names the document's title as it is now, which the engine may not have
+            // told of (#2753): the pages are listed under it from here on.
+            if !snapshot.title().is_empty() {
+                page.title = kept_title(snapshot.title());
+            }
+            let page = &*page;
             let title = if snapshot.title().is_empty() {
                 page.shown(&page.title)
             } else {
@@ -2274,7 +2450,12 @@ impl Browser {
             // A native drag source starts the engine's own drag, which the engine hands over
             // while this drag lasts, and never after (#2136): once asked to, it is told to stop
             // however the drag ends.
-            lock(&self.inner.state).dragged = None;
+            {
+                let mut state = lock(&self.inner.state);
+                state.dragged = None;
+                state.cancels_late = None;
+            }
+            let mut taken = false;
             let dragged = self
                 .devtools()
                 .call(
@@ -2283,13 +2464,40 @@ impl Browser {
                     Some(session),
                 )
                 .map_err(refusal)
-                .and_then(|_| self.dragging(&page, session, start, end, &drops_into));
+                .and_then(|_| self.dragging(&page, session, start, end, &drops_into, &mut taken));
             let handed_back = self.devtools().call(
                 "Input.setInterceptDrags",
                 json!({ "enabled": false }),
                 Some(session),
             );
-            lock(&self.inner.state).dragged = None;
+            // A drag the engine told of only after this one stopped waiting is cancelled, now
+            // or as the word comes, however late (#2839).
+            let late = {
+                let mut state = lock(&self.inner.state);
+                let told = state.dragged.take();
+                match told {
+                    Some((on, data)) if !taken && on == *session => Some(data),
+                    _ if !taken => {
+                        state.cancels_late = Some((session.clone(), end));
+                        None
+                    }
+                    _ => None,
+                }
+            };
+            if let Some(data) = late {
+                let _ = self.devtools().call(
+                    "Input.dispatchDragEvent",
+                    drag_cancel(end, &data),
+                    Some(session),
+                );
+            }
+            // Said where the drag's own failure is what its call answers.
+            if let (Err(_), Err(why)) = (&dragged, &handed_back) {
+                tracing::warn!(
+                    "purlis: a browser was not told to stop handing its drags over after a drag \
+                     that failed: {why}"
+                );
+            }
             let note = dragged?;
             handed_back.map_err(refusal)?;
             Ok(note)
@@ -2307,11 +2515,13 @@ impl Browser {
         start: (f64, f64),
         end: (f64, f64),
         drops_into: &[String],
+        taken: &mut bool,
     ) -> Result<Option<String>, Refusal> {
         self.mouse(session, "mouseMoved", start.0, start.1, 0, 0)?;
         self.mouse(session, "mousePressed", start.0, start.1, 1, 1)?;
         let mut carried = None;
         let dragged = self.dragged_on(session, start, end, drops_into, target, &mut carried);
+        *taken = carried.is_some();
         if dragged.is_err() || matches!(dragged, Ok(Some(_))) {
             self.let_go(session, end, carried.as_ref());
         }
@@ -2384,7 +2594,7 @@ impl Browser {
         if let Some(data) = carried {
             let _ = self.devtools().call(
                 "Input.dispatchDragEvent",
-                json!({ "type": "dragCancel", "x": end.0, "y": end.1, "modifiers": 0, "data": data }),
+                drag_cancel(end, data),
                 Some(session),
             );
         }
@@ -3143,6 +3353,7 @@ impl Inner {
                                 settle: Settle::new(now),
                                 scrubbed: kept,
                                 shows: 0,
+                                gone: 0,
                                 frames: HashMap::new(),
                                 opener,
                             });
@@ -3222,6 +3433,14 @@ impl Inner {
                             && let Some(page) = state.page_mut(&target)
                         {
                             page.settle.forget_session(&session, now);
+                        }
+                        // A drag ended on a session that is gone is answered by nobody (#2839).
+                        if state
+                            .cancels_late
+                            .as_ref()
+                            .is_some_and(|(on, _)| *on == session)
+                        {
+                            state.cancels_late = None;
                         }
                         state.sessions.remove(&session);
                     }
@@ -3325,14 +3544,29 @@ impl Inner {
                         && let (Some(session), Some(frame)) = (&event.session_id, text("/frameId"))
                         && let Some(target) = state.page_of_session(session)
                     {
-                        state.frame_gone(&target, &frame);
+                        let gone = state.frame_gone(&target, &frame);
+                        // What they had loading or open went with them (#2841).
+                        if let Some(page) = state.page_mut(&target) {
+                            page.settle.frames_gone(session, &gone, now);
+                        }
                     }
                 }
                 // A drag of the agent's started the engine's own (#2136): it is carried on by
                 // drag events from here.
                 "Input.dragIntercepted" => {
                     if let Some(session) = &event.session_id {
-                        state.dragged = Some((session.clone(), params["data"].clone()));
+                        match state.cancels_late.take() {
+                            // Told of after the drag that started it ended (#2839).
+                            Some((on, at)) if on == *session => follow.push(FollowUp::CancelDrag {
+                                session: on,
+                                at,
+                                data: params["data"].clone(),
+                            }),
+                            other => {
+                                state.cancels_late = other;
+                                state.dragged = Some((session.clone(), params["data"].clone()));
+                            }
+                        }
                     }
                 }
                 _ => {}
@@ -3461,6 +3695,13 @@ impl Inner {
                 if let Some((paused, outbound)) = unsent {
                     self.judged(&paused, &outbound);
                 }
+            }
+            FollowUp::CancelDrag { session, at, data } => {
+                let _ = devtools.call(
+                    "Input.dispatchDragEvent",
+                    drag_cancel(at, &data),
+                    Some(&session),
+                );
             }
             FollowUp::Release(session) => {
                 let on = Some(session.as_str());

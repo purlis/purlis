@@ -53,7 +53,10 @@ async fn a_window_of(host: Hosting) -> Client {
 #[test]
 fn a_pool_this_machine_does_not_keep_is_never_reached() {
     let config = tempfile::tempdir().unwrap();
-    let machine = a_machine(config.path(), Docker("/nonexistent/docker".into()));
+    let machine = a_machine(
+        config.path(),
+        Docker::at("/nonexistent/docker").with_settings_in(config.path().join("docker-settings")),
+    );
     let refused = ToARunner::of(&machine, "builds").err().unwrap();
     assert!(refused.contains("not on this machine"), "{refused}");
     // A pool kept with no runner reaches nothing either.
@@ -74,7 +77,10 @@ fn a_pool_this_machine_does_not_keep_is_never_reached() {
 #[test]
 fn a_link_to_a_runner_reads_this_desktops_key_and_never_makes_one() {
     let config = tempfile::tempdir().unwrap();
-    let machine = a_machine(config.path(), Docker("/nonexistent/docker".into()));
+    let machine = a_machine(
+        config.path(),
+        Docker::at("/nonexistent/docker").with_settings_in(config.path().join("docker-settings")),
+    );
     let image = Image::pinned(&format!(
         "ghcr.io/purlis/purlis-runner@sha256:{}",
         "0".repeat(64)
@@ -130,12 +136,9 @@ fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
     let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
         return;
     };
-    let docker = Docker(
-        std::env::var_os("DOCKER_POOL_TEST_DOCKER")
-            .unwrap_or("docker".into())
-            .into(),
-    );
     let config = tempfile::tempdir().unwrap();
+    let docker = Docker::at(std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()))
+        .with_settings_in(config.path().join("docker-settings"));
     let machine = a_machine(config.path(), docker.clone());
     let name = format!(
         "test-{}",
@@ -227,4 +230,126 @@ fn scopeguard(config: PathBuf, docker: Docker, name: String) -> impl Drop {
         }
     }
     Removes(config, docker, name)
+}
+
+/// **A runner's version is asked of it once for each container and image** (#2749): a link
+/// after the first reads what the first was told; one that could not be read is asked again.
+#[test]
+fn a_runners_version_is_read_once_for_its_container_and_image() {
+    let asked = std::cell::Cell::new(0);
+    let read = |answer: Result<&str, &str>| {
+        asked.set(asked.get() + 1);
+        answer.map(str::to_owned).map_err(str::to_owned)
+    };
+    let (container, image) = ("c".repeat(64), "ghcr.io/purlis/purlis-runner@sha256:once");
+    assert!(once_for(&container, image, || read(Err("not up yet"))).is_err());
+    assert_eq!(
+        once_for(&container, image, || read(Ok("0.4.2-dev.9"))),
+        Ok("0.4.2-dev.9".into())
+    );
+    assert_eq!(
+        once_for(&container, image, || read(Ok("another"))),
+        Ok("0.4.2-dev.9".into())
+    );
+    assert_eq!(asked.get(), 2, "read once it answered, and not again");
+    // Another image in the same container is read anew.
+    assert_eq!(
+        once_for(
+            &container,
+            "ghcr.io/purlis/purlis-runner@sha256:other",
+            || read(Ok("0.4.3"))
+        ),
+        Ok("0.4.3".into())
+    );
+}
+
+/// **Only a runner kept here and not draining takes a new chat** (#2865): a runners file that
+/// cannot be read, a runner not kept, and one that drains each refuse the start.
+#[test]
+fn a_start_is_refused_unless_its_runner_is_kept_and_not_draining() {
+    let config = tempfile::tempdir().unwrap();
+    // Nothing kept.
+    assert!(drains(config.path(), "builds/builds"));
+    assert!(drains(config.path(), "not a pool and runner"));
+
+    // A file that cannot be read refuses every start.
+    let file = purlis_core::machine::dir(config.path()).join(purlis_core::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "not runners").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    assert!(purlis_core::runners::read(config.path()).is_err());
+    assert!(drains(config.path(), "builds/builds"));
+    std::fs::remove_file(&file).unwrap();
+
+    // A runner kept and not draining takes chats; once it drains, it does not.
+    let image = Image::pinned(&format!(
+        "ghcr.io/purlis/purlis-runner@sha256:{}",
+        "0".repeat(64)
+    ))
+    .unwrap();
+    purlis_core::runners::record_pool(
+        config.path(),
+        &Pool::new("builds", image.clone(), Set::default()).unwrap(),
+    )
+    .unwrap();
+    let made = purlis_core::dockerpool::Made {
+        container: purlis_core::dockerpool::ContainerId::new(&"b".repeat(64)).unwrap(),
+        runner: purlis_core::dockerpool::Runner::new(
+            "builds",
+            image.clone(),
+            purlis_core::dockerpool::User::new(10001, 10001).unwrap(),
+            "/home/purlis",
+        )
+        .unwrap(),
+    };
+    let ours = purlis_session_protocol::hostlink::Pinned {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: purlis_session_protocol::hostlink::LinkKey::generate()
+            .unwrap()
+            .public(),
+    };
+    let answered = |device: &str| purlis_session_protocol::hostlink::Pinned {
+        device: device.into(),
+        key: purlis_session_protocol::hostlink::LinkKey::generate()
+            .unwrap()
+            .public(),
+    };
+    let locked = purlis_core::runners::lock(config.path());
+    purlis_core::runners::keep_for_its_pool(
+        config.path(),
+        &made,
+        &answered("01JB0RUNNER0000000000000000"),
+        &ours,
+        &locked,
+    )
+    .unwrap();
+    assert!(!drains(config.path(), "builds/builds"));
+    let next = Image::pinned(&format!(
+        "ghcr.io/purlis/purlis-runner@sha256:{}",
+        "1".repeat(64)
+    ))
+    .unwrap();
+    purlis_core::runners::succeed_locked(
+        config.path(),
+        "builds",
+        &purlis_core::dockerpool::Made {
+            container: purlis_core::dockerpool::ContainerId::new(&"c".repeat(64)).unwrap(),
+            runner: purlis_core::dockerpool::Runner::new(
+                "builds-11111111",
+                next,
+                purlis_core::dockerpool::User::new(10001, 10001).unwrap(),
+                "/home/purlis",
+            )
+            .unwrap(),
+        },
+        &answered("01JB0RUNNER0000000000000001"),
+        &ours,
+        &locked,
+    )
+    .unwrap();
+    assert!(drains(config.path(), "builds/builds"));
+    assert!(!drains(config.path(), "builds/builds-11111111"));
 }

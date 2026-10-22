@@ -12,6 +12,9 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+# A failure purlis cannot answer to anyone is a warning in the host's log (#2839): the crate
+# the core already links, so the tree gains no crate.
+tracing = "0.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true

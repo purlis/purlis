@@ -24,6 +24,7 @@ import { placeName, type Place } from "../pieceViews";
 import { useTabStop } from "../roving";
 import { useReferenceChats } from "../references";
 import { touchingIn, useTouching, type Touching, type Touches } from "../touching";
+import { ToggleButton } from "../ui/button/Button";
 
 /**
  * **A branch's files as a tree, in its file tab** (FM-2, #1103 F3): the explorer's own file rows
@@ -202,15 +203,14 @@ export function BranchTree({
           )}
         </div>
       </RovingFocusGroup.Root>
-      <button
-        type="button"
-        className="ui-button ui-button-sm ignored-toggle"
-        tabIndex={0}
-        aria-pressed={showIgnored}
-        onClick={() => setShowIgnored((was) => !was)}
+      <ToggleButton
+        size="sm"
+        isSelected={showIgnored}
+        onPress={() => setShowIgnored((was) => !was)}
+        className="ignored-toggle"
       >
         Show ignored files
-      </button>
+      </ToggleButton>
     </div>
   );
 }

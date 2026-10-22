@@ -1,0 +1,119 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: docker pool hosts
+
+# The Docker pool's container check, measured on each host it is meant for (#2680): Docker on
+# an AppArmor host (GitHub's Ubuntu 24.04), and Podman there, rootful and rootless. Each job
+# makes a container the pool's way on that host's engine, records what `inspect` and `info`
+# write of it, and holds `dockerpool::check` to it: the correctly made container passes, and
+# every loosened one is refused (`crates/purlis-core/tests/a_pool_container_is_checked_on_this_host.rs`).
+# What each host wrote is the job's artifact, and the recorded copies the unit tests read are
+# in `crates/purlis-core/src/dockerpool/hosts/`.
+#
+# **No SELinux host.** GitHub's hosted runners are Ubuntu, macOS and Windows, and a container
+# running Fedora on Ubuntu is still Ubuntu's kernel and AppArmor. So Docker on an SELinux host
+# is not measured here, and the check keeps refusing what one writes (a process label), as it
+# refuses anything it has not seen.
+#
+# On a pull request that changes the check, the test or this file, and each night.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/docker-pool-hosts.yml
+      - crates/purlis-core/src/dockerpool.rs
+      - crates/purlis-core/src/dockerpool/**
+      - crates/purlis-core/tests/a_pool_container_is_checked_on_this_host.rs
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-pool-hosts-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  measure:
+    name: ${{ matrix.host }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [docker on apparmor, podman rootful, podman rootless]
+    env:
+      HOST: ${{ matrix.host }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      - name: The host
+        run: |
+          echo "OUT=$RUNNER_TEMP/measured" >> "$GITHUB_ENV"
+          uname -a
+          cat /sys/module/apparmor/parameters/enabled || true
+          docker version || true
+          podman version || true
+      # A stand-in that keeps running whatever its command: nothing in it is run, and the pool
+      # names an image by digest alone, so it is pushed to a registry of this job's own.
+      - name: A stand-in image, by digest
+        run: |
+          set -euo pipefail
+          docker run --detach --publish 127.0.0.1:5000:5000 --name registry registry:3
+          mkdir -p "$RUNNER_TEMP/stand-in"
+          printf '%s\n' 'FROM busybox:1.37' \
+            'ENTRYPOINT ["/bin/sh", "-c", "exec sleep 2147483647"]' > "$RUNNER_TEMP/stand-in/Dockerfile"
+          docker build --tag localhost:5000/pool-stand-in:measure "$RUNNER_TEMP/stand-in"
+          docker push localhost:5000/pool-stand-in:measure
+          image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/pool-stand-in:measure)
+          echo "image $image"
+          echo "DOCKER_POOL_MEASURE_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: The engine this job measures
+        run: |
+          set -euo pipefail
+          case "$HOST" in
+            "docker on apparmor")
+              echo "DOCKER_POOL_TEST_DOCKER=$(command -v docker)" >> "$GITHUB_ENV" ;;
+            "podman rootful")
+              printf '%s\n' '#!/bin/sh' 'exec sudo podman "$@"' > "$RUNNER_TEMP/podman"
+              chmod +x "$RUNNER_TEMP/podman"
+              sudo podman pull --tls-verify=false "$DOCKER_POOL_MEASURE_IMAGE"
+              echo "DOCKER_POOL_TEST_DOCKER=$RUNNER_TEMP/podman" >> "$GITHUB_ENV" ;;
+            "podman rootless")
+              podman pull --tls-verify=false "$DOCKER_POOL_MEASURE_IMAGE"
+              echo "DOCKER_POOL_TEST_DOCKER=$(command -v podman)" >> "$GITHUB_ENV" ;;
+          esac
+      - name: The check, held to what this host writes
+        run: DOCKER_POOL_MEASURE_OUT="$OUT" cargo test --locked -p purlis-core --test a_pool_container_is_checked_on_this_host -- --nocapture
+      - name: What the host wrote
+        if: always()
+        run: |
+          for file in "$OUT"/*; do
+            # The folder each run's copy of Docker's settings was made in, and nothing to show.
+            [ -f "$file" ] || continue
+            echo "::group::$(basename "$file")"
+            cat "$file"
+            echo
+            echo "::endgroup::"
+          done
+          if [ -f "$OUT/checked.txt" ]; then
+            { echo "### $HOST"; echo '```'; cat "$OUT/checked.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: measured-${{ strategy.job-index }}
+          path: ${{ env.OUT }}
+          if-no-files-found: warn
+          retention-days: 14

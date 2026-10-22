@@ -76,10 +76,12 @@ fn a_job_that_holds_nothing_writes_the_manifest_and_hands_it_on() {
             && !manifest.can_mint_an_oidc_token(),
         "the manifest job holds no key, no environment and no token"
     );
-    assert_eq!(
-        manifest.condition(),
-        Some("needs.plan.outputs.publish == 'true'"),
-        "a manifest is written only for a run that publishes"
+    assert!(
+        manifest
+            .condition()
+            .is_some_and(|said| said.contains("needs.plan.outputs.publish == 'true'")),
+        "a manifest is written only for a run that publishes: {:?}",
+        manifest.condition()
     );
     assert!(manifest.needs().contains(&"build".to_owned()));
     // From the build files by their exact names, never a pattern (see `provenance`).
@@ -93,6 +95,11 @@ fn a_job_that_holds_nothing_writes_the_manifest_and_hands_it_on() {
             pair(
                 "purlis-linux-x86_64-${{ needs.plan.outputs.version }}",
                 "dist"
+            ),
+            // The runner image's line and its signature (#2749).
+            pair(
+                "purlis-runner-image-${{ needs.plan.outputs.version }}",
+                "runner"
             ),
         ]
     );
@@ -240,11 +247,12 @@ fn provenance_hands_its_bundle_on_and_publish_keeps_it_out_of_the_verified_files
 fn no_job_that_can_write_the_release_or_holds_a_secret_can_sign() {
     let jobs = release_jobs();
     for job in jobs.iter().filter(|j| j.can_mint_an_oidc_token()) {
-        let writes = job
-            .permissions()
-            .unwrap_or_default()
-            .iter()
-            .any(|(k, v)| v == "write" && k != "id-token" && k != "attestations");
+        // The runner image's call signs the image keyless, and so writes its package (#2749):
+        // the registry, never the release.
+        let image = job.name == "runner-image";
+        let writes = job.permissions().unwrap_or_default().iter().any(|(k, v)| {
+            v == "write" && k != "id-token" && k != "attestations" && !(image && k == "packages")
+        });
         assert!(
             !writes && !job.reads_a_secret() && !job.publishes() && job.environment().is_none(),
             "job `{}` can sign provenance and holds more",

@@ -236,6 +236,46 @@ fn what_is_about_to_be_committed_is_broken_down_by_directory_before_it_is() {
     assert!(breakdown < committed, "{said}");
 }
 
+#[test]
+fn a_save_never_commits_a_levels_local_skills_even_where_nothing_ignores_them() {
+    // ADR 0099 §1, #2767: `skills.local/` is this machine's own. This plane's `.gitignore` has
+    // no line for it, as an older plane's does not, and the save still leaves it out.
+    let fixture = Fixture::plane();
+    assert!(
+        stages_the_whole_tree(&SAVE_STAGES),
+        "the save is still a whole-tree stage"
+    );
+    for path in [
+        "skills/shared/SKILL.md",
+        "skills.local/mine/SKILL.md",
+        "workspaces/alpha/skills.local/notes/SKILL.md",
+    ] {
+        let file = fixture.root.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, "---\nname: x\ndescription: y\n---\n").unwrap();
+    }
+    assert!(
+        !changed_paths(&fixture.root)
+            .iter()
+            .any(|path| path.contains("skills.local")),
+        "the standing does not count them as unsaved either"
+    );
+
+    let (code, said) = fixture.save(Request {
+        root: &fixture.root,
+        message: Some("a save"),
+        sign: false,
+        no_push: true,
+        cwd: &fixture.root,
+        provenance: None,
+    });
+
+    assert_eq!(code, 0, "{said}");
+    let tree = run(&fixture.root, &["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert!(tree.contains("skills/shared/SKILL.md"), "{tree}");
+    assert!(!tree.contains("skills.local"), "{tree}");
+}
+
 // --------------------------------------------------------------------------------------- //
 // the two trees `save` refuses to commit                                                    //
 // --------------------------------------------------------------------------------------- //

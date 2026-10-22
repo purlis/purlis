@@ -185,6 +185,12 @@ fn warnings(findings: &[Finding]) -> Vec<Warning> {
                 None,
                 None,
             ),
+            Finding::PartFallsBack { part, floor, ratio } => (
+                format!("{part} is drawn as its family default: {floor}"),
+                None,
+                None,
+                *ratio,
+            ),
         };
         let at = match found
             .iter()

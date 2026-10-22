@@ -52,6 +52,8 @@ mod doing;
 #[cfg(feature = "e2e")]
 mod e2eforge;
 mod editortab;
+// When the browser engine cannot make its sandbox here (#2835).
+mod enginesandbox;
 mod extensions;
 mod filewatch;
 mod findfiles;
@@ -71,6 +73,9 @@ mod hooks;
 mod host;
 mod inboxupdates;
 mod machineprofiles;
+mod personaskills;
+mod skillrun;
+mod skillstudio;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg(all(test, unix))]
 mod behaviour;
@@ -94,6 +99,7 @@ mod memories;
 mod nativewindow;
 mod navguard;
 mod network;
+mod notheld;
 mod off_the_main_thread;
 mod onboarding;
 mod opener;
@@ -106,6 +112,7 @@ mod piecefiles;
 mod pin;
 mod planes;
 mod planewatch;
+mod poolfollow;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
 mod projectsettings;
@@ -120,6 +127,7 @@ mod repolist;
 mod restored;
 mod restoring;
 #[cfg(unix)]
+mod runnercode;
 mod runnerlinks;
 mod sandboxchoose;
 mod sandboxing;
@@ -2652,6 +2660,24 @@ fn chat_states(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<M
         .collect())
 }
 
+/// The skill run open in each open chat, for the chip on its tab (SK-3, #2766).
+///
+/// The window asks once, when it opens; after that it is told (`chat-skill-run`). A chat with
+/// no run open is not answered.
+#[tauri::command]
+#[specta::specta]
+fn chat_skill_runs(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<skillrun::ChatSkillRun>, String> {
+    let held = planes.held(&plane)?;
+    let open = held.chats().open_now();
+    Ok(held
+        .hooks()
+        .skill_runs()
+        .now(open.into_iter().map(|open| open.session)))
+}
+
 /// What each working chat is doing, in a kind and at most one short name (#1493).
 ///
 /// The window asks once, when it opens; after that it is told (`chat-doing`). Only chats the
@@ -2763,13 +2789,28 @@ fn running_sessions(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<
     Ok(planes.held(&plane)?.chats().sessions().running())
 }
 
-/// Hands `ipc_commands.rs`'s list, both classes of it, to `tauri-specta`.
+/// Hands `ipc_commands.rs`'s list, both classes of it, to `tauri-specta`. Its `e2e_only` is
+/// left out of every build but the `e2e` one.
+#[cfg(not(feature = "e2e"))]
 macro_rules! register {
     (
         value_free: [$($($free:ident)::+),* $(,)?],
-        vault_values: [$($($value:ident)::+),* $(,)?] $(,)?
+        vault_values: [$($($value:ident)::+),* $(,)?],
+        e2e_only: [$($($e2e:ident)::+),* $(,)?] $(,)?
     ) => {
         collect_commands![$($($free)::+,)* $($($value)::+),*]
+    };
+}
+
+/// Hands `ipc_commands.rs`'s list to `tauri-specta`, with what only a scenario test asks.
+#[cfg(feature = "e2e")]
+macro_rules! register {
+    (
+        value_free: [$($($free:ident)::+),* $(,)?],
+        vault_values: [$($($value:ident)::+),* $(,)?],
+        e2e_only: [$($($e2e:ident)::+),* $(,)?] $(,)?
+    ) => {
+        collect_commands![$($($free)::+,)* $($($value)::+,)* $($($e2e)::+),*]
     };
 }
 
@@ -2810,10 +2851,14 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<projectsettings::Rescreened>()
         .typ::<chatbrowsers::BrowsersEnded>()
         .typ::<chatbrowsers::BrowsersListed>()
+        // What `theme-drafts-close-handed` carries (#2761).
+        .typ::<themedrafts::CloseHanded>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
         // What `chats-reconnecting` carries (#2496).
         .typ::<reconnecting::ChatsReconnecting>()
+        // What `projects_not_held` answers, read again on `projects-not-held` (#2846).
+        .typ::<notheld::ProjectNotHeld>()
         // What `chat-stop` carries (#1448).
         .typ::<stopping::ChatStop>()
         // What `activity-line` carries (#1495).
@@ -2821,9 +2866,20 @@ fn commands() -> Builder<tauri::Wry> {
         // The event a launch without the session bus is told the bus answers on (`portal.rs`),
         // named once for both sides.
         .constant("SESSION_BUS_ANSWERS", portal::ANSWERS)
+        // The event a browser refused for the engine's sandbox raises its Notice on (#2835).
+        .constant(
+            "ENGINE_SANDBOX_NEEDED",
+            enginesandbox::ENGINE_SANDBOX_NEEDED,
+        )
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
         // window asks again later, matching it whole.
         .constant("SPECIMEN_BUSY", specimen::BUSY)
+        // The event a link's close of chats with theme drafts reaches the window on (#2761).
+        .constant("CLOSE_HANDED", themedrafts::CLOSE_HANDED)
+        // The Skill studio's catalogue row and a persona's scope key (#2768): named once for
+        // the persona page's summary row and the window's catalogue.
+        .constant("SKILL_STUDIO_IN", skillstudio::STUDIO_IN)
+        .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
 }
 
 /// Where the generated TypeScript lives.
@@ -2833,9 +2889,11 @@ fn commands() -> Builder<tauri::Wry> {
 /// relative path scatters a `src/bindings.ts` beside every plane, every temp directory a
 /// test runs in, and anywhere else the app is launched from. One such file was committed
 /// before this was noticed.
+#[cfg(any(test, all(debug_assertions, not(feature = "e2e"))))]
 const BINDINGS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/bindings.ts");
 
 /// How the TypeScript is written, so that the app and the test that guards it agree.
+#[cfg(any(test, all(debug_assertions, not(feature = "e2e"))))]
 fn typescript() -> specta_typescript::Typescript {
     specta_typescript::Typescript::default()
 }
@@ -3074,7 +3132,8 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
             // A window's link is relayed to a pool's runner this machine keeps (#2679).
             Some(config) => hosting
                 .heeding(purlis_core::halt::OnDisk(config.clone()))
-                .relaying_with(runnerlinks::relays_to(config)),
+                .relaying_with(runnerlinks::relays_to(config.clone()))
+                .draining_with(runnerlinks::drains_to(config)),
             None => hosting,
         };
         purlis_core::browsers::given_to(hosting)
@@ -3225,7 +3284,9 @@ pub fn run() {
     refuse_beside_the_old_app();
     let commands = commands();
 
-    #[cfg(debug_assertions)]
+    // Not by the `e2e` build, whose commands are more than the ones the TypeScript is made from
+    // (`ipc_commands.rs`'s `e2e_only`): what it writes would differ from the committed file.
+    #[cfg(all(debug_assertions, not(feature = "e2e")))]
     commands
         .export(typescript(), BINDINGS)
         .expect("the TypeScript bindings are written");
@@ -3383,6 +3444,10 @@ pub fn run() {
             // The local project out of the config home a chat's sandbox denies (#1670), after
             // rename-local named the folders and before any project opens.
             firstrun::move_the_local_project();
+            // The copies of Docker's settings that runs which ended outright left behind
+            // (#2893): off the launch's path, and only those older than a day.
+            #[cfg(unix)]
+            std::thread::spawn(purlis_core::dockerpool::settings::sweep_at_start);
             // Each harness folder this machine uses becomes a profile in place, before any chat
             // starts (ADR 0095 §2, #2033): from the app's own environment, which its chats are
             // started from. Off in the scenario build, whose home is the person's.
@@ -3471,6 +3536,13 @@ pub fn run() {
             forgeaccounts::hand_over_sign_ins();
             // And the window is told when a forge ends one of them (#729).
             forgeaccounts::tell_the_window_when_a_sign_in_ends(app.handle());
+            // A browser refused for the engine's sandbox raises its Notice (#2835).
+            {
+                let window = app.handle().clone();
+                enginesandbox::telling(Box::new(move || {
+                    let _ = window.emit(enginesandbox::ENGINE_SANDBOX_NEEDED, ());
+                }));
+            }
             // A finish leans on that lock, and is refused without it.
             app.manage(vaultswaiting::VaultsWaiting::of(
                 waiting,
@@ -3646,6 +3718,10 @@ pub fn run() {
             if let (Some(binary), Some(plugin)) = (binary.clone(), plugin.clone()) {
                 refresh_installed_plugin(binary, plugin);
             }
+            // The folders of links to the plane's skills no running chat uses any more (SK-24),
+            // removed off the main thread: one a chat still running in the session host uses
+            // is kept, and nothing waits for it.
+            purlis_core::skills::tidy_here_later(std::time::Duration::ZERO);
             // A dispatch that needs the person: the window shows it as a Notice on the asking
             // chat's tab (#1437).
             dispatchgrants::telling({
@@ -3802,6 +3878,19 @@ pub fn run() {
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |told: doing::ChatDoing| {
                         windows::emit_for_plane(&window, &told.plane.clone(), doing::EVENT, &told);
+                    })
+                })
+                // The skill run open in a chat, each time it opens, counts a call or ends:
+                // the chip on the chat's tab (SK-3). In memory only.
+                .telling_skill_runs({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: skillrun::ChatSkillRun| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            skillrun::EVENT,
+                            &told,
+                        );
                     })
                 })
                 // A sandbox block a chat's hook found: the window shows it as a Notice on the
@@ -4067,6 +4156,17 @@ pub fn run() {
             // The automatic half of updating: a timer that checks, never one that installs.
             // Off in a test build and a development build (`updates::watch` says why).
             updates::watch(app.handle());
+            // A Docker pool's runner follows this version, side by side, after an update
+            // (#2749): off where the updater is.
+            poolfollow::watch(app.handle());
+            // A project a runner would not hold again is marked in the Pools group (#2846):
+            // the window is told each time those change.
+            notheld::telling({
+                let app = app.handle().clone();
+                move || {
+                    let _ = app.emit(notheld::EVENT, ());
+                }
+            });
             // This machine's sandbox policy, read again now and then (#1431): a policy that
             // lands is told to the window, which asks again which chats it leaves behind.
             sandboxing::watch_policy(app.handle().clone());

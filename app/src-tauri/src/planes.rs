@@ -1652,7 +1652,11 @@ impl MachineStore {
     pub fn forget(&self, root: &Path) -> Result<(), String> {
         let config = self.store_home("forget a project")?;
         match machine::forget_project(config, root) {
-            Ok(true) => Ok(()),
+            Ok(true) => {
+                // A forgotten project's mark that a runner would not hold it goes (#2846).
+                crate::notheld::held(root);
+                Ok(())
+            }
             // Said, never dropped (#1240 F3): a row whose path the store does not hold, as
             // one that is not UTF-8 comes back from the window, would otherwise read as done.
             Ok(false) => Err(
@@ -1997,6 +2001,7 @@ pub struct Planes {
     touches: hooks::TouchTeller,
     /// Told what a working chat is doing, each time its one line changes (#1493).
     doings: crate::doing::Teller,
+    skill_runs: crate::skillrun::Teller,
     /// Told each sandbox block a chat's hook found, once kept in the network record (#1338,
     /// #1662).
     blocks: hooks::BlockTeller,
@@ -2279,6 +2284,7 @@ impl Planes {
             by_hand: Arc::new(|_| {}),
             touches: Arc::new(|_| {}),
             doings: Arc::new(|_| {}),
+            skill_runs: Arc::new(|_| {}),
             blocks: Arc::new(|_| {}),
             arranged: ArrangedBehind::new(|(config, windows)| write_arrangement(&config, windows)),
             refused_more: Arc::new(|_| {}),
@@ -2475,6 +2481,13 @@ impl Planes {
     /// confined to the chat's folder, so the window can mark it in the tree (FM-6).
     pub fn telling_touches(mut self, touches: hooks::TouchTeller) -> Self {
         self.touches = touches;
+        self
+    }
+
+    /// Tells `skill_runs` the skill run open in a chat of a plane this registry holds, each time
+    /// it changes (SK-3).
+    pub fn telling_skill_runs(mut self, skill_runs: crate::skillrun::Teller) -> Self {
+        self.skill_runs = skill_runs;
         self
     }
 
@@ -2946,6 +2959,9 @@ impl Planes {
         // What a working chat is doing (#1493): already a kind and one passed name, held in
         // memory and written nowhere.
         held.hooks.doings().tell_to(Arc::clone(&self.doings));
+        held.hooks
+            .skill_runs()
+            .tell_to(Arc::clone(&self.skill_runs));
         // A sandbox block a chat's hook found (#1338): kept in this machine's network record
         // with the chat it came from (#1662), then shown on the chat's tab. Of what the line
         // named, only a refused host is kept.

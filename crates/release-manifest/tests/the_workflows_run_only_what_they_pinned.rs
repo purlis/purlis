@@ -303,7 +303,14 @@ fn no_release_job_that_holds_a_key_or_publishes_restores_a_cache() {
     let names: Vec<&str> = privileged.iter().map(|job| job.name.as_str()).collect();
     assert_eq!(
         names,
-        ["plan", "build", "provenance", "publish"],
+        [
+            "plan",
+            "build",
+            "runner-image",
+            "runner-image-signature",
+            "provenance",
+            "publish"
+        ],
         "{names:?}"
     );
 

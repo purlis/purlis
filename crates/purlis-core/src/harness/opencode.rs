@@ -5,7 +5,7 @@
 //! the whole config opencode reads from `OPENCODE_CONFIG_CONTENT` ([`crate::opencode`] has the
 //! measurements).
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox};
+use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
@@ -14,6 +14,19 @@ pub struct Opencode;
 
 /// The one opencode adapter.
 pub static ADAPTER: Opencode = Opencode;
+
+/// The directories an opencode chat's skills sit in, the built-in one first: what the shim
+/// appends to `skills.paths`.
+fn skill_dirs(kit: Kit<'_>) -> Vec<std::path::PathBuf> {
+    let set = crate::skills::for_chat(kit, Harness::Opencode);
+    let linked =
+        crate::skills::linked(&set, kit).map(|folder| folder.join(crate::skills::DIR_IN_BUNDLE));
+    set.built_in_dir()
+        .map(std::path::Path::to_path_buf)
+        .into_iter()
+        .chain(linked)
+        .collect()
+}
 
 impl HarnessAdapter for Opencode {
     fn harness(&self) -> Harness {
@@ -31,9 +44,10 @@ impl HarnessAdapter for Opencode {
     ///
     /// No plugin choice: opencode has no switch that turns one plugin off.
     ///
-    /// Its skills are its set's ([`crate::skills::for_chat`]): their directory is handed to
-    /// the shim as its option, which adds them to the skills opencode discovers for this
-    /// process ([`Harness::skills`]).
+    /// Its skills are its set's ([`crate::skills::for_chat`]): the built-in skills' directory,
+    /// and the `skills/` of the folder of links to the plane's that the host laid out
+    /// ([`crate::skills::linked`]), are handed to the shim as its option, which adds them to the skills opencode discovers for
+    /// this process ([`Harness::skills`]).
     ///
     /// It cannot report `SessionEnd`: quitting opencode fires no event and runs no exit
     /// handler in a plugin (measured). The app sees the process end.
@@ -62,7 +76,7 @@ impl HarnessAdapter for Opencode {
                     crate::opencode::CONFIG_ENV.to_owned(),
                     crate::opencode::session_config(
                         &shim,
-                        crate::skills::for_chat(kit, Harness::Opencode).dir(),
+                        &skill_dirs(kit),
                         Some(kit.binary),
                         sandbox.applied().is_some(),
                     ),
@@ -107,6 +121,15 @@ impl HarnessAdapter for Opencode {
 
     fn guard_label(&self) -> &'static str {
         "opencode"
+    }
+
+    /// opencode's `skill` tool, which purlis's shim reports as `Skill`
+    /// ([`crate::opencode::TOOLS`]), naming the skill in `name`.
+    fn skill_start(&self, tool: &str, input: &serde_json::Value) -> Option<SkillStart> {
+        (tool == "Skill")
+            .then(|| input_text(input, "name"))
+            .flatten()
+            .map(|skill| SkillStart::Named(skill.to_owned()))
     }
 
     /// `permission.bash` of the project's `opencode.json`, which holds command globs: a
@@ -267,6 +290,7 @@ mod tests {
         std::fs::write(&shim, "").expect("the shim");
         let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(bundle.path()),
                 persona: None,

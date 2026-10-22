@@ -155,3 +155,14 @@ fn only_the_window_asks_its_host_to_relay_its_link_to_a_runner() {
         );
     }
 }
+
+#[test]
+fn only_the_window_or_its_hosts_relay_moves_code_over_the_link() {
+    for scope in Scope::ALL {
+        assert_eq!(
+            scope.may(Power::Code),
+            matches!(scope, Scope::LocalUi | Scope::RemoteLink),
+            "{scope}"
+        );
+    }
+}

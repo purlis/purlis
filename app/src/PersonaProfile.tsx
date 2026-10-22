@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import * as Dialog from "./overlays/dialog";
 import type { PersonaProfile as Read } from "./bindings";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** The value that stands for "names no profile": no profile is called the empty string. */
 const NONE = "";
@@ -139,38 +140,20 @@ export function PersonaProfile({
               )}
 
               <SettingActions>
-                <button
-                  className="ui-button ui-button-primary"
-                  type="submit"
-                  tabIndex={0}
-                  disabled={value === undefined || saving}
-                >
+                <Button variant="primary" type="submit" isDisabled={value === undefined || saving}>
                   {saving ? "Saving…" : "Save profile"}
-                </button>
-                <button
-                  className="ui-button"
-                  type="button"
-                  tabIndex={0}
-                  ref={cancel}
-                  disabled={saving}
-                  onClick={onCancel}
-                >
+                </Button>
+                <Button ref={cancel} isDisabled={saving} onPress={onCancel}>
                   Cancel
-                </button>
+                </Button>
               </SettingActions>
             </form>
           )}
           {!read && (
             <SettingActions>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                ref={cancel}
-                onClick={onCancel}
-              >
+              <Button ref={cancel} onPress={onCancel}>
                 Cancel
-              </button>
+              </Button>
             </SettingActions>
           )}
         </Dialog.Content>

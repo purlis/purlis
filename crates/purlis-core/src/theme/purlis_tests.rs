@@ -91,7 +91,8 @@ fn dark_draws_the_foundation_s_colours_fonts_and_icons() {
         ("text.secondary", "#c9c7d2"),
         ("accent.base", "#a99cf0"),
         ("focus.ring", "#a99cf0"),
-        ("list.selected", "#2b2a37"),
+        // One step under the frame's `#2b2a37`, so quiet and faint clear it (#2902).
+        ("list.selected", "#2a2936"),
         ("state.waiting", "#e5c08a"),
         ("state.success", "#8fc79a"),
         ("syntax.string", "#9fcfa8"),
@@ -417,6 +418,10 @@ fn light_is_dark_reflected_by_its_one_rule() {
     let stepped = [
         ("syntax.comment", "surface.hover", 3.0),
         ("syntax.punctuation", "surface.hover", 3.0),
+        // The quiet tier, the placeholder that is drawn in it, and faint (#2902).
+        ("text.quiet", "surface.hover", 4.5),
+        ("placeholder", "surface.hover", 4.5),
+        ("text.faint", "surface.hover", 3.0),
     ];
     let mut derived: std::collections::BTreeMap<&str, String> = dark
         .values

@@ -24,6 +24,7 @@ pub mod cistate;
 pub mod cliname;
 pub mod clipath;
 pub mod cloneupdate;
+pub mod codelink;
 pub mod commitgate;
 pub mod commitguard;
 pub mod committedby;
@@ -193,6 +194,8 @@ pub mod rootupdate;
 pub mod roster;
 pub mod rulespelling;
 #[cfg(unix)]
+pub mod runnerimage;
+#[cfg(unix)]
 pub mod runnerlink;
 #[cfg(unix)]
 pub mod runners;
@@ -216,6 +219,7 @@ pub mod shellwrap;
 pub mod shown;
 pub mod silence;
 pub mod skills;
+pub mod skillspan;
 pub mod skilluse;
 pub mod staleclone;
 pub mod standings;

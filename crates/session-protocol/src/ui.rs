@@ -590,6 +590,22 @@ pub const WINDOW_ONLY: &[&str] = &[
     // This machine's browser limits (#2023): the person's to read and set, in their window.
     "browser_limits",
     "set_browser_limit",
+    // This machine's Skill studio preview (#2765): the person's to turn on, in their window.
+    "set_skill_studio_on",
+    // Share in the Skill studio (#2767): moves a local skill into the shared folder, so the next
+    // save commits it to the team. The person's own press in their window.
+    "skill_share",
+    // Why browsers cannot start for the engine's sandbox, and choosing this machine's Chrome
+    // for every browser (#2835): which program runs as the person's browsers' engine is theirs
+    // to choose, in their window.
+    "engine_sandbox",
+    "use_this_machines_chrome",
+    // A persona's Skills section (#2768): adds a skill to the persona's definition or takes one
+    // out, as its profile is set. The person's own press in their window.
+    "persona_skill",
+    // Putting a chat's missing-skills Notice away (#2768), on the chat's pane in the person's
+    // window, as an MCP failure's is.
+    "put_away_chat_skills_missing",
     // This machine's Docker pools (#2679): adding one runs a container on the person's machine
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.
@@ -597,6 +613,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "add_docker_pool",
     "remove_docker_pool",
     "docker_pool_link",
+    "docker_pool_version",
+    // The projects a runner would not hold again (#2846): what this window was refused.
+    "projects_not_held",
     // Taking a browser over, driving it and handing it back (#2014): what the person types into
     // a page is theirs, and only the window, where they see it, sends it.
     "take_over_browser",
@@ -808,6 +827,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_lost_with_the_host",
     "chat_network",
     "chat_order",
+    "chat_skill_runs",
     "chat_states",
     "chat_usage",
     "chat_work_item",
@@ -844,6 +864,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "get_project",
     "git_presence",
     "grantable_folders",
+    // A link's close of chats with theme drafts, handed to the window that holds the project
+    // (#2761): the window asks the person Keep or Revert, and closes nothing unasked. Answered
+    // only whether it was handed.
+    "hand_drafts_close_to_the_window",
     "harness_cards",
     "harness_setup_found",
     "hide_window",
@@ -853,6 +877,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "installed_extensions",
     "locate_project",
     "mcp_failures",
+    // What a chat's missing-skills Notice says (#2768), read as an MCP failure is.
+    "chat_skills_missing",
     "memory_archive",
     "memory_archived",
     "memory_create",
@@ -931,6 +957,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_record",
     "set_dismissed",
     "show_window_holding",
+    "skill_runs",
+    "skill_studio",
+    "skill_studio_on",
     "smart_close_offer",
     "smart_closing",
     "stale_clones",

@@ -4,6 +4,7 @@
 import { useRef, useState } from "react";
 import * as Dialog from "./overlays/dialog";
 import { Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /**
  * **New branch**, from a repo's row (GL-1, ADR 0072 §4).
@@ -97,17 +98,10 @@ export function NewBranch({
 
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
             <SettingActions>
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={making}
-              >
+              <Button variant="primary" type="submit" isDisabled={making}>
                 {making ? "Creating…" : "Create branch"}
-              </button>
-              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-                Cancel
-              </button>
+              </Button>
+              <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
           </form>
         </Dialog.Content>

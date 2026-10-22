@@ -982,6 +982,8 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
                     path: spelled.join(name),
                     access: Access::Write,
                     named: None,
+                    reach: Reach::AndBelow,
+                    any_case: false,
                 };
                 if !out.contains(&denial) {
                     out.push(denial);
@@ -1084,6 +1086,13 @@ pub struct Denial {
     /// The file and the word in it that named the path, for one a config named
     /// ([`Class::LaterCode`]); `None` for one charter names itself.
     pub named: Option<Named>,
+    /// How much of `path` is held: it and everything below it, or the entry alone, which is
+    /// never created, renamed, moved or removed while what is below it is written (#2752).
+    pub reach: Reach,
+    /// Whether it is held under every spelling of its name a case-folding disk takes for it,
+    /// as well as its own: a folder that is not there yet is made under the name as typed
+    /// (#2752).
+    pub any_case: bool,
 }
 
 /// Where a config named a denied path: the file, and the word in it as written.
@@ -1222,6 +1231,8 @@ impl Denied {
                 path: root.join(state).join(crate::handback::DIR_NAME),
                 access: Access::ReadWrite,
                 named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
             });
         }
         self
@@ -1243,6 +1254,8 @@ impl Denied {
             path: real(&policy::machine_folder()),
             access: Access::Write,
             named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
         });
 
         // 5. Later code: the project root's manifests, under every name (#1336); those between
@@ -1256,7 +1269,88 @@ impl Denied {
             path: root.join(crate::harness_declaration::DIR),
             access: Access::Write,
             named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
         });
+        // …and where Docker Desktop, OrbStack and Rancher Desktop link `docker` and its
+        // credential helpers in the home folder (#2752), which purlis runs outside any sandbox
+        // for a Docker pool ([`crate::dockerpool::Docker::on_this_machine`]): each `bin` folder
+        // and what is in it, and the folder that holds it as an entry alone, so it is never
+        // moved aside for one that brings a `docker` of its own (the person's ruling of
+        // 2026-10-20). Under every spelling a case-folding disk takes, since a folder that is
+        // not there yet is made under the name as typed. Paths of the home alone: a project's
+        // own `.docker` stays the chat's, and so does what is beside each `bin`.
+        if let Some(home) = &machine.home {
+            // …and where each installer keeps its engine's socket in the home (D-2752-7),
+            // which purlis points each run of `docker` at only where no chat can put another
+            // socket in its place ([`crate::dockerpool::settings::trusted`]).
+            for held in crate::dockerpool::settings::HELD_IN_HOME {
+                paths.push(Denial {
+                    class: Class::LaterCode,
+                    path: home.join(held),
+                    access: Access::Write,
+                    named: None,
+                    reach: Reach::AndBelow,
+                    any_case: true,
+                });
+            }
+            for folder in crate::dockerpool::DOCKER_HOME_FOLDERS {
+                let bin = home.join(folder);
+                let holder = bin.parent().map(Path::to_path_buf);
+                for (path, reach) in [(Some(bin), Reach::AndBelow), (holder, Reach::Itself)] {
+                    let Some(path) = path else { continue };
+                    paths.push(Denial {
+                        class: Class::LaterCode,
+                        path,
+                        access: Access::Write,
+                        named: None,
+                        reach,
+                        any_case: true,
+                    });
+                }
+            }
+        }
+        // …and where a Podman machine's helper and a rootless engine keep their socket, in the
+        // temporary and the runtime folder (D-2752-7).
+        let named = |name: &str| {
+            machine
+                .env
+                .get(name)
+                .map(PathBuf::from)
+                .filter(|folder| folder.is_absolute())
+        };
+        let in_tmp = named("TMPDIR")
+            .into_iter()
+            .map(|tmp| tmp.join(crate::dockerpool::settings::HELD_IN_TMP));
+        let in_runtime = named("XDG_RUNTIME_DIR").into_iter().flat_map(|runtime| {
+            crate::dockerpool::settings::HELD_IN_RUNTIME
+                .iter()
+                .map(move |at| runtime.join(at))
+        });
+        for path in in_tmp.chain(in_runtime) {
+            paths.push(Denial {
+                class: Class::LaterCode,
+                path,
+                access: Access::Write,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: machine.os == Os::MacOs,
+            });
+        }
+        // …and Podman's own folders (#2680, the person's ruling of 2026-10-20): its settings,
+        // which name the programs it runs and the engine it talks to, and its storage and run
+        // state, which are a rootless Podman's engine itself. A chat writes none of them, under
+        // every spelling on macOS's case-folding disk.
+        for (folder, reach) in podman_folders(machine) {
+            paths.push(Denial {
+                class: Class::LaterCode,
+                path: folder,
+                access: Access::Write,
+                named: None,
+                reach,
+                any_case: machine.os == Os::MacOs,
+            });
+        }
         // …and what a protected config points at elsewhere, resolved now (V73d).
         let xdg_config = machine
             .env
@@ -1290,6 +1384,8 @@ impl Denied {
                     file: it.file,
                     word: it.word,
                 }),
+                reach: Reach::AndBelow,
+                any_case: false,
             });
         }
 
@@ -1336,6 +1432,8 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             path,
             access,
             named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
         })
     };
 
@@ -1616,6 +1714,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             data.join(crate::datahome::BROWSERS),
             Access::ReadWrite,
         );
+        // The checked copies of Docker's settings purlis makes for each run of `docker`
+        // (#2752): they hold the person's registry sign-ins, so a chat neither reads nor
+        // writes them.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::dockerpool::settings::DIR),
+            Access::ReadWrite,
+        );
         // The browser logins this device keeps sealed (#2021, the person's ruling of
         // 2026-10-18): a chat neither reads nor writes any of them.
         deny(
@@ -1623,6 +1729,23 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             data.join(crate::browserlogins::DIR),
             Access::ReadWrite,
         );
+        // The browser engines purlis downloads (#2835): the AppArmor profile the `.deb`
+        // installs lets a program at the pinned engine's path make user namespaces, so a chat
+        // writes nothing there, in the data home in use or under the default data folder's
+        // either name, which the profile names too.
+        let mut engines = vec![crate::browsers::engines_in(&data)];
+        if let Some(home) = &machine.home {
+            let share = home.join(".local/share");
+            for name in ["purlis", "charter"] {
+                let folder = crate::browsers::engines_in(&share.join(name));
+                if !engines.contains(&folder) {
+                    engines.push(folder);
+                }
+            }
+        }
+        for folder in engines {
+            deny(Class::HumanPowers, folder, Access::Write);
+        }
     }
     // The session host's socket and its lock, in the folder it makes this user's alone under
     // the runtime or temporary directory (#1997, `hostsocket`): a chat neither reads nor
@@ -1655,6 +1778,8 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 path,
                 access: Access::ReadWrite,
                 named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
             }));
             notes.extend(found.not_looked_in.into_iter().map(KeptNote::NotLookedIn));
         }
@@ -1677,6 +1802,43 @@ fn scope_has(half: &serde_json::Map<String, serde_json::Value>, name: &str) -> b
     half.get("vaults")
         .and_then(serde_json::Value::as_object)
         .is_some_and(|vaults| vaults.contains_key(name))
+}
+
+/// **Podman's own folders on `machine`** (#2680): its settings (`containers/` in
+/// `$XDG_CONFIG_HOME` and `~/.config`), its storage (`containers/` in `$XDG_DATA_HOME` and
+/// `~/.local/share`) and its run state (`containers/` and `libpod/` in `$XDG_RUNTIME_DIR`),
+/// each with everything below it. A variable that names no absolute folder names nothing.
+fn podman_folders(machine: &Machine) -> Vec<(PathBuf, Reach)> {
+    let named = |name: &str| {
+        machine
+            .env
+            .get(name)
+            .map(PathBuf::from)
+            .filter(|folder| folder.is_absolute())
+    };
+    let mut folders: Vec<PathBuf> = Vec::new();
+    let homes = machine
+        .home
+        .iter()
+        .flat_map(|home| [home.join(".config"), home.join(".local/share")]);
+    for base in named("XDG_CONFIG_HOME")
+        .into_iter()
+        .chain(named("XDG_DATA_HOME"))
+        .chain(homes)
+    {
+        folders.push(base.join("containers"));
+    }
+    if let Some(runtime) = named("XDG_RUNTIME_DIR") {
+        folders.push(runtime.join("containers"));
+        folders.push(runtime.join("libpod"));
+    }
+    let mut out: Vec<(PathBuf, Reach)> = Vec::new();
+    for folder in folders {
+        if !out.iter().any(|(one, _)| *one == folder) {
+            out.push((folder, Reach::AndBelow));
+        }
+    }
+    out
 }
 
 /// What [`kept_by_purlis`] answers.
@@ -2556,6 +2718,9 @@ pub struct ArmedWith<'a> {
     pub binary: Option<&'a Path>,
     pub plugin: Option<&'a Path>,
     pub git_hooks: Option<&'a Path>,
+    /// Where a chat's folders of links to the plane's skills are laid out (ADR 0063 as amended
+    /// 2026-10-20): a plugin folder too, held as the git hooks are.
+    pub skill_sets: Option<&'a Path>,
 }
 
 /// **The whole install `program` belongs to**, as the kernel names it: the app bundle it is
@@ -3321,6 +3486,7 @@ impl Applied {
             .chain(install.as_deref())
             .chain(kit.plugin)
             .chain(kit.git_hooks)
+            .chain(kit.skill_sets)
             .flat_map(|path| [path.to_path_buf(), real(path)])
         {
             let around_root = root.starts_with(&path) || path.starts_with(&root);
@@ -3430,6 +3596,8 @@ impl Applied {
                 path,
                 access: Access::ReadWrite,
                 named: None,
+                reach: Reach::AndBelow,
+                any_case: false,
             })
             .filter(|denial| !self.denied.contains(denial))
             .collect();
@@ -4494,19 +4662,23 @@ pub fn covering(denied: &[Denial], ground: &[PathBuf]) -> Option<NotStarted> {
             spellings(folder).into_iter().map(move |name| (name, folds))
         })
         .collect();
-    denied.iter().find_map(|denial| {
-        let covers = spellings(&denial.path).iter().any(|name| {
-            ground.iter().any(|(folder, folds)| {
-                folder.starts_with(name) || (*folds && folded(folder).starts_with(folded(name)))
+    // An entry held alone holds nothing below it (#2752), so no ground is under it.
+    denied
+        .iter()
+        .filter(|denial| denial.reach == Reach::AndBelow)
+        .find_map(|denial| {
+            let covers = spellings(&denial.path).iter().any(|name| {
+                ground.iter().any(|(folder, folds)| {
+                    folder.starts_with(name) || (*folds && folded(folder).starts_with(folded(name)))
+                })
+            });
+            covers.then(|| NotStarted::CoversItsGround {
+                path: denial.path.clone(),
+                class: denial.class,
+                named: denial.named.clone(),
+                within: None,
             })
-        });
-        covers.then(|| NotStarted::CoversItsGround {
-            path: denial.path.clone(),
-            class: denial.class,
-            named: denial.named.clone(),
-            within: None,
         })
-    })
 }
 
 /// Each spelling of `path` a sandbox or a tool may compare: as written, with `..` taken off,

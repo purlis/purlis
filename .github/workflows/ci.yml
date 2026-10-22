@@ -100,6 +100,17 @@ jobs:
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+      # The pinned engine makes its sandbox with user namespaces, which Ubuntu 23.10 and later
+      # allow only to a program an AppArmor profile names (#2835). The `.deb` installs purlis's
+      # profile, which names the engine in a user's default data folder; this step installs the
+      # same file, as the package's postinst does. The window's end-to-end browser tests give
+      # each session host a home of its own under the temporary folder, so AppArmor is told
+      # that folder holds homes, as a machine with homes outside `/home` tells it.
+      - name: The pinned engine may make its sandbox, as the .deb sets it up
+        run: |
+          echo '@{HOMEDIRS}+=/tmp/' | sudo tee /etc/apparmor.d/tunables/home.d/purlis-ci >/dev/null
+          sudo install -m 0644 crates/purlis-core/src/browsers/purlis-engine.apparmor /etc/apparmor.d/purlis-engine
+          sudo apparmor_parser -r -T -W /etc/apparmor.d/purlis-engine
       # Built in a step of its own, so the run's step timings say how much of this job is
       # compiling and linking the test binaries and how much is running them, with no log to read.
       - name: Build the tests
@@ -170,6 +181,9 @@ jobs:
       # `purlis-session-protocol/bench` so the latency bench, which only that feature builds, is
       # linted too (SC-16).
       - run: cargo clippy --workspace --all-targets --locked --features purlis-session-protocol/bench -- -D warnings
+      # The app's `e2e` feature, so what only the scenario build compiles (`ipc_commands.rs`'s
+      # `e2e_only` and what it calls, #2836) is linted too.
+      - run: cargo clippy -p purlis-app --lib --features e2e --locked -- -D warnings
   # The required check `rust (fmt, clippy, test)`: green only when the lint and both parts of
   # `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.

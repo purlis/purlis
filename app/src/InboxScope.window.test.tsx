@@ -377,10 +377,10 @@ describe("a row's ranks are the text roles (#1920)", () => {
     );
     expect(where.classList).toContain("ui-text-secondary");
     expect(meta.classList).toContain("ui-text-meta");
-    // #1919's declarations: md / 600 / primary; sm / secondary; xs / muted.
+    // #1919's declarations: md / 600 / primary; sm / secondary; xs / quiet (#2902).
     expect(drawn(primary)).toEqual(["var(--font-size-md)", "600", "var(--text-primary)"]);
     expect(drawn(where)).toEqual(["var(--font-size-sm)", "400", "var(--text-secondary)"]);
-    expect(drawn(meta)).toEqual(["var(--font-size-xs)", "400", "var(--text-muted)"]);
+    expect(drawn(meta)).toEqual(["var(--font-size-xs)", "400", "var(--text-quiet)"]);
     // The kind's words inside the meta are the meta's, by inheritance.
     expect(drawnWith(part(meta, ".inbox-source"), "font-size")).toBe("inherit");
     expect(drawnWith(part(meta, ".inbox-source"), "color")).toBe("inherit");
@@ -396,7 +396,7 @@ describe("a row's ranks are the text roles (#1920)", () => {
     expect(drawn(part(fresh, ".inbox-meta"))).toEqual([
       "var(--font-size-xs)",
       "400",
-      "var(--text-muted)",
+      "var(--text-quiet)",
     ]);
     expect(drawn(part(fresh, ".inbox-unread")).slice(1)).toEqual(["600", "var(--text-primary)"]);
     // One read steps back to the regular weight and the secondary text, at the same size: no

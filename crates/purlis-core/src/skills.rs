@@ -11,33 +11,569 @@
 //! turns the answer into its harness's argv, env and config; the route each harness takes is its
 //! declaration's fact, [`crate::harness::Harness::skills`].
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub use purlis_skills::{
-    Chat, DIR_IN_BUNDLE, Effective, HarnessSkills, LeftOut, Machine, Missing, Origin, Reason,
-    Route, Skill, SkillSet, in_bundle, listing, read,
+    BUILT_IN_PREFIXES, Chat, DIR_IN_BUNDLE, Effective, FromHarness, Grant, HarnessSkills,
+    LOCAL_DIR, LeftOut, Machine, Missing, OnMachine, Origin, PROJECT_DIR, Reason, Reference, Route,
+    Skill, SkillSet, grant_of, in_bundle, level_dir, level_shown, listing, named, persona_dir,
+    read, set_grant, share,
 };
+
+/// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
+pub use purlis_skills::runs;
 
 use crate::harness::{Harness, Kit};
 
+mod on_machine;
+pub mod persona;
+
+pub use on_machine::on_machine;
+
 /// The variable a chat whose harness cannot load its skills is started with: the directory of
-/// the skills its set holds ([`SkillSet::dir`]), whose skills its `SessionStart` briefing then
+/// the built-in skills its set holds ([`SkillSet::built_in_dir`]), whose skills its `SessionStart` briefing then
 /// lists ([`briefed`]). Set by the app for such a chat alone, so a harness that loads the skills
 /// itself is never briefed on them twice.
 pub const LISTED_ENV: &str = "PURLIS_SKILLS_DIR";
 
+/// The variable a briefed chat is started with when its set holds the plane's skills (ADR 0099):
+/// `1`, and its `SessionStart` briefing then lists them with the built-in ones. Set only where the
+/// `skill-studio` flag let the plane's skills into the chat's set, so a briefing never reads the
+/// plane where arming did not.
+pub const PLANE_LISTED_ENV: &str = "PURLIS_SKILLS_PLANE";
+
+/// The plane a chat's skills come from beside the built-in ones (ADR 0099), as a chat is armed.
+#[derive(Debug, Clone, Copy)]
+pub struct PlaneSkills<'a> {
+    /// The plane's root.
+    pub plane: &'a Path,
+    /// The workspace the chat works in, or `None` for a chat at the plane root.
+    pub workspace: Option<&'a str>,
+    /// The folder of links to the plane's skills of the chat's set, which the host laid out
+    /// before arming it ([`lay_out_for_chat`]), or `None` where it laid out none. A harness that
+    /// needs the folder is then handed the built-in skills alone.
+    pub linked: Option<&'a Path>,
+}
+
 /// The skill set of a chat on `harness` armed with `kit`, asked of [`purlis_skills::skill_set`].
 ///
-/// The built-in skills come from the bundle in `kit`. The plane is the persona's project where
-/// the chat runs as one; the workspace is not known where a chat is armed, and nothing reads it
-/// until the plane's levels arrive (SK-2, which widens `Kit` for it).
+/// The built-in skills come from the bundle in `kit`, and the plane's from `kit.skills`, where
+/// the `skill-studio` flag let them in.
 pub fn for_chat(kit: Kit<'_>, harness: Harness) -> SkillSet {
     let built_in = kit.plugin.and_then(in_bundle);
     ask(
         built_in.as_deref(),
-        kit.persona.map(|persona| (persona.root, persona.persona)),
+        kit.skills,
+        kit.persona.map(|persona| persona.persona),
         harness.skills(),
+        None,
     )
+}
+
+/// The folder of links a harness on [`Route::Plugin`] or [`Route::Config`] is handed the plane's
+/// skills of `set` by: the one the host laid out (`kit.skills`' `linked`), where the set holds a
+/// plane skill. Nothing is read or written here: an adapter only turns the set into argv, env and
+/// config (ADR 0063 as amended 2026-10-20).
+pub fn linked<'a>(set: &SkillSet, kit: Kit<'a>) -> Option<&'a Path> {
+    set.from_the_plane().next()?;
+    kit.skills?.linked
+}
+
+/// **The host's part of arming a chat with the plane's skills**: the folder of links for the
+/// plane's skills of the set of a chat in `plane`, at its root or in `workspace`, running as
+/// `persona`, with the built-in skills in `built_in`, laid out under `sets`. `None` where the set
+/// holds no plane skill, or the folder could not be laid out (said in the log: the chat then has
+/// the built-in skills alone). The set is the one [`for_chat`] works out for that chat, whatever
+/// its harness: the route changes how a skill is handed over, never which.
+pub fn lay_out_for_chat(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    built_in: Option<&Path>,
+    sets: &Path,
+) -> Option<PathBuf> {
+    let at = PlaneSkills {
+        plane,
+        workspace,
+        linked: None,
+    };
+    let set = ask(built_in, Some(at), persona, Route::Plugin, None);
+    match lay_out(&set, sets) {
+        Ok(folder) => folder,
+        Err(why) => {
+            tracing::warn!(
+                "purlis: the project's skills could not be laid out for this chat under {} \
+                 ({why}); it has the built-in skills alone",
+                sets.display()
+            );
+            None
+        }
+    }
+}
+
+/// The name of the plugin a set's folder is, in Claude Code: its skills are `skills:<name>`.
+pub const LINKED_PLUGIN: &str = "skills";
+
+/// **The folder of links for the plane's skills of `set`**, under `sets`, laid out if it is not
+/// there yet, or `None` for a set with no plane skill (ADR 0063 as amended 2026-10-20).
+///
+/// `<sets>/<digest>/` holds `.claude-plugin/plugin.json`, naming the plugin [`LINKED_PLUGIN`],
+/// and `skills/<name>`, a link to each skill's folder in the plane, so Claude Code loads it as a
+/// plugin and opencode scans its `skills/`. `<digest>` is a SHA-256 over every name and the
+/// folder it links to, so the folder of one set is never another's, and it is complete before
+/// it takes that name: a running chat's folder never changes. One found complete is used as it
+/// is; one that is not is made again.
+pub fn lay_out(set: &SkillSet, sets: &Path) -> std::io::Result<Option<PathBuf>> {
+    let links: Vec<(&str, &Path)> = set
+        .from_the_plane()
+        .filter_map(|effective| {
+            let folder = effective.skill.path.parent()?;
+            plain_name(&effective.skill.name).then_some((effective.skill.name.as_str(), folder))
+        })
+        .collect();
+    if links.is_empty() {
+        return Ok(None);
+    }
+    let digest = {
+        use sha2::Digest;
+        let mut hash = sha2::Sha256::new();
+        for (name, folder) in &links {
+            hash.update(name.as_bytes());
+            hash.update([0]);
+            hash.update(folder.as_os_str().as_encoded_bytes());
+            hash.update([0]);
+        }
+        hash.finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    };
+    let folder = sets.join(&digest);
+    std::fs::create_dir_all(sets)?;
+    // The sets' folder, opened as a folder itself once: its lock and the removal of an
+    // incomplete folder go through this handle, never back through the path.
+    #[cfg(unix)]
+    let sets_dir = at::folder(sets).map_err(|why| {
+        if at::not_a_folder(&why) {
+            std::io::Error::other(format!("{} is a link, not a folder", sets.display()))
+        } else {
+            why
+        }
+    })?;
+    // Held against [`tidy`] while it is laid out and found: a folder this returns has just been
+    // made or touched, so a tidy after it keeps it for [`TIDY_GRACE`].
+    #[cfg(unix)]
+    let _laying_out = lock_shared_in(&sets_dir)?;
+    #[cfg(not(unix))]
+    let _laying_out = lock_shared(sets)?;
+    if laid_out(&folder, &links) && touched(&folder) {
+        return Ok(Some(folder));
+    }
+    let building = tempfile::Builder::new()
+        .prefix(&format!(".{digest}."))
+        .tempdir_in(sets)?;
+    let manifest = building.path().join(".claude-plugin");
+    std::fs::create_dir(&manifest)?;
+    std::fs::write(manifest.join("plugin.json"), manifest_text())?;
+    let skills = building.path().join(DIR_IN_BUNDLE);
+    std::fs::create_dir(&skills)?;
+    for (name, target) in &links {
+        link(target, &skills.join(name))?;
+    }
+    if std::fs::symlink_metadata(&folder).is_ok() {
+        // Not complete, so not a set's folder any chat was started with: made again.
+        #[cfg(unix)]
+        at::remove_tree_in(&sets_dir, &digest)?;
+        #[cfg(not(unix))]
+        std::fs::remove_dir_all(&folder)?;
+    }
+    let built = building.keep();
+    match std::fs::rename(&built, &folder) {
+        Ok(()) => Ok(Some(folder)),
+        // Another chat's start laid the same set out first.
+        Err(_) if laid_out(&folder, &links) => {
+            let _ = std::fs::remove_dir_all(&built);
+            Ok(Some(folder))
+        }
+        Err(why) => {
+            let _ = std::fs::remove_dir_all(&built);
+            Err(why)
+        }
+    }
+}
+
+/// Marks `folder` as used now, by its modification time, which [`tidy`] keeps a folder for.
+fn touched(folder: &Path) -> bool {
+    std::fs::File::open(folder)
+        .and_then(|dir| dir.set_modified(std::time::SystemTime::now()))
+        .is_ok()
+}
+
+/// The variable a chat's start carries the folder of links it is handed by (SK-24): set by the
+/// host as it arms the chat ([`crate::hoststart::armed`]), and taken out of the chat's
+/// environment again by [`take_hold`] where its terminal is started, so its program never sees
+/// it and the terminal notes, while the program runs, that it uses the folder.
+pub const SET_ENV: &str = "PURLIS_SKILL_SET";
+
+/// The folder of a set's folder's notes, beside the sets: `<sets>/.held/<digest>/<pid>`, one
+/// file for each running program that was handed it ([`crate::session::Spec::holds`]).
+pub(crate) const HELD: &str = ".held";
+
+/// The file [`lay_out`] and [`tidy`] take turns on, in the folder of the sets.
+const LOCK: &str = ".lock";
+
+/// How long a set's folder is kept after it was last laid out or found, whether or not a
+/// running program is noted as using it: the time between a host laying it out and the chat's
+/// terminal noting it, with room to spare.
+#[cfg_attr(not(unix), allow(dead_code))]
+pub(crate) const TIDY_GRACE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// **Where a program handed the set's folder `linked` is noted as using it**: `<sets>/.held/
+/// <digest>`, or `None` for a folder that is not a set's folder of links ([`lay_out`]'s
+/// `<sets>/<digest>`, a real folder).
+pub(crate) fn hold_of(linked: &Path) -> Option<PathBuf> {
+    let digest = linked.file_name()?.to_str()?;
+    let sets = linked.parent()?;
+    (is_digest(digest)
+        && sets.file_name() == Some(std::ffi::OsStr::new(crate::hoststart::SKILL_SETS))
+        && crate::leftovers::is_plain_dir(linked))
+    .then(|| sets.join(HELD).join(digest))
+}
+
+/// **Takes [`SET_ENV`] out of a chat's `env`**, and answers where its program is noted as using
+/// the folder it names ([`hold_of`]), where it names a set's folder.
+pub fn take_hold(env: &mut Vec<(std::ffi::OsString, std::ffi::OsString)>) -> Option<PathBuf> {
+    // Under every name it goes by (V93k), as the chat's environment twins it.
+    let names = crate::envvar::spellings(SET_ENV);
+    let mut handed = None;
+    env.retain(|(key, value)| {
+        if !names.iter().any(|name| key == name.as_str()) {
+            return true;
+        }
+        handed.get_or_insert_with(|| PathBuf::from(value));
+        false
+    });
+    handed.as_deref().and_then(hold_of)
+}
+
+/// What one [`tidy`] did: the sets' folders it removed, by digest, and each it could not, with
+/// why.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Tidied {
+    pub removed: Vec<String>,
+    pub failed: Vec<(String, String)>,
+    /// Nothing was looked at: a chat's start was laying its folder out, and a tidy never makes
+    /// one wait. The next tidy looks.
+    pub busy: bool,
+}
+
+/// **Removes every set's folder under `sets` no running program uses** (SK-24): one no live
+/// program is noted in ([`HELD`]) and that was not laid out or found within [`TIDY_GRACE`],
+/// with its notes, and what a lay-out that never finished left. A tidy never makes a chat's
+/// start wait: while one is laying a folder out ([`lay_out`]), it looks at nothing (`busy`).
+///
+/// **Only `sets`' own entries are removed, by the names purlis gives them**: a folder named by
+/// a digest, a lay-out's leftover beside it, and the notes in [`HELD`] named by a process id.
+/// **Nothing is read, removed or written through a link**, even one put in place after a check:
+/// `sets`, [`HELD`], each folder of notes and each folder removed are opened as folders
+/// themselves and worked through their handles (`skills::at`). A link at [`HELD`] or at a
+/// folder of notes keeps the folders it may speak for. The links inside a set's folder are
+/// removed as links. Off unix nothing is removed: whether a program still runs cannot be
+/// asked there ([`crate::process::alive`]).
+pub fn tidy(sets: &Path) -> std::io::Result<Tidied> {
+    #[cfg(unix)]
+    {
+        tidy_through_handles(sets)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = sets;
+        Ok(Tidied::default())
+    }
+}
+
+/// What a folder of notes says of its set's folder.
+#[cfg(unix)]
+#[derive(PartialEq)]
+enum Notes {
+    /// None of a running program, or none at all.
+    None,
+    /// One of a running program, or notes that cannot be read for a link in their place.
+    Kept,
+}
+
+#[cfg(unix)]
+fn tidy_through_handles(sets: &Path) -> std::io::Result<Tidied> {
+    use rustix::fs::FileType;
+    let mut tidied = Tidied::default();
+    let sets_dir = match at::folder(sets) {
+        Ok(dir) => dir,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound || at::not_a_folder(&why) => {
+            return Ok(tidied);
+        }
+        Err(why) => return Err(why),
+    };
+    let Some(_tidying) = try_lock_in(&sets_dir)? else {
+        tidied.busy = true;
+        return Ok(tidied);
+    };
+    let now = std::time::SystemTime::now();
+    let fresh = |entry: &at::Entry| {
+        entry.modified.is_some_and(|modified| {
+            now.duration_since(modified)
+                .is_ok_and(|age| age < TIDY_GRACE)
+        })
+    };
+    // `None` where there are no notes at all; `Err` where something not a folder is in their
+    // place, which keeps every set's folder.
+    let held_dir = match at::folder_in(&sets_dir, HELD) {
+        Ok(dir) => Ok(Some(dir)),
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(why) => Err(why),
+    };
+    let notes_of = |digest: &str| match &held_dir {
+        Err(_) => Notes::Kept,
+        Ok(None) => Notes::None,
+        Ok(Some(held)) => match at::folder_in(held, digest) {
+            Ok(notes) => still_held(&notes),
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => Notes::None,
+            Err(_) => Notes::Kept,
+        },
+    };
+    for entry in at::entries(&sets_dir)? {
+        let name = entry.name.clone();
+        let digest = is_digest(&name);
+        if entry.kind != FileType::Directory || !(digest || leftover(&name)) || fresh(&entry) {
+            continue;
+        }
+        if digest && notes_of(&name) == Notes::Kept {
+            continue;
+        }
+        match at::remove_tree_in(&sets_dir, &name) {
+            Ok(()) => {
+                if digest {
+                    if let Ok(Some(held)) = &held_dir {
+                        let _ = at::remove_empty_folder_in(held, &name);
+                    }
+                    tidied.removed.push(name);
+                }
+            }
+            Err(why) => tidied.failed.push((name, why.to_string())),
+        }
+    }
+    // Notes of a folder that has gone, of programs that have gone too.
+    if let Ok(Some(held)) = &held_dir {
+        for entry in at::entries(held)? {
+            let gone = at::entry_in(&sets_dir, &entry.name)?.is_none();
+            if entry.kind == FileType::Directory
+                && is_digest(&entry.name)
+                && gone
+                && notes_of(&entry.name) == Notes::None
+            {
+                let _ = at::remove_empty_folder_in(held, &entry.name);
+            }
+        }
+    }
+    Ok(tidied)
+}
+
+/// **What the folder of notes `notes` (one set's folder in [`HELD`], opened as a folder itself)
+/// says**: [`Notes::Kept`] where a file in it is named by the id of a process that runs and
+/// that had started by the time the file was written ([`crate::process::could_be_recorded`]).
+/// Every other file named by a process id is removed, through the folder's handle. Anything
+/// not named by one is never removed, only said in the log. A process whose start cannot be
+/// read is taken as the one noted.
+#[cfg(unix)]
+fn still_held(notes: &std::os::fd::OwnedFd) -> Notes {
+    use rustix::fs::FileType;
+    let Ok(entries) = at::entries(notes) else {
+        return Notes::Kept;
+    };
+    let mut held = Notes::None;
+    for entry in entries {
+        let Ok(pid) = entry.name.parse::<u32>() else {
+            tracing::warn!(
+                "purlis: {:?} among a skills folder's notes is not one purlis wrote, so it was \
+                 left as it is",
+                entry.name
+            );
+            continue;
+        };
+        if entry.kind != FileType::RegularFile {
+            continue;
+        }
+        let runs = crate::process::alive(pid)
+            && match (started_at(pid), entry.modified) {
+                (Some(started), Some(written)) => {
+                    crate::process::could_be_recorded(started, written)
+                }
+                _ => true,
+            };
+        if runs {
+            held = Notes::Kept;
+        } else {
+            let _ = at::remove_file_in(notes, &entry.name);
+        }
+    }
+    held
+}
+
+#[cfg(unix)]
+mod at;
+
+#[cfg(unix)]
+fn started_at(pid: u32) -> Option<std::time::SystemTime> {
+    purlis_same_user::Parents::started_at(pid)
+}
+
+/// **[`tidy`] of this user's sets' folders, said in the log**, on a thread of its own after
+/// `wait`, so nothing waits on it: what the app does as it starts and after a chat closes.
+///
+/// A fenced test build tidies nothing outside its fence, as it reads no store there
+/// ([`studio_on_here`]).
+pub fn tidy_here_later(wait: std::time::Duration) {
+    let Some(sets) = crate::hoststart::skill_sets_here()
+        .filter(|sets| !crate::fence::FENCED || crate::fence::inside(sets, &crate::fence::fence()))
+    else {
+        return;
+    };
+    let _ = std::thread::Builder::new()
+        .name("purlis-skill-sets-tidy".into())
+        .spawn(move || {
+            std::thread::sleep(wait);
+            said_in_the_log(&sets, tidy(&sets));
+        });
+}
+
+/// How long after a chat closes its sets are tidied ([`tidy_here_later`]): time for its program
+/// to be ended and its note to go, so the folder it used goes in the same tidy.
+pub const TIDY_AFTER_A_CLOSE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// What a [`tidy`] of `sets` did, in the log.
+pub fn said_in_the_log(sets: &Path, tidied: std::io::Result<Tidied>) {
+    match tidied {
+        Ok(tidied) => {
+            if tidied.busy {
+                tracing::debug!(
+                    "purlis: a chat was starting, so unused skills folders in {} are looked \
+                     for after the next chat closes",
+                    sets.display()
+                );
+            }
+            for digest in &tidied.removed {
+                tracing::info!(
+                    "purlis: removed the skills folder {digest} in {}: no running chat uses it",
+                    sets.display()
+                );
+            }
+            for (digest, why) in &tidied.failed {
+                tracing::warn!(
+                    "purlis: the skills folder {digest} in {} could not be removed ({why}); \
+                     it is tried again after the next chat closes",
+                    sets.display()
+                );
+            }
+        }
+        Err(why) => tracing::warn!(
+            "purlis: unused skills folders in {} could not be looked for ({why}); they are \
+             looked for again after the next chat closes",
+            sets.display()
+        ),
+    }
+}
+
+/// Whether `name` is a set's folder's: a SHA-256, in lowercase hex.
+fn is_digest(name: &str) -> bool {
+    crate::leftovers::is_lowercase_hex(name, 64)
+}
+
+/// Whether `name` is what a lay-out that never finished left: `.<digest>.<suffix>`.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn leftover(name: &str) -> bool {
+    name.strip_prefix('.')
+        .and_then(|rest| rest.split_once('.'))
+        .is_some_and(|(digest, suffix)| {
+            is_digest(digest)
+                && !suffix.is_empty()
+                && suffix.bytes().all(|b| b.is_ascii_alphanumeric())
+        })
+}
+
+/// The sets' lock ([`LOCK`]) in the folder `sets`, opened through its handle and never through
+/// a link, taken only where nothing holds it: `None` while a lay-out does.
+#[cfg(unix)]
+fn try_lock_in(sets: &std::os::fd::OwnedFd) -> std::io::Result<Option<std::fs::File>> {
+    let file = at::file_in(sets, LOCK)?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(why)) => Err(why),
+    }
+}
+
+/// The sets' lock ([`LOCK`]) in the folder `sets`, opened through its handle and never through
+/// a link, taken shared as a lay-out takes it, until the file is dropped: waiting for a tidy to
+/// finish, which never takes long.
+#[cfg(unix)]
+fn lock_shared_in(sets: &std::os::fd::OwnedFd) -> std::io::Result<std::fs::File> {
+    let file = at::file_in(sets, LOCK)?;
+    file.lock_shared()?;
+    Ok(file)
+}
+
+/// [`lock_shared_in`] where there are no handles to open a folder by.
+#[cfg(not(unix))]
+fn lock_shared(sets: &Path) -> std::io::Result<std::fs::File> {
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(sets.join(LOCK))?;
+    file.lock_shared()?;
+    Ok(file)
+}
+
+/// The plugin manifest a set's folder holds.
+fn manifest_text() -> String {
+    serde_json::json!({
+        "name": LINKED_PLUGIN,
+        "description": "This project's skills, as purlis hands them to this chat",
+    })
+    .to_string()
+}
+
+/// Whether `folder` is the complete folder of `links`: its manifest, and exactly one link per
+/// skill, to its folder.
+fn laid_out(folder: &Path, links: &[(&str, &Path)]) -> bool {
+    let manifest = std::fs::read_to_string(folder.join(".claude-plugin/plugin.json"));
+    if manifest.ok().as_deref() != Some(manifest_text().as_str()) {
+        return false;
+    }
+    let skills = folder.join(DIR_IN_BUNDLE);
+    let count = std::fs::read_dir(&skills).map(Iterator::count).unwrap_or(0);
+    count == links.len()
+        && links.iter().all(|(name, target)| {
+            std::fs::read_link(skills.join(name)).ok().as_deref() == Some(*target)
+        })
+}
+
+/// Whether `name` can name a link in a set's folder: one plain path component.
+fn plain_name(name: &str) -> bool {
+    let mut parts = Path::new(name).components();
+    matches!(
+        (parts.next(), parts.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    ) && !name.contains(['/', '\\'])
+}
+
+#[cfg(unix)]
+fn link(target: &Path, at: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, at)
+}
+
+#[cfg(windows)]
+fn link(target: &Path, at: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, at)
 }
 
 /// The briefing section that lists the skills of a chat started with [`LISTED_ENV`], or none
@@ -47,30 +583,251 @@ pub fn for_chat(kit: Kit<'_>, harness: Harness) -> SkillSet {
 /// directory, the persona the chat runs as in the plane at `root`, and the briefing route,
 /// the only one the variable is set for — so it lists what the chat's set holds, never every
 /// folder in the directory.
-pub fn briefed(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+pub fn briefed(
+    root: &Path,
+    workspace: Option<&str>,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
     let dir = env(LISTED_ENV).filter(|dir| !dir.is_empty())?;
     let persona = crate::envvar::lookup(crate::active::PERSONA_ENV, env).filter(|p| !p.is_empty());
+    let plane = env(PLANE_LISTED_ENV).is_some_and(|on| on == "1");
     let set = ask(
         Some(Path::new(&dir)),
-        persona.as_deref().map(|persona| (root, persona)),
+        plane.then_some(PlaneSkills {
+            plane: root,
+            workspace,
+            linked: None,
+        }),
+        persona.as_deref(),
         Route::Briefing,
+        None,
     );
     let skills: Vec<Skill> = set.effective.into_iter().map(|e| e.skill).collect();
     listing(&skills)
 }
 
-/// One ask of purlis-skills, from a directory of built-in skills, the persona a chat runs as
-/// with the plane that defines it, and the chat's route.
-fn ask(built_in: Option<&Path>, persona: Option<(&Path, &str)>, route: Route) -> SkillSet {
+/// **The skills a briefed chat may start by reading their `SKILL.md`** (SK-3): every skill in
+/// the directory it was started with in [`LISTED_ENV`], and the plane's at `root` where
+/// [`PLANE_LISTED_ENV`] says its set holds them. Empty for a chat that was not briefed: a
+/// harness that loads its skills itself starts them by its own tool.
+pub fn readable_by_a_briefed_chat(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Vec<Skill> {
+    let Some(dir) = env(LISTED_ENV).filter(|dir| !dir.is_empty()) else {
+        return Vec::new();
+    };
+    let mut skills = read(Path::new(&dir));
+    if env(PLANE_LISTED_ENV).is_some_and(|on| on == "1") {
+        skills.extend(read(&root.join(purlis_skills::PROJECT_DIR)));
+    }
+    skills
+}
+
+/// One ask of purlis-skills, from a directory of built-in skills, the plane with the workspace
+/// the chat works in (where the plane's skills are let in), the persona a chat runs as (whose
+/// `skills:` list is read where the plane's skills are let in), the chat's route, and the
+/// harness skills on this machine where they were looked for.
+fn ask(
+    built_in: Option<&Path>,
+    plane: Option<PlaneSkills<'_>>,
+    persona: Option<&str>,
+    route: Route,
+    harness: Option<&[OnMachine]>,
+) -> SkillSet {
+    let kept = |folder: &Path| match plane {
+        Some(at) => crate::profiles::kept_local(at.plane, folder),
+        None => Err("there is no plane to ask git about".to_owned()),
+    };
+    let off = plane
+        .and_then(|at| Some(turned_off(at.plane, at.workspace?)))
+        .unwrap_or_default();
+    let names = plane
+        .zip(persona)
+        .map(|(at, persona)| names_of(at.plane, persona))
+        .unwrap_or_default();
     purlis_skills::skill_set(
-        persona.map(|(root, _)| root),
-        &Machine { built_in },
+        plane.map(|at| at.plane),
+        &Machine {
+            built_in,
+            kept_local: Some(&kept),
+            harness,
+        },
         &Chat {
-            workspace: None,
-            persona: persona.map(|(_, name)| name),
+            workspace: plane.and_then(|at| at.workspace),
+            persona,
+            names: &names,
+            turned_off: &off,
             harness: HarnessSkills { route },
         },
     )
+}
+
+/// **What the persona `persona`'s `skills:` list names** (SK-5, #2768), in the plane at `plane`:
+/// each entry it writes, as a [`Reference`], in order. An entry that names nothing is dropped.
+pub fn names_of(plane: &Path, persona: &str) -> Vec<Reference> {
+    crate::personaverbs::declared_skills(plane, persona)
+        .iter()
+        .filter_map(|written| Reference::parse(written))
+        .collect()
+}
+
+/// **The skills a chat's persona names that it starts without** (SK-5, #2768), as its tab's
+/// Notice says them, each as the persona's `skills:` list writes it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NotHere {
+    /// A harness skill the chat's harness does not have on this machine.
+    pub missing: Vec<String>,
+    /// A built-in skill purlis has none of: a typo, or a name from another version of purlis.
+    pub no_built_in: Vec<String>,
+}
+
+/// **The skills a chat as `persona` starts without** (SK-5, #2768), in the plane at `plane`, at
+/// its root or in `workspace`, on `harness` with the chat's environment `env` and the built-in
+/// skills in `built_in`. `None` where it has every one it names, or purlis could not tell.
+pub fn not_here(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: &str,
+    built_in: Option<&Path>,
+    harness: crate::harness::Harness,
+    env: &crate::harness_plugin::Env<'_>,
+) -> Option<NotHere> {
+    let here = on_machine(harness, env);
+    let at = PlaneSkills {
+        plane,
+        workspace,
+        linked: None,
+    };
+    let set = ask(
+        built_in,
+        Some(at),
+        Some(persona),
+        harness.skills(),
+        Some(&here),
+    );
+    let mut not = NotHere::default();
+    for left in set.left_out {
+        match left.reason {
+            Reason::NotOnThisMachine => not.missing.push(left.name),
+            Reason::NoSuchBuiltIn => not.no_built_in.push(left.name),
+            _ => {}
+        }
+    }
+    (not != NotHere::default()).then_some(not)
+}
+
+/// **The project skills the workspace `workspace` turned off** (#2767): `settings.skills.off`,
+/// as the Workspace settings layer reads its `workspace.json`. Empty where it names none, or
+/// holds something other than a list of names, which that layer's save refuses to write.
+pub fn turned_off(plane: &Path, workspace: &str) -> Vec<String> {
+    use crate::settings::workspace::{SKILLS, SKILLS_OFF};
+    crate::settings::workspace::read(plane, workspace)
+        .and_then(|table| {
+            let names = table.get(SKILLS)?.get(SKILLS_OFF)?.as_array()?;
+            names
+                .iter()
+                .map(|name| name.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()
+        })
+        .unwrap_or_default()
+}
+
+/// The folder of the project skill named `name` in the plane at `plane`: in its `skills/`, else
+/// in its `skills.local/`, or `None` where neither holds one.
+pub fn project_folder(plane: &Path, name: &str) -> Option<PathBuf> {
+    [false, true]
+        .into_iter()
+        .filter_map(|local| level_dir(plane, None, local))
+        .find_map(|dir| named(&dir, name))
+}
+
+/// **`purlis skill grant <name> <grant>`** (#2767): writes `grant` as where the project skill
+/// `name` reaches, and says its folder. Refused, writing nothing, on a project purlis opens
+/// read-only, for a name no project skill has, and for a workspace the plane does not have, so a
+/// typo never grants a name nobody has.
+pub fn grant(plane: &Path, name: &str, grant: &Grant) -> Result<PathBuf, String> {
+    crate::settings::writable(plane)?;
+    if let Grant::Only(names) = grant {
+        let held = crate::workspaces::Plane::open(plane);
+        for ws in names {
+            if !held.workspace(ws).is_ok_and(|one| one.dir().is_dir()) {
+                return Err(format!(
+                    "this project has no workspace {ws:?}, so nothing was granted: \
+                     `purlis workspace list` lists them"
+                ));
+            }
+        }
+    }
+    let folder = project_folder(plane, name).ok_or_else(|| no_project_skill(name))?;
+    set_grant(&folder, grant)?;
+    Ok(folder)
+}
+
+/// **Turns the project skill `name` off (`on` false) or back on in `workspace`** (#2767): its
+/// `settings.skills.off`, through the Workspace level's own save. A workspace can only take
+/// away what a grant gave, so a skill whose grant does not reach `workspace` is refused either
+/// way, saying the grant that would. `Ok(false)` where it already was so, and nothing is written.
+pub fn switch(plane: &Path, workspace: &str, name: &str, on: bool) -> Result<bool, String> {
+    let held = crate::workspaces::Plane::open(plane);
+    if !held
+        .workspace(workspace)
+        .is_ok_and(|one| one.dir().is_dir())
+    {
+        return Err(format!(
+            "this project has no workspace {workspace:?}: `purlis workspace list` lists them"
+        ));
+    }
+    let folder = project_folder(plane, name).ok_or_else(|| no_project_skill(name))?;
+    let reaches = grant_of(&folder).is_ok_and(|grant| grant.reaches(workspace));
+    if !reaches {
+        let what = if on {
+            "cannot be turned on there: a workspace only turns off what the project granted it"
+        } else {
+            "has nothing to turn off there"
+        };
+        return Err(format!(
+            "{name} is not granted to {workspace}, so it {what}. The project grants it at its \
+             root: purlis skill grant {name} {workspace}"
+        ));
+    }
+    let mut off = turned_off(plane, workspace);
+    let was = off.iter().any(|one| one == name);
+    if was != on {
+        return Ok(false);
+    }
+    if on {
+        off.retain(|one| one != name);
+    } else {
+        off.push(name.to_owned());
+    }
+    let read = crate::settings::workspace::read_file(plane, workspace)?;
+    let base = read.exists.then_some(read.text.as_str());
+    let path = vec![
+        crate::settings::Step::Key(crate::settings::workspace::SKILLS.to_owned()),
+        crate::settings::Step::Key(crate::settings::workspace::SKILLS_OFF.to_owned()),
+    ];
+    let value = (!off.is_empty()).then_some(crate::settings::Value::List(off));
+    crate::settings::workspace::save(
+        plane,
+        workspace,
+        base,
+        &[crate::settings::Edit { path, value }],
+    )
+    .map_err(|why| why.join(" "))?;
+    Ok(true)
+}
+
+fn no_project_skill(name: &str) -> String {
+    format!(
+        "no project skill is named {name:?}: a project skill is a folder in skills/ or \
+         skills.local/ at the project's root, and `purlis skill list` lists them"
+    )
+}
+
+/// **Share** (#2767): moves the local skill `name` of the plane root (`workspace` `None`) or of
+/// `workspace` into that level's shared `skills/`, so the plane's save commits it. Refused on a
+/// project purlis opens read-only, whose committed files it does not write.
+pub fn share_here(plane: &Path, workspace: Option<&str>, name: &str) -> Result<PathBuf, String> {
+    crate::settings::writable(plane)?;
+    share(plane, workspace, name)
 }
 
 /// The flag the Skill studio's slices land behind until its finish line (#2762, SK-23), and is
@@ -90,6 +847,224 @@ pub fn studio_on(flags: &crate::machine::Flags, env: &dyn Fn(&str) -> Option<Str
         Some("0") => false,
         _ => flags.skill_studio,
     }
+}
+
+/// **What the Skill studio and `purlis skill list` show** (SK-2): the skill set of a chat in the
+/// plane at `plane`, at its root (`workspace` `None`) or in `workspace`, as `persona` or on none
+/// (SK-5), with the built-in skills from `built_in`. Every skill with its level, and every one
+/// left out with its reason. Read as a Claude Code chat's: the route is not what they show. A
+/// harness skill a persona names is looked for in every harness the project's profiles run
+/// ([`harnesses_used`]): there where any has it, unchecked where none has it and one cannot list
+/// its plugin's skills, and left out only where none has it.
+pub fn in_the_studio(
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> SkillSet {
+    let at = PlaneSkills {
+        plane,
+        workspace,
+        linked: None,
+    };
+    let here = persona.map(|_| {
+        let env = crate::harness_plugin::Env::of(&[]);
+        harnesses_used(plane)
+            .into_iter()
+            .flat_map(|harness| on_machine(harness, &env))
+            .collect::<Vec<_>>()
+    });
+    ask(built_in, Some(at), persona, Route::Plugin, here.as_deref())
+}
+
+/// **Every harness the project's profiles run**, in the registry's order, or Claude Code alone
+/// for a project that offers none on this machine: what the studio checks a persona's harness
+/// skills against.
+pub fn harnesses_used(plane: &Path) -> Vec<crate::harness::Harness> {
+    let kinds: Vec<String> = crate::personaprofile::offers_shown(plane)
+        .into_iter()
+        .map(|offer| offer.kind)
+        .collect();
+    harnesses_of(&kinds)
+}
+
+/// The harnesses profiles of `kinds` run, in the registry's order, or Claude Code alone for none.
+fn harnesses_of(kinds: &[String]) -> Vec<crate::harness::Harness> {
+    let used: Vec<crate::harness::Harness> = crate::harness::Harness::ALL
+        .iter()
+        .copied()
+        .filter(|harness| {
+            kinds
+                .iter()
+                .any(|kind| crate::harness::Harness::of_kind(kind) == Some(*harness))
+        })
+        .collect();
+    if used.is_empty() {
+        vec![crate::harness::Harness::ClaudeCode]
+    } else {
+        used
+    }
+}
+
+/// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,
+/// the one a chat gets and each left out with why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StudioRow {
+    /// Its name, or its folder's where it names none.
+    pub name: String,
+    pub origin: Origin,
+    /// Whether it is a local skill, kept on this machine in its level's `skills.local/` (#2767).
+    pub local: bool,
+    /// Where a project skill reaches (`root`, `all`, or the workspaces' names), or `None` for a
+    /// skill of another level. A grant that cannot be read reaches the root alone, and says so
+    /// in the left-out line of a workspace's chat.
+    pub grant: Option<String>,
+    /// Why a chat does not get it, in one line, or `None` where it does.
+    pub left_out: Option<String>,
+    /// What it does: its `description`, empty for a copy left out.
+    pub description: String,
+    /// Its folder, relative to the plane where it is inside it; empty for a harness skill.
+    pub folder: String,
+    /// How a persona's `skills:` list names it (SK-5): `purlis:<name>` for a built-in skill,
+    /// `<plugin>:<name>` for a plugin's, else its name.
+    pub written: String,
+    /// Whether the persona the set is a chat as names it in its `skills:` list.
+    pub named: bool,
+    /// A harness skill the persona names that purlis could not check this machine for: its
+    /// plugin's skills cannot be listed.
+    pub unchecked: bool,
+}
+
+/// What is said of a harness skill a persona names that purlis could not check this machine for
+/// ([`StudioRow::unchecked`]): its plugin is installed, and its skills cannot be listed.
+pub const UNCHECKED: &str =
+    "purlis can't check whether this machine has it: its plugin's skills can't be listed";
+
+/// **The studio's rows of `set`**, a set of a chat in the plane at `plane` as a persona whose
+/// `skills:` list says `names` (empty for a chat on no persona): every skill it gets, every one
+/// its harness loads for the persona, and every one left out, by name, each folder relative to
+/// the plane. Of the copies of one name, the one the chat gets comes first, then each copy left
+/// out from the widest level to the narrowest, as the set lists them (#2767). The one list the
+/// window and the command line draw.
+pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<StudioRow> {
+    let relative = |path: &Path| {
+        path.strip_prefix(plane)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .into_owned()
+    };
+    let grant = |origin: Origin, folder: &Path| {
+        (origin == Origin::Project).then(|| grant_of(folder).unwrap_or(Grant::Root).to_string())
+    };
+    let written = |origin: Origin, name: &str| match origin {
+        Origin::BuiltIn => Reference::BuiltIn(name.to_owned()).to_string(),
+        _ => name.to_owned(),
+    };
+    let named = |said: &str| names.iter().any(|one| one.to_string() == said);
+    let mut rows: Vec<StudioRow> = set
+        .effective
+        .iter()
+        .map(|e| {
+            let folder = e.skill.path.parent().unwrap_or(&e.skill.path);
+            let written = written(e.origin, &e.skill.name);
+            StudioRow {
+                name: e.skill.name.clone(),
+                origin: e.origin,
+                local: e.local,
+                grant: grant(e.origin, folder),
+                left_out: None,
+                description: e.skill.description.clone(),
+                folder: relative(folder),
+                named: named(&written),
+                written,
+                unchecked: false,
+            }
+        })
+        .chain(set.from_the_harness.iter().map(|h| {
+            let written = h.reference.to_string();
+            StudioRow {
+                name: written.clone(),
+                origin: Origin::Harness,
+                local: false,
+                grant: None,
+                left_out: None,
+                description: String::new(),
+                folder: String::new(),
+                named: true,
+                written,
+                unchecked: !h.checked,
+            }
+        }))
+        .chain(set.left_out.iter().map(|l| {
+            // A left-out copy a persona names is the reference itself (`purlis:<name>` for a
+            // built-in one there is none of); every other copy is named by its own name.
+            let written = if matches!(l.reason, Reason::NoSuchBuiltIn) {
+                l.name.clone()
+            } else {
+                written(l.origin, &l.name)
+            };
+            StudioRow {
+                name: l.name.clone(),
+                origin: l.origin,
+                local: l.local,
+                grant: grant(l.origin, &l.folder),
+                left_out: Some(l.reason.to_string()),
+                description: String::new(),
+                folder: relative(&l.folder),
+                named: named(&written),
+                written,
+                unchecked: false,
+            }
+        }))
+        .collect();
+    // Stable: the set already lists each name's left-out copies widest first.
+    rows.sort_by(|a, b| {
+        a.name
+            .cmp(&b.name)
+            .then(a.left_out.is_some().cmp(&b.left_out.is_some()))
+    });
+    rows
+}
+
+/// **The studio's runs** (SK-3): every run the plane at `plane`'s skill log holds, newest first,
+/// of skill `skill` where one is named (by its name, with or without the namespace a harness
+/// used it by), at most `limit`. The one list a skill's Runs panel and `purlis skill runs` draw.
+pub fn studio_runs(plane: &Path, skill: Option<&str>, limit: usize) -> Vec<crate::skilluse::Run> {
+    crate::skilluse::runs(plane)
+        .into_iter()
+        .filter(|run| skill.is_none_or(|name| run.is_of(name)))
+        .take(limit)
+        .collect()
+}
+
+/// The built-in skills' directory of the plugin installed beside this binary, where there is one
+/// ([`crate::plugin_install::bundle_beside`]): what the Skill studio and `purlis skill` list,
+/// found the one way in the window and on the command line.
+pub fn built_in_here() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    crate::plugin_install::bundle_beside(&exe).and_then(|plugin| in_bundle(&plugin))
+}
+
+/// **Turns the Skill studio's flag on or off on this machine** (`flags.skill-studio` in
+/// `machine.json`), as Settings › You › Previews does. [`STUDIO_ENV`] still decides over it
+/// where it is set.
+pub fn set_studio_on(config_root: &Path, on: bool) -> Result<(), String> {
+    crate::machine::update(config_root, |store| store.flags.skill_studio = on)
+        .map(|_| ())
+        .map_err(|why| format!("purlis could not keep it, so nothing was changed: {why}"))
+}
+
+/// [`studio_on`] for this process: this machine's store, and this process's environment. Asked
+/// at every chat's start, so it never holds the fence: a fenced test build reads a store outside
+/// its fence as holding no flag, as [`crate::profilestore::listed_here`] does.
+pub fn studio_on_here() -> bool {
+    let flags = crate::machine::config_root_unheld()
+        .filter(|config| {
+            !crate::fence::FENCED || crate::fence::inside(config, &crate::fence::fence())
+        })
+        .map(|config| crate::machine::read(&config).store.flags)
+        .unwrap_or_default();
+    studio_on(&flags, &|name| std::env::var(name).ok())
 }
 
 #[cfg(test)]

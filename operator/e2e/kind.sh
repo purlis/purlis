@@ -15,7 +15,7 @@
 #
 # Both images are local ones (`docker image ls`): the runner image (runner-image/Dockerfile, or
 # any image that keeps its contract) and the operator's (operator/Dockerfile). Needs docker,
-# kind, kubectl, helm (v4) and cargo on PATH. `.github/workflows/operator.yml` runs it.
+# kind, kubectl, helm (v4), cargo and node on PATH. `.github/workflows/operator.yml` runs it.
 
 set -eu
 
@@ -23,6 +23,7 @@ runner_local=$1
 operator_local=$2
 
 here=$(cd "$(dirname "$0")/.." && pwd)
+repo=$(cd "$here/.." && pwd)
 cluster=${CLUSTER:-purlis-operator-e2e}
 registry=$cluster-registry
 port=${REGISTRY_PORT:-5001}
@@ -47,9 +48,10 @@ export KUBECONFIG
 # Helm's homes of the run's own, likewise.
 helm_home=$(mktemp -d "${TMPDIR:-/tmp}/purlis-operator-e2e-helm.XXXXXX")
 export HELM_CACHE_HOME="$helm_home/cache" HELM_CONFIG_HOME="$helm_home/config" HELM_DATA_HOME="$helm_home/data"
-chart=$here/charts/purlis-cluster-operator
-# The image the plain manifests name until an install sets the real one (tests/the_chart.rs).
-placeholder=ghcr.io/purlis/purlis-cluster-operator@sha256:0000000000000000000000000000000000000000000000000000000000000000
+# The install, pinned to the operator's image by digest, as the operator's image run records
+# one for every image it publishes (tools/operator-install.mjs, #2281): the plain manifests
+# and the chart, each placeholder replaced by the one tool.
+install=$helm_home/install
 
 # Each stage says its name, and in a GitHub Actions run a failure names the stage it stopped in
 # as an annotation, beside what it said.
@@ -109,6 +111,7 @@ runner=$(by_digest "$runner_local" purlis-runner)
 operator=$(by_digest "$operator_local" purlis-cluster-operator)
 echo "runner image: $runner"
 echo "operator image: $operator"
+node "$repo/tools/operator-install.mjs" "$install" "$operator"
 
 # Doctor (#2236) with the cluster's admin credentials, as a team admin runs it before installing.
 doctor() {
@@ -160,8 +163,8 @@ step "purlis's definitions, policy and operator, by the chart"
 # restricted Pod Security Standard are admitted in it, so the operator's pod has to.
 kubectl --context "$context" create namespace purlis-system
 kubectl --context "$context" label namespace purlis-system pod-security.kubernetes.io/enforce=restricted
-helm install purlis-cluster-operator "$chart" --kube-context "$context" --namespace purlis-system \
-  --set image.repository="${operator%@*}" --set image.digest="${operator#*@}" \
+# The chart's own default names the image, as in the install a person downloads.
+helm install purlis-cluster-operator "$install/charts/purlis-cluster-operator" --kube-context "$context" --namespace purlis-system \
   --wait --timeout 180s
 kubectl --context "$context" wait --for=condition=Established --timeout=60s crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev
 kubectl --context "$context" -n purlis-system rollout status deployment/purlis-cluster-operator --timeout=120s
@@ -170,10 +173,9 @@ step "the plain manifests are what the chart installed"
 # `kubectl diff` exits 1 when applying them would change anything the chart made. Helm owns
 # those fields, and the policy's match rules are one atomic field the server fills defaults
 # into, so the dry run takes the fields over (`--force-conflicts`) to compare values only.
-sed "s|image: $placeholder\$|image: $operator|" "$here/deploy/operator.yaml" > "$helm_home/operator.yaml"
-grep -qxF "          image: $operator" "$helm_home/operator.yaml"
+grep -qxF "          image: $operator" "$install/operator.yaml"
 if ! diff=$(kubectl --context "$context" diff --server-side --force-conflicts \
-  -f "$here/deploy/policy.yaml" -f "$here/deploy/crds.yaml" -f "$helm_home/operator.yaml" 2>&1); then
+  -f "$install/policy.yaml" -f "$install/crds.yaml" -f "$install/operator.yaml" 2>&1); then
   echo "$diff" >&2
   annotate "the plain manifests are not what the chart installed" "$diff"
   exit 1

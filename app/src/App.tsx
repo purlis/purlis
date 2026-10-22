@@ -45,6 +45,7 @@ import type { ForgeAsk } from "./ForgeQuestion";
 type RepoTried = { refused?: string; asksForge?: string };
 import { UnsavedMark } from "./SavingView";
 import { SessionBusNotice } from "./SessionBusNotice";
+import { EngineSandboxNotice } from "./EngineSandboxNotice";
 import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
@@ -115,12 +116,14 @@ import { TitleBar, useTitleBarRoom } from "./TitleBar";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
+import { aQuestionIsUp, useCloseHanded } from "./closeHanded";
 import { useAwayRefusals } from "./dispatchAway";
 import { useUpdates } from "./Updates";
 import { StripTablist, useTabIds } from "./StripTablist";
 import { noTabs, SETTINGS_TAB_TITLE } from "./tabs";
 import { useTextSizes } from "./textSize";
 import { MAIN, runElsewhere, thisWindow, useOtherWindows, useRunHere } from "./windows";
+import { Button } from "./ui/button/Button";
 
 /**
  * Puts the app's own `charter` on a terminal's `PATH`, and answers what the core said — the
@@ -1837,6 +1840,19 @@ function App() {
     [registry.held],
   );
   useNotificationLanding(landOnNotified);
+  /** The projects whose view has a close or a "Who draws it?" question up (#2761). */
+  const closeQuestionsIn = useRef(new Set<PlaneId>());
+  const onAsking = useCallback((plane: PlaneId, up: boolean) => {
+    if (up) closeQuestionsIn.current.add(plane);
+    else closeQuestionsIn.current.delete(plane);
+  }, []);
+  /** A link's close of chats with theme drafts (#2761): asked in that project, brought to the
+   *  front, unless a question is up anywhere in this window. */
+  const closeAsk = useCloseHanded(
+    (plane) => planesNow.current.includes(plane),
+    () => aQuestionIsUp(closeQuestionsIn.current),
+    (plane) => setShowing({ at: "plane", plane }),
+  );
 
   /**
    * **Every project's dispatches refused while nobody was there** (#1507): updates in each
@@ -2261,6 +2277,8 @@ function App() {
 
         {/* A launch without the session bus, and what that run has not got (charter#746). */}
         <SessionBusNotice chats={ending} />
+        {/* Browsers that cannot start for the engine's sandbox, and the ways out (#2835). */}
+        <EngineSandboxNotice />
 
         {/* The session host stopped unexpectedly three times in five minutes, and the window's
             supervisor stopped starting it again: Try again (#2007). */}
@@ -2390,6 +2408,8 @@ function App() {
           firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
           shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
           fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
+          closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
+          onAsking={onAsking}
           awayRefused={awayRefusals.held[plane]}
           onAway={answerAway}
           waiting={registry.held[plane]}
@@ -2408,9 +2428,7 @@ function App() {
             <section className="view-pane" aria-label={SETTINGS_TAB_TITLE}>
               <header className="view-head">
                 <h2>{SETTINGS_TAB_TITLE}</h2>
-                <button type="button" tabIndex={0} onClick={() => setSettingsAlone(false)}>
-                  Done
-                </button>
+                <Button onPress={() => setSettingsAlone(false)}>Done</Button>
               </header>
               <div className="view-body">
                 <SettingsTab />

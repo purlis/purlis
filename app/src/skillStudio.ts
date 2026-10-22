@@ -1,0 +1,172 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { useSyncExternalStore } from "react";
+import { commands, PERSONA_SCOPE_KEY, SKILL_STUDIO_IN } from "./bindings";
+import type { ViewRef } from "./tabs";
+
+/**
+ * **The Skill studio** (SK-2, #2765; spec #2762): every skill a chat in the project gets, with
+ * its level, and every one left out with why, read only for now.
+ *
+ * It is a view tab, `{ from: null, view: "skill-studio", key: "" }`: one per project, opened
+ * from the palette's `skills.studio` row. It is behind the `skill-studio` flag until its finish
+ * line (#2786): while the flag is off the palette offers no row for it.
+ */
+export const SKILL_STUDIO_VIEW: ViewRef = { from: null, view: "skill-studio", key: "" };
+
+/** What the Skill studio's tab is called. */
+export const SKILL_STUDIO_TITLE = "Skill studio";
+
+/** Whose chats the studio shows (#2767, #2768): at the project's root, in a workspace, or as a
+ *  persona, which brings its skills into every workspace. */
+export type StudioAt = "root" | "workspace" | "persona";
+
+/** **Whose chats the studio shows**: `name` is the workspace's or the persona's, empty at the root. */
+export type StudioScope = { at: StudioAt; name: string };
+
+/**
+ * **Each kind of scope, in one place**: the prefix of its view key (and so of the studio's
+ * picker's value, which is the same key), what its tab is called, and what the studio says of
+ * whose chats it shows. A workspace's name is one plain name and never holds the `/` a persona's
+ * key starts with.
+ */
+const SCOPES: Record<
+  StudioAt,
+  { prefix: string; title: (name: string) => string; chat: (name: string) => string }
+> = {
+  root: { prefix: "", title: () => SKILL_STUDIO_TITLE, chat: () => "A chat at the project's root" },
+  workspace: {
+    prefix: "",
+    title: (name) => `${SKILL_STUDIO_TITLE} · ${name}`,
+    chat: (name) => `A chat in ${name}`,
+  },
+  persona: {
+    prefix: PERSONA_SCOPE_KEY,
+    title: (name) => `${SKILL_STUDIO_TITLE} · ${name}`,
+    chat: (name) => `A chat as ${name}`,
+  },
+};
+
+/** A chat at the project's root. */
+export const AT_THE_ROOT: StudioScope = { at: "root", name: "" };
+
+/** A chat in `workspace`. */
+export function inWorkspace(workspace: string): StudioScope {
+  return { at: "workspace", name: workspace };
+}
+
+/** A chat as `persona`, at the project's root (#2768). */
+export function asPersona(persona: string): StudioScope {
+  return { at: "persona", name: persona };
+}
+
+/** The workspace and the persona a scope names, as the core takes them: `null` for none. */
+export function whoseChats(scope: StudioScope): {
+  workspace: string | null;
+  persona: string | null;
+} {
+  return {
+    workspace: scope.at === "workspace" ? scope.name : null,
+    persona: scope.at === "persona" ? scope.name : null,
+  };
+}
+
+/** What the studio's view is keyed by for `scope`: the one encoding of a scope. */
+export function scopeKey(scope: StudioScope): string {
+  return `${SCOPES[scope.at].prefix}${scope.name}`;
+}
+
+/** The scope a studio view's key names. */
+export function scopeOfKey(key: string): StudioScope {
+  if (key === "") return AT_THE_ROOT;
+  const persona = SCOPES.persona.prefix;
+  return key.startsWith(persona) ? asPersona(key.slice(persona.length)) : inWorkspace(key);
+}
+
+/** The scope a studio view shows. */
+export function scopeOf(view: ViewRef): StudioScope {
+  return scopeOfKey(view.key);
+}
+
+/**
+ * **The Skill studio on one scope's chats** (#2767): the same view, keyed by its scope, so a
+ * Skills summary row opens it on that workspace or persona and the studio's own picker can show
+ * another.
+ */
+export function skillStudioView(scope: StudioScope): ViewRef {
+  return { ...SKILL_STUDIO_VIEW, key: scopeKey(scope) };
+}
+
+/** What the studio's tab is called while it shows `scope`'s chats. */
+export function skillStudioTitle(scope: StudioScope): string {
+  return SCOPES[scope.at].title(scope.name);
+}
+
+/** Whose chat `scope` is, as the studio's picker names it. */
+export function scopeChat(scope: StudioScope): string {
+  return SCOPES[scope.at].chat(scope.name);
+}
+
+/** The catalogue row that opens the studio on a scope's chats, before the scope's key (#2767): the
+ *  core names it once (`skillstudio::STUDIO_IN`). */
+export { SKILL_STUDIO_IN };
+
+/** The catalogue row that opens the studio on `persona`'s chats (#2768): what its page's summary
+ *  row and a chat's missing-skills Notice run. */
+export function skillStudioAs(persona: string): string {
+  return `${SKILL_STUDIO_IN}${scopeKey(asPersona(persona))}`;
+}
+
+/** Whether `view` is the Skill studio. */
+export function isSkillStudio(view: ViewRef): boolean {
+  return view.from === null && view.view === SKILL_STUDIO_VIEW.view;
+}
+
+/** What this machine said of the flag, once asked, and who is drawn from it. */
+let said: boolean | undefined;
+let asking = false;
+const listeners = new Set<() => void>();
+
+function told() {
+  for (const one of listeners) one();
+}
+
+function ask() {
+  if (asking) return;
+  asking = true;
+  void commands
+    .skillStudioOn()
+    .then((answer) => {
+      if (answer.status === "ok") said = answer.data;
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      asking = false;
+      told();
+    });
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  if (said === undefined) ask();
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Whether the Skill studio is on in this window: `false` until the core has said. */
+export function useSkillStudioOn(): boolean {
+  return useSyncExternalStore(subscribe, () => said ?? false);
+}
+
+/** **Turns the Skill studio's preview on or off on this machine** (Settings › You ›
+ *  Previews), then draws what the core says is now in force, or the core's refusal. */
+export async function setSkillStudioOn(on: boolean): Promise<string | undefined> {
+  const answer = await commands
+    .setSkillStudioOn(on)
+    .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+  if (answer.status === "ok") said = answer.data;
+  told();
+  return answer.status === "error" ? answer.error : undefined;
+}

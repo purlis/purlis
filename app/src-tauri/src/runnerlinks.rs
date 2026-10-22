@@ -62,13 +62,20 @@ impl Machine {
 }
 
 impl ToARunner {
-    /// The runner kept for `pool` on `machine`: only one this machine paired and keeps.
+    /// The runner kept for `pool` on `machine`: only one this machine paired and keeps, and
+    /// never one draining (#2749).
     pub fn of(machine: &Machine, pool: &str) -> Result<ToARunner, String> {
         let kept = purlis_core::runners::runner_for(&machine.config, pool)
             .map_err(|why| why.to_string())?;
+        ToARunner::of_kept(machine, &kept)
+    }
+
+    /// The runner `kept`, as `machine` keeps it: a draining one too, which keeps its chats
+    /// until each ends (#2749).
+    pub fn of_kept(machine: &Machine, kept: &Kept) -> Result<ToARunner, String> {
         let desktop = machine.desktop()?;
         Ok(ToARunner::kept(
-            &kept,
+            kept,
             machine.docker.clone(),
             desktop.into_identity(),
         ))
@@ -77,13 +84,20 @@ impl ToARunner {
     fn kept(kept: &Kept, docker: Docker, desktop: Identity) -> ToARunner {
         let made = kept.made.clone();
         let checking = docker.clone();
+        let preparing = docker.clone();
         let connector = CommandConnector::new(
-            docker.0.clone(),
+            docker.program().to_path_buf(),
             made.connect_args(),
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || checking.check(&made).map_err(|why| why.0)),
-        );
+        )
+        // Each run of `docker exec` is given what every run of `docker` is: a checked copy of
+        // Docker's settings and the engine pinned (#2752).
+        .preparing(Arc::new(move || {
+            let (env, cleared, held) = preparing.prepared().map_err(|why| why.0)?.into_parts();
+            Ok(purlis_host::Prepared { env, cleared, held })
+        }));
         ToARunner {
             connector,
             device: desktop.device,
@@ -127,8 +141,118 @@ pub fn relaying(
     machine: impl Fn() -> Result<Machine, String> + Send + Sync + 'static,
 ) -> purlis_host::RelaysTo {
     Arc::new(move |pool: &str| {
-        let to = ToARunner::of(&machine()?, pool)?;
-        Ok(Arc::new(move || to.keep()) as purlis_host::Keep)
+        let machine = machine()?;
+        // A pool's runner, or one of its runners that drains (`<pool>/<runner>`, #2865).
+        let (kept, _) = purlis_core::runners::reachable(&machine.config, pool)
+            .map_err(|why| why.to_string())?;
+        // A runner of another version than this desktop's is said, every time (#2749).
+        if let Some(behind) = behind(&machine, &kept) {
+            tracing::warn!("purlis: pool {pool}: {behind}");
+        }
+        let resolved = format!("{}/{}", kept.pool(), kept.name());
+        let to = ToARunner::of_kept(&machine, &kept)?;
+        Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
+    })
+}
+
+/// **Which runner the session host the window starts relays to drains** (#2865): one reached as
+/// `<pool>/<runner>`, which keeps its chats and starts no new one. Read from `config_root` as
+/// each `relay_to` is taken.
+pub fn drains_to(config_root: PathBuf) -> purlis_host::DrainsTo {
+    Arc::new(move |name: &str| drains(&config_root, name))
+}
+
+/// **Whether the runner `<pool>/<runner>` kept under `config_root` takes no new chat** (#2865):
+/// only a runner of that pool kept here and not draining takes one. A file that cannot be read,
+/// a runner not kept, a name of another shape and one that drains all refuse it.
+fn drains(config_root: &Path, name: &str) -> bool {
+    let Some((pool, runner)) = name.split_once('/') else {
+        return true;
+    };
+    match purlis_core::runners::read(config_root) {
+        Ok(kept) => !kept
+            .iter()
+            .any(|kept| kept.pool() == pool && kept.name() == runner && !kept.draining),
+        Err(_) => true,
+    }
+}
+
+/// **What this desktop's version is**, as its own `purlis --version` would say it: the
+/// version its release stamped it with (#2749).
+pub fn desktop_version() -> &'static str {
+    purlis_core::adopt::release_version()
+}
+
+/// **How `kept`'s version stands against this desktop's** (#2749), in a sentence, where it is
+/// another, or could not be read; `None` where it is this desktop's own.
+pub fn behind(machine: &Machine, kept: &Kept) -> Option<String> {
+    let ours = desktop_version();
+    match version_of(machine, kept) {
+        Ok(theirs) if theirs == ours => None,
+        Ok(theirs) => Some(format!(
+            "runner {} runs purlis {theirs}, and this desktop runs {ours}",
+            kept.name()
+        )),
+        Err(why) => Some(format!(
+            "runner {}'s version could not be read, so it may not run this desktop's {ours}: \
+             {why}",
+            kept.name()
+        )),
+    }
+}
+
+/// **The version `kept`'s runner runs**, read once for each container and image and kept for the
+/// rest of this run (#2749): a container runs one image by digest, so what it says does not
+/// change, and a link need not ask it again. What could not be read is asked again next time.
+pub fn version_of(machine: &Machine, kept: &Kept) -> Result<String, String> {
+    once_for(
+        kept.made.container.as_str(),
+        kept.made.runner.image().as_str(),
+        || machine.docker.version_of(&kept.made).map_err(|why| why.0),
+    )
+}
+
+/// What `read` says of the container `container` of `image`, read the first time it answers
+/// and kept from then on; one that could not be read is read again next time.
+fn once_for(
+    container: &str,
+    image: &str,
+    read: impl FnOnce() -> Result<String, String>,
+) -> Result<String, String> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, PoisonError};
+    static READ: Mutex<Option<HashMap<(String, String), String>>> = Mutex::new(None);
+    let key = (container.to_owned(), image.to_owned());
+    let kept = READ
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .and_then(|read| read.get(&key).cloned());
+    if let Some(kept) = kept {
+        return Ok(kept);
+    }
+    let version = read()?;
+    READ.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_or_insert_with(HashMap::new)
+        .insert(key, version.clone());
+    Ok(version)
+}
+
+/// **How many chats still run on the runner `to`** (#2749, #2865): what a draining runner waits
+/// on before it is removed. One link, made and let go of; a runner that does not answer is not
+/// known to be idle.
+pub fn chats_on(to: &ToARunner) -> Result<u32, String> {
+    on_one_link(to, async |linked| match linked {
+        Ok(client) => client
+            .list()
+            .await
+            .map(|chats| {
+                u32::try_from(chats.iter().filter(|chat| chat.state != "ended").count())
+                    .unwrap_or(u32::MAX)
+            })
+            .map_err(|why| why.to_string()),
+        Err(down) => Err(down.why),
     })
 }
 

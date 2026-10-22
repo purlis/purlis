@@ -410,6 +410,17 @@ impl Running {
     }
 }
 
+/// The skills a chat's persona names that it started without (SK-5, #2768), each as the
+/// persona's `skills:` list writes it: what its tab's Notice says.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SkillsMissing {
+    pub persona: String,
+    /// Installed skills this machine does not have for the chat's harness.
+    pub missing: Vec<String>,
+    /// Built-in skills purlis has none of: a typo, or a name from another version of purlis.
+    pub no_built_in: Vec<String>,
+}
+
 /// [`Running::started_with`].
 #[derive(Debug, Clone, Default)]
 struct StartedWith {
@@ -551,6 +562,9 @@ pub struct Chats {
     /// 2026-10-16): their program's end is no end of the chat, and is taken as none.
     replacing: Mutex<std::collections::HashSet<u32>>,
     late_notes: Mutex<HashMap<u32, Vec<String>>>,
+    /// The skills each chat's persona names that it started without (SK-5, #2768), by session:
+    /// what its tab's Notice says until it is put away ([`Self::skills_missing`]).
+    skills_missing: Mutex<HashMap<u32, SkillsMissing>>,
     /// Why each chat that runs with no sandbox where the floor could not be applied does
     /// (#2071, Q2), by session: what its tab's sandbox mark says ([`Open::floorless`]).
     floorless: Mutex<HashMap<u32, String>>,
@@ -1044,6 +1058,7 @@ impl Chats {
             settled: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
+            skills_missing: Mutex::new(HashMap::new()),
             project_settings: crate::projectsettings::Watch::new(),
             sizes: Mutex::new(HashMap::new()),
             replacing: Mutex::new(std::collections::HashSet::new()),
@@ -1172,6 +1187,17 @@ impl Chats {
                 && one.harness.is_none()
                 && one.chat.cwd.as_deref().is_some_and(|cwd| same(cwd, root))
         })
+    }
+
+    /// The skills chat `session`'s persona names that it started without (SK-5, #2768), until
+    /// the Notice that says them is put away.
+    pub fn skills_missing(&self, session: u32) -> Option<SkillsMissing> {
+        lock(&self.skills_missing).get(&session).cloned()
+    }
+
+    /// Puts chat `session`'s missing-skills Notice away, for this run of it.
+    pub fn put_away_skills_missing(&self, session: u32) {
+        lock(&self.skills_missing).remove(&session);
     }
 
     /// What chat `session`'s start found to say on its tab beyond the core's notices, once.
@@ -2835,6 +2861,7 @@ impl Chats {
             binary: self.shipped.binary.clone(),
             plugin: self.shipped.plugin.clone(),
             git_hooks: self.git_hooks_for(harness),
+            skill_sets: purlis_core::hoststart::skill_sets_here(),
         }
     }
 
@@ -2908,6 +2935,7 @@ impl Chats {
         }
         // Taken back as a start that did not happen: what was announced of it goes.
         lock(&self.late_notes).remove(&session);
+        lock(&self.skills_missing).remove(&session);
         lock(&self.older_in_notes).remove(&session);
         if let Some(gone) = lock(&self.never_started).as_ref() {
             gone(session);
@@ -3123,6 +3151,27 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
+        // A skill its persona names that this machine does not have (SK-5, #2768): the chat
+        // starts without it, and its tab's Notice says which, never a silent drop.
+        let skills_missing = if reattaching || on_the_runner {
+            None
+        } else {
+            purlis_core::hoststart::skills_not_here(
+                purlis_core::skills::studio_on_here(),
+                &self.project,
+                &self.kit(harness),
+                harness,
+                chat.cwd.as_deref(),
+                runs_as.as_deref(),
+                &env,
+            )
+            .zip(runs_as.clone())
+            .map(|(not, persona)| SkillsMissing {
+                persona,
+                missing: not.missing,
+                no_built_in: not.no_built_in,
+            })
+        };
         // A sandboxed Claude Code chat whose project's own settings it does not load says which
         // keys, in the window only (ADR 0067 as amended 2026-10-15). Its arming read the same
         // files and decided the same way.
@@ -3578,6 +3627,11 @@ impl Chats {
         if !late.is_empty() && !reattaching {
             lock(&self.late_notes).insert(session, late);
         }
+        match skills_missing {
+            Some(missing) => lock(&self.skills_missing).insert(session, missing),
+            None if !reattaching => lock(&self.skills_missing).remove(&session),
+            None => None,
+        };
         if let Some(version) = older_version.filter(|_| !reattaching) {
             lock(&self.older_in_notes).insert(session, version);
         }
@@ -3693,6 +3747,9 @@ impl Chats {
         drop(front);
         let closed = self.sessions.close(session);
         self.write_it_down();
+        // The folder of links to the plane's skills it used, once its program has ended, where
+        // no other running chat uses it (SK-24).
+        purlis_core::skills::tidy_here_later(purlis_core::skills::TIDY_AFTER_A_CLOSE);
         closed
     }
 

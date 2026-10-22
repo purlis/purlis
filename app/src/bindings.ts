@@ -1255,6 +1255,13 @@ export const commands = {
 	 */
 	chatDoings: (plane: PlaneId) => typedError<ChatDoing[], string>(__TAURI_INVOKE("chat_doings", { plane })),
 	/**
+	 *  The skill run open in each open chat, for the chip on its tab (SK-3, #2766).
+	 * 
+	 *  The window asks once, when it opens; after that it is told (`chat-skill-run`). A chat with
+	 *  no run open is not answered.
+	 */
+	chatSkillRuns: (plane: PlaneId) => typedError<ChatSkillRun[], string>(__TAURI_INVOKE("chat_skill_runs", { plane })),
+	/**
 	 *  The chats the app already has open — at a launch, the ones put back from the record.
 	 * 
 	 *  The window asks this instead of opening its own: the core puts the record back, once the
@@ -1720,6 +1727,48 @@ export const commands = {
 	 *  record.
 	 */
 	dispatches: (plane: PlaneId) => typedError<Dispatches, string>(__TAURI_INVOKE("dispatches", { plane })),
+	/**
+	 *  The Skill studio of the project, for a chat at its root or in `workspace`, as `persona` or on
+	 *  none: every skill with its level, and why each left out is left out. On a blocking thread, as
+	 *  it reads the project's skill folders.
+	 */
+	skillStudio: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane, workspace, persona })),
+	/**
+	 *  The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
+	 *  flag is off. On a blocking thread, as it reads the project's skill log.
+	 */
+	skillRuns: (plane: PlaneId, skill: string) => typedError<StudioRun[], string>(__TAURI_INVOKE("skill_runs", { plane, skill })),
+	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
+	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
+	/**
+	 *  **Turns the Skill studio on or off on this machine** (Settings › You › Previews), then says
+	 *  whether it is on, which `PURLIS_SKILL_STUDIO` still decides where it is set.
+	 */
+	setSkillStudioOn: (on: boolean) => typedError<boolean, string>(__TAURI_INVOKE("set_skill_studio_on", { on })),
+	/**
+	 *  **Share** (#2767): moves the local skill `name` of the project's root (`workspace` `None`) or
+	 *  of `workspace` into that level's `skills/`, so the project's save commits it, or says why not.
+	 */
+	skillShare: (plane: PlaneId, workspace: string | null, name: string) => typedError<null, string>(__TAURI_INVOKE("skill_share", { plane, workspace, name })),
+	/**
+	 *  **Adds a skill to a persona's skills, or takes one out** (SK-5, #2768): Add and Remove in the
+	 *  Skill studio filtered to the persona. `written` is the skill as the studio's row writes it.
+	 *  Answers whether the persona's definition changed. Refused while the studio's flag is off.
+	 */
+	personaSkill: (plane: PlaneId, persona: string, written: string, change: PersonaSkillChange) => typedError<boolean, string>(__TAURI_INVOKE("persona_skill", { plane, persona, written, change })),
+	/**
+	 *  **The skills a chat's persona names that it started without** (SK-5, #2768): what its tab's
+	 *  Notice says, until it is put away. `None` for a chat that has every one.
+	 */
+	chatSkillsMissing: (plane: PlaneId, session: number) => typedError<{
+	persona: string,
+	/**  Installed skills this machine does not have for the chat's harness. */
+	missing: string[],
+	/**  Built-in skills purlis has none of: a typo, or a name from another version of purlis. */
+	no_built_in: string[],
+} | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
+	/**  Puts a chat's missing-skills Notice away. */
+	putAwayChatSkillsMissing: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_skills_missing", { plane, session })),
 	/**
 	 *  What discarding the folder of dispatch `id`'s own branch would take with it (#1453): every
 	 *  uncommitted file, every ignored one, and how many commits its branch holds that exist
@@ -2386,6 +2435,23 @@ export const commands = {
 	 *  default. It applies at the next browser call; a browser running past a lowered limit runs on.
 	 */
 	setBrowserLimit: (limit: BrowserLimit, to: number | null) => typedError<null, string>(__TAURI_INVOKE("set_browser_limit", { limit, to })),
+	/**  **The Notice, while a start was refused for the engine's sandbox** since this launch. */
+	engineSandbox: () => typedError<{
+	/**  The sentence. */
+	says: string,
+	/**
+	 *  The command that adds the profile, which the person runs themselves: none for a data
+	 *  folder whose path holds a control character.
+	 */
+	command: string | null,
+	/**  This machine's own Chrome, where one is installed. */
+	chrome: string | null,
+} | null, string>(__TAURI_INVOKE("engine_sandbox")),
+	/**
+	 *  **Every browser starts on this machine's own Chrome from now on** (ADR 0042's choice): the
+	 *  person's press on the Notice. The next browser call starts on it.
+	 */
+	useThisMachinesChrome: () => typedError<null, string>(__TAURI_INVOKE("use_this_machines_chrome")),
 	/**  **The Docker pools on this machine**, and a new pool's default limits. */
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
 	/**
@@ -2405,6 +2471,13 @@ export const commands = {
 	 *  let go of.
 	 */
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
+	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
+	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
+	/**
+	 *  **The projects a runner would not hold again after a re-link**, each with the runner's words
+	 *  and the pools its chats run on.
+	 */
+	projectsNotHeld: () => typedError<ProjectNotHeld[], string>(__TAURI_INVOKE("projects_not_held")),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	/**
@@ -2740,6 +2813,18 @@ export const commands = {
 	 *  window closes a chat.
 	 */
 	themeDraftsOfChat: (plane: PlaneId, session: number) => typedError<WindowDraft[], string>(__TAURI_INVOKE("theme_drafts_of_chat", { plane, session })),
+	/**
+	 *  **A link's close of chats that have theme drafts is handed to the window** (#2761): closing a
+	 *  chat, and its drafts' Keep and Revert, are the window's alone, so a link never settles a
+	 *  draft. Where one of `sessions` is a chat open here with a draft, the window holding the
+	 *  project is told the chats ([`CLOSE_HANDED`]). That window decides: it asks the person, Keep
+	 *  or Revert first, and brings itself and the project forward only when it does, never over a
+	 *  question already on screen; it closes nothing unasked.
+	 * 
+	 *  **The link is answered the same whatever was found**: nothing of the drafts, nor whether the
+	 *  window was told. At most [`drafts::MOST_CHATS`] chats are read from the list, each once.
+	 */
+	handDraftsCloseToTheWindow: (plane: PlaneId, sessions: number[]) => typedError<null, string>(__TAURI_INVOKE("hand_drafts_close_to_the_window", { plane, sessions })),
 	/**
 	 *  **Keep** pressed: the engine copies the draft of the chat `session` into the real folder it is
 	 *  a draft of and deletes the draft. Answers what it did, in a sentence. Only a draft the window
@@ -3478,12 +3563,6 @@ export const commands = {
 	 *  sets the appearance; every window sets its own colour.
 	 */
 	drawNativeWindow: (appearance: string, background: string, followsSystem: boolean) => typedError<null, string>(__TAURI_INVOKE("draw_native_window", { appearance, background, followsSystem })),
-	/**
-	 *  **What the operating system draws this window in** (#2328, #2760): the appearance of its
-	 *  native parts and its background colour, each read back from the platform, not from what
-	 *  purlis last asked for. The scenario tests ask; nothing in the UI does.
-	 */
-	nativeWindowDrawn: () => typedError<NativeDrawn, string>(__TAURI_INVOKE("native_window_drawn")),
 	/**  One secret's value, to show in the window for a while ([`reveal`]). */
 	vaultSecretReveal: (plane: PlaneId, vault: string, key: string) => typedError<SecretValue, string>(__TAURI_INVOKE("vault_secret_reveal", { plane, vault, key })),
 	/**
@@ -3541,7 +3620,15 @@ export const commands = {
 };
 
 /* Constants */
+export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
+
+export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
+
+export const PERSONA_SCOPE_KEY = "persona/" as const;
+
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
+
+export const SKILL_STUDIO_IN = "skills.studio:" as const;
 
 export const SPECIMEN_BUSY = "purlis is drawing another theme specimen, and draws one at a time: ask again in a moment" as const;
 
@@ -4709,6 +4796,17 @@ export type ChatRestart = {
 	not_yet: string | null,
 };
 
+/**
+ *  What `chat-skill-run` carries, and what `chat_skill_runs` answers a list of: one chat's open
+ *  run, or that it has none.
+ */
+export type ChatSkillRun = {
+	plane: PlaneId,
+	session: number,
+	/**  The innermost run open, or null: none is, or the turn it was in ended. */
+	run: OpenRun | null,
+};
+
 /**  One step of one chat's stop, as the window is told it. */
 export type ChatStop = {
 	plane: PlaneId,
@@ -4795,6 +4893,12 @@ export type ChosenInstruction = {
 	repo: string,
 	file: string,
 	text: string,
+};
+
+/**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
+export type CloseHanded = {
+	plane: PlaneId,
+	sessions: number[],
 };
 
 /**
@@ -5553,6 +5657,19 @@ export type Doing = {
 	 *  cargo"), until the next tool heard.
 	 */
 	over: boolean,
+};
+
+/**  What the Notice says and offers. */
+export type EngineSandboxShown = {
+	/**  The sentence. */
+	says: string,
+	/**
+	 *  The command that adds the profile, which the person runs themselves: none for a data
+	 *  folder whose path holds a control character.
+	 */
+	command: string | null,
+	/**  This machine's own Chrome, where one is installed. */
+	chrome: string | null,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */
@@ -6979,6 +7096,11 @@ export type LeftOut = {
 	why: string,
 };
 
+/**  The level a skill comes from, as the studio draws it. */
+export type Level = "built-in" | "project" | "workspace" | "persona" | 
+/**  A harness skill: the harness's own, which purlis never hands over. */
+"installed";
+
 /**  A level the file says that waits for your Confirm. */
 export type LevelWaiting = {
 	/**  The persona's level, or the project's for `None`. */
@@ -7335,21 +7457,6 @@ export type Moved = {
 };
 
 /**
- *  **What the operating system draws this window in**, read back from the platform: the
- *  appearance its native parts are drawn in and the background colour the window was given.
- */
-export type NativeDrawn = {
-	/**  `dark` or `light`. */
-	appearance: string,
-	/**
-	 *  The window's colour, `#rrggbb` in lowercase, opaque as the window is drawn: `null` where
-	 *  the platform gives no colour purlis reads (Windows for now, or a colour with no sRGB
-	 *  form). An unread colour never stops the appearance from being read.
-	 */
-	background: string | null,
-};
-
-/**
  *  The branch the window's focus is on, by name, in the project a scope puts first. It only
  *  orders the scope: a name no branch of the project has moves nothing.
  */
@@ -7683,6 +7790,16 @@ export type OpenHosts = {
 	title: string,
 	/**  Each host, spelled out. */
 	hosts: string[],
+};
+
+/**  A skill run open in a chat, as its tab's chip shows it. */
+export type OpenRun = {
+	/**  The skill, by the name its harness started it by. */
+	skill: string,
+	/**  The run's id, as the skill's Runs panel lists it. */
+	id: string,
+	/**  Tool calls made inside it so far, each once. */
+	tool_calls: number,
 };
 
 /**
@@ -8112,6 +8229,9 @@ export type PersonaProfile = {
 	offered: string[],
 };
 
+/**  What a change to a persona's skills does, as the studio asks it. */
+export type PersonaSkillChange = "add" | "remove";
+
 /**  Where a smart close stands. */
 export type Phase = 
 /**  Waiting for the chat's turn to end before the prompt is sent. */
@@ -8538,6 +8658,37 @@ export type PoolRow = {
 	limits: PoolLimitsShown,
 };
 
+/**
+ *  **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
+ *  when they differ, and whether purlis moves the pool along with the desktop.
+ */
+export type PoolVersion = {
+	/**  The version its runner's `purlis --version` says; none where it could not be read. */
+	runner: string | null,
+	/**  Why it could not be read, in Docker's or purlis's words. */
+	why: string | null,
+	/**  This desktop's version. */
+	desktop: string,
+	/**
+	 *  Whether the pool is of purlis's own runner image, which purlis moves to the desktop's
+	 *  version after an update; a team's own image is never moved.
+	 */
+	follows: boolean,
+	/**
+	 *  How many of its older runners drain: each keeps its chats until they end, then is
+	 *  removed.
+	 */
+	draining: number,
+	/**
+	 *  Whether this version's release named a runner image, as purlis last found it (#2880):
+	 *  one that named none leaves the pool where it is, not moving to this version; `None` until purlis has
+	 *  looked.
+	 */
+	named: boolean | null,
+	/**  How many chats those older runners still keep, as purlis last found them (#2865). */
+	waiting: number,
+};
+
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
 export type PoolsShown = {
 	pools: PoolRow[],
@@ -8721,6 +8872,21 @@ export type ProjectFolder = {
 export type ProjectHarnesses = {
 	declared: DeclaredHarness[],
 	refused: RefusedHarness[],
+};
+
+/**  One project the runner its chats run on would not hold, as the Pools group draws it. */
+export type ProjectNotHeld = {
+	/**  Where it is on this machine. */
+	root: string,
+	/**  What the window calls it: its folder's name. */
+	name: string,
+	/**  What the runner said, as plain text, at most [`MOST_SAID`] characters. */
+	why: string,
+	/**
+	 *  The pools its workspaces run their chats on, as this machine keeps them: the row the
+	 *  mark is drawn on where there is one.
+	 */
+	pools: string[],
 };
 
 /**  Both files. */
@@ -9020,7 +9186,13 @@ export type Reconnection =
  *  The link is back, or its view drew again, or the window cannot tell any more: it is
  *  drawn as it comes.
  */
-"reconnected";
+"reconnected" | 
+/**
+ *  The runner answered with another key than the one pinned at its pairing (#2752): its
+ *  host sends it nothing and does not link to it again until it is removed and added anew,
+ *  so its chats stay dimmed and the window says why in a Notice of its own.
+ */
+"key_changed";
 
 /**
  *  The level a referrer is changed at, when it is not the entry's own
@@ -9365,6 +9537,26 @@ export type RowWorktree = {
 	 */
 	discard: boolean,
 };
+
+/**  How a skill run ended, as the Runs panel draws it. */
+export type RunEnd = 
+/**  With its turn. */
+"turn" | 
+/**  A new prompt came first. */
+"interrupted" | 
+/**  The chat ended under it. */
+"session" | 
+/**  An end a newer purlis wrote. */
+"unknown";
+
+/**  What started a skill run, as the Runs panel draws it. */
+export type RunStart = 
+/**  The chat's own Skill tool. */
+"skill-tool" | 
+/**  The chat read the skill's `SKILL.md`. */
+"read" | 
+/**  A start a newer purlis wrote. */
+"unknown";
 
 /**  What the picker says about the sandbox for one profile, before anything starts. */
 export type SandboxAhead = {
@@ -10151,6 +10343,18 @@ export type SidebarWorkspace = {
 	live: boolean,
 };
 
+/**
+ *  The skills a chat's persona names that it started without (SK-5, #2768), each as the
+ *  persona's `skills:` list writes it: what its tab's Notice says.
+ */
+export type SkillsMissing = {
+	persona: string,
+	/**  Installed skills this machine does not have for the chat's harness. */
+	missing: string[],
+	/**  Built-in skills purlis has none of: a typo, or a name from another version of purlis. */
+	no_built_in: string[],
+};
+
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {
 	/**  The one line on screen. */
@@ -10328,6 +10532,87 @@ export type StopPhase =
 "stopping" | 
 /**  It has ended, and its tab goes. */
 "stopped";
+
+/**  What the studio shows: whether it is on, whose chat it shows, and its skills by name. */
+export type Studio = {
+	on: boolean,
+	/**  The workspace whose chats it shows, or `None` for a chat at the project's root. */
+	workspace: string | null,
+	/**
+	 *  The persona whose chats it shows, which brings its skills into every workspace, or
+	 *  `None` for a chat on no persona (SK-5).
+	 */
+	persona: string | null,
+	/**  Every workspace of the project, which it can be shown for. */
+	workspaces: string[],
+	skills: StudioSkill[],
+};
+
+/**
+ *  One skill run, as a skill's Runs panel lists it (SK-3): what started it and its signals,
+ *  never a pass or a fail.
+ */
+export type StudioRun = {
+	/**  Its id, or null for a use from before runs were recorded. */
+	id: string | null,
+	skill: string,
+	persona: string | null,
+	/**  What started it, or null for a use from before runs were recorded. */
+	started_by: RunStart | null,
+	/**  When it started. */
+	started: string,
+	/**  How it ended, or null while no end is recorded. */
+	ended: RunEnd | null,
+	ms: number | null,
+	tool_calls: number | null,
+	tool_errors: number | null,
+	refusals: number | null,
+	asks: number | null,
+	/**  Tokens spent inside it, where the harness reported them. */
+	tokens: number | null,
+};
+
+/**  One skill the studio lists: [`purlis_core::skills::StudioRow`], for the window. */
+export type StudioSkill = {
+	/**  Its name, or its folder's where it names none. */
+	name: string,
+	level: Level,
+	/**
+	 *  Its level as a person reads it: `project`, `local workspace`, the words the command line
+	 *  shows (`purlis_core::skills::level_shown`).
+	 */
+	label: string,
+	/**
+	 *  Whether it is a local skill, kept on this machine in its level's `skills.local/`, which
+	 *  Share makes shared.
+	 */
+	local: boolean,
+	/**
+	 *  Where a project skill reaches: `root`, `all`, or the workspaces' names. `None` for a
+	 *  skill of another level.
+	 */
+	grant: string | null,
+	/**  Whether the chat the studio shows gets it. */
+	on: boolean,
+	/**  Why it is left out, in one line, where it is. */
+	left_out: string | null,
+	/**  What it does and when to use it: its frontmatter's `description`. */
+	description: string,
+	/**  Its folder, relative to the project where it is inside it; empty for an installed skill. */
+	folder: string,
+	/**
+	 *  How a persona's skills name it: `purlis:<name>` for a built-in skill, `<plugin>:<name>`
+	 *  for a plugin's, else its name (#2768). What Add and Remove send.
+	 */
+	written: string,
+	/**  Whether the persona the studio shows names it, so Remove can take it out. */
+	named: boolean,
+	/**
+	 *  What is said of an installed skill the persona names that purlis cannot check this
+	 *  machine for, or `None`.
+	 */
+	unchecked: string | null,
+};
 
 /**  What one subject is offered. */
 export type SubjectCurations = {
@@ -11334,6 +11619,11 @@ export type WindowTheme = {
 	typed: WindowTyped,
 	/**  How a workspace's colour tints it (#2329, #2393): the window keeps only the arithmetic. */
 	tint: WindowTint,
+	/**
+	 *  The stylesheet of its component parts (#2903), written by the engine
+	 *  (`purlis_core::theme::parts::stylesheet`): empty for a theme that names none.
+	 */
+	parts: string,
 };
 
 /**

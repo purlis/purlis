@@ -29,6 +29,8 @@ import { asked, fileSetting, useSettingsDriver, type Driven, type Wrote } from "
 import type { FileSetting, LiveSetting, SettingsGroup } from "./groups";
 import { THEME_GROUP, themeRows } from "./themeGallery";
 import { workspaceDispatchGroup } from "./dispatch";
+import { workspaceSkillsGroup } from "./skillsSummary";
+import { Button } from "../ui/button/Button";
 
 /**
  * **The Workspace level** (SE-20, #1170; V89b, V89e, V89h): one workspace's settings in the
@@ -94,16 +96,9 @@ function liveSetting(read: WorkspaceRead, switched: () => void): LiveSetting {
         grouped: true,
         control: (ids) => (
           <div role="group" aria-labelledby={ids.labelledBy}>
-            <button
-              type="button"
-              className="panel-view"
-              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-              tabIndex={0}
-              aria-describedby={ids.describedBy}
-              onClick={() => setAsking(true)}
-            >
+            <Button size="sm" aria-describedby={ids.describedBy} onPress={() => setAsking(true)}>
               {live ? "Make local…" : "Make live…"}
-            </button>
+            </Button>
             {asking && (
               <LiveDialog
                 plane={plane}
@@ -150,7 +145,11 @@ function absentSetting(read: WorkspaceRead): LiveSetting {
  * `workspace.json` that is not a JSON object has no file settings to show until it is mended:
  * its standing refusals say why, above the groups.
  */
-export function workspaceGroups(read: WorkspaceRead, switched: () => void): SettingsGroup[] {
+export function workspaceGroups(
+  read: WorkspaceRead,
+  switched: () => void,
+  skillStudio = false,
+): SettingsGroup[] {
   const file: Shown = read.settings;
   const fromFile = (group: string, controls: Control[]): FileSetting[] =>
     file.parsed
@@ -212,6 +211,8 @@ export function workspaceGroups(read: WorkspaceRead, switched: () => void): Sett
         ),
       ],
     },
+    // Its chats' skills (#2767): a summary and the way into the Skill studio, behind its flag.
+    ...(skillStudio ? [workspaceSkillsGroup(read.plane, read.workspace)] : []),
     {
       id: "workspace.plugins",
       label: "Plugins",

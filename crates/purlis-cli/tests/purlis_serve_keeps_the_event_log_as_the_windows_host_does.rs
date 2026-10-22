@@ -238,6 +238,7 @@ fn a_chat_ending_with_no_window_there_ends_its_sub_agents_and_its_dispatch_witho
                     hook_ms: 1,
                     agent: Some("agent-1".into()),
                     at_ms: 0,
+                    skill: None,
                 },
             },
         ] {

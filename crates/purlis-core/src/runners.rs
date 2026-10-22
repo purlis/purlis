@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The pools this desktop added, and the runners it pinned** (ADR 0078 §3 and §8, #2525,
-//! #2679): `<config>/runners.json`, ruled 2026-10-18 and 2026-10-20, `{"version": 1, "pools":
-//! [{"name", "kind", "image", "cpus", "memory", "processes", "tmp"}], "runners": [{"name",
-//! "pool", "container", "image", "user", "home", "device", "key", "paired"}]}`.
+//! #2679, #2749): `<config>/runners.json`, ruled 2026-10-18 and 2026-10-20, `{"version": 1,
+//! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp"}], "runners":
+//! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
+//! "draining"?}]}`.
 //!
 //! - **A pool is named and defined only here** ([`Pool`]): a Docker pool's name, the runner
 //!   image by digest, and the limits the person set, each left out where purlis's default
@@ -19,6 +20,11 @@
 //!   runner's peers while the link is up, its container and home volume for a Docker pool,
 //!   whatever state they are in, and its row. Whatever could not be removed is said with how to
 //!   remove it, and the row stays until all of it is gone, so the removal can be asked again.
+//! - **A pool's runner follows the desktop's version, side by side** (#2749, ruled 2026-10-20):
+//!   a runner made beside the pool's after an update is kept `"of": "<pool>"`, the one it
+//!   replaces is kept `"draining": true` and starts no new chat, and is removed once its last
+//!   chat has ended ([`succeed_locked`], [`draining`]). A runner kept without `of` is the
+//!   runner of the pool of its name.
 //! - **The file is this user's alone**, `0600` in the config home's own folder, and denied to
 //!   chats. A file of another version or shape is refused rather than read or replaced.
 
@@ -114,6 +120,14 @@ impl Pool {
     pub fn limits(&self) -> Limits {
         self.limits
     }
+
+    /// This pool, its runner image `image` from now on (#2749).
+    fn moved_to(&self, image: Image) -> Pool {
+        Pool {
+            image,
+            ..self.clone()
+        }
+    }
 }
 
 /// Whether `name` can name a pool: as a runner is named, since a pool's runner takes its name.
@@ -146,11 +160,22 @@ pub struct Kept {
     pub pinned: Pinned,
     /// When it was paired, in seconds since the epoch.
     pub paired: u64,
+    /// The pool it is a runner of, where that is not the pool of its name (#2749): one made
+    /// beside the pool's runner after an update.
+    pub of: Option<String>,
+    /// It was replaced by a runner of the desktop's version (#2749): it starts no new chat,
+    /// and is removed once its last chat has ended.
+    pub draining: bool,
 }
 
 impl Kept {
     pub fn name(&self) -> &str {
         self.made.runner.name()
+    }
+
+    /// The pool it is a runner of: the one [`Kept::of`] names, or the pool of its name.
+    pub fn pool(&self) -> &str {
+        self.of.as_deref().unwrap_or(self.name())
     }
 }
 
@@ -249,13 +274,51 @@ pub fn runner_for(config_root: &Path, pool: &str) -> Result<Kept, Refused> {
         .iter()
         .find(|kept| kept.name() == pool)
         .map(|kept| kept.image().clone());
+    // A draining runner starts no new chat (#2749).
     held.runners
         .into_iter()
-        .find(|kept| kept.name() == pool && Some(kept.made.runner.image()) == image.as_ref())
+        .find(|kept| {
+            kept.pool() == pool
+                && !kept.draining
+                && Some(kept.made.runner.image()) == image.as_ref()
+        })
         .ok_or_else(|| {
             Refused::Other(format!(
                 "pool {pool} has no runner of its image, so nothing was started; remove the \
                  pool and add it again"
+            ))
+        })
+}
+
+/// **This desktop's label on the runner containers it makes** (#2869,
+/// [`crate::dockerpool::DESKTOP_LABEL`]): the first 16 hex digits of a SHA-256 of the config
+/// home's path, so two config homes on one Docker daemon never take each other's runners for
+/// their own leftovers.
+pub fn desktop_label(config_root: &Path) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(config_root.as_os_str().as_encoded_bytes())
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// **The runner a link that names `name` reaches** (#2865), and whether it is draining: a pool's
+/// name reaches its runner as [`runner_for`] says, where new chats start; `<pool>/<runner>`
+/// reaches that pool's runner of that name only while it is kept draining, so its chats can be
+/// answered, watched and ended until the last one has. Any other name reaches nothing.
+pub fn reachable(config_root: &Path, name: &str) -> Result<(Kept, bool), Refused> {
+    let Some((pool, runner)) = name.split_once('/') else {
+        return runner_for(config_root, name).map(|kept| (kept, false));
+    };
+    read(config_root)?
+        .into_iter()
+        .find(|kept| kept.draining && kept.pool() == pool && kept.name() == runner)
+        .map(|kept| (kept, true))
+        .ok_or_else(|| {
+            Refused::Other(format!(
+                "pool {pool} has no runner {runner} draining on this machine, so nothing was \
+                 reached"
             ))
         })
 }
@@ -327,7 +390,11 @@ pub fn keep(
     answered: &Pinned,
     ours: &Pinned,
 ) -> Result<Kept, Refused> {
-    keep_as(config_root, made, answered, ours, false, &lock(config_root))
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let kept = keep_in(&mut held, made, answered, ours, false, None)?;
+    write(config_root, &held)?;
+    Ok(kept)
 }
 
 /// [`keep`], for the runner of the pool of its name as the pool is added, under `locked`
@@ -337,20 +404,62 @@ pub fn keep_for_its_pool(
     made: &Made,
     answered: &Pinned,
     ours: &Pinned,
-    locked: &Locked,
+    _locked: &Locked,
 ) -> Result<Kept, Refused> {
-    keep_as(config_root, made, answered, ours, true, locked)
+    let mut held = load(config_root)?;
+    let kept = keep_in(&mut held, made, answered, ours, true, None)?;
+    write(config_root, &held)?;
+    Ok(kept)
 }
 
-fn keep_as(
+/// **Keeps `made`, the runner made beside pool `pool`'s for its new `image`, as that pool's
+/// runner from now on** (#2749), under `_locked`: it is kept `of` the pool once, as [`keep`]
+/// keeps a runner; each runner of the pool kept before it is kept draining; and the pool's
+/// image is `made`'s. A pool not kept here is refused, and nothing changes.
+pub fn succeed_locked(
     config_root: &Path,
+    pool: &str,
+    made: &Made,
+    answered: &Pinned,
+    ours: &Pinned,
+    _locked: &Locked,
+) -> Result<Kept, Refused> {
+    let mut held = load(config_root)?;
+    let Some(at) = held.pools.iter().position(|kept| kept.name() == pool) else {
+        return Err(Refused::Other(format!(
+            "no pool named {pool} is on this machine"
+        )));
+    };
+    let new = made.runner.name().to_owned();
+    for runner in &mut held.runners {
+        if runner.pool() == pool && runner.name() != new {
+            runner.draining = true;
+        }
+    }
+    let kept = keep_in(&mut held, made, answered, ours, false, Some(pool))?;
+    held.pools[at] = held.pools[at].moved_to(made.runner.image().clone());
+    write(config_root, &held)?;
+    Ok(kept)
+}
+
+/// **The runners kept draining** (#2749): each replaced by a runner of the desktop's version,
+/// to be removed once its last chat has ended.
+pub fn draining(config_root: &Path) -> Result<Vec<Kept>, Refused> {
+    Ok(read(config_root)?
+        .into_iter()
+        .filter(|kept| kept.draining)
+        .collect())
+}
+
+/// Keeps `made` in `held`, as [`keep`] says, `of` the pool `of` names where one does.
+fn keep_in(
+    held: &mut Held,
     made: &Made,
     answered: &Pinned,
     ours: &Pinned,
     for_its_pool: bool,
-    _locked: &Locked,
+    of: Option<&str>,
 ) -> Result<Kept, Refused> {
-    let mut held = load(config_root)?;
     let name = made.runner.name();
     if !for_its_pool && held.pools.iter().any(|pool| pool.name() == name) {
         return Err(Refused::Other(format!(
@@ -393,9 +502,10 @@ fn keep_as(
         made: made.clone(),
         pinned: answered.clone(),
         paired: now(),
+        of: of.filter(|pool| *pool != name).map(str::to_owned),
+        draining: false,
     };
     kept.push(new.clone());
-    write(config_root, &held)?;
     Ok(new)
 }
 
@@ -518,7 +628,7 @@ fn write(config_root: &Path, held: &Held) -> Result<(), Refused> {
 
 fn to_row(kept: &Kept) -> serde_json::Value {
     let runner = &kept.made.runner;
-    serde_json::json!({
+    let mut row = serde_json::json!({
         "name": runner.name(),
         "pool": "docker",
         "container": kept.made.container.as_str(),
@@ -528,15 +638,50 @@ fn to_row(kept: &Kept) -> serde_json::Value {
         "device": kept.pinned.device,
         "key": crate::runnerlink::hex_of(kept.pinned.key.as_bytes()),
         "paired": kept.paired,
-    })
+    });
+    // Each written only where it says something (#2749), so a runner kept before is as it was.
+    if let Some(of) = &kept.of {
+        row["of"] = of.as_str().into();
+    }
+    if kept.draining {
+        row["draining"] = true.into();
+    }
+    row
 }
 
 fn from_row(row: &serde_json::Value) -> Option<Kept> {
     let fields = row.as_object()?;
-    if fields.len() != 9 {
+    let known = [
+        "name",
+        "pool",
+        "container",
+        "image",
+        "user",
+        "home",
+        "device",
+        "key",
+        "paired",
+        "of",
+        "draining",
+    ];
+    if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
     }
     let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
+    // Left out where it says nothing; `draining` is only ever `true`.
+    let of = match fields.get("of") {
+        None => None,
+        Some(of) => {
+            let of = of.as_str()?;
+            usable_pool_name(of).ok()?;
+            Some(of.to_owned())
+        }
+    };
+    let draining = match fields.get("draining") {
+        None => false,
+        Some(serde_json::Value::Bool(true)) => true,
+        Some(_) => return None,
+    };
     if text("pool")? != "docker" {
         return None;
     }
@@ -560,6 +705,8 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         },
         pinned,
         paired: fields.get("paired")?.as_u64()?,
+        of,
+        draining,
     })
 }
 

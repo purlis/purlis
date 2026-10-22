@@ -210,7 +210,7 @@ describe("ForgeDeviceSignIn", () => {
     const open = await screen.findByRole("button", { name: "Open GitHub in your browser" });
     for (const button of screen.getAllByRole("button")) {
       expect(button).toHaveAttribute("tabindex", "0");
-      expect(button.className).toContain("ui-button");
+      expect(button).toHaveAttribute("data-scope", "button");
     }
     open.focus();
     await userEvent.keyboard("{Escape}");
@@ -231,7 +231,7 @@ describe("Settings › You › Accounts, signing in with GitHub", () => {
     expect(await screen.findByText("No forge account is signed in on this machine.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Sign in with a token…" })).toBeTruthy();
     const browser = screen.getByRole("button", { name: "Sign in with GitHub" });
-    expect(browser.className).toContain("ui-button");
+    expect(browser).toHaveAttribute("data-scope", "button");
 
     await userEvent.click(browser);
     await screen.findByText("WDJB-MJHT");

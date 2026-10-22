@@ -396,7 +396,7 @@ describe("removing a repo that is not cloned here from the workspace", () => {
 
     expect(
       within(await absent()).getByRole("button", { name: "Remove web from workspace…" }),
-    ).toHaveClass("ends-it");
+    ).toHaveAttribute("data-variant", "danger");
   });
 
   it("says the core's refusal in the question, and keeps the repo", async () => {

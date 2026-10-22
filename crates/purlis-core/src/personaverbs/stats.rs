@@ -356,12 +356,14 @@ fn skills_used(root: &Path, name: &str) -> BTreeSet<String> {
     out
 }
 
-/// `skilluse.drift`: `(unused, undeclared)` — declared and never invoked, and invoked and
-/// never declared.
+/// `skilluse.drift`: `(unused, undeclared)` — loaded and never invoked, and invoked and never
+/// loaded. What a persona loads is what its `skills:` list names and, since SK-5 (#2768), its
+/// own skills ([`crate::skills::persona::own`]).
 fn drift(root: &Path, name: &str) -> (Vec<String>, Vec<String>) {
     let declared: BTreeSet<String> = super::declared_skills(root, name)
         .iter()
         .map(|s| s.split_once(':').map_or(s.as_str(), |(_, l)| l).to_string())
+        .chain(crate::skills::persona::own(root, name))
         .collect();
     let used = skills_used(root, name);
     (

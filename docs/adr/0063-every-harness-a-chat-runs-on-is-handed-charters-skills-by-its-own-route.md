@@ -135,3 +135,8 @@ request, with `HOME`, `CODEX_HOME` and opencode's XDG directories in a scratch f
   `developer_instructions` rather than adding to them.
 - **Listing the skills in every chat's briefing.** Claude Code and opencode already show them,
   so they would be told twice.
+
+The amendments to this decision are files of their own in [`0063/`](0063/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

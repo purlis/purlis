@@ -45,6 +45,7 @@
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
+//! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -177,6 +178,11 @@
 //!   runner with this device's key and run the runner's connector, which is a human act (ADR
 //!   0078 §2 and §4): no agent's scope reaches a link. A relaying host refuses it, so a window
 //!   whose link is relayed never asks the runner to relay again.
+//! - **`take_code` and `give_code` are the window's, relayed for it** (1.34, #2046). They write
+//!   into a repository of a project the host holds, and read its branches back: what the window
+//!   decides moves between the desktop and a runner, as holding the project is. A relaying host
+//!   sends them on for a `local-ui` client alone, so `remote-link` is granted them only as the
+//!   desktop's host relaying its window, never as any other client of it.
 
 use crate::auth::Scope;
 
@@ -254,6 +260,9 @@ pub enum Power {
     NameWindow,
     /// `relay_to` (1.33, #2679): the window's link relayed by its own host to a runner it keeps.
     RelayTo,
+    /// `take_code` and `give_code` (1.34, #2046): a repository's history moved between the
+    /// desktop and a runner as a git bundle.
+    Code,
 }
 
 impl Scope {
@@ -284,6 +293,7 @@ impl Scope {
                     | P::Confine
                     | P::TakeBack
                     | P::Unpair
+                    | P::Code
             ),
             S::FleetMcp => matches!(power, P::List | P::Stop | P::Subscribe),
             S::Approval => matches!(power, P::List | P::Answer | P::Stop | P::Subscribe),

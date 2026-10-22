@@ -4,7 +4,7 @@
 //! Claude Code's adapter (ADR 0073, FD-13): the bundled plugin, loaded for one chat alone, with
 //! the session's own `--settings`.
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox};
+use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
 use super::{Harness, Kit, StateHooks, words};
 use crate::sandbox::Form;
 
@@ -27,9 +27,10 @@ impl HarnessAdapter for ClaudeCode {
     /// the environment. Without the plugin there is nothing to arm: a chat reads `unknown`,
     /// rather than being half-armed from a second place.
     ///
-    /// Its skills take [`crate::skills::Route::Plugin`]: the directory of its set
-    /// ([`crate::skills::for_chat`]) is the plugin's own `skills/`, which `--plugin-dir`
-    /// already loads, so nothing more is handed over for them.
+    /// Its skills take [`crate::skills::Route::Plugin`]: the built-in skills of its set
+    /// ([`crate::skills::for_chat`]) are the plugin's own `skills/`, which `--plugin-dir`
+    /// already loads; the plane's are a second `--plugin-dir`, the folder of links the host laid
+    /// out for them ([`crate::skills::linked`]), where the set holds any.
     ///
     /// `--settings` MERGES with the settings already in force rather than replacing them
     /// (measured on claude 2.1.276), and a key it names wins over the project's (measured on
@@ -54,10 +55,10 @@ impl HarnessAdapter for ClaudeCode {
         let skills = crate::skills::for_chat(kit, Harness::ClaudeCode);
         debug_assert!(
             skills
-                .dir()
+                .built_in_dir()
                 .is_none_or(|dir| dir == plugin.join(crate::skills::DIR_IN_BUNDLE)),
-            "a Claude Code chat's skills are its plugin's own: {:?}",
-            skills.dir()
+            "a Claude Code chat's built-in skills are its plugin's own: {:?}",
+            skills.built_in_dir()
         );
         // Claude Code carries its sandbox in the same `--settings`, as compiled for the folder
         // the chat runs in (its manifests, #1336). A form of another kind is not one, and the
@@ -71,6 +72,10 @@ impl HarnessAdapter for ClaudeCode {
         // Read for a sandboxed chat alone: one that is not keeps loading what it always did.
         let screened = sandbox.map(|_| project::screen(cwd));
         let mut args = words(["--plugin-dir", &plugin.display().to_string()]);
+        // The plane's skills, as a plugin of their own (ADR 0063 as amended 2026-10-20).
+        if let Some(linked) = crate::skills::linked(&skills, kit) {
+            args.extend(words(["--plugin-dir", &linked.display().to_string()]));
+        }
         args.extend(
             screened
                 .as_ref()
@@ -152,6 +157,15 @@ impl HarnessAdapter for ClaudeCode {
 
     fn guard_label(&self) -> &'static str {
         "claude-code"
+    }
+
+    /// Claude Code's `Skill` tool, which names the skill in `skill` (a plugin's own as
+    /// `plugin:name`).
+    fn skill_start(&self, tool: &str, input: &serde_json::Value) -> Option<SkillStart> {
+        (tool == "Skill")
+            .then(|| input_text(input, "skill"))
+            .flatten()
+            .map(|skill| SkillStart::Named(skill.to_owned()))
     }
 
     /// `permissions.<bucket>` of `.claude/settings.json`, or with `local` of
@@ -731,6 +745,7 @@ mod tests {
 
         let hooks = adapter().arm(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -752,6 +767,7 @@ mod tests {
         let empty = tempfile::tempdir().expect("a directory");
         let hooks = adapter().arm(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -782,6 +798,7 @@ mod tests {
         // HP-7: `--mcp-config` loads a server for this session and writes nothing.
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -814,6 +831,7 @@ mod tests {
     ) -> (serde_json::Value, serde_json::Value) {
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: Some(crate::harness::As {
@@ -974,6 +992,7 @@ mod tests {
         let empty = tempfile::tempdir().expect("a directory");
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,
@@ -1065,6 +1084,7 @@ mod tests {
         };
         let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
             Kit {
+                skills: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(std::path::Path::new("/app/plugin")),
                 persona: None,

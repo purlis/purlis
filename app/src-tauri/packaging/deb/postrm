@@ -1,0 +1,51 @@
+#!/bin/sh
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+#
+# purlis's browser engine (#2835): the profile postinst installed goes with the package, on a
+# remove and on a purge.
+#
+# A purge also takes the profile the Notice about the browser engine's sandbox offers to add
+# (#2900): the person wrote it with purlis's own command, for purlis's engine, and nothing else
+# removes it. A remove keeps it, as a remove keeps a package's configuration. A file by that name
+# that is not that profile is left alone.
+set -e
+
+PROFILE=/etc/apparmor.d/purlis-engine
+HERE_PROFILE=/etc/apparmor.d/purlis-engine-here
+
+unload() {
+  if command -v apparmor_parser >/dev/null 2>&1; then
+    apparmor_parser -R "$1" 2>/dev/null || true
+  fi
+}
+
+case "$1" in
+  remove | purge)
+    if [ -e "$PROFILE" ]; then
+      unload "$PROFILE"
+      rm -f "$PROFILE"
+    fi
+    ;;
+esac
+
+# Whether $1 is the profile the Notice's command writes, whole: its abi and include lines, then
+# the engine's path in a data folder's engines, allowed user namespaces and nothing more.
+is_purlis_profile() {
+  awk '
+    NR == 1 { ok = ($0 == "abi <abi/4.0>,") }
+    NR == 2 { ok = ok && ($0 == "include <tunables/global>") }
+    NR == 3 { ok = ok && ($0 == "") }
+    NR == 4 { ok = ok && ($0 ~ /^profile purlis-engine-here ".*\/engines\/chrome-for-testing\/\*\/chrome-linux64\/chrome" flags=\(unconfined\) \{$/) }
+    NR == 5 { ok = ok && ($0 == "  userns,") }
+    NR == 6 { ok = ok && ($0 == "}") }
+    END { exit !(ok && NR == 6) }
+  ' "$1"
+}
+
+if [ "$1" = purge ] && [ -f "$HERE_PROFILE" ] && is_purlis_profile "$HERE_PROFILE"; then
+  unload "$HERE_PROFILE"
+  rm -f "$HERE_PROFILE"
+fi
+
+exit 0

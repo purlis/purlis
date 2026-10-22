@@ -28,6 +28,8 @@ fn chat(route: Route) -> Chat<'static> {
     Chat {
         workspace: Some("smart-ide"),
         persona: Some("steward"),
+        names: &[],
+        turned_off: &[],
         harness: HarnessSkills { route },
     }
 }
@@ -37,6 +39,7 @@ fn set_for(plane: &Path, plugin: &Path, route: Route) -> SkillSet {
         Some(plane),
         &Machine {
             built_in: Some(&plugin.join("skills")),
+            ..Machine::default()
         },
         &chat(route),
     )
@@ -139,42 +142,40 @@ fn a_machine_without_the_bundle_gives_a_chat_no_skills_and_leaves_none_out() {
             Some(tmp.path()),
             &Machine {
                 built_in: built_in.as_deref(),
+                ..Machine::default()
             },
             &chat(Route::Config),
         );
 
         assert!(set.effective.is_empty());
         assert!(set.left_out.is_empty());
-        assert_eq!(set.dir(), None);
+        assert_eq!(set.built_in_dir(), None);
     }
 }
 
 #[test]
-fn a_planes_own_skill_folders_do_not_change_the_set_yet() {
-    // Only built-in skills are purlis's to hand over until the plane's levels arrive (SK-2):
-    // the plane's `.claude/skills`, and folders where those levels will be, change nothing.
+fn the_planes_harness_folders_do_not_change_the_set() {
+    // The plane's `.claude/skills` is the harness's to read, never purlis's to hand over. The
+    // project's `skills/` is `a_project_skill_reaches_chats_at_the_plane_root.rs`'s, and the
+    // workspace's and the persona's are `src/tests.rs`'s (#2767, #2768).
     let tmp = tempfile::tempdir().unwrap();
     let plugin = bundle(tmp.path());
     skill(&plugin.join("skills"), "secrets", &whole("secrets"));
     let plane = tmp.path().join("plane");
     skill(&plane.join(".claude/skills"), "house", &whole("house"));
-    skill(&plane.join("skills"), "project", &whole("project"));
-    skill(
-        &plane.join("workspaces/smart-ide/skills"),
-        "ws",
-        &whole("ws"),
-    );
-    skill(&plane.join("personas/steward/skills"), "own", &whole("own"));
 
     let with_plane = set_for(&plane, &plugin, Route::Briefing);
     let without = skill_set(
         None,
         &Machine {
             built_in: Some(&plugin.join("skills")),
+            ..Machine::default()
         },
         &Chat {
             workspace: None,
             persona: None,
+            names: &[],
+            turned_off: &[],
             harness: HarnessSkills {
                 route: Route::Briefing,
             },
@@ -199,5 +200,5 @@ fn the_set_names_the_directory_its_skills_are_handed_over_in() {
 
     let set = set_for(tmp.path(), &plugin, Route::Config);
 
-    assert_eq!(set.dir(), Some(plugin.join("skills").as_path()));
+    assert_eq!(set.built_in_dir(), Some(plugin.join("skills").as_path()));
 }

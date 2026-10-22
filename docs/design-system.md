@@ -49,14 +49,14 @@ Zed's, and it is the only one that can colour the terminal at all.
 ## The vocabulary
 
 `TOKENS` in `app/src/theme/theme.ts` is the list, with a comment on each group saying what it
-means. A hundred and nineteen colour names in twenty-three groups, and the typed tokens below
+means. A hundred and twenty-one colour names in twenty-three groups, and the typed tokens below
 them:
 
 | group                                  | tokens                                                                                          | what it is                                                                                        |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `surface.*`                            | `base` `sunken` `deep` `raised` `overlay` `hover`                                               | the layers of the window, deepest first                                                           |
 | `control.*`                            | `base` `hover` `aimed` `count`                                                                  | things that are pressed; `aimed` is where the keyboard is, which is not where the pointer is      |
-| `text.*`                               | `primary` `secondary` `muted`                                                                   |                                                                                                   |
+| `text.*`                               | `primary` `secondary` `muted` `quiet` `faint`                                                   | the grey tiers: four for words, and `faint` for marks and disabled words (#2902)                  |
 | `border.*`                             | `subtle` `strong`                                                                               |                                                                                                   |
 | `accent.*`, `focus.ring`, `tab.active` | `base` `surface`                                                                                | what purlis is drawing attention to                                                              |
 | `layer.*`                              | `project` `workspace` `chat` `selected`                                                         | which of the three strips of the axis a row is, and the tab you are on                            |
@@ -375,7 +375,8 @@ it so (`purlis_tests.rs`). Where its values come from:
 - **Dark is the foundation's.** Each colour the record proposes for a token is that token's.
   Where the record lacks a value, one rule derives it from the record's palette:
   - a wash the record gives with alpha is laid over the surface the record draws it on, so the
-    selected row is `#2b2a37`, the colour the record read off the frame;
+    selected row is `#2a2936`, one step under `#2b2a37`, the colour the record read off the
+    frame, so the quiet and faint tiers clear their floors on it (#2902);
   - a colour the record has no role for (running, failed, unreadable, danger, needs-you, the
     file icons' hues, most of the terminal's sixteen) is Purlis Classic's hue for that role at
     the lightness and chroma of the record's two state colours, `#e5c08a` and `#8fc79a`
@@ -384,8 +385,13 @@ it so (`purlis_tests.rs`). Where its values come from:
   - the needs-you count is the window's base on its chip, which is light;
   - the code colours the record names are the syntax roles they draw (keys, strings, literals,
     punctuation), and the other roles take Classic's ANSI colour for them.
-  `text.muted` is the record's `#a09eab`, the grey it names as the nearest, because its
-  quieter `#8a8896` measures 4.44 on a card; `#8a8896` is the placeholder.
+  **The grey tiers** (#2902, ruling #2803) are primary `#e6e4ec`, secondary `#c9c7d2`, muted
+  `#a09eab` and quiet `#91909d` for words, and faint `#74727f` for what is not words. Quiet is
+  the record's `#8a8896` lifted until it clears 4.5:1 on every ground, the row under the pointer
+  included; faint merges the record's `#6f6d7a` and `#55535f` and clears 3:1. Quiet is
+  informational text, and none of it is exempt: line numbers, placeholders (`placeholder` is
+  quiet), counts, paths and group labels. Faint is a tab's ×, a separator, a pin, a chevron and
+  disabled words; informational text never takes it.
 - **Geometry is the foundation's where a core token draws the same thing**: controls' corners
   7, menus' and dialogs' 10, a control 26 high and a chrome row 24, body text at a line height
   of 1.55, and no shadow under a raised surface. `radius.xl` is 12, the record's largest card
@@ -394,10 +400,13 @@ it so (`purlis_tests.rs`). Where its values come from:
 - **Light is derived from dark by one rule**: each colour's OKLCH lightness is reflected about
   the record's deepest colour (`#121215`, L 0.184), so L becomes 1 − (L − 0.184), keeping its
   hue, chroma and alpha. A reflected colour that misses a floor of the check steps its
-  lightness away from its ground by 0.01 until it clears: today only the comment and punctuation
-  grey, on the editor's current line (`#7c7a84`).
-- **High-contrast dark** moves each text step up one (primary to white), each edge up to a text
-  grey, and the accent to the record's lighter lavender `#c3baf5`.
+  lightness away from its ground by 0.01 until it clears: the comment and punctuation grey, on
+  the editor's current line (`#7c7a84`), and the quiet and faint tiers on the row under the
+  pointer (`#61606c`, the placeholder too, and `#7c7a87`).
+- **High-contrast dark** moves each text step up one (primary to white, quiet to the muted
+  `#a09eab`, faint to quiet's `#91909d`), each edge up to a text grey, and the accent to the
+  record's lighter lavender `#c3baf5`. Its strong border and tree guides are the palette's
+  quiet, so they moved with it from `#8a8896` to `#91909d` (#2902): a lighter edge on dark.
 
 **The fonts are bundled as their projects publish them**, unmodified: IBM Plex Sans 3.005
 Regular, Medium and SemiBold, each upright and italic (IBM's complete woff2, which covers Latin,
@@ -609,11 +618,11 @@ appearance and option values, and no option value can bring a consent surface be
   (an answer's button, Allow's and Keep blocked's alike, at rest and under the pointer) and on
   `danger.wash` over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
 - **Allow is distinguishable from Keep blocked**: on every ask of the two they carry equal
-  weight. Keep blocked is the plain `.ui-button`, edged in `border.strong`; each Allow is
-  `.ui-button-grants`, on the same `control.base` ground, edged in `accent.base` and led by an
+  weight. Keep blocked is the plain `Button`, edged in `border.strong`; each Allow is
+  `variant="grants"`, on the same `control.base` ground, edged in `accent.base` and led by an
   open lock, a cue that is not colour. The two edges are at least 0.1 apart in OKLab as the theme
   writes them, and `accent.base` clears 3:1 on `control.base` and on `control.hover`, so the edge
-  that tells them apart is seen. `.ui-button-primary` stays the answer purlis suggests and is
+  that tells them apart is seen. `variant="primary"` stays the answer purlis suggests and is
   never a grant's;
 - **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
   is a `danger.*` token;
@@ -1421,6 +1430,20 @@ Tailwind reads these tokens and has no geometry of its own (`styles.css` hands t
 
 The core keeps its own names (`--space-*`, `--font-size-*`), so Tailwind never redefines a token.
 
+### Component parts
+
+A token reaches every control drawn from it; a **component part** (ADR 0103) reaches one part of
+one family, such as `button.root.corner-radius: full` for a pill. The theme engine holds the
+closed manifest (`purlis_core::theme::parts`, printed by `purlis theme parts`), refuses a value
+outside its bound and any size inside a state, holds the floors per part and state, and writes
+one stylesheet keyed on `data-scope`, `data-part`, `data-variant` and React Aria's state
+attributes, which `theme.ts` puts in the `parts` layer, above `components` and below `forced`.
+A theme that names no parts writes nothing there, so the family's own stylesheet draws it.
+`ui/button/button.css` is the family default the engine measures against, held to it by
+`parts_tests.rs`. A size or a border width a theme sets is the family's md size and never
+reaches a button at sm or lg or in a wrapping row, and a variant's rule reaches only a button of
+that variant (#2904). `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
+
 ### The control baseline
 
 `app/src/base.css`, in the `base` layer under `App.css`, every selector `:where` so it has no
@@ -1506,13 +1529,14 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   and a strip's cap on a tab are each that box's own.
 - **`controls.guard.test.ts`** fails on a control that does not wear its class
   (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
-  `asChild` (`ui-button`, or a row, segment or menu row), an `<input>` or `<textarea>`
+  `asChild` (a row, segment or menu row; a button of the button family is `Button`, never a
+  native `<button>`), an `<input>` or `<textarea>`
   (`ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
   trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
   (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
   `block-size` or `min-block-size` set on a control is `--size-control`, and one set on a strip
   or a pane header is `--size-chrome`. A control is `--size-chrome` only as the small form: a
-  `.ui-button-sm` or `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
+  `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
   field of several lines is a whole number of controls. A control is what the rule's subject
   names (each selector of a list on its own, a nested rule as its full selector, an `:is()` or
   `:where()` as each selector in it): a `button`, `select`, `textarea` or non-toggle `input`, a
@@ -1667,7 +1691,7 @@ fixed size, weight and colour from the tokens, and a surface wears it instead.
 | heading   | `ui-text-heading`   | a section inside a view; a card's heading                 | `--font-size-base`, 14px | strong  | `text.primary`   |
 | body      | `ui-text-body`      | what the surface is about: a row's name, an ask's words   | `--font-size-md`, 13px   | regular | `text.primary`   |
 | secondary | `ui-text-secondary` | where, who, a help line under a field                     | `--font-size-sm`, 12px   | regular | `text.secondary` |
-| meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                   | `--font-size-xs`, 11px   | regular | `text.muted`     |
+| meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                   | `--font-size-xs`, 11px   | regular | `text.quiet`     |
 | label     | `ui-text-label`     | a section label over a group, in capitals spaced `0.06em` | `--font-size-xs`, 11px   | strong  | `text.secondary` |
 | code      | `ui-text-code`      | a command, a path, a host: `--font-mono`                  | the role it sits in      | regular | inherited        |
 

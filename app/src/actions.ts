@@ -44,6 +44,16 @@ import type {
 import { activityTitle, activityView } from "./activity";
 import { chatNetworkTitle, chatNetworkView } from "./chatNetwork";
 import { DISPATCHES_TITLE, DISPATCHES_VIEW } from "./dispatches";
+import {
+  SKILL_STUDIO_IN,
+  SKILL_STUDIO_TITLE,
+  SKILL_STUDIO_VIEW,
+  asPersona,
+  skillStudioAs,
+  inWorkspace,
+  skillStudioTitle,
+  skillStudioView,
+} from "./skillStudio";
 import { backSaid } from "./chatState";
 import { handedOff, tasksOf, type ListedChat } from "./chatsTree";
 import { MAIN } from "./here";
@@ -87,6 +97,9 @@ import {
 import { RESTORING_HAS_NO_CLOSE } from "./restoringChats";
 import { SIDE_KEYS_SAID } from "./sideKeys";
 import { SETTINGS_GROUPS } from "./settings/catalogue";
+
+/** The Workspace level's Skills group (#2767), behind the Skill studio's flag. */
+const WORKSPACE_SKILLS = "workspace.skills";
 import { profilePage } from "./settings/profileAddress";
 import { askSettingsLink, linkToGroup, settingsPlace, type SettingsLink } from "./settings/links";
 import {
@@ -688,6 +701,8 @@ export type Now = {
    * vault is the plane's, so these rows are the same whichever workspace is focused.
    */
   vaults?: readonly string[];
+  /** Whether the Skill studio's flag is on (#2765): its row is offered only then. */
+  skillStudio?: boolean;
   /**
    * The focused workspace's open todos, by slug and title (`Panels.todos`), one close and one
    * forget row each. Only the focused workspace's: the Todos panel is the one surface that
@@ -1318,6 +1333,8 @@ export const networkId = (tab: number) => `tab.network:${tab}`;
 
 /** The catalogue's id for the row that opens the project's Dispatches tab (#1452). */
 export const DISPATCHES_SHOW = "dispatches.show";
+/** The Skill studio (#2765), offered only while its flag is on. */
+export const SKILL_STUDIO_SHOW = "skills.studio";
 
 /** An offer that can run, spelled once so `reason` cannot drift from `available`. */
 function can(id: string, title: string, does: Does, name?: string): Offer {
@@ -2085,6 +2102,22 @@ export function catalogue(now: Now): Offer[] {
       }),
       note: `${workspace}: Settings at its level — live, repos, extensions, appearance and plugins.`,
     });
+    // Its chats' skills (#2767): the Skill studio on this workspace, behind the studio's flag.
+    // The Skills row of its Settings level runs it.
+    if (now.skillStudio)
+      offers.push({
+        ...can(
+          `${SKILL_STUDIO_IN}${workspace}`,
+          "Open in Skill studio",
+          {
+            verb: "openView",
+            view: skillStudioView(inWorkspace(workspace)),
+            title: skillStudioTitle(inWorkspace(workspace)),
+          },
+          workspace,
+        ),
+        note: `${workspace}: every skill its chats get, and why any other is left out.`,
+      });
     // Its cross-repo changes (charter#470), for the workspace in front of the operator: a view
     // tab keyed by the workspace and filed on its strip, which asks the forge when it opens and
     // when its Refresh is pressed, never on a switch.
@@ -2177,7 +2210,13 @@ export function catalogue(now: Now): Offer[] {
     ...can("pool.add", "Add a Docker pool…", { verb: "addDockerPool" }),
     note: "A runner on your Docker, held to the limits you set.",
   });
-  offers.push(...settingsGroupRows(now.plane, now.focused === OUTSIDE ? undefined : now.focused));
+  offers.push(
+    ...settingsGroupRows(
+      now.plane,
+      now.focused === OUTSIDE ? undefined : now.focused,
+      now.skillStudio ?? false,
+    ),
+  );
   offers.push(...profilePageRows(now.plane, now.profiles));
 
   // **A finished task's Merge… and Discard branch…, on its row's menu** (#1534): for a task
@@ -2262,6 +2301,22 @@ export function catalogue(now: Now): Offer[] {
         note: "The harness profile its chats start on: one of the project's profiles, or none.",
       },
     );
+    // Its skills (#2768): the Skill studio on a chat as this persona, behind the studio's flag.
+    // Every row of its page's Skills section runs it.
+    if (now.skillStudio)
+      offers.push({
+        ...can(
+          skillStudioAs(persona),
+          "Open in Skill studio",
+          {
+            verb: "openView",
+            view: skillStudioView(asPersona(persona)),
+            title: skillStudioTitle(asPersona(persona)),
+          },
+          persona,
+        ),
+        note: `${persona}: every skill its chats get in any workspace, and why any other is left out.`,
+      });
   }
 
   // **A new memory, in each store the window lists** (SI-9c, ADR 0065 Q9): the focused
@@ -2335,6 +2390,15 @@ export function catalogue(now: Now): Offer[] {
       }),
       note: "The work this project's chats handed to other chats, in a tab of its own.",
     });
+    if (now.skillStudio)
+      offers.push({
+        ...can(SKILL_STUDIO_SHOW, "Open Skill studio", {
+          verb: "openView",
+          view: SKILL_STUDIO_VIEW,
+          title: SKILL_STUDIO_TITLE,
+        }),
+        note: "Every skill this project's chats get, and why any other is left out.",
+      });
   }
 
   // **Curation actions (ADR 0061)**: one row per action a workspace, a persona or the plane is
@@ -3315,7 +3379,11 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
  * one; and the focused workspace's only, as the Workspace settings… row is about the workspace
  * the panels show. The labels are `settings/catalogue.ts`'s, held to the builders by its test.
  */
-function settingsGroupRows(plane: string | undefined, workspace: string | undefined): Offer[] {
+function settingsGroupRows(
+  plane: string | undefined,
+  workspace: string | undefined,
+  skillStudio: boolean,
+): Offer[] {
   const opens = (group: string, extra: { plane?: string; workspace?: string }): Does => ({
     verb: "openSettingsGroup",
     group,
@@ -3342,7 +3410,10 @@ function settingsGroupRows(plane: string | undefined, workspace: string | undefi
       note: `The project's Settings, at ${one.label}.`,
     });
   if (workspace === undefined) return rows;
-  for (const one of SETTINGS_GROUPS.workspace)
+  // The Skills group only while the Skill studio's flag is on (#2767).
+  for (const one of SETTINGS_GROUPS.workspace.filter(
+    (group) => group.id !== WORKSPACE_SKILLS || skillStudio,
+  ))
     rows.push({
       ...can(
         `settings.group:${one.id}:${workspace}`,

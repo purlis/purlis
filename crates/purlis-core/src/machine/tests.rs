@@ -2429,6 +2429,34 @@ fn the_browser_limits_survive_a_write_and_a_read_and_are_absent_until_one_is_set
     assert_eq!(read(machine.path()).store.browsers, store.browsers);
 }
 
+/// #2835 (ruled 2026-10-20): the person's choice of this machine's own Chrome is
+/// `browsers.engine = "machine"`, absent while the pinned engine is in use, and anything else
+/// reads as the pinned engine.
+#[test]
+fn the_choice_of_this_machines_chrome_survives_a_write_and_a_read_and_anything_else_is_pinned() {
+    let machine = machine();
+    let store = one_plane();
+    write(machine.path(), &store).unwrap();
+
+    set_machine_chrome(machine.path(), true).unwrap();
+    let text = std::fs::read_to_string(file(machine.path())).unwrap();
+    assert!(text.contains(r#""engine": "machine""#), "{text}");
+    assert!(read(machine.path()).store.browsers.machine_chrome);
+
+    set_machine_chrome(machine.path(), false).unwrap();
+    let text = std::fs::read_to_string(file(machine.path())).unwrap();
+    assert!(
+        !text.contains("browsers"),
+        "the pinned engine is no setting: {text}"
+    );
+    for raw in [
+        serde_json::json!({ "browsers": { "engine": "pinned" } }),
+        serde_json::json!({ "browsers": { "engine": true } }),
+    ] {
+        assert!(!browsers_of(raw.get("browsers")).machine_chrome, "{raw}");
+    }
+}
+
 // The ninth (#2764): the flags turned on on this machine.
 
 #[test]
