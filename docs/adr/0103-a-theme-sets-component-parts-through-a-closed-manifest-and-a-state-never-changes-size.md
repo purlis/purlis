@@ -55,6 +55,9 @@ or bound refuses the theme, with a sentence that names the bound.
   same bound at the value the theme draws it at. A theme that breaks any is refused with the
   density named.
 
+A panel, a section and an empty state are boxes, not controls: they are no target, and each
+of their corners is clamped to half their own box ([amended 2026-10-22](0103/2026-10-22-a-box-is-no-target.md)).
+
 ### 4. A state never changes size
 
 Inside a state only fill, text, border colour and shadow may be set. Padding, font size, font

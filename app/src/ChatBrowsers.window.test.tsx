@@ -151,9 +151,18 @@ function core(browsers: ChatBrowser[]) {
         });
       });
     },
+    /** The view of `program` attached as `role` is told its page's origin (#2300). */
+    page: (program: string, role: "focused" | "thumbnail", origin: string | null) =>
+      act(() =>
+        views
+          .get(`${program} ${role}`)
+          ?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin } }),
+      ),
     /** A frame on the view of `program` attached as `role`. */
     frame: (program: string, role: "focused" | "thumbnail", base64: string) =>
-      views.get(`${program} ${role}`)?.onmessage({ aim: "p1:1", jpeg: base64, reconnection: null }),
+      views
+        .get(`${program} ${role}`)
+        ?.onmessage({ aim: "p1:1", jpeg: base64, reconnection: null, page: null }),
   };
 }
 
@@ -165,6 +174,7 @@ const B7: ChatBrowser = {
   pinned: false,
   was: null,
   login: null,
+  driver: null,
 };
 const B8: ChatBrowser = { ...B7, name: "b2", program: "B8" };
 /** A browser pinned by chat 9, which has closed (#2022). */
@@ -176,6 +186,7 @@ const B9: ChatBrowser = {
   pinned: true,
   was: "Fix the login",
   login: null,
+  driver: null,
 };
 
 /** Where the project's browsers were at the last quit, as the core says (#2022). */
@@ -616,5 +627,81 @@ describe("a pinned browser signed in with a login (#2022)", () => {
         { plane: PLANE, program: "B9", session: 2 },
       ]),
     );
+  });
+});
+
+describe("who drives a chat's browser, on its row and its thumbnail (#2300)", () => {
+  it("says the person drives it", async () => {
+    core([{ ...B7, driver: "person" }]);
+    await opened();
+
+    const browsers = within(await chatsTree()).getByRole("group", {
+      name: "Browsers of steward 1",
+    });
+    const row = within(browsers).getByRole("button", { name: /Browser b1/ });
+    expect(row.textContent).toContain("you are driving");
+    expect(row.title).toContain("You are driving this browser.");
+    const thumbnail = await screen.findByRole("button", {
+      name: "Open browser b1 of steward 1, you are driving",
+    });
+    expect(thumbnail.querySelector(".browser-thumbnail")?.getAttribute("data-driver")).toBe(
+      "person",
+    );
+  });
+
+  it("says purlis drives it while it signs in, and nothing once its agent drives it again", async () => {
+    const host = core([{ ...B7, driver: "purlis" }]);
+    await opened();
+    const tree = await chatsTree();
+    const row = () =>
+      within(within(tree).getByRole("group", { name: "Browsers of steward 1" })).getByRole(
+        "button",
+        { name: /Browser b1/ },
+      );
+    expect(row().textContent).toContain("purlis is signing in");
+
+    host.listed([B7]);
+
+    await waitFor(() => expect(row().textContent).not.toContain("purlis is signing in"));
+    expect(row().textContent).not.toContain("you are driving");
+  });
+});
+
+describe("where a chat's browser's page is (#2300)", () => {
+  afterEach(async () => (await import("./browserWatch")).forgetOrigins());
+
+  it("is its origin, on its row's hover and its view's chip, and follows the page", async () => {
+    const host = core([B7]);
+    await opened();
+    await screen.findByRole("button", { name: "Open browser b1 of steward 1" });
+    await waitFor(() =>
+      expect(host.asked("watch_browser")).toContainEqual(
+        expect.objectContaining({ program: "B7", role: "thumbnail" }),
+      ),
+    );
+    host.page("B7", "thumbnail", "http://localhost:5173");
+
+    const row = within(
+      within(await chatsTree()).getByRole("group", { name: "Browsers of steward 1" }),
+    ).getByRole("button", { name: /Browser b1/ });
+    await waitFor(() => expect(row.title).toMatch(/localhost:5173 on this (Mac|computer)/));
+
+    await userEvent.click(row);
+    const view = await screen.findByTestId("browser-view");
+    const chip = within(view).getByTestId("browser-chip");
+    expect(chip.textContent).toMatch(/^localhost:5173 on this (Mac|computer)$/);
+    expect(chip.title).toBe("http://localhost:5173");
+
+    await waitFor(() =>
+      expect(host.asked("watch_browser")).toContainEqual(
+        expect.objectContaining({ program: "B7", role: "focused" }),
+      ),
+    );
+    host.page("B7", "focused", "https://docs.example.test");
+    await waitFor(() =>
+      expect(chip.textContent).toMatch(/^docs\.example\.test on this (Mac|computer)$/),
+    );
+    host.page("B7", "focused", null);
+    await waitFor(() => expect(chip.textContent).toMatch(/^On this (Mac|computer)$/));
   });
 });

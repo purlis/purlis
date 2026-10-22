@@ -145,3 +145,5 @@
 {"call":{"id":142,"command":"give_code","project":"01J9PRJCT00000000000000000","repo":"workspaces/app/web","transfer":8,"have":["4e90af629364f93a93f7ad38f3c4d02189bc5dcc"]}}
 {"reply":{"re":142,"ok":{"code":{"heads":[{"name":"refs/heads/fix-login","oid":"02ce1eed0eedcb47f1d076f09c845201835ecd7e"}]}}}}
 {"reply":{"re":143,"refused":{"code":"too_large","why":"the bundle is larger than 1073741824 bytes, the most one transfer carries, so it was not taken"}}}
+{"call":{"id":144,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser"}}
+{"reply":{"re":144,"refused":{"code":"no_engine_sandbox","why":"the browser engine cannot make its sandbox on this machine, and purlis never runs it without"}}}

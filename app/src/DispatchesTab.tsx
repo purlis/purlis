@@ -4,7 +4,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, LoaderCircle, Send } from "lucide-react";
 import { ChatAsk } from "./ChatAsk";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
 import { PersonaMark } from "./PersonaMark";
 import { Select } from "./primitives/Select";

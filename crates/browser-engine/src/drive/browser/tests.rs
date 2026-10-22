@@ -59,6 +59,8 @@ struct Model {
     overlay: bool,
     /// Whether the payment frame's element says no frame it holds (#2638).
     frame_unnamed: bool,
+    /// The elements inside each shadow host's shadow root, by the host's engine id (#2972).
+    shadow_of: HashMap<i64, Vec<i64>>,
     history: Value,
     screenshot: Vec<u8>,
     select: Value,
@@ -310,6 +312,23 @@ impl Engine {
                     } else {
                         json!({"backendNodeId": 3, "frameId": "PAGE-1"})
                     },
+                )
+            }
+            // A shadow host described with everything inside it, its shadow roots pierced.
+            "DOM.describeNode"
+                if p["pierce"] == true
+                    && p["backendNodeId"].as_i64().is_some_and(|host| {
+                        super::lock(&self.model).shadow_of.contains_key(&host)
+                    }) =>
+            {
+                let host = p["backendNodeId"].as_i64().unwrap();
+                let inside: Vec<Value> = super::lock(&self.model).shadow_of[&host]
+                    .iter()
+                    .map(|b| json!({"nodeId":0,"backendNodeId":b,"nodeType":1,"nodeName":"INPUT"}))
+                    .collect();
+                Ok(
+                    json!({"node":{"nodeId":0,"backendNodeId":host,"nodeType":1,"nodeName":"X-FIELD",
+                    "shadowRoots":[{"nodeId":0,"backendNodeId":host + 100_000,"nodeType":11,"nodeName":"#document-fragment","shadowRootType":"closed","children":inside}]}}),
                 )
             }
             "DOM.describeNode"
@@ -627,6 +646,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             focused_backend: None,
             overlay: false,
             frame_unnamed: false,
+            shadow_of: HashMap::new(),
             history: json!({"currentIndex":0,"entries":[{"id":1,"url":"http://fixture.test/frames.html","userTypedURL":"","title":"","transitionType":"typed"}]}),
             screenshot: white_png(),
             select: json!({"picked":["Blue"]}),
@@ -2660,6 +2680,72 @@ fn focus_on(engine: &Engine, onto: &[(&str, &str)]) {
     }
 }
 
+/// The tree's id for the node of `frame` whose element is `backend`.
+fn ax_node_of(engine: &Engine, frame: &str, backend: i64) -> String {
+    super::lock(&engine.model).ax[frame]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["backendDOMNodeId"] == backend)
+        .and_then(|n| n["nodeId"].as_str().map(str::to_owned))
+        .unwrap()
+}
+
+#[test]
+fn the_element_with_the_documents_focus_is_blanked_where_the_tree_marks_another() {
+    // #2972: a field that names an active option (`aria-activedescendant`, a combo box) has the
+    // document's focus while the tree marks the option focused: the field is blanked.
+    let (browser, engine) = browser();
+    let option = ax_node_of(&engine, "PAGE-1", 12);
+    focus_on(&engine, &[("PAGE-1", option.as_str())]);
+    super::lock(&engine.model).focused_backend = Some(20);
+    browser.blank_focused(None).unwrap();
+    let text = snapshot(&browser, 1);
+    let line = |words: &str| {
+        text.lines()
+            .find(|l| l.contains(words))
+            .map(str::to_owned)
+            .unwrap_or_default()
+    };
+    assert!(line("textbox").contains("(blanked)"), "{text}");
+    assert!(text.contains("- link \"Read more\""), "{text}");
+}
+
+#[test]
+fn a_field_inside_a_shadow_root_is_blanked_though_its_document_names_the_host() {
+    // #2972: a field inside a shadow root (open or closed) is the one the keys go to, while its
+    // document names the shadow's host as what has the focus: the field is still blanked.
+    let (browser, engine) = browser();
+    let field = ax_node_of(&engine, "PAGE-1", 20);
+    focus_on(&engine, &[("PAGE-1", field.as_str())]);
+    {
+        let mut model = super::lock(&engine.model);
+        model.focused_backend = Some(30);
+        model.shadow_of.insert(30, vec![20]);
+    }
+    browser.blank_focused(None).unwrap();
+    let text = snapshot(&browser, 1);
+    let line = |words: &str| {
+        text.lines()
+            .find(|l| l.contains(words))
+            .map(str::to_owned)
+            .unwrap_or_default()
+    };
+    assert!(line("textbox").contains("(blanked)"), "{text}");
+}
+
+#[test]
+fn the_element_the_tree_marks_focused_is_blanked_where_its_document_agrees_or_cannot_say() {
+    let (browser, engine) = browser();
+    let field = ax_node_of(&engine, "PAGE-1", 20);
+    focus_on(&engine, &[("PAGE-1", field.as_str())]);
+    browser.blank_focused(None).unwrap();
+    super::lock(&engine.model).focused_backend = Some(20);
+    browser.blank_focused(None).unwrap();
+    let text = snapshot(&browser, 1);
+    assert!(text.contains("(blanked)"), "{text}");
+}
+
 #[test]
 fn the_focused_element_in_a_frame_is_blanked_there() {
     let (browser, engine) = browser();
@@ -2814,6 +2900,39 @@ fn each_frame_shown_is_handed_over_as_its_image_and_acknowledged() {
     let ack = &engine.sent("Page.screencastFrameAck")[0];
     assert_eq!(ack.params["sessionId"], 11);
     assert_eq!(ack.session.as_deref(), Some("S-PAGE-1"));
+}
+
+#[test]
+fn each_frame_names_the_document_its_page_has_loaded_as_the_engine_records_it() {
+    // #2300: what a browser view's chip names, from the engine's record, never the page.
+    let (browser, engine) = browser();
+    let addresses: Arc<Mutex<Vec<String>>> = Arc::default();
+    let seen = Arc::clone(&addresses);
+    browser.show(Arc::new(move |painted: crate::drive::Painted| {
+        super::lock(&seen).push(painted.address);
+    }));
+    wait_for("started", || {
+        !engine.sent("Page.startScreencast").is_empty()
+    });
+    a_frame(&engine, b"\xff\xd8 one", 1);
+    wait_for("the first frame", || super::lock(&addresses).len() == 1);
+
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-5","url":"http://fixture.test/more.html?q=1","name":"","securityOrigin":"http://fixture.test","mimeType":"text/html"},"type":"Navigation"}),
+        Some("S-PAGE-1"),
+    );
+    std::thread::sleep(Duration::from_millis(50));
+    a_frame(&engine, b"\xff\xd8 two", 2);
+    wait_for("the second frame", || super::lock(&addresses).len() == 2);
+
+    assert_eq!(
+        *super::lock(&addresses),
+        [
+            "http://fixture.test/frames.html",
+            "http://fixture.test/more.html?q=1"
+        ]
+    );
 }
 
 #[test]

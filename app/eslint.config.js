@@ -13,8 +13,9 @@ const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
 /**
  * **The families a raw `<button>` may still belong to** (#2904, D-2904-9): the tabs and strips,
  * the list, tree and table rows, the menu rows, the segmented control, the activity items, the
- * title bar's chips and status pills, the status items, the cards and the settings nav. Each by
- * the role its button says, or by its family's class.
+ * title bar's workspace chips, the cards and the settings nav. Each by
+ * the role its button says, or by its family's class. The status items and the title bar's status
+ * pills have moved (#2913).
  */
 const OTHER_FAMILIES = {
   roles: ["tab", "menuitem", "option", "switch", "radio", "checkbox", "treeitem", "row", "link"],
@@ -41,11 +42,8 @@ const OTHER_FAMILIES = {
     "pane-skills",
     "task-end",
     "strip-offer",
-    // The title bar's chips and pills, and the status items.
-    "needs-you-button",
+    // The title bar's workspace chips, and a needs-you mark on a row.
     "needs-you-mark",
-    "title-kill-switch",
-    "status-update",
     "plane-root",
     // The cards: the welcome's doors, a recent project, a repo.
     "welcome-door",
@@ -99,6 +97,10 @@ export default tseslint.config(
       "purlis/choice-family": "warn",
       "purlis/dialog-family": "warn",
       "purlis/tooltip-family": "warn",
+      "purlis/panel-family": "error",
+      "purlis/panel-section-family": "error",
+      "purlis/empty-state-family": "error",
+      "purlis/status-item-family": "error",
     },
   },
 );

@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { CircleSlash, GitCompare, LoaderCircle } from "lucide-react";
 import { ChatAsk } from "./ChatAsk";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
 import {
   commands,
@@ -188,7 +188,7 @@ export function TaskChangesTab({
       )}
       {read.unknown === null && filesIn(read) === 0 && (
         <EmptyState
-          size="panel"
+          variant="panel"
           mark={GitCompare}
           headline={
             own === null

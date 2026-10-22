@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { FileText, LoaderCircle } from "lucide-react";
 import { commands, type InstructionFile, type PlaneId } from "./bindings";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 

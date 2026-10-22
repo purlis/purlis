@@ -206,7 +206,7 @@ describe("the status line", () => {
     await focusIt(false);
     await tip.waitForExist({ timeout: 20_000, reverse: true });
 
-    const onTheBar = await $("header.bar .status-project");
+    const onTheBar = await $('header.bar [data-testid="status-project"]');
     expect(await onTheBar.isExisting()).toBe(false);
   });
 
@@ -237,7 +237,7 @@ describe("the status line", () => {
       return {
         line: box('[data-testid="status-line"]'),
         project: box('[data-testid="status-project"]'),
-        where: box(".status-where"),
+        where: box('[data-testid="status-where"]'),
         notices: box('[data-testid="status-alerts"]'),
         doctor: box('[data-testid="status-doctor"]'),
       };
@@ -248,9 +248,10 @@ describe("the status line", () => {
 
     // Context first, from the left edge; health last, to the right edge.
     expect(project.left).toBeLessThan(where.left);
-    expect(where.right).toBeLessThanOrEqual(notices.left);
-    expect(notices.right).toBeLessThanOrEqual(doctor.left + 1);
-    expect(line.right - doctor.right).toBeLessThanOrEqual(24);
+    // The doctor inside, Notices outermost: the one that always stays (#2913).
+    expect(where.right).toBeLessThanOrEqual(doctor.left);
+    expect(doctor.right).toBeLessThanOrEqual(notices.left + 1);
+    expect(line.right - notices.right).toBeLessThanOrEqual(24);
     expect(project.left - line.left).toBeLessThanOrEqual(24);
     // One height for the two items, inside the line, with room around them.
     expect(Math.abs(notices.height - doctor.height)).toBeLessThanOrEqual(1);

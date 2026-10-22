@@ -63,6 +63,7 @@ import { useLastRead } from "./editor/lastRead";
 import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
 import { Button, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
+import { PanelSectionTitle } from "./ui/panel/Panel";
 
 /**
  * The left region: the repo and worktree **explorer** (ADR 0038).
@@ -1222,10 +1223,9 @@ function Section({
   if (bare) {
     return (
       <div className="explorer-section" data-section={id}>
-        <h2 className="sidebar-title explorer-section-head ui-text-label">
-          <FolderGit2 className="node-icon" aria-hidden="true" />
+        <PanelSectionTitle className="explorer-section-head" mark={FolderGit2}>
           {title}
-        </h2>
+        </PanelSectionTitle>
         <div id={body} className="explorer-section-body">
           {children}
         </div>
@@ -1234,7 +1234,7 @@ function Section({
   }
   return (
     <div className="explorer-section" data-section={id}>
-      <h2 className="sidebar-title explorer-section-head ui-text-label">
+      <PanelSectionTitle className="explorer-section-head">
         {/* The heading's whole line is the disclosure: a row of the set (`.ui-row`, #1857), so
             its title starts where the section's rows and its filter's text do. */}
         <button
@@ -1256,7 +1256,7 @@ function Section({
           )}
           {marks}
         </button>
-      </h2>
+      </PanelSectionTitle>
       <div id={body} className="explorer-section-body" hidden={closed}>
         {children}
       </div>

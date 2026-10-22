@@ -5,9 +5,9 @@
 //! reader handed the stream in pieces of any size tells where one frame ends and the next
 //! begins, and a frame larger than the bound is refused rather than held.
 
-use purlis_session_protocol::browsing::Aim;
+use purlis_session_protocol::browsing::{Aim, origin_of};
 use purlis_session_protocol::view::frames::{
-    self, AIMED_JPEG, Frame, Frames, JPEG, MOST_FRAME_BYTES,
+    self, AIMED_JPEG, Frame, Frames, JPEG, MOST_FRAME_BYTES, ORIGIN,
 };
 
 fn jpeg(byte: u8, len: usize) -> Vec<u8> {
@@ -105,4 +105,73 @@ fn a_plain_or_cut_short_frame_names_no_aim() {
         .push(&frames::frame(AIMED_JPEG, &[9, b'p']))
         .unwrap()[0];
     assert_eq!(short.aimed(), None);
+}
+
+#[test]
+fn an_origin_frame_is_the_pages_origin_alone_and_an_empty_one_is_no_page() {
+    // 1.35 (#2300): what the browser view's chip names, sent when it changes.
+    let framed = frames::origin(Some("http://localhost:5173"));
+    assert_eq!(framed[4], ORIGIN);
+    let read = &Frames::default().push(&framed).unwrap()[0];
+    assert_eq!(
+        read.origin(),
+        Some(Some("http://localhost:5173".to_owned()))
+    );
+
+    let none = &Frames::default().push(&frames::origin(None)).unwrap()[0];
+    assert_eq!(none.origin(), Some(None), "no page, or one with no origin");
+
+    let plain = &Frames::default().push(&frames::frame(JPEG, b"x")).unwrap()[0];
+    assert_eq!(plain.origin(), None, "an image is no origin frame");
+}
+
+#[test]
+fn an_origin_frame_whose_bytes_are_not_text_reads_as_no_origin_frame() {
+    let bad = &Frames::default()
+        .push(&frames::frame(ORIGIN, &[0xff, 0xfe]))
+        .unwrap()[0];
+    assert_eq!(bad.origin(), None);
+}
+
+#[test]
+fn an_address_is_cut_to_its_origin_and_nothing_else() {
+    for (address, origin) in [
+        ("http://localhost:5173/login", Some("http://localhost:5173")),
+        (
+            "https://Shop.Example.test/basket?token=s3cret#pay",
+            Some("https://shop.example.test"),
+        ),
+        (
+            "https://ada:pw@shop.example.test/",
+            Some("https://shop.example.test"),
+        ),
+        ("https://[::1]:8443/a", Some("https://[::1]:8443")),
+        (
+            "https://xn--bcher-kva.example/",
+            Some("https://xn--bcher-kva.example"),
+        ),
+        ("about:blank", None),
+        ("data:text/html,hunter2", None),
+        ("file:///etc/passwd", None),
+        ("chrome://settings", None),
+        ("https:///nohost", None),
+        ("https://b\u{fc}cher.example/", None),
+        ("https://a%20b.example/", None),
+        ("", None),
+    ] {
+        assert_eq!(origin_of(address).as_deref(), origin, "{address}");
+    }
+}
+
+#[test]
+fn an_origin_longer_than_a_whole_dns_name_is_none_and_an_origin_is_its_own_origin() {
+    let long = format!("https://{}.example", "a".repeat(250));
+    assert_eq!(origin_of(&long), None);
+    for origin in [
+        "http://localhost:5173",
+        "https://docs.example.test",
+        "https://[::1]:8443",
+    ] {
+        assert_eq!(origin_of(origin).as_deref(), Some(origin), "{origin}");
+    }
 }

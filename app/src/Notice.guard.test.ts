@@ -134,7 +134,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 4,
     why: ACTION,
   },
-  "EmptyState.tsx": {
+  "ui/empty-state/EmptyState.tsx": {
     count: 1,
     why:
       'the role a caller passes (`role="status"`) for an empty state that is a surface\'s ' +

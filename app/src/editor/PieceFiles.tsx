@@ -37,7 +37,7 @@ import Markdown, { type Components } from "react-markdown";
 import { Group, Panel, type Layout } from "react-resizable-panels";
 import { Separator } from "../shownSeparator";
 import { FileText, LoaderCircle, Pause, Play } from "lucide-react";
-import { EmptyState } from "../EmptyState";
+import { EmptyState } from "../ui/empty-state/EmptyState";
 import { ExternalLink } from "../ReleaseNotes";
 import { commands, type ChangeMark, type PieceFile, type PlaneId } from "../bindings";
 import {
@@ -428,7 +428,7 @@ function SvgPreview({ name, text }: { name: string; text: string }) {
         mark={FileText}
         headline={`${name} sets its size in a way the preview cannot measure, so it is not drawn`}
         body="Its text is under Source."
-        size="panel"
+        variant="panel"
       />
     );
   if (side !== undefined && side.width * side.height > MOST_PIXELS)
@@ -437,7 +437,7 @@ function SvgPreview({ name, text }: { name: string; text: string }) {
         mark={FileText}
         headline={huge(name, side)}
         body="Its text is under Source."
-        size="panel"
+        variant="panel"
       />
     );
   return <ImagePreview name={name} mime={SVG} bytes={bytes} />;
@@ -464,12 +464,12 @@ function Shown({
   const svgDraws = useSvgDraws();
   switch (read.kind) {
     case "reading":
-      return <EmptyState mark={LoaderCircle} headline={`Reading ${path}…`} size="panel" />;
+      return <EmptyState mark={LoaderCircle} headline={`Reading ${path}…`} variant="panel" />;
     case "refused":
-      return <EmptyState headline={read.why} size="panel" testid="piece-file-trouble" />;
+      return <EmptyState headline={read.why} variant="panel" testid="piece-file-trouble" />;
     case "text":
       if (svgDraws === undefined && isSvg(path) && !source)
-        return <EmptyState mark={LoaderCircle} headline={`Reading ${path}…`} size="panel" />;
+        return <EmptyState mark={LoaderCircle} headline={`Reading ${path}…`} variant="panel" />;
       if (svgDraws === true && isSvg(path) && !source)
         return <SvgPreview key={path} name={name} text={read.text} />;
       return isMarkdown(path) && !source ? (
@@ -489,7 +489,7 @@ function Shown({
           mark={FileText}
           headline={huge(name, read)}
           body="Open it in your editor."
-          size="panel"
+          variant="panel"
         />
       );
     case "binary":
@@ -498,7 +498,7 @@ function Shown({
           mark={FileText}
           headline={`${name} is a binary file (${sized(read.bytes)})`}
           body="The preview draws text and images only."
-          size="panel"
+          variant="panel"
         />
       );
     case "too-large":
@@ -507,7 +507,7 @@ function Shown({
           mark={FileText}
           headline={`${name} is ${sized(read.bytes)}, past what the preview draws (2 MiB)`}
           body="Open it in your editor."
-          size="panel"
+          variant="panel"
         />
       );
   }
@@ -703,7 +703,7 @@ export function PieceFilesTab({
               mark={FileText}
               headline="Pick a file to read it"
               body="Arrows move through the tree, Right opens a folder, and Enter shows a file here."
-              size="panel"
+              variant="panel"
             />
           ) : (
             <>

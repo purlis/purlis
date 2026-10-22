@@ -69,6 +69,13 @@
   --size-control: 2rem;
   --size-chrome: 1.5rem;
 
+  /* The window's geometry (#2805, #2913): the gap between its regions, a region panel's
+     corners, and the hairline between two regions. Classic draws flush: no gap, square
+     corners, and the hairline it always drew. Hairline-scale, so px. */
+  --window-gutter: 0px;
+  --panel-corner-radius: 0px;
+  --panel-border-width: 1px;
+
   /* The two focus-ring rules. Both are a `--focus-ring-width` outline in the theme's
      `focus.ring` colour. A control's ring sits outside it, `--focus-ring-offset` away; a row's
      or a tab's sits inside it (`--focus-ring-inset`), so a list or a strip never clips it. */

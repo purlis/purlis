@@ -172,6 +172,9 @@ pub struct Aim {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Painted {
     pub aim: Aim,
+    /// The address of the document the page has loaded, as the engine records it (#2300): what
+    /// the host cuts to the origin a browser view's chip names.
+    pub address: String,
     pub jpeg: Vec<u8>,
 }
 
