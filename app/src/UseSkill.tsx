@@ -18,8 +18,7 @@ import {
 } from "./bindings";
 
 /** The budget in a line: `12 skills of 30 · 3,400 of 6,000 characters`, and the manual-only
- *  skills: free where the chat leaves them out, and counted, still listed, where it does not
- *  yet (#2771). */
+ *  skills: free where the chat leaves them out, and counted, still listed, where it cannot. */
 export function budgetSaid(budget: SkillBudget): string {
   const chars = `${budget.chars.toLocaleString("en-US")} of ${budget.most_chars.toLocaleString("en-US")} characters`;
   const skills = `${counted(budget.skills, "skill", "skills")} of ${budget.most_skills}`;
@@ -29,7 +28,7 @@ export function budgetSaid(budget: SkillBudget): string {
       ? ""
       : budget.manual_free
         ? ` · ${manual} free`
-        : ` · ${manual} still listed on this chat (#2771)`;
+        : ` · ${manual} still listed on this chat`;
   return `${skills} · ${chars}${free}`;
 }
 
@@ -79,7 +78,7 @@ export function skillsMatching(skills: readonly ChatSkill[], query: string): Cha
  *
  * A manual-only skill is listed with the others and marked: it runs only when it is asked for by
  * name, which is what this does. It costs nothing in the budget where the chat leaves it out of
- * its listing, and is counted where it does not yet (#2771).
+ * its listing, and is counted where it cannot.
  */
 export function UseSkill({
   chat,

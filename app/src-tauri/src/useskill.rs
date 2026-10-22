@@ -72,8 +72,9 @@ pub struct SkillBudget {
     pub chars: u32,
     /// Manual-only skills in the set.
     pub manual: u32,
-    /// Whether they cost nothing: the chat leaves them out of its listing. Where it does not
-    /// yet, they are counted in `skills` and `chars` (#2771).
+    /// Whether they cost nothing: the chat leaves them out of its listing, by its harness's own
+    /// key or purlis's translation (SK-8). Where it cannot, they are counted in `skills` and
+    /// `chars`.
     pub manual_free: bool,
     /// The most skills the budget lists.
     pub most_skills: u32,

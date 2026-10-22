@@ -178,17 +178,24 @@ pub fn load(effective: &Effective) -> Result<Loaded, String> {
         )));
     }
     let text = std::fs::read_to_string(path).map_err(|e| unreadable(e.to_string()))?;
-    let mut files = Vec::new();
-    if let Some(folder) = path.parent() {
-        others(folder, path, 0, &mut files);
-    }
-    files.sort();
-    files.truncate(MOST_FILES);
     Ok(Loaded {
         narrowing: narrowing(&text),
         text,
-        files,
+        files: other_files(path),
     })
+}
+
+/// **Every other file of the folder of the skill whose `SKILL.md` is at `skill_md`**, by its
+/// whole path, in order: plain files only, never one reached through a link, to [`MOST_DEPTH`]
+/// and at most [`MOST_FILES`]. What a load names, and what the lint reads (SK-8).
+pub fn other_files(skill_md: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if let Some(folder) = skill_md.parent() {
+        others(folder, skill_md, 0, &mut files);
+    }
+    files.sort();
+    files.truncate(MOST_FILES);
+    files
 }
 
 /// Every plain file under `dir` but `skill_md`, into `files`, to [`MOST_DEPTH`] and at most

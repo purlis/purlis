@@ -140,7 +140,7 @@ describe("Use skill…", () => {
 
   it("says a manual-only skill is still listed, and counted, where the chat does not leave it out", () => {
     expect(budgetSaid({ ...BUDGET, manual_free: false })).toBe(
-      "3 skills of 30 · 1,234 of 6,000 characters · 1 manual-only skill still listed on this chat (#2771)",
+      "3 skills of 30 · 1,234 of 6,000 characters · 1 manual-only skill still listed on this chat",
     );
   });
 

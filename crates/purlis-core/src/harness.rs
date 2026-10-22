@@ -29,8 +29,8 @@ pub use adapter::{HarnessAdapter, SkillStart, SkillToStart};
 /// harness limit measured on 2026-10-20 (Claude Code's 1% of a 200k-token window, about 8,000
 /// characters for names, descriptions and their lines together), with room for 30 names and the
 /// lines they sit on, so no harness has to cut anything. Each adapter adds its own cap on one
-/// description, whether it lists a skill's path and whether it leaves a manual-only skill out
-/// ([`HarnessAdapter::skill_budget`]).
+/// description and whether it lists a skill's path ([`HarnessAdapter::skill_budget`]); whether a
+/// manual-only skill is free follows from what it reads ([`Harness::skill_budget`]).
 pub(crate) const SKILL_BUDGET: crate::skills::Budget = crate::skills::Budget {
     skills: 30,
     chars: 6_000,
@@ -389,9 +389,20 @@ impl Harness {
         }
     }
 
-    /// [`HarnessAdapter::skill_budget`]: one chat's skill budget on this harness (SK-12).
+    /// [`HarnessAdapter::skill_budget`]: one chat's skill budget on this harness (SK-12). A
+    /// manual-only skill is free wherever the harness keeps it out of the listing, by its own
+    /// key or purlis's translation ([`Self::skill_frontmatter`], SK-8).
     pub fn skill_budget(self) -> crate::skills::Budget {
-        self.adapter().skill_budget()
+        crate::skills::Budget {
+            manual_free: crate::skills::manual_kept_out(&self.skill_frontmatter()),
+            ..self.adapter().skill_budget()
+        }
+    }
+
+    /// [`HarnessAdapter::skill_frontmatter`]: what this harness reads of a skill's frontmatter
+    /// (SK-8).
+    pub fn skill_frontmatter(self) -> crate::skills::Honours {
+        self.adapter().skill_frontmatter()
     }
 
     /// How a chat on this harness comes to know charter's skills, for that chat alone and with

@@ -72,8 +72,14 @@ fn host_armed(
         git_hooks: None,
         skill_sets: Some(here.sets.clone()),
     };
-    let linked =
-        purlis_core::hoststart::plane_skills_laid_out(true, &here.plane, workspace, None, &host);
+    let linked = purlis_core::hoststart::plane_skills_laid_out(
+        true,
+        &here.plane,
+        workspace,
+        None,
+        &host,
+        harness,
+    );
     let skills = PlaneSkills {
         plane: &here.plane,
         workspace,

@@ -39,8 +39,10 @@ use std::path::{Path, PathBuf};
 
 pub mod budget;
 pub mod change;
+pub mod compat;
 mod declared;
 mod grant;
+pub mod lint;
 mod load;
 mod read;
 mod reference;
@@ -49,9 +51,11 @@ mod share;
 mod stamp;
 
 pub use budget::{Budget, Over, Spent};
+pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, manual_kept_out};
 pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_of, set_grant};
-pub use load::{Loaded, Narrowing, POINTER, by_name, find, load};
+pub use lint::{BuiltInLints, Finding, Level, SkillFiles, SkillLint};
+pub use load::{Loaded, Narrowing, POINTER, by_name, find, load, other_files};
 pub use read::{DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read};
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};

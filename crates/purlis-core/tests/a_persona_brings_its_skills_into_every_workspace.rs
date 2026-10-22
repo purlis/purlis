@@ -81,6 +81,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
         Some(WORKSPACE),
         Some(PERSONA),
         &host,
+        Harness::ClaudeCode,
     );
     let kit = Kit {
         binary: Path::new("/bin/purlis"),
@@ -227,6 +228,7 @@ fn a_chat_on_no_persona_in_that_workspace_gets_none_of_them() {
         Some(WORKSPACE),
         None,
         &host,
+        Harness::ClaudeCode,
     );
 
     assert_eq!(linked, None);
@@ -247,7 +249,7 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
         purlis_core::skills::not_here(
             &here.plane,
             Some(WORKSPACE),
-            PERSONA,
+            Some(PERSONA),
             Some(&here.plugin.join("skills")),
             harness,
             &env,
@@ -259,6 +261,7 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
         Some(purlis_core::skills::NotHere {
             missing: vec!["superpowers:test-driven-development".to_owned()],
             no_built_in: Vec::new(),
+            broken: Vec::new(),
         })
     );
 
@@ -304,7 +307,7 @@ fn on_codex_a_plugin_skill_is_found_in_its_cache_and_one_it_cannot_list_raises_n
         purlis_core::skills::not_here(
             &here.plane,
             Some(WORKSPACE),
-            PERSONA,
+            Some(PERSONA),
             Some(&here.plugin.join("skills")),
             Harness::Codex,
             &env,

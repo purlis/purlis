@@ -233,14 +233,27 @@ impl HarnessAdapter for Codex {
     /// Codex lists skills within 2% of the context window, 8,000 characters where it does not
     /// know the window, cutting each description at 1,024 characters, and past that drops
     /// trailing skills without saying so (0.163.0, `ext/skills/src/render.rs`). A Codex chat is
-    /// briefed on its skills, each line with its `SKILL.md`'s path, which counts; and every
-    /// skill is on it, a manual-only one too, until the briefing is handed the translation
-    /// (#2771).
+    /// briefed on its skills, each line with its `SKILL.md`'s path, which counts; a manual-only
+    /// skill's description stays out of the briefing ([`Self::skill_frontmatter`]).
     fn skill_budget(&self) -> crate::skills::Budget {
         crate::skills::Budget {
             per_description: Some(1_024),
             lists_paths: true,
             ..super::SKILL_BUDGET
+        }
+    }
+
+    /// **Codex 0.163.0** (`skills/src/parser.rs:6-20`, research of 2026-10-20): its own parser
+    /// reads `name`, `description` and `metadata.short-description`, and nothing else. A Codex
+    /// chat is briefed on purlis's skills, though, and the model reads each `SKILL.md` as text,
+    /// so no key applies there but the ones purlis reads itself. Manual-only is translated: the
+    /// briefing names a manual-only skill and its file alone, to read only when the person
+    /// names it ([`crate::skills::listing`]), as Codex's own `agents/openai.yaml`
+    /// `policy.allow_implicit_invocation: false` keeps one of its skills out of its catalogue.
+    fn skill_frontmatter(&self) -> crate::skills::Honours {
+        crate::skills::Honours {
+            reads: &[],
+            manual: crate::skills::ManualOnly::Listing,
         }
     }
 

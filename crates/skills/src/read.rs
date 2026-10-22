@@ -105,6 +105,37 @@ pub(crate) fn frontmatter_lines(text: &str) -> Vec<&str> {
         .unwrap_or_default()
 }
 
+/// **A frontmatter's top-level entries**, in the order written: each key that starts a line of
+/// the block [`frontmatter_block`] finds, with the byte span in `text` of its line and of every
+/// line under it (an indented line, a `-` item, a comment or a blank line), up to the next key.
+/// What a reader of which keys a skill sets, and a writer that leaves one out, both read. Empty
+/// where there is no frontmatter.
+pub(crate) fn entries(text: &str) -> Vec<(String, (usize, usize))> {
+    let Some((start, end)) = frontmatter_block(text) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, (usize, usize))> = Vec::new();
+    let mut at = start;
+    for line in text[start..end].split_inclusive('\n') {
+        let body = line.trim_end_matches(['\n', '\r']);
+        let top = !body.is_empty()
+            && !body.starts_with(char::is_whitespace)
+            && !body.starts_with(['-', '#']);
+        match body.split_once(':') {
+            Some((key, _)) if top && !key.trim().is_empty() => {
+                out.push((key.trim().to_owned(), (at, at + line.len())));
+            }
+            _ => {
+                if let Some((_, span)) = out.last_mut() {
+                    span.1 = at + line.len();
+                }
+            }
+        }
+        at += line.len();
+    }
+    out
+}
+
 /// `str.strip()`: Python's whitespace is Rust's and the four separator controls U+001C-U+001F.
 fn py_strip(text: &str) -> &str {
     text.trim_matches(|c: char| {
@@ -153,6 +184,11 @@ fn lines(text: &str) -> Vec<&str> {
 ///
 /// It is what a harness with skills of its own shows its model: each skill's name, when to use
 /// it, and the file to read when it applies. The model reads that file with its own tools.
+///
+/// **A manual-only skill** ([`crate::declared`]) is purlis's equivalent of the harness's own
+/// switch ([`crate::compat::ManualOnly::Listing`], SK-8): its description stays out, so the
+/// model never picks it by itself, and it is named with its file on one line of its own, to read
+/// only when the person names it. Its description costs nothing.
 pub fn listing(skills: &[Skill]) -> Option<String> {
     if skills.is_empty() {
         return None;
@@ -162,12 +198,25 @@ pub fn listing(skills: &[Skill]) -> Option<String> {
          here. When a request matches one, read its `SKILL.md` and follow it before acting; a \
          prompt that names a skill by its name means this list.",
     );
-    for skill in skills {
+    let (manual, chosen): (Vec<&Skill>, Vec<&Skill>) = skills
+        .iter()
+        .partition(|skill| crate::declared(skill).manual);
+    for skill in chosen {
         text.push_str(&format!(
             "\n- `{}` — {} (`{}`)",
             skill.name,
             skill.description,
             skill.path.display()
+        ));
+    }
+    if !manual.is_empty() {
+        let named: Vec<String> = manual
+            .iter()
+            .map(|skill| format!("`{}` (`{}`)", skill.name, skill.path.display()))
+            .collect();
+        text.push_str(&format!(
+            "\n- Only when the person names one, never by your own choice: {}",
+            named.join(", ")
         ));
     }
     Some(text)

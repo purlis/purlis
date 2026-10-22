@@ -37,14 +37,28 @@ fn the_lint_and_the_templates_are_the_cores() {
         templates.iter().map(|one| one.id).collect::<Vec<_>>(),
         [SkillTemplateId::Blank, SkillTemplateId::Steps]
     );
+    let tmp = tempfile::tempdir().unwrap();
     for one in &templates {
-        let text = Template::from(one.id).text("deploy", "Ships it.");
-        assert!(skill_lint("deploy".to_owned(), text).is_empty());
+        let text = Template::from(one.id).text("deploy", "Ships it to staging and checks it.");
+        assert_eq!(
+            findings(tmp.path(), &Level::project(), "deploy", &text),
+            Vec::<SkillLintFinding>::new(),
+            "{:?}",
+            one.id
+        );
     }
     assert_eq!(
-        skill_lint("deploy".to_owned(), "no frontmatter".to_owned()).len(),
-        1
+        findings(tmp.path(), &Level::project(), "deploy", "no frontmatter"),
+        [SkillLintFinding {
+            level: SkillLintLevel::Blocks,
+            says: purlis_core::skills::Problem::NoFrontmatter.to_string(),
+        }]
     );
+    // A short description warns, and Save does not wait on it.
+    let short = Template::Blank.text("deploy", "Ships it.");
+    let said = findings(tmp.path(), &Level::project(), "deploy", &short);
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert_eq!(said[0].level, SkillLintLevel::Warns);
 }
 
 #[test]

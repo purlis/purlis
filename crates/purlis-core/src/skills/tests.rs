@@ -508,14 +508,14 @@ fn a_lay_out_that_never_finished_is_tidied_and_one_found_again_is_kept() {
     let tmp = tempfile::tempdir().unwrap();
     let (plane, kit) = a_host_on(tmp.path());
     let sets = kit.skill_sets.clone().unwrap();
-    let folder = crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit).unwrap();
+    let folder = crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit, Harness::ClaudeCode).unwrap();
     let leftover = sets.join(format!(".{A}.x1Y2z3"));
     std::fs::create_dir_all(&leftover).unwrap();
     last_laid_out_long_ago(&leftover);
     last_laid_out_long_ago(&folder);
 
     // Found again by the next chat's start: used now, so kept.
-    let again = crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit).unwrap();
+    let again = crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit, Harness::ClaudeCode).unwrap();
     assert_eq!(again, folder);
     let tidied = tidy(&sets).unwrap();
 
@@ -740,7 +740,7 @@ fn a_lay_out_into_sets_that_are_a_link_is_refused() {
     std::os::unix::fs::symlink(&outside, &sets).unwrap();
     kit.skill_sets = Some(sets);
 
-    assert!(crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit).is_none());
+    assert!(crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit, Harness::ClaudeCode).is_none());
     assert_eq!(
         std::fs::read_dir(&outside).unwrap().count(),
         0,
@@ -799,7 +799,7 @@ fn offered_names(skills: &ChatSkills) -> Vec<&str> {
 }
 
 #[test]
-fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_only_on_claude_code() {
+fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_on_every_harness() {
     let (tmp, bundle) = use_skill_plane();
     let root = tmp.path();
 
@@ -825,13 +825,16 @@ fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_only_on_
     );
     assert_eq!(at_the_root.spent.warns(), None);
 
-    // opencode lists it still (#2771): it is counted there.
-    let on_opencode = for_use_skill(&Running {
-        harness: Harness::Opencode,
-        ..running(root, &bundle, None)
-    });
-    assert_eq!(on_opencode.spent.skills, 4);
-    assert_eq!(on_opencode.spent.manual, 1);
+    // opencode and Codex are handed the translation (SK-8, #2771): it is free there too.
+    for harness in [Harness::Opencode, Harness::Codex] {
+        let elsewhere = for_use_skill(&Running {
+            harness,
+            ..running(root, &bundle, None)
+        });
+        assert_eq!(elsewhere.spent.skills, 3, "{harness:?} leaves release out");
+        assert_eq!(elsewhere.spent.manual, 1);
+        assert!(elsewhere.spent.budget.manual_free);
+    }
 
     // In the workspace: its own skill and the granted one, never one it was not granted.
     let in_smart_ide = for_use_skill(&running(root, &bundle, Some("smart-ide")));
