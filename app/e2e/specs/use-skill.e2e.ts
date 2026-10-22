@@ -15,7 +15,8 @@ import { startAChat } from "../started.js";
  *
  * The spec puts a project skill that declares two arguments in the project's `skills/`, granted
  * to every workspace, and starts a chat as a person does, on each harness in turn: the scenario's
- * own program, declared as Claude Code, Codex and opencode. From the palette it opens Use skill…,
+ * own program, declared as Claude Code and as opencode. A Codex chat starts only in the state run
+ * (#2037), which types a skill into one (`use-skill.state.e2e.ts`). From the palette it opens Use skill…,
  * which lists the chat's skills with its skill budget, picks the skill, fills its two boxes in
  * order and types it. The window then says the line it typed (or copied, where the chat is not
  * at its prompt yet), in that harness's syntax. The Skills chip on the chat's pane opens the
@@ -44,10 +45,10 @@ async function openThePickerFromThePalette(): Promise<void> {
   );
 }
 
-/** Each harness the scenario's program is declared as, and the line Use skill… types on it. */
+/** Each harness the scenario's program is declared as here, and the line Use skill… types on
+ *  it. */
 const HARNESSES: readonly (readonly [string, string])[] = [
   ["claude", `/skills:${SKILL} 42 "the tests"`],
-  ["codex", `$${SKILL} pr: 42; focus: the tests`],
   ["opencode", `/${SKILL} 42 "the tests"`],
 ];
 
