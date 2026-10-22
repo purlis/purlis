@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792649583771,
+  "lastUpdate": 1792650993547,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21210,6 +21210,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8408575,
             "unit": "ms",
             "extra": "median of 5 runs: 100.928, 101.631, 101.841, 102.232, 102.457 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6e70174530092cd491c63c27461200bbf6fb25d5",
+          "message": "SK-13: MCP skill tools and the fallback route for harnesses without skills (#2984)\n\n* SK-13: a chat lists, finds and loads its skills over MCP, and a load is a run\n\npurlis's MCP server gets skill_list, skill_runs, skill_find and skill_load,\nread or load only, over the chat's own skill set, behind the skill-studio\nflag. A load opens an exact run (started_by mcp-load) through the one\nTracker, on the line a tool hook sends; with no host it is logged as a\nhook's unheard start. A run records its copy (level) and workspace, and\nskill_runs shows the chat's own copies in its own place. A declared harness\nthat takes MCP servers (mcp_servers) takes the Mcp route, told in one line\nin the server's instructions. A narrowing skill on an armed Claude Code chat\nis refused and sent to its own Skill tool; elsewhere \"Narrowing not\napplied\". ADR 0063 amended.\n\nCloses #2776\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-13: meet persona and installed skills on main\n\nA run's level reads persona and installed; a persona copy's runs are that\npersona's; the MCP tools' set leaves the harness's installed skills to it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T10:24:43+04:00",
+          "tree_id": "ad514227bb4977276e75e8b655113a2f16275fed",
+          "url": "https://github.com/purlis/purlis/commit/6e70174530092cd491c63c27461200bbf6fb25d5"
+        },
+        "date": 1792650991471,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5326545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.531, 0.533, 0.549, 0.564 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.1242855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.406, 16.963, 17.124, 17.483, 17.584 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.048464,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.501, 104.538, 105.048, 106.699, 106.760 ms"
           }
         ]
       }
