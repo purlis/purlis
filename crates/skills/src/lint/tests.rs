@@ -4,6 +4,7 @@
 //! The built-in lints, each fired on a fixture skill (SK-8, #2771).
 
 use super::*;
+use crate::change::Problem;
 use crate::compat::Field;
 
 /// A machine with `git`, `sh`, `bash` and `python3`, and nothing else.
@@ -62,7 +63,11 @@ fn a_frontmatter_problem_blocks_and_no_frontmatter_is_all_that_is_said() {
     assert_eq!(findings[0].severity, Severity::Blocks);
     let findings = found("---\nname: deploy\n---\n", &[], true);
     assert_eq!(findings[0].severity, Severity::Blocks);
-    assert!(findings[0].says.contains("no description"), "{findings:?}");
+    assert_eq!(
+        findings[0].lint,
+        Lint::Frontmatter(Problem::NoDescription),
+        "{findings:?}"
+    );
 }
 
 #[test]
