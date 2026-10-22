@@ -908,11 +908,14 @@ export const commands = {
 	 *  Notice says, until it is put away. `None` for a chat that has every one.
 	 */
 	chatSkillsMissing: (plane: PlaneId, session: number) => typedError<{
-	persona: string,
+	/**  The persona the chat runs as, or `None` for a chat on no persona. */
+	persona: string | null,
 	/**  Installed skills this machine does not have for the chat's harness. */
 	missing: string[],
 	/**  Built-in skills purlis has none of: a typo, or a name from another version of purlis. */
 	no_built_in: string[],
+	/**  Skills the chat would have loaded that could not be loaded, each with why. */
+	broken: SkillBroken[],
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	putAwayChatSkillsMissing: __WINDOW_ONLY_RESULT,
 	/**  The templates a new skill can start from. */

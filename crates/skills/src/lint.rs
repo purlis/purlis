@@ -172,7 +172,7 @@ fn references(text: &str, lints: &BuiltInLints<'_>) -> Vec<Finding> {
     let mut look = |namespace: &str, known: &[String], whose: &str| {
         for name in named_in(text, namespace) {
             let said = format!("{namespace}:{name}");
-            if known.iter().any(|one| *one == name) || seen.contains(&said) {
+            if known.contains(&name) || seen.contains(&said) {
                 continue;
             }
             out.push(warns(format!(
@@ -351,7 +351,6 @@ fn shell_lines(text: &str) -> Vec<String> {
         if let Some(at) = line.find("<<") {
             let word = line[at + 2..]
                 .trim_start_matches(['-', '~'])
-                .trim()
                 .split_whitespace()
                 .next()
                 .unwrap_or_default()
