@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792688139383,
+  "lastUpdate": 1792688157430,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -11420,6 +11420,42 @@ window.BENCHMARK_DATA = {
             "value": 666.1,
             "unit": "MB",
             "extra": "median of 6 samples: 633.7, 650.9, 662.9, 669.3, 670.2, 751.4 MB; window 403.5 MB, session host 262.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "98370e740edc4300cf62bffaf13bb9622bd09cae",
+          "message": "Stories run across the theme, appearance and density matrix (#3036)\n\n* Stories run across the theme, appearance and density matrix (#2945)\n\nEvery story runs in each appearance of Purlis Classic and Purlis, in each\ndensity: one Vitest project per cell, drawn by the one decorator in\npreview.tsx. axe and play run in every cell; pictures are taken in Purlis\nand Classic, dark and light, at the default density, named\n<story>_<theme>_<appearance>-<browser>-linux.png.\n\nThe stories draw the built-in themes as the core resolves them: a test of\nthe app crate holds app/.storybook/built-in-themes.json to the core, and the\nthemes' own fonts are served from their folders by digest.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories-baselines: name each story that fails while drawing, per browser and cell (#2945)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Purlis Classic light: warning text holds 4.5:1 on a control (#2945)\n\nThe matrix runs every story in Classic's light appearance, where axe found the\nwarning-soft button's words at 4.36:1 on a control (3.86:1 hovered).\nstate.waiting moves from #906000 to #805500 (5.23:1, 4.62:1 hovered).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Stories matrix: review fixes (#2945)\n\n- A compact cell's pictures are baselines too: the pattern takes an optional\n  density, and a test runs every cell's picture name through it.\n- take holds the baselines to 256 MiB in all, before anything is written.\n- The label job's comment counts the changes by directory past 100 and lists\n  every path in the run's summary.\n- A face the built-in themes name that no folder has stops the stories from\n  loading; every face is made before a story renders, in every cell; a running\n  Storybook watches the themes and the faces.\n- One command writes the themes file again, said the same everywhere.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-22T19:41:11+04:00",
+          "tree_id": "9b4360c66ec9fc84b7cd610099eae499d4225001",
+          "url": "https://github.com/purlis/purlis/commit/98370e740edc4300cf62bffaf13bb9622bd09cae"
+        },
+        "date": 1792688155249,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1455,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1451.6, 1455, 1612.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 692.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 651.8, 679.6, 691.1, 693.4, 694.6, 773.9 MB; window 407.3 MB, session host 285 MB"
           }
         ]
       }
