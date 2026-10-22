@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792700420617,
+  "lastUpdate": 1792700439153,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -11708,6 +11708,42 @@ window.BENCHMARK_DATA = {
             "value": 687.9,
             "unit": "MB",
             "extra": "median of 6 samples: 648.8, 671.8, 689.5, 687.7, 688.2, 772.5 MB; window 403.8 MB, session host 283.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4ad85cd9b5307463baf3b753d2349d6a1a1a3995",
+          "message": "Browsers: the engine's sandbox refusal has a refusal code of its own (#2975)\n\n* Browsers: the engine's sandbox refusal has a refusal code of its own (#2899)\n\nSession protocol 1.36: a browser whose engine cannot make its sandbox on the\nhost's machine is refused `no_engine_sandbox`, in the binary's words. The\nbinary says which kind of failure it was (`BrowserNotStarted`), so the host\nmatches no sentence. The window reads the code, and still reads a host\nbefore 1.36 by its sentence. The fixture records the refusal.\n\nCloses #2899\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the window takes the sandbox sentence from any host (#2899)\n\nA relaying host may pass the words on without the code.\n\nRefs #2899\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T23:29:41+04:00",
+          "tree_id": "8ad3a43da558917e7bfc01f888bdef753b40b2cd",
+          "url": "https://github.com/purlis/purlis/commit/4ad85cd9b5307463baf3b753d2349d6a1a1a3995"
+        },
+        "date": 1792700436500,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1480.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1439.9, 1480.5, 1710.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 672.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 646.8, 659.2, 667.9, 676.9, 678, 754.1 MB; window 401.5 MB, session host 270.9 MB"
           }
         ]
       }
