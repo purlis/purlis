@@ -329,3 +329,102 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
 
 #[cfg(test)]
 mod tests;
+
+/// **Where a workspace's chats run on this machine** (#2046): the pool its chats run on, `None`
+/// for this machine, and every pool this machine keeps, which the setting offers.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ChatsRunOn {
+    pub pool: Option<String>,
+    pub pools: Vec<String>,
+}
+
+#[cfg(unix)]
+/// Where `workspace` of the plane at `plane` runs its chats on `config`.
+pub fn chats_run_on_at(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: &str,
+) -> Result<ChatsRunOn, String> {
+    let pools = purlis_core::runners::pools(config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .map(|pool| pool.name().to_owned())
+        .collect();
+    let loaded = purlis_core::machine::read(config);
+    Ok(ChatsRunOn {
+        pool: loaded
+            .store
+            .chats_run_on(plane, workspace)
+            .map(str::to_owned),
+        pools,
+    })
+}
+
+#[cfg(unix)]
+/// Sets where `workspace` of the plane at `plane` runs its chats on `config`: on `pool`, which
+/// this machine must keep with its runner, or on this machine for `None`. A chat running now
+/// stays where it runs; the next starts where this says.
+pub fn set_chats_run_on_at(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: &str,
+    pool: Option<&str>,
+) -> Result<ChatsRunOn, String> {
+    if let Some(pool) = pool {
+        purlis_core::runners::runner_for(config, pool).map_err(|why| format!("{why}."))?;
+    }
+    let mut set = Ok(false);
+    purlis_core::machine::update(config, |store| {
+        set = store.set_chats_run_on(plane, workspace, pool);
+    })
+    .map_err(|why| format!("Where this workspace's chats run was not kept: {why}"))?;
+    set?;
+    chats_run_on_at(config, plane, workspace)
+}
+
+/// **Where a workspace's chats run** (#2046), as its settings show it.
+#[tauri::command]
+#[specta::specta]
+pub async fn chats_run_on(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: String,
+) -> Result<ChatsRunOn, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading where the workspace's chats run", move || {
+            chats_run_on_at(&config_root()?, &root, &workspace)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, workspace);
+        Err(NOT_HERE.to_owned())
+    }
+}
+
+/// **Sets where a workspace's chats run** (#2046): the person's choice in its settings.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_chats_run_on(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: String,
+    pool: Option<String>,
+) -> Result<ChatsRunOn, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("setting where the workspace's chats run", move || {
+            set_chats_run_on_at(&config_root()?, &root, &workspace, pool.as_deref())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, workspace, pool);
+        Err(NOT_HERE.to_owned())
+    }
+}

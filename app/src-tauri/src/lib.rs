@@ -129,6 +129,8 @@ mod repolist;
 mod restored;
 mod restoring;
 #[cfg(unix)]
+mod routedsessions;
+#[cfg(unix)]
 mod runnercode;
 mod runnerlinks;
 mod sandboxchoose;
@@ -146,6 +148,8 @@ mod smartclose;
 mod specimen;
 mod staleclones;
 mod stopping;
+#[cfg(test)]
+mod storythemes;
 mod syscontrast;
 mod taskblocks;
 mod taskbrief;

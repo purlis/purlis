@@ -393,6 +393,8 @@ macro_rules! app_commands {
                 dockerpools::docker_pool_link,
                 dockerpools::docker_pool_version,
                 notheld::projects_not_held,
+                dockerpools::chats_run_on,
+                dockerpools::set_chats_run_on,
                 updates::check_for_update,
                 updates::install_update,
                 updates::restart_to_update,

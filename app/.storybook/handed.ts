@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **What the core hands a window, put where `theme.ts` reads it** (#2901). Imported by
+ * **What the core hands a window, put where `theme.ts` reads it** (#2901, #2945). Imported by
  * `preview.tsx` before anything that imports `theme.ts`, as `test-setup.ts` imports
  * `handed.testkit.ts` first.
  */

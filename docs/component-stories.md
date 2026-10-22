@@ -20,6 +20,47 @@ Its siblings: [`ui-primitives.md`](ui-primitives.md) says what the window is bui
 Both browsers run every story: WebKit is the engine purlis ships in on macOS and Linux
 (WKWebView, WebKitGTK), and Chromium is WebView2's on Windows. A picture is kept for each.
 
+## The theme matrix
+
+**Every story runs in every cell of the matrix** (#2945): each appearance of each theme purlis
+ships, in each density. One decorator in `app/.storybook/preview.tsx` draws it in its cell, so no
+story picks a theme of its own; each cell is a Vitest project of its own, `stories <cell>
+(<browser>)` (`app/.storybook/vitest.project.ts`, `app/.storybook/matrix.ts`).
+
+| Theme | Appearances | Densities | Pictures |
+| --- | --- | --- | --- |
+| Purlis Classic (`purlis-classic`) | `dark`, `light` | `comfortable`, `compact` | dark and light, comfortable |
+| Purlis (`purlis`) | `dark`, `light`, `dark-high-contrast` | `comfortable`, `compact` | dark and light, comfortable |
+
+Every cell renders the story, plays its keyboard path and runs axe. A picture is taken only in
+the cells `app/.storybook/pictured.json` names, each its own baseline, named for its theme and
+appearance: `<story id>_<theme>_<appearance>-<browser>-linux.png`, so
+`ui-button-primary_purlis_light-webkit-linux.png` is the Primary button in Purlis's light
+appearance in WebKit. A cell's name is `<theme>_<appearance>`, and `_compact` after it for the
+compact density, which its pictures' names carry too
+(`ui-button-primary_purlis_dark_compact-webkit-linux.png`). Any cell can be pictured by adding its
+name to `pictured.json`; four are today, to keep the `stories` job short, and axe and the
+keyboard run in all ten. A picture's name is held to the names `tools/story-baselines.mjs`
+takes, cell by cell, in `tools/story-baselines.test.mjs`.
+
+Every face a theme names is made before its story renders, so the keyboard path, axe and the
+picture all meet the theme's own fonts. A face the theme names that its folder no longer has
+stops Storybook and the stories from loading, rather than drawing the fallback.
+
+**The themes are the core's.** A story's page cannot ask the core for anything, so what the core
+hands a window for each built-in appearance is kept in `app/.storybook/built-in-themes.json`, and
+a test of the app's crate (`app/src-tauri/src/storythemes.rs`) fails when it is not what the core
+resolves now. After a change to a built-in theme, write it again and commit it:
+
+```bash
+mkdir -p app/dist && PURLIS_WRITE_STORY_THEMES=1 cargo test -p purlis-app --lib storythemes
+```
+
+Each theme's fonts are drawn from the files its folder ships (`app/.storybook/handed.plugin.ts`),
+by the digest the window asks for them by, and every face is made before a picture is taken.
+
+In Storybook's own UI the toolbar's **Theme**, **Appearance** and **Density** pick the cell.
+
 A good story asserts what a person sees or does: a role and its name, a state, the keys, the
 pixels. It never reaches into a component's internals.
 
@@ -36,8 +77,7 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
 - After each move, `expectFocusInSight()` from `app/src/stories.testkit.ts` checks that the focus
   is on screen and not under anything the page draws over it, such as a dialog's sticky footer
   (WCAG 2.4.11).
-- The story is drawn in a built-in theme, the toolbar's **Theme** global; a story that must be
-  drawn in another sets `globals: { theme: "<name>" }`.
+- The story is drawn in every cell of the theme matrix (below): never pin a theme on a story.
 - The picture is of the story's frame. A story that draws outside it (a dialog, a menu, a
   popover) sets `parameters: { screenshot: "page" }`; one with nothing stable to draw sets
   `screenshot: false` and says why.
@@ -63,7 +103,8 @@ A family's ticket (spec #2897) is done when it ships:
 ```bash
 cd app
 npx playwright install chromium webkit   # once: the browsers Vitest drives
-npm run test:stories                     # every story, both browsers, keyboard and axe
+npm run test:stories                     # every story, every cell, both browsers, keyboard and axe
+npx vitest run --project "stories purlis_*"   # one theme's cells
 npm run storybook                        # the stories in Storybook, on http://localhost:6006
 ```
 
@@ -74,7 +115,7 @@ on any machine but the pinned image it would differ from its baseline without an
 wrong. A local run checks rendering, the keyboard and axe, and takes no picture.
 
 **What a failure says.** In CI, each story that fails is one annotation on the `stories` check,
-titled `<story> in <browser>`: its file, the gate it failed (`renders`, `keyboard`,
+titled `<story> in <browser>, <cell>`: its file, the gate it failed (`renders`, `keyboard`,
 `accessibility` or `screenshot`), the first line of why, and the axe rules it broke. It says the
 same in WebKit as in Chromium: `tools/story-failures.mjs` is the Vitest reporter that keeps each
 error's message, and the script that turns the reports into annotations. An error in a story
@@ -84,7 +125,8 @@ naming anything says so.
 ## Baselines
 
 A baseline is a PNG at
-`app/src/<dir>/__screenshots__/<Component>.stories.tsx/<story id>-<chromium|webkit>-linux.png`.
+`app/src/<dir>/__screenshots__/<Component>.stories.tsx/<story id>_<theme>_<appearance>-<chromium|webkit>-linux.png`,
+one for each pictured cell of the matrix.
 Every baseline is drawn by one image, Playwright's own Docker image for the Playwright version
 the lockfile names, and compared in the same image by the `stories` workflow
 (`.github/workflows/stories.yml`). Both workflows name it by its tag and its digest,
@@ -116,8 +158,9 @@ is the one branch protection reads. The run the label's job starts tests the bra
 branch that is up to date with its base, which the job requires, the two test the same tree.
 
 The `stories` check also refuses a baseline the pinned image did not draw (one named for another
-platform), and an obsolete one: a baseline whose story file is gone, or whose story is no longer
-in its file with the `test` tag, the stories the Vitest addon runs. Storybook's own index
+platform), and an obsolete one: a baseline whose story file is gone, whose story is no longer
+in its file with the `test` tag, the stories the Vitest addon runs, or whose cell is not one
+`pictured.json` names. Storybook's own index
 (`storybook index`) says which stories there are, and the check names the story of each obsolete
 baseline (`tools/story-baselines.mjs check`). When a story is renamed or deleted, delete its
 baselines in the same change, or put the `update-baselines` label on, which deletes them.

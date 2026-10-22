@@ -232,3 +232,35 @@ fn a_runner_that_lost_a_repository_since_the_last_send_is_sent_it_whole() {
         "web\n"
     );
 }
+
+#[test]
+fn no_credential_file_of_a_clone_reaches_the_runner() {
+    let world = World::new();
+    let web = world.root.join("workspaces/app/web");
+    std::fs::write(web.join(".env"), "TOKEN=not-for-the-runner\n").unwrap();
+    std::fs::write(web.join("id_ed25519"), "a key\n").unwrap();
+    std::fs::write(web.join(".env.example"), "TOKEN=\n").unwrap();
+    std::fs::write(web.join("login.rs"), "fn log_in() {}\n").unwrap();
+
+    let _ = world.sessions.open_named(
+        None,
+        &Named {
+            workspace: Some("app".into()),
+            ..crate::hostedsessions::tests::by_its_names()
+        },
+        Default::default(),
+        &|_| {},
+    );
+
+    let there = world.kept().join("workspaces/app/web");
+    assert!(
+        there.join("login.rs").is_file(),
+        "the work reached the runner"
+    );
+    assert!(there.join(".env.example").is_file());
+    assert!(
+        !there.join(".env").exists(),
+        "nothing secret is kept on a runner"
+    );
+    assert!(!there.join("id_ed25519").exists());
+}
