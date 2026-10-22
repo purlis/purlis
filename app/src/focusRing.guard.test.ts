@@ -35,14 +35,11 @@ import { LENGTH_UNITS } from "./cssMath.testkit";
  * may be taken away (`none`, `0`). A Tailwind `outline-<n>` or `outline-offset-<n>` is a written
  * ring too.
  *
- * **The one sheet it does not read is the forced-colours sheet** (`theme/forced-colors.css`,
- * #2328): it is core's and holds no theme token at all, since forced colours replace what a theme
- * says, so its ring is the system's, 2px. `forced-colors.test.ts` holds that sheet. There is no
- * other allowance.
+ * Every stylesheet is read, the forced-colours sheet too: forced colours replace colour, not
+ * geometry, so its focus rule gives the ring the system's colour and leaves its width and offset
+ * to the window's own rule (`forced-colors.test.ts` holds that it sets none). There is no
+ * allowance.
  */
-
-/** The sheet no theme token reaches, which `forced-colors.test.ts` holds. */
-const FORCED = join("theme", "forced-colors.css");
 
 /** A selector for an element that has focus. */
 const FOCUSED = /:focus\b|:focus-visible\b|:focus-within\b|\[data-focus-visible\b/;
@@ -108,8 +105,9 @@ const read = (file: string) => readFileSync(join(SRC, file), "utf8");
 
 describe("every focus ring reads the focus-ring tokens", () => {
   it("in every stylesheet", () => {
-    const sheets = sourceFiles((name) => name.endsWith(".css")).filter((file) => file !== FORCED);
+    const sheets = sourceFiles((name) => name.endsWith(".css"));
     expect(sheets).toContain("App.css");
+    expect(sheets).toContain(join("theme", "forced-colors.css"));
     const found = sheets.flatMap((file) =>
       cssRingLiterals(read(file)).map((one) => `${file}: ${one}`),
     );

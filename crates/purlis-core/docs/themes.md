@@ -194,8 +194,9 @@ The project strip sits in the title bar, whose height no token reaches yet. **St
 whatever `radius.*` says:** the strip tabs (projects, workspaces, chats), a tab's `×` closer, the
 settings gear on a strip, and every list and tree row but the palette's. **The focus ring
 tokens reach every focus ring**, the strip tabs', a tab's `×` closer's and the strip gear's
-among them; a ring that sits half as far out or in draws half the offset. Only forced colours
-draw the system's ring instead.
+among them; a ring that sits half as far out or in draws half the offset. Under forced colours
+the ring is drawn in the system's `Highlight` at the theme's width and offset: forced colours
+replace colour, not geometry.
 
 ### Density's compact layer
 
