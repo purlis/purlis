@@ -608,14 +608,15 @@ fn a_theme_that_is_not_here_is_said_and_exits_two() {
 }
 
 #[test]
-fn an_old_id_checks_purlis_classic() {
+fn an_old_id_checks_purlis() {
     let rig = Rig::new();
 
+    // `purlis-dark` and `purlis-light`, and the ids they had, name Purlis's dark and light (#3034).
     for old in ["charter-dark", "purlis-light"] {
         let ran = rig.run(&["check", old, "--json"]);
 
         assert_eq!(ran.code, 0, "{}", ran.err);
-        assert_eq!(ran.json()["theme"]["id"], "purlis-classic", "{old}");
+        assert_eq!(ran.json()["theme"]["id"], "purlis", "{old}");
         assert_eq!(ran.json()["clean"], true, "{old}");
     }
 }
