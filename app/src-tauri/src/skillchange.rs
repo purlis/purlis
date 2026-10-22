@@ -157,7 +157,7 @@ pub(crate) fn levels(root: &std::path::Path) -> Vec<StudioLevel> {
 
 /// Runs `change` with a context of the project at `root`, asked from the window, and answers
 /// the lines worth showing: what was not done, or left. A `Done` line is the command line's.
-fn heard<T>(
+pub(crate) fn heard<T>(
     root: &std::path::Path,
     change: impl FnOnce(&mut verbs::Ctx<'_>) -> Result<T, String>,
 ) -> Result<SkillChanged, String> {
@@ -177,7 +177,7 @@ fn heard<T>(
 }
 
 /// Refused while the flag is off.
-fn flag_on() -> Result<(), String> {
+pub(crate) fn flag_on() -> Result<(), String> {
     if purlis_core::skills::studio_on_here() {
         Ok(())
     } else {

@@ -201,6 +201,9 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`themes/` — the project's theme folders](#themes--the-projects-theme-folders)
   - [`skills/` — the project's skills](#skills--the-projects-skills)
   - [`skills.local/` — the project's local skills](#skillslocal--the-projects-local-skills)
+  - [`skills.lock` — the project's installed skills](#skillslock--the-projects-installed-skills)
+  - [`skills.local.lock` — the installs at local levels](#skillslocallock--the-installs-at-local-levels)
+  - [`$TMPDIR/purlis-skill-source-<random>/` — a fetched skill source](#tmpdirpurlis-skill-source-random--a-fetched-skill-source)
   - [`workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills](#workspaceswsskills-and-personasnameskills--workspace-and-persona-skills)
   - [Plane-root files that exist but are **not** this area](#plane-root-files-that-exist-but-are-not-this-area)
 - [Workspaces](#workspaces)
@@ -686,7 +689,11 @@ Paths derived from the root (all in `derive`, `charter/config.py:661`) that land
   by the same reader (`Choices::skill`) for the Skill studio and, while the Skill studio's flag
   is on, for every chat `start::ready` launches (SK-6, #2769). Its `[sandbox]` table is read
   by `crates/purlis-core/src/sandbox.rs` (`Said::read`) for every chat `start::ready` launches
-  and for the Settings tab's save (ADR 0067).
+  and for the Settings tab's save (ADR 0067). Its `[[skill_sources]]` tables (`url`, and optionally `branch`, `folder`, and `vault` and
+  `key` naming the vault entry a private source signs in with, never a token) are read and
+  written by `crates/purlis-core/src/skills/source.rs` (`sources`, `add`, `remove`) for the
+  Skill studio and `purlis skill install` (SK-10, #2773; ADR 0100 §1); `charter.local.toml` may
+  hold this machine's own, under the same table.
 - **Git:** committed (nothing ignores it; `_GITIGNORE_BASELINE` ignores its *local* sibling
   only, `charter/commands.py:1104`).
 - **Encoding details for a byte-identical writer:**
@@ -1390,6 +1397,65 @@ outside the project and removes it when the flow ends, so it adds none of them (
   (`scaffold::SKILLS_LOCAL_IGNORES`, #2874). **A save never stages one** whatever the
   `.gitignore` says: its stage and the standing's status both exclude `skills.local/**` and
   `workspaces/*/skills.local/**` (`planegit::SAVE_STAGES`).
+
+### `skills.lock` — the project's installed skills
+
+- **Format:** JSON, pretty-printed, one trailing newline: `{"version": 1, "skills": [...]}`, the
+  entries sorted by level then name. Each entry says what one installed skill was copied from
+  (fields below).
+- **Status:** **purlis only** ([ADR 0100](adr/0100-a-skill-is-installed-from-a-git-source-as-a-pinned-copy-and-never-updates-by-itself.md)),
+  **experimental** while the `skill-studio` flag is on (#2786).
+- **Tier:** Plane — committed, so every clone knows where each installed skill came from and at
+  which commit.
+- **Written by:** an accepted install or update only (`purlis_core::skills::source::install`,
+  `update`; the Skill studio and `purlis skill install | update`, #2773), written whole beside
+  itself and renamed over, only while it is still what was read (`proposed::write_pinned`), and
+  committed in the same commit as the copies it records (`planegit::save_paths`). Asking a source
+  for a newer commit (`purlis skill update`, the studio's Updates) reads its refs and writes
+  nothing here: nothing a source does moves a pin.
+- **Read by:** `purlis_core::skills::source` (`lock::read`), for the studio's Browse (which skills
+  are installed from a source), Updates and each update's review. A file that is not a plain file
+  is not read; one of a newer `version` is refused and changes nothing.
+- **Git:** committed (nothing ignores it).
+
+| Key of an entry | Type | Required / default | Meaning | Status | Source |
+|---|---|---|---|---|---|
+| `name` | string | required | The skill's name, and its folder's at its level. | experimental | ADR 0100 §2 |
+| `level` | string | required | The level's folder in the plane: `skills`, `workspaces/<ws>/skills` (`.local` in the local lockfile). | experimental | `skills::verbs::Level` |
+| `source.url` | string | required | The source's URL: `https://` with no credential in it, or a folder on this machine. | experimental | ADR 0100 §1 |
+| `source.branch` | string | optional, default the source's `HEAD` | The branch its newest commit is read from. | experimental | ADR 0100 §1 |
+| `source.folder` | string | required | The skill's folder in the source; empty for a source that is one skill. | experimental | ADR 0100 §2 |
+| `commit` | string | required | The commit the copy was made from: the pin. | experimental | ADR 0100 §2 |
+| `digest` | string | required | `sha256:` over each file's path, mode and digest, in path order. | experimental | `source::digest_of` |
+| `files` | list of `{path, executable?, sha256}` | required | Each file the install wrote, so an edit here is seen and an update removes only what the install wrote. | experimental | ADR 0100 §4 |
+| `brought_by` | string | optional | The skill whose install brought this one along, as one it refers to. | experimental | ADR 0100 §2 |
+
+### `skills.local.lock` — the installs at local levels
+
+- **Format:** as [`skills.lock`](#skillslock--the-projects-installed-skills), for skills
+  installed into a level's `skills.local/`.
+- **Status:** **purlis only** (ADR 0100 §2), **experimental** while the `skill-studio` flag is on.
+- **Tier:** Clone state — never committed, under the same live/local rule as `charter.local.toml`
+  (ADR 0048).
+- **Written by:** an accepted install or update at a local level, as `skills.lock` is, and never
+  committed.
+- **Read by:** as `skills.lock`.
+- **Git:** must be ignored: `purlis init` writes `/skills.local.lock` into the plane's
+  `.gitignore` and `purlis reinit` adds it (`scaffold::SKILLS_LOCAL_IGNORES`). **A save never
+  stages it** whatever the `.gitignore` says (`planegit::SAVE_STAGES`).
+
+### `$TMPDIR/purlis-skill-source-<random>/` — a fetched skill source
+
+- **Format:** a bare git repository, `source.git`, holding one fetched commit of a skill source
+  at `refs/purlis/fetched` (and the pinned one at `refs/purlis/pinned` for an update's diff).
+  Never checked out: its tree is read with `ls-tree` and `cat-file`.
+- **Status:** **purlis only** (#2773).
+- **Tier:** Machine — **transient**: made for one browse, review, install or update and removed
+  when it ends.
+- **Written by:** `purlis_core::skills::source::fetch`, through purlis's hardened git: no hook,
+  no submodule, `transfer.fsckObjects` on, and a private source's credential handed to its one
+  credential helper by variable, never on a command line.
+- **Read by:** the same call, alone.
 
 ### `workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills
 

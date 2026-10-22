@@ -75,6 +75,7 @@ mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
 mod skillchange;
+mod skillsources;
 mod skillrun;
 mod skillstudio;
 mod useskill;

@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis skill list | show | new | edit | mv | rm | restore | grant | share | runs` (SK-2,
+//! `purlis skill list | show | new | edit | mv | rm | restore | grant | share | install | update |
+//! runs` (SK-2,
 //! #2765; SK-4, #2767; SK-3, #2766; SK-7, #2770): the skills a chat in this project gets, and why
 //! each other one is left out, as the Skill studio shows them; making, editing, renaming, moving,
 //! deleting and restoring a skill, each one commit; where a project skill reaches and what a
@@ -12,6 +13,7 @@
 use std::path::Path;
 
 use clap::{Args, Subcommand, ValueEnum};
+use purlis_core::skills::source::{self, SignIn, Source};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{Grant, StudioRow, Template};
 use serde_json::{Value, json};
@@ -143,6 +145,50 @@ pub enum SkillCommand {
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
     },
+    /// Install skills from a skill source, a git repository of skill folders: prints the review
+    /// (the scripts each runs, the network hosts its files name, its `!` commands and its writes
+    /// outside the workspace, each risky one marked, and every file) and asks before it copies
+    /// anything. The copy is pinned to the commit it was reviewed at, in `skills.lock`
+    /// (`skills.local.lock` with `--local`). Skills the named ones refer to come along. With no
+    /// skill named, lists what the source offers.
+    Install {
+        /// The source: an https:// URL, or a folder on this machine by its full path.
+        url: String,
+        /// The skills to install, by name.
+        names: Vec<String>,
+        /// The source's branch (default: its own default branch).
+        #[arg(long)]
+        branch: Option<String>,
+        /// The folder inside the source its skills are in (default: its top).
+        #[arg(long)]
+        folder: Option<String>,
+        /// The vault a private source signs in with, through `purlis secret exec`.
+        #[arg(long, requires = "key")]
+        vault: Option<String>,
+        /// The entry in that vault that holds the token.
+        #[arg(long, requires = "vault")]
+        key: Option<String>,
+        /// Where a project skill reaches: `root`, `all`, or workspace names (default: root).
+        #[arg(long, num_args = 1..)]
+        grant: Vec<String>,
+        /// Install without asking: for a script that printed and read the review itself.
+        #[arg(long)]
+        yes: bool,
+        #[command(flatten)]
+        at: At,
+    },
+    /// Check each installed skill's source for a newer commit (its refs only: nothing is
+    /// fetched or written). With a name, print that skill's update as a diff of its review and
+    /// its files, and ask before it is applied. Nothing is ever updated by itself.
+    Update {
+        /// The installed skill to update (default: list the updates there are).
+        name: Option<String>,
+        /// Update without asking: for a script that printed and read the diff itself.
+        #[arg(long, requires = "name")]
+        yes: bool,
+        #[command(flatten)]
+        at: At,
+    },
     /// Every skill run the project's skill log holds, newest first, with its signals (tool
     /// calls, tool errors, refusals, asks, tokens, time): never a pass or a fail. With a name,
     /// that skill's runs alone.
@@ -216,6 +262,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         SkillCommand::List { .. }
             | SkillCommand::Show { .. }
             | SkillCommand::Restore { name: None }
+            | SkillCommand::Update { name: None, .. }
             | SkillCommand::Runs { .. }
     );
     if writes
@@ -455,6 +502,69 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             }
         }
+        SkillCommand::Install {
+            url,
+            names,
+            branch,
+            folder,
+            vault,
+            key,
+            grant,
+            yes,
+            at,
+        } => {
+            let source = Source {
+                url,
+                branch,
+                folder,
+                sign_in: vault.zip(key).map(|(vault, key)| SignIn {
+                    vault,
+                    key,
+                    user: None,
+                }),
+            };
+            install(&mut cx, &source, &names, &grant, yes, &at.level())
+        }
+        SkillCommand::Update { name: None, .. } => {
+            let (offers, unasked) = source::updates(root);
+            for one in &unasked {
+                voice::warn(&format!("{} ({}): {}", one.name, one.level, one.why));
+            }
+            if offers.is_empty() {
+                println!("Every installed skill is pinned to its source's newest commit.");
+            }
+            for one in &offers {
+                let edited = if one.edited { ", edited here" } else { "" };
+                println!(
+                    "{}  {}  {} -> {}{edited}",
+                    one.name,
+                    one.level,
+                    source::short(&one.pinned),
+                    source::short(&one.newer)
+                );
+            }
+            Ok(0)
+        }
+        SkillCommand::Update {
+            name: Some(name),
+            yes,
+            at,
+        } => {
+            let level = at.level();
+            let update = match source::update_review(root, &level, &name) {
+                Ok(update) => update,
+                Err(why) => {
+                    voice::err(&why);
+                    return Ok(1);
+                }
+            };
+            print!("{}", update_text(&update));
+            if !yes && !asked(&format!("Update {name} to {}?", source::short(&update.newer))) {
+                voice::info("Nothing was changed.");
+                return Ok(1);
+            }
+            done(source::update(&mut cx, &level, &name, &update.accepted()))
+        }
         SkillCommand::Runs { name, limit, json } => {
             let runs = purlis_core::skills::studio_runs(root, name.as_deref(), limit);
             if json {
@@ -540,6 +650,172 @@ fn seconds(ms: u64) -> String {
         1_000..60_000 => format!("{} s", ms / 1_000),
         _ => format!("{} min {} s", ms / 60_000, ms % 60_000 / 1_000),
     }
+}
+
+/// `purlis skill install`: what `source` offers where no skill is named; else the review of
+/// `names`, asked about, then the install at `level`.
+fn install(
+    cx: &mut verbs::Ctx<'_>,
+    source: &Source,
+    names: &[String],
+    grant: &[String],
+    yes: bool,
+    level: &Level,
+) -> Result<Code, String> {
+    let root = cx.plane;
+    if names.is_empty() {
+        let browse = match source::browse(root, source) {
+            Ok(browse) => browse,
+            Err(why) => {
+                voice::err(&why);
+                return Ok(1);
+            }
+        };
+        println!("{source} at {}:", source::short(&browse.commit));
+        for one in &browse.skills {
+            println!("  {}  {}", one.skill.name, one.skill.description);
+        }
+        for (folder, why) in &browse.not_skills {
+            println!("  ({folder}: {why})");
+        }
+        return Ok(0);
+    }
+    let grant = if grant.is_empty() {
+        None
+    } else {
+        match Grant::from_words(grant) {
+            Ok(grant) => Some(grant),
+            Err(why) => {
+                voice::err(&format!("{why}: --grant takes root, all, or workspace names"));
+                return Ok(2);
+            }
+        }
+    };
+    let review = match source::review(root, source, names) {
+        Ok(review) => review,
+        Err(why) => {
+            voice::err(&why);
+            return Ok(1);
+        }
+    };
+    print!("{}", review_text(&review));
+    let question = format!(
+        "Install {} at {level}, pinned to {}?",
+        counted(review.skills.len(), "skill", "skills"),
+        source::short(&review.commit)
+    );
+    if !yes && !asked(&question) {
+        voice::info("Nothing was installed.");
+        return Ok(1);
+    }
+    if source::sources(root)
+        .iter()
+        .all(|one| one.source.url != source.url || one.source.branch != source.branch)
+        && let Err(why) = source::add(cx, source, level.local)
+    {
+        voice::warn(&format!("The source was not added to this project's sources: {why}"));
+    }
+    done(source::install(cx, source, level, &review.accepted(), grant.as_ref()))
+}
+
+/// Asks `question` on the terminal and answers whether the person said yes. No answer is no.
+fn asked(question: &str) -> bool {
+    eprint!("{question} [y/N] ");
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).is_ok()
+        && matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+}
+
+/// A summary as the terminal prints it, each risky item marked `!`, indented by `pad`.
+fn summary_text(summary: &purlis_core::skills::review::Summary, pad: &str) -> String {
+    let mut out = String::new();
+    if summary.is_empty() {
+        out.push_str(&format!("{pad}Instructions only: no scripts, hosts, ! commands or outside writes.\n"));
+    }
+    for one in &summary.scripts {
+        let mark = if one.risks.is_empty() { " " } else { "!" };
+        let risks: Vec<String> = one.risks.iter().map(ToString::to_string).collect();
+        let risks = if risks.is_empty() { String::new() } else { format!(": {}", risks.join(", ")) };
+        out.push_str(&format!("{pad}{mark} script {} runs with {}{risks}\n", one.path, one.runs));
+    }
+    for one in &summary.hosts {
+        let mark = if one.risky { "!" } else { " " };
+        out.push_str(&format!("{pad}{mark} host {} (in {})\n", one.host, one.files.join(", ")));
+    }
+    for one in &summary.commands {
+        out.push_str(&format!("{pad}! command {}:{} runs `{}`\n", one.path, one.line, one.command));
+    }
+    for one in &summary.outside {
+        out.push_str(&format!("{pad}! writes {} ({}:{})\n", one.target, one.path, one.line));
+    }
+    out
+}
+
+/// An install review as the terminal prints it: each skill's summary first, then its files.
+fn review_text(review: &source::Review) -> String {
+    let mut out = format!(
+        "Review of {} from {} at {}\n",
+        counted(review.skills.len(), "skill", "skills"),
+        review.source,
+        source::short(&review.commit)
+    );
+    for skill in &review.skills {
+        let brought = skill
+            .brought_by
+            .as_deref()
+            .map(|by| format!(" (comes along: {by} refers to it)"))
+            .unwrap_or_default();
+        out.push_str(&format!("\n{}{brought}: {}\n", skill.name, skill.description));
+        out.push_str(&summary_text(&skill.summary, "  "));
+        for line in &skill.lint {
+            out.push_str(&format!("  lint: {line}\n"));
+        }
+        out.push_str(&format!("  Files ({}):\n", skill.files.len()));
+        for file in &skill.files {
+            let mark = if file.risky { "!" } else { " " };
+            out.push_str(&format!("  {mark} {} ({} bytes)\n", file.path, file.size));
+        }
+        for left in &skill.left_out {
+            out.push_str(&format!("    not installed: {} ({})\n", left.path, left.why));
+        }
+    }
+    out.push_str(
+        "\nThe review is read from the files: a script can do more when it runs, and the chat's \
+         sandbox bounds that.\n",
+    );
+    out
+}
+
+/// An update's review as the terminal prints it: the summary's changes, then each file's diff.
+fn update_text(update: &source::UpdateReview) -> String {
+    let mut out = format!(
+        "Update of {} at {}: {} -> {}\n",
+        update.name,
+        update.level,
+        source::short(&update.pinned),
+        source::short(&update.newer)
+    );
+    if !update.from_pin {
+        out.push_str("The pinned commit is no longer in the source: compared with the copy here.\n");
+    }
+    if update.changes.is_empty() {
+        out.push_str("The summary does not change.\n");
+    } else {
+        out.push_str("Added:\n");
+        out.push_str(&summary_text(&update.changes.added, "  "));
+        out.push_str("Removed:\n");
+        out.push_str(&summary_text(&update.changes.removed, "  "));
+    }
+    if !update.edited.is_empty() {
+        out.push_str(&format!(
+            "Edited here since the install, and replaced by the update: {}\n",
+            update.edited.join(", ")
+        ));
+    }
+    for file in &update.files {
+        out.push_str(&format!("\n{} ({:?})\n{}", file.path, file.change, file.diff));
+    }
+    out
 }
 
 /// What a verb's answer comes to: 0 where it was done, 1 with its refusal said.

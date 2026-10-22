@@ -1906,6 +1906,38 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
     Ok(run)
 }
 
+/// [`run_network`] for a skill source (SK-10, #2773; ADR 0100 §5): `config` after the
+/// one-credential rule, and `pass` handed to git by name, so a credential helper that reads one
+/// variable of it is the only credential git has. The values in `pass` never reach a command
+/// line, and git's output is the caller's to redact before it says any of it.
+pub(crate) fn run_network_handing(
+    dir: &Path,
+    config: &[String],
+    pass: Vec<(String, std::ffi::OsString)>,
+    args: &[&str],
+) -> Result<Run, GitUnavailable> {
+    let mut all: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
+    all.extend(config.iter().cloned());
+    let extra = Extra {
+        config: all,
+        network: true,
+        pass,
+        ..Extra::default()
+    };
+    let extra = match held(dir, args, extra)? {
+        Ok(extra) => extra,
+        Err(answer) => return Ok(as_text(answer)),
+    };
+    let started = Instant::now();
+    let run = counted(dir, args, || {
+        Ok::<_, GitUnavailable>(wait(spawn_with(dir, args, &extra)?, NETWORK)?)
+    })?;
+    for (operation, remote) in destinations(dir, args) {
+        crate::netlog::git_call(operation, &remote, run.ok(), started.elapsed());
+    }
+    Ok(run)
+}
+
 /// The verbs that reach a remote the repository names, by its name or as its default.
 const BY_NAME: [&str; 4] = ["fetch", "pull", "push", "ls-remote"];
 
