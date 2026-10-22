@@ -42,7 +42,7 @@ use serde_json::{Value, json};
 
 use super::super::kept::Kept;
 use super::super::keys::command_of;
-use super::super::tree::{NodeKey, Snapshot};
+use super::super::tree::{FrameAx, NodeKey, Snapshot};
 use super::{ACTIVE_ELEMENT, FOCUSED_HERE, READ_VALUE};
 use super::{Browser, Session, refusal};
 use crate::cdp::CallError;
@@ -87,6 +87,25 @@ pub(crate) struct Typing {
     /// document number it was blanked under (#2295): a key into it while it keeps the focus
     /// needs no new read of the page.
     focus: Option<Focused>,
+}
+
+/// Whether input lands on what the person saw (#2638), with what judging it read: the page's
+/// trees, or the field the last key went to, still focused, for the key to go on with (#2974).
+struct Landing {
+    lands: bool,
+    read: Option<Vec<FrameAx>>,
+    focused: Option<Focused>,
+}
+
+impl Landing {
+    /// It does not land.
+    fn not() -> Landing {
+        Landing {
+            lands: false,
+            read: None,
+            focused: None,
+        }
+    }
 }
 
 /// A field already blanked: its page's target and element, the page's read it was blanked in,
@@ -311,9 +330,18 @@ impl Browser {
             (session, now.document != input.aim().document)
         };
         // Some frame of the page loaded another document since the person saw it: the input
-        // goes on only where it lands on what they saw (#2638).
-        if moved_on && !self.lands_on_what_was_seen(&target, &session, input)? {
-            return Err(Refusal::Missed);
+        // goes on only where it lands on what they saw (#2638). What was read of the page for
+        // that is what the key's field is found in (#2974).
+        let mut read = None;
+        // The field the landing was judged by, still focused: the one the key goes on into.
+        let mut landed_in = None;
+        if moved_on {
+            let landing = self.lands_on_what_was_seen(&target, &session, input)?;
+            if !landing.lands {
+                return Err(Refusal::Missed);
+            }
+            read = landing.read;
+            landed_in = landing.focused;
         }
         match input {
             PersonInput::Key {
@@ -329,9 +357,9 @@ impl Browser {
                 let field = if edits {
                     // The field the last key went to, still focused, is blanked already: only
                     // the document is asked what has the focus (#2295).
-                    match self.still_focused(&target) {
+                    match landed_in.or_else(|| self.still_focused(&target)) {
                         Some(focused) => Some((focused.field, focused.read)),
-                        None => match self.blank_what_has_focus(None) {
+                        None => match self.blank_focus_in(&target, read.take()) {
                             Ok((field, read)) => {
                                 let read = std::sync::Arc::new(read);
                                 let shows = lock(&self.inner.state)
@@ -585,7 +613,11 @@ impl Browser {
         let session = {
             let state = lock(&self.inner.state);
             let page = state.page(target)?;
-            if focused.field.0 != target || page.shows != focused.shows {
+            // The field's frame, or one around it, loaded another document since: asked anew.
+            // Another frame of the page moving on leaves it as it is (#2974).
+            if focused.field.0 != target
+                || state.moved_at(target, focused.shows, &focused.field.1.frame, false)
+            {
                 return None;
             }
             page.frames.get(&focused.field.1.frame)?.session.clone()
@@ -636,40 +668,65 @@ impl Browser {
         target: &str,
         session: &str,
         input: &PersonInput,
-    ) -> Result<bool, Refusal> {
+    ) -> Result<Landing, Refusal> {
         let seen = input.aim().document;
         match input {
             PersonInput::Key { .. } => {
-                let snapshot = self.snapshot_of(target)?;
+                // The field the last key went to, still focused and as it was: the key lands
+                // there, and the page's tree is not read (#2974).
+                if let Some(focused) = self.still_focused(target) {
+                    let lands = !lock(&self.inner.state).moved_at(
+                        target,
+                        seen,
+                        &focused.field.1.frame,
+                        false,
+                    );
+                    return Ok(Landing {
+                        lands,
+                        read: None,
+                        focused: Some(focused),
+                    });
+                }
+                let trees = self.trees_of(target)?;
+                let snapshot = self.snapshot_from(target, &trees);
                 let reached = match snapshot.focused() {
                     // Nothing the tree shows has the focus: unless the document has nothing
                     // focused either, the focus may be in a frame purlis has not read.
-                    [] if self.focus_unseen(session, target) => return Ok(false),
+                    [] if self.focus_unseen(session, target) => return Ok(Landing::not()),
                     [] => target.to_owned(),
                     [one] => one.frame.clone(),
                     // As a key's field is found (#2295): the one its document names.
                     many => match self.the_one_focused(target, many) {
                         Some(one) => one.frame,
-                        None => return Ok(false),
+                        None => return Ok(Landing::not()),
                     },
                 };
-                Ok(!lock(&self.inner.state).moved_at(target, seen, &reached, false))
+                let lands = !lock(&self.inner.state).moved_at(target, seen, &reached, false);
+                Ok(Landing {
+                    lands,
+                    read: Some(trees),
+                    focused: None,
+                })
             }
             // A press, a release or the wheel waits for a view of the page as it is: what a
             // frame that moved on draws may be moved under the point between the check and the
             // event. Only a move goes on.
-            PersonInput::Mouse { kind, .. } if *kind != MouseKind::Moved => Ok(false),
+            PersonInput::Mouse { kind, .. } if *kind != MouseKind::Moved => Ok(Landing::not()),
             PersonInput::Mouse { x, y, .. } => {
                 if lock(&self.inner.state)
                     .page(target)
                     .is_none_or(|page| page.gone > seen)
                 {
-                    return Ok(false);
+                    return Ok(Landing::not());
                 }
                 let Some((reached, owner)) = self.frame_under(session, *x, *y) else {
-                    return Ok(false);
+                    return Ok(Landing::not());
                 };
-                Ok(!lock(&self.inner.state).moved_at(target, seen, &reached, owner))
+                Ok(Landing {
+                    lands: !lock(&self.inner.state).moved_at(target, seen, &reached, owner),
+                    read: None,
+                    focused: None,
+                })
             }
         }
     }

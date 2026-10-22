@@ -1259,7 +1259,23 @@ impl Browser {
         page: Option<&PageId>,
     ) -> Result<((String, NodeKey), Snapshot), Refusal> {
         let target = self.target(page)?;
-        let snapshot = self.snapshot_of(&target)?;
+        self.blank_focus_in(&target, None)
+    }
+
+    /// [`Browser::blank_what_has_focus`] on `target`'s page, from `read` where the page's trees
+    /// were read for this key already (#2974): the page is read once, and the element blanked
+    /// in a build of the same read.
+    pub(super) fn blank_focus_in(
+        &self,
+        target: &str,
+        read: Option<Vec<FrameAx>>,
+    ) -> Result<((String, NodeKey), Snapshot), Refusal> {
+        let target = target.to_owned();
+        let trees = match read {
+            Some(trees) => trees,
+            None => self.trees_of(&target)?,
+        };
+        let snapshot = self.snapshot_from(&target, &trees);
         let key = match snapshot.focused() {
             [] => return Err(Refusal::NothingFocused),
             [one] => one.clone(),
@@ -1270,7 +1286,14 @@ impl Browser {
                 .the_one_focused(&target, many)
                 .ok_or(Refusal::FocusUnclear)?,
         };
-        let read = self.blank_node(&target, key.clone())?;
+        {
+            let mut state = lock(&self.inner.state);
+            state.excluded.insert(key.clone());
+            state.kept_on(&target);
+        }
+        // What the element holds is kept out from this moment: the key is not sent yet, so the
+        // page as read holds what it holds now.
+        let read = self.snapshot_from(&target, &trees);
         Ok(((target, key), read))
     }
 
@@ -1878,8 +1901,32 @@ impl Browser {
 
     /// `target`'s tree as it is now, every frame in it.
     fn snapshot_of(&self, target: &str) -> Result<Snapshot, Refusal> {
+        let trees = self.trees_of(target)?;
+        Ok(self.snapshot_from(target, &trees))
+    }
+
+    /// `target`'s page built from `trees` as they were read, with what is blanked and kept out
+    /// now (#2974): built again from the same read, nothing is asked of the engine.
+    fn snapshot_from(&self, target: &str, trees: &[FrameAx]) -> Snapshot {
+        let (excluded, scrub) = {
+            let state = lock(&self.inner.state);
+            match state.page(target) {
+                Some(page) => (state.excluded.clone(), page.scrubbed.clone()),
+                None => (state.excluded.clone(), Kept::default()),
+            }
+        };
+        let snapshot = build_kept(trees, &excluded, &scrub);
+        if let Some(page) = lock(&self.inner.state).page_mut(target) {
+            page.keep_out(snapshot.blanked_text());
+        }
+        snapshot
+    }
+
+    /// Every frame's tree of `target`'s page, as the engine has it now: the one read of the
+    /// page a snapshot is built from.
+    fn trees_of(&self, target: &str) -> Result<Vec<FrameAx>, Refusal> {
         let session = self.page_session(target)?;
-        let (frames, excluded, scrub) = {
+        let (frames, _excluded, _scrub) = {
             let state = lock(&self.inner.state);
             let page = state.page(target).ok_or(Refusal::NoPage)?;
             let mut ordered: Vec<(String, &Frame)> = Vec::new();
@@ -1959,11 +2006,7 @@ impl Browser {
             };
             trees.push(frame);
         }
-        let snapshot = build_kept(&trees, &excluded, &scrub);
-        if let Some(page) = lock(&self.inner.state).page_mut(target) {
-            page.keep_out(snapshot.blanked_text());
-        }
-        Ok(snapshot)
+        Ok(trees)
     }
 
     /// Where `target` is, for acting on it.
