@@ -4,6 +4,7 @@
 //! The built-in lints, each fired on a fixture skill (SK-8, #2771).
 
 use super::*;
+use crate::compat::Field;
 
 /// A machine with `git`, `sh`, `bash` and `python3`, and nothing else.
 fn has(tool: &str) -> bool {
@@ -20,13 +21,18 @@ fn lints<'a>(plane: &'a [String], built_in: &'a [String]) -> BuiltInLints<'a> {
 }
 
 fn found(text: &str, others: &[(String, String)], handed: bool) -> Vec<Finding> {
+    let origin = if handed {
+        crate::Origin::Project
+    } else {
+        crate::Origin::Repo
+    };
     let plane = vec!["deploy".to_owned(), "review".to_owned()];
     let built_in = vec!["secrets".to_owned()];
     lints(&plane, &built_in).findings(&SkillFiles {
         name: "deploy",
         text,
         others,
-        handed,
+        origin,
     })
 }
 
@@ -53,9 +59,9 @@ fn a_whole_skill_that_calls_what_this_machine_has_is_clean() {
 fn a_frontmatter_problem_blocks_and_no_frontmatter_is_all_that_is_said() {
     let findings = found("no frontmatter, and !`jq .`", &[], true);
     assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].level, Level::Blocks);
+    assert_eq!(findings[0].severity, Severity::Blocks);
     let findings = found("---\nname: deploy\n---\n", &[], true);
-    assert_eq!(findings[0].level, Level::Blocks);
+    assert_eq!(findings[0].severity, Severity::Blocks);
     assert!(findings[0].says.contains("no description"), "{findings:?}");
 }
 
@@ -69,7 +75,7 @@ fn a_description_too_short_to_say_when_to_use_it_warns() {
              description says, so say what it does and when to use it"
         ]
     );
-    assert_eq!(findings[0].level, Level::Warns);
+    assert_eq!(findings[0].severity, Severity::Warns);
 }
 
 #[test]
@@ -93,14 +99,21 @@ fn what_would_widen_the_chat_is_said_left_out_of_a_skill_purlis_hands_and_wideni
         handed[0].starts_with("its allowed-tools: would widen the chat, so purlis leaves it out")
     );
     assert!(handed[1].starts_with("its hooks: would run commands in the chat"));
-    let outside = says(&found(&text, &[], false));
+    let outside = found(&text, &[], false);
     assert_eq!(
         outside,
-        [
-            "its allowed-tools: widens the chat: the tools it pre-approves apply while it runs",
-            "its hooks: widens the chat: the commands it adds to the chat's events apply while \
-             it runs",
-        ]
+        [Finding {
+            severity: Severity::Warns,
+            lint: Lint::Widens(vec![Field::AllowedTools, Field::Hooks]),
+        }]
+    );
+    assert_eq!(
+        outside[0].shown().as_deref(),
+        Some(
+            "Widens the chat: the tools it pre-approves and the commands it adds to the chat's \
+             events apply while it runs, and purlis cannot leave them out of a skill it does \
+             not hand over."
+        )
     );
 }
 
@@ -162,4 +175,34 @@ fn a_script_warns_of_its_interpreter_and_each_program_a_shell_script_runs() {
             "scripts/x.js calls node, which this machine does not have",
         ]
     );
+}
+
+#[test]
+fn a_frontmatter_purlis_cannot_read_as_yaml_blocks_a_skill_it_hands_and_warns_of_one_it_does_not() {
+    let text = "---\nname: deploy\ndescription: Deploys the app to staging, then checks it.\nallowed_tools: Bash\n---\n";
+    let handed = found(text, &[], true);
+    assert_eq!(handed.len(), 1, "{handed:?}");
+    assert_eq!(handed[0].severity, Severity::Blocks);
+    assert!(
+        handed[0]
+            .to_string()
+            .starts_with("purlis hands it to no chat")
+    );
+    let outside = found(text, &[], false);
+    assert_eq!(outside[0].severity, Severity::Warns);
+    assert!(
+        outside[0]
+            .shown()
+            .unwrap()
+            .starts_with("It may widen the chat")
+    );
+}
+
+#[test]
+fn only_the_editor_names_a_key() {
+    let findings = found(&skill("owner: ops\nallowed-tools: Bash\n", ""), &[], true);
+    assert_eq!(findings.len(), 2);
+    for finding in &findings {
+        assert_eq!(finding.shown(), None, "{finding}");
+    }
 }

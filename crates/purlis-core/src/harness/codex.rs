@@ -15,7 +15,8 @@ pub struct Codex;
 pub static ADAPTER: Codex = Codex;
 
 /// What a Codex chat is started with for its `SessionStart` briefing to list its skills: the
-/// built-in skills' directory, and the plane's mark where its set holds any of the plane's.
+/// built-in skills' directory, and the set's folder the host laid the plane's out in, where its
+/// set holds any (SK-8: the briefing names each by the `SKILL.md` purlis wrote for it there).
 fn listed(kit: Kit<'_>) -> Vec<(String, String)> {
     let set = crate::skills::for_chat(kit, Harness::Codex);
     let Some(dir) = set.built_in_dir() else {
@@ -25,8 +26,11 @@ fn listed(kit: Kit<'_>) -> Vec<(String, String)> {
         crate::skills::LISTED_ENV.to_owned(),
         dir.display().to_string(),
     )];
-    if set.from_the_plane().next().is_some() {
-        env.push((crate::skills::PLANE_LISTED_ENV.to_owned(), "1".to_owned()));
+    if let Some(handed) = crate::skills::linked(&set, kit) {
+        env.push((
+            crate::skills::PLANE_LISTED_ENV.to_owned(),
+            handed.display().to_string(),
+        ));
     }
     env
 }
@@ -135,8 +139,8 @@ impl HarnessAdapter for Codex {
     /// directory of the skills its set holds ([`crate::skills::for_chat`]) in
     /// [`crate::skills::LISTED_ENV`], which a Codex hook inherits, and the briefing lists
     /// what its set holds ([`crate::skills::briefed`]). Where the set holds the plane's skills,
-    /// [`crate::skills::PLANE_LISTED_ENV`] says so, and the briefing lists them too, each from
-    /// its folder in the plane.
+    /// [`crate::skills::PLANE_LISTED_ENV`] names the set's folder the host laid them out in, and
+    /// the briefing lists them too, each by the `SKILL.md` purlis wrote for it there.
     ///
     /// Its sandbox, where the plane turned it on, is not here: charter's wrap runs the whole
     /// line ([`crate::sandbox::Applied::line`], and [`crate::sandbox::codex`] has the

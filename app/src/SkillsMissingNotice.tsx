@@ -79,7 +79,7 @@ export function missingSays(chat: string, said: SkillsMissing): string {
   if (said.broken.length > 0)
     lines.push(
       `${chat} started without ${counted(said.broken.length, "skill that could not be loaded", "skills that could not be loaded")}: ${said.broken
-        .map((one) => `${one.name} (${one.level}), ${one.why}`)
+        .map((one) => `${one.name} (${one.label}), ${one.why}`)
         .join("; ")}.`,
     );
   return lines.join(" ");

@@ -62,7 +62,6 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
             manual: 1,
             most_skills: 30,
             most_chars: 6_000,
-            manual_free: true,
             warns: None,
         })
     );

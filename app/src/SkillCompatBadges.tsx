@@ -12,22 +12,38 @@ export function fitSaid(fit: SkillFit): string {
       return "partial";
     case "widens":
       return "widens the chat";
-    default:
-      return "not known";
+    case "refused":
+      return "handed to no chat";
   }
 }
 
 /**
  * **A skill's compatibility badges** (SK-8, #2771; spec decision 18): one per harness that would
- * load it, saying how well it fits (full, partial, or widens the chat) and, opened, the core's
+ * load it, saying how well it fits (full, partial, widens the chat, or handed to no chat) and,
+ * opened, the core's
  * lines that say why: what applies, what purlis leaves out because a skill may only narrow a
  * chat, what is carried over by purlis's equivalent, and what is not applied. Nothing is
  * silently half-applied.
  */
-export function SkillCompatBadges({ name, compat }: { name: string; compat: SkillCompat[] }) {
-  if (compat.length === 0) return null;
+export function SkillCompatBadges({
+  name,
+  compat,
+  lint = [],
+}: {
+  name: string;
+  compat: SkillCompat[];
+  /** What the built-in lints say of a skill from outside the project, one line each. */
+  lint?: readonly string[];
+}) {
+  if (compat.length === 0 && lint.length === 0) return null;
+  const widens = compat.some((one) => one.fit === "widens");
   return (
     <ul className="skill-compat" aria-label={`Where ${name} works`}>
+      {widens && (
+        <li className="skill-compat-widens" data-testid={`widens-${name}`}>
+          Widens the chat
+        </li>
+      )}
       {compat.map((one) => (
         <li key={one.harness}>
           <details
@@ -42,6 +58,11 @@ export function SkillCompatBadges({ name, compat }: { name: string; compat: Skil
               ))}
             </ul>
           </details>
+        </li>
+      ))}
+      {lint.map((line) => (
+        <li key={line} className="honest">
+          {line}
         </li>
       ))}
     </ul>

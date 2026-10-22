@@ -45,6 +45,30 @@ pub(super) fn file_in(dir: impl AsFd, name: &str) -> std::io::Result<std::fs::Fi
     Ok(std::fs::File::from(fd))
 }
 
+/// `name` in `dir`, made to be written, and refused where anything is there already: never
+/// through a link.
+pub(super) fn new_file_in(dir: impl AsFd, name: &str) -> std::io::Result<std::fs::File> {
+    let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let fd = rustix::fs::openat(dir, name, flags, Mode::from_raw_mode(0o644))?;
+    Ok(std::fs::File::from(fd))
+}
+
+/// The folder `rel` under `dir`, each of its parts opened as a folder itself in the one before.
+pub(super) fn folder_under(dir: impl AsFd, rel: &Path) -> std::io::Result<OwnedFd> {
+    let mut parts = rel.components().filter_map(|part| match part {
+        std::path::Component::Normal(name) => name.to_str(),
+        _ => None,
+    });
+    let first = parts
+        .next()
+        .ok_or_else(|| std::io::Error::other("no folder named"))?;
+    let mut at = folder_in(&dir, first)?;
+    for part in parts {
+        at = folder_in(&at, part)?;
+    }
+    Ok(at)
+}
+
 /// What `name` in `dir` is, itself, and when it last changed; `None` where it is not there.
 pub(super) fn entry_in(dir: impl AsFd, name: &str) -> std::io::Result<Option<Entry>> {
     match rustix::fs::statat(dir, name, AtFlags::SYMLINK_NOFOLLOW) {

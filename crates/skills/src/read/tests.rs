@@ -141,15 +141,14 @@ fn a_manual_only_skill_is_listed_by_its_name_and_file_alone_to_run_only_when_nam
 }
 
 #[test]
-fn no_built_in_skill_asks_for_what_would_widen_a_chat() {
+fn no_built_in_skill_asks_for_what_would_widen_a_chat_and_each_is_handed_whole() {
     for skill in read(&bundled()) {
         let text = std::fs::read_to_string(&skill.path).unwrap();
-        for (key, _) in entries(&text) {
-            assert!(
-                !crate::compat::Field::of(&key).is_some_and(crate::compat::Field::widens),
-                "{} sets {key}",
-                skill.name
-            );
-        }
+        let read = crate::handed::read(&text).unwrap_or_else(|why| panic!("{}: {why}", skill.name));
+        assert!(
+            !read.fields().iter().any(|field| field.widens()),
+            "{} widens a chat",
+            skill.name
+        );
     }
 }

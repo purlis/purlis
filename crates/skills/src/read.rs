@@ -105,37 +105,6 @@ pub(crate) fn frontmatter_lines(text: &str) -> Vec<&str> {
         .unwrap_or_default()
 }
 
-/// **A frontmatter's top-level entries**, in the order written: each key that starts a line of
-/// the block [`frontmatter_block`] finds, with the byte span in `text` of its line and of every
-/// line under it (an indented line, a `-` item, a comment or a blank line), up to the next key.
-/// What a reader of which keys a skill sets, and a writer that leaves one out, both read. Empty
-/// where there is no frontmatter.
-pub(crate) fn entries(text: &str) -> Vec<(String, (usize, usize))> {
-    let Some((start, end)) = frontmatter_block(text) else {
-        return Vec::new();
-    };
-    let mut out: Vec<(String, (usize, usize))> = Vec::new();
-    let mut at = start;
-    for line in text[start..end].split_inclusive('\n') {
-        let body = line.trim_end_matches(['\n', '\r']);
-        let top = !body.is_empty()
-            && !body.starts_with(char::is_whitespace)
-            && !body.starts_with(['-', '#']);
-        match body.split_once(':') {
-            Some((key, _)) if top && !key.trim().is_empty() => {
-                out.push((key.trim().to_owned(), (at, at + line.len())));
-            }
-            _ => {
-                if let Some((_, span)) = out.last_mut() {
-                    span.1 = at + line.len();
-                }
-            }
-        }
-        at += line.len();
-    }
-    out
-}
-
 /// `str.strip()`: Python's whitespace is Rust's and the four separator controls U+001C-U+001F.
 fn py_strip(text: &str) -> &str {
     text.trim_matches(|c: char| {

@@ -6,7 +6,8 @@
 //! (ADR 0101 §1), so SK-14 (#2777) moves them onto the capability unchanged.
 //!
 //! - **Its frontmatter** ([`crate::change::check`]): a whole skill that keeps its name. These
-//!   [`Level::Blocks`] a save; every other finding warns.
+//!   [`Severity::Blocks`] a save, as does a frontmatter purlis cannot read as YAML; every other
+//!   finding warns.
 //! - **Its description's length**: too short to tell a chat when to use it.
 //! - **Keys nothing reads**, and keys that would widen a chat ([`crate::compat`]).
 //! - **Broken skill references**: a `skills:<name>` or `purlis:<name>` in its text that names no
@@ -17,27 +18,130 @@
 //! Every lint here is pure: the caller hands it the skill's files and what it may check them
 //! against, and nothing here reads a disk.
 
-use crate::compat::Field;
+use crate::change::Problem;
+use crate::compat::{Field, widening_said};
+use crate::handed::Refusal;
 
 /// How much a finding stops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Level {
+pub enum Severity {
     /// The skill is not whole, and a save is refused until it is.
     Blocks,
     /// Something a person should know, which a save does not wait on.
     Warns,
 }
 
-/// One thing a lint says about a skill. Its [`std::fmt::Display`] is the line a person reads.
+/// What a lint found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Lint {
+    /// Its frontmatter is not a whole skill that keeps its name ([`crate::change::check`]).
+    Frontmatter(Problem),
+    /// purlis cannot read its frontmatter, so hands it to no chat, or, for a harness or repo
+    /// skill, cannot tell what it asks for.
+    Refused(Refusal),
+    /// Its description is this many characters, too few to say when to use it.
+    ShortDescription(usize),
+    /// It sets a key, as written, that nothing reads.
+    Unread(String),
+    /// It asks for what would widen the chat, which purlis leaves out of a skill it hands.
+    LeftOut(Field),
+    /// A harness or repo skill that asks for what widens the chat.
+    Widens(Vec<Field>),
+    /// It names a skill, as written, that there is none of: by its name, and whether it named
+    /// one of the project's (or a built-in one).
+    NoSuchSkill {
+        said: String,
+        name: String,
+        project: bool,
+    },
+    /// A program it calls that this machine does not have, and where it calls it.
+    Missing { tool: String, place: Place },
+}
+
+/// Where a skill calls a program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Place {
+    /// In a `` !`command` `` of its text.
+    Injected,
+    /// In one of its scripts, by its path inside the folder.
+    Script(String),
+}
+
+/// One thing a lint says about a skill. Its [`std::fmt::Display`] is the line the editor shows,
+/// which may name a key, as the editor is where keys are typed; [`Finding::shown`] is the line
+/// anywhere else.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    pub level: Level,
-    pub says: String,
+    pub severity: Severity,
+    pub lint: Lint,
 }
 
 impl std::fmt::Display for Finding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.says)
+        match &self.lint {
+            Lint::Frontmatter(problem) => write!(f, "{problem}"),
+            Lint::Refused(why) if self.severity == Severity::Blocks => {
+                write!(f, "purlis hands it to no chat: {why}")
+            }
+            Lint::LeftOut(Field::Hooks) => f.write_str(
+                "its hooks: would run commands in the chat, so purlis leaves them out: a skill \
+                 may only narrow a chat",
+            ),
+            Lint::LeftOut(field) => write!(
+                f,
+                "its {}: would widen the chat, so purlis leaves it out: a skill may only narrow \
+                 a chat, and disallowed-tools: is how it takes tools away",
+                field.key()
+            ),
+            Lint::Unread(key) => {
+                write!(
+                    f,
+                    "its frontmatter's {key}: is read by nothing that runs a skill"
+                )
+            }
+            _ => f.write_str(&self.shown().unwrap_or_default()),
+        }
+    }
+}
+
+impl Finding {
+    /// **The line anywhere but the editor**, naming no key, or `None` for a finding only the
+    /// editor shows (one about a key as typed).
+    pub fn shown(&self) -> Option<String> {
+        Some(match &self.lint {
+            Lint::Frontmatter(_) | Lint::LeftOut(_) | Lint::Unread(_) => return None,
+            Lint::Refused(why) if self.severity == Severity::Blocks => {
+                format!("purlis hands it to no chat: {why}")
+            }
+            Lint::Refused(why) => {
+                format!("It may widen the chat: purlis cannot read it, as {why}.")
+            }
+            Lint::ShortDescription(length) => format!(
+                "its description: it is {length} characters, and a chat chooses a skill by what \
+                 its description says, so say what it does and when to use it"
+            ),
+            Lint::Widens(fields) => widening_said(fields),
+            Lint::NoSuchSkill {
+                said,
+                name,
+                project,
+            } => format!(
+                "it names {said}, and {} no skill {name}: a chat told to use it finds none",
+                if *project {
+                    "this project has"
+                } else {
+                    "purlis has"
+                }
+            ),
+            Lint::Missing { tool, place } => format!(
+                "{} calls {tool}, which this machine does not have",
+                match place {
+                    Place::Injected => "its ! command",
+                    Place::Script(path) => path,
+                }
+            ),
+        })
     }
 }
 
@@ -50,9 +154,9 @@ pub struct SkillFiles<'a> {
     pub text: &'a str,
     /// Every other text file of its folder: its path inside the folder, and its text.
     pub others: &'a [(String, String)],
-    /// Whether purlis hands it over (a built-in skill or the plane's), rather than a harness
-    /// reading it where it lies.
-    pub handed: bool,
+    /// Where it comes from: purlis hands a built-in or a plane skill over, and a harness reads
+    /// a harness or repo skill where it lies ([`crate::Origin::handed`]).
+    pub origin: crate::Origin,
 }
 
 /// **A lint of a skill's files**: what the live lint and the install review ask, of the
@@ -64,7 +168,7 @@ pub trait SkillLint {
 }
 
 /// The shortest description that can tell a chat when to use a skill.
-pub const FEWEST_DESCRIPTION: usize = 20;
+const FEWEST_DESCRIPTION: usize = 20;
 
 /// **purlis's own lints**, with what they check a skill against.
 pub struct BuiltInLints<'a> {
@@ -90,18 +194,16 @@ impl std::fmt::Debug for BuiltInLints<'_> {
 
 impl SkillLint for BuiltInLints<'_> {
     fn findings(&self, skill: &SkillFiles<'_>) -> Vec<Finding> {
-        let blocks = |says: String| Finding {
-            level: Level::Blocks,
-            says,
-        };
-        let mut out: Vec<Finding> = crate::change::check(skill.text, skill.name)
-            .iter()
-            .map(|problem| blocks(problem.to_string()))
+        let problems = crate::change::check(skill.text, skill.name);
+        let whole_frontmatter = !problems.contains(&Problem::NoFrontmatter);
+        let mut out: Vec<Finding> = problems
+            .into_iter()
+            .map(|problem| Finding {
+                severity: Severity::Blocks,
+                lint: Lint::Frontmatter(problem),
+            })
             .collect();
-        if out
-            .iter()
-            .any(|f| f.says == crate::change::Problem::NoFrontmatter.to_string())
-        {
+        if !whole_frontmatter {
             return out;
         }
         out.extend(short_description(skill.text));
@@ -112,10 +214,10 @@ impl SkillLint for BuiltInLints<'_> {
     }
 }
 
-fn warns(says: String) -> Finding {
+fn warns(lint: Lint) -> Finding {
     Finding {
-        level: Level::Warns,
-        says,
+        severity: Severity::Warns,
+        lint,
     }
 }
 
@@ -128,39 +230,44 @@ fn short_description(text: &str) -> Option<Finding> {
         .map(|(_, value)| value.trim())
         .filter(|value| !value.is_empty())?;
     let length = description.chars().count();
-    (length < FEWEST_DESCRIPTION).then(|| {
-        warns(format!(
-            "its description: it is {length} characters, and a chat chooses a skill by what \
-             its description says, so say what it does and when to use it"
-        ))
-    })
+    (length < FEWEST_DESCRIPTION).then(|| warns(Lint::ShortDescription(length)))
 }
 
-/// The keys nothing reads, and the ones that would widen a chat.
+/// What its frontmatter, read as YAML, says: refused where purlis cannot read it (which blocks a
+/// skill purlis hands), each key nothing reads, and what would widen the chat.
 fn keys(skill: &SkillFiles<'_>) -> Vec<Finding> {
-    let mut out = Vec::new();
-    for (key, _) in crate::read::entries(skill.text) {
-        match Field::of(&key) {
-            None => out.push(warns(format!(
-                "its frontmatter's {key}: is read by nothing that runs a skill"
-            ))),
-            Some(Field::AllowedTools) if skill.handed => out.push(warns(
-                "its allowed-tools: would widen the chat, so purlis leaves it out: a skill may \
-                 only narrow a chat, and disallowed-tools: is how it takes tools away"
-                    .to_owned(),
-            )),
-            Some(Field::Hooks) if skill.handed => out.push(warns(
-                "its hooks: would run commands in the chat, so purlis leaves them out: a skill \
-                 may only narrow a chat"
-                    .to_owned(),
-            )),
-            Some(field) if field.widens() => out.push(warns(format!(
-                "its {}: widens the chat: {} apply while it runs",
-                field.key(),
-                field.said()
-            ))),
-            Some(_) => {}
+    let handed = skill.origin.handed();
+    let read = match crate::handed::read(skill.text) {
+        Ok(read) => read,
+        Err(why) => {
+            return vec![Finding {
+                severity: if handed {
+                    Severity::Blocks
+                } else {
+                    Severity::Warns
+                },
+                lint: Lint::Refused(why),
+            }];
         }
+    };
+    let mut out: Vec<Finding> = read
+        .unknown()
+        .into_iter()
+        .map(|key| warns(Lint::Unread(key)))
+        .collect();
+    let widening: Vec<Field> = read
+        .fields()
+        .into_iter()
+        .filter(|field| field.widens())
+        .collect();
+    if handed {
+        out.extend(
+            widening
+                .into_iter()
+                .map(|field| warns(Lint::LeftOut(field))),
+        );
+    } else if !widening.is_empty() {
+        out.push(warns(Lint::Widens(widening)));
     }
     out
 }
@@ -169,21 +276,23 @@ fn keys(skill: &SkillFiles<'_>) -> Vec<Finding> {
 fn references(text: &str, lints: &BuiltInLints<'_>) -> Vec<Finding> {
     let mut out: Vec<Finding> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
-    let mut look = |namespace: &str, known: &[String], whose: &str| {
+    let mut look = |namespace: &str, known: &[String], project: bool| {
         for name in named_in(text, namespace) {
             let said = format!("{namespace}:{name}");
             if known.contains(&name) || seen.contains(&said) {
                 continue;
             }
-            out.push(warns(format!(
-                "it names {said}, and {whose} no skill {name}: a chat told to use it finds none"
-            )));
-            seen.push(said);
+            seen.push(said.clone());
+            out.push(warns(Lint::NoSuchSkill {
+                said,
+                name,
+                project,
+            }));
         }
     };
-    look(lints.namespace, lints.plane, "this project has");
+    look(lints.namespace, lints.plane, true);
     for prefix in crate::BUILT_IN_PREFIXES {
-        look(prefix, lints.built_in, "purlis has");
+        look(prefix, lints.built_in, false);
     }
     out
 }
@@ -212,27 +321,28 @@ fn named_in(text: &str, namespace: &str) -> Vec<String> {
 /// machine does not have, once per place.
 fn tools_missing(skill: &SkillFiles<'_>, has: &dyn Fn(&str) -> bool) -> Vec<Finding> {
     let mut out = Vec::new();
-    let mut said = |tools: Vec<String>, where_: &str| {
+    let mut said = |tools: Vec<String>, place: Place| {
         let mut seen: Vec<String> = Vec::new();
         for tool in tools {
             if seen.contains(&tool) || has(&tool) {
                 continue;
             }
-            out.push(warns(format!(
-                "{where_} calls {tool}, which this machine does not have"
-            )));
-            seen.push(tool);
+            seen.push(tool.clone());
+            out.push(warns(Lint::Missing {
+                tool,
+                place: place.clone(),
+            }));
         }
     };
     let injected: Vec<String> = injections(skill.text)
         .iter()
         .flat_map(|command| programs(command))
         .collect();
-    said(injected, "its ! command");
+    said(injected, Place::Injected);
     for (path, text) in skill.others {
         let called = script_programs(path, text);
         if !called.is_empty() {
-            said(called, path);
+            said(called, Place::Script(path.clone()));
         }
     }
     out

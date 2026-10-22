@@ -172,9 +172,8 @@ pub trait HarnessAdapter: Sync {
     /// **What this harness reads of a skill's frontmatter** (SK-8, #2771; decision 18): the
     /// keys it applies to a skill purlis hands it, and how it keeps a manual-only skill out of
     /// its model's choice. What every skill's compatibility badge for it, the `SKILL.md` it is
-    /// handed ([`crate::skills::handed_text`]) and its budget's
-    /// [`crate::skills::Budget::manual_free`] are worked out from. No default: each adapter says
-    /// which version it read and how.
+    /// handed ([`crate::skills::handed_text`]) are worked out from. No default: each adapter
+    /// says which version it read and how.
     fn skill_frontmatter(&self) -> crate::skills::Honours;
 
     /// **Whether this harness names the skill a prompt the person sent started** (SK-12): a

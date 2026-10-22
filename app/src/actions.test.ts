@@ -4315,7 +4315,6 @@ describe("Use skill… on a chat's tab (#2775)", () => {
       skills: 25,
       chars: 1200,
       manual: 0,
-      manual_free: true,
       most_skills: 30,
       most_chars: 6000,
       warns: "skills" as const,

@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use purlis_core::harness::{Harness, Kit, StateHooks};
-use purlis_core::skills::{Field, Fit, LISTED_ENV, PlaneSkills};
+use purlis_core::skills::{Fit, LISTED_ENV, Origin, PlaneSkills};
 
 struct Here {
     _tmp: tempfile::TempDir,
@@ -135,24 +135,27 @@ fn a_claude_code_chat_is_never_handed_what_would_widen_it_and_keeps_what_narrows
         fs::symlink_metadata(&deploy).unwrap().is_dir(),
         "a folder of its own"
     );
-    let handed = fs::read_to_string(deploy.join("SKILL.md")).unwrap();
     assert_eq!(
-        handed,
+        fs::read_to_string(deploy.join("SKILL.md")).unwrap(),
         "---\nname: deploy\ndescription: Does deploy for the team.\ndisallowed-tools: Write\n---\n\nbody\n"
     );
-    assert_eq!(
-        fs::read_link(deploy.join("scripts")).unwrap(),
-        here.plane.join("skills/deploy/scripts"),
-        "its other files are the plane's own, linked"
+    assert!(
+        fs::symlink_metadata(deploy.join("scripts"))
+            .unwrap()
+            .is_dir(),
+        "a folder of the skill's is a folder of its own too"
     );
-    // Claude Code reads manual-only itself, and a skill that asks for nothing to leave out is
-    // linked as it lies.
-    for plain in ["release", "review"] {
-        assert_eq!(
-            fs::read_link(skills.join(plain)).unwrap(),
-            here.plane.join("skills").join(plain)
-        );
-    }
+    assert_eq!(
+        fs::read_link(deploy.join("scripts/run.sh")).unwrap(),
+        here.plane.join("skills/deploy/scripts/run.sh"),
+        "each file is the plane's own, linked"
+    );
+    // Claude Code reads manual-only itself: the description stays.
+    assert!(
+        fs::read_to_string(skills.join("release/SKILL.md"))
+            .unwrap()
+            .contains("description: Does release for the team.\n")
+    );
 }
 
 #[test]
@@ -172,10 +175,159 @@ fn an_opencode_chat_is_handed_a_manual_only_skill_without_its_description_and_no
     assert!(!deploy.contains("\nallowed-tools:"), "{deploy}");
     assert!(!deploy.contains("\nhooks:"), "{deploy}");
     assert!(deploy.contains("\ndisallowed-tools: Write\n"), "{deploy}");
-    assert_eq!(
-        fs::read_link(skills.join("review")).unwrap(),
-        here.plane.join("skills/review")
+}
+
+#[cfg(unix)]
+#[test]
+fn nothing_is_handed_through_a_link_and_only_the_top_skill_md_is_the_skills() {
+    purlis_core::unsteered!();
+    let here = here();
+    let outside = here.plane.parent().unwrap().join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("secret.txt"), "no\n").unwrap();
+    let skills = here.plane.join("skills");
+    // A link to outside, inside a skill's folder, and a nested skill.
+    std::os::unix::fs::symlink(outside.join("secret.txt"), skills.join("review/secret.txt"))
+        .unwrap();
+    std::os::unix::fs::symlink(&outside, skills.join("review/outside")).unwrap();
+    fs::create_dir_all(skills.join("review/inner")).unwrap();
+    fs::write(
+        skills.join("review/inner/SKILL.md"),
+        "---\nname: inner\ndescription: Nested.\nallowed-tools: Bash\n---\n",
+    )
+    .unwrap();
+    fs::write(skills.join("review/inner/notes.md"), "notes\n").unwrap();
+    // A skill whose folder is a link, and one whose SKILL.md is.
+    fs::create_dir_all(outside.join("away")).unwrap();
+    fs::write(
+        outside.join("away/SKILL.md"),
+        "---\nname: away\ndescription: Lives elsewhere.\n---\n",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(outside.join("away"), skills.join("away")).unwrap();
+    fs::create_dir_all(skills.join("pointed")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.join("away/SKILL.md"),
+        skills.join("pointed/SKILL.md"),
+    )
+    .unwrap();
+
+    let (args, _) = host_armed(Harness::ClaudeCode, &here);
+    let handed = claude_folder(&args).join("skills");
+    let review = handed.join("review");
+    assert!(
+        fs::symlink_metadata(review.join("secret.txt")).is_err(),
+        "no link to a link"
     );
+    assert!(
+        fs::symlink_metadata(review.join("outside")).is_err(),
+        "no link to a link"
+    );
+    assert!(
+        fs::symlink_metadata(review.join("inner/SKILL.md")).is_err(),
+        "no nested skill"
+    );
+    assert_eq!(
+        fs::read_link(review.join("inner/notes.md")).unwrap(),
+        skills.join("review/inner/notes.md")
+    );
+    for walked in walk(&handed) {
+        if let Ok(target) = fs::read_link(&walked) {
+            assert!(
+                target.starts_with(&skills),
+                "{} -> {}",
+                walked.display(),
+                target.display()
+            );
+        }
+    }
+    for refused in ["away", "pointed"] {
+        assert!(
+            fs::symlink_metadata(handed.join(refused)).is_err(),
+            "{refused} handed"
+        );
+    }
+
+    // And the chat's tab says why each was handed to no chat.
+    let env = purlis_core::harness_plugin::Env {
+        chat: &[],
+        home: None,
+        process: false,
+    };
+    let said = purlis_core::skills::not_here(
+        &here.plane,
+        None,
+        None,
+        Some(&here.plugin.join("skills")),
+        Harness::ClaudeCode,
+        &env,
+    )
+    .expect("said");
+    let mut broken: Vec<(String, String)> = said
+        .broken
+        .iter()
+        .map(|one| (one.name.clone(), one.why.to_string()))
+        .collect();
+    broken.sort();
+    assert_eq!(
+        broken,
+        [
+            (
+                "away".to_owned(),
+                "purlis hands it to no chat: its folder is a link, which purlis does not follow"
+                    .to_owned()
+            ),
+            (
+                "pointed".to_owned(),
+                "purlis hands it to no chat: its SKILL.md is a link or not a plain file, which \
+                 purlis does not follow"
+                    .to_owned()
+            ),
+        ]
+    );
+}
+
+/// Every path under `dir`, never through a link.
+fn walk(dir: &Path) -> Vec<PathBuf> {
+    let mut all = Vec::new();
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if fs::symlink_metadata(&path).unwrap().is_dir() {
+            all.extend(walk(&path));
+        }
+        all.push(path);
+    }
+    all
+}
+
+#[test]
+fn a_skill_whose_frontmatter_purlis_cannot_read_is_handed_to_no_chat_and_said() {
+    purlis_core::unsteered!();
+    let here = here();
+    skill(
+        &here.plane.join("skills"),
+        "respelled",
+        "allowedTools: Bash\n",
+    );
+    let (args, _) = host_armed(Harness::ClaudeCode, &here);
+    assert!(fs::symlink_metadata(claude_folder(&args).join("skills/respelled")).is_err());
+    let env = purlis_core::harness_plugin::Env {
+        chat: &[],
+        home: None,
+        process: false,
+    };
+    let said = purlis_core::skills::not_here(
+        &here.plane,
+        None,
+        None,
+        Some(&here.plugin.join("skills")),
+        Harness::ClaudeCode,
+        &env,
+    )
+    .expect("said");
+    assert_eq!(said.broken.len(), 1, "{said:?}");
+    assert_eq!(said.broken[0].name, "respelled");
+    assert!(said.broken[0].why.to_string().contains("widen the chat"));
 }
 
 #[test]
@@ -184,6 +336,8 @@ fn a_codex_chat_is_briefed_on_a_manual_only_skill_by_its_name_and_file_alone() {
     let here = here();
     let (_, env) = host_armed(Harness::Codex, &here);
     assert!(var(&env, LISTED_ENV).is_some());
+    let handed_deploy = PathBuf::from(var(&env, purlis_core::skills::PLANE_LISTED_ENV).unwrap())
+        .join("skills/deploy/SKILL.md");
 
     let lookup = |name: &str| var(&env, name).map(str::to_owned);
     let text = purlis_core::skills::briefed(&here.plane, None, None, &lookup).expect("listed");
@@ -192,7 +346,8 @@ fn a_codex_chat_is_briefed_on_a_manual_only_skill_by_its_name_and_file_alone() {
         "{text}"
     );
     assert!(!text.contains("Does release"), "{text}");
-    let release = here.plane.join("skills/release/SKILL.md");
+    let handed = PathBuf::from(var(&env, purlis_core::skills::PLANE_LISTED_ENV).unwrap());
+    let release = handed.join("skills/release/SKILL.md");
     assert!(
         text.contains(&format!(
             "Only when the person names one, never by your own choice: `release` (`{}`)",
@@ -228,41 +383,50 @@ fn each_harness_badge_says_what_applies_what_is_left_out_and_what_is_carried_ove
     let text = format!(
         "---\nname: deploy\ndescription: Deploys it.\nmodel: opus\ndisable-model-invocation: true\n{WIDENS}---\n"
     );
-    let on =
-        |harness: Harness| purlis_core::skills::compat(&text, true, &harness.skill_frontmatter());
+    let on = |harness: Harness, origin: Origin| {
+        purlis_core::skills::compat(&text, origin, &harness.skill_frontmatter())
+    };
+    let left_out = "Left out, because a skill may only narrow a chat: the tools it pre-approves \
+                    and the commands it adds to the chat's events.";
 
-    let claude = on(Harness::ClaudeCode);
+    let claude = on(Harness::ClaudeCode, Origin::Project);
     assert_eq!(claude.fit, Fit::Partial);
-    assert_eq!(claude.dropped, [Field::AllowedTools, Field::Hooks]);
-    assert_eq!(claude.ignored, Vec::<Field>::new());
-    assert_eq!(claude.translated, Vec::<Field>::new());
+    assert_eq!(claude.lines(), [left_out]);
 
     for harness in [Harness::Codex, Harness::Opencode] {
-        let badge = on(harness);
+        let badge = on(harness, Origin::Project);
         assert_eq!(badge.fit, Fit::Partial, "{harness:?}");
-        assert_eq!(badge.dropped, [Field::AllowedTools, Field::Hooks]);
-        assert_eq!(badge.translated, [Field::ManualOnly], "{harness:?}");
-        assert_eq!(badge.ignored, [Field::Model, Field::DisallowedTools]);
-        assert!(
-            badge
-                .lines()
-                .contains(&"Narrowing not applied: the tools it takes away.".to_owned()),
-            "{:?}",
-            badge.lines()
+        assert_eq!(
+            badge.lines(),
+            [
+                left_out,
+                "Carried over by purlis's equivalent: running only when asked for.",
+                "Narrowing not applied: the tools it takes away.",
+                "Ignored: the model it asks for.",
+            ],
+            "{harness:?}"
         );
     }
 
     // A harness or repo skill purlis does not hand: it widens a Claude Code chat.
-    let outside =
-        purlis_core::skills::compat(&text, false, &Harness::ClaudeCode.skill_frontmatter());
+    let outside = on(Harness::ClaudeCode, Origin::Repo);
     assert_eq!(outside.fit, Fit::Widens);
+    assert!(outside.widens());
 }
 
 #[test]
 fn a_manual_only_skill_costs_nothing_on_every_harness() {
     purlis_core::unsteered!();
     for harness in Harness::ALL {
-        assert!(harness.skill_budget().manual_free, "{harness:?}");
+        assert!(
+            matches!(
+                harness.skill_frontmatter().manual,
+                purlis_core::skills::ManualOnly::Read
+                    | purlis_core::skills::ManualOnly::Listing
+                    | purlis_core::skills::ManualOnly::WithoutDescription
+            ),
+            "{harness:?}"
+        );
     }
 }
 
@@ -294,8 +458,11 @@ fn a_skill_a_chat_would_have_loaded_that_cannot_be_is_said_with_its_level_and_wh
         said.broken,
         [purlis_core::skills::Broken {
             name: "half".to_owned(),
-            level: "project".to_owned(),
-            why: "not a skill: its SKILL.md names no `description`".to_owned(),
+            origin: Origin::Project,
+            local: false,
+            why: purlis_core::skills::BrokenWhy::LeftOut(purlis_core::skills::Reason::NotASkill(
+                purlis_core::skills::Missing::Description
+            )),
         }]
     );
     assert_eq!(said.missing, Vec::<String>::new());

@@ -8400,6 +8400,11 @@ button.show-more:focus-visible {
   font-size: var(--font-size-sm);
 }
 
+.skill-compat-widens {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
 .skill-compat-badge > summary {
   cursor: pointer;
 }

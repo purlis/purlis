@@ -528,7 +528,7 @@ export function SkillStudioTab({
                 </td>
                 <td>{skill.description}</td>
                 <td>
-                  <SkillCompatBadges name={skill.name} compat={skill.compat} />
+                  <SkillCompatBadges name={skill.name} compat={skill.compat} lint={skill.lint} />
                 </td>
                 <td>
                   <SkillRowActions

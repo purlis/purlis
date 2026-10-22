@@ -57,6 +57,7 @@ describe("the Skill studio", () => {
           unchecked: null,
           folder: "skills/deploy",
           compat: [],
+          lint: [],
         },
         {
           name: "secrets",
@@ -75,6 +76,7 @@ describe("the Skill studio", () => {
           unchecked: null,
           folder: "/app/plugin/skills/secrets",
           compat: [],
+          lint: [],
         },
         {
           name: "review",
@@ -93,6 +95,7 @@ describe("the Skill studio", () => {
           unchecked: null,
           folder: "skills/review",
           compat: [],
+          lint: [],
         },
       ],
     });
@@ -141,6 +144,7 @@ describe("the Skill studio", () => {
             unchecked: null,
             folder: "workspaces/alpha/skills/lint",
             compat: [],
+            lint: [],
           },
           {
             name: "lint",
@@ -159,6 +163,7 @@ describe("the Skill studio", () => {
             unchecked: null,
             folder: "skills/lint",
             compat: [],
+            lint: [],
           },
         ],
       };
@@ -214,6 +219,7 @@ describe("the Skill studio", () => {
             unchecked: null,
             folder: shared ? "skills/scratch" : "skills.local/scratch",
             compat: [],
+            lint: [],
           },
         ],
       };
@@ -273,6 +279,7 @@ describe("the Skill studio", () => {
             not_granted: null,
             folder: "personas/ops/skills/triage",
             compat: [],
+            lint: [],
             written: "triage",
             named: false,
             unchecked: null,
@@ -291,6 +298,7 @@ describe("the Skill studio", () => {
             not_granted: null,
             folder: "skills/deploy",
             compat: [],
+            lint: [],
             written: "deploy",
             named: true,
             unchecked: null,
@@ -309,6 +317,7 @@ describe("the Skill studio", () => {
             not_granted: null,
             folder: "",
             compat: [],
+            lint: [],
             written: "superpowers:tdd",
             named: true,
             unchecked: "purlis can't check whether this machine has it",
@@ -408,6 +417,7 @@ function withClaudeCode(offLangfuse: boolean) {
         description: "Reviews.",
         folder: "skills/review",
         compat: [],
+        lint: [],
       },
       {
         ...ROW,
@@ -417,6 +427,7 @@ function withClaudeCode(offLangfuse: boolean) {
         description: "Keeps secrets.",
         folder: "/app/plugin/skills/secrets",
         compat: [],
+        lint: [],
       },
     ],
     clashes: [
@@ -466,6 +477,7 @@ function withClaudeCode(offLangfuse: boolean) {
             description: "Reads traces.",
             folder: "/home/.claude/skills/langfuse",
             compat: [],
+            lint: [],
             owner: { kind: "you" },
             switch: { kind: "alone" },
           },
@@ -477,6 +489,7 @@ function withClaudeCode(offLangfuse: boolean) {
             description: "Frames.",
             folder: "/cache/figma/skills/frame",
             compat: [],
+            lint: [],
             owner: { kind: "plugin", name: "figma" },
             switch: {
               kind: "not",
@@ -491,6 +504,7 @@ function withClaudeCode(offLangfuse: boolean) {
             description: "The repo's review.",
             folder: "workspaces/alpha/api/.claude/skills/review",
             compat: [],
+            lint: [],
             owner: { kind: "repo", name: "api" },
             switch: { kind: "alone" },
           },

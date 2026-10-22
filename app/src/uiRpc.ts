@@ -8893,13 +8893,19 @@ export type SidebarWorkspace = {
 	live: boolean,
 };
 
-/**  A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`. */
+/**
+ *  A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
+ *  the window. purlis-core keeps no UI typing crate, so its level is the studio's `Level`.
+ */
 export type SkillBroken = {
 	/**  Its name, or its folder's where it names none. */
 	name: string,
-	/**  Its level, as a person reads it: `project`, `local workspace`. */
-	level: string,
-	/**  Why, in one line. */
+	/**  Its level, and whether it is a local skill. */
+	level: Level,
+	local: boolean,
+	/**  Its level as a person reads it: `project`, `local workspace` (the core's `level_shown`). */
+	label: string,
+	/**  Why, in one line: the core's sentence. */
 	why: string,
 };
 
@@ -8909,14 +8915,11 @@ export type SkillBudget = {
 	skills: number,
 	/**  Characters of what it lists of them. */
 	chars: number,
-	/**  Manual-only skills in the set. */
-	manual: number,
 	/**
-	 *  Whether they cost nothing: the chat leaves them out of its listing, by its harness's own
-	 *  key or purlis's translation (SK-8). Where it cannot, they are counted in `skills` and
-	 *  `chars`.
+	 *  Manual-only skills in the set, which cost nothing: every harness keeps them out of its
+	 *  listing (SK-8).
 	 */
-	manual_free: boolean,
+	manual: number,
 	/**  The most skills the budget lists. */
 	most_skills: number,
 	/**  The most characters it holds. */
@@ -8955,8 +8958,13 @@ export type SkillFit =
 "full" | 
 /**  Something it asks for is left out, ignored or not applied. */
 "partial" | 
-/**  A harness or repo skill whose harness applies what widens the chat. */
-"widens";
+/**
+ *  A harness or repo skill whose harness applies what widens the chat, or that purlis cannot
+ *  read, so may.
+ */
+"widens" | 
+/**  A skill purlis hands to no chat. */
+"refused";
 
 /**  Where a project skill reaches, as the studio sets it. */
 export type SkillGrant = 
@@ -9378,6 +9386,11 @@ export type StudioSkill = {
 	 *  skill left out.
 	 */
 	compat: SkillCompat[],
+	/**
+	 *  What the built-in lints say of a skill from outside the plane (SK-8): that it widens the
+	 *  chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
+	 */
+	lint: string[],
 };
 
 /**

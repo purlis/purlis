@@ -17,7 +17,8 @@
 //! - **Nothing is silently half-applied** (decision 18): every key a harness does not apply is on
 //!   the badge, and a key that has an equivalent is translated ([`ManualOnly`]).
 
-use crate::Declared;
+use crate::Origin;
+use crate::handed::Refusal;
 
 /// A frontmatter key a harness may read, by what it does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -60,7 +61,7 @@ pub enum Field {
 
 impl Field {
     /// Every field, in the order a badge lists them.
-    pub const ALL: [Field; 20] = [
+    pub(crate) const ALL: [Field; 20] = [
         Field::Name,
         Field::Description,
         Field::WhenToUse,
@@ -115,7 +116,7 @@ impl Field {
     }
 
     /// What it asks for, as a person reads it on a badge.
-    pub fn said(self) -> &'static str {
+    pub(crate) fn said(self) -> &'static str {
         match self {
             Self::Name => "its name",
             Self::Description => "its description",
@@ -146,7 +147,7 @@ impl Field {
     }
 
     /// Whether it narrows a chat it applies to: fewer tools, or a fork.
-    pub fn narrows(self) -> bool {
+    pub(crate) fn narrows(self) -> bool {
         matches!(self, Self::DisallowedTools | Self::Context | Self::Agent)
     }
 
@@ -167,6 +168,7 @@ impl Field {
 }
 
 /// **How a harness keeps a manual-only skill out of its model's choice**, as its adapter says.
+/// Every harness purlis runs has a way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManualOnly {
     /// It reads `disable-model-invocation` itself, and leaves the skill's description out.
@@ -177,8 +179,6 @@ pub enum ManualOnly {
     /// It lists only a skill that has a description, and still runs one by name: purlis hands
     /// it the skill without its description ([`handed_text`]).
     WithoutDescription,
-    /// It has no way: a manual-only skill is listed like any other.
-    Not,
 }
 
 /// **What a harness reads of a skill's frontmatter**: all this module needs to know of it.
@@ -204,8 +204,11 @@ pub enum Fit {
     Full,
     /// Something it asks for is left out, ignored or not applied, and the badge says what.
     Partial,
-    /// A harness or repo skill whose harness applies what widens the chat.
+    /// A harness or repo skill whose harness applies what widens the chat, or whose frontmatter
+    /// purlis cannot read, so may.
     Widens,
+    /// A skill purlis hands no chat: its frontmatter or its files are refused ([`Refusal`]).
+    Refused,
 }
 
 /// **A skill's compatibility badge on one harness**: how well it fits, and why.
@@ -213,21 +216,63 @@ pub enum Fit {
 pub struct Compat {
     pub fit: Fit,
     /// What widens the chat, which purlis leaves out of a skill it hands.
-    pub dropped: Vec<Field>,
+    dropped: Vec<Field>,
     /// What widens the chat, in a harness or repo skill whose harness applies it.
-    pub widens: Vec<Field>,
+    widens: Vec<Field>,
     /// What the harness has no key for and purlis carries over by an equivalent.
-    pub translated: Vec<Field>,
+    translated: Vec<Field>,
     /// What the harness does not apply.
-    pub ignored: Vec<Field>,
-    /// The keys no harness reads, as written.
-    pub unknown: Vec<String>,
+    ignored: Vec<Field>,
+    /// How many keys it sets that no harness reads.
+    unknown: usize,
+    /// Why purlis cannot read it, where it cannot.
+    refused: Option<Refusal>,
+}
+
+/// **The one sentence that says a skill widens the chat**, by what it asks for: the badge of a
+/// harness or repo skill and the lint of one say it the same way.
+pub fn widening_said(fields: &[Field]) -> String {
+    format!(
+        "Widens the chat: {} apply while it runs, and purlis cannot leave them out of a skill \
+         it does not hand over.",
+        said(fields)
+    )
 }
 
 impl Compat {
+    /// **The badge of a skill from `origin` purlis cannot read**, as `why` says: one it hands is
+    /// handed to no chat, and a harness or repo skill may widen the chat.
+    pub fn refused(why: Refusal, origin: Origin) -> Compat {
+        Compat {
+            fit: if origin.handed() {
+                Fit::Refused
+            } else {
+                Fit::Widens
+            },
+            dropped: Vec::new(),
+            widens: Vec::new(),
+            translated: Vec::new(),
+            ignored: Vec::new(),
+            unknown: 0,
+            refused: Some(why),
+        }
+    }
+
+    /// Whether it says the skill widens the chat.
+    pub fn widens(&self) -> bool {
+        self.fit == Fit::Widens
+    }
+
     /// **What the badge says, one line each**: what is left out, what widens, what is carried by
     /// an equivalent, what is not applied, and what nothing reads. One line where it all applies.
+    /// It names no key.
     pub fn lines(&self) -> Vec<String> {
+        if let Some(why) = &self.refused {
+            return vec![match self.fit {
+                Fit::Refused => format!("purlis hands it to no chat: {why}."),
+                _ => format!("It may widen the chat: purlis cannot read it, as {why}."),
+            }];
+        }
         let mut lines = Vec::new();
         if self.fit == Fit::Full && self.translated.is_empty() {
             lines.push("Everything it asks for applies.".to_owned());
@@ -239,11 +284,7 @@ impl Compat {
             ));
         }
         if !self.widens.is_empty() {
-            lines.push(format!(
-                "Widens the chat: {} apply, and purlis cannot leave them out of a skill it does \
-                 not hand over.",
-                said(&self.widens)
-            ));
+            lines.push(widening_said(&self.widens));
         }
         if !self.translated.is_empty() {
             lines.push(format!(
@@ -259,8 +300,8 @@ impl Compat {
         if !rest.is_empty() {
             lines.push(format!("Ignored: {}.", said(&rest)));
         }
-        if !self.unknown.is_empty() {
-            lines.push(format!("Read by nothing: {}.", self.unknown.join(", ")));
+        if self.unknown > 0 {
+            lines.push("Some of what it sets is read by nothing.".to_owned());
         }
         lines
     }
@@ -276,37 +317,29 @@ fn said(fields: &[Field]) -> String {
     }
 }
 
-/// The fields `text`'s frontmatter sets, in the order written, and the keys no harness reads.
-fn fields_of(text: &str) -> (Vec<Field>, Vec<String>) {
-    let mut fields = Vec::new();
-    let mut unknown = Vec::new();
-    for (key, _) in crate::read::entries(text) {
-        match Field::of(&key) {
-            Some(field) if !fields.contains(&field) => fields.push(field),
-            Some(_) => {}
-            None if !unknown.contains(&key) => unknown.push(key),
-            None => {}
-        }
-    }
-    (fields, unknown)
-}
-
-/// **The badge of a skill whose `SKILL.md` is `text`, on a harness that reads `honours`**.
-/// `handed` says whether purlis hands it over (a built-in skill or the plane's), so leaves out
-/// what widens the chat and translates what has an equivalent, or the harness reads it where it
-/// lies (a harness or repo skill).
-pub fn compat(text: &str, handed: bool, honours: &Honours) -> Compat {
-    let (fields, unknown) = fields_of(text);
-    let manual = crate::declared::declared_in(text).manual;
+/// **The badge of a skill whose `SKILL.md` is `text`, from `origin`, on a harness that reads
+/// `honours`**. A skill purlis hands over ([`Origin::handed`]) has what would widen the chat left
+/// out and what has an equivalent translated, and is refused where its frontmatter is
+/// ([`crate::handed`]). A harness or repo skill is read by its harness where it lies: one that
+/// purlis cannot read may widen the chat.
+pub fn compat(text: &str, origin: Origin, honours: &Honours) -> Compat {
+    let handed = origin.handed();
     let mut out = Compat {
         fit: Fit::Full,
         dropped: Vec::new(),
         widens: Vec::new(),
         translated: Vec::new(),
         ignored: Vec::new(),
-        unknown,
+        unknown: 0,
+        refused: None,
     };
-    for field in fields {
+    let read = match crate::handed::read(text) {
+        Ok(read) => read,
+        Err(why) => return Compat::refused(why, origin),
+    };
+    out.unknown = read.unknown().len();
+    let manual = read.manual();
+    for field in read.fields() {
         if field.for_a_reader() {
             continue;
         }
@@ -324,7 +357,7 @@ pub fn compat(text: &str, handed: bool, honours: &Honours) -> Compat {
                 (true, true, ManualOnly::Listing | ManualOnly::WithoutDescription) => {
                     out.translated.push(field);
                 }
-                (true, ..) => out.ignored.push(field),
+                (true, false, _) => out.ignored.push(field),
             }
         } else if !applies {
             out.ignored.push(field);
@@ -332,7 +365,7 @@ pub fn compat(text: &str, handed: bool, honours: &Honours) -> Compat {
     }
     out.fit = if !out.widens.is_empty() {
         Fit::Widens
-    } else if out.dropped.is_empty() && out.ignored.is_empty() && out.unknown.is_empty() {
+    } else if out.dropped.is_empty() && out.ignored.is_empty() && out.unknown == 0 {
         Fit::Full
     } else {
         Fit::Partial
@@ -340,45 +373,13 @@ pub fn compat(text: &str, handed: bool, honours: &Honours) -> Compat {
     out
 }
 
-/// **Whether a harness that reads `honours` keeps a manual-only skill out of its model's
-/// listing**, by its own key or purlis's equivalent: then such a skill costs nothing in its
-/// budget ([`crate::Budget::manual_free`]).
-pub fn manual_kept_out(honours: &Honours) -> bool {
-    honours.manual != ManualOnly::Not
-}
-
-/// Whether `declared` is a manual-only skill a harness that reads `honours` is handed without its
-/// description ([`ManualOnly::WithoutDescription`]).
-fn without_description(declared: &Declared, honours: &Honours) -> bool {
-    declared.manual && honours.manual == ManualOnly::WithoutDescription
-}
-
 /// **The `SKILL.md` purlis hands a harness that reads `honours`, for a skill whose own is
-/// `text`**, or `None` where it is handed as it is: every byte as written, but the entries that
-/// widen the chat (`allowed-tools`, `hooks`) left out, and, for a manual-only skill on a harness
-/// that keeps one out by its description alone, the description too.
-pub fn handed_text(text: &str, honours: &Honours) -> Option<String> {
-    let drop_description = without_description(&crate::declared::declared_in(text), honours);
-    let left_out: Vec<(usize, usize)> = crate::read::entries(text)
-        .into_iter()
-        .filter(|(key, _)| {
-            Field::of(key).is_some_and(|field| {
-                field.widens() || (drop_description && field == Field::Description)
-            })
-        })
-        .map(|(_, span)| span)
-        .collect();
-    if left_out.is_empty() {
-        return None;
-    }
-    let mut out = String::with_capacity(text.len());
-    let mut from = 0;
-    for (start, end) in left_out {
-        out.push_str(&text[from..start]);
-        from = end;
-    }
-    out.push_str(&text[from..]);
-    Some(out)
+/// `text`** ([`crate::handed`]): a frontmatter purlis writes of the keys it keeps, never one
+/// that widens the chat, and a manual-only skill without its description where that is how the
+/// harness keeps one out; then the body as it is. Refused, handing nothing, where the
+/// frontmatter is.
+pub fn handed_text(text: &str, honours: &Honours) -> Result<String, Refusal> {
+    crate::handed::handed(text, honours.manual == ManualOnly::WithoutDescription)
 }
 
 #[cfg(test)]

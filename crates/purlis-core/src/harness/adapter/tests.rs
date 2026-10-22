@@ -129,8 +129,6 @@ fn every_harness_has_purliss_budget_and_says_what_it_lists_of_a_skill() {
     assert_eq!(claude.per_description, Some(1_536));
     assert_eq!(codex.per_description, Some(1_024));
     assert_eq!(opencode.per_description, None, "opencode cuts nothing");
-    // Each keeps a manual-only skill out, by its own key or purlis's translation (SK-8).
-    assert!(claude.manual_free && codex.manual_free && opencode.manual_free);
     // A Codex chat is briefed with each skill's path on its line.
     assert!(codex.lists_paths);
     assert!(!claude.lists_paths && !opencode.lists_paths);

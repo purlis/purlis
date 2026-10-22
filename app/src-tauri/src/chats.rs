@@ -440,14 +440,18 @@ pub struct SkillsMissing {
     pub broken: Vec<SkillBroken>,
 }
 
-/// A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`.
+/// A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
+/// the window. purlis-core keeps no UI typing crate, so its level is the studio's `Level`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct SkillBroken {
     /// Its name, or its folder's where it names none.
     pub name: String,
-    /// Its level, as a person reads it: `project`, `local workspace`.
-    pub level: String,
-    /// Why, in one line.
+    /// Its level, and whether it is a local skill.
+    pub level: crate::skillstudio::Level,
+    pub local: bool,
+    /// Its level as a person reads it: `project`, `local workspace` (the core's `level_shown`).
+    pub label: String,
+    /// Why, in one line: the core's sentence.
     pub why: String,
 }
 
@@ -3260,8 +3264,10 @@ impl Chats {
                     .into_iter()
                     .map(|one| SkillBroken {
                         name: one.name,
-                        level: one.level,
-                        why: one.why,
+                        level: one.origin.into(),
+                        local: one.local,
+                        label: purlis_core::skills::level_shown(one.origin, one.local),
+                        why: one.why.to_string(),
                     })
                     .collect(),
             })

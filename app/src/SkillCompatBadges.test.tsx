@@ -8,6 +8,20 @@ import { SkillCompatBadges, fitSaid } from "./SkillCompatBadges";
 afterEach(cleanup);
 
 describe("a skill's compatibility badges (SK-8)", () => {
+  it("marks a skill from outside the project that widens the chat, with its lint", () => {
+    render(
+      <SkillCompatBadges
+        name="wide"
+        compat={[
+          { harness: "claude", title: "Claude Code", fit: "widens", says: ["Widens the chat: …"] },
+        ]}
+        lint={["it names skills:gone, and this project has no skill gone"]}
+      />,
+    );
+    expect(screen.getByTestId("widens-wide").textContent).toBe("Widens the chat");
+    expect(screen.getByText(/no skill gone/)).toBeInTheDocument();
+  });
+
   it("draws one per harness with how well it fits, and the core's lines under it", () => {
     render(
       <SkillCompatBadges
@@ -40,5 +54,6 @@ describe("a skill's compatibility badges (SK-8)", () => {
     const { container } = render(<SkillCompatBadges name="half" compat={[]} />);
     expect(container).toBeEmptyDOMElement();
     expect(fitSaid("widens")).toBe("widens the chat");
+    expect(fitSaid("refused")).toBe("handed to no chat");
   });
 });

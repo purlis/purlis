@@ -8,7 +8,9 @@ fix, never a silent drop").
 The chat tab's Notice of the skills a chat started without (SK-5) said only what its persona
 names that is not here. **It now also says each plane skill the chat would have loaded that could
 not be**: a folder that is not a whole skill (no `SKILL.md`, or one that names no `name` or
-`description`), or one of two folders at one level that name the same skill. Each is named with
+`description`), one of two folders at one level that name the same skill, or one purlis hands to
+no chat because its folder or `SKILL.md` is a link or its frontmatter is refused (ADR 0063 as
+amended 2026-10-22). Each is named with
 its level and why, in the set's own words. A project skill whose grant does not reach the chat's
 workspace is no loss to it, and is not said. The Notice is raised for a chat on no persona too,
 and its Open in Skill studio opens the studio on that chat's place, where the skill is fixed in

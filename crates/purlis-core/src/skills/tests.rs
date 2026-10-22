@@ -859,7 +859,6 @@ fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_on_every
         });
         assert_eq!(elsewhere.spent.skills, 3, "{harness:?} leaves release out");
         assert_eq!(elsewhere.spent.manual, 1);
-        assert!(elsewhere.spent.budget.manual_free);
     }
 
     // In the workspace: its own skill and the granted one, never one it was not granted.
@@ -1057,9 +1056,20 @@ fn a_briefed_chat_in_a_clone_is_told_the_repos_copy_of_a_name_and_not_the_projec
     let built_in = tmp.path().join("bundle/skills");
     std::fs::create_dir_all(&built_in).unwrap();
     let dir = built_in.display().to_string();
+    // The set's folder the host laid out, as a Codex chat is handed it (SK-8).
+    let handed = tmp.path().join("sets/handed");
+    for name in ["deploy", "review"] {
+        std::fs::create_dir_all(handed.join("skills").join(name)).unwrap();
+        std::fs::write(
+            handed.join("skills").join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n"),
+        )
+        .unwrap();
+    }
+    let handed = handed.display().to_string();
     let env = move |name: &str| match name {
         LISTED_ENV => Some(dir.clone()),
-        PLANE_LISTED_ENV => Some("1".to_owned()),
+        PLANE_LISTED_ENV => Some(handed.clone()),
         _ => None,
     };
 

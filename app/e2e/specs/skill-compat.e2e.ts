@@ -20,9 +20,10 @@ import { startAChat } from "../started.js";
  *
  * The spec puts two project skills in the project's `skills/`, granted to every workspace, as a
  * person would: one that asks for what would widen a chat (`allowed-tools`) and for a model, and
- * one whose frontmatter names no description. The Skill studio draws the first with a badge per
- * harness: partial on Claude Code, which is never handed what widens the chat, and partial on
- * Codex, which applies no model either. Then a chat in `alpha`, on the scenario's program declared
+ * one whose frontmatter names no description, and one that spells a widening key another way
+ * (`allowedTools`). The Skill studio draws the first with a badge per harness: partial on Claude
+ * Code, which is never handed what widens the chat, and partial on Codex, which applies no model
+ * either; and the third as handed to no chat. Then a chat in `alpha`, on the scenario's program declared
  * as Claude Code, starts without the second: its pane's Notice names it with why, and its Open in
  * Skill studio opens the studio. What each harness is handed is proved on its arguments, its
  * environment and its folder in purlis-core (`a_skill_can_only_narrow_a_chat.rs`).
@@ -32,6 +33,7 @@ import { startAChat } from "../started.js";
 
 const WIDENS = "e2e-compat-widens";
 const BROKEN = "e2e-compat-broken";
+const REFUSED = "e2e-compat-refused";
 
 describe("a skill's compatibility and a skill that cannot be loaded", function () {
   this.timeout(240_000);
@@ -54,12 +56,18 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
     const broken = join(skills, BROKEN);
     mkdirSync(broken, { recursive: true });
     writeFileSync(join(broken, "SKILL.md"), `---\nname: ${BROKEN}\n---\n\nSay hello.\n`);
-    for (const name of [WIDENS, BROKEN]) {
+    const refused = join(skills, REFUSED);
+    mkdirSync(refused, { recursive: true });
+    writeFileSync(
+      join(refused, "SKILL.md"),
+      `---\nname: ${REFUSED}\ndescription: Spells a widening key another way.\nallowedTools: Bash\n---\n\nSay hello.\n`,
+    );
+    for (const name of [WIDENS, BROKEN, REFUSED]) {
       const grant = join(skills, `${name}.toml`);
       writeFileSync(grant, 'grant = "all"\n');
       written.push(grant);
     }
-    written.push(widens, broken);
+    written.push(widens, broken, refused);
     local = join(root, "charter.local.toml");
     declared = readFileSync(local, "utf8");
     await focusWorkspace("alpha");
@@ -87,6 +95,10 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
     await expect(codex).toHaveText(/Codex: partial/);
     await (await codex.$("summary")).click();
     await expect(codex).toHaveText(/Ignored: the model it asks for/);
+
+    // A widening key spelled another way: purlis hands the skill to no chat, and says so.
+    const refused = await $(`[data-testid="compat-${REFUSED}-claude"]`);
+    await expect(refused).toHaveText(/Claude Code: handed to no chat/);
   });
 
   it("says on a chat's pane that it started without a skill that could not be loaded", async () => {
@@ -103,7 +115,11 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
 
     const notice = await $('[data-cause^="skills-missing:"]');
     await notice.waitForExist({ timeout: 40_000 });
-    await expect(notice).toHaveText(new RegExp(`could not be loaded: ${BROKEN} \\(project\\)`));
+    await expect(notice).toHaveText(/could not be loaded/);
+    await expect(notice).toHaveText(new RegExp(`${BROKEN} \\(project\\)`));
+    await expect(notice).toHaveText(
+      new RegExp(`${REFUSED} \\(project\\), purlis hands it to no chat`),
+    );
     await expect(notice).toHaveText(/names no `description`/);
     const open = await notice.$("button=Open in Skill studio");
     await open.waitForClickable({ timeout: 10_000 });

@@ -42,6 +42,7 @@ pub mod change;
 pub mod compat;
 mod declared;
 mod grant;
+mod handed;
 pub mod lint;
 mod load;
 mod read;
@@ -51,10 +52,11 @@ mod share;
 mod stamp;
 
 pub use budget::{Budget, Over, Spent};
-pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, manual_kept_out};
+pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, widening_said};
 pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_of, set_grant};
-pub use lint::{BuiltInLints, Finding, Level, SkillFiles, SkillLint};
+pub use handed::{MOST_BYTES, Refusal, read_skill_md};
+pub use lint::{BuiltInLints, Finding, Lint, Severity, SkillFiles, SkillLint};
 pub use load::{Loaded, Narrowing, POINTER, by_name, find, load, other_files};
 pub use read::{DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read};
 use reference::Seen;
@@ -126,6 +128,13 @@ impl Origin {
             Self::Harness => "installed",
             Self::Repo => "repo",
         }
+    }
+
+    /// **Whether purlis hands a skill of this origin over**, so writes the `SKILL.md` a harness
+    /// reads (SK-8): a built-in skill or the plane's. A harness or repo skill is read by its
+    /// harness where it lies.
+    pub fn handed(self) -> bool {
+        !matches!(self, Self::Harness | Self::Repo)
     }
 
     /// Whether a skill of this origin is one of the plane's own levels, which purlis hands a

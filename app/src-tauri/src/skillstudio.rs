@@ -103,6 +103,9 @@ pub struct StudioSkill {
     /// for a skill a chat gets from purlis, its own for one from outside the plane, none for a
     /// skill left out.
     pub compat: Vec<SkillCompat>,
+    /// What the built-in lints say of a skill from outside the plane (SK-8): that it widens the
+    /// chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
+    pub lint: Vec<String>,
 }
 
 /// How well a skill fits a harness, as its badge draws it (SK-8): the core's `Fit`.
@@ -113,8 +116,11 @@ pub enum SkillFit {
     Full,
     /// Something it asks for is left out, ignored or not applied.
     Partial,
-    /// A harness or repo skill whose harness applies what widens the chat.
+    /// A harness or repo skill whose harness applies what widens the chat, or that purlis cannot
+    /// read, so may.
     Widens,
+    /// A skill purlis hands to no chat.
+    Refused,
 }
 
 /// **A skill's compatibility badge on one harness** (SK-8, #2771; decision 18): how well it
@@ -140,6 +146,7 @@ impl From<&purlis_core::skills::HarnessCompat> for SkillCompat {
                 Fit::Full => SkillFit::Full,
                 Fit::Partial => SkillFit::Partial,
                 Fit::Widens => SkillFit::Widens,
+                Fit::Refused => SkillFit::Refused,
             },
             says: one.compat.lines(),
         }
@@ -334,7 +341,10 @@ pub(crate) fn studio(
         .as_deref()
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
-    let skills = purlis_core::skills::studio_rows(&set, root, &names)
+    let all = purlis_core::skills::harnesses_in_the_studio(&set, root, workspace.as_deref(), env);
+    let mut rows = purlis_core::skills::studio_rows(&set, root, &names);
+    purlis_core::skills::with_harness_badges(&mut rows, &all, root);
+    let skills = rows
         .into_iter()
         .map(|row| {
             let grant = (row.origin == purlis_core::skills::Origin::Project).then(|| {
@@ -371,9 +381,10 @@ pub(crate) fn studio(
             owner: None,
             switch: None,
             compat: row.compat.iter().map(Into::into).collect(),
+            lint: row.lint,
         })
         .collect();
-    let (harnesses, clashes) = harnesses(&set, root, workspace.as_deref(), env);
+    let (harnesses, clashes) = harnesses(&all, root);
     let workspaces = purlis_core::workspaces::Plane::open(root)
         .workspaces()
         .unwrap_or_default();
@@ -421,19 +432,17 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         owner,
         switch,
         compat: row.compat.iter().map(Into::into).collect(),
+        lint: row.lint,
     }
 }
 
 /// Each harness in the studio, and every clash, for a chat whose plane skills are `set`.
 fn harnesses(
-    set: &purlis_core::skills::SkillSet,
+    all: &[purlis_core::skills::HarnessInTheStudio],
     root: &std::path::Path,
-    workspace: Option<&str>,
-    env: &purlis_core::harness_plugin::Env<'_>,
 ) -> (Vec<StudioHarness>, Vec<StudioClash>) {
     use purlis_core::harness_plugin;
     let mut clashes: Vec<StudioClash> = Vec::new();
-    let all = purlis_core::skills::harnesses_in_the_studio(set, root, workspace, env);
     let harnesses = all
         .iter()
         .map(|one| {

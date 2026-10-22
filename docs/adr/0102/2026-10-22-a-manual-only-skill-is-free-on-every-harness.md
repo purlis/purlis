@@ -10,9 +10,6 @@ chat", until SK-8 hands each harness the translation. SK-8 does
 Codex's briefing names a manual-only skill and its file alone, and opencode is handed it without
 its description, which keeps it out of its listing.
 
-So **a manual-only skill costs nothing wherever its harness keeps it out of the listing**, by its
-own key or purlis's translation. `Budget::manual_free` is no longer each adapter's word: it
-follows from what the harness reads (`Harness::skill_budget`, `skills::manual_kept_out`), so it
-cannot disagree with what the chat is handed. On the three harnesses purlis ships, it is free on
-all three. A harness with no way to keep one out still counts it, and the budget still says
-"still listed on this chat" there.
+So **a manual-only skill costs nothing on every harness**: each keeps it out of the listing, by
+its own key or purlis's translation (`ManualOnly`, which has no "no way" case). `Budget` loses
+`manual_free`, and the window's "still listed on this chat" goes with it.

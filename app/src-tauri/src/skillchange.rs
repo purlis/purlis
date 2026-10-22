@@ -204,7 +204,7 @@ pub(crate) fn skill_templates() -> Vec<SkillTemplate> {
         .collect()
 }
 
-/// How much a lint's finding stops, as the editor draws it: the core's `Level`.
+/// How much a lint's finding stops, as the editor draws it: the core's `Severity`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkillLintLevel {
@@ -251,11 +251,11 @@ fn findings(
     purlis_core::skills::lint(root, level, name, text)
         .into_iter()
         .map(|finding| SkillLintFinding {
-            level: match finding.level {
-                purlis_core::skills::LintLevel::Blocks => SkillLintLevel::Blocks,
-                purlis_core::skills::LintLevel::Warns => SkillLintLevel::Warns,
+            level: match finding.severity {
+                purlis_core::skills::Severity::Blocks => SkillLintLevel::Blocks,
+                purlis_core::skills::Severity::Warns => SkillLintLevel::Warns,
             },
-            says: finding.says,
+            says: finding.to_string(),
         })
         .collect()
 }

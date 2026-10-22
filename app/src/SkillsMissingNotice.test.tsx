@@ -75,6 +75,8 @@ describe("a chat's missing skills", () => {
           {
             name: "half",
             level: "project",
+            local: false,
+            label: "project",
             why: "not a skill: its SKILL.md names no `description`",
           },
         ],
@@ -91,7 +93,9 @@ describe("a chat's missing skills", () => {
           persona: null,
           missing: [],
           no_built_in: [],
-          broken: [{ name: "half", level: "project", why: "not a skill" }],
+          broken: [
+            { name: "half", level: "project", local: false, label: "project", why: "not a skill" },
+          ],
         };
       return null;
     });
