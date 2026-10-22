@@ -108,9 +108,12 @@ describe("a skill's compatibility and a skill that cannot be loaded", function (
     const open = await notice.$("button=Open in Skill studio");
     await open.waitForClickable({ timeout: 10_000 });
     await open.click();
-    await browser.waitUntil(async () => (await tabNames()).some((tab) => tab.startsWith("Skill studio")), {
-      timeout: 20_000,
-      timeoutMsg: "Open in Skill studio never opened the studio",
-    });
+    await browser.waitUntil(
+      async () => (await tabNames()).some((tab) => tab.startsWith("Skill studio")),
+      {
+        timeout: 20_000,
+        timeoutMsg: "Open in Skill studio never opened the studio",
+      },
+    );
   });
 });

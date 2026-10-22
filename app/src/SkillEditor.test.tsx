@@ -60,7 +60,9 @@ describe("a skill in the light editor", () => {
   it("shows a warning and still offers Save (SK-8)", async () => {
     mockIPC((cmd) => {
       if (cmd === "skill_lint")
-        return [{ level: "warns", says: "its ! command calls jq, which this machine does not have" }];
+        return [
+          { level: "warns", says: "its ! command calls jq, which this machine does not have" },
+        ];
       throw new Error(`unexpected ${cmd}`);
     });
     const { container } = render(
@@ -75,7 +77,9 @@ describe("a skill in the light editor", () => {
       />,
     );
     expect(
-      await screen.findByText("Worth knowing: its ! command calls jq, which this machine does not have"),
+      await screen.findByText(
+        "Worth knowing: its ! command calls jq, which this machine does not have",
+      ),
     ).toBeInTheDocument();
     expect(container.querySelector('[data-level="warns"]')).not.toBeNull();
   });

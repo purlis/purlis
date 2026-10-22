@@ -17,9 +17,7 @@ describe("a skill's compatibility badges (SK-8)", () => {
             harness: "claude",
             title: "Claude Code",
             fit: "partial",
-            says: [
-              "Left out, because a skill may only narrow a chat: the tools it pre-approves.",
-            ],
+            says: ["Left out, because a skill may only narrow a chat: the tools it pre-approves."],
           },
           {
             harness: "codex",
@@ -33,9 +31,9 @@ describe("a skill's compatibility badges (SK-8)", () => {
     const list = screen.getByRole("list", { name: "Where deploy works" });
     expect(within(list).getByText("Claude Code: partial")).toBeInTheDocument();
     expect(within(list).getByText("Codex: full")).toBeInTheDocument();
-    expect(
-      screen.getByTestId("compat-deploy-claude").textContent,
-    ).toContain("a skill may only narrow a chat");
+    expect(screen.getByTestId("compat-deploy-claude").textContent).toContain(
+      "a skill may only narrow a chat",
+    );
   });
 
   it("draws nothing for a skill no harness would load, and names a widening skill plainly", () => {
