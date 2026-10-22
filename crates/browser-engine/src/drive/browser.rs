@@ -728,6 +728,33 @@ impl State {
         }
     }
 
+    /// `frame` of `target`'s page now lives in `session`, a process of its own (#2973): where
+    /// purlis knew the frame before, it counts as having loaded another document, as a
+    /// navigation does, whatever else the engine says of the swap.
+    fn frame_swapped(&mut self, target: &str, frame: &str, session: &str) {
+        let Some(page) = self.page_mut(target) else {
+            return;
+        };
+        let Some(entry) = page.frames.get_mut(frame) else {
+            return;
+        };
+        if entry.session == session {
+            return;
+        }
+        entry.session = session.to_owned();
+        self.generations += 1;
+        let generation = self.generations;
+        if let Some(page) = self.page_mut(target)
+            && let Some(entry) = page.frames.get_mut(frame)
+        {
+            entry.generation = generation;
+            entry.loaded = generation;
+            page.shows = generation;
+        }
+        self.refs.forget_frame(frame);
+        self.excluded.retain(|key| key.frame != frame);
+    }
+
     /// Forgets `frame` and every frame inside it, and answers them.
     fn frame_gone(&mut self, target: &str, frame: &str) -> Vec<String> {
         self.generations += 1;
@@ -3415,11 +3442,9 @@ impl Inner {
                                         frame: target.clone(),
                                     },
                                 );
-                                if let Some(page) = state.page_mut(&page)
-                                    && let Some(frame) = page.frames.get_mut(&target)
-                                {
-                                    frame.session.clone_from(&session);
-                                }
+                                // A frame purlis knew moved to a process of its own: it shows
+                                // another document from now on (#2973).
+                                state.frame_swapped(&page, &target, &session);
                                 follow.push(FollowUp::SetUp(session));
                             }
                             _ => follow.push(FollowUp::Release(session)),
