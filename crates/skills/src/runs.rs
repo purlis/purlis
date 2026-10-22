@@ -35,18 +35,22 @@ pub enum StartedBy {
     /// The chat loaded the skill through purlis's own `skill_load` tool (SK-13): an exact start
     /// on every harness, said by purlis's MCP server rather than read from the harness.
     McpLoad,
+    /// The person picked it in Use skill…, which typed it into the chat, and sent that prompt
+    /// (SK-12): the run opens as the prompt does.
+    UseSkill,
     /// A start a newer purlis wrote, which this one does not know. It never opens a run.
     #[serde(other)]
     Unknown,
 }
 
 impl StartedBy {
-    /// The word a run records: `skill-tool`, `read`, `mcp-load` or `unknown`.
+    /// The word a run records: `skill-tool`, `read`, `mcp-load`, `use-skill` or `unknown`.
     pub fn word(self) -> &'static str {
         match self {
             Self::SkillTool => "skill-tool",
             Self::Read => "read",
             Self::McpLoad => "mcp-load",
+            Self::UseSkill => "use-skill",
             Self::Unknown => "unknown",
         }
     }
@@ -57,6 +61,7 @@ impl StartedBy {
             "skill-tool" => Self::SkillTool,
             "read" => Self::Read,
             "mcp-load" => Self::McpLoad,
+            "use-skill" => Self::UseSkill,
             _ => return None,
         })
     }

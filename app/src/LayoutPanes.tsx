@@ -1,7 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Fragment, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import {
+  Fragment,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Group, Panel } from "react-resizable-panels";
 import { Separator } from "./shownSeparator";
 import {
@@ -31,6 +39,7 @@ import { droppedReference, overChat, useReferenceChats } from "./references";
 import { NoticeOf, NoticePaneRow } from "./Notice";
 import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
+import { SkillsChip } from "./UseSkill";
 import { harnessCardView, type Layout, type ViewRef } from "./tabs";
 import { type Crumbs } from "./tabChats";
 import { BriefButton, type BriefAsk } from "./Brief";
@@ -171,8 +180,11 @@ export function PaneFrame({
   const running = useChatsSelect(chats, (states) => stateOf(states, session) === "running");
   const usage = useChatUsage(plane, session, moved, running);
   const lent = useReferenceChats();
+  const frame = useRef<HTMLDivElement>(null);
+  const roomy = useRoomy(frame);
   return (
     <div
+      ref={frame}
       className="pane-frame"
       // A reference dropped on the chat's pane is typed into it, unsent (FM-9).
       onDragOver={overChat}
@@ -213,6 +225,12 @@ export function PaneFrame({
             {crumbs && <BriefButton of={briefOfShown(crumbs)} />}
             {crumbs && ending}
             <ChatGauge usage={usage} />
+            {/* The chat's skills and its skill budget, and Use skill… for it (#2775). */}
+            {/* Not beside a task's breadcrumb: that line is the fullest a pane has, and the
+                state in it is read whole before anything else (`pane-crumbs.e2e.ts`); nor in a
+                narrow pane, for the same line. The palette and the tab's menu still have Use
+                skill… there. */}
+            {!crumbs && roomy && <SkillsChip session={session} />}
             {harness && <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />}
             {from && <span className="pane-from">{from}</span>}
             {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}
@@ -223,6 +241,29 @@ export function PaneFrame({
       </div>
     </div>
   );
+}
+
+/** The widest a pane may be and still be narrow (#2775): 40rem, past which its top line has
+ *  room for the Skills chip beside everything else it holds. */
+const NARROW_REM = 40;
+
+/** Whether the pane frame in `frame` is wider than {@link NARROW_REM}, as it is resized: true
+ *  where it cannot be measured, as in a test with no layout. */
+function useRoomy(frame: RefObject<HTMLDivElement | null>): boolean {
+  const [roomy, setRoomy] = useState(true);
+  useLayoutEffect(() => {
+    const element = frame.current;
+    if (element === null || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      setRoomy(element.getBoundingClientRect().width > NARROW_REM * rem);
+    };
+    measure();
+    const watching = new ResizeObserver(measure);
+    watching.observe(element);
+    return () => watching.disconnect();
+  }, [frame]);
+  return roomy;
 }
 
 /** The task a breadcrumb's pane shows, as the Brief panel is asked for it: the last chat of

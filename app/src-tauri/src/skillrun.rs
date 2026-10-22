@@ -83,14 +83,25 @@ impl SkillRuns {
     }
 
     /// A state hook of chat `report.chat`: the turn's end, a new prompt and the session's end
-    /// close every run open in it ([`Tracker::report`]).
+    /// close every run open in it, and a new prompt opens the run of a skill Use skill… typed
+    /// into it ([`Tracker::report`]).
     pub fn reported(&self, report: &purlis_core::hookwire::Report) {
-        let closed = self
-            .runs()
-            .report(&report.chat.to_string(), report, now_ms());
-        if !closed.is_empty() {
-            self.tell(report.chat, None);
-        }
+        let key = report.chat.to_string();
+        let told = {
+            let mut runs = self.runs();
+            let reported = runs.report(&key, report, now_ms(), || None);
+            if reported.closed.is_empty() && reported.opened.is_empty() {
+                return;
+            }
+            open_of(&runs, &key)
+        };
+        self.tell(report.chat, told);
+    }
+
+    /// **Use skill… typed `typed` into chat `chat`**, unsent (SK-12): its run opens, and the chip
+    /// shows it, as the chat's next prompt does.
+    pub fn typed(&self, chat: u32, typed: purlis_core::skillspan::Typed) {
+        self.runs().typed(&chat.to_string(), typed, now_ms());
     }
 
     /// Chat `chat` is closed: a run open in it goes with it, and the window is told.

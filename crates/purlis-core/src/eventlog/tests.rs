@@ -3520,3 +3520,149 @@ fn a_load_through_mcp_opens_a_run_recorded_as_one_and_ends_with_the_turn() {
         "its own load, the second and its child's: {end:#?}"
     );
 }
+
+// ---- a skill Use skill… typed (SK-12, #2775) ----------------------------------------------
+
+/// What Use skill… holds for chat 3 as it types `text` for `skill`.
+fn typed_skill(
+    skill: &str,
+    text: &str,
+    confirmed: crate::skillspan::Confirmed,
+) -> crate::skillspan::Typed {
+    crate::skillspan::Typed {
+        skill: skill.to_owned(),
+        run: ulid::Ulid::generate(),
+        workspace: None,
+        level: None,
+        text: crate::skillspan::PromptMarks::digest(text),
+        confirmed,
+    }
+}
+
+/// Chat 3 sends a prompt whose text is `text`.
+fn sent(text: &str) -> crate::hookwire::Report {
+    let mut sent = report(3, crate::state::Event::UserPromptSubmit);
+    sent.detail.prompt_marks = crate::skillspan::PromptMarks::of(text);
+    sent
+}
+
+#[test]
+fn a_skill_use_skill_typed_opens_its_run_with_the_prompt_that_holds_it_and_a_codex_read_of_it_is_the_same_run()
+ {
+    use crate::state::Event::Stop;
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    // The chat is at its prompt: its run is known, and its last turn ended.
+    host.report(plane.path(), &report(3, Stop), Followed::No)
+        .unwrap();
+    let typed = typed_skill(
+        "deploy",
+        "$deploy env: prod",
+        crate::skillspan::Confirmed::ByPrompt,
+    );
+    let id = typed.run.to_string();
+    let written = host
+        .apply(super::Entry::SkillTyped {
+            plane: plane.path().to_path_buf(),
+            number: 3,
+            typed,
+        })
+        .unwrap();
+    assert!(written.is_empty(), "nothing is written while it is unsent");
+
+    host.report(plane.path(), &sent("$deploy env: prod"), Followed::No)
+        .unwrap();
+    // Codex reads the skill it was asked for: inside the same run, never a second one.
+    host.tool(
+        plane.path(),
+        &codex_read(3, "call_1", &crate::reopen::mint()),
+        Instant::now(),
+    )
+    .unwrap();
+    host.report(plane.path(), &report(3, Stop), Followed::No)
+        .unwrap();
+
+    let events = read(dir.path()).unwrap();
+    let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            "run.started",
+            "hook.stop",
+            "skill.started",
+            "hook.userpromptsubmit",
+            "hook.posttooluse-blocked",
+            "skill.ended",
+            "hook.stop",
+        ],
+        "{events:#?}"
+    );
+    assert_eq!(events[2].body["started_by"], "use-skill");
+    assert_eq!(
+        events[3].body["skill_run"],
+        id.as_str(),
+        "the prompt is inside it"
+    );
+    let runs = crate::skilluse::runs(plane.path());
+    assert_eq!(runs.len(), 1, "{runs:#?}");
+    assert_eq!(runs[0].id.as_deref(), Some(id.as_str()));
+    assert_eq!(
+        runs[0].started_by,
+        Some(purlis_skills::runs::StartedBy::UseSkill)
+    );
+    assert_eq!(runs[0].end.as_ref().map(|end| end.tool_calls), Some(1));
+}
+
+#[test]
+fn a_skill_typed_into_claude_code_opens_its_run_on_the_expansion_that_names_it_and_none_without() {
+    use crate::state::Event::Stop;
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    host.report(plane.path(), &report(3, Stop), Followed::No)
+        .unwrap();
+    let typed = typed_skill(
+        "skills:deploy",
+        "/skills:deploy",
+        crate::skillspan::Confirmed::ByName,
+    );
+    let id = typed.run.to_string();
+    host.apply(super::Entry::SkillTyped {
+        plane: plane.path().to_path_buf(),
+        number: 3,
+        typed,
+    })
+    .unwrap();
+    host.report(plane.path(), &sent("/skills:deploy"), Followed::No)
+        .unwrap();
+    let mut expansion = tool_call(3, "userpromptexpansion", crate::hookwire::Decision::None);
+    expansion.tool = None;
+    expansion.call = None;
+    expansion.skill = Some(Box::new(crate::hookwire::SkillStarted {
+        skill: "skills:deploy".to_owned(),
+        run: crate::reopen::mint(),
+        started_by: purlis_skills::runs::StartedBy::UseSkill,
+        workspace: None,
+        level: None,
+    }));
+    host.tool(plane.path(), &expansion, Instant::now()).unwrap();
+    // A second expansion of a skill nobody typed opens nothing.
+    let mut other = expansion.clone();
+    other.skill.as_mut().unwrap().skill = "skills:other".to_owned();
+    host.tool(plane.path(), &other, Instant::now()).unwrap();
+    host.report(plane.path(), &report(3, Stop), Followed::No)
+        .unwrap();
+
+    let runs = crate::skilluse::runs(plane.path());
+    assert_eq!(runs.len(), 1, "{runs:#?}");
+    assert_eq!(runs[0].id.as_deref(), Some(id.as_str()));
+    assert_eq!(runs[0].skill, "skills:deploy");
+    assert_eq!(
+        runs[0].end.as_ref().map(|end| end.tool_calls),
+        Some(0),
+        "an expansion is no tool call"
+    );
+}

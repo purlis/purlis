@@ -120,7 +120,8 @@ pub struct Server {
 /// start and restart nothing. They are served to a `local-ui` peer of the same build, and
 /// whether they join this list awaits a ruling. Until it is made, a command of that kind added
 /// since is held to the window, failing closed: `references_into_chat` (#1151), several of the
-/// explorer's rows typed into a chat as one paste.
+/// explorer's rows typed into a chat as one paste, and `use_skill` (#2775), a skill of the
+/// chat's typed into it by Use skill….
 ///
 /// **And every command that reads back what one chat said to another, or was sent**: what a
 /// task was sent (`task_brief`, #1494), what a session and its tasks said to each other
@@ -485,6 +486,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Several of the explorer's rows typed into a chat as the person (#1151): held to the
     // window until typing into a chat has its ruling.
     "references_into_chat",
+    // A skill of a chat's typed into it as the person by Use skill… (#2775): held to the window
+    // until typing into a chat has its ruling, as a reference is.
+    "use_skill",
     // Why this purlis opens a project read-only (#826): the window's tab sentence, which no
     // link needs.
     "project_read_only",
@@ -606,6 +610,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_restore",
     "skill_grant",
     "skill_turn",
+    // A harness's plugin or skill turned on or off in the Skill studio (#2769): it writes this
+    // machine's project file, or the workspace's settings. The person's own press in their
+    // window.
+    "skill_studio_switch",
     // Why browsers cannot start for the engine's sandbox, and choosing this machine's Chrome
     // for every browser (#2835): which program runs as the person's browsers' engine is theirs
     // to choose, in their window.
@@ -839,6 +847,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_network",
     "chat_order",
     "chat_skill_runs",
+    // The skills Use skill… offers a chat, and its skill budget (#2775): a read.
+    "chat_skills",
     "chat_states",
     "chat_usage",
     "chat_work_item",

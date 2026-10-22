@@ -175,6 +175,17 @@ pub struct ChatAt {
     pub cwd: Option<PathBuf>,
 }
 
+/// One chat open here, as Use skill… works its skills out ([`Chats::skills_of`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatForSkills {
+    /// The workspace it works in, `None` at the plane root.
+    pub workspace: Option<String>,
+    /// The persona it was started as.
+    pub persona: Option<String>,
+    /// Its harness, `None` for a shell or a program purlis has no adapter for.
+    pub harness: Option<Harness>,
+}
+
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Drafting {
@@ -2848,7 +2859,7 @@ impl Chats {
             launch.how,
             // A chat on no profile has no project choice to carry: it runs as it always did,
             // with the pins alone.
-            &std::collections::BTreeMap::new(),
+            &purlis_core::harness_plugin::Chosen::new(),
             sandbox.as_ref(),
             unsandboxed.as_ref(),
             size,
@@ -4609,6 +4620,19 @@ impl Chats {
             .profile
             .clone()
             .or_else(|| running.harness.map(|harness| harness.name().to_owned()))
+    }
+
+    /// **Where chat `session` works, as whom and on which harness** (SK-12): what its skill set
+    /// is worked out from for Use skill…, read under one hold of the open chats. None for a chat
+    /// this app does not have open.
+    pub fn skills_of(&self, session: u32) -> Option<ChatForSkills> {
+        let open = lock(&self.open);
+        let running = open.get(&session)?;
+        Some(ChatForSkills {
+            workspace: running.workspace.clone(),
+            persona: running.persona().started_as,
+            harness: running.harness,
+        })
     }
 
     /// **The personas chat `session` is named by** (#2691): the one it was started as, whose

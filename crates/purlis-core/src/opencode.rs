@@ -306,11 +306,19 @@ pub fn binary_in(text: &str) -> Option<PathBuf> {
 /// A `sandboxed` chat also makes no snapshot (ruling V73a): a snapshot is a repository git is
 /// later run in, outside the sandbox, so the wrap lets no chat write one. This layer wins over
 /// a global and a project config that turn snapshots on (measured on 1.18.33).
+///
+/// Each of `skills_off`, a skill the project turned off (SK-6, #2769), is denied under
+/// `permission.skill` by its name, which leaves it out of the skills the model is shown. A chat is
+/// handed one copy of a name, the narrowest (decision 51; [`crate::skills::PlaneSkills::repo`]),
+/// so a name denied here is never a plane skill's and a repo's at once. Measured
+/// on 1.18.33: `OPENCODE_CONFIG_CONTENT='{"permission":{"skill":{"langfuse":"deny"}}}'` gave
+/// `opencode debug agent build` the rule `skill langfuse deny`, after the operator's own.
 pub fn session_config(
     shim: &Path,
     skills: &[PathBuf],
     binary: Option<&Path>,
     sandboxed: bool,
+    skills_off: &[String],
 ) -> String {
     let mut url = String::from("file://");
     for byte in shim.display().to_string().bytes() {
@@ -335,6 +343,13 @@ pub fn session_config(
     }
     if sandboxed {
         config["snapshot"] = serde_json::Value::Bool(false);
+    }
+    if !skills_off.is_empty() {
+        let denied: serde_json::Map<String, serde_json::Value> = skills_off
+            .iter()
+            .map(|name| (name.clone(), "deny".into()))
+            .collect();
+        config["permission"] = serde_json::json!({ "skill": denied });
     }
     config.to_string()
 }

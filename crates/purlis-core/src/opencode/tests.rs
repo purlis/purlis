@@ -109,6 +109,7 @@ fn a_session_config_names_the_shim_as_a_url_no_character_can_end() {
         &[],
         None,
         false,
+        &[],
     );
     let doc: serde_json::Value = serde_json::from_str(&config).expect("JSON");
     assert_eq!(
@@ -129,6 +130,7 @@ fn a_session_config_hands_the_shim_the_skills_directory_as_its_option() {
         &[PathBuf::from("/Apps/my charter/plugin/skills")],
         None,
         false,
+        &[],
     );
     let doc: serde_json::Value = serde_json::from_str(&config).expect("JSON");
     assert_eq!(
@@ -246,6 +248,7 @@ fn a_sandboxed_chat_makes_no_snapshot() {
         &[],
         None,
         true,
+        &[],
     );
     let doc: serde_json::Value = serde_json::from_str(&config).expect("JSON");
     assert_eq!(doc["snapshot"], serde_json::Value::Bool(false));
@@ -254,6 +257,7 @@ fn a_sandboxed_chat_makes_no_snapshot() {
         &[],
         None,
         false,
+        &[],
     );
     let doc: serde_json::Value = serde_json::from_str(&unsandboxed).expect("JSON");
     assert_eq!(doc.get("snapshot"), None);
@@ -364,4 +368,32 @@ fn a_shell_command_s_end_carries_its_status() {
     // #1981: what the app lists of a task's commands.
     let text = shim(Arming::Session);
     assert!(text.contains("? { exit_code: output.metadata.exit }"));
+}
+
+#[test]
+fn a_session_config_denies_each_skill_the_project_turned_off_by_its_name() {
+    // SK-6 (#2769): a denied skill is left out of the list the model is shown (opencode
+    // 1.18.33, `Skill.available`), and opencode merges `permission` key by key with the
+    // operator's own.
+    let config = session_config(
+        Path::new("/Apps/plugin/opencode/charter.ts"),
+        &[],
+        None,
+        false,
+        &["langfuse".to_owned(), "review".to_owned()],
+    );
+    let doc: serde_json::Value = serde_json::from_str(&config).expect("JSON");
+    assert_eq!(
+        doc["permission"],
+        serde_json::json!({ "skill": { "langfuse": "deny", "review": "deny" } })
+    );
+    let none = session_config(
+        Path::new("/Apps/plugin/opencode/charter.ts"),
+        &[],
+        None,
+        false,
+        &[],
+    );
+    let doc: serde_json::Value = serde_json::from_str(&none).expect("JSON");
+    assert_eq!(doc.get("permission"), None);
 }

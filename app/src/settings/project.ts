@@ -68,6 +68,7 @@ import {
   yourLevelHelp,
 } from "./yourLevel";
 import { sandboxCommandReturned } from "../sandboxAsked";
+import { pluginsSummaryGroup } from "./skillsSummary";
 import {
   PERSONA_HOSTS_COLLECTION,
   SANDBOX_MODE,
@@ -427,11 +428,15 @@ function loosensTheSandbox(back: readonly SettingsEdit[]): boolean {
  * A file that is not TOML has no settings to show until it is mended: its standing refusals say
  * why, above the groups.
  */
-export function projectGroups(read: ProjectRead, reread?: () => void): SettingsGroup[] {
+export function projectGroups(
+  read: ProjectRead,
+  reread?: () => void,
+  skillStudio = false,
+): SettingsGroup[] {
   const names = namesOf(read);
   // The Sandbox's pages are written with the names in use, and quote hosts a person wrote:
   // nothing in them is renamed (#1340).
-  return declaredGroups(read, reread).map((group) =>
+  return declaredGroups(read, reread, skillStudio).map((group) =>
     WRITTEN_NAMED.has(group.id) ? group : inFiles(group, names),
   );
 }
@@ -509,7 +514,11 @@ function inFiles(
 }
 
 /** The level's groups, as declared: {@link projectGroups} names the files in them. */
-function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[] {
+function declaredGroups(
+  read: ProjectRead,
+  reread?: () => void,
+  skillStudio = false,
+): SettingsGroup[] {
   const shared: Shown = read.shared;
   const local: Shown = read.local;
   const sharedOk = shared.parsed;
@@ -759,16 +768,19 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
         ),
       ],
     },
-    {
-      id: "project.plugins",
-      label: "Plugins",
-      help: "Which harness plugins the chats purlis starts here have on.",
-      settings: fromShared(
-        "project.plugins",
-        plugins.flatMap((one) => one.controls),
-      ),
-      notes: plugins.flatMap((one) => one.notes),
-    },
+    // Once the Skill studio is on, every plugin choice is the studio's (SK-6, decision 35).
+    skillStudio
+      ? pluginsSummaryGroup("project.plugins", read.harnesses, null)
+      : {
+          id: "project.plugins",
+          label: "Plugins",
+          help: "Which harness plugins the chats purlis starts here have on.",
+          settings: fromShared(
+            "project.plugins",
+            plugins.flatMap((one) => one.controls),
+          ),
+          notes: plugins.flatMap((one) => one.notes),
+        },
   ];
 }
 

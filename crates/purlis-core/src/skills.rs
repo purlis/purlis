@@ -15,9 +15,10 @@ use std::path::{Path, PathBuf};
 
 pub use purlis_skills::change::{Problem, Template, check};
 pub use purlis_skills::{
-    BUILT_IN_PREFIXES, Chat, DIR_IN_BUNDLE, Effective, FromHarness, Grant, HarnessSkills,
-    LOCAL_DIR, LeftOut, Machine, Missing, Narrowing, OnMachine, Origin, POINTER, PROJECT_DIR,
-    Reason, Reference, Reload, Route, Skill, SkillSet, Stamp, beside, grant_of, in_bundle,
+    Argument, At, BUILT_IN_PREFIXES, Budget, Chat, Clash, DIR_IN_BUNDLE, Declared, Effective,
+    FromHarness, Given, Grant, HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing, Narrowing,
+    OnMachine, Origin, Outcome, OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference,
+    Reload, Route, Skill, SkillSet, Spent, Stamp, Switch, beside, declared, grant_of, in_bundle,
     level_dir, level_shown, listing, named, persona_dir, read, set_grant, share,
 };
 
@@ -31,6 +32,7 @@ mod on_machine;
 pub mod persona;
 
 pub use on_machine::on_machine;
+pub(crate) use on_machine::{folders, skill_dirs};
 
 /// The variable a chat whose harness cannot load its skills is started with: the directory of
 /// the built-in skills its set holds ([`SkillSet::built_in_dir`]), whose skills its `SessionStart` briefing then
@@ -55,6 +57,11 @@ pub struct PlaneSkills<'a> {
     /// before arming it ([`lay_out_for_chat`]), or `None` where it laid out none. A harness that
     /// needs the folder is then handed the built-in skills alone.
     pub linked: Option<&'a Path>,
+    /// The repo skills of the clone the chat works in, for its harness, which the host read
+    /// ([`repo_skills_of_chat`]): where one has a plane skill's name and purlis builds what the
+    /// harness is handed, the narrower repo copy wins and the plane's is left out (SK-6, decision
+    /// 51). Empty for a chat in no clone.
+    pub repo: &'a [OutsideSkill],
 }
 
 /// The skill set of a chat on `harness` armed with `kit`, asked of [`purlis_skills::skill_set`].
@@ -72,6 +79,40 @@ pub fn for_chat(kit: Kit<'_>, harness: Harness) -> SkillSet {
     )
 }
 
+/// **The harness's own skills a chat on `harness` armed with `kit` is handed as turned off**
+/// (SK-6, #2769): each of `chosen`'s, except a built-in skill's name, which is never turned off
+/// (a harness that switches by the name alone would reach purlis's own), and one the harness
+/// cannot leave out on its own ([`crate::harness_plugin::Adapter::skill_named_alone`]). What
+/// every adapter turns into its own switch.
+pub fn skills_off_for(
+    kit: Kit<'_>,
+    harness: Harness,
+    chosen: &crate::harness_plugin::Chosen,
+) -> Vec<String> {
+    let built_in = built_in_names(kit.plugin.and_then(in_bundle).as_deref());
+    let adapter = harness.adapter().plugins();
+    chosen
+        .skills_off
+        .iter()
+        .filter(|name| !built_in.contains(name))
+        .filter(|name| adapter.skill_named_alone(name).is_none())
+        .cloned()
+        .collect()
+}
+
+/// The names of the built-in skills of the bundle installed beside this binary
+/// ([`built_in_here`]): what a save of `[harness_skills]` refuses to turn off.
+pub fn built_in_names_here() -> Vec<String> {
+    built_in_names(built_in_here().as_deref())
+}
+
+/// The names of the built-in skills in `dir`, the bundle's `skills/` ([`in_bundle`]): none where
+/// there is no bundle. The one list a switch, a save and an adapter refuse to turn off.
+pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
+    dir.map(|dir| read(dir).into_iter().map(|skill| skill.name).collect())
+        .unwrap_or_default()
+}
+
 /// The folder of links a harness on [`Route::Plugin`] or [`Route::Config`] is handed the plane's
 /// skills of `set` by: the one the host laid out (`kit.skills`' `linked`), where the set holds a
 /// plane skill. Nothing is read or written here: an adapter only turns the set into argv, env and
@@ -85,21 +126,25 @@ pub fn linked<'a>(set: &SkillSet, kit: Kit<'a>) -> Option<&'a Path> {
 /// plane's skills of the set of a chat in `plane`, at its root or in `workspace`, running as
 /// `persona`, with the built-in skills in `built_in`, laid out under `sets`. `None` where the set
 /// holds no plane skill, or the folder could not be laid out (said in the log: the chat then has
-/// the built-in skills alone). The set is the one [`for_chat`] works out for that chat, whatever
-/// its harness: the route changes how a skill is handed over, never which.
+/// the built-in skills alone). The set is the one [`for_chat`] works out for that chat on its
+/// harness's `route`, with `repo` the repo skills of the clone it works in: a plane skill a
+/// narrower repo copy hides is not laid out (SK-6).
 pub fn lay_out_for_chat(
     plane: &Path,
     workspace: Option<&str>,
     persona: Option<&str>,
     built_in: Option<&Path>,
     sets: &Path,
+    route: Route,
+    repo: &[OutsideSkill],
 ) -> Option<PathBuf> {
     let at = PlaneSkills {
         plane,
         workspace,
         linked: None,
+        repo,
     };
-    let set = ask(built_in, Some(at), persona, Route::Plugin, None);
+    let set = ask(built_in, Some(at), persona, route, None);
     match lay_out(&set, sets) {
         Ok(folder) => folder,
         Err(why) => {
@@ -588,23 +633,41 @@ fn link(target: &Path, at: &Path) -> std::io::Result<()> {
 pub fn briefed(
     root: &Path,
     workspace: Option<&str>,
+    cwd: Option<&Path>,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
     let dir = env(LISTED_ENV).filter(|dir| !dir.is_empty())?;
     let persona = crate::envvar::lookup(crate::active::PERSONA_ENV, env).filter(|p| !p.is_empty());
     let plane = env(PLANE_LISTED_ENV).is_some_and(|on| on == "1");
+    // The repo skills of the clone the chat works in, as each briefed harness reads them: the
+    // briefing lists one copy of a name, the narrower (SK-6, decision 51).
+    let repo: Vec<OutsideSkill> = match (plane, workspace, cwd) {
+        (true, Some(ws), Some(cwd)) => Harness::ALL
+            .iter()
+            .filter(|harness| harness.skills() == Route::Briefing)
+            .flat_map(|harness| repo_skills_of_chat(*harness, root, ws, cwd))
+            .collect(),
+        _ => Vec::new(),
+    };
     let set = ask(
         Some(Path::new(&dir)),
         plane.then_some(PlaneSkills {
             plane: root,
             workspace,
             linked: None,
+            repo: &repo,
         }),
         persona.as_deref(),
         Route::Briefing,
         None,
     );
-    let skills: Vec<Skill> = set.effective.into_iter().map(|e| e.skill).collect();
+    // Only what purlis hands: the harness lists its own and the repo's itself.
+    let skills: Vec<Skill> = set
+        .effective
+        .into_iter()
+        .filter(|e| e.route != Route::Own)
+        .map(|e| e.skill)
+        .collect();
     listing(&skills)
 }
 
@@ -621,6 +684,141 @@ pub fn readable_by_a_briefed_chat(root: &Path, env: &dyn Fn(&str) -> Option<Stri
         skills.extend(read(&root.join(purlis_skills::PROJECT_DIR)));
     }
     skills
+}
+
+/// **A running chat, as Use skill… asks for its skills** (SK-12, #2775): where it works, as whom,
+/// on which harness, and whether the `skill-studio` flag lets the plane's skills into its set.
+#[derive(Debug, Clone, Copy)]
+pub struct Running<'a> {
+    /// The plane's root.
+    pub plane: &'a Path,
+    /// The workspace it works in, or `None` at the plane root.
+    pub workspace: Option<&'a str>,
+    /// The persona it was started as.
+    pub persona: Option<&'a str>,
+    pub harness: Harness,
+    /// The built-in skills' directory, where the app found it.
+    pub built_in: Option<&'a Path>,
+    /// Whether its set holds the plane's skills: the flag, as at a chat's start.
+    pub plane_skills: bool,
+}
+
+/// One skill Use skill… offers a chat: one of its set, with what it declares and the name its
+/// harness knows it by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Offered {
+    pub effective: Effective,
+    pub declared: Declared,
+    /// Whether it asks for anything before it is typed: arguments it names, or a hint at what to
+    /// pass. The one place this is decided; the window draws the boxes by it.
+    pub takes_arguments: bool,
+    /// The name the chat's harness knows it by, which a run of it records
+    /// ([`Harness::skill_name`]).
+    pub known_as: String,
+}
+
+/// **What Use skill… offers a chat, and its skill budget** (SK-12): every skill of its set, the
+/// manual-only ones among them, by name, and what the set spends of its harness's budget.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatSkills {
+    /// The chat's harness, which the skills are typed in the syntax of.
+    pub harness: Harness,
+    /// The workspace the chat works in, `None` at the plane root: where a run it starts is.
+    pub workspace: Option<String>,
+    pub offered: Vec<Offered>,
+    pub spent: Spent,
+}
+
+/// **The skills of chat `chat`, as Use skill… offers them** (SK-12): exactly its set, worked out
+/// as its start worked it out (the plane's skills only where the flag let them in, as
+/// [`of_a_chat`] works them out), each with what it declares, and the budget the set spends on
+/// its harness.
+pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
+    let route = chat.harness.skills();
+    let set = if chat.plane_skills {
+        of_a_chat(
+            chat.built_in,
+            chat.plane,
+            chat.workspace,
+            chat.persona,
+            route,
+        )
+    } else {
+        ask(chat.built_in, None, chat.persona, route, None)
+    };
+    let offered: Vec<Offered> = set
+        .effective
+        .into_iter()
+        .map(|effective| {
+            let declared = declared(&effective.skill);
+            Offered {
+                takes_arguments: !declared.arguments.is_empty() || declared.hint.is_some(),
+                known_as: chat
+                    .harness
+                    .skill_name(&effective.skill.name, effective.origin),
+                declared,
+                effective,
+            }
+        })
+        .collect();
+    let spent = purlis_skills::budget::spent(
+        offered
+            .iter()
+            .map(|one| (&one.effective.skill, &one.declared)),
+        chat.harness.skill_budget(),
+    );
+    ChatSkills {
+        harness: chat.harness,
+        workspace: chat.workspace.map(str::to_owned),
+        offered,
+        spent,
+    }
+}
+
+/// What Use skill… types into a chat to start one of its skills ([`ChatSkills::typed`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Typing {
+    /// The text, in the chat's harness's syntax, on one line.
+    pub text: String,
+    /// The run it starts once its prompt is sent, its id minted now: the name the harness knows
+    /// the skill by, which copy it is, and how its start is confirmed
+    /// ([`crate::skillspan::Typed`]).
+    pub held: crate::skillspan::Typed,
+}
+
+impl ChatSkills {
+    /// **The text that starts skill `name` of this chat's set**, with `values` for its arguments
+    /// in the order it declares them ([`Given::of`]), and the run it starts, or why there is
+    /// none: a skill that is not in the chat's set is never typed.
+    pub fn typed(&self, name: &str, values: &[String]) -> Result<Typing, String> {
+        let offered = self
+            .offered
+            .iter()
+            .find(|one| one.effective.skill.name == name)
+            .ok_or_else(|| {
+                format!("{name} is not one of this chat's skills, so nothing was typed")
+            })?;
+        let given = Given::of(&offered.declared, values);
+        let text = self
+            .harness
+            .skill_start_text(&crate::harness::SkillToStart {
+                name: &offered.effective.skill.name,
+                origin: offered.effective.origin,
+                given: &given,
+            });
+        let held = crate::skillspan::Typed {
+            skill: offered.known_as.clone(),
+            run: ulid::Ulid::generate(),
+            workspace: self.workspace.clone(),
+            level: Some(runs::Level {
+                origin: offered.effective.origin,
+                local: offered.effective.local,
+            }),
+            text: crate::skillspan::PromptMarks::digest(&text),
+            confirmed: self.harness.typed_start(),
+        };
+        Ok(Typing { text, held })
+    }
 }
 
 /// **The stamp of the plane skills a chat has now** (#2770): a chat in the plane at `plane`, at
@@ -651,6 +849,7 @@ pub fn stamp_of(
         plane,
         workspace,
         linked: None,
+        repo: &[],
     };
     let set = ask(None, Some(at), persona, harness.skills(), None);
     Stamp::of(&set, harness.skills_reload())
@@ -678,7 +877,7 @@ fn ask(
         .zip(persona)
         .map(|(at, persona)| names_of(at.plane, persona))
         .unwrap_or_default();
-    purlis_skills::skill_set(
+    let set = purlis_skills::skill_set(
         plane.map(|at| at.plane),
         &Machine {
             built_in,
@@ -692,7 +891,11 @@ fn ask(
             turned_off: &off,
             harness: HarnessSkills { route },
         },
-    )
+    );
+    match plane.map(|at| at.repo) {
+        Some(repo) if !repo.is_empty() => set.with_outside(route, repo.iter().cloned()),
+        _ => set,
+    }
 }
 
 /// **What the persona `persona`'s `skills:` list names** (SK-5, #2768), in the plane at `plane`:
@@ -730,6 +933,7 @@ pub fn not_here(
         plane,
         workspace,
         linked: None,
+        repo: &[],
     };
     let set = ask(
         built_in,
@@ -919,6 +1123,7 @@ pub fn in_the_studio(
         plane,
         workspace,
         linked: None,
+        repo: &[],
     };
     let here = persona.map(|_| {
         let env = crate::harness_plugin::Env::of(&[]);
@@ -1039,9 +1244,90 @@ pub fn of_a_chat(
         plane,
         workspace,
         linked: None,
+        repo: &[],
     };
     // The harness's own installed skills are the harness's to hand over, never these tools'.
     ask(built_in, Some(at), persona, route, None)
+}
+
+/// **One harness in the Skill studio** (SK-6, #2769): its plugins, as the settings tab surveys
+/// them, and the skills from outside the plane it finds itself, beside the plane's.
+pub struct HarnessInTheStudio {
+    pub harness: Harness,
+    /// Its plugins, and what the project has each at ([`crate::harness_plugin::survey`]).
+    pub group: crate::harness_plugin::Group,
+    /// What a chat on it gets: the plane's skills ([`in_the_studio`]) with the ones from outside
+    /// the plane ([`SkillSet::with_outside`]), each clash settled as this harness's route lets
+    /// purlis settle it.
+    pub set: SkillSet,
+    /// The skills from outside the plane, with whose each is and how it switches.
+    pub outside: Vec<OutsideSkill>,
+}
+
+/// **Every harness in the Skill studio** (SK-6, #2769), for a chat in the plane at `plane`, at
+/// its root or in `workspace` (whose clones' own skills are listed), whose plane skills are
+/// `set` ([`in_the_studio`]), and with `env` read for where each harness keeps its own: one per
+/// harness purlis knows, in the registry's order. Read from the harnesses' own files, never
+/// written.
+pub fn harnesses_in_the_studio(
+    set: &SkillSet,
+    plane: &Path,
+    workspace: Option<&str>,
+    env: &crate::harness_plugin::Env<'_>,
+) -> Vec<HarnessInTheStudio> {
+    let choices = crate::harness_plugin::Choices::read_in(plane, workspace);
+    let clones = workspace
+        .and_then(|ws| crate::repos::clones(plane, ws).ok())
+        .map(|clones| clones.repos)
+        .unwrap_or_default();
+    crate::harness_plugin::survey(&choices, env)
+        .into_iter()
+        .filter_map(|group| {
+            // Every adapter the survey lists is a harness's ([`crate::harness_plugin::adapters`]).
+            let harness = Harness::of_kind(group.adapter.harness())?;
+            let mut outside = crate::harness_plugin::harness_skills(group.adapter, env, &choices);
+            outside.extend(crate::harness_plugin::repo_skills(
+                group.adapter,
+                &choices,
+                &clones,
+            ));
+            Some(HarnessInTheStudio {
+                harness,
+                set: set.clone().with_outside(harness.skills(), outside.clone()),
+                group,
+                outside,
+            })
+        })
+        .collect()
+}
+
+/// **The repo skills the harness of a chat started in `cwd` reads** (SK-6, #2769): those of the
+/// clone `cwd` is in, in `workspace` of the plane at `plane`, each turned off where the project's
+/// choices say so. Nothing for a chat in no clone. The host's half: it reads the clone, and an
+/// adapter is handed the answer ([`PlaneSkills::repo`]).
+pub fn repo_skills_of_chat(
+    harness: Harness,
+    plane: &Path,
+    workspace: &str,
+    cwd: &Path,
+) -> Vec<OutsideSkill> {
+    let Ok(clones) = crate::repos::clones(plane, workspace) else {
+        return Vec::new();
+    };
+    let here = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let mine: Vec<crate::repos::Repo> = clones
+        .repos
+        .into_iter()
+        .filter(|repo| {
+            let at = repo
+                .path
+                .canonicalize()
+                .unwrap_or_else(|_| repo.path.clone());
+            here.starts_with(at)
+        })
+        .collect();
+    let choices = crate::harness_plugin::Choices::read_in(plane, Some(workspace));
+    crate::harness_plugin::repo_skills(harness.adapter().plugins(), &choices, &mine)
 }
 
 /// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,
@@ -1071,6 +1357,55 @@ pub struct StudioRow {
     /// A harness skill the persona names that purlis could not check this machine for: its
     /// plugin's skills cannot be listed.
     pub unchecked: bool,
+    /// For a skill from outside the plane (SK-6, #2769): whose it is, and how its harness can
+    /// leave it out. `None` for the plane's and the built-in skills.
+    pub outside: Option<OutsideRow>,
+}
+
+/// What a studio row says of a skill from outside the plane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutsideRow {
+    pub owner: Owner,
+    pub switch: Switch,
+}
+
+/// **The studio's rows of the skills from outside the plane `harness` finds** (SK-6, #2769),
+/// each by the name the harness knows it by, on or left out as its set says, with whose it is
+/// and how it switches. In the order they were found.
+pub fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow> {
+    harness
+        .outside
+        .iter()
+        .map(|found| {
+            let folder = found.skill.path.parent().unwrap_or(&found.skill.path);
+            let left_out = harness
+                .set
+                .left_out
+                .iter()
+                .find(|l| l.name == found.id && l.origin == found.origin && l.folder == folder)
+                .map(|l| l.reason.to_string());
+            StudioRow {
+                name: found.id.clone(),
+                origin: found.origin,
+                local: false,
+                grant: None,
+                left_out,
+                description: found.skill.description.clone(),
+                folder: folder
+                    .strip_prefix(plane)
+                    .unwrap_or(folder)
+                    .to_string_lossy()
+                    .into_owned(),
+                written: found.id.clone(),
+                named: false,
+                unchecked: false,
+                outside: Some(OutsideRow {
+                    owner: found.owner.clone(),
+                    switch: found.switch.clone(),
+                }),
+            }
+        })
+        .collect()
 }
 
 /// What is said of a harness skill a persona names that purlis could not check this machine for
@@ -1116,6 +1451,7 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 named: named(&written),
                 written,
                 unchecked: false,
+                outside: None,
             }
         })
         .chain(set.from_the_harness.iter().map(|h| {
@@ -1131,6 +1467,7 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 named: true,
                 written,
                 unchecked: !h.checked,
+                outside: None,
             }
         }))
         .chain(set.left_out.iter().map(|l| {
@@ -1152,6 +1489,7 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 named: named(&written),
                 written,
                 unchecked: false,
+                outside: None,
             }
         }))
         .collect();

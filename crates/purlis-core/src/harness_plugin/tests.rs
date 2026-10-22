@@ -124,7 +124,7 @@ fn a_plugin_a_file_names_that_is_not_installed_is_listed_and_handed_to_nothing()
     assert!(!it.installed);
     assert_eq!((it.wanted, it.source), (Some(true), Source::Shared));
     assert_eq!(
-        chosen(&CLAUDE_CODE, &all),
+        chosen(&CLAUDE_CODE, &all).plugins,
         pins(&CLAUDE_CODE).into_iter().collect::<BTreeMap<_, _>>()
     );
 }
@@ -200,22 +200,21 @@ fn a_workspace_that_turns_a_pin_the_wrong_way_is_ignored_by_its_own_file_and_key
 
 #[test]
 fn a_workspaces_choice_for_a_harness_that_cannot_apply_is_said_ignored_and_handed_nothing() {
-    let installed = [plugin("codex", "figma@official")];
-    let manifest = r#"{"settings": {"harness_plugins": {"codex": {"figma@official": false}}}}"#;
+    let installed = [plugin("opencode", "acme-plugin")];
+    let manifest = r#"{"settings": {"harness_plugins": {"opencode": {"acme-plugin": false}}}}"#;
     let all = resolve(
-        &CODEX,
+        &OPENCODE,
         &installed,
         &Choices::default().in_workspace("alpha", Some(manifest)),
     );
-    assert_eq!(chosen(&CODEX, &all), Chosen::new());
-    let it = row(&all, "figma@official");
+    assert_eq!(chosen(&OPENCODE, &all), Chosen::new());
+    let it = row(&all, "acme-plugin");
     assert_eq!(it.ignored.len(), 1, "{:?}", it.ignored);
     assert_eq!(it.ignored[0].source, Source::Workspace);
     assert!(
-        it.ignored[0].why.starts_with(
-            "workspaces/alpha/workspace.json sets settings.harness_plugins.codex.\
-             \"figma@official\", and plugins for Codex are not supported yet"
-        ),
+        it.ignored[0]
+            .why
+            .contains("plugins for opencode are not supported yet"),
         "{}",
         it.ignored[0].why
     );
@@ -267,8 +266,8 @@ fn no_file_can_turn_charters_own_plugin_off_or_the_old_one_on() {
     assert_eq!(old.ignored[0].source, Source::Local);
 
     let chosen = chosen(&CLAUDE_CODE, &all);
-    assert_eq!(chosen.get("purlis@inline"), Some(&true));
-    assert_eq!(chosen.get("charter@charter"), Some(&false));
+    assert_eq!(chosen.plugins.get("purlis@inline"), Some(&true));
+    assert_eq!(chosen.plugins.get("charter@charter"), Some(&false));
 }
 
 #[test]
@@ -324,13 +323,13 @@ fn every_id_the_plugin_had_before_purlis_is_pinned_off_with_the_id_that_replaced
         copy.ignored[0].why
     );
     let chosen = chosen(&CLAUDE_CODE, &all);
-    assert_eq!(chosen.get("purlis@inline"), Some(&true));
+    assert_eq!(chosen.plugins.get("purlis@inline"), Some(&true));
     for old in [
         "charter@inline",
         "charter-app@inline",
         "charter@charter-app",
     ] {
-        assert_eq!(chosen.get(old), Some(&false), "{old}");
+        assert_eq!(chosen.plugins.get(old), Some(&false), "{old}");
     }
 }
 
@@ -351,8 +350,8 @@ fn turning_the_python_plugin_off_never_turns_charters_own_off() {
     assert_eq!(old.wanted, Some(false));
     assert!(old.ignored.is_empty(), "{:?}", old.ignored);
     let chosen = chosen(&CLAUDE_CODE, &all);
-    assert_eq!(chosen.get("purlis@inline"), Some(&true));
-    assert_eq!(chosen.get("charter@charter"), Some(&false));
+    assert_eq!(chosen.plugins.get("purlis@inline"), Some(&true));
+    assert_eq!(chosen.plugins.get("charter@charter"), Some(&false));
     assert_eq!(
         refusals(
             "[harness_plugins.claude]\n\"charter@charter\" = false\n",
@@ -373,7 +372,7 @@ fn turning_charters_own_plugin_on_never_turns_the_python_one_on() {
     assert_eq!((old.wanted, old.source), (Some(false), Source::Default));
     assert!(old.ignored.is_empty(), "{:?}", old.ignored);
     assert_eq!(
-        chosen(&CLAUDE_CODE, &all).get("charter@charter"),
+        chosen(&CLAUDE_CODE, &all).plugins.get("charter@charter"),
         Some(&false)
     );
     assert_eq!(
@@ -440,7 +439,7 @@ fn a_chat_gets_exactly_the_installed_plugins_a_file_decided_and_the_pins() {
         "[harness_plugins.claude]\n\"serena@official\" = false\n",
     );
     assert_eq!(
-        chosen(&CLAUDE_CODE, &all),
+        chosen(&CLAUDE_CODE, &all).plugins,
         BTreeMap::from([
             ("charter-app@inline".to_owned(), false),
             ("charter@inline".to_owned(), false),
@@ -462,55 +461,87 @@ fn every_harness_charter_knows_has_an_adapter_and_says_whether_it_applies() {
     let words: Vec<&str> = adapters().map(|it| it.harness()).collect();
     assert_eq!(words, ["claude", "opencode", "codex"]);
     assert!(matches!(CLAUDE_CODE.support(), Support::PerChat));
-    for adapter in [&CODEX as &dyn Adapter, &OPENCODE] {
-        let Support::NotYet(why) = adapter.support() else {
-            panic!("{} claims to apply", adapter.title());
-        };
-        assert!(!why.is_empty());
-    }
+    assert!(matches!(CODEX.support(), Support::OffOnly(why) if !why.is_empty()));
+    assert!(matches!(OPENCODE.support(), Support::NotYet(why) if !why.is_empty()));
 }
 
 #[test]
 fn a_harness_that_cannot_apply_says_plugins_are_not_supported_yet() {
     assert_eq!(
-        not_supported(&CODEX).expect("Codex cannot apply"),
+        not_supported(&OPENCODE).expect("opencode cannot apply"),
         format!(
-            "plugins for Codex are not supported yet — {}",
-            match CODEX.support() {
+            "plugins for opencode are not supported yet — {}",
+            match OPENCODE.support() {
                 Support::NotYet(why) => why,
-                Support::PerChat => unreachable!(),
+                Support::PerChat | Support::OffOnly(_) => unreachable!(),
             }
         )
     );
-    assert!(
-        not_supported(&OPENCODE)
-            .expect("opencode cannot apply")
-            .starts_with("plugins for opencode are not supported yet — ")
-    );
     assert_eq!(not_supported(&CLAUDE_CODE), None);
+    assert_eq!(
+        not_supported(&CODEX),
+        None,
+        "Codex turns a plugin off per chat"
+    );
 }
 
 #[test]
 fn a_chat_on_a_harness_that_cannot_apply_is_handed_nothing_and_its_choices_are_said_ignored() {
-    let installed = [plugin("codex", "charter@charter")];
+    let installed = [plugin("opencode", "acme-plugin")];
     let all = resolve(
-        &CODEX,
+        &OPENCODE,
         &installed,
         &Choices::from_text(
-            Some("[harness_plugins.codex]\n\"charter@charter\" = false\n"),
+            Some("[harness_plugins.opencode]\n\"acme-plugin\" = false\n"),
             None,
         ),
     );
-    assert_eq!(chosen(&CODEX, &all), BTreeMap::new());
-    let it = row(&all, "charter@charter");
+    assert_eq!(chosen(&OPENCODE, &all).plugins, BTreeMap::new());
+    let it = row(&all, "acme-plugin");
     assert_eq!(it.ignored.len(), 1, "{:?}", it.ignored);
     assert!(
         it.ignored[0]
             .why
-            .contains("plugins for Codex are not supported yet"),
+            .contains("plugins for opencode are not supported yet"),
         "{}",
         it.ignored[0].why
     );
+}
+
+#[test]
+fn a_codex_chat_is_handed_each_installed_plugin_the_project_turned_off_and_none_turned_on() {
+    // Measured on codex-cli 0.163.0 (SK-6): `-c plugins."<id>".enabled=false` turns a plugin off
+    // for one session, and `=true` over a config.toml that has it off does nothing.
+    let installed = [
+        plugin("codex", "figma@official"),
+        plugin("codex", "serena@official"),
+    ];
+    let all = resolve(
+        &CODEX,
+        &installed,
+        &Choices::from_text(
+            Some(
+                "[harness_plugins.codex]\n\"figma@official\" = false\n\"serena@official\" = true\n\
+                 \"acme@corp\" = false\n",
+            ),
+            None,
+        ),
+    );
+    assert_eq!(
+        chosen(&CODEX, &all).plugins,
+        BTreeMap::from([("figma@official".to_owned(), false)]),
+        "one on is the harness's own to decide, and one not installed is handed nothing"
+    );
+    assert!(row(&all, "figma@official").ignored.is_empty());
+    assert!(
+        only_off(&CODEX).is_some_and(|said| said.starts_with(
+            "Codex is handed a plugin only to \
+                                                             turn it off — "
+        )),
+        "{:?}",
+        only_off(&CODEX)
+    );
+    assert_eq!(only_off(&CLAUDE_CODE), None);
 }
 
 // -------------------------------------------------------------------------------------
@@ -1341,19 +1372,70 @@ fn a_harness_plugins_that_is_not_a_table_is_refused() {
     );
 }
 
+#[test]
+fn a_harness_skills_table_is_refused_what_its_harness_cannot_switch_alone() {
+    let got = refusals(
+        "[harness_skills.claude]\nlangfuse = false\n\"figma:frame\" = false\n\n\
+         [harness_skills.codex]\n\"figma:frame\" = false\nreview = \"off\"\n\n\
+         [harness_skills.vim]\nx = false\n",
+        "charter.toml",
+    );
+    assert_eq!(
+        got,
+        [
+            "harness_skills.claude.\"figma:frame\" in charter.toml cannot be set: Claude Code \
+             turns a plugin's skill off only with the whole plugin, figma"
+                .to_owned(),
+            "harness_skills.codex.review in charter.toml is not true or false".to_owned(),
+            "[harness_skills.vim] in charter.toml is not a harness purlis knows — one of: \
+             claude, opencode, codex"
+                .to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn a_skill_the_harness_knows_is_on_or_off_by_the_layer_with_the_last_word() {
+    let choices = Choices::from_text(
+        Some("[harness_skills.opencode]\nreview = false\nlint = false\n"),
+        Some("[harness_skills.opencode]\nlint = true\n"),
+    )
+    .in_workspace(
+        "alpha",
+        Some(r#"{"settings": {"harness_skills": {"opencode": {"deploy": false}}}}"#),
+    );
+    assert_eq!(
+        choices.skill("opencode", "review"),
+        (Some(false), Source::Shared)
+    );
+    assert_eq!(
+        choices.skill("opencode", "lint"),
+        (Some(true), Source::Local)
+    );
+    assert_eq!(
+        choices.skill("opencode", "deploy"),
+        (Some(false), Source::Workspace)
+    );
+    assert_eq!(choices.skill("codex", "review"), (None, Source::Default));
+    assert_eq!(
+        choices.skills_off("opencode"),
+        BTreeSet::from(["deploy".to_owned(), "review".to_owned()])
+    );
+}
+
 // -------------------------------------------------------------------------------------
 // At a chat's start
 // -------------------------------------------------------------------------------------
 
 /// A plane whose `charter.toml` is `shared`, and a Claude Code config dir whose install record
 /// is `record` — read only through the chat's own `CLAUDE_CONFIG_DIR`.
-fn start_with(shared: &str, record: &str) -> Chosen {
+fn start_with(shared: &str, record: &str) -> BTreeMap<String, bool> {
     start_in(shared, None, record)
 }
 
 /// [`start_with`], for a chat in the workspace `alpha` whose `workspace.json` is `manifest`,
 /// when there is one.
-fn start_in(shared: &str, manifest: Option<&str>, record: &str) -> Chosen {
+fn start_in(shared: &str, manifest: Option<&str>, record: &str) -> BTreeMap<String, bool> {
     let plane = tempfile::tempdir().unwrap();
     std::fs::write(plane.path().join("charter.toml"), shared).unwrap();
     if let Some(manifest) = manifest {
@@ -1370,7 +1452,7 @@ fn start_in(shared: &str, manifest: Option<&str>, record: &str) -> Chosen {
         home: None,
         process: false,
     };
-    for_start("claude", plane.path(), manifest.map(|_| "alpha"), &env)
+    for_start("claude", plane.path(), manifest.map(|_| "alpha"), &env).plugins
 }
 
 #[test]
@@ -1412,7 +1494,7 @@ fn a_chat_on_a_harness_that_cannot_apply_is_handed_nothing_at_its_start() {
     let plane = tempfile::tempdir().unwrap();
     std::fs::write(
         plane.path().join("charter.toml"),
-        "[harness_plugins.codex]\n\"charter@charter\" = false\n",
+        "[harness_plugins.opencode]\n\"acme-plugin\" = false\n",
     )
     .unwrap();
     let env = Env {
@@ -1420,10 +1502,39 @@ fn a_chat_on_a_harness_that_cannot_apply_is_handed_nothing_at_its_start() {
         home: None,
         process: false,
     };
-    assert_eq!(for_start("codex", plane.path(), None, &env), Chosen::new());
     assert_eq!(
-        for_start("opencode", plane.path(), None, &env),
+        for_start_as(true, "opencode", plane.path(), None, &env),
         Chosen::new()
+    );
+}
+
+#[test]
+fn a_chat_is_handed_the_harness_skills_the_project_turned_off_only_while_the_studio_is_on() {
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        "[harness_skills.codex]\nlangfuse = false\nreview = false\n",
+    )
+    .unwrap();
+    std::fs::write(
+        plane.path().join("charter.local.toml"),
+        "[harness_skills.codex]\nreview = true\n",
+    )
+    .unwrap();
+    let env = Env {
+        chat: &[],
+        home: None,
+        process: false,
+    };
+    assert_eq!(
+        for_start_as(true, "codex", plane.path(), None, &env).skills_off,
+        BTreeSet::from(["langfuse".to_owned()]),
+        "Local turned review back on, over Shared"
+    );
+    assert_eq!(
+        for_start_as(false, "codex", plane.path(), None, &env),
+        Chosen::new(),
+        "behind the Skill studio's flag"
     );
 }
 
@@ -1479,7 +1590,7 @@ fn a_project_that_chooses_nothing_never_opens_the_harnesss_record() {
         "the record was opened for a project that chooses nothing"
     );
     assert_eq!(
-        got,
+        got.plugins,
         pins(&CLAUDE_CODE).into_iter().collect::<BTreeMap<_, _>>()
     );
 }
@@ -1588,4 +1699,228 @@ fn a_chat_written_config_is_read_only_as_a_plain_file_of_its_own() {
     assert_eq!(folder.read("endless.json"), Err(()));
     assert_eq!(folder.read("big.json"), Err(()));
     assert_eq!(folder.read("folder.json"), Err(()));
+}
+
+// -------------------------------------------------------------------------------------
+// The Skill studio's switch (SK-6, #2769)
+// -------------------------------------------------------------------------------------
+
+/// The built-in skills' names, as the window hands them over.
+fn built_in() -> Vec<String> {
+    vec!["secrets".to_owned(), "handoff".to_owned()]
+}
+
+#[test]
+fn a_built_in_skills_name_is_refused_in_harness_skills_on_every_harness() {
+    // SK-6 (#2769): opencode's and Claude Code's switches go by the name alone, so a key named as
+    // a built-in skill would turn purlis's own off.
+    let top: toml::Table = "[harness_skills.opencode]\nsecrets = false\nreview = false\n\n\
+                            [harness_skills.codex]\nhandoff = true\n"
+        .parse()
+        .unwrap();
+    let got: Vec<String> = built_in_refused(&top, "charter.toml", "", &built_in())
+        .into_iter()
+        .map(|one| one.why)
+        .collect();
+    assert_eq!(
+        got,
+        [
+            "harness_skills.opencode.secrets in charter.toml cannot be set: secrets is one of \
+             purlis's built-in skills, which no project turns off"
+                .to_owned(),
+            "harness_skills.codex.handoff in charter.toml cannot be set: handoff is one of \
+             purlis's built-in skills, which no project turns off"
+                .to_owned(),
+        ]
+    );
+}
+
+fn text_of(path: &std::path::Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_default()
+}
+
+#[test]
+fn the_studio_turns_a_harness_skill_off_at_the_root_in_this_machines_own_file_and_back_by_removing_it()
+ {
+    let plane = tempfile::tempdir().unwrap();
+    let local = plane.path().join("charter.local.toml");
+
+    switch_in_the_studio(
+        plane.path(),
+        None,
+        crate::harness::Harness::Codex,
+        Switched::Skill,
+        "langfuse",
+        false,
+        &built_in(),
+    )
+    .expect("turned off");
+    assert_eq!(
+        Choices::read(plane.path()).skill("codex", "langfuse"),
+        (Some(false), Source::Local)
+    );
+    assert!(
+        text_of(&local).contains("langfuse = false"),
+        "{}",
+        text_of(&local)
+    );
+
+    switch_in_the_studio(
+        plane.path(),
+        None,
+        crate::harness::Harness::Codex,
+        Switched::Skill,
+        "langfuse",
+        true,
+        &built_in(),
+    )
+    .expect("turned on");
+    assert_eq!(
+        Choices::read(plane.path()).skill("codex", "langfuse"),
+        (None, Source::Default),
+        "nothing else named it, so the harness decides again"
+    );
+    assert!(!text_of(&local).contains("langfuse"), "{}", text_of(&local));
+}
+
+#[test]
+fn the_studio_turns_one_on_over_a_shared_off_by_writing_it_on() {
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        "[harness_plugins.claude]\n\"figma@official\" = false\n",
+    )
+    .unwrap();
+
+    switch_in_the_studio(
+        plane.path(),
+        None,
+        crate::harness::Harness::ClaudeCode,
+        Switched::Plugin,
+        "figma@official",
+        true,
+        &built_in(),
+    )
+    .expect("turned on");
+
+    let all = resolve(
+        &CLAUDE_CODE,
+        &[plugin("claude", "figma@official")],
+        &Choices::read(plane.path()),
+    );
+    let it = row(&all, "figma@official");
+    assert_eq!((it.wanted, it.source), (Some(true), Source::Local));
+}
+
+#[test]
+fn the_studio_switches_for_a_workspace_in_its_own_settings() {
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(plane.path().join("workspaces/alpha")).unwrap();
+    // A manifest purlis wrote and stamped, as a workspace's is.
+    std::fs::write(
+        plane.path().join("workspaces/alpha/workspace.json"),
+        include_str!("../../../../tests/fixtures/planes/daily/workspaces/alpha/workspace.json"),
+    )
+    .unwrap();
+
+    switch_in_the_studio(
+        plane.path(),
+        Some("alpha"),
+        crate::harness::Harness::Opencode,
+        Switched::Skill,
+        "review",
+        false,
+        &built_in(),
+    )
+    .expect("turned off");
+
+    assert_eq!(
+        Choices::read_in(plane.path(), Some("alpha")).skill("opencode", "review"),
+        (Some(false), Source::Workspace)
+    );
+    assert_eq!(
+        Choices::read_in(plane.path(), None).skill("opencode", "review"),
+        (None, Source::Default),
+        "the project's root is untouched"
+    );
+
+    switch_in_the_studio(
+        plane.path(),
+        Some("alpha"),
+        crate::harness::Harness::Opencode,
+        Switched::Skill,
+        "review",
+        true,
+        &built_in(),
+    )
+    .expect("turned back on");
+    assert_eq!(
+        Choices::read_in(plane.path(), Some("alpha")).skill("opencode", "review"),
+        (None, Source::Default),
+        "its key is taken out again"
+    );
+    let manifest = text_of(&plane.path().join("workspaces/alpha/workspace.json"));
+    assert!(!manifest.contains("review"), "{manifest}");
+}
+
+#[test]
+fn the_studio_refuses_what_a_harness_cannot_switch_and_writes_nothing() {
+    let plane = tempfile::tempdir().unwrap();
+    let refused = [
+        (
+            switch_in_the_studio(
+                plane.path(),
+                None,
+                crate::harness::Harness::ClaudeCode,
+                Switched::Skill,
+                "figma:frame",
+                false,
+                &built_in(),
+            ),
+            "Claude Code turns a plugin's skill off only with the whole plugin, figma, so nothing \
+             was changed",
+        ),
+        (
+            switch_in_the_studio(
+                plane.path(),
+                None,
+                crate::harness::Harness::Opencode,
+                Switched::Plugin,
+                "acme",
+                false,
+                &built_in(),
+            ),
+            "plugins for opencode are not supported yet",
+        ),
+        (
+            switch_in_the_studio(
+                plane.path(),
+                None,
+                crate::harness::Harness::ClaudeCode,
+                Switched::Plugin,
+                "purlis@inline",
+                false,
+                &built_in(),
+            ),
+            "purlis@inline is always on",
+        ),
+        (
+            switch_in_the_studio(
+                plane.path(),
+                None,
+                crate::harness::Harness::Opencode,
+                Switched::Skill,
+                "secrets",
+                false,
+                &built_in(),
+            ),
+            "secrets is one of purlis's built-in skills, which no project turns off, so nothing \
+             was changed",
+        ),
+    ];
+    for (got, said) in refused {
+        let why = got.expect_err("refused");
+        assert!(why.starts_with(said), "{why}");
+    }
+    assert!(!plane.path().join("charter.local.toml").exists());
 }

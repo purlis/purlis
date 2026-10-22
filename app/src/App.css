@@ -1224,7 +1224,15 @@ button.show-more:focus-visible {
    centred in it (`align-items` or `align-content` in the chip's own rule). The heights guard
    holds every chip here (`PANE_LINE_CHIPS`). */
 .pane-chips
-  > :is(.pane-crumbs, .pane-brief, .chat-gauge, .pane-harness, .pane-from, .pane-work-item) {
+  > :is(
+    .pane-crumbs,
+    .pane-brief,
+    .chat-gauge,
+    .pane-harness,
+    .pane-from,
+    .pane-work-item,
+    .pane-skills
+  ) {
   height: var(--size-chrome);
 }
 
@@ -1452,6 +1460,74 @@ button.show-more:focus-visible {
 .pane-harness:focus-visible {
   color: var(--text-primary);
   opacity: 1;
+}
+
+/* **A chat's skills** (`SkillsChip`, #2775): how many it lists, and Use skill… for it, drawn by
+   the button family (ghost, or warning-soft while the chat's set is past its skill budget). Its
+   place on the line only: it never pushes the line wider than it is. */
+.pane-chips > .pane-skills {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* **Use skill…** (`UseSkill.tsx`, #2775): the chat's skills to pick from, then the boxes of the
+   one picked, centred as every such dialog is. It fits the window and its list scrolls inside it; each row says the skill's
+   name, its level, whether it is manual-only, and what it does. */
+.warning.use-skill {
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+}
+
+.use-skill-budget {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.use-skill-over {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  color: var(--state-waiting);
+}
+
+.use-skill-over > svg {
+  flex: none;
+  inline-size: 1em;
+  block-size: 1em;
+  margin-block-start: var(--space-1);
+}
+
+.use-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 22rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.use-skill-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 0 var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.use-skill-level,
+.use-skill-manual {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.use-skill-description {
+  grid-column: 1 / -1;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: normal;
 }
 
 /* **The work item a chat works on** (V60, ADR 0088): `Work item: <key>`, in the same corner and

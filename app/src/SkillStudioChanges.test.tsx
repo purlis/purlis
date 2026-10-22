@@ -64,6 +64,8 @@ function core(
         persona: (given.persona as string | null) ?? null,
         workspaces: ["ops", "web"],
         levels: LEVELS,
+        harnesses: [],
+        clashes: [],
         skills,
       };
     asked.push({ cmd, args: given });

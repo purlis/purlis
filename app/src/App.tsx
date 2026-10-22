@@ -1429,6 +1429,7 @@ function App() {
       restartChat: () => undefined,
       restartListed: () => undefined,
       askPersona: () => undefined,
+      useSkill: () => undefined,
       unlinkWorkItem: async () => nowhere(),
       focusWorkspace: () => undefined,
       pickClone: () => undefined,

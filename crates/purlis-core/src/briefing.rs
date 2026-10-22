@@ -224,7 +224,9 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
         active::Place::PlaneRoot => None,
         active::Place::Workspace(workspace) => Some(workspace),
     };
-    if let Some(skills) = crate::skills::briefed(ask.root, workspace.as_deref(), ask.env) {
+    if let Some(skills) =
+        crate::skills::briefed(ask.root, workspace.as_deref(), Some(ask.cwd), ask.env)
+    {
         parts.push(skills);
     }
     parts

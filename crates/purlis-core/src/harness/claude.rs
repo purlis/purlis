@@ -4,7 +4,9 @@
 //! Claude Code's adapter (ADR 0073, FD-13): the bundled plugin, loaded for one chat alone, with
 //! the session's own `--settings`.
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
+use super::adapter::{
+    HarnessAdapter, RuleFile, Sandbox, SkillStart, SkillToStart, input_text, slash_with_words,
+};
 use super::{Harness, Kit, StateHooks, words};
 use crate::sandbox::Form;
 
@@ -71,6 +73,14 @@ impl HarnessAdapter for ClaudeCode {
         };
         // Read for a sandboxed chat alone: one that is not keeps loading what it always did.
         let screened = sandbox.map(|_| project::screen(cwd));
+        // The skills it can be handed as turned off: never a built-in skill's, nor a plugin's
+        // ([`crate::skills::skills_off_for`]).
+        let handed = crate::harness_plugin::Chosen {
+            plugins: plugins.plugins.clone(),
+            skills_off: crate::skills::skills_off_for(kit, Harness::ClaudeCode, plugins)
+                .into_iter()
+                .collect(),
+        };
         let mut args = words(["--plugin-dir", &plugin.display().to_string()]);
         // The plane's skills, as a plugin of their own (ADR 0063 as amended 2026-10-20).
         if let Some(linked) = crate::skills::linked(&skills, kit) {
@@ -95,7 +105,7 @@ impl HarnessAdapter for ClaudeCode {
                         kit.binary,
                         cwd,
                         crate::footerclaim::status_line(cwd).free(),
-                        plugins,
+                        &handed,
                         sandbox,
                         &denied_tools(kit),
                         screened.as_ref(),
@@ -168,15 +178,70 @@ impl HarnessAdapter for ClaudeCode {
             .map(|skill| SkillStart::Named(skill.to_owned()))
     }
 
-    /// Claude Code's `Skill` tool, by the plugin the skill came in: `purlis:<name>` for a
-    /// built-in skill, `skills:<name>` for the plane's ([`crate::skills::LINKED_PLUGIN`]). Claude
-    /// Code applies a skill's `disallowed-tools` and its fork when it starts the skill itself.
+    /// Every skill of a chat's set reaches Claude Code as a plugin's (ADR 0063 as amended
+    /// 2026-10-20): a built-in one as purlis's plugin's, `purlis:<name>`, and one of the plane's
+    /// as the folder of links' plugin's, `skills:<name>` ([`crate::skills::LINKED_PLUGIN`]). The
+    /// namespaced name is the one that cannot be taken by a person's own skill of that name.
+    /// A harness or repo skill is loaded by Claude Code itself, by its own name.
+    fn skill_name(&self, name: &str, origin: crate::skills::Origin) -> String {
+        use crate::skills::Origin;
+        match origin {
+            Origin::BuiltIn => format!("{}{name}", crate::names::SKILL_NAMESPACE.write),
+            Origin::Project | Origin::Workspace | Origin::Persona => {
+                format!("{}:{name}", crate::skills::LINKED_PLUGIN)
+            }
+            Origin::Harness | Origin::Repo => name.to_owned(),
+        }
+    }
+
+    /// **Claude Code 2.1.304** (research of 2026-10-20, `skills.md` "Invoke a skill" and a
+    /// measured `-p` run): `/<plugin>:<name>` at the start of the message runs the skill, and
+    /// what follows is its arguments, `$ARGUMENTS` raw and `$N` (and each `arguments:` name) split
+    /// as shell words, quotes kept. So each value is one shell word, in the declared order.
+    fn skill_start_text(&self, skill: &SkillToStart<'_>) -> String {
+        let head = format!("/{}", self.skill_name(skill.name, skill.origin));
+        slash_with_words(&head, skill.given)
+    }
+
+    /// Claude Code lists skills within 1% of the context window (`skillListingBudgetFraction`),
+    /// about 8,000 characters on a 200k-token window for names, descriptions and their lines,
+    /// cutting each description at 1,536 characters and dropping descriptions past the budget,
+    /// and leaves a `disable-model-invocation` skill's description out (2.1.304,
+    /// `settings-reference.md`, `skills.md`).
+    fn skill_budget(&self) -> crate::skills::Budget {
+        crate::skills::Budget {
+            per_description: Some(1_536),
+            manual_free: true,
+            ..super::SKILL_BUDGET
+        }
+    }
+
+    /// Claude Code fires `UserPromptExpansion` as a `/<name>` the person sent expands into its
+    /// skill, naming it ([`Self::prompt_started`]).
+    fn typed_start_named(&self) -> bool {
+        true
+    }
+
+    /// **Claude Code 2.1.304** (`hooks.md` "UserPromptExpansion", and a measured payload of
+    /// 2026-10-20): `{"hook_event_name": "UserPromptExpansion", "expansion_type":
+    /// "slash_command", "command_name": "<plugin>:<name>", ...}`. A skill's command is its name
+    /// as [`Self::skill_name`] says it.
+    fn prompt_started(&self, payload: &serde_json::Value) -> Option<String> {
+        let said = |key: &str| payload.get(key).and_then(serde_json::Value::as_str);
+        (said("hook_event_name") == Some("UserPromptExpansion")
+            && said("expansion_type") == Some("slash_command"))
+        .then(|| said("command_name"))
+        .flatten()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+    }
+
+    /// Claude Code's `Skill` tool, by the plugin the skill came in ([`Self::skill_name`]):
+    /// `purlis:<name>` for a built-in skill, `skills:<name>` for the plane's. Claude Code applies
+    /// a skill's `disallowed-tools` and its fork when it starts the skill itself.
     fn narrowed_start(&self, name: &str, origin: crate::skills::Origin) -> Option<String> {
-        let plugin = match origin {
-            crate::skills::Origin::BuiltIn => crate::names::PLUGIN_NAME.write,
-            _ => crate::skills::LINKED_PLUGIN,
-        };
-        Some(format!("{plugin}:{name}"))
+        Some(self.skill_name(name, origin))
     }
 
     /// `permissions.<bucket>` of `.claude/settings.json`, or with `local` of
@@ -327,6 +392,7 @@ fn settings(
     // session `enabledPlugins` wins over the project's and the user's for the keys it names,
     // and leaves every other plugin to them.
     let mut enabled: serde_json::Map<String, serde_json::Value> = plugins
+        .plugins
         .iter()
         .map(|(id, on)| (id.clone(), (*on).into()))
         .collect();
@@ -345,6 +411,23 @@ fn settings(
         "enabledPlugins".to_owned(),
         serde_json::Value::Object(enabled),
     );
+    // **The person's own skills the project turned off** (SK-6, #2769): `skillOverrides`, one
+    // name to `"off"` each, for this session alone. Measured on 2.1.304: `--settings
+    // '{"skillOverrides":{"langfuse":"off"}}'` took `langfuse` out of the init event's skills.
+    // It does not reach a plugin's skill (`<plugin>:<skill>`), which goes only with its plugin,
+    // so none is written, and nor is a built-in skill's name ([`crate::skills::skills_off_for`]).
+    // Not written at all where none is off, so the operator's own overrides stand.
+    let overrides: serde_json::Map<String, serde_json::Value> = plugins
+        .skills_off
+        .iter()
+        .map(|name| (name.clone(), "off".into()))
+        .collect();
+    if !overrides.is_empty() {
+        settings.insert(
+            "skillOverrides".to_owned(),
+            serde_json::Value::Object(overrides),
+        );
+    }
     // **Only where nothing else fills it.** The key is one value and the flag is the last
     // writer, so arming it where the operator has their own would stop theirs running
     // ([`crate::footerclaim`], measured on 2.1.280). Where charter does not arm it, the chat
