@@ -797,42 +797,6 @@ mod tests {
         }
     }
 
-    /// **The story harness is handed Purlis as the core hands it** (#3034): Storybook's page and
-    /// a unit test's jsdom have no core, so `app/src/theme/handed.purlis.json` holds each of
-    /// Purlis's appearances, by its id, as a [`WindowTheme`], and the id of the one the window
-    /// comes up in (`default`), and this holds the file to the engine. Run with
-    /// `PURLIS_WRITE_HANDED=1` to write it again after Purlis changes.
-    #[test]
-    fn the_story_harness_is_handed_purlis_as_the_core_hands_it() {
-        let file = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../src/theme/handed.purlis.json"
-        );
-        let appearances: Vec<serde_json::Value> = theme::purlis()
-            .appearances
-            .iter()
-            .map(|one| serde_json::json!({ "id": one.id, "theme": WindowTheme::from(one) }))
-            .collect();
-        // The default's own appearance by its id: what a story is drawn in when it names none.
-        assert_eq!(theme::shipped(theme::DEFAULT), Some(theme::purlis()));
-        let handed = serde_json::json!({
-            "default": theme::default_theme().id,
-            "appearances": appearances,
-        });
-        let text = format!(
-            "{}\n",
-            serde_json::to_string_pretty(&handed).expect("a theme is plain data")
-        );
-        if std::env::var_os("PURLIS_WRITE_HANDED").is_some() {
-            std::fs::write(file, &text).expect("the handed file is written");
-        }
-        let kept = std::fs::read_to_string(file).unwrap_or_default();
-        assert!(
-            kept == text,
-            "{file} is not Purlis as the core hands it: run this test with PURLIS_WRITE_HANDED=1"
-        );
-    }
-
     #[test]
     fn every_window_is_handed_the_one_read_of_the_person_s_theme() {
         let home = tempfile::tempdir().unwrap();

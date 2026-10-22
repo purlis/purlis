@@ -24,7 +24,6 @@ import {
   inForce,
   onDrawn,
   THEME_ALIASES,
-  CLASSIC,
   type Theme,
 } from "./theme/theme";
 import { forgetProjectThemes } from "./projectTheme";
@@ -781,7 +780,7 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     await drawThemeFor(new Set(), "purlis-dark", { plane: "p-1" as PlaneId, workspace: "alpha" });
     expect(root.classList.contains(CROSSFADE)).toBe(false);
     await drawThemeFor(new Set(), "purlis-light", { plane: "p-1" as PlaneId, workspace: "beta" });
-    expect(inForce().name).toBe("purlis-light");
+    expect(inForce()).toBe(BUILT_IN["purlis-light"]);
     expect(root.classList.contains(CROSSFADE)).toBe(true);
     await vi.waitFor(() => expect(root.classList.contains(CROSSFADE)).toBe(false));
   });
@@ -862,8 +861,6 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
       ["purlis-light", "purlis-light"],
       ...Object.entries(THEME_ALIASES),
       ["purlis-dark", "purlis-dark"],
-      // Purlis Classic by its own id draws its first appearance, as the engine answers.
-      [CLASSIC, "purlis-dark"],
       ["purlis-light", "purlis-light"],
     ]) {
       // No `await`: the switch has drawn by the time it returns, so no frame shows the last one.
@@ -1035,10 +1032,10 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
       }),
     });
     await drawThemeFor(new Set(), "system");
-    expect(inForce().name).toBe("purlis-light");
+    expect(inForce()).toBe(BUILT_IN["purlis-light"]);
 
     turn(false);
-    await expect.poll(() => inForce().name).toBe("purlis-dark");
+    await expect.poll(() => inForce()).toBe(BUILT_IN["purlis-dark"]);
 
     following = false;
     await drawThemeFor(new Set(), "purlis-dark");
@@ -1062,7 +1059,8 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Dark"); // project C
     stop();
 
-    expect(terminal.map((theme) => theme.name)).toEqual(["purlis-light", "Solarized Dark"]);
+    // `purlis-light` names Purlis's light, handed at creation (#3034).
+    expect(terminal).toEqual([BUILT_IN["purlis-light"], answer]);
   });
 
   it("draws nothing for an answer that was overtaken by a newer ask", async () => {

@@ -380,9 +380,10 @@ token a theme does not name still falls back to Classic's of its appearance, so 
 before the switch draws as it did. A workspace's colour dims only the tokens a tint rule holds
 apart from danger (`tint::chroma_for`); its strip keeps the colour's full hue in Purlis too.
 No built-in theme ships as a preview now; each built-in theme's entry in `purlis theme list
---json` keeps its `"preview"` key, false for both. The component stories and their screenshot
-baselines draw Purlis's dark by default, from `app/src/theme/handed.purlis.json`, which a test
-of the app's core holds to the engine (`docs/component-stories.md`).
+--json` keeps its `"preview"` key, false for both. The component stories run in every cell of
+the theme matrix, and Storybook starts on the default's cell, which
+`app/.storybook/at-creation.json` names and a test of the app's core holds to the engine
+(`docs/component-stories.md`).
 
 It has three appearances, `dark`, `light` and `dark-high-contrast` (dark, high contrast), each
 naming every token itself, so nothing in it is Purlis Classic's by falling back. Every

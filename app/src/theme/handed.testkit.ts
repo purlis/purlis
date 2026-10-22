@@ -2,15 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The built-in appearances, handed to a test's window as the app's core hands them to the
- * real one** (`purlis_core::theme::built_ins`, `src-tauri/src/windowprefs.rs`).
+ * **The built-in themes, handed to a test's window as the app's core hands them to the real
+ * one** (`windowprefs::handed_built_ins` and `default_theme`, `src-tauri/src/windowprefs.rs`).
  *
  * The real window finds them in the page before its own code runs; a test's window is jsdom,
- * which nothing hands anything. So `test-setup.ts` imports this first, and it puts Purlis
- * Classic's appearances, read from the core's own theme folder, on the same global, in the shape
- * the core resolves them to: each named by the id a pick names it by, dark first. The folder is
- * read from the core, so there is one copy; Classic is complete (the core's tests prove it), so
- * resolving an appearance is putting its tokens and motion where the window reads them.
+ * which nothing hands anything. So `test-setup.ts` imports this first, and it puts them on the
+ * same global, in the shape the core resolves them to: each built-in pick's appearance
+ * (`purlis-dark` and `purlis-light`, Purlis's dark and light, #3034; `purlis-classic`, Purlis
+ * Classic's dark), and the default's, Purlis's dark. They are read from the files a story's page
+ * reads them from (`.storybook/built-in-themes.json`, every appearance of every built-in theme as
+ * the core resolves it, and `.storybook/at-creation.json`, which of them a window is handed),
+ * which a test of the app's crate holds to the core (`storythemes.rs`). One engine resolves the
+ * themes every test draws.
  */
 
 /// <reference types="node" />
@@ -18,83 +21,40 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Vitest's working directory is `app`. */
-const CLASSIC = join(
-  process.cwd(),
-  "..",
-  "crates",
-  "purlis-core",
-  "src",
-  "theme",
-  "built-in",
-  "purlis-classic",
-  "theme.json",
-);
+const STORYBOOK = join(process.cwd(), ".storybook");
 
-type Appearance = {
-  appearance: string;
-  tokens: Record<string, string | boolean | number>;
-  motion: Record<string, number | number[]>;
+/** One appearance of a built-in theme, by reference into `built-in-themes.json`. */
+type Cell = { theme: string; appearance: string };
+
+const themes = JSON.parse(readFileSync(join(STORYBOOK, "built-in-themes.json"), "utf8")) as Record<
+  string,
+  Record<string, { name: string; appearance: string }>
+>;
+
+const atCreation = JSON.parse(readFileSync(join(STORYBOOK, "at-creation.json"), "utf8")) as {
+  default: Cell;
+  built_in: Record<string, Cell>;
 };
 
-/** The ids a pick names Classic's appearances by, in its order (`purlis_core::names`). */
-const PICKS = ["purlis-dark", "purlis-light"];
+const of = (cell: Cell) => themes[cell.theme][cell.appearance];
 
-function resolved(from: Appearance, at: number) {
-  const durations: Record<string, number> = {};
-  const easings: Record<string, number[]> = {};
-  for (const [token, value] of Object.entries(from.motion)) {
-    if (Array.isArray(value)) easings[token] = value;
-    else durations[token] = value;
-  }
-  // A token is a colour, or one that is not (#2327): a flag, the cursor's shape by name, or a
-  // number, as `purlis_core::theme::Typed` holds them.
-  const values: Record<string, string> = {};
-  const typed = {
-    flags: {} as Record<string, boolean>,
-    choices: {} as Record<string, string>,
-    numbers: {} as Record<string, number>,
-  };
-  for (const [token, value] of Object.entries(from.tokens)) {
-    if (typeof value === "boolean") typed.flags[token] = value;
-    else if (typeof value === "number") typed.numbers[token] = value;
-    // A colour, or "platform" for what the platform draws.
-    else if (value.startsWith("#") || value === "platform") values[token] = value;
-    else typed.choices[token] = value;
-  }
-  return {
-    name: PICKS[at],
-    appearance: from.appearance,
-    values,
-    typed,
-    motion: { durations, easings },
-    // Classic names no icon set, so the rails draw the window's own marks (#2337).
-    icons: {},
-    tint,
-  };
+/** One built-in appearance, by its id, as the core hands it. */
+export type HandedAppearance = { id: string; theme: { name: string; appearance: string } };
+
+/** Purlis Classic's appearances, by their ids, dark first, as the core hands each. */
+export function classicAppearances(): HandedAppearance[] {
+  return Object.entries(themes["purlis-classic"]).map(([id, theme]) => ({ id, theme }));
 }
 
-/** The recipe the core resolves for Classic (`purlis_core::theme::Tint`), as the shared tint
- *  fixture holds it and the core's tests hold the fixture to the engine. */
-const TINT_CASES = join(
-  process.cwd(),
-  "..",
-  "crates",
-  "purlis-core",
-  "src",
-  "theme",
-  "tint-cases.json",
-);
-const tint = (JSON.parse(readFileSync(TINT_CASES, "utf8")) as { classic: unknown }).classic;
+/** What the core hands a window as it is created, as far as a test's window needs it. */
+function handedAtCreation() {
+  return {
+    built_in: Object.fromEntries(
+      Object.entries(atCreation.built_in).map(([pick, cell]) => [pick, of(cell)]),
+    ),
+    default_theme: of(atCreation.default),
+  };
+}
 
 const GLOBAL = "__CHARTER_AT_CREATION__";
-const held = globalThis as Record<string, unknown>;
-const classic = JSON.parse(readFileSync(CLASSIC, "utf8")) as { appearances: Appearance[] };
-
-/** What the core hands a window as it is created, as far as a test's window needs it: the
- *  built-in appearances. A story's page is handed what the core itself resolves for every
- *  built-in theme instead (`.storybook/handed.plugin.ts`, #2945). */
-function handedAtCreation() {
-  return { built_in: classic.appearances.map(resolved) };
-}
-
-held[GLOBAL] ??= handedAtCreation();
+(globalThis as Record<string, unknown>)[GLOBAL] ??= handedAtCreation();

@@ -554,11 +554,7 @@ describe("a window holding more than one project", () => {
 
       await userEvent.click(projectTab("one"));
       await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
-      expect(terminal.map((theme) => theme.name)).toEqual([
-        "purlis-light",
-        "Purlis",
-        "purlis-light",
-      ]);
+      expect(terminal).toEqual([BUILT_IN["purlis-light"], DEFAULT_THEME, BUILT_IN["purlis-light"]]);
     } finally {
       stop();
       drawIn(DEFAULT_THEME);
