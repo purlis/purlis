@@ -1336,45 +1336,52 @@ is core's terminal family.
 
 Lengths that should grow with the words are in rem, written as "N px at 14px"
 (`calc(6rem / 14)`), so the text-size setting scales them with the window. Corners and focus
-rings stay in px. The px below are at the default 14px text.
+rings stay in px. The values below are Purlis Classic's, as `app/src/theme/geometry.css` writes
+them, in px at the default 14px text.
 
-| token                   | value                                      | for                                                                      |
-| ----------------------- | ------------------------------------------ | ------------------------------------------------------------------------ |
-| `--space-0`             | 0                                          | the spacing scale: every padding, gap and margin                         |
-| `--space-1`             | 2px                                        |                                                                          |
-| `--space-2`             | 4px                                        |                                                                          |
-| `--space-3`             | 6px                                        |                                                                          |
-| `--space-4`             | 8px                                        | a control's side padding                                                 |
-| `--space-5`             | 12px                                       |                                                                          |
-| `--space-6`             | 16px                                       |                                                                          |
-| `--space-7`             | 24px                                       |                                                                          |
-| `--space-8`             | 32px                                       |                                                                          |
-| `--font-size-2xs`       | 10px                                       | the type scale, seven steps: a tight secondary label only (#2319)        |
-| `--font-size-xs`        | 11px                                       | badges, counts; the meta and label roles: the words' floor               |
-| `--font-size-sm`        | 12px                                       | secondary lines, help text; the secondary role                           |
-| `--font-size-md`        | 13px                                       | dense lists and tables, a menu's rows; the body role                     |
-| `--font-size-base`      | 14px                                       | the window's text (`1rem`); the heading role                             |
-| `--font-size-lg`        | 16px                                       | the title role; nothing drew it before the [text roles](#text-roles)     |
-| `--font-size-xl`        | 20px                                       | on the scale; nothing draws it and no role reads it (#1920 rules on it)  |
-| `--font-weight-regular` | 400                                        | the weight of the window's words                                         |
-| `--font-weight-medium`  | 500                                        | a form's label: a setting's name, a choice's name                        |
-| `--font-weight-strong`  | 600                                        | the one strong weight: a title, a heading, a label, a row's strong line  |
-| `--line-height-tight`   | 1.2                                        | a compact line: a count, a chip. A share of the text's size, so no unit  |
-| `--line-height-body`    | 1.4                                        | the window's own line (`:root`)                                          |
-| `--font-ui`             | `ui-sans-serif, Inter, Avenir, Helvetica, Arial, sans-serif` | the window's own family (`:root`); a theme's `fonts.ui`                  |
-| `--font-mono`           | `ui-monospace, Menlo, Consolas, monospace` | the one monospace family: a command, a path, a host; a theme's `fonts.mono` |
-| `--radius-sm`           | 3px                                        | checkboxes, chips                                                        |
-| `--radius-md`           | 4px                                        | every control                                                            |
-| `--radius-lg`           | 6px                                        | every overlay (dialogs, popovers, menus, tooltips), segmented controls   |
-| `--radius-xl`           | 8px                                        | on the scale; nothing draws it since overlays share one corner (#1845)   |
-| `--radius-full`         | 9999px                                     | pills and round marks                                                    |
-| `--size-control`        | 28px                                       | every button, field, select and Reset                                    |
-| `--size-chrome`         | 21px                                       | every tab strip and pane header                                          |
-| `--focus-ring-width`    | 2px                                        | both focus rings, drawn in the theme's `focus.ring`                      |
-| `--focus-ring-offset`   | 2px                                        | rule 1: a control's ring, **outside** it                                 |
-| `--focus-ring-inset`    | -2px                                       | rule 2: a row's or a tab's ring, **inside** it, so a list never clips it |
-| `--elevation-raised`    | 0 2px 8px                                  | a bar floating over a pane (the find bar)                                |
-| `--elevation-overlay`   | 0 8px 24px                                 | every overlay: dialogs, popovers, menus, tooltips (#1845)                |
+**What each token reaches is said once, in the theme docs**: the "What it reaches" column of
+[`themes.md`'s Geometry section](../crates/purlis-core/docs/themes.md#geometry), held to the
+engine's `STEPS` by `geometry_tests.rs`. It is not repeated here. `--font-ui` and `--font-mono`
+are no geometry token: they are the window's own family and its one monospace family, a theme's
+`fonts.ui` and `fonts.mono`.
+
+| token                   | value                                                        |
+| ----------------------- | ------------------------------------------------------------ |
+| `--space-0`             | 0                                                            |
+| `--space-1`             | 2px                                                          |
+| `--space-2`             | 4px                                                          |
+| `--space-3`             | 6px                                                          |
+| `--space-4`             | 8px                                                          |
+| `--space-5`             | 12px                                                         |
+| `--space-6`             | 16px                                                         |
+| `--space-7`             | 24px                                                         |
+| `--space-8`             | 32px                                                         |
+| `--font-size-2xs`       | 10px                                                         |
+| `--font-size-xs`        | 11px                                                         |
+| `--font-size-sm`        | 12px                                                         |
+| `--font-size-md`        | 13px                                                         |
+| `--font-size-base`      | 14px                                                         |
+| `--font-size-lg`        | 16px                                                         |
+| `--font-size-xl`        | 20px                                                         |
+| `--font-weight-regular` | 400                                                          |
+| `--font-weight-medium`  | 500                                                          |
+| `--font-weight-strong`  | 600                                                          |
+| `--line-height-tight`   | 1.2                                                          |
+| `--line-height-body`    | 1.4                                                          |
+| `--font-ui`             | `ui-sans-serif, Inter, Avenir, Helvetica, Arial, sans-serif` |
+| `--font-mono`           | `ui-monospace, Menlo, Consolas, monospace`                   |
+| `--radius-sm`           | 3px                                                          |
+| `--radius-md`           | 4px                                                          |
+| `--radius-lg`           | 6px                                                          |
+| `--radius-xl`           | 8px                                                          |
+| `--radius-full`         | 9999px                                                       |
+| `--size-control`        | 28px                                                         |
+| `--size-chrome`         | 21px                                                         |
+| `--focus-ring-width`    | 2px                                                          |
+| `--focus-ring-offset`   | 2px                                                          |
+| `--focus-ring-inset`    | -2px                                                         |
+| `--elevation-raised`    | 0 2px 8px                                                    |
+| `--elevation-overlay`   | 0 8px 24px                                                   |
 
 ### What a theme may set them to
 
