@@ -6,6 +6,7 @@ import { FileText, LoaderCircle } from "lucide-react";
 import { commands, type InstructionFile, type PlaneId } from "./bindings";
 import { EmptyState } from "./EmptyState";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The agent instructions a workspace's repo carries, offered to its memory** (FR-18a, #612):
@@ -115,14 +116,9 @@ export function RepoInstructionsTab({
           </>
         }
         action={
-          <button
-            type="button"
-            className="ui-button ui-button-primary"
-            tabIndex={0}
-            onClick={() => setAsked((was) => was + 1)}
-          >
+          <Button variant="primary" onPress={() => setAsked((was) => was + 1)}>
             Read again
-          </button>
+          </Button>
         }
         testid="repo-instructions-empty"
       />
@@ -163,18 +159,10 @@ export function RepoInstructionsTab({
       {/* `tabIndex={0}` on every button, per `docs/ui-primitives.md` (charter-app#189). Add to
           memory trusts the repository's text, so it is as plain as Not now (D-2591-1). */}
       <SettingActions>
-        <button
-          type="button"
-          className="ui-button"
-          tabIndex={0}
-          disabled={ticked.length === 0 || adding}
-          onClick={add}
-        >
+        <Button isDisabled={ticked.length === 0 || adding} onPress={add}>
           Add to memory
-        </button>
-        <button type="button" className="ui-button" tabIndex={0} onClick={onClose}>
-          {added === undefined ? "Not now" : "Done"}
-        </button>
+        </Button>
+        <Button onPress={onClose}>{added === undefined ? "Not now" : "Done"}</Button>
       </SettingActions>
     </div>
   );

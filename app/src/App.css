@@ -1254,7 +1254,15 @@ button.show-more:focus-visible {
    centred in it (`align-items` or `align-content` in the chip's own rule). The heights guard
    holds every chip here (`PANE_LINE_CHIPS`). */
 .pane-chips
-  > :is(.pane-crumbs, .pane-brief, .chat-gauge, .pane-harness, .pane-from, .pane-work-item) {
+  > :is(
+    .pane-crumbs,
+    .pane-brief,
+    .chat-gauge,
+    .pane-harness,
+    .pane-from,
+    .pane-work-item,
+    .pane-skills
+  ) {
   height: var(--size-chrome);
 }
 
@@ -1482,6 +1490,74 @@ button.show-more:focus-visible {
 .pane-harness:focus-visible {
   color: var(--text-primary);
   opacity: 1;
+}
+
+/* **A chat's skills** (`SkillsChip`, #2775): how many it lists, and Use skill… for it, drawn by
+   the button family (ghost, or warning-soft while the chat's set is past its skill budget). Its
+   place on the line only: it never pushes the line wider than it is. */
+.pane-chips > .pane-skills {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* **Use skill…** (`UseSkill.tsx`, #2775): the chat's skills to pick from, then the boxes of the
+   one picked, centred as every such dialog is. It fits the window and its list scrolls inside it; each row says the skill's
+   name, its level, whether it is manual-only, and what it does. */
+.warning.use-skill {
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+}
+
+.use-skill-budget {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.use-skill-over {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  color: var(--state-waiting);
+}
+
+.use-skill-over > svg {
+  flex: none;
+  inline-size: 1em;
+  block-size: 1em;
+  margin-block-start: var(--space-1);
+}
+
+.use-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 22rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.use-skill-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 0 var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.use-skill-level,
+.use-skill-manual {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.use-skill-description {
+  grid-column: 1 / -1;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: normal;
 }
 
 /* **The work item a chat works on** (V60, ADR 0088): `Work item: <key>`, in the same corner and
@@ -2342,7 +2418,7 @@ button.show-more:focus-visible {
 /* **The sentence has the row.** It is as wide as it reads on one line, so the ways out stand
    beside it only when all of it fits unwrapped; when it does not, the sentence takes the whole
    row and wraps there, and the ways out go under it, on as many rows as they need. The line is
-   a `.ui-button-row` (#1855): a way out that alone is wider than the Notice breaks its words
+   a `ButtonRow` (#1855): a way out that alone is wider than the Notice breaks its words
    over lines, and is never clipped. */
 .notice-pane {
   flex: none;
@@ -3069,7 +3145,7 @@ button.show-more:focus-visible {
 .inbox-acts {
   margin-top: 0;
 }
-/* The answers are the shared row whose buttons wrap their words (`.ui-button-row`, #1855): an
+/* The answers are the shared row whose buttons wrap their words (`ButtonRow`, #1855): an
    answer's label is the source's, and in a narrow sidebar a long one must wrap, not widen the
    Inbox (inbox-long-ask.state.e2e). */
 .inbox-answers,
@@ -3344,7 +3420,7 @@ button.show-more:focus-visible {
 }
 
 /* *Changed only*, *Show ignored files* and the picked rows' buttons: small toggles and buttons
-   (`.ui-button-sm`, pressed on the accent), on a line under the tree. */
+   (a small `ToggleButton`, pressed on the accent), on a line under the tree. */
 .explorer .files-toggles {
   display: flex;
   flex-wrap: wrap;
@@ -3365,7 +3441,7 @@ button.show-more:focus-visible {
 
 /* The branch cockpit (FM-5): a breadcrumb back out, then the branch's state with Merge and
    Done, above the branch's own chats and files. Sentences here wrap; the rows below do not. */
-/* The crumbs back out are small ghost buttons (`.ui-button-ghost.ui-button-sm`). */
+/* The crumbs back out are small ghost buttons (a small ghost `Button`). */
 .explorer .cockpit-crumbs ol {
   display: flex;
   flex-wrap: wrap;
@@ -3406,7 +3482,7 @@ button.show-more:focus-visible {
   margin: var(--space-2) 0 var(--space-3);
 }
 
-/* Merge and Done: small buttons (`.ui-button-sm`). */
+/* Merge and Done: small buttons (the family's small `Button`). */
 .explorer .cockpit-actions {
   display: flex;
   gap: var(--space-3);
@@ -3971,7 +4047,7 @@ h2.sidebar-title .node-icon {
    `.ui-row.ui-tree-row` as a chat's row is), at its chat's level (the `li`'s `data-level`): its
    height, its step, its guides, its hover. So a finished task's mark and name stand in the
    columns a chat's do (DS-11). Its Brief, Reopen and Clear are small buttons beside it
-   (`.ui-button-sm`), the row's height. What is said under the line (a refusal, the core's note,
+   (the family's small `Button`), the row's height. What is said under the line (a refusal, the core's note,
    the report) stands where the name does, and the item draws the levels' guides on down past
    it. */
 .chats-section li.finished-tasks,
@@ -4237,7 +4313,7 @@ h2.sidebar-title .node-icon {
 
 /* **A Notice** (`Notice.tsx`, V91a–d): a standing line about something true now, with its ways
    out — a fix, a link, Copy command, Dismiss — as the shared small buttons in a row that wraps
-   (`.ui-button-row`, #1855). Outside a list (a Notice on a Settings page) the line is the inline
+   (`ButtonRow`, #1855). Outside a list (a Notice on a Settings page) the line is the inline
    surface (`.ui-inline-surface`, `primitives/overlays.css`); this only pads it. */
 .notice-inbox {
   margin: 0;
@@ -4456,45 +4532,6 @@ h2.sidebar-title .node-icon {
   display: flex;
   gap: var(--space-3);
   justify-content: flex-end;
-}
-
-/* The buttons a dialog is answered with, drawn the way the bar's are. They were the browser's
-   own — light grey chrome on a dark window — so `ends-it`'s red sat on a background it was
-   never picked against, and a disabled Start was a greyed light button rather than a visibly
-   unavailable one. */
-.answer button {
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-4);
-  font: inherit;
-  cursor: pointer;
-}
-
-.answer button:hover:not(:disabled) {
-  background: var(--border-subtle);
-}
-
-/* Unavailable, and said by more than a shade: the cursor stops offering it too. */
-.answer button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.answer button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-/* The answer that ends everything is marked, and it is not the one Return finds. */
-.answer .ends-it {
-  border-color: var(--danger-base);
-  color: var(--danger-base);
-}
-
-.answer .ends-it:hover:not(:disabled) {
-  background: var(--danger-surface);
 }
 
 /* What a chat is doing. A mark, plus a shape per state: colour alone is no state at all to
@@ -5300,7 +5337,7 @@ h2.sidebar-title .node-icon {
 
    **One bar, as an editor's status bar is** (qw357): context on the left, health on the right,
    every size from the core tokens. What can be pressed is the set's small ghost button
-   (`.ui-button-ghost.ui-button-sm`): no box, the chrome's height, the set's hover and ring.
+   (a small ghost `Button`): no box, the chrome's height, the set's hover and ring.
    The line's own padding is the ring's room (its width and its offset), so a focused item's
    ring is never clipped by the window's bottom edge.
 
@@ -6229,7 +6266,7 @@ h2.sidebar-title .node-icon {
   font-size: var(--font-size-xs);
 }
 
-/* The way out: the shared primary button (`ui-button ui-button-primary`), one beside another where there are two. */
+/* The way out: the shared primary button (`Button variant="primary"`), one beside another where there are two. */
 .empty-state-action {
   display: flex;
   flex-wrap: wrap;
@@ -6356,7 +6393,7 @@ h2.sidebar-title .node-icon {
 }
 
 /* **Play and Pause beside an animated image's caption** (#1132): a small ghost button
-   (`.ui-button-ghost.ui-button-sm`), no bezel, so it does not outweigh the caption it sits in.
+   (a small ghost `Button`), no bezel, so it does not outweigh the caption it sits in.
    Its icon is Lucide's, beside the words (design-system.md, Lucide). */
 .piece-image figcaption {
   display: flex;
@@ -6383,7 +6420,7 @@ h2.sidebar-title .node-icon {
   min-width: 0;
 }
 
-/* The head over a file: its path, then its actions, each a small button (`.ui-button-sm`) at the
+/* The head over a file: its path, then its actions, each a small button (the family's small `Button`) at the
    chrome's height (DS-12). */
 .piece-files-head {
   display: flex;
@@ -6508,7 +6545,7 @@ h2.sidebar-title .node-icon {
 }
 
 /* A dispatch's worktree, under where it worked (#1453): how it stands, then Discard. */
-/* Review changes, Merge and Discard are small buttons (`.ui-button-sm`, DS-12). */
+/* Review changes, Merge and Discard are small buttons (the family's small `Button`, DS-12). */
 .dispatch-worktree {
   display: flex;
   gap: var(--space-3);
@@ -7042,7 +7079,7 @@ h2.sidebar-title .node-icon {
   align-items: center;
 }
 
-/* Small buttons (`.ui-button-sm`), the row's height. */
+/* Small buttons (the family's small `Button`), the row's height. */
 .panel-row .row-actions {
   display: flex;
   flex: 0 0 auto;
@@ -7382,7 +7419,7 @@ h2.sidebar-title .node-icon {
 }
 
 /* The title bar's save indicator (charter-app#294): two small ghost buttons of the set
-   (`.ui-button-ghost.ui-button-sm`, #1857), the chrome's height, with the mark carrying the
+   (a small ghost `Button`, #1857), the chrome's height, with the mark carrying the
    stage. Words stay `text-primary`; only the mark takes a state colour. */
 .save-indicator {
   display: flex;
@@ -8425,40 +8462,6 @@ h2.sidebar-title .node-icon {
   margin: 0;
 }
 
-.ui-setting-actions button {
-  padding: var(--space-2) var(--space-4);
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  font: inherit;
-  cursor: pointer;
-}
-
-.ui-setting-actions button:hover:not(:disabled) {
-  background: var(--control-hover);
-}
-
-.ui-setting-actions button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.ui-setting-actions button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-/* The answer that destroys something, in the one colour the window keeps for it. */
-.ui-setting-actions button.ends-it {
-  border-color: var(--danger-base);
-  color: var(--danger-base);
-}
-
-.ui-setting-actions button.ends-it:hover:not(:disabled) {
-  background: var(--danger-surface);
-}
-
 /* A row whose control is its answers (the forge question): the row already spaces them. */
 .ui-setting-control > .ui-setting-actions {
   margin: 0;
@@ -8707,4 +8710,48 @@ textarea.ui-field {
 /* A skill's tab (SK-3): the run its chip opened it on stands out in its Runs panel. */
 .skill-tab .ui-table tr[data-wanted] {
   background: var(--surface-hover);
+}
+
+/* The Skill studio's changes (SK-7, #2770): the panel a change opens under the toolbar, the
+   levels a row is dropped on to move it, the editor's lint and the deleted skills. */
+.skill-change,
+.skill-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 60rem;
+  margin: 0 0 var(--space-4);
+}
+
+.skill-change label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+.skill-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+
+.skill-level-target {
+  padding: var(--space-1) var(--space-3);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.skill-lint,
+.skill-users {
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--font-size-sm);
+}
+
+.skill-deleted ul {
+  margin: 0;
+  padding-left: var(--space-5);
 }

@@ -70,6 +70,7 @@ const HARNESSES: HarnessPlugins[] = [
     harness: "claude",
     title: "Claude Code",
     unsupported: null,
+    only_off: null,
     record: "/home/dev/.claude/plugins/installed_plugins.json",
     trouble: null,
     local_left_out: null,
@@ -137,6 +138,7 @@ const HARNESSES: HarnessPlugins[] = [
     record: "/home/dev/.config/opencode",
     unsupported:
       "plugins for opencode are not supported yet — opencode has no switch that turns one plugin off",
+    only_off: null,
     trouble: null,
     local_left_out: null,
     plugins: [],
@@ -147,6 +149,7 @@ const HARNESSES: HarnessPlugins[] = [
     record: "/home/dev/.codex/config.toml",
     unsupported:
       "plugins for Codex are not supported yet — Codex 0.147.0 turns a plugin on or off only in its own config.toml",
+    only_off: null,
     trouble: null,
     local_left_out: null,
     plugins: [

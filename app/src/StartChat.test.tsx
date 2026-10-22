@@ -301,7 +301,7 @@ describe("a chat that starts in a repo (GL-1)", () => {
     expect(screen.getByRole("dialog").querySelector(".answer")).toBeNull();
     expect(names).toEqual(["Start", "Cancel"]);
     const start = screen.getByRole("button", { name: "Start" });
-    expect(start).toHaveClass("ui-button", "ui-button-primary");
+    expect(start).toHaveAttribute("data-variant", "primary");
     // A button and not a submit: Return in the Name box never starts a command.
     expect(start).toHaveAttribute("type", "button");
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveAttribute("type", "button");
@@ -319,9 +319,9 @@ describe("a chat that starts in a repo (GL-1)", () => {
     // Approving is the form's act, not a confirm that ends something (D-1719-3): purlis can
     // take the chat back, and the command is said above it before the press (V69).
     // It grants the command its run: the grant's style, not the suggested answer's (ADR 0097 §6).
-    expect(approve).toHaveClass("ui-button-grants");
-    expect(approve).not.toHaveClass("ui-button-primary");
-    expect(approve).not.toHaveClass("ends-it");
+    expect(approve).toHaveAttribute("data-variant", "grants");
+    expect(approve).not.toHaveAttribute("data-variant", "primary");
+    expect(approve).not.toHaveAttribute("data-variant", "danger");
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
   });
 

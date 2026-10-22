@@ -4,6 +4,7 @@
 import { useId, useState } from "react";
 import { commands, type PersonaSkillChange, type PlaneId } from "./bindings";
 import { Notice } from "./Notice";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A persona's skills in the Skill studio** (SK-5, #2768; spec decision 35): the studio filtered
@@ -11,8 +12,9 @@ import { Notice } from "./Notice";
  * choice is the studio's; the persona's page only counts them.
  */
 
-/** Adds `written` to `persona`'s skills, or takes it out: the core's refusal, or nothing. */
-async function change(
+/** Adds `written` to `persona`'s skills, or takes it out: the core's refusal, or nothing. What
+ *  Add here and a studio row's Add and Remove do. */
+export async function changePersonaSkill(
   plane: PlaneId,
   persona: string,
   written: string,
@@ -55,7 +57,7 @@ export function PersonaSkillAdd({
     const name = written.trim();
     if (busy || name === "") return;
     setBusy(true);
-    const said = await change(plane, persona, name, "add");
+    const said = await changePersonaSkill(plane, persona, name, "add");
     setBusy(false);
     setRefused(said);
     if (said === undefined) {
@@ -90,14 +92,9 @@ export function PersonaSkillAdd({
           <option key={name} value={name} />
         ))}
       </datalist>
-      <button
-        type="submit"
-        className="ui-button"
-        tabIndex={0}
-        disabled={busy || readOnly !== undefined || written.trim() === ""}
-      >
+      <Button type="submit" isDisabled={busy || readOnly !== undefined || written.trim() === ""}>
         {busy ? "Adding…" : "Add"}
-      </button>
+      </Button>
       {refused !== undefined && (
         <Notice
           cause={`persona-skill-add:${persona}`}
@@ -112,52 +109,5 @@ export function PersonaSkillAdd({
   );
 }
 
-/** **Remove** (#2768): takes `written` out of `persona`'s `skills:` list. */
-export function PersonaSkillRemove({
-  plane,
-  persona,
-  written,
-  onChanged,
-  readOnly,
-}: {
-  plane: PlaneId;
-  persona: string;
-  written: string;
-  onChanged: () => void;
-  readOnly?: string;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [refused, setRefused] = useState<string>();
-  return (
-    <>
-      <button
-        type="button"
-        className="ui-button persona-skill-remove"
-        tabIndex={0}
-        aria-label={`Remove ${written} from ${persona}`}
-        disabled={busy || readOnly !== undefined}
-        title={readOnly}
-        onClick={() => {
-          setBusy(true);
-          void change(plane, persona, written, "remove").then((said) => {
-            setBusy(false);
-            setRefused(said);
-            if (said === undefined) onChanged();
-          });
-        }}
-      >
-        {busy ? "Removing…" : "Remove"}
-      </button>
-      {refused !== undefined && (
-        <Notice
-          cause={`persona-skill-remove:${persona}:${written}`}
-          tone="trouble"
-          label="The skill was not removed"
-          onDismiss={() => setRefused(undefined)}
-        >
-          {refused}
-        </Notice>
-      )}
-    </>
-  );
-}
+/* **Remove** (#2768) is one of a studio row's actions (`SkillRowActions`, #2770), beside Add
+   for a skill the persona's list does not name: it calls `changePersonaSkill` too. */

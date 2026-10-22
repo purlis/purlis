@@ -26,6 +26,8 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "you.text", label: "Text" },
     { id: "you.theme", label: "Theme" },
     { id: "you.look", label: "Density and fonts" },
+    { id: "you.motion", label: "Motion and contrast" },
+    { id: "you.colours", label: "Your colours" },
     { id: "you.editor", label: "Editor" },
     { id: "you.chats", label: "Chats list" },
     { id: "you.notifications", label: "Notifications" },

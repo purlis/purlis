@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import * as Dialog from "./overlays/dialog";
 import { useFocusBack } from "./EndingChat";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /** Where the new chat works, as the dialog holds the pick. */
 type Where = "here" | "branch" | "workspace";
@@ -238,17 +239,10 @@ export function AskPersona({
 
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
             <SettingActions>
-              <button
-                className="ui-button ui-button-primary"
-                type="submit"
-                tabIndex={0}
-                disabled={!ready}
-              >
+              <Button variant="primary" type="submit" isDisabled={!ready}>
                 {asking ? `Asking ${persona}…` : `Ask ${persona}`}
-              </button>
-              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-                Cancel
-              </button>
+              </Button>
+              <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
           </form>
         </Dialog.Content>

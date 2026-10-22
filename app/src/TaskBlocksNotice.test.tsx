@@ -103,7 +103,7 @@ describe("the question for several tasks (#1709)", () => {
     expect(
       within(question)
         .getAllByRole("button")
-        .map((one) => one.classList.contains("ui-button-grants")),
+        .map((one) => one.getAttribute("data-variant") === "grants"),
     ).toEqual([true, false, false]);
     await userEvent.click(within(question).getByRole("button", { name: "Other scopes…" }));
     // Under the menu: only these tasks, then everyone in the project.

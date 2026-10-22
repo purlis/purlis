@@ -32,7 +32,7 @@ import {
  *
  * | Drawn as                                                         | Wears                     |
  * | ---------------------------------------------------------------- | ------------------------- |
- * | `<button>`, or a Radix trigger or close without `asChild`        | `ui-button` (or a row, a segment or a menu row, which a button can be) |
+ * | `<button>`, or a Radix trigger or close without `asChild`        | a row, a segment or a menu row; a button of the button family is `Button` (#2904), never a native `<button>` |
  * | `<input>`, `<textarea>`                                          | `ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio` |
  * | `<select>`, Radix Select's `Trigger`                             | `ui-select`               |
  * | `<table>`                                                        | `ui-table`                |
@@ -52,7 +52,7 @@ import {
 
 /** The classes that are each kind's whole look. A button can also be a list row, a tree row, a
  *  segment or a menu's row (`docs/ui-primitives.md`). */
-const BUTTON = ["ui-button", "ui-row", "ui-tree-row", "ui-segmented-item", "ui-menu-item"];
+const BUTTON = ["ui-row", "ui-tree-row", "ui-segmented-item", "ui-menu-item"];
 const WEARS: Record<string, string[]> = {
   button: BUTTON,
   input: ["ui-input"],
@@ -138,6 +138,8 @@ export function unclassedControls(source: string): string[] {
 function unclassedByFile(): Map<string, string[]> {
   return new Map(
     sourceFiles(isView)
+      // The component layer is where a family wraps its native element (#2904).
+      .filter((file) => !file.startsWith("ui/"))
       .map((file) => [file, unclassedControls(readFileSync(join(SRC, file), "utf8"))] as const)
       .filter(([, found]) => found.length > 0),
   );
@@ -332,6 +334,7 @@ describe("the control guard (#1837)", () => {
     `;
     expect(unclassedControls(tsx)).toEqual([
       '<button className="tab-close">',
+      '<button className={cn("ui-button", on && "ui-button-primary")}>',
       "<input>",
       '<input type="checkbox" className="box">',
       '<textarea className="notes">',
@@ -362,8 +365,12 @@ describe("the control guard (#1837)", () => {
   });
 
   it("covers the window's components, so a reader that found nothing fails", () => {
+    // Native buttons and the button family's, which a button left native would have been.
     const buttons = sourceFiles(isView).flatMap((file) =>
-      openingTags(readFileSync(join(SRC, file), "utf8"), /^button$/),
+      openingTags(
+        readFileSync(join(SRC, file), "utf8"),
+        /^(?:button|Button|IconButton|ToggleButton)$/,
+      ),
     );
     expect(buttons.length).toBeGreaterThan(200);
   });
@@ -428,12 +435,33 @@ const NOT_ON_ITS_OWN = ["ui-row", "ui-tree-row", "ui-segmented-item"];
 /** The kinds of control whose classes are held to the control height. */
 const HELD_KINDS = new Set(["button", "input", "input:dynamic", "textarea", "select", "menu-item"]);
 
+/** The button family's members (`ui/button/Button.tsx`, #2904): a class one is given places a
+ *  control, so a view's height on it is a control's. */
+const BUTTON_FAMILY = /^(?:Button|IconButton|ToggleButton)$/;
+
+/** `tag` without its `icon={…}` prop. */
+function withoutIcon(tag: string): string {
+  const at = /\sicon=\{/.exec(tag);
+  if (!at) return tag;
+  let depth = 0;
+  for (let i = at.index + at[0].length - 1; i < tag.length; i++) {
+    if (tag[i] === "{") depth++;
+    else if (tag[i] === "}" && --depth === 0) return tag.slice(0, at.index) + tag.slice(i + 1);
+  }
+  return tag;
+}
+
 /** Each class a component gives a control it draws (`HELD_KINDS`), rows and segments aside. */
 export function controlClasses(source: string): string[] {
   const radix = radixNames(withoutComments(source, "ts"));
-  return openingTags(source, /^(?:button|input|textarea|select|\w+\.\w+)$/).flatMap((tag) => {
-    const { name, text } = tag;
-    const kind = kindOf(name, text, radix);
+  return openingTags(
+    source,
+    /^(?:button|input|textarea|select|Button|IconButton|ToggleButton|\w+\.\w+)$/,
+  ).flatMap((tag) => {
+    const { name } = tag;
+    // A family member's `icon` is an element of its own, whose class is the icon's.
+    const text = BUTTON_FAMILY.test(name) ? withoutIcon(tag.text) : tag.text;
+    const kind = BUTTON_FAMILY.test(name) ? "button" : kindOf(name, text, radix);
     if (!kind || !HELD_KINDS.has(kind)) return [];
     const className = classNameOf(text) ?? "";
     const strings = /\sclassName=\{/.test(text)
@@ -453,7 +481,7 @@ const STRIP =
 const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 
 /** The chips on a pane's top line (#2484): the breadcrumb, Brief, the gauge, the harness, where
- *  a handed-off chat came from and its work item. Each is as tall as the line, the chrome
+ *  a handed-off chat came from, its work item and its skills (#2775). Each is as tall as the line, the chrome
  *  height, so the line is one height with the ways to end a task beside them. */
 export const PANE_LINE_CHIPS = [
   "pane-crumbs",
@@ -462,6 +490,7 @@ export const PANE_LINE_CHIPS = [
   "pane-harness",
   "pane-from",
   "pane-work-item",
+  "pane-skills",
 ];
 
 /** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
@@ -768,6 +797,7 @@ const LINE_CHIP_COMPONENTS: Record<string, string> = {
   BriefButton: "pane-brief",
   ChatGauge: "chat-gauge",
   HarnessChip: "pane-harness",
+  SkillsChip: "pane-skills",
 };
 
 /** A component that draws its one child as itself (`asChild`): the line reads through it. */

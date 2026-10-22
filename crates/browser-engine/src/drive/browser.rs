@@ -251,6 +251,9 @@ struct Frame {
     name: String,
     url: String,
     generation: u64,
+    /// The page's document number when this frame last loaded another document, or when it
+    /// was first seen (#2638).
+    loaded: u64,
 }
 
 struct Page {
@@ -266,6 +269,8 @@ struct Page {
     /// What the page shows, as a number that changes each time it or any frame in it loads
     /// another document, or a frame in it goes (#2014): the document a frame's aim names.
     shows: u64,
+    /// The document number at which a frame of it last went, 0 if none has (#2638).
+    gone: u64,
     frames: HashMap<String, Frame>,
     /// The page that opened this one, if one did.
     opener: Option<String>,
@@ -621,6 +626,50 @@ impl State {
         })
     }
 
+    /// Whether what `target`'s page shows has moved on since the document number `seen`, at
+    /// the frame `reached` (#2638): that frame, or one around it, loaded another document since,
+    /// or, `with_inside`, one inside it did. A frame not known now has moved on.
+    fn moved_at(&self, target: &str, seen: u64, reached: &str, with_inside: bool) -> bool {
+        let Some(page) = self.page(target) else {
+            return true;
+        };
+        let Some(frame) = page.frames.get(reached) else {
+            return true;
+        };
+        // The frame and every frame around it.
+        let mut at = Some((reached, frame));
+        let mut steps = 0;
+        while let Some((_, frame)) = at {
+            steps += 1;
+            if frame.loaded > seen || steps > page.frames.len() {
+                return true;
+            }
+            at = frame
+                .parent
+                .as_deref()
+                .and_then(|parent| page.frames.get_key_value(parent))
+                .map(|(id, frame)| (id.as_str(), frame));
+        }
+        // Every frame inside it, where what is under a point may be any of them.
+        with_inside
+            && page.frames.iter().any(|(id, frame)| {
+                frame.loaded > seen && id != reached && {
+                    let mut up = frame.parent.as_deref();
+                    let mut steps = 0;
+                    loop {
+                        steps += 1;
+                        match up {
+                            Some(parent) if parent == reached => break true,
+                            Some(parent) if steps <= page.frames.len() => {
+                                up = page.frames.get(parent).and_then(|f| f.parent.as_deref());
+                            }
+                            _ => break false,
+                        }
+                    }
+                }
+            })
+    }
+
     fn info(&self, target: &str) -> Option<PageInfo> {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
@@ -658,12 +707,14 @@ impl State {
             .get("parentId")
             .and_then(Value::as_str)
             .map(str::to_owned);
+        let shown = page.shows;
         let entry = page.frames.entry(id.to_owned()).or_insert_with(|| Frame {
             session: session.to_owned(),
             parent: None,
             name: String::new(),
             url: String::new(),
             generation,
+            loaded: shown,
         });
         if parent.is_some() {
             entry.parent = parent;
@@ -678,6 +729,7 @@ impl State {
         if navigated {
             page.shows = generation;
             entry.generation = generation;
+            entry.loaded = generation;
             if id == target {
                 page.url = text("url");
             }
@@ -709,6 +761,7 @@ impl State {
             page.frames.remove(id);
         }
         page.shows = shows;
+        page.gone = shows;
         for id in &gone {
             self.refs.forget_frame(id);
             self.excluded.retain(|key| &key.frame != id);
@@ -3310,6 +3363,7 @@ impl Inner {
                                 settle: Settle::new(now),
                                 scrubbed: kept,
                                 shows: 0,
+                                gone: 0,
                                 frames: HashMap::new(),
                                 opener,
                             });

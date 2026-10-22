@@ -139,6 +139,7 @@ pub fn handler(name: &str) -> Option<Handler> {
         "pretooluse-dispatch" => toolhooks::pretooluse_dispatch,
         "posttooluse" => toolhooks::posttooluse,
         "posttooluse-skill" => toolhooks::posttooluse_skill,
+        "userpromptexpansion" => says_nothing,
         "posttooluse-dispatch" => toolhooks::posttooluse_dispatch,
         // What these hooks find goes to the app ([`blocks`]); the chat is told of what the app
         // took once it has ([`told_after`]), never from here.

@@ -75,5 +75,9 @@ describe("the team's policy beside Your level", () => {
     );
     expect(await screen.findByText(/You kept it on/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy();
+    // Accepting runs chats with no sandbox: the grant's look, edge and lock (ADR 0097 §6).
+    const accept = screen.getByRole("button", { name: "Accept" });
+    expect(accept).toHaveAttribute("data-variant", "grants");
+    expect(accept.querySelector('[data-part="icon"] svg.lucide-lock-open')).not.toBeNull();
   });
 });

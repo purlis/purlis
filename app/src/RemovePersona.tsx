@@ -4,6 +4,7 @@
 import { useRef } from "react";
 import * as AlertDialog from "./overlays/alert-dialog";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * Deleting a persona (SI-3): what goes, what stays, and one answer.
@@ -67,26 +68,14 @@ export function RemovePersona({
 
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                ref={cancel}
-                onClick={onCancel}
-              >
+              <Button ref={cancel} onPress={onCancel}>
                 Cancel
-              </button>
+              </Button>
             </AlertDialog.Cancel>
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              disabled={deleting}
-              onClick={onDelete}
-            >
+            <Button variant="danger" isDisabled={deleting} onPress={onDelete}>
               {deleting ? "Deleting…" : "Delete persona"}
-            </button>
+            </Button>
           </AnswerBar>
         </AlertDialog.Content>
       </AlertDialog.Portal>

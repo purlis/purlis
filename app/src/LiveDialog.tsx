@@ -7,6 +7,7 @@ import { Radio } from "lucide-react";
 import { commands, type LivePreview, type PlaneId, type RemoteReaders } from "./bindings";
 import { askSavingTab, tellSaved } from "./saving";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * **Make a workspace LIVE or LOCAL** (charter-app#301, ADR 0051): what it publishes, where it
@@ -164,52 +165,35 @@ export function LiveDialog({
           )}
           {switched !== null ? (
             <AnswerBar>
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                ref={cancel}
-                onClick={() => onDone(switched.said)}
-              >
+              <Button ref={cancel} onPress={() => onDone(switched.said)}>
                 Close
-              </button>
+              </Button>
               {/* Where a save that did not happen is mended (NO-8's follow-up, #1296): the
                   Saving tab says why, and has the save, the mode and the ways out. */}
-              <button
-                className="ui-button"
-                type="button"
-                tabIndex={0}
-                onClick={() => {
+              <Button
+                onPress={() => {
                   onDone(switched.said);
                   askSavingTab(plane);
                 }}
               >
                 Go to Saving
-              </button>
+              </Button>
             </AnswerBar>
           ) : (
             <AnswerBar>
               <AlertDialog.Cancel asChild>
-                <button
-                  className="ui-button"
-                  type="button"
-                  tabIndex={0}
-                  ref={cancel}
-                  onClick={onClose}
-                >
+                <Button ref={cancel} onPress={onClose}>
                   Cancel
-                </button>
+                </Button>
               </AlertDialog.Cancel>
-              <button
-                type="button"
-                className="ui-button ui-button-danger ends-it"
-                tabIndex={0}
-                disabled={busy || read === null}
-                onClick={() => void confirm()}
+              <Button
+                variant="danger"
+                isDisabled={busy || read === null}
+                onPress={() => void confirm()}
               >
                 {/* Said while the core switches it (D-630-3). */}
                 {busy ? `Making ${word}…` : `Make ${word}`}
-              </button>
+              </Button>
             </AnswerBar>
           )}
         </AlertDialog.Content>

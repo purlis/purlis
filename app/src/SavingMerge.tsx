@@ -9,6 +9,7 @@ import { commands, type PlaneId, type SaveMerge } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
 import { FIX_STARTING_SIZE, PLANE_SAVED, tellFixStarted } from "./saving";
 import { askSettingsLink, type SettingsLink } from "./settings/links";
+import { Button } from "./ui/button/Button";
 
 /** Settings › You › Accounts, where a forge is signed in to. */
 const ACCOUNTS: SettingsLink = { group: "you.accounts" };
@@ -303,20 +304,13 @@ function ConfirmMerge({
           )}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button className="ui-button" type="button" tabIndex={0} ref={cancel}>
-                Cancel
-              </button>
+              <Button ref={cancel}>Cancel</Button>
             </AlertDialog.Cancel>
             {/* `ends-it`: a merge lands on the target branch, and purlis has no undo for it
                 (D-1719-3, `docs/ui-primitives.md`). */}
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              onClick={onMerge}
-            >
+            <Button variant="danger" onPress={onMerge}>
               Merge as it stands
-            </button>
+            </Button>
           </AnswerBar>
         </AlertDialog.Content>
       </AlertDialog.Portal>

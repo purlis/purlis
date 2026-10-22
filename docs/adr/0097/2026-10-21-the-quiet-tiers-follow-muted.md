@@ -26,5 +26,6 @@ aliases.
   recipe tints `text.muted` and wants its quiet tiers tinted too names them in the recipe. The
   tint keeps luminance, so an untinted quiet clears the same floors either way.
 - **Every tier is held on every ground.** The theme check holds the four text tiers at 4.5:1
-  and faint at 3:1 on every ground a part draws them on (`theme::TIER_GROUNDS`). These are
-  warnings, as every contrast finding is. No hard floor is added for them.
+  and faint at 3:1 on every ground a part draws them on (`theme::TIER_GROUNDS`). Since
+  [ADR 0098's amendment of 2026-10-21](../0098/2026-10-21-a-text-tier-never-draws-under-its-floor.md)
+  (ruling #2803·3), a tier under its floor is also drawn as the nearest colour that clears it.

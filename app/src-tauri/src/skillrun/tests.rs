@@ -25,6 +25,8 @@ fn call(chat: u32, id: &str, skill: Option<&str>) -> ToolCall {
                 skill: skill.to_owned(),
                 run: RUN.to_owned(),
                 started_by: purlis_core::skills::runs::StartedBy::SkillTool,
+                workspace: None,
+                level: None,
             })
         }),
     }
@@ -108,4 +110,39 @@ fn a_refused_skill_call_or_a_sub_agents_stop_changes_nothing() {
     runs.reported(&child);
     assert_eq!(runs.now([4]).len(), 1);
     assert_eq!(told.try_iter().count(), 1);
+}
+
+#[test]
+fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into() {
+    let (runs, told) = listening();
+    use purlis_core::skillspan::{Confirmed, PromptMarks, Typed};
+    runs.typed(
+        4,
+        Typed {
+            skill: "deploy".to_owned(),
+            run: RUN.parse().unwrap(),
+            workspace: None,
+            level: None,
+            text: PromptMarks::digest("$deploy"),
+            confirmed: Confirmed::ByPrompt,
+        },
+    );
+    assert!(runs.now([4]).is_empty(), "nothing runs until it is sent");
+    assert_eq!(told.try_iter().count(), 0);
+
+    let mut sent = report(4, Event::UserPromptSubmit);
+    sent.detail.prompt_marks = PromptMarks::of("$deploy");
+    runs.reported(&sent);
+    runs.heard(&call(4, "toolu_1", None));
+    runs.reported(&report(4, Event::Stop));
+
+    let said: Vec<_> = told.try_iter().map(|t| t.run).collect();
+    let open = |tool_calls| {
+        Some(OpenRun {
+            skill: "deploy".to_owned(),
+            id: RUN.to_owned(),
+            tool_calls,
+        })
+    };
+    assert_eq!(said, vec![open(0), open(1), None]);
 }

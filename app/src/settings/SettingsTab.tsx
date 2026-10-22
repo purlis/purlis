@@ -57,6 +57,7 @@ import { OffWhenReadOnly, useReadOnlyMendable, useReadOnlySaid } from "../ReadOn
 import { LivesHere } from "../LivesHere";
 import { usePools } from "../pools";
 import { POOLS } from "./pools";
+import { Button } from "../ui/button/Button";
 
 /**
  * **Settings** (SE-16, #1166; the spec on #558, rulings V89a–i): the one tab where a setting is
@@ -175,9 +176,11 @@ function ProjectLevelTab({ plane, ...switcher }: Switcher & { plane: PlaneId }) 
     if (project.state === "read") await project.readEntries();
     return true;
   };
+  const skillStudio = useSkillStudioOn();
   const groups = useMemo(
-    () => (project.state === "read" ? projectGroups(project.read, project.reread) : []),
-    [project],
+    () =>
+      project.state === "read" ? projectGroups(project.read, project.reread, skillStudio) : [],
+    [project, skillStudio],
   );
   // Each file as its whole text (SE-19, V89d), written through the level's driver: the core
   // checks it and writes it, in the queue every setting's write is in.
@@ -535,15 +538,9 @@ function Shown({
                     {to && (
                       <>
                         {" "}
-                        <button
-                          type="button"
-                          className="ui-setting-reset"
-                          // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                          tabIndex={0}
-                          onClick={() => linkToGroup(place, to.group, to.setting)}
-                        >
+                        <Button size="sm" onPress={() => linkToGroup(place, to.group, to.setting)}>
                           {`Go to ${to.label}`}
-                        </button>
+                        </Button>
                       </>
                     )}
                   </li>
@@ -761,16 +758,9 @@ function ShownGroup({
       {onAction && (group.links?.length ?? 0) > 0 && (
         <p className="ui-setting-links">
           {group.links?.map((one) => (
-            <button
-              key={one.action}
-              type="button"
-              className="ui-setting-reset"
-              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-              tabIndex={0}
-              onClick={() => onAction(one.action)}
-            >
+            <Button size="sm" key={one.action} onPress={() => onAction(one.action)}>
               {one.label}
-            </button>
+            </Button>
           ))}
         </p>
       )}
@@ -1040,15 +1030,9 @@ function FileRow({
               setting.names === "persona" &&
               value !== "" &&
               (setting.choices ?? []).includes(value) && (
-                <button
-                  type="button"
-                  className="ui-setting-reset"
-                  // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                  tabIndex={0}
-                  onClick={() => onAction(showPersona(value))}
-                >
+                <Button size="sm" onPress={() => onAction(showPersona(value))}>
                   {`Show ${value}`}
-                </button>
+                </Button>
               )}
           </>
         ) : setting.reading && value === "" ? (
@@ -1130,21 +1114,11 @@ function Status({
     >
       <p>{setting.status?.(value) ?? value}</p>
       {turnOn !== undefined && value === "" && (
-        <button
-          type="button"
-          // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-          tabIndex={0}
-          disabled={writing}
-          onClick={() => onWrite(turnOn.value)}
-        >
+        <Button isDisabled={writing} onPress={() => onWrite(turnOn.value)}>
           {turnOn.label}
-        </button>
+        </Button>
       )}
-      {goTo !== undefined && (
-        <button type="button" className="ui-button" tabIndex={0} onClick={goTo.onPress}>
-          {goTo.label}
-        </button>
-      )}
+      {goTo !== undefined && <Button onPress={goTo.onPress}>{goTo.label}</Button>}
     </div>
   );
 }
@@ -1187,15 +1161,9 @@ function MoveTo({
   return (
     <Menu.Root modal={false}>
       <Menu.Trigger asChild>
-        <button
-          type="button"
-          className="ui-setting-reset ui-button ui-button-ghost"
-          // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-          tabIndex={0}
-          disabled={disabled}
-        >
+        <Button variant="ghost" isDisabled={disabled} className="ui-setting-reset">
           Move to…
-        </button>
+        </Button>
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Content className="ui-menu ui-setting-move" align="end" sideOffset={4}>

@@ -22,6 +22,7 @@ import {
   type AwayItem,
   type Queued,
 } from "./awayCounts";
+import { Button } from "./ui/button/Button";
 
 /**
  * **While you were away: one summary of what happened** (#1514, V100-65).
@@ -151,29 +152,29 @@ function AwayPart({
     const named = items.map((item) => item.says).join(", ");
     return (
       // Where it goes is in its name: a title alone is read by few screen readers.
-      <button
-        type="button"
-        className="away-part"
+      <Button
+        variant="link"
         aria-label={`${says}: ${named}`}
         title={named}
-        onClick={() => onGo(items[0].go)}
+        onPress={() => onGo(items[0].go)}
+        className="away-part"
       >
         {says}
-      </button>
+      </Button>
     );
   }
   return (
     <Menu.Root modal={false} open={open} onOpenChange={setOpen}>
       <Menu.Trigger asChild>
-        <button
-          type="button"
-          className="away-part"
+        <Button
+          variant="link"
           aria-haspopup="menu"
           onPointerDown={(event) => event.preventDefault()}
-          onClick={() => setOpen((up) => !up)}
+          onPress={() => setOpen((up) => !up)}
+          className="away-part"
         >
           {says}
-        </button>
+        </Button>
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Content

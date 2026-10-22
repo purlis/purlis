@@ -5,6 +5,7 @@ import { useState } from "react";
 import { commands, type PlaneId, type ProjectHarnesses } from "../bindings";
 import { NO_EDITOR, yourEditor } from "../yourEditor";
 import type { LiveSetting } from "./groups";
+import { Button } from "../ui/button/Button";
 
 /**
  * **The project's harness declarations, read-only, each with Open file** (#1389, spec #1221's
@@ -71,9 +72,7 @@ function opening(plane: PlaneId, file: string): LiveSetting["useControl"] {
           aria-labelledby={ids.labelledBy}
           aria-describedby={ids.describedBy}
         >
-          <button type="button" tabIndex={0} onClick={open}>
-            Open file
-          </button>
+          <Button onPress={open}>Open file</Button>
         </div>
       ),
     };

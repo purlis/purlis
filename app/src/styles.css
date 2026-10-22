@@ -63,6 +63,11 @@
  * redraw it and the window's focus floor does not pull its ring inside. A view still places a
  * control; `docs/ui-primitives.md` lists the classes.
  *
+ * **A component family draws itself from its wrapper's attributes** (#2904). `ui/<family>/` holds
+ * each family's one wrapper over its React Aria primitive and its stylesheet, keyed on
+ * `data-scope`, `data-part`, `data-variant` and React Aria's state attributes, in the same layer
+ * as the control classes it replaces; `docs/ui-primitives.md` lists the families.
+ *
  * **What the window draws over itself is one surface** (#1845). `primitives/overlays.css`, after
  * the controls in the same layer, gives a dialog, a popover, a menu and a tooltip one ground,
  * border, corner and elevation, and the scrim behind a modal question; a view only places and
@@ -72,6 +77,11 @@
  * stylesheet for the parts a theme sets (`purlis_core::theme::parts`), which `theme.ts` puts in
  * the `parts` layer: above `components`, so a part a theme names wins over the family default,
  * and below `forced`. A theme that names no parts writes nothing there.
+ *
+ * **Reduced motion is one switch, in the first layer** (R152, #2925). `theme/reduced-motion.css`
+ * stops every transition and animation under the root's `data-motion="reduced"`, which the
+ * window writes when the system or the person's own setting turns motion off. Its declarations
+ * are important in the first layer, so no later layer turns motion back on.
  *
  * **Forced colours are drawn over all of it** (#2328). `theme/forced-colors.css` says again, in
  * the system's palette and with a shape, what the window says with a background or a shadow
@@ -92,12 +102,14 @@
 
 @import "tailwindcss/theme.css" layer(theme);
 @import "./theme/geometry.css" layer(theme);
+@import "./theme/reduced-motion.css" layer(theme);
 @import "./base.css" layer(base);
 @import "@xterm/xterm/css/xterm.css" layer(vendor);
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./App.css" layer(charter);
 @import "./primitives/collections.css" layer(components);
 @import "./primitives/controls.css" layer(components);
+@import "./ui/button/button.css" layer(components);
 @import "./primitives/overlays.css" layer(components);
 @import "./primitives/text.css" layer(components);
 @import "./theme/forced-colors.css" layer(forced);

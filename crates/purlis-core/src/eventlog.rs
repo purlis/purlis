@@ -1319,9 +1319,14 @@ fn spooled_as(mut body: serde_json::Value, seq: Option<u64>) -> serde_json::Valu
 fn tool_kind(call: &crate::hookwire::ToolCall) -> String {
     match phase(&call.tool_hook) {
         Some(_) => format!("hook.{}", call.tool_hook),
+        None if call.tool_hook == crate::hookwire::SKILL_LOAD => SKILL_LOADED.to_owned(),
         None => UNKNOWN_HOOK.to_owned(),
     }
 }
+
+/// The kind a skill purlis's MCP server loaded is recorded under (SK-13, #2776): the tool call
+/// that loaded it, just after the `skill.started` of the run it opened.
+pub const SKILL_LOADED: &str = "hook.skill-load";
 
 /// The kind a tool hook word charter does not answer is recorded under, so a line cannot mint
 /// a kind of its own: the word goes in the body, shortened.
@@ -1710,8 +1715,9 @@ impl Recorder {
         {
             who.attributes.conversation = Some(id.to_owned());
         }
+        let persona = top.attributes.persona.clone();
         let under = self.under(top, report.agent.as_deref())?;
-        self.skills_heard_of_a_report(plane, &under, report)?;
+        self.skills_heard_of_a_report(plane, &under, persona.as_deref(), report)?;
         let mut body = serde_json::json!({});
         if report.event == crate::state::Event::SessionStart {
             body["started"] = started(report.detail.started).into();
@@ -1803,7 +1809,7 @@ impl Recorder {
             "decision": call.decision.word(),
             "hook_ms": call.hook_ms,
         });
-        if phase(&call.tool_hook).is_none() {
+        if tool_kind(call) == UNKNOWN_HOOK {
             body["word"] =
                 crate::shown::readable(&call.tool_hook, crate::shown::DISPLAY_LIMIT).into();
         }
@@ -2317,6 +2323,18 @@ impl Recorder {
         else {
             return Ok(());
         };
+        self.skill_started(plane, under, persona, &opened)
+    }
+
+    /// Says that skill run `opened` began, with a `skill.started`, and logs it in the plane's
+    /// skill log as it opens ([`crate::skilluse::started`]).
+    fn skill_started(
+        &mut self,
+        plane: &Path,
+        under: &Under,
+        persona: Option<&str>,
+        opened: &purlis_skills::runs::Open,
+    ) -> io::Result<()> {
         let mut body = serde_json::json!({ "started_by": opened.started_by });
         if let Some(parent) = &opened.parent {
             body["parent_skill_run"] = parent.as_str().into();
@@ -2324,7 +2342,7 @@ impl Recorder {
         self.append(under, "skill.started", body)?;
         crate::skilluse::started(
             plane,
-            &(&opened).into(),
+            &opened.into(),
             persona.filter(|persona| *persona != NONE && *persona != UNKNOWN),
             chrono::Utc::now(),
             &self.log.device,
@@ -2334,18 +2352,39 @@ impl Recorder {
 
     /// What a state hook does to the skill runs of its chat's run (SK-3): the turn's end, a new
     /// prompt and the session's end close them, each before the hook's own event, which is
-    /// outside them; a question put to the person is counted.
+    /// outside them; a question put to the person is counted. A new prompt then opens the run
+    /// of a skill Use skill… typed into it (SK-12), said before the prompt's own event, which is
+    /// inside it.
     fn skills_heard_of_a_report(
         &mut self,
         plane: &Path,
         under: &Under,
+        persona: Option<&str>,
         report: &crate::hookwire::Report,
     ) -> io::Result<()> {
         if under.parent.is_some() {
             return Ok(());
         }
-        let closed = self.skills.report(&under.run, report, now_ms());
-        self.skills_closed(plane, under, closed)
+        let chat = under.chat.clone();
+        let reported = self
+            .skills
+            .report(&under.run, report, now_ms(), || tokens_of(plane, &chat));
+        self.skills_closed(plane, under, reported.closed)?;
+        for opened in &reported.opened {
+            self.skill_started(plane, under, persona, opened)?;
+        }
+        Ok(())
+    }
+
+    /// **Use skill… typed `typed` into chat `number` of `plane`**, unsent (SK-12): its run opens
+    /// once a prompt shows it was sent ([`crate::skillspan::Tracker::typed`]). Nothing is
+    /// written now; a chat this writer knows no run of holds nothing.
+    pub fn skill_typed(&mut self, plane: &Path, number: u32, typed: crate::skillspan::Typed) {
+        let Some(who) = self.chats.get(&(plane.to_path_buf(), number)) else {
+            return;
+        };
+        let key = who.run.clone();
+        self.skills.typed(&key, typed, now_ms());
     }
 
     /// Closes every skill run open in `under`'s chat run as `ended`.

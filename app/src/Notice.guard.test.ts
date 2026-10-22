@@ -451,6 +451,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". Also its warning that installing ends every chat (WARNING's case), and the channel " +
       "it moved to: what the last press answered, not a standing line",
   },
+  "UseSkill.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ", in the picker and in the arguments form, one shown at a time (#2775). And the " +
+      "dialog's warning that the chat's set is past its skill budget, read as it opens: about " +
+      "the chat the dialog is for, gone with the dialog",
+  },
   "VaultSignIn.tsx": {
     count: 5,
     why:
@@ -572,10 +580,13 @@ function files(dir: string, keep: (name: string) => boolean): string[] {
 
 /** Every source file the window is drawn from: not tests, which name the classes to deny them. */
 const sources = () =>
-  files(SRC, (name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)).map((path) => ({
-    name: relative(SRC, path),
-    text: readFileSync(path, "utf8"),
-  }));
+  // A test and a story draw what they test, not a line of the window.
+  files(SRC, (name) => /\.tsx?$/.test(name) && !/\.(test|stories)\.tsx?$/.test(name)).map(
+    (path) => ({
+      name: relative(SRC, path),
+      text: readFileSync(path, "utf8"),
+    }),
+  );
 
 /**
  * Every JSX opening tag in `source` whose name `named` takes, as its tag name and its attribute

@@ -5,6 +5,7 @@ import { useRef } from "react";
 import * as Alert from "./overlays/alert-dialog";
 import type { RelaunchChoice, RelaunchQuestion } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
+import { Button } from "./ui/button/Button";
 
 /**
  * What a launch asks before it puts anything back (charter-app#250): reopen every session, or
@@ -76,22 +77,15 @@ export function RelaunchAsk({
           </ul>
           <AnswerBar>
             <Alert.Cancel asChild>
-              <button className="ui-button" type="button" ref={reopen} tabIndex={0}>
-                Reopen all sessions
-              </button>
+              <Button ref={reopen}>Reopen all sessions</Button>
             </Alert.Cancel>
             {/* Not the primitive's `Action`: an `Action` also closes the dialog, and closing
                 is this dialog's "Reopen all" — one press would send both answers. */}
             {/* `ends-it`: starting fresh clears the record of what was open, and that cannot be
                 taken back (`docs/design-system.md`, the answer bar). */}
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              onClick={() => onAnswer("StartFresh")}
-            >
+            <Button variant="danger" onPress={() => onAnswer("StartFresh")}>
               Start fresh
-            </button>
+            </Button>
           </AnswerBar>
         </Alert.Content>
       </Alert.Portal>

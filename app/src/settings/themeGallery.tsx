@@ -21,7 +21,9 @@ import {
   BUILT_IN,
   CLASSIC,
   SYSTEM,
-  systemAsksMoreContrast,
+  moreContrastAsked,
+  personAsked,
+  personLook,
   systemIsLight,
   THEME_ALIASES,
   type Theme,
@@ -32,6 +34,7 @@ import { useReadOnlySaid } from "../ReadOnlyLine";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { OptionsList } from "./themeOptions";
 import { useOnScreen, useSpecimen } from "./themeSpecimens";
+import { Button } from "../ui/button/Button";
 
 /**
  * **Settings › Theme is a gallery** (spec #2313, #2331): a card per theme a choice at this level
@@ -366,16 +369,16 @@ function enter(
   }
   const appearance = appearanceFor(card, yours) ?? SYSTEM;
   const light = systemIsLight();
-  const more = systemAsksMoreContrast();
+  const more = moreContrastAsked();
   const values = isYours(card, yours) ? JSON.stringify(yours?.options ?? {}) : "";
-  const key = `${keyOf(at)}\u0000${card.key}\u0000${card.stamp}\u0000${appearance}\u0000${values}\u0000${light}\u0000${more}`;
+  const key = `${keyOf(at)}\u0000${card.key}\u0000${card.stamp}\u0000${appearance}\u0000${values}\u0000${light}\u0000${more}\u0000${personLook()}`;
   const kept = drawnThemes.get(key);
   if (kept) {
     showWhileOn(kept, ticket, cards);
     return;
   }
   void commands
-    .themeCardDrawn(at, card.id, card.level, appearance, light, more)
+    .themeCardDrawn(at, card.id, card.level, appearance, light, more, personAsked())
     .then((answer) => {
       const theme =
         answer.status === "ok" && answer.data?.theme
@@ -952,89 +955,64 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
             className="flex flex-col gap-1"
           >
             <SettingActions>
-              <button
-                type="button"
-                className="ui-button"
-                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                tabIndex={0}
-                disabled={card === undefined || !card.duplicable}
+              <Button
+                isDisabled={card === undefined || !card.duplicable}
                 title={
                   card !== undefined && !card.duplicable
                     ? "A theme of your own extends the built-in theme or another of your own."
                     : undefined
                 }
-                onClick={duplicate}
+                onPress={duplicate}
               >
                 Duplicate as my theme
-              </button>
-              <button
-                type="button"
-                className="ui-button"
-                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                tabIndex={0}
-                disabled={card === undefined || !card.folder}
+              </Button>
+              <Button
+                isDisabled={card === undefined || !card.folder}
                 title={
                   card !== undefined && !card.folder
                     ? `${card.name} has no theme folder: it is ${card.from === "built-in" ? "built into purlis" : "an extension's"}.`
                     : undefined
                 }
-                onClick={open}
+                onPress={open}
               >
                 Open folder
-              </button>
-              <button
-                type="button"
-                className="ui-button"
-                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                tabIndex={0}
-                disabled={card === undefined || noChat !== undefined}
+              </Button>
+              <Button
+                isDisabled={card === undefined || noChat !== undefined}
                 title={noChat}
-                onClick={() => chat(card)}
+                onPress={() => chat(card)}
               >
                 Edit with a chat
-              </button>
-              <button
-                type="button"
-                className="ui-button"
-                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                tabIndex={0}
-                // Once the core has answered for this level, as every button here waits.
-                disabled={gallery === undefined || noChat !== undefined}
+              </Button>
+              <Button
+                isDisabled={gallery === undefined || noChat !== undefined}
                 title={noChat}
-                onClick={() => chat(undefined)}
+                onPress={() => chat(undefined)}
               >
                 New theme
-              </button>
-              <button
-                type="button"
-                className="ui-button"
-                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                tabIndex={0}
-                disabled={!inWorkspace}
+              </Button>
+              <Button
+                isDisabled={!inWorkspace}
                 title={
                   card !== undefined && !inWorkspace
                     ? `${card.name} is not a theme of this workspace.`
                     : MOVE_TO_PROJECT_SAYS
                 }
-                onClick={toProject}
+                onPress={toProject}
               >
                 Use in the whole project
-              </button>
-              <button
-                type="button"
-                className="ui-button"
-                // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-                tabIndex={0}
-                disabled={!inProject}
+              </Button>
+              <Button
+                isDisabled={!inProject}
                 title={
                   card !== undefined && !inProject
                     ? `${card.name} is not a theme of this project.`
                     : undefined
                 }
-                onClick={toMachine}
+                onPress={toMachine}
               >
                 Copy to my machine
-              </button>
+              </Button>
             </SettingActions>
             {said !== undefined && (
               <p className="ui-setting-help" role="status">

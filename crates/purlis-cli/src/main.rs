@@ -64,7 +64,7 @@ mod whereworking;
 /// read them back; this is the one place they become the coloured line `charter/util.py`
 /// prints. `eprintln!("{line}")` would print the mark uncoloured, which is right in a pipe
 /// and wrong in a terminal.
-fn speak(line: purlis_core::repocmd::Say) {
+pub(crate) fn speak(line: purlis_core::repocmd::Say) {
     use purlis_core::repocmd::Say;
     match line {
         Say::Info(text) => voice::info(&text),
@@ -1055,7 +1055,11 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             WorkspaceCommand::List | WorkspaceCommand::Current | WorkspaceCommand::Recall { .. },
         )
         | Command::Persona(memory::PersonaCommand::List)
-        | Command::Skill(skill::SkillCommand::List { .. } | skill::SkillCommand::Show { .. })
+        | Command::Skill(
+            skill::SkillCommand::List { .. }
+            | skill::SkillCommand::Show { .. }
+            | skill::SkillCommand::Restore { name: None },
+        )
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
         | Command::Harness(HarnessCommand::List | HarnessCommand::Show { .. })
@@ -1872,8 +1876,7 @@ fn tell_the_host_about_the_tool_call(
         agent: hookwire::sub_agent(data["agent_id"].as_str(), &purlis_core::envvar::var),
         at_ms: std::time::SystemTime::now()
             .checked_sub(took)
-            .and_then(|began| began.duration_since(std::time::UNIX_EPOCH).ok())
-            .and_then(|since| u64::try_from(since.as_millis()).ok())
+            .map(hookwire::ms_since_1970)
             .unwrap_or_default(),
         skill,
     };
@@ -2095,7 +2098,7 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
         // The skill run the call starts (SK-3): heard once, as the call came back, and
         // never of a call the guard refused, which ran nothing.
         let skill = (purlis_core::hookreg::find(name)
-            .is_some_and(purlis_core::hookreg::Handler::hears_a_call_come_back)
+            .is_some_and(|hook| hook.hears_a_call_come_back() || hook.hears_a_prompt_start())
             && answered.decision != hookwire::Decision::Deny)
             .then(|| hooks::with_hook(&text, now, purlis_core::toolhooks::skill_started))
             .flatten();

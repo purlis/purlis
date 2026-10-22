@@ -54,6 +54,11 @@ struct Model {
     /// The element that has the focus, by its engine id, where the document has the focus
     /// (#2295).
     focused_backend: Option<i64>,
+    /// Whether a box the pointer passes through (`pointer-events: none`) of the page's own
+    /// document lies over the payment frame (#2638).
+    overlay: bool,
+    /// Whether the payment frame's element says no frame it holds (#2638).
+    frame_unnamed: bool,
     history: Value,
     screenshot: Vec<u8>,
     select: Value,
@@ -284,6 +289,43 @@ impl Engine {
                 Ok(json!({ "nodes": model.ax.get(frame).cloned().unwrap_or(json!([])) }))
             }
             "DOM.getFrameOwner" => Ok(json!({"backendNodeId": 50, "nodeId": 0})),
+            // The payment frame's element is drawn at (100, 200), 200 by 60, as its box model
+            // says; anywhere else is the page's own document (#2638).
+            "DOM.getNodeForLocation" => {
+                let (x, y) = (
+                    p["x"].as_f64().unwrap_or(-1.0),
+                    p["y"].as_f64().unwrap_or(-1.0),
+                );
+                let through = p["ignorePointerEventsNone"] == true;
+                Ok(
+                    if (100.0..300.0).contains(&x)
+                        && (200.0..260.0).contains(&y)
+                        && super::lock(&self.model).overlay
+                        && through
+                    {
+                        // Asked to find boxes the pointer passes through, it finds the overlay.
+                        json!({"backendNodeId": 3, "frameId": "PAGE-1"})
+                    } else if (100.0..300.0).contains(&x) && (200.0..260.0).contains(&y) {
+                        json!({"backendNodeId": 50, "frameId": "PAGE-1"})
+                    } else {
+                        json!({"backendNodeId": 3, "frameId": "PAGE-1"})
+                    },
+                )
+            }
+            "DOM.describeNode"
+                if p["objectId"].is_null()
+                    && p["backendNodeId"] == 50
+                    && super::lock(&self.model).frame_unnamed =>
+            {
+                Ok(
+                    json!({"node":{"nodeId":0,"backendNodeId":50,"nodeType":1,"nodeName":"IFRAME","localName":"iframe","nodeValue":""}}),
+                )
+            }
+            "DOM.describeNode" if p["objectId"].is_null() => Ok(if p["backendNodeId"] == 50 {
+                json!({"node":{"nodeId":0,"backendNodeId":50,"nodeType":1,"nodeName":"IFRAME","localName":"iframe","nodeValue":"","frameId":"PAYMENT-FRAME"}})
+            } else {
+                json!({"node":{"nodeId":0,"backendNodeId":p["backendNodeId"],"nodeType":1,"nodeName":"DIV","localName":"div","nodeValue":""}})
+            }),
             "DOM.getBoxModel" => Ok(
                 json!({"model":{"content":[100,200,300,200,300,260,100,260],"padding":[100,200,300,200,300,260,100,260],"border":[100,200,300,200,300,260,100,260],"margin":[100,200,300,200,300,260,100,260],"width":200,"height":60}}),
             ),
@@ -583,6 +625,8 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             ready: "complete".into(),
             titles: HashMap::new(),
             focused_backend: None,
+            overlay: false,
+            frame_unnamed: false,
             history: json!({"currentIndex":0,"entries":[{"id":1,"url":"http://fixture.test/frames.html","userTypedURL":"","title":"","transitionType":"typed"}]}),
             screenshot: white_png(),
             select: json!({"picked":["Blue"]}),

@@ -9,6 +9,7 @@ import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
 import { askLink, askVersion, removePool, startAddingAPool, usePools } from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
+import { Button } from "../ui/button/Button";
 
 /**
  * **You › This machine › Pools** (#2679, the person's rulings of 2026-10-20): the Docker pools
@@ -131,18 +132,11 @@ export function RemovePool({
           </AlertDialog.Description>
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
-                Cancel
-              </button>
+              <Button onPress={onCancel}>Cancel</Button>
             </AlertDialog.Cancel>
-            <button
-              type="button"
-              className="ui-button ui-button-danger ends-it"
-              tabIndex={0}
-              onClick={onRemove}
-            >
+            <Button variant="danger" onPress={onRemove}>
               Remove pool
-            </button>
+            </Button>
           </AnswerBar>
         </AlertDialog.Content>
       </AlertDialog.Portal>
@@ -175,17 +169,14 @@ function PoolEntry({
         {limitsSaid(pool)}
       </span>
       <span className="ui-setting-badge">{linkSaid(link)}</span>
-      <button
-        type="button"
-        className="ui-button ui-button-sm"
-        // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-        tabIndex={0}
+      <Button
+        size="sm"
         aria-label={removing ? `Removing pool ${pool.name}` : `Remove pool ${pool.name}`}
         aria-disabled={removing}
-        onClick={removing ? undefined : remove}
+        onPress={removing ? undefined : remove}
       >
         {removing ? "Removing…" : "Remove"}
-      </button>
+      </Button>
       {typeof link === "object" && link.state === "key_changed" && (
         <Notice
           cause={`pool-key-changed:${pool.name}`}
@@ -302,9 +293,7 @@ const poolsList: LiveSetting = {
           )}
           {/* A project whose pool this machine cannot name is marked under the list. */}
           {marks(shown.filter((one) => rowOf(one) === undefined))}
-          <button type="button" className="ui-button" tabIndex={0} onClick={startAddingAPool}>
-            Add a Docker pool…
-          </button>
+          <Button onPress={startAddingAPool}>Add a Docker pool…</Button>
         </div>
       ),
     };

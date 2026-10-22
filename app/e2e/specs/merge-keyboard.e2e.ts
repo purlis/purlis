@@ -119,7 +119,7 @@ async function measured() {
         // The section's help line spans its content box: the width the list may take.
         content: box(section?.querySelector("p.ui-setting-help")),
         // The section's own Save: a control at its full height.
-        save: box(section?.querySelector(".ui-raw-actions .ui-button")),
+        save: box(section?.querySelector('.ui-raw-actions [data-scope="button"]')),
         names: buttons.map((one) => one.textContent?.trim() ?? ""),
         buttons: buttons.map((one) => ({
           ...box(one),

@@ -10,6 +10,7 @@ import { Menued } from "./Menus";
 import { THUMBNAIL_ACROSS, useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { useProjectShown } from "./projectShown";
 import { onAMac } from "./tabKeys";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A chat's browsers, where the window draws them besides their view tab** (#2024, spec
@@ -140,18 +141,18 @@ function TabBrowser({
   const origin = useBrowserOrigin(shown.browser.program);
   const driver = shown.browser.driver;
   return (
-    <button
-      type="button"
-      className="ui-button ui-button-ghost tab-browser"
-      tabIndex={-1}
+    <Button
+      variant="ghost"
+      excludeFromTabOrder
       aria-label={`Open browser ${shown.browser.name} of ${shown.chat}${
         driver !== null ? `, ${DRIVEN[driver].mark}` : ""
       }`}
       title={browserSaid(shown, origin, onAMac()).join("\n")}
-      onClick={() => onOpen(shown)}
+      onPress={() => onOpen(shown)}
+      className="tab-browser"
     >
       <BrowserThumbnail program={shown.browser.program} driver={driver} />
-    </button>
+    </Button>
   );
 }
 

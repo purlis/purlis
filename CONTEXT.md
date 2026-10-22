@@ -980,6 +980,20 @@ title bar's ✋, which opens the **Inbox**, and each is counted in red on its ta
 show-more hiding it. **Ignore** clears a chat's items until the next one arrives (ADR 0076).
 _Avoid_: notification, alert (an alert is a **Notice**), waiting (for the state)
 
+**Component family**:
+One kind of control the window draws one way everywhere, such as the button (with the icon button
+and the toggle button), the field, the select or the dialog: its variants, its sizes and its
+keyboard, built once in `app/src/ui/<family>` and used by every screen. A screen never builds a
+control of a family by hand, and lint holds it (ADR 0104).
+_Avoid_: component library, design system (that is the tokens, the families and their rules
+together), widget, house component
+
+**Primitive wrapper**:
+The one file in a component family that wraps a React Aria primitive, the only place the
+primitives library is imported. It is where the family's variants, sizes and parts are set, and
+the seam a later change of library would cross (ADR 0104).
+_Avoid_: adapter, shim, HOC
+
 **Notice**:
 A standing line in a project's window about something that is true now, such as a pin to a
 workspace that is gone or a repo that could not be cloned. A Notice always offers a way out:
@@ -1671,6 +1685,13 @@ How many skills, and how many characters of their descriptions, one chat's listi
 its harness. purlis sets it below each harness's own limit and shows it on the chat tab; past
 it, the skill router hides skills behind the index skill (ADR 0102).
 _Avoid_: context budget (for this), skill limit
+
+**Use skill…**:
+Picking one of a chat's skills, from the palette, the chat's tab menu or the Skills chip on its
+pane, and having it typed into the chat in its harness's syntax, with the arguments the skill
+declares, for the person to send. It lists exactly that chat's skill set, manual-only skills
+included, and its run starts when that prompt is sent (#2775).
+_Avoid_: skill picker (for the act), run skill, invoke
 
 **Index skill**:
 An always-loaded skill a skill router shows whenever it hides any skill, listing every hidden

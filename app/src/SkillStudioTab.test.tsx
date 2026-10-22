@@ -25,6 +25,7 @@ afterEach(() => {
 function answering(studio: unknown) {
   mockIPC((cmd) => {
     if (cmd === "skill_studio") return studio;
+    if (cmd === "skills_deleted") return [];
     throw new Error(`unexpected ${cmd}`);
   });
 }
@@ -35,6 +36,9 @@ describe("the Skill studio", () => {
       on: true,
       workspace: null,
       workspaces: [],
+      levels: [],
+      harnesses: [],
+      clashes: [],
       skills: [
         {
           name: "deploy",
@@ -42,9 +46,15 @@ describe("the Skill studio", () => {
           label: "project",
           local: false,
           grant: "root",
+          granted: { to: "root" },
+          turned_off: false,
           on: true,
           left_out: null,
           description: "Deploys the site.",
+          not_granted: null,
+          written: "deploy",
+          named: false,
+          unchecked: null,
           folder: "skills/deploy",
         },
         {
@@ -53,9 +63,15 @@ describe("the Skill studio", () => {
           label: "built-in",
           local: false,
           grant: null,
+          granted: null,
+          turned_off: false,
           on: true,
           left_out: null,
           description: "Keeps secrets.",
+          not_granted: null,
+          written: "secrets",
+          named: false,
+          unchecked: null,
           folder: "/app/plugin/skills/secrets",
         },
         {
@@ -64,9 +80,15 @@ describe("the Skill studio", () => {
           label: "project",
           local: false,
           grant: "root",
+          granted: { to: "root" },
+          turned_off: false,
           on: false,
           left_out: "a built-in skill has this name, and a built-in skill is never replaced",
           description: "",
+          not_granted: null,
+          written: "review",
+          named: false,
+          unchecked: null,
           folder: "skills/review",
         },
       ],
@@ -88,12 +110,16 @@ describe("the Skill studio", () => {
   it("shows a workspace's chats, its own copy over the project's, and both copies", async () => {
     const asked: unknown[] = [];
     mockIPC((cmd, args) => {
+      if (cmd === "skills_deleted") return [];
       if (cmd !== "skill_studio") throw new Error(`unexpected ${cmd}`);
       asked.push(args);
       return {
         on: true,
         workspace: "alpha",
         workspaces: ["alpha", "beta"],
+        levels: [],
+        harnesses: [],
+        clashes: [],
         skills: [
           {
             name: "lint",
@@ -101,9 +127,15 @@ describe("the Skill studio", () => {
             label: "workspace",
             local: false,
             grant: null,
+            granted: null,
+            turned_off: false,
             on: true,
             left_out: null,
             description: "Lints here.",
+            not_granted: null,
+            written: "lint",
+            named: false,
+            unchecked: null,
             folder: "workspaces/alpha/skills/lint",
           },
           {
@@ -112,9 +144,15 @@ describe("the Skill studio", () => {
             label: "project",
             local: false,
             grant: "all",
+            granted: { to: "all" },
+            turned_off: false,
             on: false,
             left_out: "hidden by the workspace skill of this name",
             description: "",
+            not_granted: null,
+            written: "lint",
+            named: false,
+            unchecked: null,
             folder: "skills/lint",
           },
         ],
@@ -126,7 +164,7 @@ describe("the Skill studio", () => {
     const mine = await screen.findByTestId("skill-lint");
     expect(within(mine).getByText("workspace")).toBeInTheDocument();
     const hidden = screen.getByTestId("skill-lint-hidden-1");
-    expect(within(hidden).getByText("all")).toBeInTheDocument();
+    expect(within(hidden).getByText("Every workspace")).toBeInTheDocument();
     expect(
       within(hidden).getByText("Left out: hidden by the workspace skill of this name"),
     ).toBeInTheDocument();
@@ -144,11 +182,15 @@ describe("the Skill studio", () => {
         shared = true;
         return null;
       }
+      if (cmd === "skills_deleted") return [];
       if (cmd !== "skill_studio") throw new Error(`unexpected ${cmd}`);
       return {
         on: true,
         workspace: null,
         workspaces: [],
+        levels: [],
+        harnesses: [],
+        clashes: [],
         skills: [
           {
             name: "scratch",
@@ -156,9 +198,15 @@ describe("the Skill studio", () => {
             label: shared ? "project" : "local project",
             local: !shared,
             grant: "root",
+            granted: { to: "root" },
+            turned_off: false,
             on: true,
             left_out: null,
             description: "Tries it.",
+            not_granted: null,
+            written: "scratch",
+            named: false,
+            unchecked: null,
             folder: shared ? "skills/scratch" : "skills.local/scratch",
           },
         ],
@@ -171,13 +219,22 @@ describe("the Skill studio", () => {
     within(row).getByRole("button", { name: "Share" }).click();
 
     await waitFor(() =>
-      expect(within(screen.getByTestId("skill-scratch")).queryByRole("button")).toBeNull(),
+      expect(
+        within(screen.getByTestId("skill-scratch")).queryByRole("button", { name: "Share" }),
+      ).toBeNull(),
     );
     expect(calls.filter((cmd) => cmd === "skill_studio")).toHaveLength(2);
   });
 
   it("says it is not on while its flag is off", async () => {
-    answering({ on: false, workspace: null, workspaces: [], skills: [] });
+    answering({
+      on: false,
+      workspace: null,
+      workspaces: [],
+      skills: [],
+      harnesses: [],
+      clashes: [],
+    });
     render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
     expect(await screen.findByTestId("skill-studio-off")).toBeInTheDocument();
   });
@@ -192,6 +249,9 @@ describe("the Skill studio", () => {
         workspace: null,
         persona: "ops",
         workspaces: ["alpha"],
+        levels: [],
+        harnesses: [],
+        clashes: [],
         skills: [
           {
             name: "triage",
@@ -202,6 +262,9 @@ describe("the Skill studio", () => {
             on: true,
             left_out: null,
             description: "Triages.",
+            granted: null,
+            turned_off: false,
+            not_granted: null,
             folder: "personas/ops/skills/triage",
             written: "triage",
             named: false,
@@ -216,6 +279,9 @@ describe("the Skill studio", () => {
             on: true,
             left_out: null,
             description: "Deploys.",
+            granted: null,
+            turned_off: false,
+            not_granted: null,
             folder: "skills/deploy",
             written: "deploy",
             named: true,
@@ -230,6 +296,9 @@ describe("the Skill studio", () => {
             on: true,
             left_out: null,
             description: "",
+            granted: null,
+            turned_off: false,
+            not_granted: null,
             folder: "",
             written: "superpowers:tdd",
             named: true,
@@ -298,5 +367,276 @@ describe("the Skill studio", () => {
     const ids = (on: boolean) => catalogue(now(on)).map((offer) => offer.id);
     expect(ids(true)).toContain(SKILL_STUDIO_SHOW);
     expect(ids(false)).not.toContain(SKILL_STUDIO_SHOW);
+  });
+});
+
+const ROW = {
+  local: false,
+  grant: null,
+  granted: null,
+  turned_off: false,
+  not_granted: null,
+  on: true,
+  left_out: null,
+  owner: null,
+  switch: null,
+};
+
+/** A studio with one project skill, `review`, and Claude Code's own skills and plugins. */
+function withClaudeCode(offLangfuse: boolean) {
+  return {
+    on: true,
+    workspace: null,
+    workspaces: [],
+    levels: [],
+    skills: [
+      {
+        ...ROW,
+        name: "review",
+        level: "project",
+        label: "project",
+        grant: "root",
+        description: "Reviews.",
+        folder: "skills/review",
+      },
+      {
+        ...ROW,
+        name: "secrets",
+        level: "built-in",
+        label: "built-in",
+        description: "Keeps secrets.",
+        folder: "/app/plugin/skills/secrets",
+      },
+    ],
+    clashes: [
+      {
+        name: "review",
+        level: "project",
+        local: false,
+        harness: "Claude Code",
+        outside: "repo",
+        owner: { kind: "repo", name: "api" },
+        outcome: "both-load",
+      },
+    ],
+    harnesses: [
+      {
+        harness: "claude",
+        title: "Claude Code",
+        unsupported: null,
+        only_off: null,
+        trouble: null,
+        plugins: [
+          {
+            id: "figma@official",
+            name: "figma",
+            origin: "official, user",
+            installed: true,
+            state: "not-set",
+            pinned: null,
+          },
+          {
+            id: "purlis@inline",
+            name: "purlis",
+            origin: "",
+            installed: false,
+            state: "on",
+            pinned: "purlis@inline is always on: it is purlis's own plugin",
+          },
+        ],
+        skills: [
+          {
+            ...ROW,
+            name: "langfuse",
+            level: "installed",
+            label: "installed",
+            on: !offLangfuse,
+            left_out: offLangfuse ? "turned off for this project's chats" : null,
+            description: "Reads traces.",
+            folder: "/home/.claude/skills/langfuse",
+            owner: { kind: "you" },
+            switch: { kind: "alone" },
+          },
+          {
+            ...ROW,
+            name: "figma:frame",
+            level: "installed",
+            label: "installed",
+            description: "Frames.",
+            folder: "/cache/figma/skills/frame",
+            owner: { kind: "plugin", name: "figma" },
+            switch: {
+              kind: "not",
+              why: "Claude Code turns a plugin's skill off only with the whole plugin, figma",
+            },
+          },
+          {
+            ...ROW,
+            name: "review",
+            level: "repo",
+            label: "repo",
+            description: "The repo's review.",
+            folder: "workspaces/alpha/api/.claude/skills/review",
+            owner: { kind: "repo", name: "api" },
+            switch: { kind: "alone" },
+          },
+        ],
+      },
+      {
+        harness: "opencode",
+        title: "opencode",
+        unsupported: "plugins for opencode are not supported yet — it has no switch",
+        only_off: null,
+        trouble: null,
+        plugins: [],
+        skills: [],
+      },
+    ],
+  };
+}
+
+describe("each program's own skills in the Skill studio (SK-6)", () => {
+  it("lists them read only with whose each is, and says plainly where one cannot be switched", async () => {
+    answering(withClaudeCode(false));
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const claude = await screen.findByTestId("skill-studio-claude");
+    expect(within(claude).getByRole("heading", { name: "Claude Code" })).toBeInTheDocument();
+    const own = within(claude).getByTestId("found-claude-langfuse");
+    expect(within(own).getByText("You")).toBeInTheDocument();
+    expect(within(own).getByRole("button", { name: "Turn off" })).toBeInTheDocument();
+    const plugin = within(claude).getByTestId("found-claude-figma:frame");
+    expect(within(plugin).queryByRole("button")).toBeNull();
+    expect(
+      within(plugin).getByText(
+        /Claude Code turns a plugin's skill off only with the whole plugin, figma/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(within(claude).getByTestId("found-claude-review")).getByText("Repo api"),
+    ).toBeInTheDocument();
+    const pinned = within(claude).getByTestId("plugin-claude-purlis@inline");
+    expect(within(pinned).queryByRole("button")).toBeNull();
+    expect(
+      within(screen.getByTestId("skill-studio-opencode")).getByText(
+        /plugins for opencode are not supported yet/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("marks a project skill a repo also has, and says a built-in skill is always on", async () => {
+    answering(withClaudeCode(false));
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    expect(await screen.findByTestId("clash-review")).toHaveTextContent(
+      "the repo api has a skill of this name too, and a chat there gets both",
+    );
+    expect(
+      within(screen.getByTestId("skill-secrets")).getByText(/cannot be turned off/),
+    ).toBeInTheDocument();
+  });
+
+  it("turns one off through the core and reads the project again", async () => {
+    let off = false;
+    const asked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "skill_studio_switch") {
+        asked.push(args);
+        off = true;
+        return null;
+      }
+      if (cmd === "skill_studio") return withClaudeCode(off);
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const row = await screen.findByTestId("found-claude-langfuse");
+    within(row).getByRole("button", { name: "Turn off" }).click();
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("found-claude-langfuse")).getByText(
+          "Left out: turned off for this project's chats",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(asked).toEqual([
+      { plane: "p", workspace: null, harness: "claude", what: "skill", id: "langfuse", on: false },
+    ]);
+  });
+
+  it("says what the core refused, and changes nothing", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_studio_switch") throw "Claude Code turns it off only with its plugin";
+      if (cmd === "skill_studio") return withClaudeCode(false);
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    const plugin = await screen.findByTestId("plugin-claude-figma@official");
+    within(plugin).getByRole("button", { name: "Turn off" }).click();
+    expect(
+      await screen.findByText("Claude Code turns it off only with its plugin"),
+    ).toBeInTheDocument();
+  });
+
+  it("offers Codex a plugin's way back as Leave to Codex, saying its own config decides", async () => {
+    const studio = withClaudeCode(false);
+    const codexHarness = {
+      harness: "codex",
+      title: "Codex",
+      unsupported: null,
+      only_off: "Codex is handed a plugin only to turn it off",
+      trouble: null,
+      plugins: [
+        {
+          id: "zp@zmkt",
+          name: "zp",
+          origin: "zmkt, on in config.toml",
+          installed: true,
+          state: "off",
+          pinned: null,
+        },
+      ],
+      skills: [],
+    };
+    answering({ ...studio, harnesses: [...studio.harnesses, codexHarness] });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const codex = await screen.findByTestId("skill-studio-codex");
+    const plugin = within(codex).getByTestId("plugin-codex-zp@zmkt");
+    expect(within(plugin).getByRole("button", { name: "Leave to Codex" })).toBeInTheDocument();
+    expect(
+      within(codex).getByText(/Codex's own config decides whether a plugin is on/),
+    ).toBeInTheDocument();
+  });
+
+  it("says a Codex or opencode chat in the repo gets the repo's copy alone", async () => {
+    const studio = withClaudeCode(false);
+    studio.clashes = [{ ...studio.clashes[0], harness: "opencode", outcome: "repo-wins" }];
+    answering(studio);
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    expect(await screen.findByTestId("clash-review")).toHaveTextContent(
+      "the repo api has a skill of this name too, and opencode chats there get the repo's copy alone",
+    );
+  });
+
+  it("renames the project's copy from the clash mark, through the studio's own Rename", async () => {
+    const asked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "skill_rename") {
+        asked.push(args);
+        return { notes: [] };
+      }
+      if (cmd === "skill_studio") return withClaudeCode(false);
+      if (cmd === "skills_deleted") return [];
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const clash = await screen.findByTestId("clash-review");
+    within(clash).getByRole("button", { name: "Rename the project's copy" }).click();
+    const form = await screen.findByRole("form", { name: "Rename review" });
+    expect(within(form).getByLabelText("New name")).toBeInTheDocument();
   });
 });

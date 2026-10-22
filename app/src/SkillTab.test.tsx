@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillTab } from "./SkillTab";
+import { SkillTab, startedBySaid } from "./SkillTab";
 
 afterEach(() => {
   cleanup();
@@ -78,5 +78,12 @@ describe("a skill's Runs panel, for a use from before runs were recorded", () =>
     expect(row.textContent).toContain("From before runs were recorded");
     expect(row.textContent).toContain("Not recorded");
     expect(row.getAttribute("aria-current")).toBeNull();
+  });
+});
+
+describe("what started a run", () => {
+  it("says a load through purlis's tools in plain words", () => {
+    expect(startedBySaid("mcp-load")).toBe("The chat loaded the skill");
+    expect(startedBySaid("skill-tool")).toBe("The chat's Skill tool");
   });
 });

@@ -2575,6 +2575,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
                 "seatbelt".to_owned(),
             )),
             grants_as: None,
+            skills: None,
         },
     );
 
@@ -2647,6 +2648,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 )),
                 composed_by_its_host: false,
                 grants_as: None,
+                skills: None,
             },
         );
     };
@@ -3083,6 +3085,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 )),
                 composed_by_its_host: false,
                 grants_as: None,
+                skills: None,
             },
         );
     };
@@ -3141,7 +3144,7 @@ fn ready_under(
         declared: None,
         session: None,
         how: purlis_core::reopen::Reopened::Fresh(Fresh::NoConversationRecorded),
-        plugins: std::collections::BTreeMap::new(),
+        plugins: purlis_core::harness_plugin::Chosen::new(),
         sandbox: Some(sandbox),
         unsandboxed: None,
         floorless: None,
@@ -5714,7 +5717,7 @@ fn a_shell_ready() -> purlis_core::start::Ready {
         declared: None,
         session: None,
         how: Reopened::Fresh(Fresh::NoConversationRecorded),
-        plugins: std::collections::BTreeMap::new(),
+        plugins: purlis_core::harness_plugin::Chosen::new(),
         sandbox: None,
         unsandboxed: None,
         floorless: None,
@@ -6538,7 +6541,7 @@ fn the_sidebar_is_told_the_harness_a_chat_was_started_as_not_one_read_off_its_pr
         how: purlis_core::reopen::Reopened::Fresh(
             purlis_core::reopen::Fresh::NoConversationRecorded,
         ),
-        plugins: std::collections::BTreeMap::new(),
+        plugins: purlis_core::harness_plugin::Chosen::new(),
         sandbox: None,
         unsandboxed: None,
         floorless: None,
@@ -6652,7 +6655,7 @@ fn a_chat_whose_profile_names_a_key_in_a_vault_its_persona_may_not_read_starts_n
         how: purlis_core::reopen::Reopened::Fresh(
             purlis_core::reopen::Fresh::NoConversationRecorded,
         ),
-        plugins: std::collections::BTreeMap::new(),
+        plugins: purlis_core::harness_plugin::Chosen::new(),
         sandbox: None,
         unsandboxed: None,
         floorless: None,
@@ -6735,7 +6738,7 @@ fn the_board_is_told_the_harness_the_profile_declared_before_the_program_starts(
         how: purlis_core::reopen::Reopened::Fresh(
             purlis_core::reopen::Fresh::NoConversationRecorded,
         ),
-        plugins: std::collections::BTreeMap::new(),
+        plugins: purlis_core::harness_plugin::Chosen::new(),
         sandbox: None,
         unsandboxed: None,
         floorless: None,
@@ -7272,6 +7275,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 ran: ran.clone(),
                 composed_by_its_host: false,
                 grants_as: None,
+                skills: None,
             },
         );
         let case = format!("compiled {}, recorded {ran:?}", confines.is_some());
@@ -7711,6 +7715,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
                 grants_as: None,
+                skills: None,
             },
         );
     };
@@ -7762,6 +7767,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 composed_by_its_host: false,
                 ran: Some(purlis_session_protocol::session::RunSandbox::Off),
                 grants_as: None,
+                skills: None,
             },
         );
     };
@@ -7953,6 +7959,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                     "seatbelt".to_owned(),
                 )),
                 grants_as: None,
+                skills: None,
             },
         );
     }
@@ -8056,4 +8063,56 @@ fn allowing_a_host_once_from_a_notice_is_refused_and_reaches_no_chat() {
     assert_eq!(*lock(&audited), 0);
     assert!(hosts_of(&one.allowed).is_empty());
     assert!(hosts_of(&two.allowed).is_empty());
+}
+
+/// #2770: **a running chat whose skills changed is told so**, where its harness does not take the
+/// change in by itself: a Claude Code chat for an edit to a skill's text, which a Codex chat reads
+/// from where it lies, and both for a skill added. A chat on no harness is never told.
+#[test]
+fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").expect("a manifest");
+    let skill = |name: &str, body: &str| {
+        let folder = plane.path().join("skills").join(name);
+        std::fs::create_dir_all(&folder).expect("a skill folder");
+        std::fs::write(
+            folder.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n\n{body}\n"),
+        )
+        .expect("a skill");
+    };
+    skill("deploy", "one");
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    for (session, harness) in [
+        (1, Some(Harness::ClaudeCode)),
+        (2, Some(Harness::Codex)),
+        (3, None),
+    ] {
+        lock(&chats.open).insert(
+            session,
+            Running {
+                chat: a_resumable_chat_in(plane.path()),
+                how: Reopened::Fresh(Fresh::NoConversationRecorded),
+                harness,
+                declared: None,
+                workspace: None,
+                confinement: None,
+                confines: None,
+                started_with: StartedWith::default(),
+                composed_by_its_host: false,
+                ran: None,
+                grants_as: None,
+                skills: harness.map(|harness| {
+                    purlis_core::skills::stamp_of(plane.path(), None, None, harness)
+                }),
+            },
+        );
+    }
+    assert_eq!(chats.skills_changed_while_on(), Vec::<u32>::new());
+
+    skill("deploy", "two");
+    assert_eq!(chats.skills_changed_while_on(), [1]);
+
+    skill("triage", "one");
+    assert_eq!(chats.skills_changed_while_on(), [1, 2]);
 }

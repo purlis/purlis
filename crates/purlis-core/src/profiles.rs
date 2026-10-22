@@ -563,6 +563,7 @@ pub fn derive_with(
             && key != crate::extension::project::TABLE
             && key != crate::extension::project::theme::TABLE
             && key != crate::harness_plugin::TABLE
+            && key != crate::harness_plugin::SKILLS_TABLE
             && key != "plane"
             && key != "repos"
             && key != crate::sandbox::TABLE

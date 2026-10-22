@@ -140,11 +140,22 @@ async function raise(
       // As `Notice` marks one with an answer besides Dismiss: what the pane's row stands first
       // (#1647), so a Notice this file raises is one of the two that stand.
       if (ways.some((way) => way !== "Dismiss")) box.setAttribute("data-asks", "");
-      const line = el("div", "notice notice-pane notice-trouble ui-button-row");
+      // The line is a small `ButtonRow` of the button family's buttons (#2904).
+      const line = el("div", "notice notice-pane notice-trouble");
+      Object.assign(line.dataset, { scope: "button-row", size: "sm", wraps: "" });
       line.setAttribute("role", "status");
       line.append(el("div", "notice-says", sentence));
       for (const way of ways) {
-        const button = el("button", "notice-fix ui-button ui-button-sm", way);
+        const button = el("button", "notice-fix");
+        Object.assign(button.dataset, {
+          scope: "button",
+          part: "root",
+          variant: "secondary",
+          size: "sm",
+        });
+        const label = el("span", "", way);
+        Object.assign(label.dataset, { scope: "button", part: "label" });
+        button.append(label);
         button.setAttribute("type", "button");
         button.tabIndex = 0;
         line.append(button);
@@ -1144,10 +1155,13 @@ describe("the Ask persona dialog", () => {
           ),
         );
       const answers = el("div", "ui-setting-actions");
-      answers.append(
-        el("button", "ui-button ui-button-primary", "Ask devops"),
-        el("button", "ui-button", "Cancel"),
-      );
+      // The button family's buttons (#2904), as `Button` draws them.
+      const family = (variant: string, words: string) => {
+        const button = el("button", "", words);
+        Object.assign(button.dataset, { scope: "button", part: "root", variant, size: "md" });
+        return button;
+      };
+      answers.append(family("primary", "Ask devops"), family("secondary", "Cancel"));
       form.append(answers);
       dialog.append(el("h2", "", "Ask devops"), form);
       document.body.append(scrim, dialog);

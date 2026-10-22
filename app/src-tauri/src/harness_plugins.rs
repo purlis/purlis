@@ -21,6 +21,9 @@ pub struct HarnessPlugins {
     /// "plugins for <harness> are not supported yet — <why>", or none where charter applies
     /// a project's choice to the chats it starts.
     pub unsupported: Option<String>,
+    /// "<harness> is handed a plugin only to turn it off — <why>" (SK-6, #2769), where a chat
+    /// can be handed a plugin turned off and not one turned on: Codex's.
+    pub only_off: Option<String>,
     /// Where charter read what it has installed: the file or directory, as this app's own
     /// environment names it. A profile that points the harness elsewhere is listed against its
     /// own directory when its chat starts.
@@ -90,6 +93,7 @@ fn groups(
             harness: group.adapter.harness().to_owned(),
             title: group.adapter.title().to_owned(),
             unsupported: harness_plugin::not_supported(group.adapter),
+            only_off: harness_plugin::only_off(group.adapter),
             record: group.record.map(|path| path.display().to_string()),
             trouble: group.trouble,
             plugins: group
@@ -164,7 +168,14 @@ mod tests {
             .collect();
         assert_eq!(
             titles,
-            [("Claude Code", false), ("opencode", true), ("Codex", true)]
+            [("Claude Code", false), ("opencode", true), ("Codex", false)]
+        );
+        assert!(
+            got[2].only_off.as_deref().is_some_and(
+                |said| said.starts_with("Codex is handed a plugin only to turn it off")
+            ),
+            "{:?}",
+            got[2].only_off
         );
         let figma = got[0]
             .plugins
@@ -193,12 +204,12 @@ mod tests {
             own.pinned
         );
         assert!(
-            got[2]
+            got[1]
                 .unsupported
                 .as_deref()
-                .is_some_and(|said| said.starts_with("plugins for Codex are not supported yet")),
+                .is_some_and(|said| said.starts_with("plugins for opencode are not supported yet")),
             "{:?}",
-            got[2].unsupported
+            got[1].unsupported
         );
     }
 

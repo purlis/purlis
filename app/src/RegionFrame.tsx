@@ -53,6 +53,7 @@ import { moveAlong, sequenceIn } from "./tabSequence";
 import { inADialog } from "./paneKeyboard";
 import { CHAT_KEYBOARD } from "./actions";
 import { forgetFrameScroll, useViewScroll } from "./viewScroll";
+import { IconButton } from "./ui/button/Button";
 
 /**
  * **The window, drawn from the arrangement** (ADR 0038, and `regions.ts` for why the
@@ -706,19 +707,15 @@ function Half({
                   ref={drawn.actionRef(view)}
                 />
               ))}
-              <button
-                type="button"
-                className="panel-view half-away"
-                // Not a Tab stop, so the half is one: its view's (P-13). The keyboard puts the
-                // half away on its open Lower icon, or the Panel with ⌘J. Written down, as
-                // WebKit wants every button's (#190).
-                tabIndex={-1}
+              <IconButton
+                size="sm"
+                excludeFromTabOrder
                 aria-label={`Put the panel's ${side} half away`}
                 title={`Put the panel's ${side} half away`}
-                onClick={() => open !== undefined && drawn.onPick?.(open)}
-              >
-                <ChevronDown className="node-icon" aria-hidden="true" />
-              </button>
+                onPress={() => open !== undefined && drawn.onPick?.(open)}
+                icon={<ChevronDown className="node-icon" aria-hidden="true" />}
+                className="half-away"
+              />
             </div>
             <RegionViews placed={placed} drawn={drawn} />
           </>

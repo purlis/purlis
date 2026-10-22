@@ -5,7 +5,9 @@
 //! the whole config opencode reads from `OPENCODE_CONFIG_CONTENT` ([`crate::opencode`] has the
 //! measurements).
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
+use super::adapter::{
+    HarnessAdapter, RuleFile, Sandbox, SkillStart, SkillToStart, input_text, slash_with_words,
+};
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
@@ -44,6 +46,12 @@ impl HarnessAdapter for Opencode {
     ///
     /// No plugin choice: opencode has no switch that turns one plugin off.
     ///
+    /// **A skill the project turned off** (SK-6, #2769) is denied in the same config's
+    /// `permission.skill`, by its name: a denied skill is left out of the list the model is
+    /// shown (`Skill.available` in `skill/index.ts`, opencode 1.18.33; measured through
+    /// `OPENCODE_PERMISSION`, the same merge), and a call to it is refused. opencode merges
+    /// objects key by key, so the operator's own rules stand beside it.
+    ///
     /// Its skills are its set's ([`crate::skills::for_chat`]): the built-in skills' directory,
     /// and the `skills/` of the folder of links to the plane's that the host laid out
     /// ([`crate::skills::linked`]), are handed to the shim as its option, which adds them to the skills opencode discovers for
@@ -55,7 +63,7 @@ impl HarnessAdapter for Opencode {
         &self,
         kit: Kit<'_>,
         _cwd: Option<&std::path::Path>,
-        _plugins: &crate::harness_plugin::Chosen,
+        plugins: &crate::harness_plugin::Chosen,
         sandbox: Sandbox<'_>,
     ) -> StateHooks {
         let Some(shim) = kit
@@ -79,6 +87,7 @@ impl HarnessAdapter for Opencode {
                         &skill_dirs(kit),
                         Some(kit.binary),
                         sandbox.applied().is_some(),
+                        &crate::skills::skills_off_for(kit, Harness::Opencode, plugins),
                     ),
                 ),
                 (crate::opencode::PURE_ENV.to_owned(), "0".to_owned()),
@@ -130,6 +139,23 @@ impl HarnessAdapter for Opencode {
             .then(|| input_text(input, "name"))
             .flatten()
             .map(|skill| SkillStart::Named(skill.to_owned()))
+    }
+
+    /// **opencode 1.18.33** (research of 2026-10-20, `session/prompt.ts`): every skill is also
+    /// a slash command, `/<name>`, by its own name; what follows is split into words, a quoted
+    /// run being one (`"[^"]*"|'[^']*'|[^\s"']+`), for `$1..$n`, and `$ARGUMENTS` is the raw line.
+    /// So each value is one quoted word, in the declared order.
+    fn skill_start_text(&self, skill: &SkillToStart<'_>) -> String {
+        let head = format!("/{}", self.skill_name(skill.name, skill.origin));
+        slash_with_words(&head, skill.given)
+    }
+
+    /// opencode 1.18.33 puts every skill in its system prompt with no limit at all, so purlis's
+    /// budget is the only one its chats have (ADR 0102 §1), and no description is cut. A
+    /// manual-only skill is listed too: 1.18.33 reads no field that keeps it out, until the
+    /// translation (#2771).
+    fn skill_budget(&self) -> crate::skills::Budget {
+        super::SKILL_BUDGET
     }
 
     /// `permission.bash` of the project's `opencode.json`, which holds command globs: a
@@ -312,5 +338,49 @@ mod tests {
             serde_json::json!({"type": "local", "command": ["/bin/charter", "mcp"], "enabled": true})
         );
         assert!(config["plugin"].is_array(), "{config}");
+    }
+
+    #[test]
+    fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name() {
+        // SK-6 (#2769): opencode's `permission.skill` goes by the name alone, so a built-in
+        // skill's name is never denied, whatever a file says.
+        let bundle = tempfile::tempdir().expect("a bundle");
+        let shim = crate::opencode::shim_in(bundle.path());
+        std::fs::create_dir_all(shim.parent().expect("a parent")).expect("dirs");
+        std::fs::write(&shim, "").expect("the shim");
+        let secrets = bundle.path().join("skills/secrets");
+        std::fs::create_dir_all(&secrets).expect("a built-in skill");
+        std::fs::write(
+            secrets.join("SKILL.md"),
+            "---\nname: secrets\ndescription: Keeps secrets.\n---\n",
+        )
+        .expect("its SKILL.md");
+        let chosen = crate::harness_plugin::Chosen {
+            plugins: std::collections::BTreeMap::new(),
+            skills_off: ["review".to_owned(), "secrets".to_owned()].into(),
+        };
+        let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
+            Kit {
+                skills: None,
+                binary: std::path::Path::new("/bin/charter"),
+                plugin: Some(bundle.path()),
+                persona: None,
+            },
+            None,
+            &chosen,
+            None,
+        ) else {
+            panic!("armed per session");
+        };
+        let config = env
+            .iter()
+            .find(|(name, _)| name == crate::opencode::CONFIG_ENV)
+            .map(|(_, value)| value)
+            .expect("the session config");
+        let config: serde_json::Value = serde_json::from_str(config).expect("JSON");
+        assert_eq!(
+            config["permission"],
+            serde_json::json!({ "skill": { "review": "deny" } })
+        );
     }
 }

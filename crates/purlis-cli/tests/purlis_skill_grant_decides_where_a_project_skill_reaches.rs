@@ -37,16 +37,21 @@ impl Project {
 
     fn run(&self, args: &[&str]) -> Output {
         let root = self.root();
-        support::purlis()
+        let mut command = support::purlis();
+        command
             .args(args)
             .current_dir(&root)
             .env("CHARTER_ROOT", &root)
             .env("HOME", self.at.join("home"))
             .env("PURLIS_CONFIG_HOME", self.at.join("home/config"))
             .env("PURLIS_SKILL_STUDIO", "1")
-            .env("NO_COLOR", "1")
-            .output()
-            .unwrap()
+            .env("NO_COLOR", "1");
+        // Run from a terminal, even where this test runs inside a chat: a chat changes no skill
+        // itself (#2770).
+        for spelling in purlis_core::envvar::spellings("PURLIS_SESSION_ID") {
+            command.env_remove(spelling);
+        }
+        command.output().unwrap()
     }
 
     /// The state `purlis skill list -w <ws>` gives `name`, at its first row.

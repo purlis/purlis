@@ -266,7 +266,7 @@ an unknown token is.
 
 | Family | Parts | Variants |
 |---|---|---|
-| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept) |
+| `button` | `root` (every property), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`) | `secondary`, `primary`, `ghost`, `danger`, `grants` (an Allow or an Accept); since version 2 `soft-accent`, `warning-soft` and `link` |
 
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
 keyboard is on it), `disabled` and `open`.
@@ -314,6 +314,11 @@ drawn on; a border that is the part's only edge, on a fill that is its ground or
 3:1. A part that breaks one draws its family default in that variant and state, and the check
 says each as a `part-falls-back` warning. A disabled control is exempt, as WCAG has it.
 
+**A family's grounds are every surface the window draws it on**: for a button, the window's
+surfaces and the strips' layers, and a Notice's danger surface and wash among them. A wash is
+read laid over the surface under it. `app/src/theme/grounds.test.ts` finds them from the components, and fails until the
+manifest lists a new one.
+
 **The consent floors hold whatever a theme changed** (ADR 0097 §6), as it is written and in
 every workspace tint, and two looks are compared by the colours they draw, never by the tokens'
 names:
@@ -327,16 +332,20 @@ names:
   same theme, measured on what a person reads as the look as it shows on each surface;
 - danger's words stay apart from the accent and from the primary's words.
 
+**A theme's tokens alone keep Allow apart from the primary** (#2948): the button family's
+defaults, drawn from the theme's tokens, are measured the same way, at rest and in each state, as
+written and in each of the theme's own tints. A theme whose tokens bring the two together is
+drawn with purlis's own fill for the primary, and Allow's own fill only when that is not enough,
+under the consent floors' Notice.
+
 A consent variant that breaks one draws its family default there, and where that is not enough,
 so does the variant it is held apart from. Allow's lock is the window's, and no property reaches
 it.
 
-**On today's controls.** The button family's rules also reach its class (`.ui-button`, each
-variant's class and the native states). A variant that is not consent never reaches a button
-that also carries a consent variant's class, so such a button draws as that consent variant. A
-size (`padding`, `gap`, `font-size`, `font-weight`, `height`, `border-width`) never reaches a
-small button (`.ui-button-sm`) or a button in a wrapping row, whose size their own classes keep,
-and a small button's corners are clamped to its own height.
+**Sizes.** A size (`padding`, `gap`, `font-size`, `font-weight`, `height`, `border-width`) is
+the family's default size, md: it never reaches a button drawn at sm or lg, or one in a row that
+wraps, whose size the family keeps, and an sm or lg button's corners are clamped to its own
+height. A button names one variant, so a variant's rule reaches only a button of that variant.
 
 The strip tabs, a tab's `×` closer, the gear on a strip and the list and tree rows are not
 families with parts today: they are drawn as the note under [Geometry](#geometry) says.
@@ -350,7 +359,14 @@ numbers, placeholders, counts, paths and group labels; none of it is exempt, and
 takes faint. The check measures every text tier at 4.5:1 and faint at 3:1 on every ground a
 part draws them on: the window, a field, the status bar, a panel, a card, the row under the
 pointer, the editor's code, the selected row, the tab in front and a control, at rest and
-under the pointer. **A tier the layer below draws in the grey of the tier above it follows
+under the pointer. **No theme draws a tier under its floor** (ruling #2803·3, ADR 0098's
+amendment of 2026-10-21): a tier that falls under it on one of those grounds, as written or in a
+workspace tint, is drawn as the nearest colour that clears it, the theme's own colour walked
+along its lightness with its hue kept, and the check says so as a `tier-falls-back` warning
+beside the pair's own. A lifted tier can read as loud as the tier above it: the floor comes
+before the order. Where no lightness clears every ground (a dark window with a light code
+ground), the floor is held on the window's own surfaces, a tier that already clears them keeps
+its colour, and the check names the ground on the other side. **A tier the layer below draws in the grey of the tier above it follows
 that tier** (ADR 0097's amendment of 2026-10-21): over Purlis Classic, whose quiet and faint are
 its muted, a theme that names `text.muted` and not `text.quiet` draws quiet in its muted, and one
 that names no `text.faint` draws faint in its quiet. So a theme written before the tiers draws
@@ -404,7 +420,8 @@ each layer under it as a warning names them, its ratio and the tint it was found
   is the author's call; the theme is drawn.
 - **Consent floors** (an ask contrasts with its surface, Allow is distinguishable from Keep
   blocked, the danger colours contrast with what they are drawn on, danger is distinguishable
-  from primary, the state marks meet the mark floor) hold in every combination. A combination
+  from primary, the state marks meet the mark floor, Allow is distinguishable from the primary)
+  hold in every combination. A combination
   that breaks one, an option value's included, is drawn with purlis's own values for those
   tokens and the rest as written, and the window says so in a Notice.
 - **Hard floors** are the few rules that keep the window readable whatever a theme says, each

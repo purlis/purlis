@@ -123,6 +123,7 @@ import { StripTablist, useTabIds } from "./StripTablist";
 import { noTabs, SETTINGS_TAB_TITLE } from "./tabs";
 import { useTextSizes } from "./textSize";
 import { MAIN, runElsewhere, thisWindow, useOtherWindows, useRunHere } from "./windows";
+import { Button } from "./ui/button/Button";
 
 /**
  * Puts the app's own `charter` on a terminal's `PATH`, and answers what the core said — the
@@ -1428,6 +1429,7 @@ function App() {
       restartChat: () => undefined,
       restartListed: () => undefined,
       askPersona: () => undefined,
+      useSkill: () => undefined,
       unlinkWorkItem: async () => nowhere(),
       focusWorkspace: () => undefined,
       pickClone: () => undefined,
@@ -2427,9 +2429,7 @@ function App() {
             <section className="view-pane" aria-label={SETTINGS_TAB_TITLE}>
               <header className="view-head">
                 <h2>{SETTINGS_TAB_TITLE}</h2>
-                <button type="button" tabIndex={0} onClick={() => setSettingsAlone(false)}>
-                  Done
-                </button>
+                <Button onPress={() => setSettingsAlone(false)}>Done</Button>
               </header>
               <div className="view-body">
                 <SettingsTab />

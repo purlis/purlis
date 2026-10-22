@@ -2340,6 +2340,31 @@ impl Hooks {
             .map_err(|why| why.to_string())
     }
 
+    /// **Use skill… typed a skill into chat `number`**, unsent (SK-12): `typed` is held for its
+    /// run, which opens once a prompt shows it was sent, in the event log and on the chat's tab
+    /// alike, started by Use skill…. Best effort: a log that is not open, or refused the line,
+    /// starts no run there and the chip still shows it, as a run is only ever a record of what
+    /// the chat did.
+    pub fn skill_typed(&self, root: &Path, number: u32, typed: purlis_core::skillspan::Typed) {
+        self.skill_runs.typed(number, typed.clone());
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(events) = events
+            && let Err(why) = events.record(Entry::SkillTyped {
+                plane: root.to_path_buf(),
+                number,
+                typed,
+            })
+        {
+            tracing::warn!(
+                "purlis: the skill typed into chat {number} was not held for its run: {why}"
+            );
+        }
+    }
+
     /// **Audits a sandbox grant or revoke** (#1342) in the host's event log, under chat
     /// `number` where it came from one, and made durable before it answers. Refused where this
     /// machine has no event log open: a grant nobody recorded is never made.

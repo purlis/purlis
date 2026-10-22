@@ -74,8 +74,10 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
+mod skillchange;
 mod skillrun;
 mod skillstudio;
+mod useskill;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg(all(test, unix))]
 mod behaviour;
@@ -3444,6 +3446,10 @@ pub fn run() {
             // The local project out of the config home a chat's sandbox denies (#1670), after
             // rename-local named the folders and before any project opens.
             firstrun::move_the_local_project();
+            // The copies of Docker's settings that runs which ended outright left behind
+            // (#2893): off the launch's path, and only those older than a day.
+            #[cfg(unix)]
+            std::thread::spawn(purlis_core::dockerpool::settings::sweep_at_start);
             // Each harness folder this machine uses becomes a profile in place, before any chat
             // starts (ADR 0095 §2, #2033): from the app's own environment, which its chats are
             // started from. Off in the scenario build, whose home is the person's.

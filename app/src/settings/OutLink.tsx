@@ -4,6 +4,7 @@
 import type { ReactNode } from "react";
 import type { PlaneId } from "../bindings";
 import { askSettingsAction } from "./links";
+import { Button } from "../ui/button/Button";
 
 /**
  * **A link out of Settings, drawn** (#1387, #1388): a button, the shared one (DS-9), that
@@ -24,15 +25,8 @@ export function OutLink({
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      className="ui-button"
-      aria-label={label}
-      // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-      tabIndex={0}
-      onClick={() => askSettingsAction(plane, action)}
-    >
+    <Button aria-label={label} onPress={() => askSettingsAction(plane, action)}>
       {children}
-    </button>
+    </Button>
   );
 }

@@ -904,12 +904,14 @@ pub fn posttooluse_skill(hook: &Hook) -> Answer {
 pub fn skill_started(hook: &Hook) -> Option<Box<crate::hookwire::SkillStarted>> {
     use crate::harness::{Harness, SkillStart};
     use purlis_skills::runs::StartedBy;
-    let harness = crate::envvar::lookup(crate::hookwire::HARNESS_ENV, hook.env)
-        .and_then(|kind| Harness::of_kind(&kind))
-        .unwrap_or(Harness::ClaudeCode);
-    let start = harness
-        .adapter()
-        .skill_start(hook.tool_name(), hook.tool_input())?;
+    let kind = crate::envvar::lookup(crate::hookwire::HARNESS_ENV, hook.env);
+    let adapter = Harness::of_chat(kind.as_deref())?.adapter();
+    // A prompt the person sent started a skill (SK-12): only the start of a skill Use skill…
+    // typed, which the host holds and alone opens; logged nowhere where no host listens.
+    if let Some(skill) = adapter.prompt_started(hook.payload) {
+        return Some(Box::new(skill_run(hook, skill, StartedBy::UseSkill)));
+    }
+    let start = adapter.skill_start(hook.tool_name(), hook.tool_input())?;
     let (skill, started_by) = match start {
         SkillStart::Named(skill) => (skill, StartedBy::SkillTool),
         SkillStart::Reading(read) => {
@@ -923,26 +925,59 @@ pub fn skill_started(hook: &Hook) -> Option<Box<crate::hookwire::SkillStarted>> 
             (skill.name.clone(), StartedBy::Read)
         }
     };
-    let started = crate::hookwire::SkillStarted {
+    let started = skill_run(hook, skill, started_by);
+    if crate::envvar::lookup(crate::hookwire::SOCKET_ENV, hook.env).is_none() {
+        started_unheard(hook, &started);
+    }
+    Some(Box::new(started))
+}
+
+/// **The skill run a start of `skill` in `hook`'s chat opens**, by `started_by`: its id minted
+/// here, the workspace the chat works in (none at the plane root) and which copy of the skill it
+/// is ([`crate::skills::whose`]). The one maker of a run's start, for a hook and for purlis's MCP
+/// server's `skill_load` alike ([`crate::skilltools::start_run`]).
+pub fn skill_run(
+    hook: &Hook,
+    skill: String,
+    started_by: purlis_skills::runs::StartedBy,
+) -> crate::hookwire::SkillStarted {
+    let session = hook.workspace_session();
+    let workspace =
+        (!hook.at_plane_root(session.as_deref())).then(|| hook.workspace(session.as_deref()));
+    let whose = if hook.in_plane {
+        crate::skills::whose(
+            hook.root,
+            workspace.as_deref(),
+            hook.persona().as_deref(),
+            &skill,
+        )
+    } else {
+        purlis_skills::runs::Whose::default()
+    };
+    crate::hookwire::SkillStarted {
         skill,
         run: crate::reopen::mint(),
         started_by,
-    };
-    if crate::envvar::lookup(crate::hookwire::SOCKET_ENV, hook.env).is_none() && hook.in_plane {
-        let persona = hook.persona();
-        let _ = crate::skilluse::started(
-            hook.root,
-            &crate::skilluse::Starting {
-                id: &started.run,
-                skill: &started.skill,
-                started_by,
-            },
-            persona.as_deref(),
-            hook.now,
-            &hook.log_name(),
-        );
+        workspace: whose.workspace,
+        level: whose.level,
     }
-    Some(Box::new(started))
+}
+
+/// **A run's start no host heard**: a terminal's own harness, or a host its line could not
+/// reach. Logged in the plane's skill log under the active persona, so no use of a skill goes
+/// unrecorded; its end is not, as nothing counts its signals. Nothing outside a plane.
+pub fn started_unheard(hook: &Hook, started: &crate::hookwire::SkillStarted) {
+    if !hook.in_plane {
+        return;
+    }
+    let persona = hook.persona();
+    let _ = crate::skilluse::started(
+        hook.root,
+        &started.into(),
+        persona.as_deref(),
+        hook.now,
+        &hook.log_name(),
+    );
 }
 
 /// `posttooluse_dispatch`: nothing to the harness, since #1451. It logged which persona a

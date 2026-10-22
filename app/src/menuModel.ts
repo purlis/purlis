@@ -203,6 +203,8 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.answer": { said: SAID.answer, slot: "open" },
   "tab.activity": { said: SAID.activity, slot: "open", under: "open" },
   "tab.network": { said: SAID.network, slot: "open", under: "open" },
+  // The row's own words: Use skill…, and the chat's budget where it is known (#2775).
+  "tab.useskill": { said: (offer) => offer.title, slot: "open" },
   "tab.restart": { said: SAID.restart, midTurn: SAID.restartMidTurn, slot: "run" },
   "chat.restart": { said: SAID.restart, midTurn: SAID.restartMidTurn, slot: "run" },
   "chat.stop": stopped(WARNS.stops),

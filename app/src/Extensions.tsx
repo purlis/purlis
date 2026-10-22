@@ -29,8 +29,11 @@ import {
   inForce,
   PREFERS_LIGHT,
   PREFERS_MORE_CONTRAST,
+  moreContrastAsked,
+  onPersonLook,
+  personAsked,
+  personLook,
   sameTheme,
-  systemAsksMoreContrast,
   systemIsLight,
   THEME_ALIASES,
   type Theme,
@@ -48,6 +51,7 @@ import { AnswerBar } from "./AnswerBar";
 import { EmptyState } from "./EmptyState";
 import { yourEditor } from "./yourEditor";
 import { setDraftHere } from "./themeDrafts";
+import { Button } from "./ui/button/Button";
 
 /**
  * What has contributed what to this window, and the question charter asks before anything new
@@ -197,9 +201,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
               two buttons sat in the middle, on an engine that will not tab to a `<button>`
               whose `tabindex` is not written down. Reviewing or removing an extension was a
               mouse-only act, on the one surface in the window that is about trust. */}
-          <button className="ui-button" type="button" tabIndex={0} onClick={() => void add()}>
-            Add an extension…
-          </button>
+          <Button onPress={() => void add()}>Add an extension…</Button>
 
           {/* What went wrong, drawn as trouble (#630). Not yet a live region: `Notice.guard`
               counts every one by file, and that guard is another lane's this round. */}
@@ -219,22 +221,8 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                   Open in your editor is where it is mended (#1296). A row of their own under
                   the sentence, not two buttons inside it (#1719). */}
               <SettingActions>
-                <button
-                  className="ui-button"
-                  type="button"
-                  tabIndex={0}
-                  onClick={() => void reread()}
-                >
-                  Read again
-                </button>
-                <button
-                  className="ui-button"
-                  type="button"
-                  tabIndex={0}
-                  onClick={() => void openRecord()}
-                >
-                  Open in your editor
-                </button>
+                <Button onPress={() => void reread()}>Read again</Button>
+                <Button onPress={() => void openRecord()}>Open in your editor</Button>
               </SettingActions>
             </>
           )}
@@ -290,16 +278,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                     {troubleSaid(trouble)}
                   </span>
                 ))}
-                {row.ask && (
-                  <button
-                    className="ui-button"
-                    type="button"
-                    tabIndex={0}
-                    onClick={() => setAsking(row.ask)}
-                  >
-                    Review
-                  </button>
-                )}
+                {row.ask && <Button onPress={() => setAsking(row.ask)}>Review</Button>}
                 {row.source === "app" ? (
                   // On or off the moment it is turned: the settings set's switch (#1860), named
                   // by the extension and the words beside it, which turn it too.
@@ -318,14 +297,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                     </label>
                   </span>
                 ) : (
-                  <button
-                    className="ui-button"
-                    type="button"
-                    tabIndex={0}
-                    onClick={() => void forget(row.id)}
-                  >
-                    Remove
-                  </button>
+                  <Button onPress={() => void forget(row.id)}>Remove</Button>
                 )}
               </li>
             ))}
@@ -351,9 +323,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
           )}
 
           <AnswerBar>
-            <button className="ui-button" type="button" tabIndex={0} onClick={onClose}>
-              Done
-            </button>
+            <Button onPress={onClose}>Done</Button>
           </AnswerBar>
         </Dialog.Content>
       </Dialog.Portal>
@@ -468,10 +438,11 @@ export async function themeOptionsInForce(): Promise<readonly WindowOption[]> {
       picked,
       on,
       systemIsLight(),
-      systemAsksMoreContrast(),
+      moreContrastAsked(),
       false,
       where,
       null,
+      personAsked(),
     );
     if (answered.status !== "ok") return [];
     const given = answered.data as typeof answered.data | null;
@@ -518,6 +489,8 @@ export function forgetExtensionThemes() {
   unfollowSystem = undefined;
   unfollowContrast?.();
   unfollowContrast = undefined;
+  unfollowLook?.();
+  unfollowLook = undefined;
   unfollowFolders?.();
   unfollowFolders = undefined;
   forgetTheirTheme();
@@ -635,11 +608,43 @@ let following = false;
  * default may choose a theme folder (#2602), so the core is asked.
  */
 function handedFor(pick: string | null): Theme | undefined {
+  // What was handed was drawn with the person's colours and contrast as the window was created:
+  // once Settings changed them, the core is asked (#2925).
+  if (personLook() !== lookHanded) return undefined;
   const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
   if (pick === null) return where === null ? undefined : theirThemeOnce();
   if (pick === CLASSIC) return DEFAULT_THEME;
   const id = has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
   return has(BUILT_IN, id) ? BUILT_IN[id] : undefined;
+}
+
+/** The person's look the window was handed its themes in: what {@link handedFor} draws. */
+const lookHanded = personLook();
+
+/** How to stop following the person's look, while it is followed. */
+let unfollowLook: (() => void) | undefined;
+
+/** **Draws again when Settings changes the person's colours or contrast** (#2925): the engine
+ *  draws them into the theme it answers with. One follower for the life of the window, started
+ *  by the first draw. */
+function followLook() {
+  unfollowLook ??= onPersonLook(() => void drawWhatIsInForce());
+}
+
+/** Says, or takes back, which of the person's colours the theme in force leaves out, and why
+ *  (#2925): each would put a pair under its floor in this theme. */
+function sayYourColours(mine: readonly string[] | undefined) {
+  sayAboutThisMachine(
+    "your colours",
+    mine !== undefined && mine.length > 0
+      ? {
+          severity: "warn",
+          detail: mine.join("; "),
+          remedy: "pick another colour in Settings, or clear it to draw the theme's",
+          settings: "you.colours",
+        }
+      : undefined,
+  );
 }
 
 /** Puts `theme` in force, unless it is already what is drawn — so the terminal is told only of
@@ -676,6 +681,7 @@ function draw(theme: Theme) {
 export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> {
   const mine = ++drawing;
   followContrast();
+  followLook();
   followThemeFolders();
   if (reread) surveyAgain = true;
   const handed = handedFor(picked);
@@ -703,10 +709,11 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
       picked,
       on,
       systemIsLight(),
-      systemAsksMoreContrast(),
+      moreContrastAsked(),
       again,
       where,
       null,
+      personAsked(),
     );
   } catch {
     return;
@@ -720,6 +727,7 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   following = given.follows_system === true;
   if (following) followSystem();
   sayTheRefused(given.refused, given.review ?? null);
+  sayYourColours(Array.isArray(given.mine) ? given.mine : undefined);
   if (given.theme) {
     const theme = given.theme as unknown as Theme;
     // The person's own theme file, drawn (no level chose): its way out is Use built-in.
@@ -778,10 +786,11 @@ async function drawADraftOver(mine: number): Promise<void> {
       picked,
       on,
       systemIsLight(),
-      systemAsksMoreContrast(),
+      moreContrastAsked(),
       false,
       where,
       null,
+      personAsked(),
     );
   } catch {
     return;
@@ -814,10 +823,11 @@ export async function compareWithKept(held: boolean): Promise<void> {
       picked,
       on,
       systemIsLight(),
-      systemAsksMoreContrast(),
+      moreContrastAsked(),
       false,
       where,
       true,
+      personAsked(),
     );
   } catch {
     return;

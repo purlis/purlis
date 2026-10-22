@@ -618,11 +618,11 @@ appearance and option values, and no option value can bring a consent surface be
   (an answer's button, Allow's and Keep blocked's alike, at rest and under the pointer) and on
   `danger.wash` over the window and over a dialog, and `needs-you.text` on `needs-you.base`;
 - **Allow is distinguishable from Keep blocked**: on every ask of the two they carry equal
-  weight. Keep blocked is the plain `.ui-button`, edged in `border.strong`; each Allow is
-  `.ui-button-grants`, on the same `control.base` ground, edged in `accent.base` and led by an
+  weight. Keep blocked is the plain `Button`, edged in `border.strong`; each Allow is
+  `variant="grants"`, on the same `control.base` ground, edged in `accent.base` and led by an
   open lock, a cue that is not colour. The two edges are at least 0.1 apart in OKLab as the theme
   writes them, and `accent.base` clears 3:1 on `control.base` and on `control.hover`, so the edge
-  that tells them apart is seen. `.ui-button-primary` stays the answer purlis suggests and is
+  that tells them apart is seen. `variant="primary"` stays the answer purlis suggests and is
   never a grant's;
 - **the danger colours contrast with what they are drawn on**: every pair of `PAIRS` whose front
   is a `danger.*` token;
@@ -1068,6 +1068,12 @@ has it; nothing reads the key after that.
   not one is its default, and the Inbox says so. Settings and the size keys
   (`⌘`/`Ctrl` with `=`, `-`, `0`, `app/src/textSize.ts`) write it; it is in this file and not in
   a plane because a size is this machine's, and a plane would carry it to every clone.
+- **`appearance`** is what the person sets that every theme honours (#2326, #2925):
+  **`density`** (`comfortable` or `compact`), **`fonts`** (a family for `ui`, `mono` and
+  `terminal`), **`motion`** (`system` or `reduced`), **`contrast`** (`standard` or `more`) and
+  **`colours`** (a colour for each token the person sets, `#rgb`, `#rgba`, `#rrggbb` or
+  `#rrggbbaa`). Leave any out for its default; Settings › You writes them. A value the engine
+  cannot use is its default, and the Inbox says so.
 - **`editor`** is your editor (RC-20, ADR 0081 §3), where *Open in your editor* sends a file
   at a line: `vscode`, `zed`, `idea` (a JetBrains IDE) or `variable` (`$VISUAL`, else
   `$EDITOR`, from purlis's own environment, run with `+line` and the file). Leave it out and
@@ -1146,7 +1152,9 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 ### The vocabulary
 
 `DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Nine names, written to the document as
-`--motion-duration-*` and `--motion-easing-*` beside the colours:
+`--motion-duration-*` and `--motion-easing-*` beside the colours. The built-ins are Purlis
+Classic's; Purlis draws `duration.quick` at 150 ms and `easing.standard` and `easing.enter` on
+the shell's one ease (below):
 
 | token              | built-in           | what it is for                                                          |
 | ------------------ | ------------------ | ----------------------------------------------------------------------- |
@@ -1159,6 +1167,11 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 | `easing.enter`     | `[0, 0, 0.2, 1]`   | decelerating into place, which is what reads as _arrived_               |
 | `easing.steady`    | `[0, 0, 1, 1]`     | a turn; an eased one stutters once a second                             |
 | `easing.breathe`   | `[0.4, 0, 0.6, 1]` | a loop with no visible seam                                             |
+
+**The shell's motion rule** (R150, #2925): one ease, `cubic-bezier(.22, .8, .24, 1)`, which
+Purlis gives `easing.standard` and `easing.enter`, and 150 ms for a chevron and a switch's knob,
+Purlis's `duration.quick`. Each of the shell's other steps is a duration token that arrives with
+the motion it times.
 
 **Semantic, not a scale**, for the reason `needs-you.base` and `danger.base` are two tokens: a
 theme that wants arrivals quicker changes `duration.enter` and does not also speed up whatever
@@ -1195,8 +1208,15 @@ A theme file carries them under `motion`, beside `tokens`:
 
 ### Reduced motion is the layer's job, once
 
-Under `prefers-reduced-motion: reduce`, `drawIn` writes **every duration as `0ms`**, and follows
-the setting live if the operator changes it while the window is up. A transition over no time is
+Under `prefers-reduced-motion: reduce`, or with **Reduce motion** on in Settings › You › Motion
+and contrast (#2925, layered on the system's: either one is enough), `drawIn` writes **every
+duration as `0ms`**, and follows the setting live if the operator changes it while the window is
+up. It also writes `data-motion="reduced"` on the root, which **one global switch** reads
+(`app/src/theme/reduced-motion.css`, R152): no transition, and every animation plays its whole
+run at once, so a motion written without a token stops too, and a component waiting for an
+animation's end still hears it. xterm blinks its cursor on a timer of its own, so under reduced
+motion every terminal is told not to blink, whatever the theme says. The switch's declarations are important in the first layer,
+so no later layer turns motion back on. A transition over no time is
 no transition, and a looping animation with a zero duration has a zero active duration (Web
 Animations), so a spinner does not spin and a pulse does not pulse. **A component written
 tomorrow gets this for free, because it reads a token** — and `literals.test.ts` refuses a
@@ -1332,6 +1352,37 @@ for the slot (`purlis_core::theme::Person`), so a family that is not installed f
 core's. The terminal reads its family from the theme too (`terminalFont`), and its old literal
 is core's terminal family.
 
+**The person's colours are drawn over any theme, held to the floors** (#2925, ruling #2814·8).
+Settings › You › Your colours takes a colour for any token of the vocabulary, one
+`token #colour` a line, and the engine draws each over the theme in force, whatever it is
+(`purlis_core::theme::Layer::over`). A colour that would put a pair of the check under its floor
+in that theme, and lower than the theme has it, is left out there and the theme's is drawn; a
+Notice names each one. The consent floors are held after the person's colours, as after a
+theme's option values, so a colour can no more bring danger near the accent than a theme can.
+
+**Minimum contrast is the person's too** (#2925, ruling #2814·7). Settings › You › Motion and
+contrast offers the theme's floors or more. More is layered on the system's Increase contrast:
+it draws a theme's high-contrast appearance where it has one, as the system's does, and it
+raises the floors the engine holds, words from 4.5:1 to 7:1 (WCAG 1.4.6) and marks from 3:1
+to 4.5:1 (`purlis_core::theme::Least`). A pair under its raised floor has its front drawn
+lighter on a dark ground or darker on a light one, in small steps toward white or black, and
+then its back the other way where the back is not one of the window's grounds. Where the back
+has to move, the two may swap sides instead, dark words on a light mark, when that leaves fewer
+pairs under their floors. Marks are raised before words. A grey tier is raised as far as the
+tier above it and never past it, so muted words can at most match secondary ones and the tiers
+keep their order. A floor under a mark's, a hint's, is not raised. The consent floors are held
+at the raised floors, with purlis's own values raised where a theme's are put back, in the
+theme as written and in every workspace tint. A theme's component parts are held to the raised
+floors too, and one under them draws its family default. The window's tokens, the terminal's
+colours and the parts' stylesheet all come from the one theme the engine answers with, so the
+setting holds everywhere.
+
+**Each window asks with its own layer.** The window hands the engine its person's contrast and
+colours with each ask of a theme, and is handed its first frame drawn with the layer the layout
+file held as it was created. A theme's specimen and the gallery's card pictures show the theme
+itself and are drawn without the layer; a card drawn on the window while the pointer is on it
+wears it.
+
 ### The core tokens
 
 Lengths that should grow with the words are in rem, written as "N px at 14px"
@@ -1438,12 +1489,11 @@ closed manifest (`purlis_core::theme::parts`, printed by `purlis theme parts`), 
 outside its bound and any size inside a state, holds the floors per part and state, and writes
 one stylesheet keyed on `data-scope`, `data-part`, `data-variant` and React Aria's state
 attributes, which `theme.ts` puts in the `parts` layer, above `components` and below `forced`.
-A theme that names no parts writes nothing there, so the controls' own classes draw it.
-`primitives/controls.css` is the family default the engine measures against, held to it by
-`parts_tests.rs`. The button family's rules also reach its class (`.ui-button`, with each
-variant's class and the native state), so a theme's parts draw on today's markup; a size or a
-border width never reaches `.ui-button-sm` or `.ui-button-row > .ui-button`, and a
-variant that is not consent never reaches a button that also carries a consent variant's class. `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
+A theme that names no parts writes nothing there, so the family's own stylesheet draws it.
+`ui/button/button.css` is the family default the engine measures against, held to it by
+`parts_tests.rs`. A size or a border width a theme sets is the family's md size and never
+reaches a button at sm or lg or in a wrapping row, and a variant's rule reaches only a button of
+that variant (#2904). `crates/purlis-core/docs/themes.md` has the grammar, the bounds and the floors.
 
 ### The control baseline
 
@@ -1530,13 +1580,14 @@ third, `type.guard.test.ts`, is [the text roles'](#the-type-guard), #1920):
   and a strip's cap on a tab are each that box's own.
 - **`controls.guard.test.ts`** fails on a control that does not wear its class
   (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
-  `asChild` (`ui-button`, or a row, segment or menu row), an `<input>` or `<textarea>`
+  `asChild` (a row, segment or menu row; a button of the button family is `Button`, never a
+  native `<button>`), an `<input>` or `<textarea>`
   (`ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
   trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
   (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
   `block-size` or `min-block-size` set on a control is `--size-control`, and one set on a strip
   or a pane header is `--size-chrome`. A control is `--size-chrome` only as the small form: a
-  `.ui-button-sm` or `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
+  `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
   field of several lines is a whole number of controls. A control is what the rule's subject
   names (each selector of a list on its own, a nested rule as its full selector, an `:is()` or
   `:where()` as each selector in it): a `button`, `select`, `textarea` or non-toggle `input`, a

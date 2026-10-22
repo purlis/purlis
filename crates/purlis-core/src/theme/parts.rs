@@ -57,9 +57,9 @@
 //! as drawn, by colour, never by the tokens' names. Where the consent variant's own default is
 //! not enough, the variant it is held apart from draws its default too.
 //!
-//! **On today's markup** a family's rules also reach its class: a variant
-//! that is not consent never reaches a control that carries a consent variant's class too, and
-//! a size never reaches the small or wrapping controls, whose size their own classes keep.
+//! **A size a theme sets is the family's default size** (md for the button): it never reaches a
+//! control drawn at another of the family's sizes, nor one in a row that wraps, whose size the
+//! family's own stylesheet keeps (#2904).
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write as _;
@@ -67,7 +67,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::{Map, Value, json};
 
-use super::check::{contrast, onto};
+use super::check::{contrast, is_opaque, onto, solid};
 use super::geometry::{self, Geometry};
 use super::tint;
 use super::vocabulary::{PLATFORM, TOKENS};
@@ -75,7 +75,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -122,24 +122,13 @@ impl State {
     /// The attribute React Aria sets on a part in this state, which the stylesheet keys on.
     pub fn attribute(self) -> &'static str {
         match self {
-            Self::Hover => "[data-hovered]",
-            Self::Pressed => "[data-pressed]",
+            // An unavailable button is never drawn under the pointer or pressed (#2904).
+            Self::Hover => "[data-hovered]:not([data-disabled])",
+            Self::Pressed => "[data-pressed]:not([data-disabled])",
             Self::Selected => "[data-selected]",
             Self::Focused => "[data-focus-visible]",
             Self::Disabled => "[data-disabled]",
             Self::Open => "[data-open]",
-        }
-    }
-
-    /// The same state on today's control classes.
-    fn on_a_class(self) -> &'static str {
-        match self {
-            Self::Hover => ":hover:not(:disabled, [aria-disabled=\"true\"])",
-            Self::Pressed => ":active:not(:disabled, [aria-disabled=\"true\"])",
-            Self::Selected => "[aria-pressed=\"true\"]",
-            Self::Focused => ":focus-visible",
-            Self::Disabled => ":is(:disabled, [aria-disabled=\"true\"])",
-            Self::Open => "[aria-expanded=\"true\"]",
         }
     }
 
@@ -332,9 +321,6 @@ pub struct Variant {
     pub since: u32,
     pub description: &'static str,
     pub consent: Option<Consent>,
-    /// The class today's markup draws it with; `None`
-    /// for the variant a class without one draws.
-    class: Option<&'static str>,
 }
 
 /// One part of a family.
@@ -357,16 +343,15 @@ pub struct Family {
     pub since: u32,
     pub parts: &'static [Part],
     pub variants: &'static [Variant],
-    /// The surfaces it is drawn on, which a see-through fill shows.
+    /// The surfaces it is drawn on, which a see-through fill shows: every one the window draws it
+    /// on, found from the components (`app/src/theme/grounds.test.ts`).
     pub grounds: &'static [&'static str],
-    /// The class today's markup draws its root with, beside the wrapper's attributes.
-    class: Option<&'static str>,
-    /// The selectors of today's controls of the class whose size the window's own classes keep
-    /// (a small button, a button in a wrapping row): a part's size never reaches them.
+    /// The selectors of the roots drawn at another of the family's sizes, or in a row that keeps
+    /// their size (a button in a wrapping row): a part's size never reaches them.
     keeps_size: &'static [&'static str],
-    /// Today's small controls of the class, and the size token each is drawn at, which their
-    /// corners are clamped to.
-    small: &'static [(&'static str, &'static str)],
+    /// The roots drawn at another of the family's sizes, and the height each is drawn at, as the
+    /// family's stylesheet writes it, which their corners are clamped to.
+    sized_apart: &'static [(&'static str, &'static str)],
     /// The root's height at rest, the size token it is drawn at, which a corner is clamped to.
     height: &'static str,
     /// Its words' size and line height at rest, and its border's width: what fits in its height.
@@ -411,41 +396,83 @@ pub const MANIFEST: &[Family] = &[Family {
             since: 1,
             description: "The plain button.",
             consent: None,
-            class: None,
         },
         Variant {
             name: "primary",
             since: 1,
             description: "The answer purlis suggests.",
             consent: None,
-            class: Some("ui-button-primary"),
         },
         Variant {
             name: "ghost",
             since: 1,
             description: "A button with no box until the pointer reaches it.",
             consent: None,
-            class: Some("ui-button-ghost"),
         },
         Variant {
             name: "danger",
             since: 1,
             description: "What cannot be undone.",
             consent: Some(Consent::Danger),
-            class: Some("ui-button-danger"),
         },
         Variant {
             name: "grants",
             since: 1,
             description: "An answer that grants: an Allow, an Accept.",
             consent: Some(Consent::Grants),
-            class: Some("ui-button-grants"),
+        },
+        Variant {
+            name: "soft-accent",
+            since: 2,
+            description: "A suggestion that is not the answer: the accent's ground, no edge.",
+            consent: None,
+        },
+        Variant {
+            name: "warning-soft",
+            since: 2,
+            description: "What asks for care without ending anything.",
+            consent: None,
+        },
+        Variant {
+            name: "link",
+            since: 2,
+            description: "A button that reads as a link: no box, as tall as its words.",
+            consent: None,
         },
     ],
-    grounds: &["surface.base", "surface.raised", "surface.overlay"],
-    class: Some("ui-button"),
-    keeps_size: &[".ui-button-sm", ".ui-button-row > .ui-button"],
-    small: &[(".ui-button-sm", "size.chrome")],
+    // Every surface a button is drawn on in the window, as `app/src/theme/grounds.test.ts` finds
+    // them from the components; that test fails until a new one is listed here.
+    grounds: &[
+        "surface.base",
+        "surface.raised",
+        "surface.overlay",
+        "surface.sunken",
+        "surface.deep",
+        "border.subtle",
+        "tab.active",
+        "danger.surface",
+        "danger.wash",
+        "layer.project",
+        "layer.workspace",
+        "layer.chat",
+        "layer.selected",
+        "terminal.background",
+    ],
+    keeps_size: &[
+        "[data-size=\"sm\"]",
+        "[data-size=\"lg\"]",
+        "[data-scope=\"button-row\"][data-wraps] > *",
+    ],
+    sized_apart: &[
+        (
+            "[data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]",
+            "max(var(--size-chrome), var(--space-7))",
+        ),
+        (
+            "[data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]",
+            "calc(var(--size-control) + var(--space-2))",
+        ),
+    ],
     height: "size.control",
     font_size: "font-size.base",
     line_height: 1.0,
@@ -464,8 +491,8 @@ struct Look {
 /// `transparent`: the one colour a part may take that is not a token.
 const TRANSPARENT: &str = "transparent";
 
-/// **The button's colours as `app/src/primitives/controls.css` draws them**, which a test holds
-/// to that file: at rest, under the pointer and pressed as a toggle (selected).
+/// **The button's colours as `app/src/ui/button/button.css` draws them**, which a test holds to
+/// that file: at rest, under the pointer and pressed as a toggle (selected).
 fn button_look(variant: &str, state: Option<State>) -> Look {
     let mut look = match variant {
         "primary" => Look {
@@ -488,6 +515,21 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
             text: "text.primary",
             border: "accent.base",
         },
+        "soft-accent" => Look {
+            fill: "accent.surface",
+            text: "text.primary",
+            border: TRANSPARENT,
+        },
+        "warning-soft" => Look {
+            fill: "control.base",
+            text: "state.waiting",
+            border: TRANSPARENT,
+        },
+        "link" => Look {
+            fill: TRANSPARENT,
+            text: "markdown.link",
+            border: TRANSPARENT,
+        },
         _ => Look {
             fill: "control.base",
             text: "text.primary",
@@ -500,6 +542,9 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
                 "primary" => "tab.active",
                 "ghost" => "surface.hover",
                 "danger" => "danger.surface",
+                "soft-accent" => "list.selected",
+                // A link is underlined under the pointer; its ground stays none.
+                "link" => TRANSPARENT,
                 _ => "control.hover",
             };
         }
@@ -514,7 +559,7 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
 
 /// **The distance in OKLab below which a person sees one colour** (`floors.rs`'s scale): how
 /// near Allow's fill is held to Keep blocked's.
-const SEEN: f64 = 0.02;
+pub(super) const SEEN: f64 = 0.02;
 
 /// How much nearer the primary than the family's defaults a consent variant may be drawn: none,
 /// beyond what rounding a colour moves.
@@ -533,10 +578,8 @@ fn look_apart(theme: &ResolvedTheme, family: &Family, a: &Drawn, b: &Drawn, word
     let shown = |fill: &str, ground: &str| {
         hex(theme, fill).map_or_else(|| ground.to_owned(), |fill| onto(fill, ground))
     };
-    let fills = family
-        .grounds
+    let fills = grounds(theme, family)
         .iter()
-        .filter_map(|ground| hex(theme, ground))
         .filter_map(|ground| {
             let (x, y) = (shown(a.fill, ground), shown(b.fill, ground));
             Some(tint::distance(tint::oklab_of(&x)?, tint::oklab_of(&y)?))
@@ -557,6 +600,70 @@ fn look_apart(theme: &ResolvedTheme, family: &Family, a: &Drawn, b: &Drawn, word
 
 /// The variant every family's suggested answer is drawn in.
 const PRIMARY: &str = "primary";
+
+/// **Allow against the primary as a theme's tokens draw them** (#2948): one measure for each
+/// state an answer that grants is drawn in. The token-level floor ([`super::floors`]) holds it.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct AllowLook {
+    /// The state, `None` at rest.
+    pub state: Option<State>,
+    /// How far apart the two looks are drawn ([`look_apart`]).
+    pub apart: f64,
+    /// The primary's fill token, then Allow's: what a floor that fails draws as purlis's own.
+    pub fills: [&'static str; 2],
+}
+
+/// The grounds every family with an answer that grants is drawn on: what its fills are measured
+/// over.
+pub(super) fn allow_grounds() -> impl Iterator<Item = &'static str> {
+    MANIFEST
+        .iter()
+        .filter(|family| {
+            family
+                .variants
+                .iter()
+                .any(|variant| variant.consent == Some(Consent::Grants))
+        })
+        .flat_map(|family| family.grounds.iter().copied())
+}
+
+/// **How far Allow is drawn from the primary by the family defaults alone**, in `theme`: for
+/// every family with an answer that grants, at rest and in each state whose look differs from
+/// it, measured as the parts check measures looks ([`look_apart`]): the fills as each shows on
+/// every ground the family is drawn on, the nearest ground counting, and the edges where they
+/// stand out. A selected toggle is left out: an answer that grants is never a toggle.
+pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
+    let mut found = Vec::new();
+    for family in MANIFEST {
+        let Some(grants) = family
+            .variants
+            .iter()
+            .find(|variant| variant.consent == Some(Consent::Grants))
+        else {
+            continue;
+        };
+        let mut seen: Vec<(Drawn, Drawn)> = Vec::new();
+        for state in std::iter::once(None).chain(
+            STATES
+                .into_iter()
+                .filter(|state| !matches!(state, State::Selected | State::Disabled))
+                .map(Some),
+        ) {
+            let allow = drawn(&[], family, grants.name, state);
+            let primary = drawn(&[], family, PRIMARY, state);
+            if seen.contains(&(allow.clone(), primary.clone())) {
+                continue;
+            }
+            found.push(AllowLook {
+                state,
+                apart: look_apart(theme, family, &allow, &primary, false),
+                fills: [primary.fill, allow.fill],
+            });
+            seen.push((allow, primary));
+        }
+    }
+    found
+}
 
 /// A variant's button colours as the engine holds them, for the test that holds them to
 /// `controls.css`: at rest, under the pointer, and selected.
@@ -1199,16 +1306,44 @@ fn hex<'a>(theme: &'a ResolvedTheme, token: &str) -> Option<&'a str> {
     (value != PLATFORM && !value.is_empty()).then_some(value)
 }
 
+/// **The family's grounds as `theme` draws them**, never none: each opaque one as it is, its
+/// alpha read as drawn, and a wash laid over each opaque one, since a wash is drawn over what is
+/// under it. With no opaque ground, each is measured as its colour drawn opaque; with no ground
+/// purlis can read, on black and on white, the strictest.
+fn grounds(theme: &ResolvedTheme, family: &Family) -> Vec<String> {
+    let given: Vec<&str> = family
+        .grounds
+        .iter()
+        .filter_map(|ground| hex(theme, ground))
+        .collect();
+    let under: Vec<String> = given
+        .iter()
+        .filter(|one| is_opaque(one))
+        .map(|one| solid(one))
+        .collect();
+    if under.is_empty() {
+        let drawn: Vec<String> = given.iter().map(|one| solid(one)).collect();
+        return if drawn.is_empty() {
+            vec!["#000000".to_owned(), "#ffffff".to_owned()]
+        } else {
+            drawn
+        };
+    }
+    let mut drawn = under.clone();
+    for one in given.iter().filter(|one| !is_opaque(one)) {
+        drawn.extend(under.iter().map(|below| onto(one, below)));
+    }
+    drawn
+}
+
 /// The lowest contrast `front` has on `fill` over each of the family's grounds.
 fn lowest(theme: &ResolvedTheme, family: &Family, fill: &str, front: &str) -> Option<f64> {
     let front = hex(theme, front)?;
-    family
-        .grounds
+    grounds(theme, family)
         .iter()
-        .filter_map(|ground| {
-            let ground = hex(theme, ground)?;
-            let back = hex(theme, fill).map_or_else(|| ground.to_owned(), |f| onto(f, ground));
-            Some(contrast(&onto(front, &back), &back))
+        .map(|ground| {
+            let back = hex(theme, fill).map_or_else(|| ground.clone(), |f| onto(f, ground));
+            contrast(&onto(front, &back), &back)
         })
         .reduce(f64::min)
         .map(|ratio| (ratio * 100.0).floor() / 100.0)
@@ -1274,7 +1409,8 @@ fn edge(rules: &[Rule], family: &Family, variant: &str, look: &Drawn) -> Option<
 }
 
 /// What a look a theme changed breaks of the reading floors, if anything: each part's words at
-/// 4.5:1 and its icon at 3:1 on its fill, and a border that is the part's only edge at 3:1.
+/// 4.5:1 and its icon at 3:1 on its fill, and a border that is the part's only edge at 3:1;
+/// with more contrast asked for, each raised as [`super::Least::floor`] raises it (#2925).
 fn unreadable(
     theme: &ResolvedTheme,
     rules: &[Rule],
@@ -1283,7 +1419,8 @@ fn unreadable(
     look: &Drawn,
 ) -> Option<(String, Option<f64>)> {
     for (at, part) in family.parts.iter().enumerate() {
-        let floor = floor_of(part);
+        // With more contrast asked for, the reading floors are raised (#2925).
+        let floor = theme.least.floor(floor_of(part));
         if let Some(ratio) = lowest(theme, family, look.fill, look.words[at])
             && ratio < floor
         {
@@ -1305,17 +1442,18 @@ fn unreadable(
     if let Some(border) = edge(rules, family, variant, look) {
         let fill = hex(theme, look.fill);
         let on_its_ground = fill.is_none_or(|fill| {
-            family
-                .grounds
-                .iter()
-                .any(|ground| hex(theme, ground).is_some_and(|g| g.eq_ignore_ascii_case(fill)))
+            !is_opaque(fill)
+                || grounds(theme, family)
+                    .iter()
+                    .any(|ground| ground.eq_ignore_ascii_case(&solid(fill)))
         });
+        let floor = theme.least.floor(3.0);
         if on_its_ground
             && let Some(ratio) = lowest(theme, family, look.fill, border)
-            && ratio < 3.0
+            && ratio < floor
         {
             return Some((
-                "the root's border contrasts 3:1 with its fill".to_owned(),
+                format!("the root's border contrasts {floor}:1 with its fill"),
                 Some(ratio),
             ));
         }
@@ -1737,11 +1875,9 @@ fn declarations(rule: &Rule, property: Prop, value: PartValue) -> String {
     }
 }
 
-/// The selectors a rule's root is reached by: the wrapper's attributes, and today's class while
-/// the family is drawn by one. On the class, a variant that is not consent never reaches a
-/// control that also carries a consent variant's class, which draws as that one; and `sized`
-/// leaves out the small and wrapping controls (the family's `keeps_size` classes), whose size the
-/// window's own classes keep.
+/// The selectors a rule's root is reached by: the wrapper's attributes, and with `sized` none of
+/// the roots drawn at another of the family's sizes or in a row that keeps their size (the
+/// family's `keeps_size`), whose size the family's own stylesheet keeps.
 fn root_selectors(rule: &Rule, sized: bool) -> Vec<String> {
     let family = rule.family;
     let mut data = format!(
@@ -1751,43 +1887,13 @@ fn root_selectors(rule: &Rule, sized: bool) -> Vec<String> {
     if let Some(variant) = rule.variant {
         let _ = write!(data, "[data-variant=\"{variant}\"]");
     }
+    if sized && !family.keeps_size.is_empty() {
+        let _ = write!(data, ":not({})", family.keeps_size.join(", "));
+    }
     if let Some(state) = rule.state {
         data.push_str(state.attribute());
     }
-    let mut selectors = vec![data];
-    if let Some(class) = family.class {
-        let mut on = format!(".{class}");
-        let classes = |consent: bool| -> Vec<String> {
-            family
-                .variants
-                .iter()
-                .filter(|one| !consent || one.consent.is_some())
-                .filter_map(|one| one.class.map(|c| format!(".{c}")))
-                .collect()
-        };
-        if let Some(name) = rule.variant {
-            let variant = family.variants.iter().find(|one| one.name == name);
-            match variant.and_then(|one| one.class) {
-                Some(own) => {
-                    let _ = write!(on, ".{own}");
-                    if variant.is_some_and(|one| one.consent.is_none()) {
-                        let _ = write!(on, ":not({})", classes(true).join(", "));
-                    }
-                }
-                None => {
-                    let _ = write!(on, ":not({})", classes(false).join(", "));
-                }
-            }
-        }
-        if sized && !family.keeps_size.is_empty() {
-            let _ = write!(on, ":not({})", family.keeps_size.join(", "));
-        }
-        if let Some(state) = rule.state {
-            on.push_str(state.on_a_class());
-        }
-        selectors.push(on);
-    }
-    selectors
+    vec![data]
 }
 
 /// A rule's selector, without specificity: the stylesheet's order alone says which rule wins.
@@ -1805,8 +1911,8 @@ fn selector(rule: &Rule, sized: bool) -> String {
     format!(":where({})", reached.join(", "))
 }
 
-/// Whether a property changes a control's size: what the small and wrapping controls of today's
-/// classes keep as their own.
+/// Whether a property changes a control's size: what the roots at another of the family's sizes
+/// and in a wrapping row keep as their own.
 fn sizes(property: Prop) -> bool {
     matches!(
         property,
@@ -1830,18 +1936,13 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
     }
     rules.sort_by_key(Rule::order);
     let mut sheet = String::from("@layer parts {\n");
-    // The small controls of today's class are clamped to their own height.
+    // The roots at another of the family's sizes are clamped to their own height.
     let corners = rules
         .iter()
         .any(|rule| rule.part == 0 && rule.values.contains_key(&Prop::CornerRadius));
     for family in MANIFEST.iter().filter(|_| corners) {
-        for (class, height) in family.small {
-            let property = geometry::step_of(height)
-                .map_or_else(String::new, |step| format!("var({})", step.property));
-            let _ = writeln!(
-                sheet,
-                "  :where({class}) {{ {HEIGHT_PROPERTY}: {property}; }}"
-            );
+        for (root, height) in family.sized_apart {
+            let _ = writeln!(sheet, "  :where({root}) {{ {HEIGHT_PROPERTY}: {height}; }}");
         }
     }
     for rule in &rules {

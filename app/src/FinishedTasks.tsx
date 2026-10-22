@@ -12,6 +12,7 @@ import { PersonaMark } from "./PersonaMark";
 import { StateShown } from "./StateShown";
 import { useTokensOnHover } from "./tasksUsed";
 import { WaitingTaskWaysContext } from "./waitingTasks";
+import { Button } from "./ui/button/Button";
 
 /**
  * **A chat's finished tasks, under its row in the Chats section** (#1485).
@@ -107,15 +108,14 @@ export const FinishedTasks = memo(function FinishedTasks({
               {open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
               Finished ({folded.length})
             </button>
-            <button
-              type="button"
-              className="ui-button ui-button-sm finished-clear"
-              tabIndex={0}
+            <Button
+              size="sm"
               title="Takes these rows away, and forgets what these tasks and this chat said to each other. Each brief and report stays on its dispatch record."
-              onClick={() => onClear(folded.map((task) => task.id))}
+              onPress={() => onClear(folded.map((task) => task.id))}
+              className="finished-clear"
             >
               Clear finished
-            </button>
+            </Button>
           </div>
         )}
         {open &&
@@ -258,89 +258,81 @@ function FinishedRow({
           )}
         </button>
         {openBrief !== undefined && (
-          <button
-            type="button"
-            className="ui-button ui-button-sm finished-brief"
-            tabIndex={0}
+          <Button
+            size="sm"
             aria-label={briefTitle(task.name)}
             aria-haspopup="dialog"
             title="What this task was sent, as it was sent."
-            onClick={() => openBrief({ dispatch: task.id, name: task.name })}
+            onPress={() => openBrief({ dispatch: task.id, name: task.name })}
+            className="finished-brief"
           >
             Brief
-          </button>
+          </Button>
         )}
         {/* Still a task (`waits`): the ways out a chat that did not start has, and never
           Reopen or Clear, which are for one that has ended. */}
         {waits !== null && ways !== null && (
           <>
-            <button
-              type="button"
-              className="ui-button ui-button-sm finished-reopen"
-              tabIndex={0}
-              disabled={busy}
+            <Button
+              size="sm"
+              isDisabled={busy}
               aria-label={`Try to start ${task.name} again`}
               title="Starts it again as the launch tried to. It stays a task of the chat that asked."
-              onClick={() => doing(ways.retry(task).then(() => undefined))}
+              onPress={() => doing(ways.retry(task).then(() => undefined))}
+              className="finished-reopen"
             >
               Try to start again
-            </button>
+            </Button>
             {waits.approval !== null && (
-              <button
-                type="button"
-                className="ui-button ui-button-sm finished-reopen"
-                tabIndex={0}
-                disabled={busy}
+              <Button
+                size="sm"
+                isDisabled={busy}
                 aria-label={`Review and approve what ${task.name} would run`}
-                onClick={() => waits.approval !== null && ways.approve(task, waits.approval)}
+                onPress={() => waits.approval !== null && ways.approve(task, waits.approval)}
+                className="finished-reopen"
               >
                 Review and approve…
-              </button>
+              </Button>
             )}
             {ending ? (
               <>
-                <button
-                  type="button"
-                  className="ui-button ui-button-sm finished-clear"
-                  tabIndex={0}
-                  disabled={busy}
+                <Button
+                  size="sm"
+                  isDisabled={busy}
                   aria-label={`End ${task.name} now`}
-                  onClick={() => doing(ways.end(task))}
+                  onPress={() => doing(ways.end(task))}
+                  className="finished-clear"
                 >
                   End it
-                </button>
-                <button
-                  type="button"
-                  className="ui-button ui-button-sm finished-clear"
-                  tabIndex={0}
-                  disabled={busy}
+                </Button>
+                <Button
+                  size="sm"
+                  isDisabled={busy}
                   aria-label={`Keep ${task.name}`}
-                  onClick={() => setEnding(false)}
+                  onPress={() => setEnding(false)}
+                  className="finished-clear"
                 >
                   Keep
-                </button>
+                </Button>
               </>
             ) : (
-              <button
-                type="button"
-                className="ui-button ui-button-sm finished-clear"
-                tabIndex={0}
-                disabled={busy}
+              <Button
+                size="sm"
+                isDisabled={busy}
                 aria-label={`End task ${task.name}`}
                 title="Ends the task: the chat that asked is told it failed and why, and it is not tried again. Its conversation can still be reopened as an ordinary chat."
-                onClick={() => setEnding(true)}
+                onPress={() => setEnding(true)}
+                className="finished-clear"
               >
                 End task
-              </button>
+              </Button>
             )}
           </>
         )}
         {/* Reopen and Clear are for a task that has ended. */}
         {waits === null && (
-          <button
-            type="button"
-            className="ui-button ui-button-sm finished-reopen"
-            tabIndex={0}
+          <Button
+            size="sm"
             aria-disabled={cannot !== undefined || busy || undefined}
             aria-label={`Reopen ${task.name}`}
             aria-description={cannot}
@@ -348,38 +340,37 @@ function FinishedRow({
               cannot ??
               "Resumes its conversation as an ordinary chat with a tab. It is no longer a task: it sends no report, and the chat that asked is not told."
             }
-            onClick={reopen}
+            onPress={reopen}
+            className="finished-reopen"
           >
             Reopen
-          </button>
+          </Button>
         )}
         {waits === null && onChanges !== undefined && (
-          <button
-            type="button"
-            className="ui-button ui-button-sm finished-changes"
-            tabIndex={0}
+          <Button
+            size="sm"
             aria-label={`${task.branch === null ? "Changes" : "Review changes"} of ${task.name}`}
             title={
               task.branch === null
                 ? "Opens the files this task's edit tools wrote that are still uncommitted. Edits made by a shell command, and what it committed, are not listed."
                 : "Opens what its own branch changed, with Merge and Discard."
             }
-            onClick={() => onChanges(task)}
+            onPress={() => onChanges(task)}
+            className="finished-changes"
           >
             {task.branch === null ? "Changes" : "Review changes"}
-          </button>
+          </Button>
         )}
         {waits === null && onClear !== undefined && (
-          <button
-            type="button"
-            className="ui-button ui-button-sm finished-clear"
-            tabIndex={0}
+          <Button
+            size="sm"
             aria-label={`Clear ${task.name}`}
             title="Takes this row away, and forgets what this task and its chat said to each other. Its brief and report stay on its dispatch record."
-            onClick={() => onClear([task.id])}
+            onPress={() => onClear([task.id])}
+            className="finished-clear"
           >
             Clear
-          </button>
+          </Button>
         )}
       </div>
       {refused !== undefined && (
@@ -407,15 +398,15 @@ function FinishedRow({
               <p className="report-text report-changed">Changed: {task.changed}</p>
             ) : (
               <p className="report-text report-changed">
-                <button
-                  type="button"
-                  className="report-changed-link ui-button ui-button-ghost ui-button-sm"
-                  tabIndex={0}
+                <Button
+                  size="sm"
+                  variant="ghost"
                   title="Opens what purlis can tell this task changed"
-                  onClick={() => onChanges(task)}
+                  onPress={() => onChanges(task)}
+                  className="report-changed-link"
                 >
                   Changed:
-                </button>{" "}
+                </Button>{" "}
                 {task.changed}
               </p>
             ))}
