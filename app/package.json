@@ -14,7 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run --project unit",
-    "test:stories": "vitest run --project stories",
+    "test:stories": "vitest run --project \"stories *\"",
     "storybook": "storybook dev --port 6006 --no-open",
     "e2e": "wdio run e2e/wdio.conf.ts",
     "e2e:relaunch": "node ../tools/relaunch.mjs",

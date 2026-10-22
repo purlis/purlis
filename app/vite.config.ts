@@ -97,8 +97,8 @@ export default defineConfig(async () => ({
     },
   },
   // Two kinds of test (#2901): `unit`, every `*.test.ts(x)` in jsdom (`npm test`), and
-  // `stories`, every story run in real Chromium and WebKit (`npm run test:stories`,
-  // `.storybook/vitest.project.ts`, `docs/component-stories.md`).
+  // `stories`, every story run in real Chromium and WebKit in each cell of the theme matrix
+  // (`npm run test:stories`, `.storybook/vitest.project.ts`, `docs/component-stories.md`).
   test: {
     projects: [
       {
@@ -111,7 +111,7 @@ export default defineConfig(async () => ({
       },
       // Loaded only when Vitest reads this file: `vite dev` and `vite build` never load
       // Storybook.
-      ...(process.env.VITEST ? [(await import("./.storybook/vitest.project.ts")).stories()] : []),
+      ...(process.env.VITEST ? (await import("./.storybook/vitest.project.ts")).stories() : []),
     ],
   },
 }));

@@ -11,6 +11,7 @@ import { test } from "node:test";
 
 import StoryFailures, {
   annotations,
+  cellOf,
   gateOf,
   REPORT,
   reportPath,
@@ -306,4 +307,39 @@ test("the reporter writes nothing when the variable is unset or not absolute", (
     process.chdir(before);
   }
   assert.deepEqual(readdirSync(dir), []);
+});
+
+test("a failed story is named with the matrix cell it failed in", () => {
+  assert.equal(cellOf("stories purlis_dark (webkit)"), "purlis_dark");
+  assert.equal(
+    cellOf("stories purlis-classic_light_compact (chromium)"),
+    "purlis-classic_light_compact",
+  );
+  assert.equal(cellOf("unit"), undefined);
+  const to = join(
+    mkdtempSync(join(tmpdir(), "story-failures-")),
+    "report.json",
+  );
+  const failedTest = {
+    fullName: "Probe > Steps",
+    result: () => ({
+      errors: [{ message: "the probe would not draw", stack: "" }],
+    }),
+  };
+  reporting(to, (reporter) =>
+    reporter.onTestRunEnd(
+      [
+        {
+          ...moduleOf({ tests: [failedTest] }),
+          project: { name: "stories purlis_light (webkit)" },
+        },
+      ],
+      [],
+      "failed",
+    ),
+  );
+  const report = JSON.parse(readFileSync(to, "utf8"));
+  assert.deepEqual(annotations(report, "webkit"), [
+    "::error title=Probe Steps in webkit%2C purlis_light::src/Probe.stories.tsx: renders: the probe would not draw",
+  ]);
 });
