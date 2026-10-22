@@ -16,6 +16,14 @@ import { Notice } from "./Notice";
  * under way, wherever the person is, with **Cancel download**: nothing of a cancelled download is
  * kept, and its start is refused in words that say so.
  */
+/** Whether two answers show the same downloads, saying the same. */
+function sameDownloads(a: EngineDownloadShown[], b: EngineDownloadShown[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((one, i) => one.program === b[i].program && one.says === b[i].says)
+  );
+}
+
 export function EngineDownloadNotice() {
   const [shown, setShown] = useState<EngineDownloadShown[]>([]);
   const [cancelling, setCancelling] = useState<string | null>(null);
@@ -28,8 +36,10 @@ export function EngineDownloadNotice() {
         .engineDownloads()
         .then((answer) => {
           if (gone || answer.status !== "ok") return;
-          // A window whose core answers nothing (a test's, an older build's) shows none.
-          setShown(Array.isArray(answer.data) ? answer.data : []);
+          // A window whose core answers nothing (a test's, an older build's) shows none, and an
+          // answer that changes nothing renders nothing again.
+          const now = Array.isArray(answer.data) ? answer.data : [];
+          setShown((was) => (sameDownloads(was, now) ? was : now));
         })
         .catch(() => undefined);
     read();
