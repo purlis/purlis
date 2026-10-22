@@ -547,7 +547,9 @@ fn the_window_draws_an_option_value_that_breaks_a_floor_with_purlis_s_values_and
         follow(&theme, Appearance::Dark, Contrast::Standard),
     ] {
         let held = drawn.held.as_ref().expect("the floor was held");
-        assert_eq!(held.floors, [Floor::Danger]);
+        // Its blue accent also brings the primary's fill near Allow's at a hue a workspace's own
+        // colour can take, which is drawn untinted there (#2948).
+        assert_eq!(held.floors, [Floor::Danger, Floor::AllowNotPrimary]);
         assert_eq!(held.tokens, ["danger.surface", "danger.text"]);
         assert!(
             held.said().starts_with("Ember breaks the consent floors"),
