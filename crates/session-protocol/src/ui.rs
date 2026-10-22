@@ -599,6 +599,17 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Share in the Skill studio (#2767): moves a local skill into the shared folder, so the next
     // save commits it to the team. The person's own press in their window.
     "skill_share",
+    // The Skill studio's changes (#2770): making, saving, renaming, moving, deleting and
+    // restoring a skill, its grant and a workspace's turn-off. Each is one commit to the
+    // project, the person's own press in their window. A chat's change is a draft (SK-9).
+    "skill_new",
+    "skill_save",
+    "skill_rename",
+    "skill_move",
+    "skill_delete",
+    "skill_restore",
+    "skill_grant",
+    "skill_turn",
     // Why browsers cannot start for the engine's sandbox, and choosing this machine's Chrome
     // for every browser (#2835): which program runs as the person's browsers' engine is theirs
     // to choose, in their window.
@@ -963,9 +974,15 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_record",
     "set_dismissed",
     "show_window_holding",
+    "skill_lint",
+    "skill_move_needs_grant",
     "skill_runs",
     "skill_studio",
     "skill_studio_on",
+    "skill_templates",
+    "skill_text",
+    "skill_users",
+    "skills_deleted",
     "smart_close_offer",
     "smart_closing",
     "stale_clones",

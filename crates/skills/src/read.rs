@@ -79,17 +79,23 @@ pub fn frontmatter(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// **Where a frontmatter is**, as byte offsets into `text`: from just after the opening `---`
+/// to the start of the next `---`, or `None` where it has none. The one rule every reader and
+/// writer of a frontmatter keeps ([`frontmatter`], and the rename of a skill's text in
+/// [`crate::change`]).
+pub(crate) fn frontmatter_block(text: &str) -> Option<(usize, usize)> {
+    let rest = text.strip_prefix("---")?;
+    let end = rest.find("---")?;
+    Some((3, 3 + end))
+}
+
 /// The lines of a `SKILL.md`'s frontmatter, by the rule [`frontmatter`] reads it by: the block
-/// between the first two `---`, stripped and split as Python splits lines. Empty where there is
+/// [`frontmatter_block`] finds, stripped and split as Python splits lines. Empty where there is
 /// no frontmatter. What a reader of a key that spans lines (a block list) reads.
 pub(crate) fn frontmatter_lines(text: &str) -> Vec<&str> {
-    let Some(rest) = text.strip_prefix("---") else {
-        return Vec::new();
-    };
-    let Some(end) = rest.find("---") else {
-        return Vec::new();
-    };
-    lines(py_strip(&rest[..end]))
+    frontmatter_block(text)
+        .map(|(start, end)| lines(py_strip(&text[start..end])))
+        .unwrap_or_default()
 }
 
 /// `str.strip()`: Python's whitespace is Rust's and the four separator controls U+001C-U+001F.

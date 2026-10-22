@@ -74,6 +74,7 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 mod personaskills;
+mod skillchange;
 mod skillrun;
 mod skillstudio;
 mod useskill;

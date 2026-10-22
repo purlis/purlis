@@ -89,6 +89,10 @@ fill at 4.5:1, an icon at 3:1, and a border that is the part's only edge at 3:1,
 the family is drawn on. A disabled control is exempt, as WCAG has it. A part that breaks one
 draws its family default there, and the theme check says so.
 
+The surfaces a family is drawn on are its manifest entry's grounds, and they are every surface
+the window draws the family on, found from the components by a test in the window that fails
+until the manifest lists a new one (#2959). A wash is measured laid over the surface under it.
+
 **ADR 0097 §6 holds for parts unchanged.** The consent floors are held whatever part of a family
 the theme changes, as the theme is written and in every workspace tint, custom colours included,
 and two looks are compared by the colours they draw, never by the tokens' names:

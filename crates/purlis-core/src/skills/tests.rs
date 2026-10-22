@@ -193,8 +193,8 @@ fn a_workspace_cannot_turn_on_a_skill_the_project_did_not_grant_it_and_is_told_w
     assert_eq!(
         refused,
         "deploy is not granted to smart-ide, so it cannot be turned on there: a workspace only \
-         turns off what the project granted it. The project grants it at its root: purlis skill \
-         grant deploy smart-ide"
+         turns off what the project granted it. Its grant is root: a grant to smart-ide, or to \
+         all, would reach it"
     );
     assert!(
         !plane

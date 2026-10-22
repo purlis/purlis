@@ -2531,6 +2531,9 @@ pub enum Trigger {
     Live,
     /// A workspace renamed (`charter workspace rename`), whose tracked files moved.
     Rename,
+    /// A skill made, edited, renamed, moved, deleted, restored, granted or turned off (#2770):
+    /// from the Skill studio in the window, or by `purlis skill`.
+    Skill(crate::skills::verbs::By),
 }
 
 impl Trigger {
@@ -2540,8 +2543,12 @@ impl Trigger {
     /// which never gets a sign-in, for every save nobody pressed for.
     pub fn caller(self) -> forge::Caller {
         match self {
-            Self::Manual | Self::Live => forge::Caller::window(),
-            Self::Cli | Self::Rename => forge::Caller::command(),
+            Self::Manual | Self::Live | Self::Skill(crate::skills::verbs::By::Window) => {
+                forge::Caller::window()
+            }
+            Self::Cli | Self::Rename | Self::Skill(crate::skills::verbs::By::Command) => {
+                forge::Caller::command()
+            }
             Self::Quiet | Self::SessionEnd | Self::Quit | Self::Launch => forge::Caller::trigger(),
         }
     }
@@ -2556,6 +2563,7 @@ impl Trigger {
             Self::Cli => "cli",
             Self::Live => "live",
             Self::Rename => "rename",
+            Self::Skill(_) => "skill",
         }
     }
 }
@@ -2575,7 +2583,126 @@ pub fn save_as(request: &Request, trigger: Trigger, say: Sink) -> u8 {
 }
 
 /// [`save_as`], for a caller that already holds the plane's [`Claim`].
-pub fn save_claimed(request: &Request, trigger: Trigger, _claim: &Claim, say: Sink) -> u8 {
+pub fn save_claimed(request: &Request, trigger: Trigger, claim: &Claim, say: Sink) -> u8 {
+    save_staging(request, trigger, claim, &SAVE_STAGES, say)
+}
+
+/// What a save of exactly some paths says when something else is staged already.
+pub const OTHERS_STAGED: &str = "Not saved: other changes are staged in this project, and this \
+     save commits only its own files. Commit or unstage them, and the next save takes this one \
+     too.";
+
+/// **A save of exactly `paths`** (#2770), relative to the plane, `/` between their parts: one
+/// commit that holds those paths and nothing else, through the one save ([`save_as`]), so the
+/// plane's mode, its secret guard, its push and its journal are a skill change's too. The
+/// paths-scoped staging of `doctor --fix rename-plane`'s commit, in the save itself.
+///
+/// A path is staged where git tracks something under it, or where it is on disk and git does
+/// not ignore it: a removed folder's files leave the index, a new one's join it, and a local
+/// file (a `skills.local/`, a workspace that is not LIVE) is never named, and each is named
+/// literally. Refused, with nothing staged, for each reason [`paths_unsaved`] gives.
+pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Sink) -> u8 {
+    let Some(claim) = Claim::of(request.root) else {
+        say(Say::Fail(ALREADY_SAVING.into()));
+        return 1;
+    };
+    let root = request.root;
+    if let Some(why) = paths_unsaved(root, paths) {
+        say(Say::Fail(why));
+        return 1;
+    }
+    let named: Vec<String> = paths
+        .iter()
+        .filter(|path| stageable(root, path))
+        .cloned()
+        .collect();
+    if named.is_empty() {
+        say(Say::Info(
+            "Nothing to save: the change is in files that stay on this machine.".into(),
+        ));
+        return 0;
+    }
+    let literal: Vec<String> = named.iter().map(|path| literally(path)).collect();
+    let mut add: Vec<&str> = vec!["add", "-A", "--"];
+    add.extend(literal.iter().map(String::as_str));
+    add.extend(&SAVE_STAGES[4..]);
+    save_staging(request, trigger, &claim, &add, say)
+}
+
+/// Whether `path` (plane-relative) can be named to `git add -A`: git tracks something under it,
+/// or it is on disk and git does not ignore it. A name matching nothing would fail the add.
+fn stageable(root: &Path, path: &str) -> bool {
+    let spec = literally(path);
+    let tracked = git::run(root, &["ls-files", "-z", "--", &spec], git::READ)
+        .is_ok_and(|run| run.ok() && !run.out.is_empty());
+    if tracked {
+        return true;
+    }
+    if std::fs::symlink_metadata(root.join(path)).is_err() {
+        return false;
+    }
+    // `check-ignore -q` exits 0 for an ignored path and 1 for one that is not.
+    git::run(root, &["check-ignore", "-q", "--", path], git::READ)
+        .is_ok_and(|run| run.code == Some(1))
+}
+
+/// `path` as a pathspec git reads letter for letter (`:(literal)`): a folder named `*` or `[a]`
+/// names that folder and no other.
+pub fn literally(path: &str) -> String {
+    format!(":(literal){path}")
+}
+
+/// **Why a save of exactly `paths` would make no commit now**, or `None` where it would: the
+/// project is one purlis may not write, has not been told how it is saved, saves nothing, or
+/// already holds something staged outside `paths`, which the commit would carry. Asked before a
+/// change that only a commit keeps (a skill's delete, #2770), and by [`save_paths`] itself.
+pub fn paths_unsaved(root: &Path, paths: &[String]) -> Option<String> {
+    if let Some(why) = crate::compat::read_only(root) {
+        return Some(format!("nothing was written: {why}"));
+    }
+    match crate::planesave::Settings::read(root).plane.mode.value {
+        None => {
+            return Some(
+                "Not saved: this project has not been told how it is saved yet, so the next \
+                 save takes this change."
+                    .to_owned(),
+            );
+        }
+        Some(crate::planesave::Mode::Off) => {
+            return Some("Not saved: this project's saving is off.".to_owned());
+        }
+        Some(_) => {}
+    }
+    let staged = git::run(root, &["diff", "--cached", "--name-only", "-z"], git::READ);
+    let Some(staged) = staged.ok().filter(git::Run::ok) else {
+        return Some(
+            "Not saved: purlis could not ask git what is staged in this project.".to_owned(),
+        );
+    };
+    let ours = |one: &str| {
+        paths.iter().any(|path| {
+            one == path
+                || one
+                    .strip_prefix(path.as_str())
+                    .is_some_and(|rest| rest.starts_with('/'))
+        })
+    };
+    staged
+        .out
+        .split('\0')
+        .filter(|one| !one.is_empty())
+        .any(|one| !ours(one))
+        .then(|| OTHERS_STAGED.to_owned())
+}
+
+/// [`save_claimed`], staging with `add_cmd`.
+fn save_staging(
+    request: &Request,
+    trigger: Trigger,
+    _claim: &Claim,
+    add_cmd: &[&str],
+    say: Sink,
+) -> u8 {
     let started = std::time::Instant::now();
     let plane = crate::planesave::Settings::read(request.root).plane;
     let mut attempt = Attempt::default();
@@ -2610,7 +2737,7 @@ pub fn save_claimed(request: &Request, trigger: Trigger, _claim: &Claim, say: Si
         commit_push(
             request,
             &plane,
-            &SAVE_STAGES,
+            add_cmd,
             &trigger.caller(),
             &mut attempt,
             say,

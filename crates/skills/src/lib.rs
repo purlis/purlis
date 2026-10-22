@@ -33,6 +33,7 @@
 use std::path::{Path, PathBuf};
 
 pub mod budget;
+pub mod change;
 mod declared;
 mod grant;
 mod load;
@@ -40,6 +41,7 @@ mod read;
 mod reference;
 pub mod runs;
 mod share;
+mod stamp;
 
 pub use budget::{Budget, Over, Spent};
 pub use declared::{Argument, Declared, Given, declared};
@@ -49,6 +51,7 @@ pub use read::{DIR_IN_BUNDLE, frontmatter, in_bundle, listing, read};
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
 pub use share::{named, share};
+pub use stamp::{Reload, Stamp};
 
 /// A skill, as a chat is told about it: a folder in the open SKILL.md format.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -356,16 +359,43 @@ pub fn persona_dir(plane: &Path, persona: &str, local: bool) -> Option<PathBuf> 
 /// workspace's otherwise; its `skills.local/` where `local`. `None` for a workspace name that is
 /// not one plain name, which is no folder of the plane's.
 pub fn level_dir(plane: &Path, workspace: Option<&str>, local: bool) -> Option<PathBuf> {
+    level_rel(workspace, local).map(|rel| plane.join(rel))
+}
+
+/// The folder the plane's workspaces sit in.
+const WORKSPACES_DIR: &str = "workspaces";
+
+/// **The one rule for where a plane level's skills are**, relative to the plane with `/` between
+/// the parts: `skills`, `skills.local`, `workspaces/<ws>/skills`, `workspaces/<ws>/skills.local`.
+/// `None` for a workspace name that is not one plain name. [`level_dir`] is it under a plane, and
+/// [`level_of_rel`] reads it back.
+pub fn level_rel(workspace: Option<&str>, local: bool) -> Option<String> {
     let dir = if local { LOCAL_DIR } else { PROJECT_DIR };
     match workspace {
-        None => Some(plane.join(dir)),
-        Some(ws) => plain(ws).then(|| plane.join("workspaces").join(ws).join(dir)),
+        None => Some(dir.to_owned()),
+        Some(ws) => plain(ws).then(|| format!("{WORKSPACES_DIR}/{ws}/{dir}")),
+    }
+}
+
+/// The level whose skills folder `rel` is, as [`level_rel`] spells it: its workspace (`None` for
+/// the project's) and whether it is local. `None` for any other path.
+pub fn level_of_rel(rel: &str) -> Option<(Option<String>, bool)> {
+    let local = |name: &str| match name {
+        PROJECT_DIR => Some(false),
+        LOCAL_DIR => Some(true),
+        _ => None,
+    };
+    let parts: Vec<&str> = rel.split('/').collect();
+    match parts.as_slice() {
+        [one] => Some((None, local(one)?)),
+        [WORKSPACES_DIR, ws, one] if plain(ws) => Some((Some((*ws).to_owned()), local(one)?)),
+        _ => None,
     }
 }
 
 /// The file beside a skill's `folder` that holds what purlis alone knows about it:
 /// `<folder>.toml` (ADR 0099 §1). Share moves it with the folder.
-pub(crate) fn beside(folder: &Path) -> PathBuf {
+pub fn beside(folder: &Path) -> PathBuf {
     let mut name = folder.file_name().unwrap_or_default().to_os_string();
     name.push(".toml");
     folder.with_file_name(name)
