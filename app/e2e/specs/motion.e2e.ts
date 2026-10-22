@@ -77,6 +77,9 @@ describe("the motion layer", () => {
       const css = getComputedStyle(tab);
       const root = getComputedStyle(document.documentElement);
       return {
+        // The root says motion is off (`theme/reduced-motion.css`, #2925): the system's
+        // reduced motion or purlis's own.
+        off: document.documentElement.getAttribute("data-motion") === "reduced",
         property: css.transitionProperty,
         duration: css.transitionDuration,
         easing: css.transitionTimingFunction,
@@ -87,6 +90,11 @@ describe("the motion layer", () => {
 
     expect(read).not.toBeNull();
     if (read === null) return;
+    if (read.off) {
+      // The one global switch wins the cascade: no transition at all (R152).
+      expect(read.property).toBe("none");
+      return;
+    }
     expect(read.property).toContain("background-color");
     // The engine reports seconds and the token is milliseconds; the same number either way.
     expect(Number.parseFloat(read.duration) * 1000).toBeCloseTo(Number.parseFloat(read.token), 3);

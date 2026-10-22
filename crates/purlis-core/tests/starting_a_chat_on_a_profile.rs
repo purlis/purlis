@@ -635,14 +635,14 @@ fn a_persona_whose_directory_leaves_the_plane_is_refused() {
 /// What the app arms `harness` with for this session, as the app asks for it: the bundled
 /// plugin for Claude Code, the `-c` flags for Codex.
 fn armed(harness: Harness, root: &Path) -> Vec<String> {
-    armed_with(harness, root, &std::collections::BTreeMap::new())
+    armed_with(harness, root, &purlis_core::harness_plugin::Chosen::new())
 }
 
 /// The same, for a chat handed `plugins` — what `start::ready` put on the launch.
 fn armed_with(
     harness: Harness,
     root: &Path,
-    plugins: &std::collections::BTreeMap<String, bool>,
+    plugins: &purlis_core::harness_plugin::Chosen,
 ) -> Vec<String> {
     let binary = root.join("charter");
     let plugin = root.join("plugin");
@@ -822,10 +822,11 @@ fn a_claude_code_chat_is_started_with_exactly_the_plugins_its_project_chose() {
 }
 
 #[test]
-fn a_codex_chat_is_started_with_no_plugin_choice_whatever_its_project_says() {
+fn a_codex_chat_is_started_with_each_plugin_its_project_turned_off() {
     purlis_core::unsteered!();
-    // Codex's adapter cannot apply per chat (measured on 0.147.0), so the choice is shown in the
-    // settings tab as not supported yet and the launch carries nothing for it.
+    // codex-cli 0.163.0 takes `-c plugins."<id>".enabled=false` for one session (measured,
+    // SK-6), so the plugin Codex's own record has installed and the project turned off is
+    // turned off for this chat alone.
     let plane = Plane::new();
     let home = plane.root().join("codex-home");
     fs::create_dir_all(&home).unwrap();
@@ -857,10 +858,14 @@ fn a_codex_chat_is_started_with_no_plugin_choice_whatever_its_project_says() {
     };
     let ready = start::ready(&start, plane.root()).expect("it starts");
 
-    assert!(ready.plugins.is_empty(), "{:?}", ready.plugins);
+    assert_eq!(
+        ready.plugins.plugins,
+        std::collections::BTreeMap::from([("charter@charter".to_owned(), false)])
+    );
     let line = ready.command_line(armed_with(Harness::Codex, plane.root(), &ready.plugins));
     assert!(
-        line.iter().all(|word| !word.contains("plugins")),
+        line.windows(2)
+            .any(|pair| pair[0] == "-c" && pair[1] == "plugins.\"charter@charter\".enabled=false"),
         "{line:?}"
     );
 }

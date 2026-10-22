@@ -402,7 +402,7 @@ export function harnessPluginGroups(harnesses: readonly HarnessPlugins[], scope:
     const chosen = harness.unsupported === null ? harness.plugins.filter((it) => !it.pinned) : [];
     return {
       title: `Harness plugins: ${harness.title}`,
-      note: harness.unsupported ?? undefined,
+      note: harness.unsupported ?? harness.only_off ?? undefined,
       empty:
         harness.unsupported === null
           ? `${harness.title} has no plugin installed on this machine.`

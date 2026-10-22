@@ -1409,7 +1409,8 @@ fn edge(rules: &[Rule], family: &Family, variant: &str, look: &Drawn) -> Option<
 }
 
 /// What a look a theme changed breaks of the reading floors, if anything: each part's words at
-/// 4.5:1 and its icon at 3:1 on its fill, and a border that is the part's only edge at 3:1.
+/// 4.5:1 and its icon at 3:1 on its fill, and a border that is the part's only edge at 3:1;
+/// with more contrast asked for, each raised as [`super::Least::floor`] raises it (#2925).
 fn unreadable(
     theme: &ResolvedTheme,
     rules: &[Rule],
@@ -1418,7 +1419,8 @@ fn unreadable(
     look: &Drawn,
 ) -> Option<(String, Option<f64>)> {
     for (at, part) in family.parts.iter().enumerate() {
-        let floor = floor_of(part);
+        // With more contrast asked for, the reading floors are raised (#2925).
+        let floor = theme.least.floor(floor_of(part));
         if let Some(ratio) = lowest(theme, family, look.fill, look.words[at])
             && ratio < floor
         {
@@ -1445,12 +1447,13 @@ fn unreadable(
                     .iter()
                     .any(|ground| ground.eq_ignore_ascii_case(&solid(fill)))
         });
+        let floor = theme.least.floor(3.0);
         if on_its_ground
             && let Some(ratio) = lowest(theme, family, look.fill, border)
-            && ratio < 3.0
+            && ratio < floor
         {
             return Some((
-                "the root's border contrasts 3:1 with its fill".to_owned(),
+                format!("the root's border contrasts {floor}:1 with its fill"),
                 Some(ratio),
             ));
         }

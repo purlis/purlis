@@ -310,6 +310,7 @@ describe("Settings › Theme's cards (#2331)", () => {
         appearance: "system",
         light: false,
         moreContrast: false,
+        person: null,
       },
     ]);
     fireEvent.pointerLeave(named("Dusk"));

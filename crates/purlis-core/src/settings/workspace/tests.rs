@@ -185,7 +185,8 @@ fn a_settings_key_no_reader_reads_is_refused() {
         refusals(text, "alpha"),
         vec![
             "settings.colour in workspaces/alpha/workspace.json is not read — a workspace's \
-             settings hold extensions, harness_plugins, theme, skills and nothing else"
+             settings hold extensions, harness_plugins, harness_skills, theme, skills and \
+             nothing else"
                 .to_owned()
         ]
     );

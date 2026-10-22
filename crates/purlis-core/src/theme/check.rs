@@ -719,6 +719,16 @@ pub const PAIRS: &[Pair] = &[
 /// **`black` is held lower, and that is not a loophole.** ANSI black on a dark terminal is dim in
 /// every theme there has ever been: it is the colour a program picks when it means "recede". It
 /// still has to be visible, because `ESC[30m` must not be an invisible line, so it clears 1.5.
+/// **Each ANSI colour on the terminal's background, at its own floor** ([`ansi_floor`]), as a
+/// pair: what the check measures of the terminal, in the shape the person's layer and the raised
+/// contrast measure it in (#2925).
+pub(super) fn ansi_pairs() -> impl Iterator<Item = Pair> {
+    TOKENS
+        .iter()
+        .filter(|token| token.starts_with("terminal.ansi."))
+        .map(|token| p(token, "terminal.background", ansi_floor(token)))
+}
+
 pub(super) fn ansi_floor(token: &str) -> f64 {
     if token == "terminal.ansi.black" {
         1.5
@@ -1007,7 +1017,7 @@ fn two_places(ratio: f64) -> f64 {
 }
 
 /// The two hex digits of `#rgb`, `#rgba`, `#rrggbb` or `#rrggbbaa` as six or eight.
-fn long(hex: &str) -> String {
+pub(super) fn long(hex: &str) -> String {
     let digits = hex.strip_prefix('#').unwrap_or(hex);
     if digits.len() <= 4 {
         digits.chars().flat_map(|d| [d, d]).collect()
@@ -1034,7 +1044,7 @@ fn channel(hex: &str, at: usize) -> f64 {
 }
 
 /// WCAG relative luminance.
-fn luminance(hex: &str) -> f64 {
+pub(super) fn luminance(hex: &str) -> f64 {
     0.2126 * channel(hex, 0) + 0.7152 * channel(hex, 1) + 0.0722 * channel(hex, 2)
 }
 

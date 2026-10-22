@@ -1030,6 +1030,7 @@ fn appearance(
         options: Vec::new(),
         tint: base.tint.clone(),
         parts: base.parts.clone(),
+        least: super::Least::Standard,
     })
 }
 
