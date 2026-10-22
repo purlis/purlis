@@ -21,6 +21,9 @@ pub enum Reload {
     /// A listed skill's `SKILL.md`, which the chat reads from where it lies each time the skill
     /// applies: an edit to it is read, and every other change waits for the restart.
     Bodies,
+    /// Everything: the chat asks for its skill set afresh each time it finds or loads a skill,
+    /// so no change waits for a restart.
+    Everything,
 }
 
 /// One chat's plane skills as they were at a moment, by name. Two stamps differ exactly where a
@@ -43,11 +46,14 @@ impl Stamp {
     /// The stamp of `set`'s plane skills for a chat whose harness takes in `reload` by itself.
     /// A `SKILL.md` that cannot be read is stamped as no text, so it reads as changed once it can.
     pub fn of(set: &SkillSet, reload: Reload) -> Stamp {
+        if reload == Reload::Everything {
+            return Stamp::default();
+        }
         let mut rows: Vec<_> = set
             .from_the_plane()
             .map(|effective| {
                 let body = match reload {
-                    Reload::Bodies => None,
+                    Reload::Bodies | Reload::Everything => None,
                     Reload::Nothing => {
                         Some(std::fs::read(&effective.skill.path).unwrap_or_default())
                     }

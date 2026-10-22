@@ -387,6 +387,7 @@ impl Harness {
     /// - The plugin and config routes (Claude Code, opencode): nothing. Claude Code reads a
     ///   `--plugin-dir` plugin's skills at the start (measured twice on 2.1.304), and opencode
     ///   caches discovery and the body per directory (measured on 1.18.33).
+    /// - The MCP route: everything, as its tools ask for the chat's set afresh at each call.
     /// - The briefing route (Codex): the bodies. The `SessionStart` briefing lists each skill
     ///   with its `SKILL.md`'s path, once, and the model reads the file from where it lies each
     ///   time a skill applies, so an edit to a listed skill is read and every other change
@@ -394,6 +395,8 @@ impl Harness {
     pub fn skills_reload(self) -> crate::skills::Reload {
         match self.skills() {
             crate::skills::Route::Briefing => crate::skills::Reload::Bodies,
+            // `skill_find` and `skill_load` work the chat's set out at each call (SK-13).
+            crate::skills::Route::Mcp => crate::skills::Reload::Everything,
             crate::skills::Route::Plugin | crate::skills::Route::Config => {
                 crate::skills::Reload::Nothing
             }
