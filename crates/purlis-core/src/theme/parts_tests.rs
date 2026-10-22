@@ -762,6 +762,21 @@ fn the_buttons_family_default_is_what_button_css_draws() {
             "border": token(declared(pressed, "border-color").unwrap()),
         })
     );
+    // A toggle that is on, under the pointer: its own rule's fill, over every variant's.
+    let pressed_hover = rule(
+        css,
+        &format!("{root}[data-selected][data-hovered]:not([data-disabled])"),
+    );
+    for variant in ["secondary", "primary", "ghost", "danger", "grants"] {
+        assert_eq!(
+            parts::defaults_json(variant)["selected_hover"],
+            json!({
+                "fill": token(declared(pressed_hover, "background-color").unwrap()),
+                "border": token(declared(pressed, "border-color").unwrap()),
+            }),
+            "{variant}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1441,4 +1456,152 @@ fn a_field_is_measured_on_every_ground_a_control_stands_on() {
         let family = parts::family(name).expect("a field family");
         assert_eq!(family.grounds, button.grounds, "{name}");
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// States that hold at once
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn the_primary_never_takes_allows_look_in_two_states_at_once() {
+    // The look two states draw at once, as the stylesheet resolves it, is held like one state's.
+    for later in ["pressed", "focused", "open"] {
+        let fallen = fallen_parts(&with_parts(json!({
+            "button.root.primary.hover.fill": "control.hover",
+            "button.root.primary.hover.border-colour": "text.secondary",
+            format!("button.root.primary.{later}.border-colour"): "accent.base",
+        })));
+        assert!(
+            fallen.contains(&format!("button.root.primary.hover+{later}")),
+            "{later}: {fallen:?}"
+        );
+    }
+}
+
+#[test]
+fn a_parts_words_are_held_in_every_set_of_states_that_hold_at_once() {
+    // A toggle that is on draws its own fill under the pointer; the words a theme gives the plain
+    // button are held on it there too, and the finding names both states.
+    let fallen = fallen_parts(&with_tokens_and_parts(
+        json!({ "tab.active": "#a3a29a" }),
+        json!({ "button.root.secondary.text": "text.secondary" }),
+    ));
+    assert!(
+        fallen.contains(&"button.root.secondary.hover+selected".to_owned()),
+        "{fallen:?}"
+    );
+    assert!(
+        !fallen.contains(&"button.root.secondary".to_owned()),
+        "{fallen:?}"
+    );
+}
+
+#[test]
+fn a_set_of_states_that_falls_back_draws_a_default_its_floors_hold() {
+    let loaded = load(&with_parts(json!({
+        "button.root.primary.hover.fill": "control.hover",
+        "button.root.primary.hover.border-colour": "text.secondary",
+        "button.root.primary.focused.border-colour": "accent.base",
+    })));
+    let theme = loaded.theme.first();
+    let sheet = parts::stylesheet(theme);
+    // The fallback is written once, for the state the stylesheet writes last.
+    let focused = "[data-variant=\"primary\"][data-focus-visible])";
+    let written: Vec<&str> = sheet
+        .lines()
+        .filter(|line| line.contains(focused))
+        .collect();
+    assert_eq!(written.len(), 2, "{sheet}");
+    assert!(written[1].contains("var(--accent-surface)"), "{sheet}");
+    assert!(
+        written[1].contains("border-color: var(--accent-base)"),
+        "{sheet}"
+    );
+}
+
+#[test]
+fn states_whose_mix_is_the_familys_own_look_are_not_held_back() {
+    let fallen = fallen_parts(&with_parts(json!({
+        "button.root.primary.hover.fill": "tab.active",
+        "button.root.primary.focused.border-colour": "accent.base",
+        "button.root.corner-radius": "full",
+    })));
+    assert!(fallen.is_empty(), "{fallen:?}");
+}
+
+#[test]
+fn the_floors_are_held_until_holding_them_again_writes_no_fallback() {
+    // A fallback changes how a state draws, so the hold runs again until a round writes none:
+    // holding the result once more finds nothing that falls.
+    let themes = [
+        with_tokens_and_parts(
+            json!({ "control.hover": "#9a9a90" }),
+            json!({
+                "button.root.secondary.focused.fill": "accent.surface",
+                "button.root.grants.focused.fill": "accent.surface",
+                "button.root.primary.focused.fill": "control.base",
+                "button.root.primary.focused.border-colour": "accent.base",
+                "button.root.primary.hover.fill": "control.hover",
+                "button.root.primary.hover.text": "surface.base",
+            }),
+        ),
+        with_parts(json!({
+            "button.root.primary.hover.fill": "control.hover",
+            "button.root.primary.hover.border-colour": "text.secondary",
+            "button.root.primary.open.border-colour": "accent.base",
+            "button.root.secondary.open.fill": "accent.surface",
+            "button.root.grants.open.fill": "accent.surface",
+            "button.root.primary.open.fill": "control.base",
+        })),
+        with_tokens_and_parts(
+            json!({ "tab.active": "#a3a29a" }),
+            json!({ "button.root.secondary.text": "text.secondary" }),
+        ),
+        with_tokens_and_parts(
+            json!({ "tab.active": "#a3a29a" }),
+            json!({
+                "button.root.primary.hover.fill": "tab.active",
+                "button.root.primary.hover.text": "surface.base",
+                "button.root.primary.focused.fill": "control.base",
+                "button.root.primary.focused.border-colour": "accent.base",
+                "button.root.secondary.focused.fill": "accent.surface",
+                "button.root.grants.focused.fill": "accent.surface",
+            }),
+        ),
+    ];
+    for document in &themes {
+        let loaded = load(document);
+        assert!(!loaded.refused, "{:?}", said(&loaded));
+        let theme = loaded.theme.first();
+        assert_eq!(parts::held_again(theme), [], "{document}");
+    }
+}
+
+#[test]
+fn a_field_familys_own_states_are_held_at_once_too() {
+    // A text box is never pressed, chosen or open: its own states (hovered and focused) are the
+    // sets it is measured in, and each falls back with the set named.
+    let fallen = fallen_parts(&with_parts(json!({
+        "text-input.root.hover.fill": "text.primary",
+        "text-input.root.hover.text": "surface.base",
+        "text-input.root.focused.fill": "surface.sunken",
+    })));
+    assert!(
+        fallen.contains(&"text-input.root.hover+focused".to_owned()),
+        "{fallen:?}"
+    );
+    assert!(
+        !fallen.contains(&"text-input.root.hover".to_owned()),
+        "{fallen:?}"
+    );
+    assert!(
+        !fallen.contains(&"text-input.root.focused".to_owned()),
+        "{fallen:?}"
+    );
+    assert!(
+        !fallen
+            .iter()
+            .any(|one| one.contains("pressed") || one.contains("open")),
+        "{fallen:?}"
+    );
 }
