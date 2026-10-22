@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792674194096,
+  "lastUpdate": 1792675647458,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21588,6 +21588,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5834495,
             "unit": "ms",
             "extra": "median of 5 runs: 101.203, 101.458, 101.583, 102.034, 102.593 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2f0eebd56eeeaff9d32bb96edc5af78e489c4fc6",
+          "message": "Browsers: a frame swapped into a process of its own counts as having loaded (#2991)\n\n* Browsers: a frame swapped into a process of its own counts as having loaded (#2973)\n\nWhen the engine attaches a session of its own for a frame purlis knew in\nanother session, the page's document number and the frame's move, as a\nnavigation's do, and what was dealt or blanked in its old document is\nforgotten. A real-Chrome test moves a frame from the page's own site to\nanother.\n\nCloses #2973\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: the swap test moves its frame only at the person's key (#2973)\n\nThe frame is shown on the page's own site first, and goes to another site\nonly once the browser is taken over.\n\nRefs #2973\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T17:11:34+04:00",
+          "tree_id": "9c4351731dac85c2f3fa13833157a8c3a009ece3",
+          "url": "https://github.com/purlis/purlis/commit/2f0eebd56eeeaff9d32bb96edc5af78e489c4fc6"
+        },
+        "date": 1792675644559,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6714629999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.663, 0.666, 0.671, 0.673, 0.691 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5551375,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.544, 16.555, 16.555, 16.644, 16.886 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.26863,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.874, 102.119, 102.269, 102.341, 103.031 ms"
           }
         ]
       }
