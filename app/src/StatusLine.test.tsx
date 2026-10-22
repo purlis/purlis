@@ -201,7 +201,11 @@ describe("the Notices button (#1695)", () => {
     draw();
 
     const button = screen.getByRole("button", { name: "Notices — nothing to open here" });
-    expect(button).toBeDisabled();
+    // Unavailable, and still a Tab stop: the bar's menu always opens from Notices (#2913).
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute("data-disabled", "true");
+    expect(button).toHaveAttribute("tabindex", "0");
   });
 
   it("drops a count purlis cannot stand behind and still opens the Inbox", async () => {
@@ -335,9 +339,10 @@ describe("the line is one status bar (qw357)", () => {
     expect(context.firstElementChild?.firstElementChild).toBe(screen.getByTestId("status-project"));
     expect(context).toHaveTextContent("alpha");
     expect(health).toHaveAttribute("data-part", "end");
+    // The doctor inside, Notices outermost: the one that always stays never moves (#2913).
     expect(within(health as HTMLElement).getAllByRole("button")).toEqual([
-      screen.getByTestId("status-alerts"),
       screen.getByTestId("status-doctor"),
+      screen.getByTestId("status-alerts"),
     ]);
   });
 

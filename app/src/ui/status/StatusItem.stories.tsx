@@ -16,9 +16,14 @@ import { drawWindowText, LEAST_TEXT } from "../../textSize";
 import { StatusBar, type StatusContribution } from "./StatusBar";
 import { StatusCell, StatusItem } from "./StatusItem";
 
-/** The title bar's right end: what waits, the save, About, the kill switch and the version. */
+/**
+ * The title bar's right end, in the bar's order (#2913): what comes and goes on the inner side
+ * (what waits, an update on offer), then the save, the kill switch and About at the end. Right
+ * aligned, as the bar is, so a pill that appears moves only what is left of it.
+ */
 function Pills() {
   const [said, setSaid] = useState("Nothing pressed");
+  const [offered, setOffered] = useState(false);
   return (
     <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
       <div
@@ -26,6 +31,8 @@ function Pills() {
         aria-label="Status pills"
         style={{
           display: "flex",
+          justifyContent: "flex-end",
+          inlineSize: "36rem",
           gap: "var(--space-3)",
           padding: "var(--space-3)",
           background: "var(--surface-deep)",
@@ -38,6 +45,15 @@ function Pills() {
           count={2}
           onPress={() => setSaid("Inbox")}
         />
+        {offered && (
+          <StatusItem
+            variant="accent"
+            icon={<ArrowUpCircle aria-hidden="true" />}
+            onPress={() => setSaid("Updates")}
+          >
+            0.4.2-dev.1037
+          </StatusItem>
+        )}
         <StatusItem
           variant="pill"
           tone="success"
@@ -48,28 +64,24 @@ function Pills() {
         </StatusItem>
         <StatusItem
           variant="pill"
-          icon={<Info aria-hidden="true" />}
-          onPress={() => setSaid("About")}
-        >
-          About
-        </StatusItem>
-        <StatusItem
-          variant="pill"
           aria-label="Stop every chat"
           icon={<OctagonX aria-hidden="true" />}
           onPress={() => setSaid("Stopped")}
         />
         <StatusItem
-          variant="accent"
-          icon={<ArrowUpCircle aria-hidden="true" />}
-          onPress={() => setSaid("Updates")}
+          variant="pill"
+          icon={<Info aria-hidden="true" />}
+          onPress={() => setSaid("About")}
         >
-          0.4.2-dev.1037
+          About
         </StatusItem>
       </div>
       <p role="status" style={{ margin: 0 }}>
         {said}
       </p>
+      <button type="button" onClick={() => setOffered((was) => !was)}>
+        Offer an update
+      </button>
     </div>
   );
 }
@@ -81,10 +93,14 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Every pill is 24px tall with full corners, one Tab stop each; Enter and Space press it. */
+/**
+ * Every pill is 24px tall with full corners, one Tab stop each; Enter and Space press it. An
+ * update arriving on the inner side moves none of the pills that stay.
+ */
 export const TitleBarPills: Story = {
   play: async ({ canvas, userEvent }) => {
-    const pills = canvas.getAllByRole("button");
+    const group = canvas.getByRole("group", { name: "Status pills" });
+    const pills = within(group).getAllByRole("button");
     for (const one of pills) {
       const box = one.getBoundingClientRect();
       await expect(Math.round(box.height)).toBe(24);
@@ -104,6 +120,18 @@ export const TitleBarPills: Story = {
       await expect(one).toHaveFocus();
       expectFocusInSight();
     }
+
+    const staying = ["Saved", "Stop every chat", "About"].map((name) =>
+      within(group).getByRole("button", { name }),
+    );
+    const before = staying.map((one) => Math.round(one.getBoundingClientRect().right));
+    await userEvent.click(canvas.getByRole("button", { name: "Offer an update" }));
+    await waitFor(() =>
+      expect(within(group).getByRole("button", { name: "0.4.2-dev.1037" })).toBeVisible(),
+    );
+    const after = staying.map((one) => Math.round(one.getBoundingClientRect().right));
+    await expect(after).toEqual(before);
+    await userEvent.click(canvas.getByRole("button", { name: "Offer an update" }));
   },
 };
 

@@ -307,7 +307,9 @@ export function StatusLine({
     id: "purlis.notices",
     name: "Notices",
     side: "right",
-    priority: 30,
+    // Outermost: the one item that always stays, so nothing that comes, goes or changes its
+    // words on this end ever moves it.
+    priority: 10,
     // The one item that always stays: the keyboard always has an item on the bar to open the
     // bar's menu from, and so a way back to every item hidden.
     hideable: false,
@@ -318,7 +320,9 @@ export function StatusLine({
       id: "purlis.doctor",
       name: "Doctor",
       side: "right",
-      priority: 20,
+      // Innermost: its verdict's words change ("1 warning", "2 warnings"), which moves only what
+      // is inside it, never the pin or Notices.
+      priority: 50,
       item: <Health doctor={doctor} onOpenSettings={onOpenSettings} />,
     });
   // The pin is drawn only when it drifts or could not be read (`PinItem`).
@@ -327,7 +331,7 @@ export function StatusLine({
       id: "purlis.pin",
       name: "Pin",
       side: "right",
-      // Inner on its end, so a pin that starts to drift moves neither Notices nor the doctor.
+      // Between the doctor and Notices: a pin that starts to drift never moves Notices.
       priority: 40,
       item: <PinItem pin={pin.pin} trouble={pin.trouble} again={pin.again} />,
     });
@@ -429,9 +433,11 @@ export type Alerts = {
 function AlertsButton({ alerts }: { alerts?: Alerts }) {
   if (alerts === undefined) {
     return (
+      // Unavailable but still a Tab stop (`aria-disabled`, #1700): Notices is the item the bar
+      // always keeps, the one its menu opens from by the keyboard.
       <StatusItem
         data-testid="status-alerts"
-        isDisabled
+        aria-disabled="true"
         aria-label="Notices — nothing to open here"
         title="This status line has no Inbox behind it."
         icon={<Bell aria-hidden="true" />}

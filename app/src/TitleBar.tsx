@@ -175,11 +175,12 @@ export function TitleBar({
         {/* First, because it is the one of the three that is about the operator's chats and
             not about the app — and it is nothing at all when nothing needs you. */}
         {needing && <NeedsYouButton {...needing} />}
-        {/* The kill switch (OV-1): about every chat in every window. First of the pills that
-            stay, so the words it takes once thrown ("Stopped · Re-arm") move none of them. */}
-        <KillSwitch />
-        {/* Then the project in front's unsaved work: about the project, not the app, and the
-            one thing on the bar the operator acts on as often as a chat that asks. */}
+        {/* **What comes and goes is on the inner side** (#2913): the bar's end is right-aligned,
+            so a pill appearing moves only what is left of it. The hand and an update first, then
+            the project's save and the chat's sandbox, which come with a project and a chat. */}
+        {updates && <UpdateItem updates={updates} chats={chats} />}
+        {/* The project in front's unsaved work: about the project, not the app, and the one
+            thing on the bar the operator acts on as often as a chat that asks. */}
         {save && <SaveIndicator {...save} />}
         {/* The level of the chat in front, beside the project's save: about that chat. */}
         {sandbox && (
@@ -192,9 +193,11 @@ export function TitleBar({
             />
           </span>
         )}
-        {/* The update pill comes and goes, so it is inside About, which stays at the bar's end
-            and never moves when an update is offered (#2913). */}
-        {updates && <UpdateItem updates={updates} chats={chats} />}
+        {/* The kill switch (OV-1): about every chat in every window, always there. Its words once
+            thrown ("Stopped · Re-arm") move only what is inside it, on purpose: a stopped app
+            must never read as an idle one. */}
+        <KillSwitch />
+        {/* About, at the bar's end, which nothing ever moves. */}
         <AboutCharter />
       </span>
     </header>

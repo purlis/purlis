@@ -195,7 +195,9 @@ export function StatusBar({
             event.preventDefault();
             const back = opener.current?.isConnected
               ? opener.current
-              : footer.current?.querySelector<HTMLElement>("button, [tabindex]");
+              : footer.current?.querySelector<HTMLElement>(
+                  'button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+                );
             back?.focus();
           }}
         >

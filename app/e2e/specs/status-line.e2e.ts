@@ -248,9 +248,10 @@ describe("the status line", () => {
 
     // Context first, from the left edge; health last, to the right edge.
     expect(project.left).toBeLessThan(where.left);
-    expect(where.right).toBeLessThanOrEqual(notices.left);
-    expect(notices.right).toBeLessThanOrEqual(doctor.left + 1);
-    expect(line.right - doctor.right).toBeLessThanOrEqual(24);
+    // The doctor inside, Notices outermost: the one that always stays (#2913).
+    expect(where.right).toBeLessThanOrEqual(doctor.left);
+    expect(doctor.right).toBeLessThanOrEqual(notices.left + 1);
+    expect(line.right - notices.right).toBeLessThanOrEqual(24);
     expect(project.left - line.left).toBeLessThanOrEqual(24);
     // One height for the two items, inside the line, with room around them.
     expect(Math.abs(notices.height - doctor.height)).toBeLessThanOrEqual(1);
