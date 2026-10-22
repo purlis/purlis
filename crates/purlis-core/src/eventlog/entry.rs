@@ -87,13 +87,12 @@ pub enum Entry {
     KillSwitchWrote { line: crate::halt::Entry },
     /// The kill switch's journal, read again ([`Recorder::kill_switch_read`]).
     KillSwitchRead,
-    /// Use skill… typed `skill` into chat `number`, unsent (SK-12): the run `run` its next
-    /// prompt opens ([`Recorder::skill_typed`]). Nothing is written until that prompt.
+    /// Use skill… typed a skill into chat `number`, unsent (SK-12): the run a prompt that
+    /// shows it was sent opens ([`Recorder::skill_typed`]). Nothing is written until then.
     SkillTyped {
         plane: PathBuf,
         number: u32,
-        skill: String,
-        run: String,
+        typed: crate::skillspan::Typed,
     },
     /// What the window said of a browser (#2293): who drives it, that someone typed into it,
     /// or that it was handed to a chat, under chat `number` where it is a chat's
@@ -207,10 +206,9 @@ impl Recorder {
             Entry::SkillTyped {
                 plane,
                 number,
-                skill,
-                run,
+                typed,
             } => {
-                self.skill_typed(&plane, number, &skill, &run);
+                self.skill_typed(&plane, number, typed);
                 Ok(Vec::new())
             }
         }

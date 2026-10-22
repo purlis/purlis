@@ -14,10 +14,11 @@
 use std::path::{Path, PathBuf};
 
 pub use purlis_skills::{
-    BUILT_IN_PREFIXES, Budget, Chat, DIR_IN_BUNDLE, Declared, Effective, FromHarness, Given, Grant,
-    HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing, Narrowing, OnMachine, Origin, Over,
-    POINTER, PROJECT_DIR, Reason, Reference, Route, Skill, SkillSet, Spent, declared, grant_of,
-    in_bundle, level_dir, level_shown, listing, named, persona_dir, read, set_grant, share,
+    Argument, BUILT_IN_PREFIXES, Budget, Chat, DIR_IN_BUNDLE, Declared, Effective, FromHarness,
+    Given, Grant, HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing, Narrowing, OnMachine,
+    Origin, Over, POINTER, PROJECT_DIR, Reason, Reference, Route, Skill, SkillSet, Spent, declared,
+    grant_of, in_bundle, level_dir, level_shown, listing, named, persona_dir, read, set_grant,
+    share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -644,6 +645,9 @@ pub struct Running<'a> {
 pub struct Offered {
     pub effective: Effective,
     pub declared: Declared,
+    /// Whether it asks for anything before it is typed: arguments it names, or a hint at what to
+    /// pass. The one place this is decided; the window draws the boxes by it.
+    pub takes_arguments: bool,
     /// The name the chat's harness knows it by, which a run of it records
     /// ([`Harness::skill_name`]).
     pub known_as: String,
@@ -653,35 +657,44 @@ pub struct Offered {
 /// manual-only ones among them, by name, and what the set spends of its harness's budget.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatSkills {
+    /// The chat's harness, which the skills are typed in the syntax of.
+    pub harness: Harness,
+    /// The workspace the chat works in, `None` at the plane root: where a run it starts is.
+    pub workspace: Option<String>,
     pub offered: Vec<Offered>,
     pub spent: Spent,
 }
 
 /// **The skills of chat `chat`, as Use skill… offers them** (SK-12): exactly its set, worked out
-/// as its start worked it out ([`for_chat`]), each with what it declares, and the budget the set
-/// spends on its harness, manual-only skills costing nothing.
-pub fn of_a_chat(chat: &Running<'_>) -> ChatSkills {
-    let at = PlaneSkills {
-        plane: chat.plane,
-        workspace: chat.workspace,
-        linked: None,
+/// as its start worked it out (the plane's skills only where the flag let them in, as
+/// [`of_a_chat`] works them out), each with what it declares, and the budget the set spends on
+/// its harness.
+pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
+    let route = chat.harness.skills();
+    let set = if chat.plane_skills {
+        of_a_chat(
+            chat.built_in,
+            chat.plane,
+            chat.workspace,
+            chat.persona,
+            route,
+        )
+    } else {
+        ask(chat.built_in, None, chat.persona, route, None)
     };
-    let set = ask(
-        chat.built_in,
-        chat.plane_skills.then_some(at),
-        chat.persona,
-        chat.harness.skills(),
-        None,
-    );
     let offered: Vec<Offered> = set
         .effective
         .into_iter()
-        .map(|effective| Offered {
-            declared: declared(&effective.skill),
-            known_as: chat
-                .harness
-                .skill_name(&effective.skill.name, effective.origin),
-            effective,
+        .map(|effective| {
+            let declared = declared(&effective.skill);
+            Offered {
+                takes_arguments: !declared.arguments.is_empty() || declared.hint.is_some(),
+                known_as: chat
+                    .harness
+                    .skill_name(&effective.skill.name, effective.origin),
+                declared,
+                effective,
+            }
         })
         .collect();
     let spent = purlis_skills::budget::spent(
@@ -690,7 +703,12 @@ pub fn of_a_chat(chat: &Running<'_>) -> ChatSkills {
             .map(|one| (&one.effective.skill, &one.declared)),
         chat.harness.skill_budget(),
     );
-    ChatSkills { offered, spent }
+    ChatSkills {
+        harness: chat.harness,
+        workspace: chat.workspace.map(str::to_owned),
+        offered,
+        spent,
+    }
 }
 
 /// What Use skill… types into a chat to start one of its skills ([`ChatSkills::typed`]).
@@ -698,15 +716,17 @@ pub fn of_a_chat(chat: &Running<'_>) -> ChatSkills {
 pub struct Typing {
     /// The text, in the chat's harness's syntax, on one line.
     pub text: String,
-    /// The skill, by the name the harness knows it by: what its run records.
-    pub known_as: String,
+    /// The run it starts once its prompt is sent, its id minted now: the name the harness knows
+    /// the skill by, which copy it is, and how its start is confirmed
+    /// ([`crate::skillspan::Typed`]).
+    pub held: crate::skillspan::Typed,
 }
 
 impl ChatSkills {
-    /// **The text that starts skill `name` of this chat's set** on `harness`, with `values` for
-    /// its arguments in the order it declares them ([`Given::of`]), or why there is none: a
-    /// skill that is not in the chat's set is never typed.
-    pub fn typed(&self, harness: Harness, name: &str, values: &[String]) -> Result<Typing, String> {
+    /// **The text that starts skill `name` of this chat's set**, with `values` for its arguments
+    /// in the order it declares them ([`Given::of`]), and the run it starts, or why there is
+    /// none: a skill that is not in the chat's set is never typed.
+    pub fn typed(&self, name: &str, values: &[String]) -> Result<Typing, String> {
         let offered = self
             .offered
             .iter()
@@ -715,15 +735,25 @@ impl ChatSkills {
                 format!("{name} is not one of this chat's skills, so nothing was typed")
             })?;
         let given = Given::of(&offered.declared, values);
-        let text = harness.skill_invocation(&crate::harness::SkillInvoked {
-            name: &offered.effective.skill.name,
-            origin: offered.effective.origin,
-            given: &given,
-        });
-        Ok(Typing {
-            text,
-            known_as: offered.known_as.clone(),
-        })
+        let text = self
+            .harness
+            .skill_start_text(&crate::harness::SkillToStart {
+                name: &offered.effective.skill.name,
+                origin: offered.effective.origin,
+                given: &given,
+            });
+        let held = crate::skillspan::Typed {
+            skill: offered.known_as.clone(),
+            run: ulid::Ulid::generate(),
+            workspace: self.workspace.clone(),
+            level: Some(runs::Level {
+                origin: offered.effective.origin,
+                local: offered.effective.local,
+            }),
+            text: crate::skillspan::PromptMarks::digest(&text),
+            confirmed: self.harness.typed_start(),
+        };
+        Ok(Typing { text, held })
     }
 }
 

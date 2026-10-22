@@ -31,13 +31,6 @@ pub struct Declared {
     pub hint: Option<String>,
 }
 
-impl Declared {
-    /// Whether it asks for anything before it runs: named arguments, or a hint at what to pass.
-    pub fn takes_arguments(&self) -> bool {
-        !self.arguments.is_empty() || self.hint.is_some()
-    }
-}
-
 /// **What a person gave a skill's arguments** in Use skill… (decision 61), each value on one
 /// line: what a harness adapter passes in its own syntax.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -47,9 +40,18 @@ pub enum Given {
     Nothing,
     /// A value for each argument it names, in its order. A value left empty is passed empty
     /// where a later one is given, so each keeps its place, and not at all at the end.
-    Named(Vec<(String, String)>),
+    Named(Vec<Argument>),
     /// The one line given for a skill that names no arguments and says what to pass.
     Raw(String),
+}
+
+/// One named argument and the value given it, on one line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Argument {
+    /// Its name, as the skill declares it.
+    pub name: String,
+    /// What was given it, possibly empty.
+    pub value: String,
 }
 
 impl Given {
@@ -65,16 +67,16 @@ impl Given {
                 _ => Given::Nothing,
             };
         }
-        let mut named: Vec<(String, String)> = declared
+        let mut named: Vec<Argument> = declared
             .arguments
             .iter()
             .enumerate()
-            .map(|(at, name)| {
-                let value = values.get(at).map(|value| line(value)).unwrap_or_default();
-                (name.clone(), value)
+            .map(|(at, name)| Argument {
+                name: name.clone(),
+                value: values.get(at).map(|value| line(value)).unwrap_or_default(),
             })
             .collect();
-        while named.last().is_some_and(|(_, value)| value.is_empty()) {
+        while named.last().is_some_and(|one| one.value.is_empty()) {
             named.pop();
         }
         if named.is_empty() {
@@ -98,15 +100,15 @@ pub fn declared(skill: &Skill) -> Declared {
 }
 
 /// What the `SKILL.md` at `path` declares: nothing for one that cannot be read.
-pub fn declared_at(path: &Path) -> Declared {
+pub(crate) fn declared_at(path: &Path) -> Declared {
     std::fs::read_to_string(path)
         .map(|text| declared_in(&text))
         .unwrap_or_default()
 }
 
 /// What a `SKILL.md`'s text declares, read by the one frontmatter rule ([`crate::frontmatter`]),
-/// and a block list of arguments from the lines under its key.
-pub fn declared_in(text: &str) -> Declared {
+/// and a block list of arguments from the frontmatter's lines under its key.
+pub(crate) fn declared_in(text: &str) -> Declared {
     let pairs = crate::frontmatter(text);
     let value = |key: &str| {
         pairs
@@ -170,22 +172,18 @@ fn inline_list(value: &str) -> Vec<String> {
 }
 
 /// The names of the block list under `key` in the frontmatter: each `- name` line right after
-/// the key's own line.
+/// the key's own line, read from the frontmatter's lines ([`crate::read::frontmatter_lines`]).
 fn block_list(text: &str, key: &str) -> Vec<String> {
-    let Some(rest) = text.strip_prefix("---") else {
-        return Vec::new();
-    };
-    let block = rest.find("---").map_or(rest, |end| &rest[..end]);
-    let mut lines = block.lines();
-    let found = lines.by_ref().any(|line| {
+    let lines = crate::read::frontmatter_lines(text);
+    let Some(at) = lines.iter().position(|line| {
         line.split_once(':')
             .is_some_and(|(k, v)| k.trim() == key && v.trim().is_empty())
-    });
-    if !found {
+    }) else {
         return Vec::new();
-    }
-    lines
-        .map(str::trim)
+    };
+    lines[at + 1..]
+        .iter()
+        .map(|line| line.trim())
         .take_while(|line| line.starts_with('-'))
         .map(|line| unquoted(line.trim_start_matches('-')))
         .filter(|name| !name.is_empty())

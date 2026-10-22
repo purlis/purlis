@@ -42,7 +42,7 @@ pub mod runs;
 mod share;
 
 pub use budget::{Budget, Over, Spent};
-pub use declared::{Declared, Given, declared, declared_at, declared_in};
+pub use declared::{Argument, Declared, Given, declared};
 pub use grant::{Grant, grant_of, set_grant};
 pub use load::{Loaded, Narrowing, POINTER, by_name, find, load};
 pub use read::{DIR_IN_BUNDLE, frontmatter, in_bundle, listing, read};
@@ -80,7 +80,6 @@ pub enum Route {
 
 /// Where a skill in a chat's set comes from: its level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum Origin {
     /// It ships inside purlis, in the bundled plugin's `skills/`. It cannot be turned off.
     BuiltIn,

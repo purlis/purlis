@@ -69,13 +69,7 @@ pub fn read(dir: &Path) -> Vec<Skill> {
 /// lines as Python's `str.splitlines` splits them, each line at its first `:`, key and value
 /// stripped as Python's `str.strip` strips, and a line with an empty key dropped.
 pub fn frontmatter(text: &str) -> Vec<(String, String)> {
-    let Some(rest) = text.strip_prefix("---") else {
-        return Vec::new();
-    };
-    let Some(end) = rest.find("---") else {
-        return Vec::new();
-    };
-    lines(py_strip(&rest[..end]))
+    frontmatter_lines(text)
         .into_iter()
         .filter_map(|line| {
             let (key, value) = line.split_once(':')?;
@@ -83,6 +77,19 @@ pub fn frontmatter(text: &str) -> Vec<(String, String)> {
             (!key.is_empty()).then(|| (key.to_owned(), py_strip(value).to_owned()))
         })
         .collect()
+}
+
+/// The lines of a `SKILL.md`'s frontmatter, by the rule [`frontmatter`] reads it by: the block
+/// between the first two `---`, stripped and split as Python splits lines. Empty where there is
+/// no frontmatter. What a reader of a key that spans lines (a block list) reads.
+pub(crate) fn frontmatter_lines(text: &str) -> Vec<&str> {
+    let Some(rest) = text.strip_prefix("---") else {
+        return Vec::new();
+    };
+    let Some(end) = rest.find("---") else {
+        return Vec::new();
+    };
+    lines(py_strip(&rest[..end]))
 }
 
 /// `str.strip()`: Python's whitespace is Rust's and the four separator controls U+001C-U+001F.

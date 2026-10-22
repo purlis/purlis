@@ -3,6 +3,13 @@
 
 use super::*;
 
+fn argument(name: &str, value: &str) -> Argument {
+    Argument {
+        name: name.to_owned(),
+        value: value.to_owned(),
+    }
+}
+
 fn skill_md(frontmatter: &str) -> String {
     format!("---\nname: x\ndescription: Does x.\n{frontmatter}---\n\nbody $ARGUMENTS\n")
 }
@@ -11,7 +18,6 @@ fn skill_md(frontmatter: &str) -> String {
 fn a_skill_that_says_nothing_is_picked_by_the_harness_and_takes_no_arguments() {
     let declared = declared_in(&skill_md(""));
     assert_eq!(declared, Declared::default());
-    assert!(!declared.takes_arguments());
 }
 
 #[test]
@@ -37,7 +43,6 @@ fn arguments_are_read_as_a_string_a_flow_list_or_a_block_list_in_order() {
     ));
     assert_eq!(block.arguments, ["pr", "focus"]);
     assert_eq!(block.hint.as_deref(), Some("<pr> [focus]"));
-    assert!(block.takes_arguments());
 }
 
 #[test]
@@ -45,7 +50,6 @@ fn a_hint_alone_asks_for_arguments_without_names() {
     let declared = declared_in(&skill_md("argument-hint: \"[issue number]\"\n"));
     assert!(declared.arguments.is_empty());
     assert_eq!(declared.hint.as_deref(), Some("[issue number]"));
-    assert!(declared.takes_arguments());
 }
 
 #[test]
@@ -54,18 +58,12 @@ fn values_are_given_in_the_declared_order_on_one_line_and_trailing_empties_dropp
     let values = |all: &[&str]| all.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
     assert_eq!(
         Given::of(&declared, &values(&["42", "the\n tests", ""])),
-        Given::Named(vec![
-            ("pr".to_owned(), "42".to_owned()),
-            ("focus".to_owned(), "the tests".to_owned()),
-        ])
+        Given::Named(vec![argument("pr", "42"), argument("focus", "the tests")])
     );
     // A middle one left empty keeps the later one's place.
     assert_eq!(
         Given::of(&declared, &values(&["", "x"])),
-        Given::Named(vec![
-            ("pr".to_owned(), String::new()),
-            ("focus".to_owned(), "x".to_owned()),
-        ])
+        Given::Named(vec![argument("pr", ""), argument("focus", "x")])
     );
     assert_eq!(Given::of(&declared, &values(&["", " "])), Given::Nothing);
 }

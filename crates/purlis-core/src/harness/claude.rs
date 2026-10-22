@@ -5,7 +5,7 @@
 //! the session's own `--settings`.
 
 use super::adapter::{
-    HarnessAdapter, RuleFile, Sandbox, SkillInvoked, SkillStart, input_text, slash_with_words,
+    HarnessAdapter, RuleFile, Sandbox, SkillStart, SkillToStart, input_text, slash_with_words,
 };
 use super::{Harness, Kit, StateHooks, words};
 use crate::sandbox::Form;
@@ -174,12 +174,15 @@ impl HarnessAdapter for ClaudeCode {
     /// 2026-10-20): a built-in one as purlis's plugin's, `purlis:<name>`, and one of the plane's
     /// as the folder of links' plugin's, `skills:<name>` ([`crate::skills::LINKED_PLUGIN`]). The
     /// namespaced name is the one that cannot be taken by a person's own skill of that name.
+    /// A harness skill is the person's own, loaded by Claude Code by its own name.
     fn skill_name(&self, name: &str, origin: crate::skills::Origin) -> String {
+        use crate::skills::Origin;
         match origin {
-            crate::skills::Origin::BuiltIn => {
-                format!("{}{name}", crate::names::SKILL_NAMESPACE.write)
+            Origin::BuiltIn => format!("{}{name}", crate::names::SKILL_NAMESPACE.write),
+            Origin::Project | Origin::Workspace | Origin::Persona => {
+                format!("{}:{name}", crate::skills::LINKED_PLUGIN)
             }
-            _ => format!("{}:{name}", crate::skills::LINKED_PLUGIN),
+            Origin::Harness => name.to_owned(),
         }
     }
 
@@ -187,19 +190,43 @@ impl HarnessAdapter for ClaudeCode {
     /// measured `-p` run): `/<plugin>:<name>` at the start of the message runs the skill, and
     /// what follows is its arguments, `$ARGUMENTS` raw and `$N` (and each `arguments:` name) split
     /// as shell words, quotes kept. So each value is one shell word, in the declared order.
-    fn skill_invocation(&self, skill: &SkillInvoked<'_>) -> String {
+    fn skill_start_text(&self, skill: &SkillToStart<'_>) -> String {
         let head = format!("/{}", self.skill_name(skill.name, skill.origin));
         slash_with_words(&head, skill.given)
     }
 
     /// Claude Code lists skills within 1% of the context window (`skillListingBudgetFraction`),
-    /// about 8,000 characters on a 200k-token window, cutting each description at 1,536
-    /// characters and dropping descriptions past the budget (2.1.304, `settings-reference.md`).
+    /// about 8,000 characters on a 200k-token window for names, descriptions and their lines,
+    /// cutting each description at 1,536 characters and dropping descriptions past the budget,
+    /// and leaves a `disable-model-invocation` skill's description out (2.1.304,
+    /// `settings-reference.md`, `skills.md`).
     fn skill_budget(&self) -> crate::skills::Budget {
         crate::skills::Budget {
             per_description: Some(1_536),
+            manual_free: true,
             ..super::SKILL_BUDGET
         }
+    }
+
+    /// Claude Code fires `UserPromptExpansion` as a `/<name>` the person sent expands into its
+    /// skill, naming it ([`Self::prompt_started`]).
+    fn typed_start_named(&self) -> bool {
+        true
+    }
+
+    /// **Claude Code 2.1.304** (`hooks.md` "UserPromptExpansion", and a measured payload of
+    /// 2026-10-20): `{"hook_event_name": "UserPromptExpansion", "expansion_type":
+    /// "slash_command", "command_name": "<plugin>:<name>", ...}`. A skill's command is its name
+    /// as [`Self::skill_name`] says it.
+    fn prompt_started(&self, payload: &serde_json::Value) -> Option<String> {
+        let said = |key: &str| payload.get(key).and_then(serde_json::Value::as_str);
+        (said("hook_event_name") == Some("UserPromptExpansion")
+            && said("expansion_type") == Some("slash_command"))
+        .then(|| said("command_name"))
+        .flatten()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
     }
 
     /// Claude Code's `Skill` tool, by the plugin the skill came in ([`Self::skill_name`]):

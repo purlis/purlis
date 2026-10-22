@@ -2370,27 +2370,21 @@ impl Recorder {
             .skills
             .report(&under.run, report, now_ms(), || tokens_of(plane, &chat));
         self.skills_closed(plane, under, reported.closed)?;
-        match reported.opened {
-            Some(opened) => self.skill_started(plane, under, persona, &opened),
-            None => Ok(()),
+        for opened in &reported.opened {
+            self.skill_started(plane, under, persona, opened)?;
         }
+        Ok(())
     }
 
-    /// **Use skill… typed `skill` into chat `number` of `plane`**, unsent (SK-12): its run, `run`,
-    /// opens as the chat's next prompt does ([`crate::skillspan::Tracker::typed`]). Nothing is
+    /// **Use skill… typed `typed` into chat `number` of `plane`**, unsent (SK-12): its run opens
+    /// once a prompt shows it was sent ([`crate::skillspan::Tracker::typed`]). Nothing is
     /// written now; a chat this writer knows no run of holds nothing.
-    pub fn skill_typed(&mut self, plane: &Path, number: u32, skill: &str, run: &str) {
+    pub fn skill_typed(&mut self, plane: &Path, number: u32, typed: crate::skillspan::Typed) {
         let Some(who) = self.chats.get(&(plane.to_path_buf(), number)) else {
             return;
         };
         let key = who.run.clone();
-        self.skills.typed(
-            &key,
-            crate::skillspan::Typed {
-                skill: skill.to_owned(),
-                run: run.to_owned(),
-            },
-        );
+        self.skills.typed(&key, typed, now_ms());
     }
 
     /// Closes every skill run open in `under`'s chat run as `ended`.

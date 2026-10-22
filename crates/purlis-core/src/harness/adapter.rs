@@ -161,19 +161,35 @@ pub trait HarnessAdapter: Sync {
     /// the arguments the person gave in its own syntax too (decision 61): what Use skill… types
     /// into the chat, unsent. Pure, and one line: nothing here may hold a line break. Each
     /// adapter says which version it measured and how.
-    fn skill_invocation(&self, skill: &SkillInvoked<'_>) -> String;
+    fn skill_start_text(&self, skill: &SkillToStart<'_>) -> String;
 
     /// **This harness's skill budget** (SK-12, ADR 0102 §1): how many skills, and how many
     /// characters of their descriptions, one chat's listing may hold, set below the harness's
     /// own limit so it never has to cut anything itself. No default: each adapter says its
     /// harness's limit.
     fn skill_budget(&self) -> crate::skills::Budget;
+
+    /// **Whether this harness names the skill a prompt the person sent started** (SK-12): a
+    /// hook it fires says so ([`Self::prompt_started`]), and a skill Use skill… typed is then
+    /// confirmed by that name. `false`, the default, for a harness that does not, whose typed
+    /// skill is confirmed by the prompt holding its text ([`crate::skillspan::Confirmed`]).
+    fn typed_start_named(&self) -> bool {
+        false
+    }
+
+    /// **The skill a hook's payload says a prompt the person sent started**, by the name this
+    /// harness knows it by, or `None` where the payload says no such thing. Pure: nothing is
+    /// read but the payload. The default is a harness that says none.
+    fn prompt_started(&self, payload: &serde_json::Value) -> Option<String> {
+        let _ = payload;
+        None
+    }
 }
 
 /// A skill of a chat's set, as Use skill… starts it: by its own name, from its level, with what
-/// the person gave its arguments ([`HarnessAdapter::skill_invocation`]).
+/// the person gave its arguments ([`HarnessAdapter::skill_start_text`]).
 #[derive(Debug, Clone, Copy)]
-pub struct SkillInvoked<'a> {
+pub struct SkillToStart<'a> {
     /// Its frontmatter's `name`.
     pub name: &'a str,
     pub origin: crate::skills::Origin,
@@ -208,7 +224,7 @@ pub(crate) fn slash_with_words(head: &str, given: &crate::skills::Given) -> Stri
         Given::Nothing => head.to_owned(),
         Given::Raw(line) => format!("{head} {line}"),
         Given::Named(values) => std::iter::once(head.to_owned())
-            .chain(values.iter().map(|(_, value)| shell_word(value)))
+            .chain(values.iter().map(|one| shell_word(&one.value)))
             .collect::<Vec<_>>()
             .join(" "),
     }
