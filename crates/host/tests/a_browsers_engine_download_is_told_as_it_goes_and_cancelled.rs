@@ -185,3 +185,42 @@ async fn a_cancelled_download_refuses_the_start_in_words_and_keeps_nothing_of_it
         .await
         .expect("nothing to cancel is no refusal");
 }
+
+#[tokio::test]
+async fn a_start_that_names_one_still_downloading_is_refused() {
+    let (hosting, browsers, _store, project) = hosting();
+    let (window, _events) = a_window(&hosting, session::speaks()).await;
+    window
+        .hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .expect("held");
+    let starting = tokio::spawn({
+        let window = Arc::clone(&window);
+        async move { window.start_program(start()).await }
+    });
+    timeout(PATIENCE, async {
+        while browsers.waiting() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the start waits on its download");
+
+    let again = timeout(PATIENCE, window.start_program(start())).await;
+
+    // Let go before anything is asserted, so a failing check never leaves the start waiting.
+    browsers.let_starts_go();
+    let again = again.expect("the second start is answered without waiting");
+    timeout(PATIENCE, starting)
+        .await
+        .unwrap()
+        .unwrap()
+        .expect("the first starts");
+    match again {
+        Err(purlis_session_protocol::session::CallError::Refused(refusal)) => {
+            assert_eq!(refusal.code, session::MALFORMED, "{refusal:?}");
+            assert!(refusal.why.contains(PROGRAM), "{refusal:?}");
+        }
+        other => panic!("the second start was not refused: {other:?}"),
+    }
+}

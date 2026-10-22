@@ -231,6 +231,14 @@ pub trait Fetch {
     fn fetch_sized(&self, url: &str) -> io::Result<(Box<dyn Read + '_>, Option<u64>)> {
         Ok((self.fetch(url)?, None))
     }
+
+    /// Whether the install this fetches for is still wanted (#2207): asked once more after the
+    /// archive is downloaded and unpacked, just before the engine is put in place, so a download
+    /// cancelled while it unpacks puts nothing there. An error stops the install, refused as
+    /// [`Refused::Download`] in its words.
+    fn still_wanted(&self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// What a download heard, for each request it made: its address, the status that came back
@@ -795,6 +803,8 @@ impl Engines {
                 )
             })
             .map_err(Refused::Store)?;
+        // Cancelled while it unpacked: nothing is put in place, and its scratch goes.
+        fetch.still_wanted().map_err(Refused::Download)?;
         // The one step that touches the engines in place, one at a time in this process; every
         // download and unpack before it is into a scratch name of its own. An engine another
         // install finished meanwhile is kept, never replaced under a browser running it.

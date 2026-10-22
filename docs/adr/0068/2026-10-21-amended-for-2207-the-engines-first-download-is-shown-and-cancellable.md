@@ -10,9 +10,11 @@ failed.
    begins and once at its end. Only a link that speaks 1.37 and holds the browser power is told:
    an older link never receives the push.
 2. **A window cancels a download** with `cancel_engine_download { program }`, a window-only
-   command of the browser power. The download stops at its next read, nothing of it is kept in
-   the engines folder, and the start is refused in words that say it was cancelled and how to
-   download it again.
+   command of the browser power. The download stops at its next read, or before the engine is
+   put in place where it was cancelled while it unpacked, and nothing of it is kept in the
+   engines folder. A cancel is not a failure: the chat is told the person cancelled it and not
+   to retry, and the person is told "You cancelled the browser engine's download. Open the
+   browser again to download it."
 3. **A download that fails says what to do**: check the connection and open the browser again,
    or, where the archive is not the one purlis pins, that it was not kept and the browser can be
    opened again to download it again.
@@ -26,8 +28,13 @@ Decisions taken in implementation, to be confirmed:
 - **D-2207-1** The download is shown in a Notice, one per download under way, wherever the
   person is, not on a browser's tab: a chat's browser has no tab while it starts, and the
   person's gets one only once it has started.
-- **D-2207-2** The window names the browser it starts (a ULID in `StartProgram.program`), so it
-  knows which start a pushed download belongs to, and drops a download's Notice once its start
-  answers, whatever the answer.
-- **D-2207-3** Progress is counted in MB, rounded down; a server that sends no length shows how
-  much has come so far.
+- **D-2207-2** The window names the browser it starts (a ULID in `StartProgram.program`) and
+  waits on that start before asking for it. It shows a pushed download only for a start it is
+  waiting on, so another window's start, or a word heard after its own start answered, raises
+  nothing; its Notice goes once the start answers, whatever the answer. The host holds a
+  downloading start's id as taken.
+- **D-2207-3** Progress is counted in MB of a million bytes, rounded down; a server that sends
+  no length shows how much has come so far.
+- **D-2207-4** The window tells a cancel apart by the host's sentence for it
+  (`ENGINE_DOWNLOAD_CANCELLED`), as it tells the engine's sandbox apart (D-2835-1), so no
+  refusal code is added.

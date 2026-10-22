@@ -29,9 +29,19 @@ pub struct EngineDownloadShown {
     pub says: String,
 }
 
-/// What a download that has come to `done` bytes, of `total` where known, says.
+/// What a chat is told where the person cancelled the engine's download its browser waited on.
+pub const CANCELLED_FOR_THE_CHAT: &str = "The person cancelled the browser engine's download, so \
+     no browser started. Don't retry; go on with what needs no browser, and tell the person if the \
+     task needs one.";
+
+/// What the person is told where they cancelled the engine's download a browser waited on.
+pub const CANCELLED_FOR_THE_PERSON: &str =
+    "You cancelled the browser engine's download. Open the browser again to download it.";
+
+/// What a download that has come to `done` bytes, of `total` where known, says: in megabytes of
+/// a million bytes, rounded down.
 pub fn says(done: u64, total: Option<u64>) -> String {
-    let mb = |bytes: u64| bytes / (1024 * 1024);
+    let mb = |bytes: u64| bytes / 1_000_000;
     match total {
         Some(total) => format!(
             "Downloading the browser engine… {} of {} MB.",
@@ -42,10 +52,16 @@ pub fn says(done: u64, total: Option<u64>) -> String {
     }
 }
 
-/// The downloads under way, by program, and what tells the window of each change.
+/// The last word of a download: how far it has come, and of how much where that is known.
+type Word = (u64, Option<u64>);
+
+/// The downloads under way, by program, and what tells the window of each change. Only a start
+/// this window made and has not had answered yet is shown: a word for any other program (another
+/// window's start, or one heard after its start answered) is not.
 #[derive(Default)]
 pub struct Downloads {
-    under_way: Mutex<BTreeMap<String, (u64, Option<u64>)>>,
+    /// Each start this window waits on, with the last word of its download once one came.
+    under_way: Mutex<BTreeMap<String, Option<Word>>>,
     tell: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
@@ -64,12 +80,27 @@ impl Downloads {
         }
     }
 
-    /// The host said the download for `program`'s start has come to `done`, of `total`.
-    pub fn heard(&self, program: &str, done: u64, total: Option<u64>) {
+    /// This window is starting `program`: a download the host tells of for it is shown.
+    pub fn started(&self, program: &str) {
         self.under_way
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(program.to_owned(), (done, total));
+            .insert(program.to_owned(), None);
+    }
+
+    /// The host said the download for `program`'s start has come to `done`, of `total`: shown
+    /// only where this window is waiting on that start.
+    pub fn heard(&self, program: &str, done: u64, total: Option<u64>) {
+        {
+            let mut under_way = self
+                .under_way
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            let Some(word) = under_way.get_mut(program) else {
+                return;
+            };
+            *word = Some((done, total));
+        }
         self.told();
     }
 
@@ -80,7 +111,7 @@ impl Downloads {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(program);
-        if was.is_some() {
+        if matches!(was, Some(Some(_))) {
             self.told();
         }
     }
@@ -91,9 +122,11 @@ impl Downloads {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .map(|(program, (done, total))| EngineDownloadShown {
-                program: program.clone(),
-                says: says(*done, *total),
+            .filter_map(|(program, word)| {
+                word.map(|(done, total)| EngineDownloadShown {
+                    program: program.clone(),
+                    says: says(done, total),
+                })
             })
             .collect()
     }

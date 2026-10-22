@@ -1835,11 +1835,12 @@ impl Hosting {
         self.let_through(&start, peer)?;
         // Read before the lock: it may read this machine's store.
         let budget = self.inner.browsers.budget();
-        let (program, at, place) = {
+        let (program, at, place, download) = {
             let mut state = self.state();
             let at = held_at(&state, &start.project, link_of(peer))?;
             let program = match &start.program {
-                Some(id) if state.programs.contains_key(id) => {
+                // A start still downloading its engine holds its id too (#2207).
+                Some(id) if state.programs.contains_key(id) || state.downloads.contains_key(id) => {
                     return Err(Refusal {
                         code: session::MALFORMED.into(),
                         why: format!("this host already holds a program {id}"),
@@ -1855,23 +1856,22 @@ impl Hosting {
                 None => ulid::Ulid::generate().to_string(),
             };
             let place = PlaceInTheBudget::taken(self, &mut state, budget)?;
-            (program, at, place)
+            // Its engine's download, told to the windows as it goes and cancelled by one
+            // (#2207): its id taken under the same hold as the check above.
+            let download = {
+                let telling = self.clone();
+                let of = program.clone();
+                crate::browsers::Download::telling(Arc::new(move |done, total| {
+                    telling.tell(&Pushed::EngineDownload {
+                        program: of.clone(),
+                        done,
+                        total,
+                    });
+                }))
+            };
+            state.downloads.insert(program.clone(), download.clone());
+            (program, at, place, download)
         };
-        // Its engine's download, told to the windows as it goes and cancelled by one (#2207).
-        let download = {
-            let telling = self.clone();
-            let of = program.clone();
-            crate::browsers::Download::telling(Arc::new(move |done, total| {
-                telling.tell(&Pushed::EngineDownload {
-                    program: of.clone(),
-                    done,
-                    total,
-                });
-            }))
-        };
-        self.state()
-            .downloads
-            .insert(program.clone(), download.clone());
         // Starting an engine forks and waits for it to answer: off the runtime.
         let hosting = self.clone();
         let named = program.clone();

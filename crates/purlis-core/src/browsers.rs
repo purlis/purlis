@@ -503,6 +503,15 @@ impl<'a> Progressing<'a> {
 }
 
 impl Fetch for Progressing<'_> {
+    fn still_wanted(&self) -> std::io::Result<()> {
+        if self.download.is_cancelled() {
+            return Err(std::io::Error::other(
+                purlis_host::ENGINE_DOWNLOAD_CANCELLED,
+            ));
+        }
+        self.inner.still_wanted()
+    }
+
     fn fetch(&self, url: &str) -> std::io::Result<Box<dyn std::io::Read + '_>> {
         let (body, total) = self.inner.fetch_sized(url)?;
         Ok(Box::new(Counted {
@@ -563,10 +572,7 @@ impl std::io::Read for Counted<'_> {
 pub fn download_failed_said(refused: &Refused) -> String {
     match refused {
         Refused::Download(why) if why.to_string() == purlis_host::ENGINE_DOWNLOAD_CANCELLED => {
-            format!(
-                "{}: open the browser again to download it",
-                purlis_host::ENGINE_DOWNLOAD_CANCELLED
-            )
+            download_cancelled_said()
         }
         Refused::Download(why) => format!(
             "the browser engine could not be downloaded ({why}): check this machine's \
@@ -577,6 +583,15 @@ pub fn download_failed_said(refused: &Refused) -> String {
             .to_owned(),
         other => other.to_string(),
     }
+}
+
+/// What a browser's start is refused with where the person cancelled its engine's download
+/// (#2207): [`purlis_host::ENGINE_DOWNLOAD_CANCELLED`]'s words, which a window tells apart.
+pub fn download_cancelled_said() -> String {
+    format!(
+        "{}: open the browser again to download it",
+        purlis_host::ENGINE_DOWNLOAD_CANCELLED
+    )
 }
 
 /// **What decides which engine a browser starts on** (#2835).

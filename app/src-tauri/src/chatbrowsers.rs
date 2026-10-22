@@ -81,6 +81,8 @@ pub enum NotStarted {
     Full { most: usize },
     /// The browser engine cannot make its sandbox on this machine (#2835).
     NoSandbox,
+    /// The person cancelled the engine's download the start waited on (#2207).
+    Cancelled,
     /// It failed, in the host's words.
     Failed(String),
 }
@@ -1973,6 +1975,9 @@ impl ChatBrowsers {
                     NotStarted::NoSandbox => {
                         crate::enginesandbox::refused();
                         crate::enginesandbox::NO_BROWSER_HERE.to_owned()
+                    }
+                    NotStarted::Cancelled => {
+                        crate::enginedownload::CANCELLED_FOR_THE_CHAT.to_owned()
                     }
                     NotStarted::Failed(why) => format!(
                         "the browser did not start: {why}. Try once more; if it fails again, \

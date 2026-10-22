@@ -304,6 +304,8 @@ mod hosted {
             || crate::enginesandbox::is_no_sandbox(&refused.why)
         {
             NotStarted::NoSandbox
+        } else if refused.why.contains(purlis_host::ENGINE_DOWNLOAD_CANCELLED) {
+            NotStarted::Cancelled
         } else {
             NotStarted::Failed(refused.why)
         }
@@ -661,6 +663,9 @@ mod hosted {
                         crate::enginesandbox::refused();
                         crate::enginesandbox::NOT_STARTED_FOR_THE_PERSON.to_owned()
                     }
+                    NotStarted::Cancelled => {
+                        crate::enginedownload::CANCELLED_FOR_THE_PERSON.to_owned()
+                    }
                     NotStarted::Failed(why) => why,
                 })
         }
@@ -697,6 +702,8 @@ mod hosted {
             // Named here, so the engine download this window is told of is known to be this
             // start's, and waited for as long as the download may take (#2207).
             let named = purlis_core::browsers::a_browsers_id();
+            // Waited on before it is asked for, so no word of its download comes too early.
+            crate::enginedownload::here().started(&named);
             let start = Command::StartProgram(Box::new(StartProgram {
                 program: Some(named.clone()),
                 reach,
