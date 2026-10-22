@@ -1806,8 +1806,10 @@ fn scope_has(half: &serde_json::Map<String, serde_json::Value>, name: &str) -> b
 
 /// **Podman's own folders on `machine`** (#2680): its settings (`containers/` in
 /// `$XDG_CONFIG_HOME` and `~/.config`), its storage (`containers/` in `$XDG_DATA_HOME` and
-/// `~/.local/share`) and its run state (`containers/` and `libpod/` in `$XDG_RUNTIME_DIR`),
-/// each with everything below it. A variable that names no absolute folder names nothing.
+/// `~/.local/share`) and its run state (`containers/` and `libpod/` in `$XDG_RUNTIME_DIR`, or,
+/// where that names no folder, `/tmp/podman-run-<uid>`, `/tmp/storage-run-<uid>` and
+/// `/tmp/containers-user-<uid>`), each with everything below it. A variable that names no
+/// absolute folder names nothing.
 fn podman_folders(machine: &Machine) -> Vec<(PathBuf, Reach)> {
     let named = |name: &str| {
         machine
@@ -1828,9 +1830,19 @@ fn podman_folders(machine: &Machine) -> Vec<(PathBuf, Reach)> {
     {
         folders.push(base.join("containers"));
     }
-    if let Some(runtime) = named("XDG_RUNTIME_DIR") {
-        folders.push(runtime.join("containers"));
-        folders.push(runtime.join("libpod"));
+    match named("XDG_RUNTIME_DIR") {
+        Some(runtime) => {
+            folders.push(runtime.join("containers"));
+            folders.push(runtime.join("libpod"));
+        }
+        // Where none is named, as in an ssh session or one without systemd, Podman keeps its
+        // run state in `/tmp` by the person's user id (#2896).
+        None => {
+            let uid = rustix::process::getuid().as_raw();
+            for kind in ["podman-run", "storage-run", "containers-user"] {
+                folders.push(PathBuf::from(format!("/tmp/{kind}-{uid}")));
+            }
+        }
     }
     let mut out: Vec<(PathBuf, Reach)> = Vec::new();
     for folder in folders {
