@@ -517,6 +517,28 @@ describe("the picker a chat starts from", () => {
     expect(onStart).not.toHaveBeenCalled();
   });
 
+  it("never starts without the sandbox on ⌘⏎, from Cancel or the Name field (ADR 0097 §6)", () => {
+    const { onStart } = show({
+      profiles: [
+        {
+          ...ONE.profiles[0],
+          sandbox: {
+            state: "refused",
+            said: "bwrap is not installed.",
+            install: null,
+            locked: null,
+          },
+        },
+      ],
+    });
+    expect(screen.getByRole("button", { name: "Start without the sandbox" })).toBeInTheDocument();
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
+    fireEvent.keyDown(cancel, SEND);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: /^Name/ }), SEND);
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
   it("starts under the default name when the Name field is only spaces", async () => {
     const { onStart, user } = show();
 

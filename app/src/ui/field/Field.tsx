@@ -39,6 +39,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type CSSProperties,
   type DOMAttributes,
   type FocusEvent,
@@ -137,8 +138,7 @@ interface Common<E extends HTMLElement> extends Handlers<E> {
   style?: CSSProperties;
 }
 
-export interface TextFieldProps extends Common<HTMLInputElement> {
-  type?: "text" | "search" | "password" | "url" | "email";
+interface OneLine extends Common<HTMLInputElement> {
   /** Ignored for a list's main filter alone: `lg`. */
   size?: FieldSize;
   /** The mark at the box's start: a filter's or a search's glass. */
@@ -154,6 +154,24 @@ export interface TextFieldProps extends Common<HTMLInputElement> {
   /** The element typed in, as a group that wraps the field (`asChild`) asks for it. */
   ref?: Ref<HTMLInputElement>;
 }
+
+/**
+ * A one-line field's props. **A secret's box (`type="password"`) is never given its words**: it
+ * holds them itself, so they are never in React's state or the page's markup, and it says only
+ * whether it is filled. Giving it a `value` is a type error.
+ */
+export type PlainTextFieldProps = OneLine & { type?: "text" | "search" | "url" | "email" };
+
+export type TextFieldProps =
+  | PlainTextFieldProps
+  | (Omit<OneLine, "value" | "onChange" | "validate" | "keepsFocus"> & {
+      type: "password";
+      value?: never;
+      validate?: never;
+      keepsFocus?: never;
+      /** Whether the box holds anything: never its words. */
+      onChange?: (filled: boolean) => void;
+    });
 
 export interface TextAreaProps extends Omit<Common<HTMLTextAreaElement>, "value"> {
   /** A textarea's words are always the caller's. */
@@ -185,19 +203,22 @@ function primaryOf(form: HTMLFormElement): HTMLButtonElement | HTMLInputElement 
   );
 }
 
-/** The answers a chord never gives: a grant (ADR 0097 §6) and what cannot be undone (D-1719-3),
- *  each only ever a press of its own button. */
-const PRESSED_ONLY = new Set(["grants", "danger"]);
+/** **The answers a chord may give**: the suggested answer and the plain one. Every other look
+ *  (a grant, ADR 0097 §6; what cannot be undone, D-1719-3; any look added later) is only ever a
+ *  press of its own button, so a new kind of answer is never sent by a chord until it is named
+ *  here. */
+const CHORD_SENDS = new Set(["primary", "secondary"]);
 
 /**
  * Whether ⌘⏎ leaves a form's primary action alone: it says it cannot be pressed now (`disabled`,
- * `aria-disabled`), or it is an answer a chord never gives.
+ * `aria-disabled`), or it is not an answer a chord may give.
  */
 function unavailable(button: HTMLElement): boolean {
+  const variant = button.getAttribute("data-variant");
   return (
     (button as HTMLButtonElement).disabled ||
     button.getAttribute("aria-disabled") === "true" ||
-    PRESSED_ONLY.has(button.getAttribute("data-variant") ?? "")
+    (variant !== null && !CHORD_SENDS.has(variant))
   );
 }
 
@@ -234,6 +255,8 @@ export function Form({ onSubmit, onKeyDown, children, ...rest }: FormProps) {
   const keys = (event: KeyboardEvent<HTMLFormElement>) => {
     onKeyDown?.(event);
     if (event.defaultPrevented || !submits(event.nativeEvent)) return;
+    // A key from what a portal draws outside the form (a dialog, a list) is not the form's.
+    if (!event.currentTarget.contains(event.target as Node)) return;
     event.preventDefault();
     const form = event.currentTarget;
     const primary = primaryOf(form);
@@ -256,9 +279,10 @@ export function Form({ onSubmit, onKeyDown, children, ...rest }: FormProps) {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * **What a field says is wrong** (N26): nothing until the person leaves the box; then what
- * `validate` says, which follows their typing from there until it is right. A refusal from
- * elsewhere (`error`) is said at once and wins. A form checks the field before it is sent.
+ * **What a field says is wrong** (N26): nothing until the person leaves a box whose words they
+ * changed (a box only tabbed through says nothing); then what `validate` says, which follows
+ * their typing from there until it is right. A refusal from elsewhere (`error`) is said at once
+ * and wins. A form checks every field before it is sent, changed or not.
  */
 function useInline(
   value: string | undefined,
@@ -267,6 +291,8 @@ function useInline(
   element: () => HTMLInputElement | HTMLTextAreaElement | null,
 ) {
   const [shown, setShown] = useState<string | undefined>(undefined);
+  // The words the box was drawn with: leaving it with the same words is no answer to check.
+  const [first] = useState(value);
   // Once said, it follows the value: a fix takes it away, a new mistake says the new words. A box
   // that holds its own words is checked again only when it is left or its form is sent.
   const following = shown === undefined || value === undefined ? shown : validate?.(value);
@@ -285,7 +311,11 @@ function useInline(
       checks.delete(one);
     };
   }, [checks, check, element, validate]);
-  return { said: error ?? following, left: check };
+  const left = useCallback(
+    () => (shown === undefined && value !== undefined && value === first ? true : check()),
+    [shown, value, first, check],
+  );
+  return { said: error ?? following, left, check };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -356,16 +386,47 @@ function joined<T>(...refs: (Ref<T> | undefined)[]): RefCallback<T> {
 // The parts
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * **The room for why a value is refused** (N26): a field that can be refused (it has `validate`,
+ * or an `error` prop, set or not) keeps one line under its box whether or not it says anything,
+ * so a refusal that comes or goes moves nothing around it. Empty, it is hidden from a screen
+ * reader; the words that land in it are an alert, as every refusal in the window is. A long one
+ * is cut short on screen and read whole as the box's description.
+ */
+function ErrorLine({ id, said }: { id: string; said: string | undefined }) {
+  return (
+    <p
+      data-scope="field"
+      data-part="error"
+      id={id}
+      role="alert"
+      aria-hidden={said === undefined ? "true" : undefined}
+    >
+      {said}
+    </p>
+  );
+}
+
+/** Whether a field can be refused, and so keeps its error's line. */
+function refusable(props: { validate?: unknown; error?: unknown }): boolean {
+  return props.validate !== undefined || "error" in props;
+}
+
+/** The ids that describe the box: the call's own, and the error's while it says something. */
+function describedBy(own: string | undefined, error: string, said: string | undefined) {
+  return [own, said !== undefined ? error : undefined].filter(Boolean).join(" ") || undefined;
+}
+
 /** The field's label, help and error around its control. */
 function Around({
   label,
   help,
-  said,
+  error,
   children,
 }: {
   label?: ReactNode;
   help?: ReactNode;
-  said?: string;
+  error?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -381,12 +442,7 @@ function Around({
           {help}
         </Text>
       )}
-      {said !== undefined && (
-        // An alert, as every refusal in the window is: said when it appears, the box left or not.
-        <Text slot="errorMessage" elementType="p" data-scope="field" data-part="error" role="alert">
-          {said}
-        </Text>
-      )}
+      {error}
     </>
   );
 }
@@ -400,14 +456,18 @@ function intoTheBox(event: MouseEvent<HTMLElement>) {
 }
 
 /** The props React Aria's `TextField` takes from a call. */
-function fieldProps<E extends HTMLElement>(props: Common<E>, said: string | undefined) {
+function fieldProps<E extends HTMLElement>(
+  props: Common<E>,
+  said: string | undefined,
+  errorId: string,
+) {
   return {
     value: props.value,
     onChange: props.onChange,
     id: props.id,
     "aria-label": props["aria-label"],
     "aria-labelledby": props["aria-labelledby"],
-    "aria-describedby": props["aria-describedby"],
+    "aria-describedby": describedBy(props["aria-describedby"], errorId, said),
     isDisabled: props.isDisabled,
     isReadOnly: props.isReadOnly,
     isRequired: props.isRequired,
@@ -463,39 +523,57 @@ function elementProps<E extends HTMLElement>(props: Common<E>, left: () => boole
 
 /** **A field for one line**: a name, a token, an address, a filter. */
 export function TextField(props: TextFieldProps) {
-  const { type = "text", size = "md", icon, columns, list, keepsFocus, inputRef, ref } = props;
+  const one = props as OneLine & { type?: string };
+  const { type = "text", size = "md", icon, columns, list, keepsFocus, inputRef, ref } = one;
   const box = useRef<HTMLInputElement>(null);
   const element = useCallback(() => box.current, []);
-  const { said, left } = useInline(props.value, props.validate, props.error, element);
+  const { said, left } = useInline(one.value, one.validate, one.error, element);
   const keep = useKept(keepsFocus);
   const refs = useMemo(() => joined(box, keep, inputRef, ref), [keep, inputRef, ref]);
   const own = useId();
+  const errorId = `${own}-error`;
   const [focusedWithin, setFocusedWithin] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const hasIcon = icon !== undefined && icon !== null;
   const glass = hasIcon && (
     <span data-scope="text-input" data-part="icon" aria-hidden="true">
       {icon}
     </span>
   );
-  if (props.value === undefined) {
+  const error = refusable(one) ? <ErrorLine id={errorId} said={said} /> : null;
+  if (type === "password" || one.value === undefined) {
     // **A box that holds its own words** (a secret's value): a native input the family draws, so
     // the words are never in React's state, nor in the page's markup, as React Aria's own state
-    // would put them. Tied to its label, help and error by id, as React Aria ties them.
-    const id = props.id ?? `${own}-box`;
+    // would put them. Tied to its label, help and error by id, and marked with the states its
+    // parts are keyed on, as React Aria marks them.
+    const id = one.id ?? `${own}-box`;
     const described =
       [
-        props["aria-describedby"],
-        props.help !== undefined ? `${own}-help` : undefined,
-        said !== undefined ? `${own}-error` : undefined,
+        one["aria-describedby"],
+        one.help !== undefined ? `${own}-help` : undefined,
+        said !== undefined ? errorId : undefined,
       ]
         .filter(Boolean)
         .join(" ") || undefined;
-    const invalid = said !== undefined || props.isInvalid === true;
+    const invalid = said !== undefined || one.isInvalid === true;
+    const disabled = one.isDisabled ? "true" : undefined;
+    const changed = (event: ChangeEvent<HTMLInputElement>) => {
+      const words = event.currentTarget.value;
+      if (type === "password")
+        (props.onChange as ((filled: boolean) => void) | undefined)?.(words !== "");
+      else one.onChange?.(words);
+    };
     return (
-      <div data-scope="field" data-part="root" className={props.className} style={props.style}>
-        {props.label !== undefined && (
+      <div
+        data-scope="field"
+        data-part="root"
+        data-disabled={disabled}
+        className={one.className}
+        style={one.style}
+      >
+        {one.label !== undefined && (
           <label data-scope="field" data-part="label" htmlFor={id}>
-            {props.label}
+            {one.label}
           </label>
         )}
         <div
@@ -503,53 +581,52 @@ export function TextField(props: TextFieldProps) {
           data-part="root"
           data-size={size}
           data-icon={hasIcon ? "" : undefined}
+          data-hovered={hovered && !one.isDisabled ? "true" : undefined}
           data-focus-within={focusedWithin ? "true" : undefined}
-          data-disabled={props.isDisabled ? "true" : undefined}
+          data-disabled={disabled}
           data-invalid={invalid ? "true" : undefined}
           onMouseDown={intoTheBox}
+          onPointerEnter={() => setHovered(true)}
+          onPointerLeave={() => setHovered(false)}
           onFocus={() => setFocusedWithin(true)}
           onBlur={() => setFocusedWithin(false)}
         >
           {glass}
           <input
-            {...elementProps(props, left)}
+            {...elementProps(one, left)}
             ref={refs}
             id={id}
             type={type}
-            name={props.name}
-            maxLength={props.maxLength}
-            autoComplete={props.autoComplete ?? "off"}
-            autoFocus={props.autoFocus}
-            inputMode={props.inputMode}
-            enterKeyHint={props.enterKeyHint}
-            disabled={props.isDisabled}
-            readOnly={props.isReadOnly}
-            required={props.isRequired}
+            name={one.name}
+            maxLength={one.maxLength}
+            autoComplete={one.autoComplete ?? "off"}
+            autoFocus={one.autoFocus}
+            inputMode={one.inputMode}
+            enterKeyHint={one.enterKeyHint}
+            disabled={one.isDisabled}
+            readOnly={one.isReadOnly}
+            required={one.isRequired}
             size={columns}
             list={list}
-            aria-label={props["aria-label"]}
-            aria-labelledby={props["aria-labelledby"]}
+            aria-label={one["aria-label"]}
+            aria-labelledby={one["aria-labelledby"]}
             aria-describedby={described}
             aria-invalid={invalid || undefined}
-            onChange={(event) => props.onChange?.(event.currentTarget.value)}
+            onChange={changed}
           />
         </div>
-        {props.help !== undefined && (
+        {one.help !== undefined && (
           <p data-scope="field" data-part="help" id={`${own}-help`}>
-            {props.help}
+            {one.help}
           </p>
         )}
-        {said !== undefined && (
-          <p data-scope="field" data-part="error" id={`${own}-error`} role="alert">
-            {said}
-          </p>
-        )}
+        {error}
       </div>
     );
   }
   return (
-    <AriaTextField {...fieldProps(props, said)} type={type}>
-      <Around label={props.label} help={props.help} said={said}>
+    <AriaTextField {...fieldProps(one, said, errorId)} type={type}>
+      <Around label={one.label} help={one.help} error={error}>
         <Group
           data-scope="text-input"
           data-part="root"
@@ -558,7 +635,7 @@ export function TextField(props: TextFieldProps) {
           onMouseDown={intoTheBox}
         >
           {glass}
-          <Input {...elementProps(props, left)} ref={refs} size={columns} list={list} />
+          <Input {...elementProps(one, left)} ref={refs} size={columns} list={list} />
         </Group>
       </Around>
     </AriaTextField>
@@ -572,9 +649,11 @@ export function TextArea(props: TextAreaProps) {
   const element = useCallback(() => box.current, []);
   const { said, left } = useInline(props.value, props.validate, props.error, element);
   const refs = useMemo(() => joined(box, inputRef, ref), [inputRef, ref]);
+  const errorId = `${useId()}-error`;
+  const error = refusable(props) ? <ErrorLine id={errorId} said={said} /> : null;
   return (
-    <AriaTextField {...fieldProps(props, said)}>
-      <Around label={props.label} help={props.help} said={said}>
+    <AriaTextField {...fieldProps(props, said, errorId)}>
+      <Around label={props.label} help={props.help} error={error}>
         <Group
           data-scope="textarea"
           data-part="root"

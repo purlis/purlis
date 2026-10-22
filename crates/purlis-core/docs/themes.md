@@ -278,7 +278,10 @@ measured on its own fill as a button's are, and its floors fall back to its own 
 help to the quiet tier and its error to the danger colour.
 
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
-keyboard is on it; a field whenever it holds the caret), `disabled` and `open`.
+keyboard is on it; a field whenever it holds the caret), `disabled` and `open`. A family names
+only the states its wrapper marks: the button every one; a text input and a textarea `hover`,
+`focused` and `disabled`; a field's root `disabled` alone. A key naming another is said and left
+out.
 
 | Property | Value | Bounds |
 |---|---|---|

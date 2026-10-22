@@ -550,8 +550,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "This machine's read refusal, standing in for its list inside Settings (ST-2; NO-7, #1232)",
   },
   "ui/field/Field.tsx": {
-    count: 2,
-    why: "a field's error under its box, why its value is refused, in either of the family's boxes (#2905)",
+    count: 1,
+    why: "a field's error line under its box, why its value is refused, in either of the family's boxes (#2905)",
   },
 };
 

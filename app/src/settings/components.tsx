@@ -586,7 +586,12 @@ export function Field(props: FieldProps) {
       </span>
     );
   if (props.kind === "list") return <ListField {...props} />;
-  const { onCommit } = props;
+  // A value its check refuses is never written: the box says why, and keeps the words.
+  const onCommit =
+    props.onCommit &&
+    (() => {
+      if (props.validate?.(props.value) === undefined) props.onCommit?.();
+    });
   return (
     <TextField
       id={ids.id}
@@ -660,7 +665,9 @@ function ListField(props: Extract<FieldProps, { kind: "list" }>) {
       aria-labelledby={ids.label === undefined ? ids.labelledBy : undefined}
       aria-describedby={ids.describedBy}
       onChange={props.onChange}
-      onBlur={props.onCommit}
+      onBlur={() => {
+        if (props.validate?.(value) === undefined) props.onCommit?.();
+      }}
     />
   );
 }

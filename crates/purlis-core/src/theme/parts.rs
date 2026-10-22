@@ -360,6 +360,9 @@ pub struct Family {
     border_width: f64,
     /// Its colours at rest and in each state, as the window's own stylesheet draws them.
     defaults: fn(&str, Option<State>) -> Look,
+    /// The states a key may name for it: the ones its wrapper marks (#2905). A text box is never
+    /// pressed, chosen or open, and a field's root is only ever unavailable.
+    pub states: &'static [State],
     /// The attribute its root is keyed on while it has the focus: React Aria's keyboard focus
     /// for a button, and for a field whenever it holds the caret, as a text box's `:focus-visible`
     /// has it (#2905).
@@ -526,6 +529,7 @@ pub const MANIFEST: &[Family] = &[
         line_height: 1.0,
         border_width: 1.0,
         defaults: button_look,
+        states: &STATES,
         focused: "[data-focus-visible]",
         words: &[],
     },
@@ -561,7 +565,24 @@ pub const MANIFEST: &[Family] = &[
             },
         ],
         variants: &[],
-        grounds: &["surface.base", "surface.raised", "surface.overlay"],
+        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
+        // the components): a field stands where a button does, a filter on a list's layer.
+        grounds: &[
+            "surface.base",
+            "surface.raised",
+            "surface.overlay",
+            "surface.sunken",
+            "surface.deep",
+            "border.subtle",
+            "tab.active",
+            "danger.surface",
+            "danger.wash",
+            "layer.project",
+            "layer.workspace",
+            "layer.chat",
+            "layer.selected",
+            "terminal.background",
+        ],
         keeps_size: &[],
         sized_apart: &[],
         height: "size.control",
@@ -569,6 +590,7 @@ pub const MANIFEST: &[Family] = &[
         line_height: 1.0,
         border_width: 0.0,
         defaults: field_look,
+        states: &[State::Disabled],
         focused: "[data-focus-within]",
         words: &[("help", "text.quiet"), ("error", "danger.text")],
     },
@@ -603,7 +625,24 @@ pub const MANIFEST: &[Family] = &[
             },
         ],
         variants: &[],
-        grounds: &["surface.base", "surface.raised", "surface.overlay"],
+        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
+        // the components): a field stands where a button does, a filter on a list's layer.
+        grounds: &[
+            "surface.base",
+            "surface.raised",
+            "surface.overlay",
+            "surface.sunken",
+            "surface.deep",
+            "border.subtle",
+            "tab.active",
+            "danger.surface",
+            "danger.wash",
+            "layer.project",
+            "layer.workspace",
+            "layer.chat",
+            "layer.selected",
+            "terminal.background",
+        ],
         keeps_size: &["[data-size=\"sm\"]", "[data-size=\"lg\"]"],
         sized_apart: &[
             (
@@ -620,6 +659,7 @@ pub const MANIFEST: &[Family] = &[
         line_height: 1.0,
         border_width: 1.0,
         defaults: box_look,
+        states: &[State::Hover, State::Focused, State::Disabled],
         focused: "[data-focus-within]",
         words: &[],
     },
@@ -644,7 +684,24 @@ pub const MANIFEST: &[Family] = &[
             ],
         }],
         variants: &[],
-        grounds: &["surface.base", "surface.raised", "surface.overlay"],
+        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
+        // the components): a field stands where a button does, a filter on a list's layer.
+        grounds: &[
+            "surface.base",
+            "surface.raised",
+            "surface.overlay",
+            "surface.sunken",
+            "surface.deep",
+            "border.subtle",
+            "tab.active",
+            "danger.surface",
+            "danger.wash",
+            "layer.project",
+            "layer.workspace",
+            "layer.chat",
+            "layer.selected",
+            "terminal.background",
+        ],
         keeps_size: &[],
         sized_apart: &[],
         height: "size.control",
@@ -652,6 +709,7 @@ pub const MANIFEST: &[Family] = &[
         line_height: 1.0,
         border_width: 1.0,
         defaults: box_look,
+        states: &[State::Hover, State::Focused, State::Disabled],
         focused: "[data-focus-within]",
         words: &[],
     },
@@ -1016,7 +1074,12 @@ fn key(raw: &str) -> Result<Key, String> {
         next = middle.next();
     }
     if let Some(name) = next {
-        state = Some(State::named(name).ok_or_else(said)?);
+        let named = State::named(name).ok_or_else(said)?;
+        // A state the family's wrapper never marks would reach nothing on screen.
+        if !family.states.contains(&named) {
+            return Err(said());
+        }
+        state = Some(named);
         next = middle.next();
     }
     if next.is_some() {
@@ -2277,6 +2340,7 @@ pub fn manifest_json() -> Value {
                 "description": family.description,
                 "since": family.since,
                 "focused": family.focused,
+                "states": family.states.iter().map(|state| state.name()).collect::<Vec<_>>(),
                 "parts": family.parts.iter().map(|part| json!({
                     "name": part.name,
                     "description": part.description,
@@ -2313,7 +2377,7 @@ pub(super) fn schema() -> Value {
             let variants =
                 std::iter::once(None).chain(family.variants.iter().map(|one| Some(one.name)));
             for variant in variants {
-                let states = std::iter::once(None).chain(STATES.map(Some));
+                let states = std::iter::once(None).chain(family.states.iter().copied().map(Some));
                 for state in states {
                     for property in part.properties {
                         if state.is_some() && !property.in_state() {

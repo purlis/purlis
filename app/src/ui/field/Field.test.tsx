@@ -11,15 +11,16 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { userEvent } from "@testing-library/user-event";
 import { Search } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { drawnWith } from "../../cascade.testkit";
 import { Button } from "../button/Button";
-import { Form, TextArea, TextField, type TextFieldProps } from "./Field";
+import { Form, TextArea, TextField, type PlainTextFieldProps } from "./Field";
 import { submitKeySaid, submits } from "./submitKey";
 
 afterEach(cleanup);
 
 /** A field that holds its own value, so the keyboard can change it. */
-function Held(props: Omit<TextFieldProps, "value" | "onChange"> & { start?: string }) {
+function Held(props: Omit<PlainTextFieldProps, "value" | "onChange"> & { start?: string }) {
   const [value, setValue] = useState(props.start ?? "");
   return <TextField {...props} value={value} onChange={setValue} />;
 }
@@ -116,7 +117,7 @@ describe("a box that holds its own words (a secret's value)", () => {
         label="Token"
         help="It goes to the keychain."
         type="password"
-        onChange={(to) => changed(to !== "")}
+        onChange={changed}
       />,
     );
     const box = screen.getByLabelText("Token") as HTMLInputElement;
@@ -143,12 +144,49 @@ describe("inline validation (N26)", () => {
     expect(box).toHaveAccessibleDescription("A name is letters, digits, ., _ and -.");
   });
 
-  it("follows the typing once said, until the value is right", async () => {
-    render(<Held label="Name" validate={NAME_RULE} start="my name" />);
-    const box = screen.getByRole("textbox", { name: "Name" });
-    box.focus();
+  it("says nothing for a box the person only tabbed through", async () => {
+    render(
+      <>
+        <Held
+          label="Colour"
+          validate={(v) => (v === "" ? "A colour is # and six digits." : undefined)}
+        />
+        <Button>After</Button>
+      </>,
+    );
     await userEvent.tab();
-    expect(screen.getByRole("alert")).toBeInTheDocument();
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "Colour" })).not.toHaveAttribute("aria-invalid");
+    expect(document.querySelector('[data-part="error"]')).toBeEmptyDOMElement();
+  });
+
+  it("keeps its error's line, empty and unheard, so a refusal moves nothing", async () => {
+    render(<Held label="Name" validate={NAME_RULE} />);
+    const line = document.querySelector('[data-scope="field"][data-part="error"]') as Element;
+    expect(line).toHaveAttribute("aria-hidden", "true");
+    expect(line).toBeEmptyDOMElement();
+    const box = screen.getByRole("textbox", { name: "Name" });
+    expect(box).not.toHaveAccessibleDescription();
+    await userEvent.type(box, "my name");
+    await userEvent.tab();
+    // The same element, now saying why: no part comes or goes, so the field keeps its height.
+    expect(document.querySelector('[data-part="error"]')).toBe(line);
+    expect(line).not.toHaveAttribute("aria-hidden");
+    expect(line).toHaveTextContent("A name is letters");
+    expect(drawnWith(line, "block-size")).toBe(
+      "calc(var(--font-size-xs) * var(--line-height-body))",
+    );
+    expect(drawnWith(line, "white-space")).toBe("nowrap");
+  });
+
+  it("follows the typing once said, until the value is right", async () => {
+    render(<Held label="Name" validate={NAME_RULE} start="my nam" />);
+    const box = screen.getByRole("textbox", { name: "Name" });
+    await userEvent.click(box);
+    await userEvent.keyboard("e");
+    await userEvent.tab();
+    expect(screen.getByRole("alert")).toHaveTextContent("A name is letters");
     await userEvent.click(box);
     await userEvent.clear(box);
     await userEvent.type(box, "my-name");
@@ -278,6 +316,51 @@ describe("a form (N26)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Rename" }));
     expect(sent).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+});
+
+describe("what a chord sends (N26)", () => {
+  it("sends only a plain or suggested answer: any other look is pressed", () => {
+    for (const [variant, sends] of [
+      ["primary", true],
+      ["secondary", true],
+      ["soft-accent", false],
+      ["warning-soft", false],
+    ] as const) {
+      const sent = vi.fn();
+      render(
+        <Form aria-label="Answer" onSubmit={(e) => (e.preventDefault(), sent())}>
+          <TextField label="Why" value="" onChange={() => {}} />
+          <Button type="submit" variant={variant}>
+            Go
+          </Button>
+        </Form>,
+      );
+      fireEvent.keyDown(screen.getByRole("textbox", { name: "Why" }), SEND);
+      expect(sent).toHaveBeenCalledTimes(sends ? 1 : 0);
+      cleanup();
+    }
+  });
+
+  it("never sends the form from what a portal draws outside it", () => {
+    const sent = vi.fn();
+    function Outer() {
+      return (
+        <Form aria-label="Outer" onSubmit={(e) => (e.preventDefault(), sent())}>
+          <TextField label="Name" value="" onChange={() => {}} />
+          {createPortal(
+            <TextField label="Inside a dialog" value="" onChange={() => {}} />,
+            document.body,
+          )}
+          <Button type="submit">Create</Button>
+        </Form>
+      );
+    }
+    render(<Outer />);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Inside a dialog" }), SEND);
+    expect(sent).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), SEND);
+    expect(sent).toHaveBeenCalledTimes(1);
   });
 });
 

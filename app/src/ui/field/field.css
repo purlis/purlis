@@ -42,11 +42,18 @@
 }
 
 /* Why its value is refused: in the danger colour, under the control, beside the edge that says
-   so too. Its words are the cue that is not colour. */
+   so too. Its words are the cue that is not colour. **Its line is kept whether it says anything
+   or not**, one line tall, so a refusal coming or going moves nothing; a long one is cut short
+   here and read whole as the box's description. */
 [data-scope="field"][data-part="error"] {
   margin: 0;
+  overflow: hidden;
   color: var(--danger-text);
   font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  block-size: calc(var(--font-size-xs) * var(--line-height-body));
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* ---------------------------------------------------------------------------------------------

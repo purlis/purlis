@@ -12,8 +12,7 @@ import { useChatsHere } from "./chatState";
 import { Choice, Field, SettingActions, SettingGroup, SettingRow } from "./settings/components";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { Button } from "./ui/button/Button";
-import { submits } from "./ui/field/submitKey";
-import { onAMac } from "./tabKeys";
+import { submitKeyShortcut, submits } from "./ui/field/submitKey";
 
 /**
  * The value that stands for "no persona at all".
@@ -289,10 +288,13 @@ export function StartChat({
           // reviewer sees it was decided rather than inherited.
           onInteractOutside={(e) => e.preventDefault()}
           // **⌘⏎ starts the chat** (N26, Ctrl+Enter off macOS), from anywhere in the dialog: a
-          // chord, never a stray Return. Never an approval: approving a profile's command grants
-          // it its run, and a grant is only ever a press of its own button (ADR 0097 §6).
+          // chord, never a stray Return. Never an approval, and never a start without the
+          // sandbox: each grants the chat more than the sandbox gives, and a grant is only ever a
+          // press of its own button (ADR 0097 §6). Never from a list drawn outside the dialog
+          // (the profile picker's open list), whose keys are its own.
           onKeyDown={(e) => {
-            if (!submits(e.nativeEvent) || picked?.approval || !startable) return;
+            if (!submits(e.nativeEvent) || !e.currentTarget.contains(e.target as Node)) return;
+            if (picked?.approval || withoutSandbox !== null || !startable) return;
             e.preventDefault();
             start();
           }}
@@ -589,7 +591,7 @@ export function StartChat({
               <Button
                 variant="primary"
                 onPress={start}
-                aria-keyshortcuts={onAMac() ? "Meta+Enter" : "Control+Enter"}
+                aria-keyshortcuts={submitKeyShortcut()}
                 isDisabled={!startable}
               >
                 {starting ? "Starting…" : startWord}

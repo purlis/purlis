@@ -523,24 +523,28 @@ family moves.
 | Prop | Says |
 | --- | --- |
 | `label`, `help` | its name over the box and one line of help under it; with no visible label, `aria-label` or `aria-labelledby` names it (a filter, a box in a table's cell, a settings row's box, whose row draws the label) |
-| `validate` | what is wrong with a value, or nothing: said under the box when it is left, then following the typing until it is right (N26) |
+| `validate` | what is wrong with a value, or nothing: said under the box when it is left with words the person changed (a box only tabbed through says nothing), then following the typing until it is right (N26) |
 | `error` | a refusal from elsewhere, in its own words (the core's), said at once; `isInvalid` marks a box refused whose words are drawn elsewhere (a tab's rename card) |
 | `size` | a `TextField`'s `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only for a list's main filter field; one size for a row of controls |
 | `icon` | the mark at a `TextField`'s start: a filter's or a search's glass, hidden from a screen reader, taking no press |
 | `keepsFocus` | a name unique to the box in the window: the box drawn in its place keeps the keyboard and the caret (R168) |
-| `value`, `onChange` | the words, as React Aria's words: `onChange` is handed the string. Left out, the box holds its own words (a secret's value is never held in React state) |
+| `value`, `onChange` | the words, as React Aria's words: `onChange` is handed the string. A secret's box (`type="password"`) is never given its words, a type error if it is: it holds them itself, out of React's state and the page's markup, and its `onChange` says only whether it is filled (`secretBoxes.guard.test.ts` names each one) |
 | `onKeyDown`, `onBlur`, … | the element's own native handlers, unstopped: a dialog's Escape and a list's arrows still hear a key the box does not take |
 | `className` | the field's place in its view (margin, width, flex, order), never a look |
 
 - **A field is its label, its control, its help and its error, as one.** React Aria ties the
   label to the box and the help and the error to its description. The error is an alert, as every
   refusal in the window is, and the box's edge takes the danger colour beside it: the words are
-  the cue that is not colour.
+  the cue that is not colour. **A field that can be refused keeps its error's line** whether it
+  says anything or not, one line tall, empty and unheard until it does, so a refusal coming or
+  going moves nothing; a long one is cut short on screen and read whole as the description.
 - **⌘⏎ sends a form's primary action** (Ctrl+Enter off macOS; N26), its first submit button, from
   anywhere in the form, a textarea included, where Enter starts a new line. A `Form` checks its
   fields first: one that is not right says why and the focus goes to the first such. **A chord
-  never gives a grant or what cannot be undone**: a primary action drawn `grants` or `danger` is
-  only ever pressed, and Start a chat's ⌘⏎ starts a chat but never approves a command. A surface
+  sends only a plain or a suggested answer** (`secondary`, `primary`): a grant, what cannot be
+  undone and any look added later are only ever pressed. Start a chat's ⌘⏎ starts a chat, but
+  never approves a command and never starts one without the sandbox. A key from what a portal
+  draws outside the form (a dialog, an open list) is never the form's. A surface
   whose primary action is not a form's submit asks `submits` (`ui/field/submitKey.ts`) itself.
 - **Drawn by its parts** (ADR 0103): the field's root is `data-scope="field"` with its `label`,
   `help` and `error` parts; its control is `data-scope="text-input"` (with `data-size`, and the

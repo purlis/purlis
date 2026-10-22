@@ -1762,22 +1762,7 @@
         "field.label.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
-        "field.label.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.label.pressed.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.label.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.label.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
         "field.label.disabled.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.label.open.text": {
           "$ref": "#/$defs/part-text"
         },
         "field.help.text": {
@@ -1786,22 +1771,7 @@
         "field.help.font-size": {
           "$ref": "#/$defs/part-font-size"
         },
-        "field.help.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.help.pressed.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.help.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.help.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
         "field.help.disabled.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.help.open.text": {
           "$ref": "#/$defs/part-text"
         },
         "field.error.text": {
@@ -1810,22 +1780,7 @@
         "field.error.font-size": {
           "$ref": "#/$defs/part-font-size"
         },
-        "field.error.hover.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.error.pressed.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.error.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.error.focused.text": {
-          "$ref": "#/$defs/part-text"
-        },
         "field.error.disabled.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "field.error.open.text": {
           "$ref": "#/$defs/part-text"
         },
         "text-input.root.fill": {
@@ -1870,30 +1825,6 @@
         "text-input.root.hover.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
-        "text-input.root.pressed.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "text-input.root.pressed.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "text-input.root.pressed.border-colour": {
-          "$ref": "#/$defs/part-border-colour"
-        },
-        "text-input.root.pressed.shadow": {
-          "$ref": "#/$defs/part-shadow"
-        },
-        "text-input.root.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "text-input.root.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "text-input.root.selected.border-colour": {
-          "$ref": "#/$defs/part-border-colour"
-        },
-        "text-input.root.selected.shadow": {
-          "$ref": "#/$defs/part-shadow"
-        },
         "text-input.root.focused.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -1918,37 +1849,16 @@
         "text-input.root.disabled.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
-        "text-input.root.open.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "text-input.root.open.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "text-input.root.open.border-colour": {
-          "$ref": "#/$defs/part-border-colour"
-        },
-        "text-input.root.open.shadow": {
-          "$ref": "#/$defs/part-shadow"
-        },
         "text-input.icon.text": {
           "$ref": "#/$defs/part-text"
         },
         "text-input.icon.hover.text": {
           "$ref": "#/$defs/part-text"
         },
-        "text-input.icon.pressed.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "text-input.icon.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
         "text-input.icon.focused.text": {
           "$ref": "#/$defs/part-text"
         },
         "text-input.icon.disabled.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "text-input.icon.open.text": {
           "$ref": "#/$defs/part-text"
         },
         "textarea.root.fill": {
@@ -1987,30 +1897,6 @@
         "textarea.root.hover.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
-        "textarea.root.pressed.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "textarea.root.pressed.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "textarea.root.pressed.border-colour": {
-          "$ref": "#/$defs/part-border-colour"
-        },
-        "textarea.root.pressed.shadow": {
-          "$ref": "#/$defs/part-shadow"
-        },
-        "textarea.root.selected.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "textarea.root.selected.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "textarea.root.selected.border-colour": {
-          "$ref": "#/$defs/part-border-colour"
-        },
-        "textarea.root.selected.shadow": {
-          "$ref": "#/$defs/part-shadow"
-        },
         "textarea.root.focused.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -2033,18 +1919,6 @@
           "$ref": "#/$defs/part-border-colour"
         },
         "textarea.root.disabled.shadow": {
-          "$ref": "#/$defs/part-shadow"
-        },
-        "textarea.root.open.fill": {
-          "$ref": "#/$defs/part-fill"
-        },
-        "textarea.root.open.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "textarea.root.open.border-colour": {
-          "$ref": "#/$defs/part-border-colour"
-        },
-        "textarea.root.open.shadow": {
           "$ref": "#/$defs/part-shadow"
         }
       }

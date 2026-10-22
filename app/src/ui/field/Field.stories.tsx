@@ -14,10 +14,10 @@ import { expect, waitFor } from "storybook/test";
 import { ListFilter, Search } from "lucide-react";
 import { expectFocusInSight } from "../../stories.testkit";
 import { Button } from "../button/Button";
-import { FIELD_SIZES, Form, TextArea, TextField, type TextFieldProps } from "./Field";
+import { FIELD_SIZES, Form, TextArea, TextField, type PlainTextFieldProps } from "./Field";
 
 /** A field that holds its own value, so the keyboard can change it. */
-function Held(props: Omit<TextFieldProps, "value" | "onChange"> & { start?: string }) {
+function Held(props: Omit<PlainTextFieldProps, "value" | "onChange"> & { start?: string }) {
   const [value, setValue] = useState(props.start ?? "");
   return (
     <div style={{ inlineSize: "20rem" }}>

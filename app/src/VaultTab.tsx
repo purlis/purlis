@@ -1126,7 +1126,7 @@ function ValueDialog({
                   autoComplete="new-password"
                   aria-labelledby={ids.labelledBy}
                   aria-describedby={ids.describedBy}
-                  onChange={(to) => setFilled(to !== "")}
+                  onChange={setFilled}
                 />
               )}
             />

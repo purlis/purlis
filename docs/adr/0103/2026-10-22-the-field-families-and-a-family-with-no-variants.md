@@ -17,6 +17,14 @@ named by its part (`text-input.root`).
 and its error in the danger colour, not in the root's colour, and a part that breaks a floor
 falls back to that default. A root that draws no colour (the field's) is given none.
 
+**A family names its own states**: a key may name only a state its wrapper marks. A text input
+and a textarea are under the pointer, focused and unavailable; a field's root is only
+unavailable. A key naming another state is no part, said and left out. `purlis theme parts`
+lists each family's `states`.
+
+**A field is measured on every ground a control stands on**: the field families list the
+button's grounds, since a filter stands on a list's layers and a sunken ground as a button does.
+
 **`focused` is keyed per family.** A button is focused from the keyboard
 (`[data-focus-visible]`); a field whenever it holds the caret (`[data-focus-within]`), as a text
 box's `:focus-visible` has it. `purlis theme parts` names each family's attribute (`focused`).

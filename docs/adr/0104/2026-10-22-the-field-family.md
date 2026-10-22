@@ -13,14 +13,19 @@ and `Text`, and a form they are sent from is the family's `Form`.
   list's main filter field. A row of controls takes one size, so the find bar's and the browser
   address bar's boxes are `sm` beside their small buttons.
 - **It validates inline, on blur** (N26): `validate` says what is wrong, said under the box when
-  it is left and followed from there until it is right; a refusal from elsewhere (`error`) is
-  said at once. Either marks the box `aria-invalid` and describes it by the words, an alert as
-  every refusal in the window is.
+  it is left with words the person changed and followed from there until it is right; a refusal
+  from elsewhere (`error`) is said at once. Either marks the box `aria-invalid` and describes it
+  by the words, an alert as every refusal in the window is. A field that can be refused keeps its
+  error's line, empty and unheard while it says nothing, so nothing moves when it does.
+- **A secret's box is never given its words**: `type="password"` with a `value` is a type
+  error, and the box holds what is typed outside React's state and the page's markup.
 - **⌘⏎ sends a form's primary action** (N26; Ctrl+Enter off macOS), its first submit button,
-  from anywhere in it, a textarea included. **A chord never gives a grant or what cannot be
-  undone**: a primary action drawn `grants` or `danger` is only ever a press of its own button
-  (ADR 0097 §6, D-1719-3), and Start a chat's ⌘⏎ never approves a command. A form whose fields
-  are not right says why at each and takes the focus to the first.
+  from anywhere in it, a textarea included. **A chord sends only a plain or a suggested answer**
+  (`secondary`, `primary`); a grant, what cannot be undone and any look added later are only
+  ever a press of their own button (ADR 0097 §6, D-1719-3). Start a chat's ⌘⏎ never approves a
+  command and never starts a chat without the sandbox. A key from what a portal draws outside
+  the form is not the form's. A form whose fields are not right says why at each and takes the
+  focus to the first.
 - **A filter keeps its focus and its caret across a redraw** (R168): `keepsFocus` hands the
   keyboard and the caret on to the box drawn in its place.
 - **Lint** (§5): `purlis/field-family` is an error. A raw `<textarea>`, or an `<input>` a person

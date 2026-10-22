@@ -27,6 +27,11 @@ export function submitKeySaid(mac: boolean = onAMac()): string {
   return mac ? "⌘↩" : "Ctrl+Enter";
 }
 
+/** The key as `aria-keyshortcuts` names it, on this platform. */
+export function submitKeyShortcut(mac: boolean = onAMac()): string {
+  return mac ? "Meta+Enter" : "Control+Enter";
+}
+
 function onAMac(): boolean {
   return typeof navigator !== "undefined" && navigator.platform.startsWith("Mac");
 }

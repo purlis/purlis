@@ -862,6 +862,18 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
         assert_eq!(one["since"], 3, "{name}");
         assert_eq!(one["variants"], json!([]), "{name}");
         assert_eq!(one["focused"], "[data-focus-within]", "{name}");
+        let states: Vec<&str> = one["states"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|state| state.as_str().unwrap())
+            .collect();
+        let wanted_states: &[&str] = if name == "field" {
+            &["disabled"]
+        } else {
+            &["hover", "focused", "disabled"]
+        };
+        assert_eq!(states, wanted_states, "{name}");
         let parts: Vec<&str> = one["parts"]
             .as_array()
             .unwrap()
@@ -940,7 +952,7 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     ),
     (
         3,
-        "8a863447d8077fcb178637999fc6ed55bbb0fcca6ffaf9ff58b6ff0f7668d4d0",
+        "a59f1d43e8ea81fd5d4379743664d436979ec1cf53324f1346c2712b805dbe55",
     ),
 ];
 
@@ -1384,5 +1396,49 @@ fn the_field_families_default_is_what_field_css_draws() {
             token(declared(drawn, "color").unwrap()),
             "the field's {part}"
         );
+    }
+}
+
+#[test]
+fn a_state_a_fields_wrapper_never_marks_is_no_part() {
+    let loaded = load(&with_parts(json!({
+        "field.label.focused.text": "accent.base",
+        "field.help.hover.text": "accent.base",
+        "text-input.root.pressed.fill": "accent.surface",
+        "textarea.root.open.fill": "accent.surface",
+        "text-input.root.hover.border-colour": "accent.base",
+    })));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    for key in [
+        "field.label.focused.text",
+        "field.help.hover.text",
+        "text-input.root.pressed.fill",
+        "textarea.root.open.fill",
+    ] {
+        assert!(
+            said(&loaded)
+                .iter()
+                .any(|one| one.contains(&format!("parts.{key} is not a component part"))),
+            "{key}: {:?}",
+            said(&loaded)
+        );
+    }
+    assert_eq!(loaded.theme.first().parts.len(), 1);
+    let keys = schema()["properties"]["parts"]["properties"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    assert!(keys.contains_key("text-input.root.hover.border-colour"));
+    assert!(keys.contains_key("field.label.disabled.text"));
+    assert!(!keys.contains_key("field.label.focused.text"));
+    assert!(!keys.contains_key("textarea.root.selected.fill"));
+}
+
+#[test]
+fn a_field_is_measured_on_every_ground_a_control_stands_on() {
+    let button = parts::family("button").expect("the button family");
+    for name in ["field", "text-input", "textarea"] {
+        let family = parts::family(name).expect("a field family");
+        assert_eq!(family.grounds, button.grounds, "{name}");
     }
 }
