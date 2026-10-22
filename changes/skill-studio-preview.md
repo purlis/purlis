@@ -10,11 +10,12 @@
   them. A chat can also list, find and load its own skills and see their recent runs, so a
   chat program that has no skills of its own still gets yours. Loading a skill counts as a run,
   and the run says the chat loaded it (#2776).
-  *Use skill…*, in the palette and on the Skills chip of each chat's pane, lists exactly that
-  chat's skills, asks for the arguments a skill declares, and types the skill into the chat
-  for you to send, in the way that chat's tool expects it. The chip also shows how many skills
-  and how many characters of their descriptions the chat lists, and warns when that is past
-  purlis's budget; a manual-only skill costs nothing (#2775).
+  *Use skill…*, in the palette, on each chat tab's menu and on the Skills chip of a chat's
+  pane, lists exactly that chat's skills, asks for the arguments a skill declares, and types the
+  skill into the chat for you to send, in the way that chat's tool expects it, on Claude Code,
+  Codex and opencode alike. The chip and the tab's menu show how many skills and how many
+  characters of their descriptions the chat lists, and warn at four fifths of purlis's budget;
+  a manual-only skill costs nothing where the chat leaves it out, as Claude Code does (#2775).
 - **A persona brings its skills into every workspace** (Skill studio preview). A persona's own
   skills, and the skills its definition names, reach every chat as that persona, in any
   workspace, whatever the workspace was granted; the persona's copy wins over a workspace's or

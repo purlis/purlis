@@ -6287,6 +6287,12 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   token does; it lets the drain tell a copy of a line the host already took late from another
   line that reads the same, and a copy is passed over only where it is the same chat's, under
   the same id, and says the same thing.
+  A `UserPromptSubmit` report carries `prompt_marks` (#2775): a 256-bit Bloom filter of the
+  SHA-256 digests of the stretches of each line of the prompt (from any word, up to 6 words; at
+  most 36), and never the prompt's words, so the app knows a skill Use skill… typed was in the prompt sent. It is heard
+  live alone: never spooled, never in the event log. A `userpromptexpansion` tool line (Claude
+  Code) names the skill a `/<skill>` the person sent expanded into, as its `skill`, started by
+  `use-skill`: the app opens a run only for a skill Use skill… typed and still holds.
   Another, `doing`, says what a chat's tool hook saw, for the one line a working chat's row
   says under its name (#1493): `{"chat": <n>, "doing": {"is": "began", "kind": "<kind>",
   "name": "<name>"}}` before a tool runs, and `{"is": "ended", "kind": "<kind>"}` after one
@@ -6408,7 +6414,7 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     "<the hook's line, as JSON text>", "mac": "<64 hex>"}` and a newline. `seq` counts from 1 per
     key; `key` names the key the line checks under; `mac` is HMAC-SHA256, under that key, of the
     chat number, `seq` and `key` (each followed by a newline) and then `line`'s bytes. A line
-    holds no token, and a tool line holds no `args`, its unkeyed argument digest (#977). The name's `<key>` and `<seq>` are the line's own, `<seq>` in decimal, and
+    holds no token, a tool line holds no `args`, its unkeyed argument digest (#977), and a report holds no `prompt_marks`, the filter of its prompt's line starts that tells a skill Use skill… typed was sent (#2775). The name's `<key>` and `<seq>` are the line's own, `<seq>` in decimal, and
     the file holds that one line: the drain reads no other. A file with this name is whole and
     is never written again.
   - `<key>.<seq>.part` is a number a hook has taken and is still writing its line under, or took
