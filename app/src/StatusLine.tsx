@@ -8,6 +8,7 @@ import { Health, type DoctorState } from "./Doctor";
 import { PinItem } from "./Updates";
 import type { FactBadge, PinReport } from "./bindings";
 import { ago } from "./ChangesView";
+import { Button } from "./ui/button/Button";
 
 /**
  * **charter's status line**: one line at the very bottom of the window, under everything.
@@ -356,30 +357,28 @@ export type Alerts = {
 function AlertsButton({ alerts }: { alerts?: Alerts }) {
   if (alerts === undefined) {
     return (
-      <button
-        type="button"
-        className="ui-button ui-button-ghost ui-button-sm status-alerts"
-        tabIndex={0}
+      <Button
+        size="sm"
+        variant="ghost"
         data-testid="status-alerts"
-        disabled
+        isDisabled
         aria-label="Notices — nothing to open here"
         title="This status line has no Inbox behind it."
+        icon={<Bell aria-hidden="true" size="1em" />}
+        className="status-alerts"
       >
-        <Bell aria-hidden="true" size="1em" /> Notices
+        Notices
         <span className="status-unknown" aria-hidden="true">
           —
         </span>
-      </button>
+      </Button>
     );
   }
   const { count } = alerts;
   return (
-    <button
-      type="button"
-      className="ui-button ui-button-ghost ui-button-sm status-alerts"
-      // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written
-      // down (`docs/ui-primitives.md`, charter-app#189).
-      tabIndex={0}
+    <Button
+      size="sm"
+      variant="ghost"
       data-testid="status-alerts"
       data-count={count ?? "unknown"}
       aria-label={
@@ -390,9 +389,11 @@ function AlertsButton({ alerts }: { alerts?: Alerts }) {
           ? "purlis could not count this project's Notices — open the Inbox to see why"
           : "Open the Inbox: this project's Notices, and what waits on you"
       }
-      onClick={alerts.open}
+      onPress={alerts.open}
+      icon={<Bell aria-hidden="true" size="1em" />}
+      className="status-alerts"
     >
-      <Bell aria-hidden="true" size="1em" /> Notices
+      Notices
       {count === undefined ? (
         <span className="status-unknown" aria-hidden="true">
           —
@@ -404,7 +405,7 @@ function AlertsButton({ alerts }: { alerts?: Alerts }) {
           </span>
         )
       )}
-    </button>
+    </Button>
   );
 }
 

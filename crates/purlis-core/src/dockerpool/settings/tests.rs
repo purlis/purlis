@@ -271,3 +271,91 @@ fn settings_that_cannot_be_read_are_taken_as_none() {
     std::fs::write(home.path().join(".docker/config.json"), "{not json").unwrap();
     assert_eq!(copy_of(), "{}");
 }
+
+/// `folder`'s time of last change, set back to `ago` before now.
+fn aged(folder: &Path, ago: std::time::Duration) {
+    let then = std::time::SystemTime::now() - ago;
+    std::fs::File::open(folder)
+        .unwrap()
+        .set_modified(then)
+        .unwrap();
+}
+
+/// A copy a run that ended outright left behind is swept once it is older than a day, as a
+/// run is prepared and as the app starts (#2893); a run still going keeps its own, however
+/// old, and nothing but a run's folder is touched.
+#[test]
+fn copies_older_than_a_day_are_swept_and_a_running_runs_never_is() {
+    let (home, data) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let settings_in = data.path().join(DIR);
+    let source = || Source {
+        settings_in: &settings_in,
+        path: OsString::new(),
+        home: Some(home.path()),
+        docker_config: None,
+        docker_host: None,
+        tmp: None,
+        runtime: None,
+        system: Path::new("/nonexistent/docker.sock"),
+    };
+    let day = std::time::Duration::from_secs(24 * 60 * 60);
+    // A run still going, whose copy is two days old.
+    let running = prepare(&source()).unwrap();
+    let running_folder = PathBuf::from(
+        &running
+            .env
+            .iter()
+            .find(|(name, _)| *name == "DOCKER_CONFIG")
+            .unwrap()
+            .1,
+    );
+    aged(&running_folder, 2 * day);
+    // Two left behind: one two days old, one an hour old; and a folder that is no run's.
+    let left_old = settings_in.join("run-left-old");
+    let left_young = settings_in.join("run-left-young");
+    let other = settings_in.join("mine");
+    for folder in [&left_old, &left_young, &other] {
+        std::fs::create_dir_all(folder).unwrap();
+        std::fs::write(folder.join("config.json"), "{}").unwrap();
+    }
+    aged(&left_old, 2 * day);
+    aged(&left_young, std::time::Duration::from_secs(60 * 60));
+    aged(&other, 2 * day);
+
+    // As a run is prepared.
+    let next = prepare(&source()).unwrap();
+    assert!(!left_old.exists());
+    assert!(left_young.exists());
+    assert!(other.exists());
+    assert!(running_folder.exists(), "a running run's copy was swept");
+    drop(next);
+
+    // As the app starts.
+    let left_again = settings_in.join("run-left-again");
+    std::fs::create_dir_all(&left_again).unwrap();
+    aged(&left_again, 2 * day);
+    assert_eq!(sweep(&settings_in, std::time::SystemTime::now()), 1);
+    assert!(!left_again.exists());
+    assert!(running_folder.exists());
+    drop(running);
+    assert!(!running_folder.exists());
+}
+
+/// Nothing is swept where the folder is not there, or is a link.
+#[test]
+fn a_settings_folder_that_is_not_one_is_never_swept() {
+    let (data, elsewhere) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    assert_eq!(
+        sweep(&data.path().join(DIR), std::time::SystemTime::now()),
+        0
+    );
+    let old = elsewhere.path().join("run-old");
+    std::fs::create_dir_all(&old).unwrap();
+    aged(&old, std::time::Duration::from_secs(3 * 24 * 60 * 60));
+    std::os::unix::fs::symlink(elsewhere.path(), data.path().join(DIR)).unwrap();
+    assert_eq!(
+        sweep(&data.path().join(DIR), std::time::SystemTime::now()),
+        0
+    );
+    assert!(old.exists());
+}

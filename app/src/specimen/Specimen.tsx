@@ -33,6 +33,7 @@ import { look } from "../editor/look";
 import { DEFAULT_TEXT } from "../textDefaults";
 import { drawnFont, xtermTheme, type Theme } from "../theme/theme";
 import { CHAT_LINES, EDITOR_FILE, EDITOR_TEXT, TERMINAL_LINES } from "./fixture";
+import { Button } from "../ui/button/Button";
 
 /** What a control is handed to do: nothing, the specimen never changes. */
 const still = () => {};
@@ -219,17 +220,10 @@ function SpecimenSettings() {
           onCheckedChange={still}
         />
         <SettingActions>
-          <button
-            type="button"
-            className="ui-button ui-button-primary"
-            tabIndex={0}
-            onClick={still}
-          >
+          <Button variant="primary" onPress={still}>
             Save
-          </button>
-          <button type="button" className="ui-button" tabIndex={0} onClick={still}>
-            Cancel
-          </button>
+          </Button>
+          <Button onPress={still}>Cancel</Button>
         </SettingActions>
       </SettingGroup>
     </SettingsLayout>
@@ -248,17 +242,10 @@ export function SpecimenDialog() {
         control={(ids) => <Field ids={ids} kind="text" value="sample/he" onChange={still} />}
       />
       <AnswerBar>
-        <button className="ui-button" type="button" tabIndex={0} onClick={still}>
-          Cancel
-        </button>
-        <button
-          className="ui-button ui-button-danger ends-it"
-          type="button"
-          tabIndex={0}
-          onClick={still}
-        >
+        <Button onPress={still}>Cancel</Button>
+        <Button variant="danger" onPress={still}>
           Delete branch
-        </button>
+        </Button>
       </AnswerBar>
     </div>
   );

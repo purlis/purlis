@@ -78,10 +78,13 @@ fn the_provenance_job_attests_what_the_build_made_whenever_the_run_publishes() {
         "provenance needs {:?}; it attests the build's output, so it needs `build`",
         provenance.needs()
     );
-    assert_eq!(
-        provenance.condition(),
-        Some("needs.plan.outputs.publish == 'true'"),
-        "a published build is attested, and one published nowhere is not"
+    // Whatever became of the runner image (#2880).
+    assert!(
+        provenance
+            .condition()
+            .is_some_and(|said| said.contains("needs.plan.outputs.publish == 'true'")),
+        "a published build is attested, and one published nowhere is not: {:?}",
+        provenance.condition()
     );
 
     let steps = provenance.steps();
@@ -163,7 +166,9 @@ fn only_the_provenance_job_can_sign_and_publish_can_only_read() {
         })
         .map(|j| j.name.as_str())
         .collect();
-    assert_eq!(attesters, ["provenance"], "{attesters:?}");
+    // `runner-image` calls `runner-image.yml`, whose `attest` attests the runner image's own
+    // provenance and SBOMs to the image in the registry (#2191), never a file of the release.
+    assert_eq!(attesters, ["runner-image", "provenance"], "{attesters:?}");
 }
 
 #[test]

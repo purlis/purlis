@@ -29,6 +29,7 @@ import {
 import { useLentMemoryStores } from "./MemoryEdits";
 import { MOVES_WHOLE, movesPublishSaid, storeLabel } from "./memoryMoves";
 import { OffWhenReadOnly, useReadOnlySaid } from "./ReadOnlyLine";
+import { Button } from "./ui/button/Button";
 
 // The body's editor is CodeMirror (#1862), a chunk of its own loaded the first time a memory is
 // edited, so the window's main bundle carries none (`tools/main-chunk-has-no-codemirror.mjs`).
@@ -232,29 +233,23 @@ export function MemoryTab({
               ? "This memory is not there any more — it was archived or removed since you opened it. Nothing was saved."
               : "This memory changed on disk since you opened it, so nothing was saved. It is beside your edit as it now is: take what you want from it, then Overwrite to save your edit over it, or Reload to take it up and drop your edit."}{" "}
             <SettingActions>
-              <button
-                type="button"
-                className="ui-button"
-                tabIndex={0}
-                onClick={() => {
+              <Button
+                onPress={() => {
                   setDraft(plane, key, undefined);
                   if (stale.now !== undefined) setSaid({ memory: stale.now });
                 }}
               >
                 Reload
-              </button>
+              </Button>
               {stale.now !== null && (
-                <button
-                  type="button"
-                  // It writes over what changed on disk, which is then gone (D-1719-3).
-                  className="ui-button ui-button-danger"
-                  tabIndex={0}
-                  disabled={saving || readOnly !== undefined}
+                <Button
+                  variant="danger"
+                  isDisabled={saving || readOnly !== undefined}
                   title={readOnly}
-                  onClick={() => void save(true)}
+                  onPress={() => void save(true)}
                 >
                   Overwrite
-                </button>
+                </Button>
               )}
             </SettingActions>
           </div>
@@ -265,27 +260,23 @@ export function MemoryTab({
           </p>
         )}
         <SettingActions>
-          <button
+          <Button
+            variant="primary"
             type="submit"
-            className="ui-button ui-button-primary"
-            tabIndex={0}
-            disabled={saving || stale !== undefined || readOnly !== undefined}
+            isDisabled={saving || stale !== undefined || readOnly !== undefined}
             title={readOnly}
           >
             Save
-          </button>
-          <button
-            type="button"
-            className="ui-button"
-            tabIndex={0}
-            onClick={() => {
+          </Button>
+          <Button
+            onPress={() => {
               setDraft(plane, key, undefined);
               setRefused(undefined);
               if (isNew) onClose();
             }}
           >
             Cancel
-          </button>
+          </Button>
         </SettingActions>
       </form>
     );
@@ -315,14 +306,9 @@ export function MemoryTab({
         body={`Nothing is called ${slug} in ${scopeWord(scope)}'s memory now.`}
         action={
           onOpenArchive && (
-            <button
-              type="button"
-              className="ui-button ui-button-primary"
-              tabIndex={0}
-              onClick={onOpenArchive}
-            >
+            <Button variant="primary" onPress={onOpenArchive}>
               {`Open ${archiveWhere(scope)}`}
-            </button>
+            </Button>
           )
         }
         testid="view-gone"
@@ -453,15 +439,13 @@ function MoveMemory({
           </p>
         )}
         <SettingActions>
-          <button
-            type="button"
-            className="ui-button ui-button-primary"
-            tabIndex={0}
-            disabled={target === undefined || moving}
-            onClick={() => void move()}
+          <Button
+            variant="primary"
+            isDisabled={target === undefined || moving}
+            onPress={() => void move()}
           >
             Move
-          </button>
+          </Button>
         </SettingActions>
       </OffWhenReadOnly>
     </div>

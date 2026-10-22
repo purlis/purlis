@@ -61,6 +61,7 @@ import { dragReference, type Referenced } from "./references";
 import { pickable, useFilePicks, type Pickable } from "./filePicks";
 import { useLastRead } from "./editor/lastRead";
 import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
+import { Button, ToggleButton } from "./ui/button/Button";
 
 /**
  * The left region: the repo and worktree **explorer** (ADR 0038).
@@ -590,14 +591,14 @@ export function Explorer({
                   </div>
                 </RovingFocusGroup.Root>
                 <div className="files-toggles">
-                  <button
-                    type="button"
-                    className="ui-button ui-button-sm ignored-toggle"
-                    aria-pressed={showIgnored}
-                    onClick={() => setShowIgnored((was) => !was)}
+                  <ToggleButton
+                    size="sm"
+                    isSelected={showIgnored}
+                    onPress={() => setShowIgnored((was) => !was)}
+                    className="ignored-toggle"
                   >
                     Show ignored files
-                  </button>
+                  </ToggleButton>
                 </div>
               </>
             )}
@@ -650,22 +651,22 @@ export function Explorer({
   const toggles = open.length > 0 && (
     // Only while some branch's files are open: with none, there is nothing they change.
     <div className="files-toggles">
-      <button
-        type="button"
-        className="ui-button ui-button-sm changed-toggle"
-        aria-pressed={changedOnly}
-        onClick={() => setChangedOnly((was) => !was)}
+      <ToggleButton
+        size="sm"
+        isSelected={changedOnly}
+        onPress={() => setChangedOnly((was) => !was)}
+        className="changed-toggle"
       >
         Changed only
-      </button>
-      <button
-        type="button"
-        className="ui-button ui-button-sm ignored-toggle"
-        aria-pressed={showIgnored}
-        onClick={() => setShowIgnored((was) => !was)}
+      </ToggleButton>
+      <ToggleButton
+        size="sm"
+        isSelected={showIgnored}
+        onPress={() => setShowIgnored((was) => !was)}
+        className="ignored-toggle"
       >
         Show ignored files
-      </button>
+      </ToggleButton>
     </div>
   );
 
@@ -684,22 +685,16 @@ export function Explorer({
             className="ui-text-secondary"
             aria-hidden="true"
           >{`${picks.picks.length} picked`}</span>
-          <button
-            type="button"
-            className="ui-button ui-button-sm"
+          <Button
+            size="sm"
             aria-label={`Add ${picks.picks.length} picked to a chat's context`}
-            onClick={() => onAddToChat(picks.inOrder(navRef.current))}
+            onPress={() => onAddToChat(picks.inOrder(navRef.current))}
           >
             Add to a chat&apos;s context
-          </button>
-          <button
-            type="button"
-            className="ui-button ui-button-sm"
-            aria-label="Clear the picked rows"
-            onClick={picks.clear}
-          >
+          </Button>
+          <Button size="sm" aria-label="Clear the picked rows" onPress={picks.clear}>
             Clear
-          </button>
+          </Button>
         </div>
       )}
     </>

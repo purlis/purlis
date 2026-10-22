@@ -122,7 +122,9 @@ describe("the refused vault Notice", () => {
     // Allow is the grants style; Keep blocked and the dispatch the plain one
     // (ADR 0097 §6).
     expect(
-      screen.getAllByRole("button").map((button) => button.classList.contains("ui-button-grants")),
+      screen
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("data-variant") === "grants"),
     ).toEqual([true, false, false]);
     // What the press would do is on screen before it, and so is the way that is the chat's own.
     expect(screen.getByText(/Allow lets every chat opened as steward use vault/)).toHaveTextContent(

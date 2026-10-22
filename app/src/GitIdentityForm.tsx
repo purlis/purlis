@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Field, SettingActions, SettingRow } from "./settings/components";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The git identity form** (FX-3): the fix for the doctor's `git identity` row, which needs a
@@ -125,12 +126,10 @@ export function GitIdentityForm({
       />
       {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
       <SettingActions>
-        <button type="submit" tabIndex={0} disabled={busy || sending}>
+        <Button type="submit" isDisabled={busy || sending}>
           {sending ? "Setting…" : "Set identity"}
-        </button>
-        <button type="button" tabIndex={0} onClick={onCancel}>
-          Cancel
-        </button>
+        </Button>
+        <Button onPress={onCancel}>Cancel</Button>
       </SettingActions>
     </form>
   );

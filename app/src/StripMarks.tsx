@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { type Offer } from "./actions";
 import { useArrived } from "./lib/arrived";
+import { Button } from "./ui/button/Button";
 
 /**
  * **The strips' own controls** (#1035, split out of `PlaneView.tsx`): a catalogue row drawn as a
@@ -95,16 +96,15 @@ export function Doer({
   const bare = iconOnly && Mark !== undefined;
   if (primary)
     return (
-      <button
-        className="ui-button ui-button-primary"
-        tabIndex={0}
-        disabled={!offer.available}
+      <Button
+        variant="primary"
+        isDisabled={!offer.available}
         title={offer.reason || offer.note || undefined}
-        onClick={() => onPress(offer)}
+        onPress={() => onPress(offer)}
       >
         {Mark && <Mark />}
         {words ?? offer.title}
-      </button>
+      </Button>
     );
   return (
     <button

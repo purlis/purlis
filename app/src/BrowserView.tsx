@@ -39,6 +39,7 @@ import { useProjectShown } from "./projectShown";
 import { RECONNECTING_SAID } from "./reconnecting";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { onAMac } from "./tabKeys";
+import { Button } from "./ui/button/Button";
 
 /** The keys that are only held with another. */
 const ONLY_HELD = new Set(["Shift", "Control", "Alt", "Meta"]);
@@ -477,13 +478,13 @@ export function BrowserView({ plane, program }: { plane: string; program: string
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
           />
-          <button
+          <Button
+            size="sm"
             type="submit"
-            className="ui-button ui-button-sm"
             aria-disabled={going || typed.trim() === "" ? true : undefined}
           >
             Go
-          </button>
+          </Button>
         </form>
       )}
       {theirs && asking !== null && (
@@ -535,14 +536,14 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           onValueChange={pickSize}
         />
         {driving && (
-          <button
-            type="button"
-            className="ui-button ui-button-primary ui-button-sm"
+          <Button
+            size="sm"
+            variant="primary"
             title={`Hand the browser back to the agent (${handsBackSaid(mac)})`}
-            onClick={handBack}
+            onPress={handBack}
           >
             Done
-          </button>
+          </Button>
         )}
       </div>
       <div

@@ -57,9 +57,9 @@
 //! as drawn, by colour, never by the tokens' names. Where the consent variant's own default is
 //! not enough, the variant it is held apart from draws its default too.
 //!
-//! **On today's markup** a family's rules also reach its class: a variant
-//! that is not consent never reaches a control that carries a consent variant's class too, and
-//! a size never reaches the small or wrapping controls, whose size their own classes keep.
+//! **A size a theme sets is the family's default size** (md for the button): it never reaches a
+//! control drawn at another of the family's sizes, nor one in a row that wraps, whose size the
+//! family's own stylesheet keeps (#2904).
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write as _;
@@ -75,7 +75,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -122,24 +122,13 @@ impl State {
     /// The attribute React Aria sets on a part in this state, which the stylesheet keys on.
     pub fn attribute(self) -> &'static str {
         match self {
-            Self::Hover => "[data-hovered]",
-            Self::Pressed => "[data-pressed]",
+            // An unavailable button is never drawn under the pointer or pressed (#2904).
+            Self::Hover => "[data-hovered]:not([data-disabled])",
+            Self::Pressed => "[data-pressed]:not([data-disabled])",
             Self::Selected => "[data-selected]",
             Self::Focused => "[data-focus-visible]",
             Self::Disabled => "[data-disabled]",
             Self::Open => "[data-open]",
-        }
-    }
-
-    /// The same state on today's control classes.
-    fn on_a_class(self) -> &'static str {
-        match self {
-            Self::Hover => ":hover:not(:disabled, [aria-disabled=\"true\"])",
-            Self::Pressed => ":active:not(:disabled, [aria-disabled=\"true\"])",
-            Self::Selected => "[aria-pressed=\"true\"]",
-            Self::Focused => ":focus-visible",
-            Self::Disabled => ":is(:disabled, [aria-disabled=\"true\"])",
-            Self::Open => "[aria-expanded=\"true\"]",
         }
     }
 
@@ -332,9 +321,6 @@ pub struct Variant {
     pub since: u32,
     pub description: &'static str,
     pub consent: Option<Consent>,
-    /// The class today's markup draws it with; `None`
-    /// for the variant a class without one draws.
-    class: Option<&'static str>,
 }
 
 /// One part of a family.
@@ -359,14 +345,12 @@ pub struct Family {
     pub variants: &'static [Variant],
     /// The surfaces it is drawn on, which a see-through fill shows.
     pub grounds: &'static [&'static str],
-    /// The class today's markup draws its root with, beside the wrapper's attributes.
-    class: Option<&'static str>,
-    /// The selectors of today's controls of the class whose size the window's own classes keep
-    /// (a small button, a button in a wrapping row): a part's size never reaches them.
+    /// The selectors of the roots drawn at another of the family's sizes, or in a row that keeps
+    /// their size (a button in a wrapping row): a part's size never reaches them.
     keeps_size: &'static [&'static str],
-    /// Today's small controls of the class, and the size token each is drawn at, which their
-    /// corners are clamped to.
-    small: &'static [(&'static str, &'static str)],
+    /// The roots drawn at another of the family's sizes, and the height each is drawn at, as the
+    /// family's stylesheet writes it, which their corners are clamped to.
+    sized_apart: &'static [(&'static str, &'static str)],
     /// The root's height at rest, the size token it is drawn at, which a corner is clamped to.
     height: &'static str,
     /// Its words' size and line height at rest, and its border's width: what fits in its height.
@@ -411,41 +395,66 @@ pub const MANIFEST: &[Family] = &[Family {
             since: 1,
             description: "The plain button.",
             consent: None,
-            class: None,
         },
         Variant {
             name: "primary",
             since: 1,
             description: "The answer purlis suggests.",
             consent: None,
-            class: Some("ui-button-primary"),
         },
         Variant {
             name: "ghost",
             since: 1,
             description: "A button with no box until the pointer reaches it.",
             consent: None,
-            class: Some("ui-button-ghost"),
         },
         Variant {
             name: "danger",
             since: 1,
             description: "What cannot be undone.",
             consent: Some(Consent::Danger),
-            class: Some("ui-button-danger"),
         },
         Variant {
             name: "grants",
             since: 1,
             description: "An answer that grants: an Allow, an Accept.",
             consent: Some(Consent::Grants),
-            class: Some("ui-button-grants"),
+        },
+        Variant {
+            name: "soft-accent",
+            since: 2,
+            description: "A suggestion that is not the answer: the accent's ground, no edge.",
+            consent: None,
+        },
+        Variant {
+            name: "warning-soft",
+            since: 2,
+            description: "What asks for care without ending anything.",
+            consent: None,
+        },
+        Variant {
+            name: "link",
+            since: 2,
+            description: "A button that reads as a link: no box, as tall as its words.",
+            consent: None,
         },
     ],
     grounds: &["surface.base", "surface.raised", "surface.overlay"],
-    class: Some("ui-button"),
-    keeps_size: &[".ui-button-sm", ".ui-button-row > .ui-button"],
-    small: &[(".ui-button-sm", "size.chrome")],
+    keeps_size: &[
+        "[data-size=\"sm\"]",
+        "[data-size=\"lg\"]",
+        "[data-scope=\"button-row\"][data-wraps] > *",
+    ],
+    sized_apart: &[
+        (
+            "[data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]",
+            "max(var(--size-chrome), var(--space-7))",
+        ),
+        (
+            "[data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]",
+            "calc(var(--size-control) + var(--space-2))",
+        ),
+    ],
     height: "size.control",
     font_size: "font-size.base",
     line_height: 1.0,
@@ -464,8 +473,8 @@ struct Look {
 /// `transparent`: the one colour a part may take that is not a token.
 const TRANSPARENT: &str = "transparent";
 
-/// **The button's colours as `app/src/primitives/controls.css` draws them**, which a test holds
-/// to that file: at rest, under the pointer and pressed as a toggle (selected).
+/// **The button's colours as `app/src/ui/button/button.css` draws them**, which a test holds to
+/// that file: at rest, under the pointer and pressed as a toggle (selected).
 fn button_look(variant: &str, state: Option<State>) -> Look {
     let mut look = match variant {
         "primary" => Look {
@@ -488,6 +497,21 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
             text: "text.primary",
             border: "accent.base",
         },
+        "soft-accent" => Look {
+            fill: "accent.surface",
+            text: "text.primary",
+            border: TRANSPARENT,
+        },
+        "warning-soft" => Look {
+            fill: "control.base",
+            text: "state.waiting",
+            border: TRANSPARENT,
+        },
+        "link" => Look {
+            fill: TRANSPARENT,
+            text: "markdown.link",
+            border: TRANSPARENT,
+        },
         _ => Look {
             fill: "control.base",
             text: "text.primary",
@@ -500,6 +524,9 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
                 "primary" => "tab.active",
                 "ghost" => "surface.hover",
                 "danger" => "danger.surface",
+                "soft-accent" => "list.selected",
+                // A link is underlined under the pointer; its ground stays none.
+                "link" => TRANSPARENT,
                 _ => "control.hover",
             };
         }
@@ -1737,11 +1764,9 @@ fn declarations(rule: &Rule, property: Prop, value: PartValue) -> String {
     }
 }
 
-/// The selectors a rule's root is reached by: the wrapper's attributes, and today's class while
-/// the family is drawn by one. On the class, a variant that is not consent never reaches a
-/// control that also carries a consent variant's class, which draws as that one; and `sized`
-/// leaves out the small and wrapping controls (the family's `keeps_size` classes), whose size the
-/// window's own classes keep.
+/// The selectors a rule's root is reached by: the wrapper's attributes, and with `sized` none of
+/// the roots drawn at another of the family's sizes or in a row that keeps their size (the
+/// family's `keeps_size`), whose size the family's own stylesheet keeps.
 fn root_selectors(rule: &Rule, sized: bool) -> Vec<String> {
     let family = rule.family;
     let mut data = format!(
@@ -1751,43 +1776,13 @@ fn root_selectors(rule: &Rule, sized: bool) -> Vec<String> {
     if let Some(variant) = rule.variant {
         let _ = write!(data, "[data-variant=\"{variant}\"]");
     }
+    if sized && !family.keeps_size.is_empty() {
+        let _ = write!(data, ":not({})", family.keeps_size.join(", "));
+    }
     if let Some(state) = rule.state {
         data.push_str(state.attribute());
     }
-    let mut selectors = vec![data];
-    if let Some(class) = family.class {
-        let mut on = format!(".{class}");
-        let classes = |consent: bool| -> Vec<String> {
-            family
-                .variants
-                .iter()
-                .filter(|one| !consent || one.consent.is_some())
-                .filter_map(|one| one.class.map(|c| format!(".{c}")))
-                .collect()
-        };
-        if let Some(name) = rule.variant {
-            let variant = family.variants.iter().find(|one| one.name == name);
-            match variant.and_then(|one| one.class) {
-                Some(own) => {
-                    let _ = write!(on, ".{own}");
-                    if variant.is_some_and(|one| one.consent.is_none()) {
-                        let _ = write!(on, ":not({})", classes(true).join(", "));
-                    }
-                }
-                None => {
-                    let _ = write!(on, ":not({})", classes(false).join(", "));
-                }
-            }
-        }
-        if sized && !family.keeps_size.is_empty() {
-            let _ = write!(on, ":not({})", family.keeps_size.join(", "));
-        }
-        if let Some(state) = rule.state {
-            on.push_str(state.on_a_class());
-        }
-        selectors.push(on);
-    }
-    selectors
+    vec![data]
 }
 
 /// A rule's selector, without specificity: the stylesheet's order alone says which rule wins.
@@ -1805,8 +1800,8 @@ fn selector(rule: &Rule, sized: bool) -> String {
     format!(":where({})", reached.join(", "))
 }
 
-/// Whether a property changes a control's size: what the small and wrapping controls of today's
-/// classes keep as their own.
+/// Whether a property changes a control's size: what the roots at another of the family's sizes
+/// and in a wrapping row keep as their own.
 fn sizes(property: Prop) -> bool {
     matches!(
         property,
@@ -1830,18 +1825,13 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
     }
     rules.sort_by_key(Rule::order);
     let mut sheet = String::from("@layer parts {\n");
-    // The small controls of today's class are clamped to their own height.
+    // The roots at another of the family's sizes are clamped to their own height.
     let corners = rules
         .iter()
         .any(|rule| rule.part == 0 && rule.values.contains_key(&Prop::CornerRadius));
     for family in MANIFEST.iter().filter(|_| corners) {
-        for (class, height) in family.small {
-            let property = geometry::step_of(height)
-                .map_or_else(String::new, |step| format!("var({})", step.property));
-            let _ = writeln!(
-                sheet,
-                "  :where({class}) {{ {HEIGHT_PROPERTY}: {property}; }}"
-            );
+        for (root, height) in family.sized_apart {
+            let _ = writeln!(sheet, "  :where({root}) {{ {HEIGHT_PROPERTY}: {height}; }}");
         }
     }
     for rule in &rules {

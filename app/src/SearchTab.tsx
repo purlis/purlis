@@ -57,6 +57,7 @@ import {
 import { placeName } from "./pieceViews";
 import { Select } from "./primitives/Select";
 import type { ViewRef } from "./tabs";
+import { Button, ToggleButton } from "./ui/button/Button";
 
 /** How long the query is still before it is asked. */
 const SETTLE = 250;
@@ -223,17 +224,15 @@ function Switch({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      className="ui-button search-switch"
-      tabIndex={0}
-      aria-pressed={on}
+    <ToggleButton
+      isSelected={on}
       aria-label={label}
       title={label}
-      onClick={onPress}
+      onPress={onPress}
+      className="search-switch"
     >
       {children}
-    </button>
+    </ToggleButton>
   );
 }
 
@@ -600,9 +599,9 @@ function Hits({
         </div>
       )}
       {heard.state === "more" && (
-        <button type="button" className="ui-button search-more" tabIndex={0} onClick={onMore}>
+        <Button onPress={onMore} className="search-more">
           Show more
-        </button>
+        </Button>
       )}
     </>
   );

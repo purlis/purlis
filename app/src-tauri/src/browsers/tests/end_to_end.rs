@@ -1168,6 +1168,40 @@ pub(crate) fn types(window: &Window, program: &str, aim: &str, letters: &str) {
     }
 }
 
+/// **The person takes `program` over while the agent's wait runs in the engine**, and what the
+/// wait answered. A wait the window counts in flight may not have reached the session host yet,
+/// and one that reaches it after the take-over is refused because the person drives, not
+/// interrupted. Both answers are right, and only the second is the one asked for. So the person
+/// hands the browser back and the wait starts again, given longer each time to reach the engine
+/// first, until a wait is cut while it runs.
+fn taken_over_during_a_wait(window: &Window, tools: &mut Tools, program: &str) -> Said {
+    let mut reaching = Duration::ZERO;
+    loop {
+        let waiting = tools.start(
+            "browser_wait_for_text",
+            json!({ "text": "words this page never shows", "seconds": 60 }),
+        );
+        until("the wait to be in flight", || window.acting.in_flight() > 0);
+        std::thread::sleep(reaching);
+        window
+            .browsers
+            .take_over(program)
+            .expect("the person takes it over");
+        let answered = tools.answered("browser_wait_for_text", waiting);
+        let came_after = answered
+            .text
+            .contains(purlis_host::A_BROWSER_THE_PERSON_DRIVES);
+        if !came_after || reaching >= Duration::from_secs(5) {
+            return answered;
+        }
+        window
+            .browsers
+            .hand_back(program)
+            .expect("they hand it back to try again");
+        reaching += Duration::from_millis(250);
+    }
+}
+
 /// The acceptance lines of #2294 on a real engine: a wait in flight answers interrupted as the
 /// person takes the browser over; every call of the agent's is refused while they drive; they
 /// type into the fixture site's login form and its page that echoes, and hand it back; a
@@ -1201,16 +1235,7 @@ fn the_person_takes_a_real_browser_over_types_and_the_agent_never_sees_it() {
     let form = watching.aim_other_than(None);
 
     // A wait in flight answers interrupted as the person takes over.
-    let waiting = tools.start(
-        "browser_wait_for_text",
-        json!({ "text": "words this page never shows", "seconds": 60 }),
-    );
-    until("the wait to be in flight", || window.acting.in_flight() > 0);
-    window
-        .browsers
-        .take_over(&program)
-        .expect("the person takes it over");
-    let cut = tools.answered("browser_wait_for_text", waiting);
+    let cut = taken_over_during_a_wait(&window, &mut tools, &program);
     assert!(cut.text.contains("it was interrupted"), "{cut:?}");
 
     // While they drive, every call of the agent's is refused in words.

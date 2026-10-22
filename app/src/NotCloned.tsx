@@ -12,6 +12,7 @@ import {
   type Offer,
 } from "./actions";
 import type { CloneState } from "./repoClones";
+import { Button } from "./ui/button/Button";
 
 /** What this window is cloning into the focused workspace, by repo (`repoClones`). */
 export type Cloning = ReadonlyMap<string, CloneState>;
@@ -57,15 +58,13 @@ export function NotClonedHere({
         {absent.length > 1 && all !== undefined && (
           <div className="absent-actions">
             <SettingActions>
-              <button
-                type="button"
-                tabIndex={0}
-                disabled={!all.available}
+              <Button
+                isDisabled={!all.available}
                 title={all.available ? all.title : all.reason}
-                onClick={() => onPress(all)}
+                onPress={() => onPress(all)}
               >
                 Clone all
-              </button>
+              </Button>
             </SettingActions>
           </div>
         )}
@@ -131,29 +130,25 @@ function AbsentRow({
               <div className={`absent-actions${state?.state === "failed" ? "" : " row-action"}`}>
                 <SettingActions>
                   {offer !== undefined && (
-                    <button
-                      type="button"
-                      tabIndex={0}
+                    <Button
                       aria-label={state?.state === "failed" ? `Retry ${repo}` : offer.title}
-                      disabled={!offer.available}
+                      isDisabled={!offer.available}
                       title={offer.available ? offer.note : offer.reason}
-                      onClick={press}
+                      onPress={press}
                     >
                       {state?.state === "failed" ? "Retry" : "Clone"}
-                    </button>
+                    </Button>
                   )}
                   {drop !== undefined && (
-                    <button
-                      type="button"
-                      className="ends-it"
-                      tabIndex={0}
+                    <Button
+                      variant="danger"
                       aria-label={drop.title}
-                      disabled={!drop.available}
+                      isDisabled={!drop.available}
                       title={drop.available ? drop.note : drop.reason}
-                      onClick={() => onPress(drop)}
+                      onPress={() => onPress(drop)}
                     >
                       Remove…
-                    </button>
+                    </Button>
                   )}
                 </SettingActions>
               </div>

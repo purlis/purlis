@@ -708,7 +708,7 @@ pub const PAIRS: &[Pair] = &[
     p("text.faint", "layer.project", 3.0),
     p("text.faint", "layer.workspace", 3.0),
     p("text.faint", "layer.chat", 3.0),
-    // An Allow (`.ui-button-grants`, ADR 0097 §6) is edged in the accent on the control's own
+    // An Allow (the button's `grants` variant, ADR 0097 §6) is edged in the accent on the control's own
     // ground, at rest and under the pointer: the edge is a control's outline, held to 3:1.
     p("accent.base", "control.base", 3.0),
     p("accent.base", "control.hover", 3.0),
@@ -742,7 +742,7 @@ pub struct Fit {
 /// **Every line that has to fit in its box.** The control's box is a field (`.ui-input`): it is
 /// `size.control` tall and its text is the window's words (`font-size.base`) on the body line
 /// (`line-height.body`, the `:root`'s). A button is as tall, and its label sits on a line of 1
-/// (`.ui-button`), so it fits wherever a field's text does; a strip's largest words are a tab's
+/// (`ui/button/button.css`), so it fits wherever a field's text does; a strip's largest words are a tab's
 /// title (`font-size.md`, `.tabs [role="tab"]`) on the body line.
 pub const FITS: &[Fit] = &[
     Fit {

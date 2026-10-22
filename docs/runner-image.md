@@ -52,6 +52,31 @@ own, as long as it keeps the contract below.
   The image of a stable release is signed on its tag: use
   `runner-image.yml@refs/tags/v<version>` as the identity.
 
+- **Build provenance and an SBOM:** each published image carries SLSA build provenance,
+  attached to the image the release names (its multi-architecture index), and a CycloneDX SBOM
+  of each architecture's image. The SBOM lists the image's Ubuntu packages and the crates the
+  `purlis` binary was built from. Each is stored by GitHub and pushed to the registry beside
+  the image, and the run that pushed the image verifies each one before it ends, so a release
+  never names an image without them. To check them yourself, signed in to the registry
+  (`gh auth token | docker login ghcr.io -u <you> --password-stdin`):
+
+  ```bash
+  # Provenance: built by runner-image.yml in purlis/purlis, on a GitHub-hosted runner.
+  gh attestation verify oci://ghcr.io/purlis/purlis-runner@sha256:<digest> \
+    --repo purlis/purlis \
+    --signer-workflow purlis/purlis/.github/workflows/runner-image.yml \
+    --deny-self-hosted-runners
+
+  # The SBOM of one architecture's image: its digest is in `docker buildx imagetools inspect`.
+  gh attestation verify oci://ghcr.io/purlis/purlis-runner@sha256:<arch digest> \
+    --repo purlis/purlis \
+    --signer-workflow purlis/purlis/.github/workflows/runner-image.yml \
+    --predicate-type https://cyclonedx.org/bom \
+    --format json | jq '.[0].verificationResult.statement.predicate'
+  ```
+
+  Add `--source-digest <commit>` to check that it was built from a given commit.
+
 - **Checked:** each architecture's image is pushed untagged, by digest, and pulled back.
   The contract below then runs on exactly the bytes that were pushed. Nothing is tagged or
   signed until it has passed for both architectures. A pull request that changes the image

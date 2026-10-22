@@ -369,7 +369,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 1): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 2): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -1003,6 +1003,321 @@
         "button.root.grants.open.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
+        "button.root.soft-accent.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.soft-accent.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.soft-accent.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.soft-accent.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.soft-accent.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "button.root.soft-accent.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "button.root.soft-accent.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "button.root.soft-accent.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "button.root.soft-accent.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.root.soft-accent.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "button.root.soft-accent.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "button.root.soft-accent.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.soft-accent.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.soft-accent.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.soft-accent.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.soft-accent.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.soft-accent.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.soft-accent.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.soft-accent.pressed.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.soft-accent.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.soft-accent.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.soft-accent.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.soft-accent.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.soft-accent.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.soft-accent.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.soft-accent.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.soft-accent.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.soft-accent.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.soft-accent.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.soft-accent.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.soft-accent.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.soft-accent.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.soft-accent.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.soft-accent.open.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.soft-accent.open.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.warning-soft.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.warning-soft.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.warning-soft.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.warning-soft.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.warning-soft.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "button.root.warning-soft.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "button.root.warning-soft.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "button.root.warning-soft.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "button.root.warning-soft.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.root.warning-soft.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "button.root.warning-soft.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "button.root.warning-soft.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.warning-soft.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.warning-soft.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.warning-soft.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.warning-soft.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.warning-soft.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.warning-soft.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.warning-soft.pressed.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.warning-soft.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.warning-soft.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.warning-soft.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.warning-soft.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.warning-soft.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.warning-soft.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.warning-soft.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.warning-soft.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.warning-soft.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.warning-soft.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.warning-soft.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.warning-soft.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.warning-soft.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.warning-soft.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.warning-soft.open.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.warning-soft.open.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.link.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.link.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.link.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.link.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.link.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "button.root.link.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "button.root.link.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "button.root.link.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "button.root.link.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.root.link.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "button.root.link.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "button.root.link.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.link.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.link.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.link.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.link.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.link.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.link.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.link.pressed.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.link.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.link.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.link.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.link.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.link.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.link.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.link.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.link.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.link.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.link.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.link.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.link.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.link.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.link.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.link.open.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.link.open.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
         "button.label.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -1165,6 +1480,87 @@
         "button.label.grants.open.text": {
           "$ref": "#/$defs/part-text"
         },
+        "button.label.soft-accent.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.soft-accent.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.label.soft-accent.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "button.label.soft-accent.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.soft-accent.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.soft-accent.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.soft-accent.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.soft-accent.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.soft-accent.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.warning-soft.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.warning-soft.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.label.warning-soft.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "button.label.warning-soft.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.warning-soft.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.warning-soft.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.warning-soft.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.warning-soft.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.warning-soft.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.link.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.link.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.label.link.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "button.label.link.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.link.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.link.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.link.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.link.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.link.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "button.icon.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -1289,6 +1685,69 @@
           "$ref": "#/$defs/part-text"
         },
         "button.icon.grants.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.soft-accent.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.soft-accent.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.soft-accent.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.soft-accent.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.soft-accent.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.soft-accent.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.soft-accent.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.warning-soft.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.warning-soft.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.warning-soft.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.warning-soft.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.warning-soft.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.warning-soft.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.warning-soft.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.link.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.link.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.link.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.link.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.link.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.link.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.link.open.text": {
           "$ref": "#/$defs/part-text"
         }
       }
