@@ -78,6 +78,7 @@ fn host_armed(
         plane: &here.plane,
         workspace,
         linked: linked.as_deref(),
+        repo: &[],
     };
     armed(harness, kit(here, Some(skills)), cwd)
 }
@@ -187,7 +188,7 @@ fn a_codex_chat_at_the_plane_root_is_briefed_on_the_project_skill_from_its_folde
     assert_eq!(var(&env, PLANE_LISTED_ENV), Some("1"));
 
     let lookup = |name: &str| var(&env, name).map(str::to_owned);
-    let text = purlis_core::skills::briefed(&here.plane, None, &lookup).expect("listed");
+    let text = purlis_core::skills::briefed(&here.plane, None, None, &lookup).expect("listed");
     assert!(text.contains("`deploy`"), "{text}");
     assert!(
         text.contains(
@@ -220,7 +221,7 @@ fn with_the_flag_off_every_harness_is_armed_as_before_with_the_built_in_skills_a
     let (_, codex) = armed(Harness::Codex, kit(&here, None), &here.plane);
     assert_eq!(var(&codex, PLANE_LISTED_ENV), None);
     let lookup = |name: &str| var(&codex, name).map(str::to_owned);
-    let text = purlis_core::skills::briefed(&here.plane, None, &lookup).expect("listed");
+    let text = purlis_core::skills::briefed(&here.plane, None, None, &lookup).expect("listed");
     assert!(!text.contains("`deploy`"), "{text}");
 
     assert!(!here.sets.exists(), "nothing laid out");
@@ -249,6 +250,7 @@ fn an_adapter_lays_nothing_out_itself_and_with_no_folder_hands_the_built_in_skil
         plane: &here.plane,
         workspace: None,
         linked: None,
+        repo: &[],
     });
 
     let (claude, _) = armed(Harness::ClaudeCode, kit(&here, no_folder), &here.plane);

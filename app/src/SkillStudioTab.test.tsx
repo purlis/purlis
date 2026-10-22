@@ -37,6 +37,8 @@ describe("the Skill studio", () => {
       workspace: null,
       workspaces: [],
       levels: [],
+      harnesses: [],
+      clashes: [],
       skills: [
         {
           name: "deploy",
@@ -116,6 +118,8 @@ describe("the Skill studio", () => {
         workspace: "alpha",
         workspaces: ["alpha", "beta"],
         levels: [],
+        harnesses: [],
+        clashes: [],
         skills: [
           {
             name: "lint",
@@ -185,6 +189,8 @@ describe("the Skill studio", () => {
         workspace: null,
         workspaces: [],
         levels: [],
+        harnesses: [],
+        clashes: [],
         skills: [
           {
             name: "scratch",
@@ -221,7 +227,14 @@ describe("the Skill studio", () => {
   });
 
   it("says it is not on while its flag is off", async () => {
-    answering({ on: false, workspace: null, workspaces: [], skills: [] });
+    answering({
+      on: false,
+      workspace: null,
+      workspaces: [],
+      skills: [],
+      harnesses: [],
+      clashes: [],
+    });
     render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
     expect(await screen.findByTestId("skill-studio-off")).toBeInTheDocument();
   });
@@ -237,6 +250,8 @@ describe("the Skill studio", () => {
         persona: "ops",
         workspaces: ["alpha"],
         levels: [],
+        harnesses: [],
+        clashes: [],
         skills: [
           {
             name: "triage",
@@ -352,5 +367,257 @@ describe("the Skill studio", () => {
     const ids = (on: boolean) => catalogue(now(on)).map((offer) => offer.id);
     expect(ids(true)).toContain(SKILL_STUDIO_SHOW);
     expect(ids(false)).not.toContain(SKILL_STUDIO_SHOW);
+  });
+});
+
+const ROW = {
+  local: false,
+  grant: null,
+  granted: null,
+  turned_off: false,
+  not_granted: null,
+  on: true,
+  left_out: null,
+  owner: null,
+  switch: null,
+};
+
+/** A studio with one project skill, `review`, and Claude Code's own skills and plugins. */
+function withClaudeCode(offLangfuse: boolean) {
+  return {
+    on: true,
+    workspace: null,
+    workspaces: [],
+    levels: [],
+    skills: [
+      {
+        ...ROW,
+        name: "review",
+        level: "project",
+        label: "project",
+        grant: "root",
+        description: "Reviews.",
+        folder: "skills/review",
+      },
+      {
+        ...ROW,
+        name: "secrets",
+        level: "built-in",
+        label: "built-in",
+        description: "Keeps secrets.",
+        folder: "/app/plugin/skills/secrets",
+      },
+    ],
+    clashes: [
+      {
+        name: "review",
+        level: "project",
+        local: false,
+        harness: "Claude Code",
+        outside: "repo",
+        owner: { kind: "repo", name: "api" },
+        outcome: "both-load",
+      },
+    ],
+    harnesses: [
+      {
+        harness: "claude",
+        title: "Claude Code",
+        unsupported: null,
+        only_off: null,
+        trouble: null,
+        plugins: [
+          {
+            id: "figma@official",
+            name: "figma",
+            origin: "official, user",
+            installed: true,
+            state: "not-set",
+            pinned: null,
+          },
+          {
+            id: "purlis@inline",
+            name: "purlis",
+            origin: "",
+            installed: false,
+            state: "on",
+            pinned: "purlis@inline is always on: it is purlis's own plugin",
+          },
+        ],
+        skills: [
+          {
+            ...ROW,
+            name: "langfuse",
+            level: "installed",
+            label: "installed",
+            on: !offLangfuse,
+            left_out: offLangfuse ? "turned off for this project's chats" : null,
+            description: "Reads traces.",
+            folder: "/home/.claude/skills/langfuse",
+            owner: { kind: "you" },
+            switch: { kind: "alone" },
+          },
+          {
+            ...ROW,
+            name: "figma:frame",
+            level: "installed",
+            label: "installed",
+            description: "Frames.",
+            folder: "/cache/figma/skills/frame",
+            owner: { kind: "plugin", name: "figma" },
+            switch: {
+              kind: "not",
+              why: "Claude Code turns a plugin's skill off only with the whole plugin, figma",
+            },
+          },
+          {
+            ...ROW,
+            name: "review",
+            level: "repo",
+            label: "repo",
+            description: "The repo's review.",
+            folder: "workspaces/alpha/api/.claude/skills/review",
+            owner: { kind: "repo", name: "api" },
+            switch: { kind: "alone" },
+          },
+        ],
+      },
+      {
+        harness: "opencode",
+        title: "opencode",
+        unsupported: "plugins for opencode are not supported yet — it has no switch",
+        only_off: null,
+        trouble: null,
+        plugins: [],
+        skills: [],
+      },
+    ],
+  };
+}
+
+describe("each program's own skills in the Skill studio (SK-6)", () => {
+  it("lists them read only with whose each is, and says plainly where one cannot be switched", async () => {
+    answering(withClaudeCode(false));
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const claude = await screen.findByTestId("skill-studio-claude");
+    expect(within(claude).getByRole("heading", { name: "Claude Code" })).toBeInTheDocument();
+    const own = within(claude).getByTestId("found-claude-langfuse");
+    expect(within(own).getByText("You")).toBeInTheDocument();
+    expect(within(own).getByRole("button", { name: "Turn off" })).toBeInTheDocument();
+    const plugin = within(claude).getByTestId("found-claude-figma:frame");
+    expect(within(plugin).queryByRole("button")).toBeNull();
+    expect(
+      within(plugin).getByText(
+        /Claude Code turns a plugin's skill off only with the whole plugin, figma/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(within(claude).getByTestId("found-claude-review")).getByText("Repo api"),
+    ).toBeInTheDocument();
+    const pinned = within(claude).getByTestId("plugin-claude-purlis@inline");
+    expect(within(pinned).queryByRole("button")).toBeNull();
+    expect(
+      within(screen.getByTestId("skill-studio-opencode")).getByText(
+        /plugins for opencode are not supported yet/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("marks a project skill a repo also has, and says a built-in skill is always on", async () => {
+    answering(withClaudeCode(false));
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    expect(await screen.findByTestId("clash-review")).toHaveTextContent(
+      "the repo api has a skill of this name too, and a chat there gets both",
+    );
+    expect(
+      within(screen.getByTestId("skill-secrets")).getByText(/cannot be turned off/),
+    ).toBeInTheDocument();
+  });
+
+  it("turns one off through the core and reads the project again", async () => {
+    let off = false;
+    const asked: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "skill_studio_switch") {
+        asked.push(args);
+        off = true;
+        return null;
+      }
+      if (cmd === "skill_studio") return withClaudeCode(off);
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const row = await screen.findByTestId("found-claude-langfuse");
+    within(row).getByRole("button", { name: "Turn off" }).click();
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("found-claude-langfuse")).getByText(
+          "Left out: turned off for this project's chats",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(asked).toEqual([
+      { plane: "p", workspace: null, harness: "claude", what: "skill", id: "langfuse", on: false },
+    ]);
+  });
+
+  it("says what the core refused, and changes nothing", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_studio_switch") throw "Claude Code turns it off only with its plugin";
+      if (cmd === "skill_studio") return withClaudeCode(false);
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    const plugin = await screen.findByTestId("plugin-claude-figma@official");
+    within(plugin).getByRole("button", { name: "Turn off" }).click();
+    expect(
+      await screen.findByText("Claude Code turns it off only with its plugin"),
+    ).toBeInTheDocument();
+  });
+
+  it("offers Codex a plugin's way back as Leave to Codex, saying its own config decides", async () => {
+    const studio = withClaudeCode(false);
+    const codexHarness = {
+      harness: "codex",
+      title: "Codex",
+      unsupported: null,
+      only_off: "Codex is handed a plugin only to turn it off",
+      trouble: null,
+      plugins: [
+        {
+          id: "zp@zmkt",
+          name: "zp",
+          origin: "zmkt, on in config.toml",
+          installed: true,
+          state: "off",
+          pinned: null,
+        },
+      ],
+      skills: [],
+    };
+    answering({ ...studio, harnesses: [...studio.harnesses, codexHarness] });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    const codex = await screen.findByTestId("skill-studio-codex");
+    const plugin = within(codex).getByTestId("plugin-codex-zp@zmkt");
+    expect(within(plugin).getByRole("button", { name: "Leave to Codex" })).toBeInTheDocument();
+    expect(
+      within(codex).getByText(/Codex's own config decides whether a plugin is on/),
+    ).toBeInTheDocument();
+  });
+
+  it("says a Codex or opencode chat in the repo gets the repo's copy alone", async () => {
+    const studio = withClaudeCode(false);
+    studio.clashes = [{ ...studio.clashes[0], harness: "opencode", outcome: "repo-wins" }];
+    answering(studio);
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    expect(await screen.findByTestId("clash-review")).toHaveTextContent(
+      "the repo api has a skill of this name too, and opencode chats there get the repo's copy alone",
+    );
   });
 });

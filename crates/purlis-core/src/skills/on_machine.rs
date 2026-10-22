@@ -57,7 +57,7 @@ pub(crate) fn listed(at: &[SkillsAt]) -> Vec<OnMachine> {
 
 /// The folders a plugin at `root` keeps its skills in: what its manifest names under `skills`, a
 /// path or a list of them, else `skills/`.
-fn skill_dirs(root: &Path, manifest: &str) -> Vec<String> {
+pub(crate) fn skill_dirs(root: &Path, manifest: &str) -> Vec<String> {
     let named = std::fs::read_to_string(root.join(manifest))
         .ok()
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
@@ -74,7 +74,7 @@ fn skill_dirs(root: &Path, manifest: &str) -> Vec<String> {
 }
 
 /// Every folder in `dir`, by name.
-fn folders(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn folders(dir: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()

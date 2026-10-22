@@ -53,9 +53,38 @@ use crate::settings::Refusal;
 /// The table both files hold choices in: `[harness_plugins.<harness>]`, `"<id>" = true|false`.
 pub const TABLE: &str = "harness_plugins";
 
-/// What one chat is handed: each plugin on (`true`) or off (`false`), by the harness's own id.
-/// A plugin it does not name is left to the harness.
-pub type Chosen = BTreeMap<String, bool>;
+/// The table both files hold a harness's own skills turned on or off in (SK-6, #2769):
+/// `[harness_skills.<harness>]`, `"<name>" = true|false`, by the name the harness knows the skill
+/// by. Read only while the Skill studio's flag is on.
+pub const SKILLS_TABLE: &str = "harness_skills";
+
+/// What one chat is handed: each plugin on (`true`) or off (`false`), by the harness's own id,
+/// and the harness's own skills the project turned off. A plugin or skill it does not name is
+/// left to the harness.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Chosen {
+    /// Each plugin, on or off, by the harness's id.
+    pub plugins: BTreeMap<String, bool>,
+    /// The harness's own skills to leave out of the chat, by the name the harness knows each by
+    /// (SK-6, #2769).
+    pub skills_off: BTreeSet<String>,
+}
+
+impl Chosen {
+    /// Nothing chosen: the harness decides every plugin and skill.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl From<BTreeMap<String, bool>> for Chosen {
+    fn from(plugins: BTreeMap<String, bool>) -> Self {
+        Self {
+            plugins,
+            skills_off: BTreeSet::new(),
+        }
+    }
+}
 
 /// One plugin a harness has installed on this machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +104,10 @@ pub struct Plugin {
 pub enum Support {
     /// For one chat alone, with nothing written anywhere.
     PerChat,
+    /// For one chat alone, but only to turn a plugin off: whether one is on is the harness's own
+    /// config's. The measured reason a plugin cannot be turned on, as the end of a sentence
+    /// (SK-6, #2769).
+    OffOnly(&'static str),
     /// Not yet, and the measured reason, as the end of a sentence.
     NotYet(&'static str),
 }
@@ -162,6 +195,16 @@ pub trait Adapter: Sync {
         Vec::new()
     }
     fn support(&self) -> Support;
+    /// The folders, relative to a clone, it finds a repo's own skills in, each a folder of skill
+    /// folders: what a clone a chat works in can carry for it.
+    fn repo_skill_dirs(&self) -> &'static [&'static str] {
+        &[]
+    }
+    /// Why a skill the harness knows as `name` cannot be turned off on its own, or `None` where
+    /// it can: what a file that names it is refused with.
+    fn skill_named_alone(&self, _name: &str) -> Option<String> {
+        None
+    }
     /// What charter fixes for it, whatever a file says.
     ///
     /// The default is an empty slice, and cargo-mutants' `Vec::leak(Vec::new())` is an empty
@@ -195,12 +238,24 @@ pub fn adapter(kind: &str) -> Option<&'static dyn Adapter> {
 /// that applies.
 pub fn not_supported(adapter: &dyn Adapter) -> Option<String> {
     match adapter.support() {
-        Support::PerChat => None,
+        Support::PerChat | Support::OffOnly(_) => None,
         // ADR 0050 fixes the sentence; the module header says what the "yet" waits on.
         Support::NotYet(why) => Some(format!(
             "plugins for {} are not supported yet — {why}",
             adapter.title()
         )),
+    }
+}
+
+/// "<harness> is handed a plugin only to turn it off — <why>" (SK-6, #2769), or none for an
+/// adapter that turns plugins both ways, or none at all.
+pub fn only_off(adapter: &dyn Adapter) -> Option<String> {
+    match adapter.support() {
+        Support::OffOnly(why) => Some(format!(
+            "{} is handed a plugin only to turn it off — {why}",
+            adapter.title()
+        )),
+        Support::PerChat | Support::NotYet(_) => None,
     }
 }
 
@@ -328,6 +383,21 @@ impl Adapter for ClaudeCode {
         Support::PerChat
     }
 
+    /// A repo's `.claude/skills`, which Claude Code reads as the project's own (its skills docs,
+    /// "Choose where skills load").
+    fn repo_skill_dirs(&self) -> &'static [&'static str] {
+        &[".claude/skills"]
+    }
+
+    /// A plugin's skill, `<plugin>:<skill>`: Claude Code's `skillOverrides` does not reach one
+    /// ("Overrides don't apply to plugin skills, which you manage through /plugin", its
+    /// settings reference), so it goes only with its plugin.
+    fn skill_named_alone(&self, name: &str) -> Option<String> {
+        name.split_once(':').map(|(plugin, _)| {
+            format!("Claude Code turns a plugin's skill off only with the whole plugin, {plugin}")
+        })
+    }
+
     fn pinned(&self) -> &'static [Pin] {
         CLAUDE_PINS.as_slice()
     }
@@ -400,19 +470,25 @@ impl Adapter for Codex {
         skills::codex(self, env)
     }
 
-    /// Measured on codex-cli 0.147.0 (charter-app#274), in a throwaway `CODEX_HOME` holding a
-    /// copy of a real config and plugin cache, with `codex debug prompt-input` showing which of
-    /// the plugin's skills reached the model. `enabled = false` in `config.toml` took them out.
-    /// `-c` did nothing in any shape its parser takes: not `plugins.<id>.enabled=false`, not
-    /// `plugins.<id>={enabled=false}`, not `plugins={"<id>"={enabled=false}}`, and not the
-    /// other way round over a file that says false. A per-session switch would have to be one
-    /// of those. The only other switch is `--disable plugins`, which turns them all off.
+    /// **Measured again on codex-cli 0.163.0** (SK-6, #2769), in a throwaway `CODEX_HOME` with
+    /// one plugin from a local marketplace (`codex plugin marketplace add`, `codex plugin add`),
+    /// reading which of its skills `codex debug prompt-input` showed the model:
+    /// `-c 'plugins."<id>".enabled=false'` took its skills out over a `config.toml` that had it
+    /// on, for that one run, with nothing written. The reverse did nothing: `-c …enabled=true`
+    /// over a `config.toml` that had it off left it off. 0.147.0 honoured neither (charter-app
+    /// #274). So a chat is handed a plugin only to turn it off.
     fn support(&self) -> Support {
-        Support::NotYet(
-            "Codex 0.147.0 turns a plugin on or off only in its own config.toml, and ignores \
-             the same key given for one session with -c (measured), and purlis never writes \
-             Codex's config",
+        Support::OffOnly(
+            "one its own config.toml turned off stays off, since Codex 0.163.0 takes a plugin \
+             turned on for one session as nothing (measured), and purlis never writes Codex's \
+             config",
         )
+    }
+
+    /// A repo's `.agents/skills` and `.codex/skills` (`host_roots.rs` at `rust-v0.163.0`: the
+    /// repo roots, and a trusted project's own `.codex/`).
+    fn repo_skill_dirs(&self) -> &'static [&'static str] {
+        &[".agents/skills", ".codex/skills"]
     }
 }
 
@@ -630,12 +706,28 @@ impl Adapter for Opencode {
         skills::opencode(self, env)
     }
 
+    /// Read again in opencode 1.18.33's source for SK-6 (#2769): `plugin/index.ts` loads every
+    /// entry of the merged config's `plugin_origins`, and `config/plugin.ts` merges each config's
+    /// list into it, keeping one entry per package; the only switches are `--pure`, which loads
+    /// none at all, and `OPENCODE_DISABLE_DEFAULT_PLUGINS`, which drops the built-in ones.
     fn support(&self) -> Support {
         Support::NotYet(
             "opencode has no switch that turns one plugin off: it loads every plugin from every \
              config and plugin directory together, and a project's `\"plugin\": []` did not \
-             remove one another config named (measured, opencode 1.18.23)",
+             remove one another config named (measured, opencode 1.18.23; its 1.18.33 source \
+             still merges every list)",
         )
+    }
+
+    /// A repo's `.claude/skills`, `.agents/skills`, and `skill/` and `skills/` in its
+    /// `.opencode/` (`skill/index.ts` at `v1.18.33`).
+    fn repo_skill_dirs(&self) -> &'static [&'static str] {
+        &[
+            ".claude/skills",
+            ".agents/skills",
+            ".opencode/skill",
+            ".opencode/skills",
+        ]
     }
 }
 
@@ -1119,6 +1211,38 @@ pub fn id_ok(id: &str) -> bool {
 /// What one layer says: by harness, then by plugin id.
 type Said = BTreeMap<String, BTreeMap<String, bool>>;
 
+/// What each of the three layers says of one table.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Layers {
+    shared: Said,
+    /// Empty outside a workspace, and for a workspace whose manifest says nothing.
+    workspace: Said,
+    local: Said,
+}
+
+impl Layers {
+    /// Each layer, the one with the last word first.
+    fn last_word_first(&self) -> [(&Said, Source); 3] {
+        [
+            (&self.local, Source::Local),
+            (&self.workspace, Source::Workspace),
+            (&self.shared, Source::Shared),
+        ]
+    }
+
+    /// What the first layer that names `harness`'s `key` says, and which layer that is.
+    fn answer(&self, harness: &str, key: &str) -> (Option<bool>, Source) {
+        self.last_word_first()
+            .into_iter()
+            .find_map(|(said, source)| {
+                said.get(harness)
+                    .and_then(|keys| keys.get(key))
+                    .map(|on| (Some(*on), source))
+            })
+            .unwrap_or((None, Source::Default))
+    }
+}
+
 /// What a project's two files say, by harness and then by plugin id — and, in a workspace, what
 /// that workspace's `workspace.json` says (charter-app#282), the layer between them.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1127,6 +1251,8 @@ pub struct Choices {
     /// Empty outside a workspace, and for a workspace whose manifest says nothing.
     workspace: Said,
     local: Said,
+    /// The same three layers' `[harness_skills]` (SK-6, #2769), by harness, then by skill name.
+    skills: Layers,
     /// The workspace these were read in, when they were.
     workspace_name: Option<String>,
     /// Why `charter.local.toml` is not among these layers, when it is there and git would carry
@@ -1142,14 +1268,19 @@ pub struct Choices {
 impl Choices {
     /// The two files' text: `None` for a file that is not there.
     pub fn from_text(shared: Option<&str>, local: Option<&str>) -> Self {
-        let said = |text: &str| {
+        let said = |text: &str, table: &str| {
             text.parse::<toml::Table>()
-                .map(|top| said_in(&top))
+                .map(|top| said_in(&top, table))
                 .unwrap_or_default()
         };
         Self {
-            shared: shared.map(said).unwrap_or_default(),
-            local: local.map(said).unwrap_or_default(),
+            shared: shared.map(|t| said(t, TABLE)).unwrap_or_default(),
+            local: local.map(|t| said(t, TABLE)).unwrap_or_default(),
+            skills: Layers {
+                shared: shared.map(|t| said(t, SKILLS_TABLE)).unwrap_or_default(),
+                workspace: Said::default(),
+                local: local.map(|t| said(t, SKILLS_TABLE)).unwrap_or_default(),
+            },
             ..Self::default()
         }
     }
@@ -1165,7 +1296,14 @@ impl Choices {
     }
 
     fn with_workspace(mut self, name: &str, settings: Option<toml::Table>) -> Self {
-        self.workspace = settings.as_ref().map(said_in).unwrap_or_default();
+        self.workspace = settings
+            .as_ref()
+            .map(|top| said_in(top, TABLE))
+            .unwrap_or_default();
+        self.skills.workspace = settings
+            .as_ref()
+            .map(|top| said_in(top, SKILLS_TABLE))
+            .unwrap_or_default();
         self.workspace_name = Some(name.to_owned());
         self
     }
@@ -1199,8 +1337,9 @@ impl Choices {
     ) -> Self {
         let mut unread = BTreeSet::new();
         let why = local.left_out_where(|top| {
-            unread = said_in(top)
+            unread = [TABLE, SKILLS_TABLE]
                 .into_iter()
+                .flat_map(|table| said_in(top, table))
                 .filter(|(_, plugins)| !plugins.is_empty())
                 .map(|(harness, _)| harness)
                 .collect();
@@ -1244,6 +1383,38 @@ impl Choices {
         self.workspace_name
             .as_deref()
             .map(crate::settings::workspace::named)
+    }
+
+    /// **Whether the project has the harness's own skill `name` on or off** (SK-6, #2769), and
+    /// which layer said so: Local, then the workspace, then Shared, as a plugin's. `None` where
+    /// no layer names it, and the harness has it as it always did.
+    pub fn skill(&self, harness: &str, name: &str) -> (Option<bool>, Source) {
+        self.skills.answer(harness, name)
+    }
+
+    /// **Whether the project has `harness`'s plugin `id` on or off** as its files say it, and
+    /// which layer said so, by the same precedence ([`resolve`] adds what this machine has
+    /// installed and the pins).
+    pub fn plugin(&self, harness: &str, id: &str) -> (Option<bool>, Source) {
+        Layers {
+            shared: self.shared.clone(),
+            workspace: self.workspace.clone(),
+            local: self.local.clone(),
+        }
+        .answer(harness, id)
+    }
+
+    /// Every one of the harness's own skills the project has off, by the harness's name for it:
+    /// each name some layer sets whose answer ([`Self::skill`]) is off.
+    pub fn skills_off(&self, harness: &str) -> BTreeSet<String> {
+        self.skills
+            .last_word_first()
+            .into_iter()
+            .filter_map(|(said, _)| said.get(harness))
+            .flat_map(BTreeMap::keys)
+            .filter(|name| self.skill(harness, name).0 == Some(false))
+            .cloned()
+            .collect()
     }
 
     /// Whether any layer turns any of `harness`'s plugins on or off.
@@ -1292,11 +1463,11 @@ struct Layer<'c> {
     said: Option<&'c BTreeMap<String, bool>>,
 }
 
-/// Every well-formed `"<id>" = true|false` under each `[harness_plugins.<harness>]` in `top` — a
-/// whole TOML file, or a workspace's `settings` read as one. What is not well formed is left out
+/// Every well-formed `"<id>" = true|false` under each `[<table>.<harness>]` in `top` (`table` is
+/// [`TABLE`] or [`SKILLS_TABLE`]) — a whole TOML file, or a workspace's `settings` read as one. What is not well formed is left out
 /// here and refused by [`refusals`].
-fn said_in(top: &toml::Table) -> Said {
-    top.get(TABLE)
+fn said_in(top: &toml::Table, table: &str) -> Said {
+    top.get(table)
         .and_then(toml::Value::as_table)
         .into_iter()
         .flatten()
@@ -1401,14 +1572,21 @@ pub fn resolve(adapter: &dyn Adapter, installed: &[Plugin], choices: &Choices) -
 /// **What a chat on this harness is handed**: every pin, and every installed plugin a file
 /// turned on or off. Nothing for a harness whose adapter cannot apply, and nothing not set: the
 /// harness decides those as it always did.
+///
+/// An adapter that hands a plugin only to turn it off ([`Support::OffOnly`]) is handed the ones
+/// off alone: one on is left to the harness, which is the most it can be.
 pub fn chosen(adapter: &dyn Adapter, all: &[Effective]) -> Chosen {
-    if adapter.support() != Support::PerChat {
-        return Chosen::new();
-    }
+    let only_off = match adapter.support() {
+        Support::PerChat => false,
+        Support::OffOnly(_) => true,
+        Support::NotYet(_) => return Chosen::new(),
+    };
     all.iter()
         .filter(|it| it.pinned.is_some() || it.installed)
         .filter_map(|it| Some((it.id.clone(), it.wanted?)))
-        .collect()
+        .filter(|(_, on)| !(only_off && *on))
+        .collect::<BTreeMap<_, _>>()
+        .into()
 }
 
 /// What a chat of `kind`, started in the plane at `root` — in `workspace`, when it is in one —
@@ -1418,7 +1596,22 @@ pub fn chosen(adapter: &dyn Adapter, all: &[Effective]) -> Chosen {
 /// chosen, the answer is the pins whatever is installed, so a project that says nothing costs no
 /// read of anybody's home directory. Where the record cannot be read, the pins alone: a listing
 /// charter could not read is not a reason to start a chat without its guard.
+///
+/// **And the harness's own skills the project turned off** (SK-6, #2769), only while the Skill
+/// studio's flag is on: every name `[harness_skills.<harness>]` has at `false` after the same
+/// precedence ([`Choices::skills_off`]).
 pub fn for_start(kind: &str, root: &Path, workspace: Option<&str>, env: &Env<'_>) -> Chosen {
+    for_start_as(crate::skills::studio_on_here(), kind, root, workspace, env)
+}
+
+/// [`for_start`], with the Skill studio's flag `studio` as given.
+pub(crate) fn for_start_as(
+    studio: bool,
+    kind: &str,
+    root: &Path,
+    workspace: Option<&str>,
+    env: &Env<'_>,
+) -> Chosen {
     let Some(adapter) = adapter(kind) else {
         return Chosen::new();
     };
@@ -1428,7 +1621,11 @@ pub fn for_start(kind: &str, root: &Path, workspace: Option<&str>, env: &Env<'_>
     } else {
         Vec::new()
     };
-    chosen(adapter, &resolve(adapter, &installed, &choices))
+    let mut chosen = chosen(adapter, &resolve(adapter, &installed, &choices));
+    if studio {
+        chosen.skills_off = choices.skills_off(adapter.harness());
+    }
+    chosen
 }
 
 /// One harness in the settings tab.
@@ -1497,15 +1694,24 @@ pub fn refusals_in(top: &toml::Table, file: &str, at: &str) -> Vec<String> {
 /// [`refusals_in`], each with the key it is about **in `top`** (#1292): `at` is left out, so a
 /// workspace's is the key under its `settings`. A plugin id is one step, dots and all.
 pub fn keyed_in(top: &toml::Table, file: &str, at: &str) -> Vec<Refusal> {
-    let Some(table) = top.get(TABLE) else {
+    let mut out = keyed_table(top, file, at, Switched::Plugin);
+    out.extend(keyed_table(top, file, at, Switched::Skill));
+    out
+}
+
+/// [`keyed_in`] for one of the two tables: [`TABLE`], whose keys are plugin ids, or
+/// [`SKILLS_TABLE`], whose keys are skill names (SK-6, #2769).
+fn keyed_table(top: &toml::Table, file: &str, at: &str, of: Switched) -> Vec<Refusal> {
+    let name = of.table();
+    let Some(table) = top.get(name) else {
         return Vec::new();
     };
-    let shape = "each harness is [harness_plugins.<harness>], holding \"<plugin id>\" = true or \
-                 false";
+    let what = of.noun();
+    let shape = format!("each harness is [{name}.<harness>], holding \"<{what}>\" = true or false");
     let Some(table) = table.as_table() else {
         return vec![Refusal::at(
-            format!("{at}{TABLE} in {file} is not a table — {shape}"),
-            &[TABLE],
+            format!("{at}{name} in {file} is not a table — {shape}"),
+            &[name],
         )];
     };
     let mut out = Vec::new();
@@ -1514,28 +1720,28 @@ pub fn keyed_in(top: &toml::Table, file: &str, at: &str) -> Vec<Refusal> {
             let known: Vec<&str> = adapters().map(|it| it.harness()).collect();
             out.push(Refusal::at(
                 format!(
-                    "[{at}{TABLE}.{}] in {file} is not a harness purlis knows — one of: {}",
+                    "[{at}{name}.{}] in {file} is not a harness purlis knows — one of: {}",
                     toml_key(harness),
                     known.join(", ")
                 ),
-                &[TABLE, harness.as_str()],
+                &[name, harness.as_str()],
             ));
             continue;
         };
         let Some(plugins) = plugins.as_table() else {
             out.push(Refusal::at(
-                format!("{at}{TABLE}.{harness} in {file} is not a table — {shape}"),
-                &[TABLE, harness.as_str()],
+                format!("{at}{name}.{harness} in {file} is not a table — {shape}"),
+                &[name, harness.as_str()],
             ));
             continue;
         };
         for (id, on) in plugins {
-            let key = format!("{at}{TABLE}.{harness}.{}", toml_key(id));
-            let keyed = [TABLE, harness.as_str(), id.as_str()];
+            let key = format!("{at}{name}.{harness}.{}", toml_key(id));
+            let keyed = [name, harness.as_str(), id.as_str()];
             if !id_ok(id) {
                 out.push(Refusal::at(
                     format!(
-                        "{key} in {file} is not a plugin id — one line of at most \
+                        "{key} in {file} is not a {what} — one line of at most \
                          {MOST_ID_BYTES} bytes, with nothing invisible in it"
                     ),
                     &keyed,
@@ -1549,6 +1755,15 @@ pub fn keyed_in(top: &toml::Table, file: &str, at: &str) -> Vec<Refusal> {
                 ));
                 continue;
             };
+            if of == Switched::Skill {
+                if let Some(why) = adapter.skill_named_alone(id) {
+                    out.push(Refusal::at(
+                        format!("{key} in {file} cannot be set: {why}"),
+                        &keyed,
+                    ));
+                }
+                continue;
+            }
             if let Some(pin) = adapter
                 .pinned()
                 .iter()
@@ -1567,6 +1782,177 @@ pub fn keyed_in(top: &toml::Table, file: &str, at: &str) -> Vec<Refusal> {
 mod skills;
 
 pub use skills::SkillsAt;
+
+/// What the Skill studio switches for one harness (SK-6, #2769).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Switched {
+    /// One of its plugins, by its id: `[harness_plugins.<harness>]`.
+    Plugin,
+    /// One of its own skills, by the name it knows it by: `[harness_skills.<harness>]`.
+    Skill,
+}
+
+impl Switched {
+    /// The table both files and a workspace's settings hold it in.
+    pub fn table(self) -> &'static str {
+        match self {
+            Self::Plugin => TABLE,
+            Self::Skill => SKILLS_TABLE,
+        }
+    }
+
+    /// What its keys are, as a sentence names them.
+    fn noun(self) -> &'static str {
+        match self {
+            Self::Plugin => "plugin id",
+            Self::Skill => "skill name",
+        }
+    }
+
+    /// What `choices` have `harness`'s `id` at.
+    fn said(self, choices: &Choices, harness: &str, id: &str) -> Option<bool> {
+        match self {
+            Self::Plugin => choices.plugin(harness, id).0,
+            Self::Skill => choices.skill(harness, id).0,
+        }
+    }
+
+    /// Why `adapter`'s `id` may not be switched, as the start of a sentence, or `None`.
+    fn refused(self, adapter: &dyn Adapter, id: &str, built_in: &[String]) -> Option<String> {
+        match self {
+            Self::Plugin => not_supported(adapter).or_else(|| {
+                adapter
+                    .pinned()
+                    .iter()
+                    .find(|pin| pin.id == id)
+                    .map(|pin| pin.why.to_owned())
+            }),
+            Self::Skill => built_in_said(id, built_in).or_else(|| adapter.skill_named_alone(id)),
+        }
+    }
+}
+
+/// "<name> is one of purlis's built-in skills, which no project turns off" where `name` is one
+/// of `built_in`, the built-in skills' names (SK-6, #2769): a built-in skill is protected on every
+/// harness, and a name a harness knows its own by is matched as a built-in one's would be.
+fn built_in_said(name: &str, built_in: &[String]) -> Option<String> {
+    built_in
+        .iter()
+        .any(|one| one == name)
+        .then(|| format!("{name} is one of purlis's built-in skills, which no project turns off"))
+}
+
+/// **What `[harness_skills]` in `top` may not say because of a built-in skill** (SK-6, #2769):
+/// any harness's key that is one of `built_in`, the built-in skills' names, each refused in a
+/// sentence with its key. A built-in skill is never turned off, and opencode's and Claude Code's
+/// switches go by the name alone, so one named so would reach purlis's own.
+pub fn built_in_refused(
+    top: &toml::Table,
+    file: &str,
+    at: &str,
+    built_in: &[String],
+) -> Vec<Refusal> {
+    top.get(SKILLS_TABLE)
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flatten()
+        .filter_map(|(harness, names)| Some((harness, names.as_table()?)))
+        .flat_map(|(harness, names)| {
+            names.keys().filter_map(move |name| {
+                let why = built_in_said(name, built_in)?;
+                Some(Refusal::at(
+                    format!(
+                        "{at}{SKILLS_TABLE}.{harness}.{} in {file} cannot be set: {why}",
+                        toml_key(name)
+                    ),
+                    &[SKILLS_TABLE, harness.as_str(), name.as_str()],
+                ))
+            })
+        })
+        .collect()
+}
+
+/// **The Skill studio's switch** (SK-6, #2769): turns `harness`'s plugin or skill `id` on or off
+/// for the chats the studio shows: at the project's root (`workspace` `None`) in
+/// `charter.local.toml`, this machine's own, since a harness's plugins and skills are the person's
+/// own install; in a workspace, in its `workspace.json`, which is the team's for that workspace.
+///
+/// It writes the least that makes the answer `on`: this layer's key is taken out, and written
+/// only where another layer would still say otherwise. So turning one back on where nothing else
+/// named it leaves the harness to decide, as it did. Refused, writing nothing, for a pinned
+/// plugin, a program that cannot hand a plugin to a chat, a skill it cannot leave out alone, a
+/// built-in skill's name (`built_in` holds their names), and anything a save of that file refuses.
+pub fn switch_in_the_studio(
+    root: &Path,
+    workspace: Option<&str>,
+    harness: crate::harness::Harness,
+    what: Switched,
+    id: &str,
+    on: bool,
+    built_in: &[String],
+) -> Result<(), String> {
+    use crate::settings::{Edit, Step, Value, Which};
+    let adapter = harness.adapter().plugins();
+    let kind = adapter.harness();
+    if !id_ok(id) {
+        return Err("that is no name purlis can write, so nothing was changed".to_owned());
+    }
+    if let Some(why) = what.refused(adapter, id, built_in) {
+        return Err(format!("{why}, so nothing was changed"));
+    }
+    let path = vec![
+        Step::Key(what.table().to_owned()),
+        Step::Key(kind.to_owned()),
+        Step::Key(id.to_owned()),
+    ];
+    let is_on = |choices: &Choices| what.said(choices, kind, id) != Some(false);
+    match workspace {
+        None => {
+            let read = crate::settings::read(root, Which::Local)?;
+            let base = read.exists.then_some(read.text.as_str());
+            let without = crate::settings::edited(
+                &read.text,
+                &[Edit {
+                    path: path.clone(),
+                    value: None,
+                }],
+            )?;
+            let shared = crate::settings::layer_text(root, Which::Shared);
+            let after = Choices::from_text(shared.text(), Some(&without));
+            let text = if is_on(&after) == on {
+                without
+            } else {
+                crate::settings::edited(
+                    &read.text,
+                    &[Edit {
+                        path,
+                        value: Some(Value::Bool(on)),
+                    }],
+                )?
+            };
+            crate::settings::save(root, Which::Local, base, &text).map_err(|why| why.join(" "))
+        }
+        Some(ws) => {
+            let read = crate::settings::workspace::read_file(root, ws)?;
+            let base = read.exists.then_some(read.text.as_str());
+            let mut settings = crate::settings::workspace::read(root, ws).unwrap_or_default();
+            if let Some(harnesses) = settings
+                .get_mut(what.table())
+                .and_then(toml::Value::as_table_mut)
+                && let Some(ids) = harnesses.get_mut(kind).and_then(toml::Value::as_table_mut)
+            {
+                ids.remove(id);
+            }
+            let after = Choices::read(root).with_workspace(ws, Some(settings));
+            let value = (is_on(&after) != on).then_some(Value::Bool(on));
+            crate::settings::workspace::save(root, ws, base, &[Edit { path, value }])
+                .map_err(|why| why.join(" "))
+        }
+    }
+}
+
+mod outside;
+pub use outside::{harness_skills, repo_skills};
 
 #[cfg(test)]
 mod tests;

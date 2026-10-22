@@ -133,6 +133,7 @@ const CLAUDE: HarnessPlugins = {
   harness: "claude",
   title: "Claude Code",
   unsupported: null,
+  only_off: null,
   record: null,
   trouble: null,
   plugins: [

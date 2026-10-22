@@ -93,6 +93,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
             plane: &here.plane,
             workspace: Some(WORKSPACE),
             linked: linked.as_deref(),
+            repo: &[],
         }),
     };
     let cwd = here.plane.join("workspaces").join(WORKSPACE);
@@ -201,7 +202,8 @@ fn a_codex_chat_as_the_persona_is_briefed_on_its_skills() {
         }
         var(&env, name).map(str::to_owned)
     };
-    let text = purlis_core::skills::briefed(&here.plane, Some(WORKSPACE), &lookup).expect("listed");
+    let text =
+        purlis_core::skills::briefed(&here.plane, Some(WORKSPACE), None, &lookup).expect("listed");
     for name in ["`deploy`", "`triage`", "`secrets`"] {
         assert!(text.contains(name), "{name} in {text}");
     }

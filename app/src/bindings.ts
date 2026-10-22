@@ -1816,6 +1816,13 @@ export const commands = {
 	 */
 	skillTurn: (plane: PlaneId, workspace: string, name: string, on: boolean) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_turn", { plane, workspace, name, on })),
 	/**
+	 *  **Turns one of a harness's plugins or skills on or off** (SK-6, #2769) for the chats the
+	 *  studio shows: at the project's root on this machine alone (`charter.local.toml`), in a
+	 *  workspace in its own settings, as `purlis_core::harness_plugin::switch_in_the_studio` writes
+	 *  it. A chat started after it is handed the change.
+	 */
+	skillStudioSwitch: (plane: PlaneId, workspace: string | null, harness: HarnessKind, what: StudioSwitched, id: string, on: boolean) => typedError<null, string>(__TAURI_INVOKE("skill_studio_switch", { plane, workspace, harness, what, id, on })),
+	/**
 	 *  What discarding the folder of dispatch `id`'s own branch would take with it (#1453): every
 	 *  uncommitted file, every ignored one, and how many commits its branch holds that exist
 	 *  nowhere else, for the question the window asks before it discards. Refused while a chat is
@@ -4941,6 +4948,13 @@ export type ChosenInstruction = {
 	text: string,
 };
 
+/**  What came of a clash. */
+export type ClashOutcome = 
+/**  Both copies load. */
+"both-load" | 
+/**  The repo's narrower copy is the one the chat gets; the plane's is left out. */
+"repo-wins";
+
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
 export type CloseHanded = {
 	plane: PlaneId,
@@ -6793,6 +6807,9 @@ export type HarnessGlance = {
 	cannot_type: string | null,
 };
 
+/**  A harness, as the window and the core name one to each other: a profile's `kind`. */
+export type HarnessKind = "claude" | "opencode" | "codex";
+
 /**  One plugin, in one project. */
 export type HarnessPlugin = {
 	/**  The harness's own id for it. */
@@ -6828,6 +6845,11 @@ export type HarnessPlugins = {
 	 *  a project's choice to the chats it starts.
 	 */
 	unsupported: string | null,
+	/**
+	 *  "<harness> is handed a plugin only to turn it off — <why>" (SK-6, #2769), where a chat
+	 *  can be handed a plugin turned off and not one turned on: Codex's.
+	 */
+	only_off: string | null,
 	/**
 	 *  Where charter read what it has installed: the file or directory, as this app's own
 	 *  environment names it. A profile that points the harness elsewhere is listed against its
@@ -7158,7 +7180,9 @@ export type LeftOut = {
 /**  The level a skill comes from, as the studio draws it. */
 export type Level = "built-in" | "project" | "workspace" | "persona" | 
 /**  A harness skill: the harness's own, which purlis never hands over. */
-"installed";
+"installed" | 
+/**  A repo's own, in a clone (SK-6). */
+"repo";
 
 /**  A level the file says that waits for your Confirm. */
 export type LevelWaiting = {
@@ -7934,6 +7958,15 @@ export type OwnBranch = {
 	left: LeftBranch | null,
 };
 
+/**  Whose a skill from outside the plane is. */
+export type Owner = 
+/**  The person's own. */
+{ kind: "you" } | 
+/**  A plugin's, by its name. */
+{ kind: "plugin"; name: string } | 
+/**  A repo's, by its clone's name. */
+{ kind: "repo"; name: string };
+
 /**  One owner in the picker. */
 export type OwnerRow = {
 	/**  The login or the group's full path: what the creation is asked for. */
@@ -8683,6 +8716,11 @@ export type PlaneUpdated = {
 	 */
 	skills: boolean,
 };
+
+/**  What the project has a harness's plugin at. */
+export type PluginState = "on" | "off" | 
+/**  No layer names it: the harness decides, from its own settings. */
+"not-set";
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
 export type PoolAdding = {
@@ -10409,6 +10447,13 @@ export type SidebarWorkspace = {
 	live: boolean,
 };
 
+/**  How a harness can leave one of its own skills out of a chat. */
+export type SkillSwitch = 
+/**  On its own: the studio draws a switch. */
+{ kind: "alone" } | 
+/**  Not on its own, and why, which the studio says in place of a switch. */
+{ kind: "not"; why: string };
+
 /**
  *  What a change had to say beyond being done: that it was left for the next save, or that a
  *  place naming the skill was left as it was. Empty for a change that only did what was asked.
@@ -10659,6 +10704,57 @@ export type Studio = {
 	/**  Every level a skill can be made at or moved to, with its words (#2770). */
 	levels: StudioLevel[],
 	skills: StudioSkill[],
+	/**  Each harness, with its plugins and its own skills (SK-6). */
+	harnesses: StudioHarness[],
+	/**  Every harness or repo skill that has the name of a skill a chat gets, by name. */
+	clashes: StudioClash[],
+};
+
+/**
+ *  A harness or repo skill with the name of a skill purlis hands a chat (ADR 0099 §3): both
+ *  load, so the studio marks purlis's copy.
+ */
+export type StudioClash = {
+	name: string,
+	/**  The level of the plane's copy, and whether it is local. */
+	level: Level,
+	local: boolean,
+	/**  The harness that loads the other copy, as a person reads its name. */
+	harness: string,
+	/**  The other copy: a harness's or a repo's, and whose. */
+	outside: Level,
+	owner: Owner,
+	outcome: ClashOutcome,
+};
+
+/**  One harness in the studio (SK-6): its plugins and the skills it finds itself. */
+export type StudioHarness = {
+	/**  Which harness it is, which a switch names. */
+	harness: HarnessKind,
+	title: string,
+	/**  Why its plugins cannot be chosen for one chat, where they cannot: no plugin switch. */
+	unsupported: string | null,
+	/**  Why a plugin can only be turned off, where that is all it can be. */
+	only_off: string | null,
+	/**  Why its own record of what it installed could not be read, if it could not. */
+	trouble: string | null,
+	plugins: StudioPlugin[],
+	/**  The skills it finds itself, read only, each by the name it knows it by. */
+	skills: StudioSkill[],
+};
+
+/**  One of a harness's plugins in the studio (SK-6). */
+export type StudioPlugin = {
+	/**  The harness's own id for it, which the switch names. */
+	id: string,
+	name: string,
+	/**  Where purlis found it installed; empty where this machine has not installed it. */
+	origin: string,
+	installed: boolean,
+	/**  What the project has it at, in the chats the studio shows. */
+	state: PluginState,
+	/**  Why purlis fixes it whatever the project says, or `None`: no switch is drawn for it. */
+	pinned: string | null,
 };
 
 /**  A level a skill can be moved to or made at, and its words. */
@@ -10745,7 +10841,24 @@ export type StudioSkill = {
 	 *  machine for, or `None`.
 	 */
 	unchecked: string | null,
+	/**
+	 *  Whose a harness or repo skill is: "you", a plugin's name, a repo's name. `None` for the
+	 *  plane's levels and the built-in skills (SK-6).
+	 */
+	owner: Owner | null,
+	/**
+	 *  How a harness or repo skill's harness can leave it out. `None` for the plane's levels
+	 *  and the built-in skills, whose switches are their own.
+	 */
+	switch: SkillSwitch | null,
 };
+
+/**
+ *  What the studio's switch turns on or off for a harness: the core's `Switched`, spelled for
+ *  the window. purlis-core keeps no UI typing crate (CLAUDE.md), so the window's copy of the type
+ *  lives here and turns into the core's in one place.
+ */
+export type StudioSwitched = "plugin" | "skill";
 
 /**  What one subject is offered. */
 export type SubjectCurations = {
