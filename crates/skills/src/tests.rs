@@ -1238,3 +1238,51 @@ fn a_skill_turned_off_clashes_with_nothing_and_a_plugins_namespaced_skill_never_
     assert!(set.clashes.is_empty(), "{:?}", set.clashes);
     assert_eq!(set.from_the_plane().count(), 1);
 }
+
+#[test]
+fn a_built_in_skill_never_loses_to_a_repo_or_harness_copy_of_its_name_on_any_route() {
+    // SK-6 (#2769): a clone could otherwise replace purlis's own `secrets` on Codex and opencode.
+    let plane = Plane::new();
+    let built_in = plane.root.join("../plugin/skills");
+    skill(&built_in, "secrets", &whole("secrets"));
+    let set = || {
+        skill_set(
+            Some(&plane.root),
+            &Machine {
+                built_in: Some(&built_in),
+                kept_local: Some(&|_| Ok(())),
+                harness: None,
+            },
+            &Chat {
+                workspace: None,
+                persona: None,
+                names: &[],
+                turned_off: &[],
+                harness: HarnessSkills {
+                    route: Route::Plugin,
+                },
+            },
+        )
+    };
+
+    for route in [Route::Plugin, Route::Config, Route::Briefing] {
+        let got = set().with_outside(
+            route,
+            [
+                outside("secrets", Origin::Repo, repo("api"), false),
+                outside("secrets", Origin::Harness, Owner::You, false),
+            ],
+        );
+        assert_eq!(
+            effective(&got),
+            [("secrets", Origin::BuiltIn, false)],
+            "{route:?}"
+        );
+        let hidden: Vec<String> = got.left_out.iter().map(|l| l.reason.to_string()).collect();
+        assert_eq!(
+            hidden, ["hidden by purlis's built-in skill of this name"; 2],
+            "{route:?}"
+        );
+        assert!(got.clashes.is_empty(), "{route:?}");
+    }
+}

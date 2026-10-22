@@ -882,3 +882,52 @@ fn a_briefed_chat_in_a_clone_is_told_the_repos_copy_of_a_name_and_not_the_projec
         "a chat in no clone: {elsewhere}"
     );
 }
+
+#[test]
+fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_or_opencode() {
+    // SK-6 (#2769): a clone's `secrets` must not take purlis's own away from a chat.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let clone = plane.join("workspaces/alpha/api");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    let built_in = tmp.path().join("bundle/skills");
+    for (dir, says) in [
+        (built_in.clone(), "purlis's"),
+        (clone.join(".agents/skills"), "repo's"),
+    ] {
+        std::fs::create_dir_all(dir.join("secrets")).unwrap();
+        std::fs::write(
+            dir.join("secrets/SKILL.md"),
+            format!("---\nname: secrets\ndescription: The {says} secrets.\n---\n"),
+        )
+        .unwrap();
+    }
+    let repo = repo_skills_of_chat(Harness::Codex, &plane, "alpha", &clone);
+    assert_eq!(repo.len(), 1, "{repo:?}");
+    for route in [Route::Briefing, Route::Config] {
+        let set = ask(
+            Some(&built_in),
+            Some(PlaneSkills {
+                plane: &plane,
+                workspace: Some("alpha"),
+                linked: None,
+                repo: &repo,
+            }),
+            None,
+            route,
+            None,
+        );
+        assert_eq!(set.built_in_dir(), Some(built_in.as_path()), "{route:?}");
+        let handed: Vec<(&str, Origin)> = set
+            .effective
+            .iter()
+            .map(|e| (e.skill.name.as_str(), e.origin))
+            .collect();
+        assert_eq!(handed, [("secrets", Origin::BuiltIn)], "{route:?}");
+        assert_eq!(
+            set.left_out[0].reason.to_string(),
+            "hidden by purlis's built-in skill of this name",
+            "{route:?}"
+        );
+    }
+}

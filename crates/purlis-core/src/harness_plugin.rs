@@ -706,16 +706,16 @@ impl Adapter for Opencode {
         skills::opencode(self, env)
     }
 
-    /// Read again in opencode 1.18.33's source for SK-6 (#2769): `plugin/index.ts` loads every
-    /// entry of the merged config's `plugin_origins`, and `config/plugin.ts` merges each config's
-    /// list into it, keeping one entry per package; the only switches are `--pure`, which loads
-    /// none at all, and `OPENCODE_DISABLE_DEFAULT_PLUGINS`, which drops the built-in ones.
+    /// **Measured on opencode 1.18.33** (SK-6, #2769; #3009): a session layer's `plugin` list in
+    /// `OPENCODE_CONFIG_CONTENT` is added to every other config's in `plugin_origins`, which is
+    /// what opencode loads, and an empty one removes nothing (two file plugins named in another
+    /// config both still loaded). The only switches are `--pure`, which loads none at all, and
+    /// `OPENCODE_DISABLE_DEFAULT_PLUGINS`, which drops the built-in ones.
     fn support(&self) -> Support {
         Support::NotYet(
-            "opencode has no switch that turns one plugin off: it loads every plugin from every \
-             config and plugin directory together, and a project's `\"plugin\": []` did not \
-             remove one another config named (measured, opencode 1.18.23; its 1.18.33 source \
-             still merges every list)",
+            "opencode has no switch that turns one of its plugins off for one chat: it loads every \
+             plugin each of its configs names, and an empty list for one chat leaves them all \
+             loaded (measured, opencode 1.18.33)",
         )
     }
 

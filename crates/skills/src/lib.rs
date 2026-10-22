@@ -248,6 +248,9 @@ pub enum Reason {
     /// A harness or repo skill the project turned off for this harness's chats, which purlis
     /// asks the harness to leave out.
     OffForTheHarness,
+    /// A harness or repo skill named as one of purlis's built-in skills, which never loses to
+    /// any other copy (SK-6): the chat is handed purlis's.
+    HiddenByBuiltIn,
 }
 
 /// What a folder lacks to be a whole skill.
@@ -307,6 +310,7 @@ impl std::fmt::Display for Reason {
                 f.write_str("its persona names it, and purlis has no built-in skill of this name")
             }
             Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
+            Self::HiddenByBuiltIn => f.write_str("hidden by purlis's built-in skill of this name"),
         }
     }
 }
@@ -456,6 +460,24 @@ impl SkillSet {
                         .position(|e| e.route != Route::Own && e.skill.name == one.id)
                 })
                 .flatten();
+            let folder = one
+                .skill
+                .path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
+            // A built-in skill never loses to any other copy: purlis's is the one handed, and
+            // the other is listed as hidden by it, whatever the route.
+            if handed.is_some_and(|at| self.effective[at].origin == Origin::BuiltIn) {
+                self.left_out.push(LeftOut {
+                    name: one.id,
+                    origin: one.origin,
+                    local: false,
+                    folder,
+                    reason: Reason::HiddenByBuiltIn,
+                });
+                continue;
+            }
             if let Some(at) = handed {
                 let plane = &self.effective[at];
                 let outcome = if one.origin == Origin::Repo && route != Route::Plugin {
@@ -492,12 +514,6 @@ impl SkillSet {
                     });
                 }
             }
-            let folder = one
-                .skill
-                .path
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_default();
             if one.off {
                 self.left_out.push(LeftOut {
                     name: one.id,

@@ -89,11 +89,7 @@ pub fn skills_off_for(
     harness: Harness,
     chosen: &crate::harness_plugin::Chosen,
 ) -> Vec<String> {
-    let built_in: Vec<String> = kit
-        .plugin
-        .and_then(in_bundle)
-        .map(|dir| read(&dir).into_iter().map(|skill| skill.name).collect())
-        .unwrap_or_default();
+    let built_in = built_in_names(kit.plugin.and_then(in_bundle).as_deref());
     let adapter = harness.adapter().plugins();
     chosen
         .skills_off
@@ -107,8 +103,13 @@ pub fn skills_off_for(
 /// The names of the built-in skills of the bundle installed beside this binary
 /// ([`built_in_here`]): what a save of `[harness_skills]` refuses to turn off.
 pub fn built_in_names_here() -> Vec<String> {
-    built_in_here()
-        .map(|dir| read(&dir).into_iter().map(|skill| skill.name).collect())
+    built_in_names(built_in_here().as_deref())
+}
+
+/// The names of the built-in skills in `dir`, the bundle's `skills/` ([`in_bundle`]): none where
+/// there is no bundle. The one list a switch, a save and an adapter refuse to turn off.
+pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
+    dir.map(|dir| read(dir).into_iter().map(|skill| skill.name).collect())
         .unwrap_or_default()
 }
 
@@ -1117,6 +1118,7 @@ pub fn of_a_chat(
 /// **One harness in the Skill studio** (SK-6, #2769): its plugins, as the settings tab surveys
 /// them, and the skills from outside the plane it finds itself, beside the plane's.
 pub struct HarnessInTheStudio {
+    pub harness: Harness,
     /// Its plugins, and what the project has each at ([`crate::harness_plugin::survey`]).
     pub group: crate::harness_plugin::Group,
     /// What a chat on it gets: the plane's skills ([`in_the_studio`]) with the ones from outside
@@ -1145,20 +1147,21 @@ pub fn harnesses_in_the_studio(
         .unwrap_or_default();
     crate::harness_plugin::survey(&choices, env)
         .into_iter()
-        .map(|group| {
+        .filter_map(|group| {
+            // Every adapter the survey lists is a harness's ([`crate::harness_plugin::adapters`]).
+            let harness = Harness::of_kind(group.adapter.harness())?;
             let mut outside = crate::harness_plugin::harness_skills(group.adapter, env, &choices);
             outside.extend(crate::harness_plugin::repo_skills(
                 group.adapter,
                 &choices,
                 &clones,
             ));
-            let route =
-                Harness::of_kind(group.adapter.harness()).map_or(Route::Plugin, Harness::skills);
-            HarnessInTheStudio {
-                set: set.clone().with_outside(route, outside.clone()),
+            Some(HarnessInTheStudio {
+                harness,
+                set: set.clone().with_outside(harness.skills(), outside.clone()),
                 group,
                 outside,
-            }
+            })
         })
         .collect()
 }

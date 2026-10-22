@@ -408,8 +408,7 @@ fn harnesses(
                 });
             }
             StudioHarness {
-                harness: purlis_core::harness::Harness::of_kind(adapter.harness())
-                    .map_or(HarnessKind::Claude, HarnessKind::from),
+                harness: one.harness.into(),
                 title: adapter.title().to_owned(),
                 unsupported: harness_plugin::not_supported(adapter),
                 only_off: harness_plugin::only_off(adapter),
@@ -744,15 +743,11 @@ pub(crate) async fn skill_studio_switch(
         if !purlis_core::skills::studio_on_here() {
             return Err("The Skill studio is not turned on on this machine.".to_owned());
         }
-        let built_in: Vec<String> = crate::bundled_plugin_here()
-            .and_then(|plugin| purlis_core::skills::in_bundle(&plugin))
-            .map(|dir| {
-                purlis_core::skills::read(&dir)
-                    .into_iter()
-                    .map(|skill| skill.name)
-                    .collect()
-            })
-            .unwrap_or_default();
+        let built_in = purlis_core::skills::built_in_names(
+            crate::bundled_plugin_here()
+                .and_then(|plugin| purlis_core::skills::in_bundle(&plugin))
+                .as_deref(),
+        );
         purlis_core::harness_plugin::switch_in_the_studio(
             held.root(),
             workspace.as_deref(),
