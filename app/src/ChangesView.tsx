@@ -31,6 +31,7 @@ import type { Cloning } from "./NotCloned";
 import type { CloneState } from "./repoClones";
 import { useArrived } from "./lib/arrived";
 import { useTabStop } from "./roving";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * The Changes view: what the focused workspace's repos are doing (ADR 0038 as amended
@@ -641,9 +642,9 @@ function FactOf({ column, cell }: { column: FactColumn; cell: FactCell }) {
   return (
     <>
       <Puzzle className="node-icon" />
-      <span className="stamp" title={`From the extension ${column.extension}`}>
-        {column.title}
-      </span>{" "}
+      <Tooltip tip={`From the extension ${column.extension}`}>
+        <span className="stamp">{column.title}</span>
+      </Tooltip>{" "}
       {cell.value}
       {cell.stale && <span className="stamp"> · {ago(cell.age_seconds)}</span>}
     </>

@@ -191,7 +191,7 @@ export function RefusedRows({
                   variant="grants"
                   key={level}
                   isDisabled={level === "project" && readOnly !== undefined}
-                  title={level === "project" ? readOnly : undefined}
+                  tooltip={level === "project" ? readOnly : undefined}
                   aria-label={`${ALLOW_SAID[level]}: ${row.target}`}
                   onPress={() => row.target !== null && allow(row.target, level)}
                 >

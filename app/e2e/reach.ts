@@ -138,10 +138,7 @@ export async function workspaceTabs(): Promise<{ name: string; selected: boolean
     (strip: string) =>
       [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)].map((tab) => ({
         name:
-          tab.querySelector(".workspace-name")?.textContent ??
-          tab.getAttribute("aria-label") ??
-          tab.getAttribute("title") ??
-          "",
+          tab.querySelector(".workspace-name")?.textContent ?? tab.getAttribute("aria-label") ?? "",
         selected: tab.getAttribute("aria-selected") === "true",
       })),
     WORKSPACES,

@@ -138,7 +138,7 @@ export function Breadcrumb({
               size="sm"
               variant="ghost"
               onPress={onLeave}
-              title="Back to the whole workspace (Esc)"
+              tooltip="Back to the whole workspace (Esc)"
             >
               {workspace}
             </Button>
@@ -158,7 +158,7 @@ export function Breadcrumb({
             size="sm"
             variant="ghost"
             onPress={onLeave}
-            title="Back to the whole workspace (Esc)"
+            tooltip="Back to the whole workspace (Esc)"
           >
             {workspace}
           </Button>
@@ -169,7 +169,7 @@ export function Breadcrumb({
             size="sm"
             variant="ghost"
             onPress={onLeave}
-            title="Back to the whole workspace (Esc)"
+            tooltip="Back to the whole workspace (Esc)"
           >
             {repo}
           </Button>
@@ -234,7 +234,7 @@ export function CockpitHeader({
       <Button
         size="sm"
         isDisabled={!offer.available}
-        title={offer.available ? offer.title : offer.reason}
+        tooltip={offer.available ? offer.title : offer.reason}
         onPress={() => onPress(offer)}
         className="cockpit-action"
       >

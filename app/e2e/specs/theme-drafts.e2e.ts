@@ -292,7 +292,13 @@ describe("a chat's theme draft", () => {
           const close = [...asking.querySelectorAll<HTMLButtonElement>("button")].find(
             (one) => one.textContent?.trim() === "Close",
           );
-          if (close === undefined || close.disabled) return false;
+          // Off until the draft is answered: unavailable, and kept in reach for its reason.
+          if (
+            close === undefined ||
+            close.disabled ||
+            close.getAttribute("aria-disabled") === "true"
+          )
+            return false;
           close.click();
           return true;
         }),

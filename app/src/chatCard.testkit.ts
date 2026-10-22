@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { expect } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 
 /**
@@ -10,11 +10,22 @@ import { userEvent } from "@testing-library/user-event";
  * `tooltip` role, which is what these find it by.
  */
 
+/** The card's own `tooltip`, never a hint's (`ui/tooltip`, which draws `data-scope="tooltip"`). */
+const CARD = '[role="tooltip"]:not([data-scope="tooltip"])';
+
 /** The card that is up, or nothing. */
-export const card = () => screen.queryByRole("tooltip");
+export const card = () => document.querySelector<HTMLElement>(CARD);
 
 /** The card, once it has come up: after the rest it waits for. */
-export const theCard = () => screen.findByRole("tooltip", {}, { timeout: 3000 });
+export const theCard = () =>
+  waitFor(
+    () => {
+      const up = card();
+      expect(up).not.toBeNull();
+      return up as HTMLElement;
+    },
+    { timeout: 3000 },
+  );
 
 /** What a card says of each of its facts, by the fact's word. */
 export const facts = (shown: HTMLElement | null): Record<string, string | undefined> =>

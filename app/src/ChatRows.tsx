@@ -15,6 +15,7 @@ import { StateShown } from "./StateShown";
 import { needsSaid } from "./tabTasks";
 import { tasksAtWorkOf } from "./sessionTasks";
 import { useTasksBelow } from "./TasksBelow";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /*
  * **The rows that draw a chat** (SC-3): split out of `PlaneView`, whose rendering they no longer
@@ -242,15 +243,16 @@ export function TabMarks({
           chip's and goes to that chat (#1487); from the menu the way is to bring the tab
           forward, and its chip is there. */}
       {needs.length > 0 && (
-        <span
-          className="needs-you-mark"
-          data-mark="needs-you"
-          role="img"
-          aria-label={needsSaid(needs)}
-          title={needsSaid(needs)}
-        >
-          <Hand aria-hidden="true" />
-        </span>
+        <Tooltip tip={needsSaid(needs)}>
+          <span
+            className="needs-you-mark"
+            data-mark="needs-you"
+            role="img"
+            aria-label={needsSaid(needs)}
+          >
+            <Hand aria-hidden="true" />
+          </span>
+        </Tooltip>
       )}
       <StoppingMark held={showsStopping(tabs, id, stopping)} />
       <WrappingUp held={panesOf(tabs, id).some((one) => wrapping.has(one.session))} />

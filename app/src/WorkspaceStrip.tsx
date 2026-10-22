@@ -19,6 +19,7 @@ import { StripTablist } from "./StripTablist";
 import { useTabStop } from "./roving";
 import type { Ref } from "./fits";
 import { Doer, ShowMore, Gear } from "./StripMarks";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **The workspace strip** (ADR 0036), the second of the three strips: one tab per workspace
@@ -115,34 +116,35 @@ export function WorkspaceStrip({
                             tabStopId={workspace}
                             active={workspace === focused}
                           >
-                            <button
-                              role="tab"
-                              id={workspaceTabId(place)}
-                              // The root's own width is measured, and comes off the room the
-                              // named workspaces share (`fits.useWidth`, qw337).
-                              ref={root ? workspaceRoot : undefined}
-                              className={root ? "plane-root" : undefined}
-                              aria-label={root ? OUTSIDE_TITLE : undefined}
-                              aria-selected={workspace === focused}
-                              aria-describedby={
-                                root ? undefined : sortable.attributes["aria-describedby"]
-                              }
-                              title={root ? ROOT_TIP : offer?.title}
-                              // Its own colour, in front or not (charter-app#281): its shade and its
-                              // mark are its tint, set on the tab and the cell around it.
-                              data-colour={colourOf(workspace) ?? undefined}
-                              style={tintOf(workspace)}
-                              {...sortable.listeners}
-                              onKeyDown={(event) => {
-                                keepsTheFocus(event, sortable.isDragging);
-                                sortable.listeners?.onKeyDown?.(event);
-                              }}
-                              onClick={() => {
-                                if (offer?.available) press(offer);
-                              }}
-                            >
-                              {workspaceMarks(workspace)}
-                            </button>
+                            <Tooltip tip={root ? ROOT_TIP : offer?.title}>
+                              <button
+                                role="tab"
+                                id={workspaceTabId(place)}
+                                // The root's own width is measured, and comes off the room the
+                                // named workspaces share (`fits.useWidth`, qw337).
+                                ref={root ? workspaceRoot : undefined}
+                                className={root ? "plane-root" : undefined}
+                                aria-label={root ? OUTSIDE_TITLE : undefined}
+                                aria-selected={workspace === focused}
+                                aria-describedby={
+                                  root ? undefined : sortable.attributes["aria-describedby"]
+                                }
+                                // Its own colour, in front or not (charter-app#281): its shade and its
+                                // mark are its tint, set on the tab and the cell around it.
+                                data-colour={colourOf(workspace) ?? undefined}
+                                style={tintOf(workspace)}
+                                {...sortable.listeners}
+                                onKeyDown={(event) => {
+                                  keepsTheFocus(event, sortable.isDragging);
+                                  sortable.listeners?.onKeyDown?.(event);
+                                }}
+                                onClick={() => {
+                                  if (offer?.available) press(offer);
+                                }}
+                              >
+                                {workspaceMarks(workspace)}
+                              </button>
+                            </Tooltip>
                           </RovingFocusGroup.Item>
                         </Menued>
                         {/* Its settings (SE-23, V89i): on the focused workspace only, and

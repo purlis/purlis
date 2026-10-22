@@ -64,6 +64,7 @@ import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
 import { Button, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * The left region: the repo and worktree **explorer** (ADR 0038).
@@ -1088,21 +1089,20 @@ function ReposSection({
                                 active={isPicked}
                                 focusable={isDrawn(pieceRow(repo, piece.piece))}
                               >
-                                <button
-                                  type="button"
-                                  className="ui-row ui-tree-row spot"
-                                  aria-current={isPicked ? "true" : undefined}
-                                  {...treeitem(pieceRow(repo, piece.piece))}
-                                  // The folder's whole path: ADR 0072 §4 shows it only where a
-                                  // path is wanted, and the row itself reads the branch.
-                                  title={piece.path}
-                                  onClick={() =>
-                                    onPick({ repo, piece: piece.piece, path: piece.path })
-                                  }
-                                >
-                                  <GitBranch className="node-icon" />
-                                  <BranchLabel repo={repo} piece={piece} />
-                                </button>
+                                <Tooltip tip={piece.path}>
+                                  <button
+                                    type="button"
+                                    className="ui-row ui-tree-row spot"
+                                    aria-current={isPicked ? "true" : undefined}
+                                    {...treeitem(pieceRow(repo, piece.piece))}
+                                    onClick={() =>
+                                      onPick({ repo, piece: piece.piece, path: piece.path })
+                                    }
+                                  >
+                                    <GitBranch className="node-icon" />
+                                    <BranchLabel repo={repo} piece={piece} />
+                                  </button>
+                                </Tooltip>
                               </RovingFocusGroup.Item>
                             </Menued>
                             {/* The two states the operator has to see BEFORE they start a chat
@@ -1136,22 +1136,20 @@ function ReposSection({
                             sentence for why (#1476), never drawn as one with nothing to commit.
                             The row is one line, so the sentence is the label's title. */}
                             {piece.unread && (
-                              <span
-                                className="label said"
-                                data-testid="piece-unread"
-                                title={piece.unread}
-                              >
-                                unreadable
-                              </span>
+                              <Tooltip tip={piece.unread}>
+                                <span className="label said" data-testid="piece-unread">
+                                  unreadable
+                                </span>
+                              </Tooltip>
                             )}
                             {piece.unclaimed && (
-                              <span
-                                className="label said"
-                                data-testid="piece-unclaimed"
-                                title={`purlis cut this branch ${piece.unclaimed} ago for a chat that never started in it. Nothing removes it on its own: start a chat in it, or remove its folder from its menu.`}
+                              <Tooltip
+                                tip={`purlis cut this branch ${piece.unclaimed} ago for a chat that never started in it. Nothing removes it on its own: start a chat in it, or remove its folder from its menu.`}
                               >
-                                unclaimed {piece.unclaimed}
-                              </span>
+                                <span className="label said" data-testid="piece-unclaimed">
+                                  unclaimed {piece.unclaimed}
+                                </span>
+                              </Tooltip>
                             )}
                           </li>
                         );
@@ -1337,9 +1335,9 @@ export type Spot = { repo: string; piece?: string; path: string };
 function PieceCount({ pieces, refused }: { pieces?: readonly unknown[]; refused?: string }) {
   if (refused !== undefined)
     return (
-      <span className="piece-count none ui-text-meta" title={refused}>
-        unreadable
-      </span>
+      <Tooltip tip={refused}>
+        <span className="piece-count none ui-text-meta">unreadable</span>
+      </Tooltip>
     );
   if (pieces === undefined) return <span className="piece-count pending ui-text-meta">…</span>;
   return (
@@ -1495,9 +1493,11 @@ function ChangeBadge({ marked, folder }: { marked: Marked | undefined; folder: b
       ? `renamed from ${marked.from}`
       : MARK_SAID[marked.mark];
   return (
-    <span className="change-mark" data-mark={marked.mark} title={said} aria-label={said}>
-      {folder ? marked.count : marked.mark[0].toUpperCase()}
-    </span>
+    <Tooltip tip={said}>
+      <span className="change-mark" data-mark={marked.mark} aria-label={said}>
+        {folder ? marked.count : marked.mark[0].toUpperCase()}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -1506,7 +1506,11 @@ function ChangeBadge({ marked, folder }: { marked: Marked | undefined; folder: b
 function TouchMark({ names }: { names: readonly string[] | undefined }) {
   if (names === undefined || names.length === 0) return null;
   const said = touchSaid(names);
-  return <span className="touch-mark" role="img" title={said} aria-label={said} />;
+  return (
+    <Tooltip tip={said}>
+      <span className="touch-mark" role="img" aria-label={said} />
+    </Tooltip>
+  );
 }
 
 /** Everything a branch's file rows share: the branch they are of, what the tree knows about
@@ -1759,17 +1763,18 @@ export function FolderEntries({
             return (
               <li key={`w${entry.name}`} role="none" data-workspace={ofWorkspace}>
                 <RovingFocusGroup.Item asChild tabStopId={id} focusable={at.isDrawn(id)}>
-                  <button
-                    type="button"
-                    className="ui-row ui-tree-row file-node"
-                    title={said}
-                    {...at.treeitem(id)}
-                    onClick={() => at.onGoToWorkspace?.(ofWorkspace)}
-                  >
-                    <Folders className="node-icon" />
-                    <span className="spot-name">{entry.name}</span>{" "}
-                    <span className="spot-what ui-text-secondary">{`workspace ${ofWorkspace}`}</span>
-                  </button>
+                  <Tooltip tip={said}>
+                    <button
+                      type="button"
+                      className="ui-row ui-tree-row file-node"
+                      {...at.treeitem(id)}
+                      onClick={() => at.onGoToWorkspace?.(ofWorkspace)}
+                    >
+                      <Folders className="node-icon" />
+                      <span className="spot-name">{entry.name}</span>{" "}
+                      <span className="spot-what ui-text-secondary">{`workspace ${ofWorkspace}`}</span>
+                    </button>
+                  </Tooltip>
                 </RovingFocusGroup.Item>
               </li>
             );
@@ -1797,33 +1802,35 @@ export function FolderEntries({
                 at={at}
               >
                 <RovingFocusGroup.Item asChild tabStopId={id} focusable={at.isDrawn(id)}>
-                  <button
-                    type="button"
-                    className="ui-row ui-tree-row file-node"
-                    data-refused={refused !== undefined || undefined}
-                    aria-disabled={refused !== undefined || undefined}
-                    title={refused ?? path}
-                    {...at.treeitem(id)}
-                    {...draggedAs(at, path, false, refused)}
-                    {...pickedAs(at, picked)}
-                    onClick={(event) => {
-                      if (at.pick?.click(event, picked)) return;
-                      if (refused === undefined) at.onOpenFile?.(at.place, path);
-                    }}
-                  >
-                    {Mark === null ? (
-                      <FileIcon symbol={iconFor(at.icons, { name: entry.name, folder: false })} />
-                    ) : (
-                      <Mark className="node-icon" />
-                    )}
-                    <span className="spot-name">{entry.name}</span> <TouchMark names={touchedBy} />
-                    <ChangeBadge marked={entry.marked} folder={false} />
-                    {/* Why it does not open, said beside it — an ignored file's too, which is
+                  <Tooltip tip={refused ?? path}>
+                    <button
+                      type="button"
+                      className="ui-row ui-tree-row file-node"
+                      data-refused={refused !== undefined || undefined}
+                      aria-disabled={refused !== undefined || undefined}
+                      {...at.treeitem(id)}
+                      {...draggedAs(at, path, false, refused)}
+                      {...pickedAs(at, picked)}
+                      onClick={(event) => {
+                        if (at.pick?.click(event, picked)) return;
+                        if (refused === undefined) at.onOpenFile?.(at.place, path);
+                      }}
+                    >
+                      {Mark === null ? (
+                        <FileIcon symbol={iconFor(at.icons, { name: entry.name, folder: false })} />
+                      ) : (
+                        <Mark className="node-icon" />
+                      )}
+                      <span className="spot-name">{entry.name}</span>{" "}
+                      <TouchMark names={touchedBy} />
+                      <ChangeBadge marked={entry.marked} folder={false} />
+                      {/* Why it does not open, said beside it — an ignored file's too, which is
                       drawn only once the operator asked to see what git ignores. */}
-                    {refused !== undefined && (
-                      <span className="spot-what ui-text-secondary">{refused}</span>
-                    )}
-                  </button>
+                      {refused !== undefined && (
+                        <span className="spot-what ui-text-secondary">{refused}</span>
+                      )}
+                    </button>
+                  </Tooltip>
                 </RovingFocusGroup.Item>
               </FileMenu>
             </li>

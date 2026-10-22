@@ -603,7 +603,8 @@ describe("Edit as TOML on a read-only project (#826, #1759)", () => {
     const text = await raw("charter.toml");
     expect(text).toHaveAttribute("aria-readonly", "true");
     expect(typeable(text)).toBe(false);
-    expect(text.closest("fieldset")).toHaveAttribute("title", UNREADABLE);
+    // Why it is off: its group\'s description, which its legend\'s tooltip says too (#2908).
+    expect(text.closest("fieldset")).toHaveAccessibleDescription(UNREADABLE);
   });
 
   it("keeps a group's controls off even where the manifest is mendable", async () => {

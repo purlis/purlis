@@ -159,7 +159,7 @@ const ITEMS = (open: () => void): StatusContribution[] => [
     priority: 40,
     label: "PRs",
     value: "2",
-    title: "PRs, from Forge's facts file",
+    tooltip: "PRs, from Forge's facts file",
   },
   {
     id: "purlis.notices",

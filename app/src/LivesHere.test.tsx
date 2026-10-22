@@ -12,6 +12,7 @@ import { LIVES_HERE, LivesHere } from "./LivesHere";
 import { settingsPageIn } from "./PublishProject";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { pickIn } from "./primitives/select.testkit";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A project that lives only on this machine says so, and publishes** (#1820), as the window
@@ -132,8 +133,8 @@ describe("a project that lives only on this machine (#1820)", () => {
       </ReadOnlySaid.Provider>,
     );
     const publish = await screen.findByRole("button", { name: "Publish to GitHub or GitLab…" });
-    expect(publish).toBeDisabled();
-    expect(publish).toHaveAttribute("title", "purlis opens the project read-only.");
+    expect(publish).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(publish)).toEqual("purlis opens the project read-only.");
   });
 
   it("publishes with #1819's form, private by default, and the line goes once it lands", async () => {

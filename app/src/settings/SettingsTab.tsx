@@ -53,7 +53,12 @@ import { CollectionView, type Asked } from "./Collection";
 import { useEnteringFocus } from "./entering";
 import { OutLink } from "./OutLink";
 import { standingIn, type Standing } from "./standing";
-import { OffWhenReadOnly, useReadOnlyMendable, useReadOnlySaid } from "../ReadOnlyLine";
+import {
+  OffWhenReadOnly,
+  ReadOnlyFieldset,
+  useReadOnlyMendable,
+  useReadOnlySaid,
+} from "../ReadOnlyLine";
 import { LivesHere } from "../LivesHere";
 import { usePools } from "../pools";
 import { POOLS } from "./pools";
@@ -633,12 +638,7 @@ function OffUnless({
 }) {
   const said = useReadOnlySaid();
   if (!steady) return on ? <>{children}</> : <OffWhenReadOnly>{children}</OffWhenReadOnly>;
-  const off = said !== undefined && !on;
-  return (
-    <fieldset className="read-only-off" disabled={off} title={off ? said : undefined}>
-      {children}
-    </fieldset>
-  );
+  return <ReadOnlyFieldset said={on ? undefined : said}>{children}</ReadOnlyFieldset>;
 }
 
 /**
@@ -1249,7 +1249,7 @@ function Place({
   }) => ReactNode;
 }) {
   const noted = useId();
-  const { rested, rest, wake } = useRested(true);
+  const { rested, rest, wake, hold } = useRested(true);
   return children({
     props: { textValue: label, "aria-label": label, "aria-describedby": noted, ...rest },
     inside: (
@@ -1259,7 +1259,7 @@ function Place({
           {says}
         </span>
         {rested && (
-          <MenuTip side="left" onClose={wake}>
+          <MenuTip side="left" onClose={wake} hold={hold}>
             {says}
           </MenuTip>
         )}

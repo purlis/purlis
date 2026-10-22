@@ -19,6 +19,7 @@ import App from "./App";
 import type { FinishedTask, OpenChat } from "./bindings";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A chat's finished tasks, against the whole window** (#1485): a task ends at its report, and
@@ -393,7 +394,7 @@ describe("a chat's finished tasks", () => {
     }
     expect(theRow(group, "counted")).toHaveAccessibleName("counted done");
     expect(theRow(group, "stuck")).toHaveAccessibleName("stuck failed blocked");
-    expect(theRow(group, "stuck").getAttribute("title")).toMatch(/^failed · blocked/);
+    expect(tipOf(theRow(group, "stuck"))).toMatch(/^stuck\nfailed · blocked/);
     expect(within(theRow(group, "counted")).queryByRole("img")).toBeNull();
   });
 
@@ -522,10 +523,11 @@ describe("a chat's finished tasks", () => {
     const name = theRow(group, "check staging");
 
     fireEvent.pointerEnter(name);
-    await waitFor(() =>
-      expect(name.getAttribute("title")).toBe(
-        "failed\nThe cluster refused the login.\nTokens: 12k in, 3k out",
-      ),
+    // Its whole name first, cut short in a narrow sidebar, then how it ended and what it used.
+    await waitFor(() => expect(asked("tasks_used")).toHaveLength(1));
+    await act(async () => {});
+    expect(tipOf(name)).toBe(
+      "check staging\nfailed\nThe cluster refused the login.\nTokens: 12k in, 3k out",
     );
     expect(asked("tasks_used")).toEqual([
       { plane: PLANE, scope: "hover", own: null, chats: [], finished: [FAILED.id] },
@@ -536,7 +538,7 @@ describe("a chat's finished tasks", () => {
     fireEvent.pointerEnter(waiting);
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(asked("tasks_used")).toHaveLength(1);
-    expect(waiting.getAttribute("title")).toBe("failed\nIt could not start.");
+    expect(tipOf(waiting)).toBe("start again\nfailed\nIt could not start.");
   });
 
   it("shows a finished row's report on a press, as text and never as markup", async () => {
@@ -554,8 +556,11 @@ describe("a chat's finished tasks", () => {
     render(<App />);
     const group = await theirs();
     const name = theRow(group, "check prod");
-    // Its first line on hover, after how it ended; nothing of it drawn until it is opened.
-    expect(name).toHaveAttribute("title", 'failed\n<b>Healthy</b> <img src=x onerror="alert(1)">');
+    // Its first line on hover, after its name and how it ended; nothing of it drawn until it is
+    // opened.
+    expect(tipOf(name)).toEqual(
+      'check prod\nfailed\n<b>Healthy</b> <img src=x onerror="alert(1)">',
+    );
     expect(screen.queryByRole("region", { name: "Report of check prod" })).toBeNull();
 
     await userEvent.click(name);
@@ -612,7 +617,8 @@ describe("a chat's finished tasks", () => {
     const cannot = within(group).getByRole("button", { name: "Reopen no conversation" });
     expect(cannot).not.toBeDisabled();
     expect(cannot).toHaveAttribute("aria-disabled", "true");
-    expect(cannot).toHaveAccessibleDescription(
+    // Its tooltip, which the keyboard's focus opens and which describes it while it is shown.
+    expect(tipOf(cannot)).toBe(
       "It cannot be reopened: its harness named no conversation to resume.",
     );
     cannot.focus();
