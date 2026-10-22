@@ -287,6 +287,18 @@ fn a_start_refused_with_a_code_this_window_does_not_know_is_refused_in_the_hosts
 }
 
 #[test]
+fn a_start_the_host_refused_no_engine_sandbox_is_not_started_for_it_whatever_its_words() {
+    // 1.36 (#2899): the code says it, not the words.
+    use crate::chatbrowsers::NotStarted;
+    use purlis_session_protocol::session;
+    let refused = session::Refusal {
+        code: session::NO_ENGINE_SANDBOX.into(),
+        why: "worded in a way this window has never seen".into(),
+    };
+    assert_eq!(super::not_started(refused, 3), NotStarted::NoSandbox);
+}
+
+#[test]
 fn a_start_the_host_refused_for_the_engines_sandbox_is_not_started_for_it() {
     // #2835: the host's words for it, whatever its code, are told apart from any failure.
     use crate::chatbrowsers::NotStarted;
