@@ -1,0 +1,390 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * **The field family's wrapper** (#2905): what a person types, reads and hears, and the
+ * attributes a theme's parts are keyed on (ADR 0103). The look itself is held by the stories, in
+ * a real browser (`Field.stories.tsx`).
+ */
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+import { Search } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { drawnWith } from "../../cascade.testkit";
+import { Button } from "../button/Button";
+import { Form, TextArea, TextField, type TextFieldProps } from "./Field";
+import { submitKeySaid, submits } from "./submitKey";
+
+afterEach(cleanup);
+
+/** A field that holds its own value, so the keyboard can change it. */
+function Held(props: Omit<TextFieldProps, "value" | "onChange"> & { start?: string }) {
+  const [value, setValue] = useState(props.start ?? "");
+  return <TextField {...props} value={value} onChange={setValue} />;
+}
+
+/** ⌘⏎ on a Mac, Ctrl+Enter elsewhere: the platform the test runs on. */
+const MAC = navigator.platform.startsWith("Mac");
+const SEND = { key: "Enter", metaKey: MAC, ctrlKey: !MAC };
+
+const NAME_RULE = (value: string) =>
+  /^[\w.-]*$/.test(value) ? undefined : "A name is letters, digits, ., _ and -.";
+
+describe("a text field", () => {
+  it("is its label, its box, its help and its error, as one", () => {
+    render(
+      <TextField
+        label="Name"
+        help="It becomes a directory."
+        error="That name is taken."
+        value="docs"
+        onChange={() => {}}
+      />,
+    );
+    const box = screen.getByRole("textbox", { name: "Name" });
+    expect(box.tagName).toBe("INPUT");
+    expect(box).toHaveAccessibleDescription("It becomes a directory. That name is taken.");
+    expect(box).toHaveAttribute("aria-invalid", "true");
+    const root = box.closest('[data-scope="field"][data-part="root"]');
+    expect(root).not.toBeNull();
+    expect(root?.querySelector('[data-part="label"]')).toHaveTextContent("Name");
+    expect(root?.querySelector('[data-part="help"]')).toHaveTextContent("It becomes a directory.");
+    expect(root?.querySelector('[data-part="error"]')).toHaveAttribute("role", "alert");
+  });
+
+  it("carries the text input's parts and its size, its glass hidden from a screen reader", () => {
+    render(
+      <TextField
+        aria-label="Filter chats"
+        type="search"
+        size="lg"
+        icon={<Search />}
+        value=""
+        onChange={() => {}}
+      />,
+    );
+    const box = screen.getByRole("searchbox", { name: "Filter chats" });
+    const control = box.parentElement;
+    expect(control).toHaveAttribute("data-scope", "text-input");
+    expect(control).toHaveAttribute("data-part", "root");
+    expect(control).toHaveAttribute("data-size", "lg");
+    const icon = control?.querySelector('[data-scope="text-input"][data-part="icon"]');
+    expect(icon).toHaveAttribute("aria-hidden", "true");
+    // The box is named by its label alone: no label part is drawn for it.
+    expect(document.querySelector('[data-part="label"]')).toBeNull();
+  });
+
+  it("hands what is typed on as words, and a key on to its handler and beyond", async () => {
+    const changed = vi.fn();
+    const outside = vi.fn();
+    const own = vi.fn();
+    render(
+      <div onKeyDown={(event) => outside(event.key)}>
+        <TextField aria-label="Name" value="" onChange={changed} onKeyDown={(e) => own(e.key)} />
+      </div>,
+    );
+    const box = screen.getByRole("textbox", { name: "Name" });
+    await userEvent.type(box, "a");
+    expect(changed).toHaveBeenLastCalledWith("a");
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(own).toHaveBeenLastCalledWith("Escape");
+    // React Aria stops no key here: a dialog's Escape and a list's arrows still hear it.
+    expect(outside).toHaveBeenLastCalledWith("Escape");
+  });
+
+  it("is never offered from the webview's history and never spell-checked, unless it asks", () => {
+    render(<TextField aria-label="Path" value="" onChange={() => {}} />);
+    const box = screen.getByRole("textbox", { name: "Path" });
+    expect(box).toHaveAttribute("autocomplete", "off");
+    expect(box).toHaveAttribute("spellcheck", "false");
+  });
+
+  it("is unavailable as React Aria says it, drawn so by its box", () => {
+    render(<TextField aria-label="Name" isDisabled value="" onChange={() => {}} />);
+    const box = screen.getByRole("textbox", { name: "Name" });
+    expect(box).toBeDisabled();
+    expect(box.parentElement).toHaveAttribute("data-disabled", "true");
+  });
+});
+
+describe("a box that holds its own words (a secret's value)", () => {
+  it("never puts what is typed in the page's markup, and is still the family's labelled box", async () => {
+    const changed = vi.fn();
+    render(
+      <TextField
+        label="Token"
+        help="It goes to the keychain."
+        type="password"
+        onChange={(to) => changed(to !== "")}
+      />,
+    );
+    const box = screen.getByLabelText("Token") as HTMLInputElement;
+    expect(box).toHaveAccessibleDescription("It goes to the keychain.");
+    await userEvent.type(box, "secret-123");
+    expect(box.value).toBe("secret-123");
+    expect(document.body.innerHTML).not.toContain("secret-123");
+    expect(changed).toHaveBeenLastCalledWith(true);
+    expect(box.parentElement).toHaveAttribute("data-scope", "text-input");
+    expect(box.parentElement).toHaveAttribute("data-focus-within", "true");
+  });
+});
+
+describe("inline validation (N26)", () => {
+  it("says nothing while the person types, and what is wrong when they leave the box", async () => {
+    render(<Held label="Name" validate={NAME_RULE} />);
+    const box = screen.getByRole("textbox", { name: "Name" });
+    await userEvent.type(box, "my name");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(box).not.toHaveAttribute("aria-invalid");
+    await userEvent.tab();
+    expect(screen.getByRole("alert")).toHaveTextContent("A name is letters, digits, ., _ and -.");
+    expect(box).toHaveAttribute("aria-invalid", "true");
+    expect(box).toHaveAccessibleDescription("A name is letters, digits, ., _ and -.");
+  });
+
+  it("follows the typing once said, until the value is right", async () => {
+    render(<Held label="Name" validate={NAME_RULE} start="my name" />);
+    const box = screen.getByRole("textbox", { name: "Name" });
+    box.focus();
+    await userEvent.tab();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    await userEvent.click(box);
+    await userEvent.clear(box);
+    await userEvent.type(box, "my-name");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(box).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("validates a textarea the same way", async () => {
+    function Lines() {
+      const [value, setValue] = useState("");
+      return (
+        <TextArea
+          label="Hosts"
+          value={value}
+          onChange={setValue}
+          validate={(v) => (v.includes(" ") ? "One host per line." : undefined)}
+        />
+      );
+    }
+    render(<Lines />);
+    const box = screen.getByRole("textbox", { name: "Hosts" });
+    expect(box.tagName).toBe("TEXTAREA");
+    expect(box.parentElement).toHaveAttribute("data-scope", "textarea");
+    await userEvent.type(box, "a b");
+    await userEvent.tab();
+    expect(screen.getByRole("alert")).toHaveTextContent("One host per line.");
+  });
+});
+
+/** A form with a name and a note, and what it was sent with. */
+function Sending({
+  sent,
+  ready = true,
+  children,
+}: {
+  sent: (name: string) => void;
+  ready?: boolean;
+  children?: ReactNode;
+}) {
+  const [name, setName] = useState("");
+  const [note, setNote] = useState("");
+  return (
+    <Form
+      aria-label="New workspace"
+      onSubmit={(event) => {
+        event.preventDefault();
+        sent(name);
+      }}
+    >
+      <TextField label="Name" value={name} onChange={setName} validate={NAME_RULE} />
+      <TextArea label="Note" value={note} onChange={setNote} />
+      {children}
+      <Button type="submit" variant="primary" isDisabled={!ready}>
+        Create
+      </Button>
+    </Form>
+  );
+}
+
+describe("a form (N26)", () => {
+  it("sends its primary action on ⌘⏎ from a box and from a textarea, as Enter in a box does", async () => {
+    const sent = vi.fn();
+    render(<Sending sent={sent} />);
+    const name = screen.getByRole("textbox", { name: "Name" });
+    await userEvent.type(name, "docs");
+    fireEvent.keyDown(name, SEND);
+    expect(sent).toHaveBeenLastCalledWith("docs");
+    const note = screen.getByRole("textbox", { name: "Note" });
+    fireEvent.keyDown(note, SEND);
+    expect(sent).toHaveBeenCalledTimes(2);
+    // A plain Enter in the textarea is a new line, never a send.
+    fireEvent.keyDown(note, { key: "Enter" });
+    expect(sent).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends nothing on ⌘⏎ while its primary action is unavailable", () => {
+    const sent = vi.fn();
+    render(<Sending sent={sent} ready={false} />);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), SEND);
+    expect(sent).not.toHaveBeenCalled();
+  });
+
+  it("never gives a grant or what cannot be undone on ⌘⏎: those are pressed", () => {
+    for (const variant of ["grants", "danger"] as const) {
+      const sent = vi.fn();
+      render(
+        <Form aria-label="Answer" onSubmit={(e) => (e.preventDefault(), sent())}>
+          <TextField label="Why" value="" onChange={() => {}} />
+          <Button type="submit" variant={variant}>
+            {variant === "grants" ? "Allow" : "Delete"}
+          </Button>
+        </Form>,
+      );
+      fireEvent.keyDown(screen.getByRole("textbox", { name: "Why" }), SEND);
+      expect(sent).not.toHaveBeenCalled();
+      cleanup();
+    }
+  });
+
+  it("says what is wrong at each field and takes the focus to the first, instead of sending", async () => {
+    const sent = vi.fn();
+    render(<Sending sent={sent} />);
+    const name = screen.getByRole("textbox", { name: "Name" });
+    await userEvent.type(name, "my name");
+    const note = screen.getByRole("textbox", { name: "Note" });
+    note.focus();
+    // Moving from the box said it already; ⌘⏎ from the note sends nothing and goes back to it.
+    await act(async () => {
+      fireEvent.keyDown(note, SEND);
+    });
+    expect(sent).not.toHaveBeenCalled();
+    expect(name).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent("A name is letters");
+  });
+
+  it("checks a field the person never left before it is sent", async () => {
+    const sent = vi.fn();
+    function Untouched() {
+      return (
+        <Form aria-label="Rename" onSubmit={(e) => (e.preventDefault(), sent())}>
+          <TextField label="Name" value="a b" onChange={() => {}} validate={NAME_RULE} />
+          <Button type="submit">Rename</Button>
+        </Form>
+      );
+    }
+    render(<Untouched />);
+    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
+    expect(sent).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+});
+
+describe("the key that sends", () => {
+  it("is ⌘⏎ on a Mac and Ctrl+Enter elsewhere, and never an Enter an input method composes", () => {
+    const key = { key: "Enter", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
+    expect(submits({ ...key, metaKey: true, isComposing: false }, true)).toBe(true);
+    expect(submits({ ...key, ctrlKey: true, isComposing: false }, true)).toBe(false);
+    expect(submits({ ...key, ctrlKey: true, isComposing: false }, false)).toBe(true);
+    expect(submits({ ...key, metaKey: true, isComposing: false }, false)).toBe(false);
+    expect(submits({ ...key, metaKey: true, isComposing: true }, true)).toBe(false);
+    expect(submits({ ...key, metaKey: true, shiftKey: true, isComposing: false }, true)).toBe(
+      false,
+    );
+    expect(submits({ ...key, isComposing: false }, true)).toBe(false);
+    expect(submitKeySaid(true)).toBe("⌘↩");
+    expect(submitKeySaid(false)).toBe("Ctrl+Enter");
+  });
+});
+
+describe("a filter drawn again (R168)", () => {
+  it("keeps the keyboard and the caret when its box is replaced", async () => {
+    function Remounted() {
+      const [value, setValue] = useState("");
+      // The key changes with every letter: React draws a new box each time.
+      return (
+        <TextField
+          key={value.length}
+          aria-label="Filter personas"
+          keepsFocus="story-filter"
+          value={value}
+          onChange={setValue}
+        />
+      );
+    }
+    render(<Remounted />);
+    await userEvent.click(screen.getByRole("textbox", { name: "Filter personas" }));
+    await userEvent.keyboard("abc");
+    const box = screen.getByRole("textbox", { name: "Filter personas" }) as HTMLInputElement;
+    expect(box).toHaveValue("abc");
+    expect(box).toHaveFocus();
+    expect([box.selectionStart, box.selectionEnd]).toEqual([3, 3]);
+    // The caret moved back two: a redraw keeps it there.
+    box.setSelectionRange(1, 1);
+    await userEvent.keyboard("x");
+    const again = screen.getByRole("textbox", { name: "Filter personas" }) as HTMLInputElement;
+    expect(again).toHaveValue("axbc");
+    expect(again).toHaveFocus();
+    expect([again.selectionStart, again.selectionEnd]).toEqual([2, 2]);
+  });
+
+  it("never takes the keyboard back once the person has gone elsewhere", async () => {
+    function Later({ shown }: { shown: boolean }) {
+      return (
+        <>
+          <Button>Elsewhere</Button>
+          {shown && (
+            <TextField aria-label="Filter" keepsFocus="later" value="" onChange={() => {}} />
+          )}
+        </>
+      );
+    }
+    const { rerender } = render(<Later shown />);
+    screen.getByRole("textbox", { name: "Filter" }).focus();
+    rerender(<Later shown={false} />);
+    await new Promise((done) => setTimeout(done, 0));
+    screen.getByRole("button", { name: "Elsewhere" }).focus();
+    rerender(<Later shown />);
+    expect(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
+  });
+});
+
+describe("the family's default, through the window's cascade (field.css)", () => {
+  it("draws a one-line box a control tall, a textarea three, and the ring outside either", () => {
+    render(
+      <>
+        <TextField label="Name" value="" onChange={() => {}} />
+        <TextArea label="Notes" value="" onChange={() => {}} />
+      </>,
+    );
+    const box = screen.getByRole("textbox", { name: "Name" }).parentElement as Element;
+    expect(drawnWith(box, "block-size")).toBe("var(--size-control)");
+    const lines = screen.getByRole("textbox", { name: "Notes" }).parentElement as Element;
+    expect(drawnWith(lines, "min-block-size")).toBe("calc(var(--size-control) * 3)");
+    for (const one of [box, lines]) {
+      one.setAttribute("data-focus-within", "true");
+      expect(drawnWith(one, "outline")).toBe("var(--focus-ring-width) solid var(--focus-ring)");
+    }
+  });
+
+  it("draws a refused box's edge in the danger colour, and only while it is refused", () => {
+    render(
+      <>
+        <TextField aria-label="Colour" error="Not a colour." value="x" onChange={() => {}} />
+        <TextField aria-label="Name" value="x" onChange={() => {}} />
+      </>,
+    );
+    const refused = screen.getByRole("textbox", { name: "Colour" }).parentElement as Element;
+    expect(drawnWith(refused, "border-color")).toBe("var(--danger-base)");
+    const plain = screen.getByRole("textbox", { name: "Name" }).parentElement as Element;
+    expect(drawnWith(plain, "border-color")).toBeUndefined();
+  });
+
+  it("draws an unavailable box's words in the faint tier, on its own ground", () => {
+    render(<TextField aria-label="Host" isDisabled value="x" onChange={() => {}} />);
+    const box = screen.getByRole("textbox", { name: "Host" }).parentElement as Element;
+    expect(drawnWith(box, "color")).toBe("var(--text-faint)");
+    expect(drawnWith(box, "background-color")).toBe("var(--surface-sunken)");
+  });
+});

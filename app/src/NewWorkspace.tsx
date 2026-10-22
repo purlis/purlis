@@ -7,6 +7,7 @@ import type { PlaneId } from "./bindings";
 import { RepoPicker } from "./RepoPicker";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * Making a workspace, asked where the answer is given.
@@ -95,7 +96,7 @@ export function NewWorkspace({
             in <code>{plane}</code>
           </p>
 
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               create();
@@ -185,7 +186,7 @@ export function NewWorkspace({
               </Button>
               <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

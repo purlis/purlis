@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import { useFocusBack } from "./EndingChat";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /** Where the new chat works, as the dialog holds the pick. */
 type Where = "here" | "branch" | "workspace";
@@ -139,7 +140,7 @@ export function AskPersona({
             From <code>{chat}</code>
           </p>
 
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               send();
@@ -244,7 +245,7 @@ export function AskPersona({
               </Button>
               <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

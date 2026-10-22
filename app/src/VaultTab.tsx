@@ -25,6 +25,7 @@ import { saidOfTheOldExport, saidOfTheOthers, VaultSignIn } from "./VaultSignIn"
 import { AnswerBar } from "./AnswerBar";
 import { providerName } from "./vaultProviders";
 import { Button, ButtonRow, ToggleButton } from "./ui/button/Button";
+import { Form, TextField } from "./ui/field/Field";
 
 /**
  * **One vault, in a tab of its own** (charter-app#235): its name, its provider and how many
@@ -470,17 +471,18 @@ export function VaultTab({
             />
             {changeSignIn}
             <div className="vault-tools">
-              <div className="panel-search ui-input-lead">
-                <Search className="ui-input-lead-icon" aria-hidden="true" />
-                <input
-                  type="search"
-                  className="ui-input"
-                  value={query}
-                  aria-label={`Search secrets in ${vault}`}
-                  placeholder={`Search ${counted(contents.count)}`}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </div>
+              {/* One size for the row: the box is as small as Add beside it. */}
+              <TextField
+                className="panel-search"
+                type="search"
+                size="sm"
+                icon={<Search aria-hidden="true" />}
+                keepsFocus={`vault-search:${vault}`}
+                value={query}
+                aria-label={`Search secrets in ${vault}`}
+                placeholder={`Search ${counted(contents.count)}`}
+                onChange={setQuery}
+              />
               <Button
                 size="sm"
                 onPress={add}
@@ -767,15 +769,14 @@ function IdentityPanel({
       <ButtonRow className="vault-identity-put">
         {!several && (
           <>
-            <input
-              ref={box}
+            {/* Holds its own words: a token is never held in React state. */}
+            <TextField
+              inputRef={box}
+              className="vault-token"
               type="password"
-              className="ui-input"
               aria-label={`Token for ${tokenFor(identity)}`}
               placeholder="Paste the token"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={busy}
+              isDisabled={busy}
               onKeyDown={(e) => {
                 if (e.key === "Enter") put();
               }}
@@ -1098,7 +1099,7 @@ function ValueDialog({
           }}
         >
           <Dialog.Title>{title}</Dialog.Title>
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               void submit();
@@ -1114,18 +1115,18 @@ function ValueDialog({
               label={secret === undefined ? "Value" : "New value"}
               help="It goes into the vault and nowhere else. purlis never shows it here."
               control={(ids) => (
-                // **A native box in the row's control slot, not a `Field`**: a `Field` is
+                // **A box that holds its own words, not a settings `Field`**: a `Field` is
                 // controlled, and a secret's value is never held in React state (see above).
-                <input
+                <TextField
                   id={ids.id}
-                  ref={valueBox}
-                  className="ui-field ui-input"
+                  inputRef={valueBox}
+                  className="ui-setting-box"
                   type="password"
                   // What keeps a password manager from filling it; WebKit ignores `off` here.
                   autoComplete="new-password"
-                  spellCheck={false}
+                  aria-labelledby={ids.labelledBy}
                   aria-describedby={ids.describedBy}
-                  onChange={(event) => setFilled(event.target.value !== "")}
+                  onChange={(to) => setFilled(to !== "")}
                 />
               )}
             />
@@ -1142,7 +1143,7 @@ function ValueDialog({
                 Cancel
               </Button>
             </SettingActions>
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -1199,7 +1200,7 @@ function RenameDialog({
           }}
         >
           <Dialog.Title>Rename {secret}</Dialog.Title>
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               void submit();
@@ -1223,7 +1224,7 @@ function RenameDialog({
                 Cancel
               </Button>
             </SettingActions>
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

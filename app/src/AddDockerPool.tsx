@@ -7,6 +7,7 @@ import type { PoolAdding, PoolLimitsShown } from "./bindings";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { addPool, stopAddingAPool, usePools } from "./pools";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * **Add a Docker pool…** (#2679, spec #2041: a Docker pool in one step): its name, the runner
@@ -109,7 +110,7 @@ function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) 
           <p className="where">
             on this machine; its runner is a container of the image, run on your Docker
           </p>
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               void add();
@@ -187,7 +188,7 @@ function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) 
                 Cancel
               </Button>
             </SettingActions>
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

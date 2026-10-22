@@ -356,7 +356,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": Finding files…",
   },
-  "Panels.tsx": { count: 3, why: "a panel's read refusal and its blocks' tone, inside the panel" },
+  "Panels.tsx": { count: 2, why: "a panel's read refusal and its blocks' tone, inside the panel" },
   "PersonaProfile.tsx": {
     count: 3,
     why: ACTION + ". Also its read refusal: " + READ_ONCE + ". And " + READING,
@@ -548,6 +548,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "settings/thisMachine.tsx": {
     count: 1,
     why: "This machine's read refusal, standing in for its list inside Settings (ST-2; NO-7, #1232)",
+  },
+  "ui/field/Field.tsx": {
+    count: 2,
+    why: "a field's error under its box, why its value is refused, in either of the family's boxes (#2905)",
   },
 };
 

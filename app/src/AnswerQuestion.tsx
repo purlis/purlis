@@ -4,6 +4,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { commands, type PlaneId } from "./bindings";
 import { Button } from "./ui/button/Button";
+import { Form, TextArea } from "./ui/field/Field";
 
 /** What the form says when it is sent with nothing in it. The core says the same of blanks. */
 export const EMPTY_ANSWER = "The answer is empty, so nothing was sent.";
@@ -164,10 +165,8 @@ export function AnswerQuestion({
       </div>
     );
   }
-  /** What is wrong, where something is: that the question closed, else the last refusal. */
-  const said = shut ?? refused;
   return (
-    <form
+    <Form
       className="answer-question"
       data-testid="answer-question"
       aria-label={`Answer ${task}'s question`}
@@ -179,21 +178,23 @@ export function AnswerQuestion({
       <p className="answer-asked" id={`${ids}-asked`}>
         {asked.question}
       </p>
-      <textarea
-        ref={box}
-        className="ui-field answer-text"
+      {/* The last refusal is the field's error, under the box; a question that closed is not
+          the answer's fault, and is said on its own line. */}
+      <TextArea
+        inputRef={box}
+        className="answer-text"
         aria-label="Your answer"
         aria-describedby={
-          said === undefined ? `${ids}-asked ${ids}-how` : `${ids}-asked ${ids}-refused`
+          shut === undefined ? `${ids}-asked ${ids}-how` : `${ids}-asked ${ids}-refused`
         }
-        aria-invalid={refused !== undefined && shut === undefined}
+        error={shut === undefined ? refused : undefined}
         rows={Math.min(Math.max(2, text.split("\n").length), 10)}
         value={text}
-        disabled={sending}
+        isDisabled={sending}
         // Closed: nothing more is typed, and what was typed can still be selected and copied.
-        readOnly={shut !== undefined}
-        onChange={(event) => {
-          setText(event.currentTarget.value);
+        isReadOnly={shut !== undefined}
+        onChange={(to) => {
+          setText(to);
           setRefused(undefined);
         }}
         onKeyDown={(event) => {
@@ -205,9 +206,9 @@ export function AnswerQuestion({
           void send();
         }}
       />
-      {said !== undefined && (
+      {shut !== undefined && (
         <p className="answer-refused" id={`${ids}-refused`} role="alert">
-          {said}
+          {shut}
         </p>
       )}
       <div className="answer-actions">
@@ -223,6 +224,6 @@ export function AnswerQuestion({
           </span>
         )}
       </div>
-    </form>
+    </Form>
   );
 }

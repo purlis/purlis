@@ -33,7 +33,7 @@ import {
  * | Drawn as                                                         | Wears                     |
  * | ---------------------------------------------------------------- | ------------------------- |
  * | `<button>`, or a Radix trigger or close without `asChild`        | a row, a segment or a menu row; a button of the button family is `Button` (#2904), never a native `<button>` |
- * | `<input>`, `<textarea>`                                          | `ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio` |
+ * | `<input>`, `<textarea>`                                          | nothing: a box is the field family's `TextField` or `TextArea` (#2905); a checkbox `ui-checkbox`, a radio `ui-radio` |
  * | `<select>`, Radix Select's `Trigger`                             | `ui-select`               |
  * | `<table>`                                                        | `ui-table`                |
  * | a Radix menu's or Select's `Content` or `SubContent`             | `ui-menu`                 |
@@ -55,11 +55,12 @@ import {
 const BUTTON = ["ui-row", "ui-tree-row", "ui-segmented-item", "ui-menu-item"];
 const WEARS: Record<string, string[]> = {
   button: BUTTON,
-  input: ["ui-input"],
+  // A box a person types in is the field family's (#2905): no class makes a raw one right.
+  input: [],
   "input:checkbox": ["ui-checkbox"],
   "input:radio": ["ui-radio"],
-  "input:dynamic": ["ui-input", "ui-checkbox", "ui-radio"],
-  textarea: ["ui-input"],
+  "input:dynamic": ["ui-checkbox", "ui-radio"],
+  textarea: [],
   select: ["ui-select"],
   table: ["ui-table"],
   menu: ["ui-menu"],
@@ -336,7 +337,9 @@ describe("the control guard (#1837)", () => {
       '<button className="tab-close">',
       '<button className={cn("ui-button", on && "ui-button-primary")}>',
       "<input>",
+      '<input className="ui-input">',
       '<input type="checkbox" className="box">',
+      '<input className="ui-input">',
       '<textarea className="notes">',
       "<select>",
       '<table className="vault-secrets">',

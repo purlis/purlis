@@ -509,36 +509,77 @@ own `min-width: max-content` beside the class.
   state, Allow beside Keep blocked, a row of one size, the icon buttons and a toggle, each walked
   by the keyboard and checked by axe in Chromium and WebKit.
 
+## The field family
+
+**Every box a person types in is `TextField` or `TextArea`** (`app/src/ui/field/Field.tsx`,
+#2905, ADR 0104), on React Aria's `TextField`, `Input`, `TextArea`, `Group`, `Label` and `Text`,
+and the form it is sent from is the family's `Form`. No screen draws an `<input>` or a
+`<textarea>` of its own for one, and none wears the old `.ui-input`, `.ui-input-lead` or
+`.ui-list-field` classes: `eslint.config.js` refuses both (`purlis/field-family`, an error). A
+raw `<input>` left is another family's: a checkbox, a radio, a slider or a colour well
+(`purlis/choice-family`), or a combobox's (`purlis/select-family`), each a warning until its
+family moves.
+
+| Prop | Says |
+| --- | --- |
+| `label`, `help` | its name over the box and one line of help under it; with no visible label, `aria-label` or `aria-labelledby` names it (a filter, a box in a table's cell, a settings row's box, whose row draws the label) |
+| `validate` | what is wrong with a value, or nothing: said under the box when it is left, then following the typing until it is right (N26) |
+| `error` | a refusal from elsewhere, in its own words (the core's), said at once; `isInvalid` marks a box refused whose words are drawn elsewhere (a tab's rename card) |
+| `size` | a `TextField`'s `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only for a list's main filter field; one size for a row of controls |
+| `icon` | the mark at a `TextField`'s start: a filter's or a search's glass, hidden from a screen reader, taking no press |
+| `keepsFocus` | a name unique to the box in the window: the box drawn in its place keeps the keyboard and the caret (R168) |
+| `value`, `onChange` | the words, as React Aria's words: `onChange` is handed the string. Left out, the box holds its own words (a secret's value is never held in React state) |
+| `onKeyDown`, `onBlur`, … | the element's own native handlers, unstopped: a dialog's Escape and a list's arrows still hear a key the box does not take |
+| `className` | the field's place in its view (margin, width, flex, order), never a look |
+
+- **A field is its label, its control, its help and its error, as one.** React Aria ties the
+  label to the box and the help and the error to its description. The error is an alert, as every
+  refusal in the window is, and the box's edge takes the danger colour beside it: the words are
+  the cue that is not colour.
+- **⌘⏎ sends a form's primary action** (Ctrl+Enter off macOS; N26), its first submit button, from
+  anywhere in the form, a textarea included, where Enter starts a new line. A `Form` checks its
+  fields first: one that is not right says why and the focus goes to the first such. **A chord
+  never gives a grant or what cannot be undone**: a primary action drawn `grants` or `danger` is
+  only ever pressed, and Start a chat's ⌘⏎ starts a chat but never approves a command. A surface
+  whose primary action is not a form's submit asks `submits` (`ui/field/submitKey.ts`) itself.
+- **Drawn by its parts** (ADR 0103): the field's root is `data-scope="field"` with its `label`,
+  `help` and `error` parts; its control is `data-scope="text-input"` (with `data-size`, and the
+  `icon` part) or `data-scope="textarea"`, the box React Aria's `Group` draws around the element
+  typed in. `app/src/ui/field/field.css` draws the family default from those and React Aria's
+  state attributes (`data-hovered`, `data-focus-within`, `data-invalid`, `data-disabled`). A field
+  shows its ring whenever it holds the caret, from the keyboard or a press, as a text box's
+  `:focus-visible` has it: 2px in `focus.ring` at 2px outside the box (R162). A state changes a
+  colour or a ring, never a size.
+- **A box with a mark at its start** lines its words up past the mark by the box's inset, the
+  mark's size and a gap, all core tokens. A view whose words must line up with something else
+  hands the box three sizes, and only these: `--text-input-start`, `--text-input-icon` and
+  `--text-input-gap` (the Chats filter, whose text starts where the chats' names do). Every
+  search box in the window has its glass (`fieldIcon.test.tsx`).
+- **A textarea** is three controls tall at least, in the mono face, and as tall as a person
+  drags it; with `grows` (a settings list field, DS-10) it is as tall as its lines and never
+  dragged.
+- **Stories hold it** (`Field.stories.tsx`, `docs/component-stories.md`): a labelled field,
+  inline validation on blur, a refusal, the three sizes with their glass, an unavailable box, a
+  textarea, a form sent by ⌘⏎, and a filter that keeps its caret while its list redraws, each
+  walked by the keyboard and checked by axe in Chromium and WebKit.
+
 ## The control classes
 
 **Each kind of control is one CSS class, drawn only from the tokens** (ADR 0094 §4, #1834). The
 class goes on the native element or on the element a Radix primitive renders, and the class is
 the whole of the look. There is still no React component for it: the call site shows the
 primitive and its props, and the class beside them. The classes share the `ui-` namespace with
-the collections above and with the settings set; the field is `.ui-input` because `.ui-field` is
-still the settings set's own until Settings moves onto the primitives.
+the collections above and with the settings set. A box a person types in is not a class: it is
+[the field family](#the-field-family).
 
 | Control           | Class and parts                                                                                                         | Variants                                                                                | On                                                                                                              |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Field             | `.ui-input`                                                                                                                | a `<textarea>` is at least three controls tall and grows when dragged; `.ui-list-field` is the row's width and grows with its lines | `<input>`, `<textarea>`                                                                                         |
 | Select            | `.ui-select`; its list is a `.ui-menu` of `.ui-menu-item`s                                                                       |                                                                                         | Radix Select's `Trigger` (`@radix-ui/react-select`), through `primitives/Select.tsx`; no native `<select>` remains |
 | Checkbox          | `.ui-checkbox`, its `Indicator` inside                                                                                     |                                                                                         | Radix Checkbox's `Root`                                                                                         |
 | Radio             | `.ui-radio` with `.ui-radio-mark`                                                                                             |                                                                                         | Radix RadioGroup's `Item` and `Indicator`                                                                       |
 | Switch            | `.ui-switch` with `.ui-switch-thumb`                                                                                          |                                                                                         | Radix Switch's `Root` and `Thumb` (`@radix-ui/react-switch`)                                                    |
 | Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
 | Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` on what cannot be undone; `.ui-menu-line`, `.ui-menu-label`; in a row `.ui-menu-words` (`.ui-menu-title`, `.ui-menu-note`), `.ui-menu-keys`, `.ui-menu-mark`, `.ui-menu-tip` | a surface that needs another width hands `--ui-menu-min` or `--ui-menu-max`             | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item`, `CheckboxItem`, `RadioItem` and `SubTrigger`, `Separator`, `Label`; a row's parts are `primitives/MenuRow.tsx` ([Menus](#menus)) |
-
-**A refused value** (`aria-invalid="true"`) draws the field's edge in the danger colour
-(#1857), beside the words that say why; a view never redraws it.
-
-**A field with a leading icon** is `.ui-input-lead` (#1856): a holder with a
-`.ui-input-lead-icon` (`aria-hidden`) and then the `.ui-input`. Every filter and search box
-wears it, with the glass (`Search`) or the filter mark (`ListFilter`); `fieldIcon.test.tsx`
-fails on an `<input type="search">` that does not. The icon is the text's size
-(`--font-size-base`), inset `--space-3` and centred; the text starts past it by `--space-2`, so
-it never runs under the icon, which takes no press. A view that lines the text up with something
-else hands the holder `--ui-input-lead-at`, `--ui-input-lead-size` and `--ui-input-lead-text`
-(the Chats filter, whose text starts where the chats' names do).
 
 **A button is the button family**, not a class: [The button family](#the-button-family). An
 answer that trusts text from outside is plain too (#2591): the repository-instructions tab's Add
@@ -547,9 +588,10 @@ now, with the same weight. It grants nothing, so it is not `variant="grants"`.
 
 What every class holds to:
 
-- **One height.** A field, a select and a segmented control are `--size-control` tall (28px at
+- **One height.** A select and a segmented control are `--size-control` tall (28px at
   the default text size); a small segmented control is `--size-chrome` (21px), for strips and
-  pane headers. A button's sizes are the family's. A menu's row is at least a control tall.
+  pane headers. A button's and a field's sizes are their families'. A menu's row is at least a
+  control tall.
 - **A menu's row is one line, a control tall, and the menu scrolls.** Its words give way to an
   ellipsis and never wrap. A row with something under its words (`.ui-menu-note`,
   [Menus](#menus)) is as tall as the two say, and its height is never fixed.
@@ -701,9 +743,8 @@ and its rows).
   keeps its answers at its bottom edge while it scrolls, so it takes its own bottom padding away.
 - **Inside, the shared controls.** Every button in a dialog or a popover is a `Button`: the
   form's submit, a question's default answer and Smart close are `variant="primary"`, an answer
-  that ends something (D-1719-3) is `variant="danger"`, and the rest are secondary. A field is `.ui-input`, except a field in a dialog's settings row, which is the
-  settings set's own `.ui-field` until the set moves onto the primitives, so a dialog's fields
-  never differ from one another.
+  that ends something (D-1719-3) is `variant="danger"`, and the rest are secondary. A field is the field family's, in a dialog's settings row too, so a dialog's fields
+  never differ from one another, and ⌘⏎ sends the dialog's form.
 - **A Notice is not an overlay.** It stands in its pane's row or in the Inbox, never over
   anything (#1647), so it has no lift and no overlay ground. It is the **inline surface** instead
   (#1855): `.ui-inline-surface` draws the overlay's border and the control's corner on the page's

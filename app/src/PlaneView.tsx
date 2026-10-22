@@ -9887,7 +9887,7 @@ function refOf(view: ViewTab): ViewRef {
 function giveViewTheKeyboard(view: ViewId): void {
   const panel = `[role="tabpanel"][data-view="${view}"]`;
   (view === "search"
-    ? document.querySelector<HTMLElement>(`${panel} [role="searchbox"]`)
+    ? document.querySelector<HTMLElement>(`${panel} input[type="search"]`)
     : (document.querySelector<HTMLElement>(`${panel} [role="tree"] [tabindex="0"]`) ??
       // The Inbox's first ask, past the scope switch above its list (qw359).
       document.querySelector<HTMLElement>(`${panel} .inbox-list [tabindex="0"]`) ??

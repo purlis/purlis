@@ -21,6 +21,7 @@ import { Check, Info, ListFilter } from "lucide-react";
 import { Select } from "../primitives/Select";
 import { useTabStop } from "../roving";
 import { Button } from "../ui/button/Button";
+import { TextArea, TextField } from "../ui/field/Field";
 
 /**
  * **The house settings set** (SE-16, #1166; DS-3 #626; V89f, V89j): the six pieces every
@@ -169,27 +170,24 @@ export function SettingsLayout({
         {about !== undefined && <p className="ui-settings-about">{about}</p>}
       </div>
       <div className="ui-settings-side">
-        <div className="ui-settings-filter ui-input-lead">
-          <ListFilter className="ui-input-lead-icon" aria-hidden="true" />
-          <input
-            type="search"
-            className="ui-input"
-            value={filter}
-            aria-label="Filter settings"
-            placeholder="Filter settings"
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => onFilterChange(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Escape" || filter === "") return;
-              // Taken here: an Escape that cleared the box has done its job, and nothing
-              // behind the tab should act on it too.
-              event.preventDefault();
-              event.stopPropagation();
-              onFilterChange("");
-            }}
-          />
-        </div>
+        <TextField
+          className="ui-settings-filter"
+          type="search"
+          icon={<ListFilter aria-hidden="true" />}
+          keepsFocus="settings-filter"
+          value={filter}
+          aria-label="Filter settings"
+          placeholder="Filter settings"
+          onChange={onFilterChange}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || filter === "") return;
+            // Taken here: an Escape that cleared the box has done its job, and nothing
+            // behind the tab should act on it too.
+            event.preventDefault();
+            event.stopPropagation();
+            onFilterChange("");
+          }}
+        />
         <p className="sr-only" role="status" aria-live="polite" aria-label="Settings found">
           {said}
         </p>
@@ -493,23 +491,27 @@ function OriginBadge({ badge }: { badge: Badge }) {
 /** What every field and choice is handed: the row's ids. */
 type Tied = { ids: RowIds };
 
-/** A box's or a select's look: the shared control (`ui-input`; the one select wears its own
- *  `ui-select`), one control tall like the Reset beside it (DS-8, #1840); with no row, it is
- *  never wider than the cell or the line it is drawn in, so a long value does not push a table
- *  past its page. */
-const rowless = (ids: RowIds, control?: "ui-input") =>
-  [control, "ui-field", ...(ids.label === undefined ? [] : ["min-w-0", "max-w-full"])]
-    .filter((one) => one !== undefined)
-    .join(" ");
+/** With no row, a box or a select is never wider than the cell or the line it is drawn in, so a
+ *  long value does not push a table past its page. */
+const narrow = (ids: RowIds) => (ids.label === undefined ? [] : ["min-w-0", "max-w-full"]);
+
+/** A select's look and place: the one select's own `ui-select`, one control tall like the Reset
+ *  beside it (DS-8, #1840). */
+const rowless = (ids: RowIds) => ["ui-field", ...narrow(ids)].join(" ");
+
+/** A box's place in its row (`ui-setting-box`): the field family draws it (`ui/field`, #2905). */
+const boxPlace = (ids: RowIds) => ["ui-setting-box", ...narrow(ids)].join(" ");
 
 /**
- * **A value typed or slid**: `text` is one line, `list` one entry per line, and `range` a whole
- * number between two bounds, with what it is at said beside it. Native elements, because the
- * browser already has each one (`ui-primitives.md`).
+ * **A value typed or slid**: `text` is one line and `list` one entry per line, each the field
+ * family's box (`TextField`, `TextArea`, #2905), and `range` a whole number between two bounds,
+ * with what it is at said beside it, a native slider until the slider family moves.
  *
  * A typed value is **committed** when the field is left, and a `text` one on Enter too
  * (`onCommit`): a value written as it is changed (V89e) is written once it is typed, not at
- * every key — half a branch name is not a value to write, or to refuse.
+ * every key — half a branch name is not a value to write, or to refuse. A typed value may be
+ * **checked as it is left** (`validate`, N26): what is wrong is said under the box, and a form
+ * of the family checks it again before it is sent.
  */
 export type FieldProps = Tied &
   (
@@ -531,6 +533,8 @@ export type FieldProps = Tied &
         /** The input's own `disabled`: out of reach while this answer is moot or its work is
          *  running. */
         disabled?: boolean;
+        /** What is wrong with a value, said when the box is left (N26). */
+        validate?: (value: string) => string | undefined;
         onCommit?: () => void;
       }
     /** One entry per line. The text is what is typed, kept whole — an empty line while the next
@@ -542,6 +546,8 @@ export type FieldProps = Tied &
         onChange: (to: string) => void;
         /** The fewest lines the box shows, before it grows with what is typed. Two unless said. */
         minRows?: number;
+        /** What is wrong with the entries, said when the box is left (N26). */
+        validate?: (value: string) => string | undefined;
         onCommit?: () => void;
       }
     | {
@@ -582,23 +588,21 @@ export function Field(props: FieldProps) {
   if (props.kind === "list") return <ListField {...props} />;
   const { onCommit } = props;
   return (
-    <input
+    <TextField
       id={ids.id}
-      className={rowless(ids, "ui-input")}
-      type="text"
+      className={boxPlace(ids)}
       value={props.value}
       placeholder={props.placeholder}
       maxLength={props.maxLength}
       inputMode={props.inputMode}
-      size={props.size}
-      disabled={props.disabled}
-      // A path or a name, not something the webview should offer to fill from history.
-      autoComplete="off"
-      spellCheck={false}
+      columns={props.size}
+      isDisabled={props.disabled}
+      validate={props.validate}
       aria-label={ids.label}
+      aria-labelledby={ids.label === undefined ? ids.labelledBy : undefined}
       title={ids.title}
       aria-describedby={ids.describedBy}
-      onChange={(event) => props.onChange(event.currentTarget.value)}
+      onChange={props.onChange}
       onBlur={onCommit}
       onKeyDown={(event) => {
         if (event.key === "Enter" && onCommit) {
@@ -644,15 +648,18 @@ function ListField(props: Extract<FieldProps, { kind: "list" }>) {
     return () => watch.disconnect();
   }, []);
   return (
-    <textarea
-      ref={box}
+    <TextArea
+      inputRef={box}
       id={ids.id}
-      className="ui-field ui-input ui-list-field"
+      className="ui-setting-box ui-setting-list"
+      grows
       value={value}
-      spellCheck={false}
       rows={Math.max(props.minRows ?? 2, value.split("\n").length)}
+      validate={props.validate}
+      aria-label={ids.label}
+      aria-labelledby={ids.label === undefined ? ids.labelledBy : undefined}
       aria-describedby={ids.describedBy}
-      onChange={(event) => props.onChange(event.currentTarget.value)}
+      onChange={props.onChange}
       onBlur={props.onCommit}
     />
   );

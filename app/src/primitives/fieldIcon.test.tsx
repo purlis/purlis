@@ -3,15 +3,14 @@
 
 /// <reference types="node" />
 /**
- * **A field with a leading icon** (`.ui-input-lead`, `primitives/controls.css`, #1856): the
- * shared field with the glass at its start, for every box that filters or searches.
+ * **A field with a leading icon** (#1856, the field family since #2905): the family's box with
+ * the glass at its start, for every box that filters or searches.
  *
- * DS-12 (#1844) moved those boxes onto `.ui-input`, which had no icon part, so they lost their
- * glass (D-1844-2). Held here to what a person sees and what a contributor can break:
- * - **it is still the shared field**: one control tall, the outside ring, read through the
+ * Held here to what a person sees and what a contributor can break:
+ * - **it is still the family's box**: one control tall, the outside ring, read through the
  *   window's cascade;
- * - **the text starts past the icon**: the field's start inset is the icon's inset, its size and
- *   a gap, all core tokens, so typed text never runs under the glass;
+ * - **the text starts past the icon**: the box's start inset, the icon's size and the gap after
+ *   it are core tokens, which a view lining the text up with something else may hand it;
  * - **the icon is decoration**: hidden from a screen reader and from the pointer, so the box keeps
  *   its own name and a press on the glass lands in the field;
  * - **every search box in the window wears it**, read from the source with the TypeScript AST.
@@ -24,62 +23,62 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { Search } from "lucide-react";
 import { drawnWith } from "../cascade.testkit";
+import { TextField } from "../ui/field/Field";
 
 afterEach(cleanup);
-
-/** A declared value as one line: the stylesheet's formatter breaks a long one over several. */
-const flat = (value: string | undefined) =>
-  value?.replace(/\(\s+/g, "(").replace(/\s+\)/g, ")").replace(/\s+/g, " ");
 
 const SRC = join(process.cwd(), "src");
 
 function FilterBox() {
   return (
-    <div className="ui-input-lead">
-      <Search className="ui-input-lead-icon" aria-hidden="true" />
-      <input type="search" className="ui-input" tabIndex={0} aria-label="Filter files" />
-    </div>
+    <TextField
+      type="search"
+      icon={<Search aria-hidden="true" />}
+      aria-label="Filter files"
+      value=""
+      onChange={() => {}}
+    />
   );
 }
 
+/** The box a search field is drawn in: the text input's root. */
+const boxOf = (input: Element) => input.parentElement as Element;
+
 describe("a field with a leading icon", () => {
-  it("is the shared field: one control tall, with the outside ring", () => {
+  it("is the family's box: one control tall, with the outside ring", () => {
     render(<FilterBox />);
-    const box = screen.getByRole("searchbox", { name: "Filter files" });
+    const box = boxOf(screen.getByRole("searchbox", { name: "Filter files" }));
     expect(drawnWith(box, "block-size")).toBe("var(--size-control)");
-    expect(drawnWith(box, "outline", { focusVisible: true })).toBe(
-      "var(--focus-ring-width) solid var(--focus-ring)",
-    );
+    box.setAttribute("data-focus-within", "true");
+    expect(drawnWith(box, "outline")).toBe("var(--focus-ring-width) solid var(--focus-ring)");
+    expect(drawnWith(box, "outline-offset")).toBe("var(--focus-ring-offset)");
   });
 
-  it("starts its text past the icon, by the icon's inset, its size and a gap", () => {
+  it("starts its text past the icon, by the box's inset, the icon's size and a gap", () => {
     render(<FilterBox />);
-    const box = screen.getByRole("searchbox", { name: "Filter files" });
-    const icon = document.querySelector(".ui-input-lead-icon") as Element;
+    const box = boxOf(screen.getByRole("searchbox", { name: "Filter files" }));
+    const icon = box.querySelector('[data-scope="text-input"][data-part="icon"]') as Element;
     // Each size a token, which a view lining the text up with something else may hand it.
-    expect(drawnWith(icon, "inset-inline-start")).toBe("var(--ui-input-lead-at, var(--space-3))");
-    expect(drawnWith(icon, "inline-size")).toBe("var(--ui-input-lead-size, var(--font-size-base))");
-    expect(drawnWith(icon, "block-size")).toBe("var(--ui-input-lead-size, var(--font-size-base))");
-    expect(flat(drawnWith(box, "padding-inline-start"))).toBe(
-      "var(--ui-input-lead-text, calc(var(--space-3) + var(--font-size-base) + var(--space-2)))",
-    );
-    // The icon is placed against the field's own box, centred on its height.
-    const lead = icon.parentElement as Element;
-    expect(drawnWith(lead, "position")).toBe("relative");
-    expect(drawnWith(icon, "position")).toBe("absolute");
+    expect(drawnWith(box, "padding-inline-start")).toBe("var(--text-input-start, var(--space-3))");
+    expect(drawnWith(box, "gap")).toBe("var(--text-input-gap, var(--space-2))");
+    const glass = icon.querySelector("svg") as Element;
+    expect(drawnWith(glass, "inline-size")).toBe("var(--text-input-icon, 1em)");
+    expect(drawnWith(glass, "block-size")).toBe("var(--text-input-icon, 1em)");
+    // The icon is an item of the box's own row, before the words.
+    expect(icon.nextElementSibling?.tagName).toBe("INPUT");
   });
 
   it("is decoration: hidden from a screen reader and the pointer, the field keeps its name", async () => {
     const user = userEvent.setup();
     render(<FilterBox />);
-    const icon = document.querySelector(".ui-input-lead-icon") as Element;
+    const icon = document.querySelector('[data-part="icon"]') as Element;
     expect(icon).toHaveAttribute("aria-hidden", "true");
     expect(drawnWith(icon, "pointer-events")).toBe("none");
-    const box = screen.getByRole("searchbox", { name: "Filter files" });
+    const input = screen.getByRole("searchbox", { name: "Filter files" });
     await user.tab();
-    expect(box).toHaveFocus();
+    expect(input).toHaveFocus();
     await user.keyboard("main");
-    expect(box).toHaveValue("main");
+    expect(input).toHaveAttribute("type", "search");
   });
 });
 
@@ -101,37 +100,24 @@ const attr = (element: ts.JsxOpeningLikeElement, name: string): string | undefin
   return undefined;
 };
 
-const opening = (node: ts.JsxChild): ts.JsxOpeningLikeElement | undefined =>
-  ts.isJsxSelfClosingElement(node) ? node : ts.isJsxElement(node) ? node.openingElement : undefined;
-
 /**
- * Each `<input type="search">` in a file's text that is not a shared field with a leading icon:
- * its parent is not a `.ui-input-lead`, the input is not a `.ui-input`, or no hidden
- * `.ui-input-lead-icon` stands before it.
+ * Each search box in a file's text that is not the field family's with a leading icon: a raw
+ * `<input type="search">`, or a `<TextField type="search">` with no `icon`.
  */
 function bareSearchBoxes(name: string, text: string): string[] {
   const source = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const classes = (element: ts.JsxOpeningLikeElement | undefined) =>
-    element === undefined ? [] : (attr(element, "className") ?? "").split(/\s+/);
   const out: string[] = [];
   const visit = (node: ts.Node) => {
-    if (
-      ts.isJsxSelfClosingElement(node) &&
-      node.tagName.getText() === "input" &&
-      attr(node, "type") === "search"
-    ) {
-      const line = source.getLineAndCharacterOfPosition(node.getStart()).line + 1;
-      const parent = node.parent;
-      const siblings = ts.isJsxElement(parent) ? [...parent.children] : [];
-      const icon = siblings
-        .slice(0, siblings.indexOf(node))
-        .map(opening)
-        .find((one) => classes(one).includes("ui-input-lead-icon"));
-      const lead =
-        ts.isJsxElement(parent) && classes(parent.openingElement).includes("ui-input-lead");
-      const field = classes(node).includes("ui-input");
-      const hidden = icon !== undefined && attr(icon, "aria-hidden") !== undefined;
-      if (!lead || !field || !hidden) out.push(`${name}:${line}`);
+    const element = ts.isJsxSelfClosingElement(node)
+      ? node
+      : ts.isJsxElement(node)
+        ? node.openingElement
+        : undefined;
+    if (element && attr(element, "type") === "search") {
+      const tag = element.tagName.getText();
+      const line = source.getLineAndCharacterOfPosition(element.getStart()).line + 1;
+      if (tag === "input" || (tag === "TextField" && attr(element, "icon") === undefined))
+        out.push(`${name}:${line}`);
     }
     ts.forEachChild(node, visit);
   };
@@ -140,7 +126,7 @@ function bareSearchBoxes(name: string, text: string): string[] {
 }
 
 describe("the window's search boxes", () => {
-  it("are each the shared field with the glass at its start", () => {
+  it("are each the family's box with the glass at its start", () => {
     const files = sources();
     expect(files.length).toBeGreaterThan(50);
     expect(
@@ -148,20 +134,12 @@ describe("the window's search boxes", () => {
     ).toEqual([]);
   });
 
-  it("finds a box that is bare, one with no glass, and one whose glass is announced", () => {
+  it("finds a raw box, and a family box with no glass", () => {
     const planted = (box: string) => bareSearchBoxes("planted.tsx", `const a = ${box};`);
-    const input = `<input type="search" className="ui-input" />`;
-    const glass = `<Search className="ui-input-lead-icon" aria-hidden="true" />`;
-    expect(planted(`<div className="ui-input-lead">${glass}${input}</div>`)).toEqual([]);
-    expect(planted(`<div>${input}</div>`)).toEqual(["planted.tsx:1"]);
-    expect(planted(`<div className="ui-input-lead">${input}</div>`)).toEqual(["planted.tsx:1"]);
     expect(
-      planted(
-        `<div className="ui-input-lead"><Search className="ui-input-lead-icon" />${input}</div>`,
-      ),
-    ).toEqual(["planted.tsx:1"]);
-    expect(planted(`<div className="ui-input-lead">${glass}<input type="search" /></div>`)).toEqual(
-      ["planted.tsx:1"],
-    );
+      planted(`<TextField type="search" icon={<Search aria-hidden="true" />} value="" />`),
+    ).toEqual([]);
+    expect(planted(`<div><input type="search" /></div>`)).toEqual(["planted.tsx:1"]);
+    expect(planted(`<TextField type="search" value="" />`)).toEqual(["planted.tsx:1"]);
   });
 });

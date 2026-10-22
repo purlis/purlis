@@ -149,7 +149,8 @@
 }
 
 /* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves. */
-:is([data-scope="text-input"], [data-scope="textarea"])[data-part="root"][data-disabled] {
+[data-scope="text-input"][data-part="root"][data-disabled],
+[data-scope="textarea"][data-part="root"][data-disabled] {
   color: var(--text-faint);
   cursor: default;
 }

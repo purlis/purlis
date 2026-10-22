@@ -13,6 +13,7 @@ import {
 } from "./bindings";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { TextField } from "./ui/field/Field";
 
 /** A command's answer, with a call that never reached the core answered as its refusal. */
 function settled<T>(
@@ -254,16 +255,14 @@ export function VaultSignIn({
           help="It goes to purlis once and from there into your system keychain. It is not kept on this page."
           control={(ids) => (
             <>
-              <input
-                ref={box}
+              <TextField
+                inputRef={box}
                 id={ids.id}
-                className="ui-field ui-input"
+                className="ui-setting-box"
                 type="password"
                 placeholder="Paste the token"
-                autoComplete="off"
-                spellCheck={false}
-                tabIndex={0}
-                disabled={busy}
+                isDisabled={busy}
+                aria-labelledby={ids.labelledBy}
                 aria-describedby={ids.describedBy}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {

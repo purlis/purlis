@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import type { PersonaProfile as Read } from "./bindings";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /** The value that stands for "names no profile": no profile is called the empty string. */
 const NONE = "";
@@ -106,7 +107,7 @@ export function PersonaProfile({
           )}
 
           {read && (
-            <form
+            <Form
               onSubmit={(event) => {
                 event.preventDefault();
                 if (value !== undefined && !saving) onSave(value === NONE ? null : value);
@@ -147,7 +148,7 @@ export function PersonaProfile({
                   Cancel
                 </Button>
               </SettingActions>
-            </form>
+            </Form>
           )}
           {!read && (
             <SettingActions>

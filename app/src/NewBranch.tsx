@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import * as Dialog from "./overlays/dialog";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * **New branch**, from a repo's row (GL-1, ADR 0072 §4).
@@ -72,7 +73,7 @@ export function NewBranch({
             In <code>{repo}</code>
           </Dialog.Description>
 
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               cut();
@@ -103,7 +104,7 @@ export function NewBranch({
               </Button>
               <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

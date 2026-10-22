@@ -68,7 +68,7 @@ describe("the host box of a block that named no host", () => {
   it("is the set's field in a form row, named by its row, with an example in it", () => {
     drawn();
     const box = screen.getByRole("textbox", { name: "Host to allow" });
-    expect(box).toHaveClass("ui-field");
+    expect(box.closest('[data-scope="field"]')).toHaveClass("ui-setting-box");
     expect(box).toHaveAttribute("placeholder", "api.example.com");
     expect(box.closest(".ui-setting-row")).not.toBeNull();
     expect(box).toHaveAccessibleDescription("An Allow lets the chat reach the host you type here.");
