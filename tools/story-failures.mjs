@@ -103,7 +103,7 @@ const error = (title, text) =>
  *  story; and, for a run that failed naming nothing, one that says so. The report does not say
  *  which browser ran it, so the job runs each browser on its own and says which report is whose. */
 export function annotations(report, browser) {
-  const failed = report.failures.map(({ file, story, errors }) => {
+  const failed = report.failures.map(({ file, story, cell, errors }) => {
     const [first = { message: "" }] = errors;
     const rules = [
       ...new Set(
@@ -114,7 +114,7 @@ export function annotations(report, browser) {
     ];
     const broke = rules.length > 0 ? ` [axe: ${rules.join(", ")}]` : "";
     return error(
-      `${story} in ${browser}`,
+      `${story} in ${browser}${cell ? `, ${cell}` : ""}`,
       `${file}: ${gateOf(first)}: ${whyOf(first)}${broke}`,
     );
   });
@@ -147,6 +147,12 @@ export function reportPath(env) {
   return to && isAbsolute(to) ? to : null;
 }
 
+/** The cell of the theme matrix a story project runs in, from its name,
+ *  `stories <cell> (<browser>)` (`app/.storybook/vitest.project.ts`); `undefined` for another. */
+export function cellOf(project) {
+  return /^stories (\S+) \(\w+\)$/.exec(project ?? "")?.[1];
+}
+
 /** **The reporter**: at the end of the run, each failed story's errors, the errors of a story
  *  file or a suite, those outside any, and whether the run failed. */
 export default class StoryFailures {
@@ -155,6 +161,7 @@ export default class StoryFailures {
       [...module.children.allTests("failed")].map((test) => ({
         file: module.relativeModuleId,
         story: test.fullName.replaceAll(" > ", " "),
+        cell: cellOf(module.project?.name),
         errors: (test.result().errors ?? []).map(kept),
       })),
     );

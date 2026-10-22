@@ -118,14 +118,16 @@ fn purlis_classic_draws_exactly_today_s_values() {
     // The sha-256 of today's `purlis-dark.json` and `purlis-light.json` tokens, taken before
     // they moved into the Classic folder (sorted keys, compact JSON). A changed value anywhere
     // in Classic changes one of these. Dark's `needs-you.base` moved from `#b85050` to
-    // `#bd5654` for the mark on a hovered control (#2504).
+    // `#bd5654` for the mark on a hovered control (#2504). Light's `state.waiting` (and its
+    // glow) moved from `#906000` to `#805500`, so the words of a warning-soft button hold 4.5:1
+    // on a control and a hovered one (#2945).
     assert_eq!(
         digest(classic_dark()),
         "b612dcdabecf1c81bbde32cb5a5c8f0bcc7774d0d70aac68e27cd8771136e9df"
     );
     assert_eq!(
         digest(classic_light()),
-        "056852028a59c9c0c6ae9feb322db7661b7b8b26e7a5f122f5a3a30f46c1a370"
+        "dcde57746655f6d64dff15e2f0fdcb9799bec9b1852573970a05468a495edbf9"
     );
     for theme in [classic_dark(), classic_light()] {
         assert_eq!(theme.motion.durations["duration.quick"], 120);
