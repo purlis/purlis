@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792703337948,
+  "lastUpdate": 1792703359272,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -11780,6 +11780,42 @@ window.BENCHMARK_DATA = {
             "value": 672.4,
             "unit": "MB",
             "extra": "median of 6 samples: 646.8, 659.2, 667.9, 676.9, 678, 754.1 MB; window 401.5 MB, session host 270.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "43ce2fb39c717f0be08d2118f25bb1190b03742d",
+          "message": "Panel, panel section, empty state, status item and window geometry (#3024)\n\n* Panel, panel section, empty state, status item and window geometry (#2913)\n\nThe window's own surfaces are shared families, each one wrapper under\napp/src/ui and its own lint rule at error: Panel and its sections\n(ui/panel), EmptyState (ui/empty-state), and StatusItem, StatusCell and\nStatusBar (ui/status), which share the button family's press.\n\n- Window geometry (#2805, N21): window.gutter, panel.corner-radius and\n  panel.border-width. Purlis floats its panels 8 apart with 12px corners on\n  surface.raised; Purlis Classic draws flush.\n- The status bar's contribution model (N28): left or right by priority,\n  any item hidden from the bar's menu but Notices, kept per machine; a press\n  runs a command; items that come and go sit on their end's inner side.\n- Status pills (R115): at least 24px in CSS px, full corners, 12px words;\n  the waiting pill on the new wash.warning token.\n- ADR 0103 amendment: a box is no target, and each of its corners is\n  min(r, 50%).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Run the checks on the redrawn narrow-bar baseline (#2913)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Re-review: the title bar's pills never move, Notices stays a Tab stop (#2913)\n\n- The title bar's right end is what waits, an update, the save, the\n  sandbox, then the kill switch and About: what comes and goes is on the\n  inner side, held by a story that an update moves none of the others.\n- The status bar's right end is the doctor, the pin, then Notices\n  outermost, so neither a drifting pin nor the doctor's words move it.\n- Notices with no Inbox behind it is aria-disabled, still a Tab stop.\n- The menu's fallback focus skips a disabled button.\n- The theme check holds the hand mark on the amber wash at 3:1.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Stories across the theme matrix: the old single baselines go, Flush draws Classic's geometry (#2913)\n\nThe panel, empty-state and status stories are drawn in every theme,\nappearance and density cell now (#3036); their single-name baselines are\ngone for the matrix set the label draws. Flush sets Purlis Classic's window\ngeometry itself, as Floating sets Purlis's, so each holds in every cell.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Run the checks on the matrix baselines (#2913)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Stories draw the built-in themes as the core now resolves them (#2913)\n\nThe amber wash, the window geometry and Purlis's raised panels, written\nagain by PURLIS_WRITE_STORY_THEMES.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The window's families give their look for states that hold at once (#2913, #2966)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Run the checks on the per-cell baselines (#2913)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-23T00:03:17+04:00",
+          "tree_id": "c2100b4c50ab52ecee433d5f099399dc6510e4ca",
+          "url": "https://github.com/purlis/purlis/commit/43ce2fb39c717f0be08d2118f25bb1190b03742d"
+        },
+        "date": 1792703356926,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1573.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1423.9, 1573.7, 1588.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 669.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 633.8, 658.1, 667.3, 671.9, 672.5, 760.7 MB; window 411.2 MB, session host 258.4 MB"
           }
         ]
       }
