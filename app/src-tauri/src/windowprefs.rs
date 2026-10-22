@@ -379,6 +379,7 @@ fn at_creation_from(
 /// **What `theme.ts` reads from the creation global as its module loads**, and throws without:
 /// every page that loads it is handed each (`creation_script_from` here, `specimen.rs`'s), and a
 /// test holds both to this list.
+#[cfg(test)]
 pub(crate) const HANDED_AT_LOAD: [&str; 2] = ["built_in", "default_theme"];
 
 /// **The built-in appearances a window is handed, by the pick that names each** (#3034):

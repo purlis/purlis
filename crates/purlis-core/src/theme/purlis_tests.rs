@@ -628,7 +628,7 @@ fn purlis_draws_each_workspace_colour_as_these_numbers_and_every_strip_keeps_its
     let mut got = Vec::new();
     for one in &purlis().appearances {
         for hue in &one.tint.hues {
-            let tint = tinted(one, &hue.name);
+            let tint = tinted(one, hue.name);
             got.push((
                 one.id.as_str(),
                 hue.name,
