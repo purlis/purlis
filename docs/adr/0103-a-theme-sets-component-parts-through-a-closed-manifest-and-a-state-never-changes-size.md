@@ -95,6 +95,11 @@ The surfaces a family is drawn on are its manifest entry's grounds, and they are
 the window draws the family on, found from the components by a test in the window that fails
 until the manifest lists a new one (#2959). A wash is measured laid over the surface under it.
 
+States that hold at once (hovered and pressed, focused and selected) are measured as the
+stylesheet resolves them, each property from the state it writes last, and held like one state;
+a part that breaks a floor in such a set draws its default in the last of its states, and the
+finding names the set (#2958).
+
 **ADR 0097 §6 holds for parts unchanged.** The consent floors are held whatever part of a family
 the theme changes, as the theme is written and in every workspace tint, custom colours included,
 and two looks are compared by the colours they draw, never by the tokens' names:

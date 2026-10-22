@@ -358,8 +358,9 @@ pub struct Family {
     font_size: &'static str,
     line_height: f64,
     border_width: f64,
-    /// Its colours at rest and in each state, as the window's own stylesheet draws them.
-    defaults: fn(&str, Option<State>) -> Look,
+    /// Its colours at rest and in each set of states that hold at once, as the window's own
+    /// stylesheet draws them.
+    defaults: fn(&str, &[State]) -> Look,
     /// The states a key may name for it: the ones its wrapper marks (#2905). A text box is never
     /// pressed, chosen or open, and a field's root is only ever unavailable.
     pub states: &'static [State],
@@ -528,7 +529,7 @@ pub const MANIFEST: &[Family] = &[
         font_size: "font-size.base",
         line_height: 1.0,
         border_width: 1.0,
-        defaults: button_look,
+        defaults: button_look_in,
         states: &STATES,
         focused: "[data-focus-visible]",
         words: &[],
@@ -718,7 +719,7 @@ pub const MANIFEST: &[Family] = &[
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
 /// `words`.
-fn field_look(_variant: &str, _state: Option<State>) -> Look {
+fn field_look(_variant: &str, _states: &[State]) -> Look {
     Look {
         fill: TRANSPARENT,
         text: "text.primary",
@@ -729,7 +730,7 @@ fn field_look(_variant: &str, _state: Option<State>) -> Look {
 /// **A text input's and a textarea's colours as `app/src/ui/field/field.css` draws them**: the
 /// sunken ground behind the strong edge, in every state; the keyboard's ring and a refused value's
 /// danger edge are drawn by the family, outside the parts.
-fn box_look(_variant: &str, _state: Option<State>) -> Look {
+fn box_look(_variant: &str, _states: &[State]) -> Look {
     Look {
         fill: "surface.sunken",
         text: "text.primary",
@@ -747,6 +748,25 @@ struct Look {
 
 /// `transparent`: the one colour a part may take that is not a token.
 const TRANSPARENT: &str = "transparent";
+
+/// **The button's colours in the states that hold at once**, as `button.css` resolves them:
+/// a toggle that is on keeps its fill and edge under the pointer's, and under the pointer it
+/// draws its own selected-and-hovered fill. Pressed, focused and open change no colour.
+fn button_look_in(variant: &str, states: &[State]) -> Look {
+    let selected = button_look(variant, Some(State::Selected));
+    match (
+        states.contains(&State::Hover),
+        states.contains(&State::Selected),
+    ) {
+        (true, true) => Look {
+            fill: "tab.active",
+            ..selected
+        },
+        (false, true) => selected,
+        (true, false) => button_look(variant, Some(State::Hover)),
+        (false, false) => button_look(variant, None),
+    }
+}
 
 /// **The button's colours as `app/src/ui/button/button.css` draws them**, which a test holds to
 /// that file: at rest, under the pointer and pressed as a toggle (selected).
@@ -906,8 +926,9 @@ pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
                 .filter(|state| !matches!(state, State::Selected | State::Disabled))
                 .map(Some),
         ) {
-            let allow = drawn(&[], family, grants.name, state);
-            let primary = drawn(&[], family, PRIMARY, state);
+            let states: Vec<State> = state.into_iter().collect();
+            let allow = drawn(&[], family, grants.name, &states);
+            let primary = drawn(&[], family, PRIMARY, &states);
             if seen.contains(&(allow.clone(), primary.clone())) {
                 continue;
             }
@@ -929,12 +950,14 @@ pub(super) fn defaults_json(variant: &str) -> Value {
     let rest = button_look(variant, None);
     let hover = button_look(variant, Some(State::Hover));
     let selected = button_look(variant, Some(State::Selected));
+    let both = button_look_in(variant, &[State::Hover, State::Selected]);
     json!({
         "fill": rest.fill,
         "text": rest.text,
         "border": rest.border,
         "hover": hover.fill,
         "selected": { "fill": selected.fill, "border": selected.border },
+        "selected_hover": { "fill": both.fill, "border": both.border },
     })
 }
 
@@ -942,12 +965,12 @@ pub(super) fn defaults_json(variant: &str) -> Value {
 /// `field.css`: the boxes', and each of the field's words.
 #[cfg(test)]
 pub(super) fn field_defaults_json() -> Value {
-    let boxes = box_look("", None);
+    let boxes = box_look("", &[]);
     let field = family("field").expect("the field family");
     let words = |part: &str| {
         let at = field.parts.iter().position(|one| one.name == part);
         at.and_then(|at| field.own_words(at))
-            .unwrap_or(field_look("", None).text)
+            .unwrap_or(field_look("", &[]).text)
     };
     json!({
         "box": { "fill": boxes.fill, "text": boxes.text, "border": boxes.border },
@@ -1482,8 +1505,10 @@ impl Rule {
         )
     }
 
-    fn reaches(&self, variant: &str, state: Option<State>) -> bool {
-        self.variant.is_none_or(|v| v == variant) && (self.state.is_none() || self.state == state)
+    /// Whether it reaches `variant` while `states` hold (none: at rest).
+    fn reaches(&self, variant: &str, states: &[State]) -> bool {
+        self.variant.is_none_or(|v| v == variant)
+            && self.state.is_none_or(|state| states.contains(&state))
     }
 }
 
@@ -1523,20 +1548,21 @@ fn rules(parts: &Parts) -> Vec<Rule> {
     grouped.into_values().collect()
 }
 
-/// The colour token `rules` draw `property` of `part` in, for `variant` in `state`, or the
-/// family default's; `None` when nothing sets it (a label's words follow the root's).
+/// The colour token `rules` draw `property` of `part` in, for `variant` while `states` hold, as
+/// the stylesheet's order resolves them, or the family default's; `None` when nothing sets it (a
+/// label's words follow the root's).
 fn drawn_colour(
     rules: &[Rule],
     family: &Family,
     part: usize,
     variant: &str,
-    state: Option<State>,
+    states: &[State],
     property: Prop,
 ) -> Option<&'static str> {
     let mut ordered: Vec<&Rule> = rules
         .iter()
         .filter(|rule| {
-            std::ptr::eq(rule.family, family) && rule.part == part && rule.reaches(variant, state)
+            std::ptr::eq(rule.family, family) && rule.part == part && rule.reaches(variant, states)
         })
         .collect();
     ordered.sort_by_key(|rule| rule.order());
@@ -1553,7 +1579,7 @@ fn drawn_colour(
     if part != 0 {
         return family.own_words(part);
     }
-    let look = (family.defaults)(variant, state);
+    let look = (family.defaults)(variant, states);
     Some(match property {
         Prop::Fill => look.fill,
         Prop::Text => look.text,
@@ -1569,8 +1595,8 @@ struct Drawn {
     words: Vec<&'static str>,
 }
 
-fn drawn(rules: &[Rule], family: &Family, variant: &str, state: Option<State>) -> Drawn {
-    let colour = |part, property| drawn_colour(rules, family, part, variant, state, property);
+fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Drawn {
+    let colour = |part, property| drawn_colour(rules, family, part, variant, states, property);
     let root_text = colour(0, Prop::Text).unwrap_or("text.primary");
     Drawn {
         fill: colour(0, Prop::Fill).unwrap_or(TRANSPARENT),
@@ -1652,7 +1678,7 @@ fn drawn_at_rest(
             std::ptr::eq(rule.family, family)
                 && rule.part == 0
                 && rule.state.is_none()
-                && rule.reaches(variant, None)
+                && rule.reaches(variant, &[])
         })
         .collect();
     ordered.sort_by_key(|rule| rule.order());
@@ -1760,12 +1786,12 @@ fn consent_broken(
     rules: &[Rule],
     family: &Family,
     variant: &Variant,
-    state: Option<State>,
+    states: &[State],
 ) -> Option<Consented> {
-    let look = drawn(rules, family, variant.name, state);
-    let primary = drawn(rules, family, PRIMARY, state);
-    let default_look = drawn(&[], family, variant.name, state);
-    let default_primary = drawn(&[], family, PRIMARY, state);
+    let look = drawn(rules, family, variant.name, states);
+    let primary = drawn(rules, family, PRIMARY, states);
+    let default_look = drawn(&[], family, variant.name, states);
+    let default_primary = drawn(&[], family, PRIMARY, states);
     // Parts never bring a consent variant nearer the primary than the family's defaults are, in
     // this same drawn theme: the farthest of its fill, its edge and (for danger) its words.
     let words = variant.consent == Some(Consent::Danger);
@@ -1782,9 +1808,9 @@ fn consent_broken(
                 ));
             }
             let keep_blocked_name = family.variants[0].name;
-            let keep_blocked = drawn(rules, family, keep_blocked_name, state);
-            let default_keep_blocked = drawn(&[], family, keep_blocked_name, state);
-            let default_allow = drawn(&[], family, variant.name, state);
+            let keep_blocked = drawn(rules, family, keep_blocked_name, states);
+            let default_keep_blocked = drawn(&[], family, keep_blocked_name, states);
+            let default_allow = drawn(&[], family, variant.name, states);
             if !alike(
                 theme,
                 default_allow.border,
@@ -1849,25 +1875,35 @@ fn consent_broken(
 }
 
 /// **The rules a theme's parts give, with the floors held.** Each variant and state the theme
-/// changes is held to the reading floors. The consent floors are held in every state but
-/// disabled, whatever the theme changed, as written and in each workspace tint the theme's
-/// recipe draws (ADR 0097 §6). A variant that breaks one draws its family default there, said
-/// in the [`Fell`]s; where that is not enough, so does the variant it is held apart from.
+/// changes is held to the reading floors, and so is each set of states that hold at once (hovered
+/// and pressed, focused and selected) as the stylesheet's order resolves them. The consent floors
+/// are held in every state but disabled and every set of them, whatever the theme changed, as
+/// written and in each workspace tint the theme's recipe draws (ADR 0097 §6). A variant that
+/// breaks one draws its family default there, said in the [`Fell`]s; where that is not enough, so
+/// does the variant it is held apart from.
 fn held(theme: &ResolvedTheme) -> (Vec<Rule>, Vec<Fell>) {
-    let mut rules = rules(&theme.parts);
-    let mut fell = Vec::new();
+    held_from(theme, rules(&theme.parts), Vec::new())
+}
+
+/// The fallbacks a theme's held rules would still write if they were held once more: none, for
+/// the hold ends only when a round writes none.
+#[cfg(test)]
+pub(super) fn held_again(theme: &ResolvedTheme) -> Vec<Fell> {
+    let (rules, fell) = held(theme);
+    let before = fell.len();
+    let (_, again) = held_from(theme, rules, fell);
+    again[before..].to_vec()
+}
+
+/// [`held`], from `rules` and what already `fell`.
+fn held_from(
+    theme: &ResolvedTheme,
+    mut rules: Vec<Rule>,
+    mut fell: Vec<Fell>,
+) -> (Vec<Rule>, Vec<Fell>) {
     if rules.is_empty() {
         return (rules, fell);
     }
-    // A disabled control is exempt, as WCAG has it, and cannot be answered.
-    let states: Vec<Option<State>> = std::iter::once(None)
-        .chain(
-            STATES
-                .into_iter()
-                .filter(|one| *one != State::Disabled)
-                .map(Some),
-        )
-        .collect();
     // As written, and tinted by every colour a workspace can name: each of the theme's own and
     // every whole degree a workspace's own colour can take (#2526).
     let mut drawn_in = vec![theme.clone()];
@@ -1885,18 +1921,6 @@ fn held(theme: &ResolvedTheme) -> (Vec<Rule>, Vec<Fell>) {
         if !rules.iter().any(|rule| std::ptr::eq(rule.family, family)) {
             continue;
         }
-        let mut fall = |rules: &mut Vec<Rule>,
-                        variant: &'static str,
-                        state: Option<State>,
-                        floor: String,
-                        ratio: Option<f64>| {
-            let part = named(family, variant, state);
-            if fell.iter().any(|one: &Fell| one.part == part) {
-                return;
-            }
-            fell.push(Fell { part, floor, ratio });
-            rules.extend(fallback(family, variant, state));
-        };
         // A theme that turns borders off still draws the edge of an answer that grants.
         for variant in family
             .variants
@@ -1917,51 +1941,204 @@ fn held(theme: &ResolvedTheme) -> (Vec<Rule>, Vec<Fell>) {
                 });
             }
         }
-        for variant in family.looks() {
-            for state in &states {
-                let look = drawn(&rules, family, variant, *state);
-                if look == drawn(&[], family, variant, *state) {
-                    continue;
+        // At rest and in each state the family names but disabled: a disabled control is
+        // exempt, as WCAG has it, and cannot be answered.
+        let singles: Vec<Vec<State>> = std::iter::once(Vec::new())
+            .chain(states_of(family).into_iter().map(|one| vec![one]))
+            .collect();
+        let mut held = Held {
+            family,
+            rules: &mut rules,
+            fell: &mut fell,
+        };
+        // Held again until no fallback is written: a fallback changes how a state draws, so
+        // whatever was measured against that state before is measured against what it draws
+        // now. It ends, since each round that writes one names a part that had not fallen.
+        loop {
+            let written = held.rules.len();
+            for states in &singles {
+                held.readable(theme, states);
+            }
+            for states in &singles {
+                held.consented(&drawn_in, states);
+            }
+            // Then each set of states that hold at once whose look no state alone, nor another
+            // set already measured, draws. A fallback can name a state, so the sets are read
+            // again; they end, since there are finitely many.
+            let mut measured: Vec<Alike> = singles
+                .iter()
+                .map(|states| alike_as(held.rules, family, states))
+                .collect();
+            loop {
+                let next: Vec<Vec<State>> = combined(family)
+                    .into_iter()
+                    .filter(|states| {
+                        let one = alike_as(held.rules, family, states);
+                        let new = !measured.contains(&one);
+                        if new {
+                            measured.push(one);
+                        }
+                        new
+                    })
+                    .collect();
+                if next.is_empty() {
+                    break;
                 }
-                if let Some((floor, ratio)) = unreadable(theme, &rules, family, variant, &look) {
-                    fall(&mut rules, variant, *state, floor, ratio);
+                for states in &next {
+                    held.readable(theme, states);
+                    held.consented(&drawn_in, states);
                 }
             }
-        }
-        for variant in family.variants.iter().filter(|one| one.consent.is_some()) {
-            for state in &states {
-                for one in &drawn_in {
-                    // A variant already drawn as its default is held by the token floors; a
-                    // fallback would change nothing, so what it is held apart from falls back.
-                    let own_default = drawn(&rules, family, variant.name, *state)
-                        == drawn(&[], family, variant.name, *state);
-                    match consent_broken(one, &rules, family, variant, *state) {
-                        None => {}
-                        Some(Consented::Own(floor, ratio)) => {
-                            if !own_default {
-                                fall(&mut rules, variant.name, *state, floor, ratio);
-                            }
-                        }
-                        Some(Consented::Both(floor, other)) => {
-                            if !own_default {
-                                fall(&mut rules, variant.name, *state, floor.clone(), None);
-                            }
-                            if consent_broken(one, &rules, family, variant, *state).is_some() {
-                                fall(&mut rules, other, *state, floor, None);
-                            }
-                        }
-                    }
-                }
+            if held.rules.len() == written {
+                break;
             }
         }
     }
     (rules, fell)
 }
 
-fn named(family: &Family, variant: &str, state: Option<State>) -> String {
+/// The states `family` names but disabled, in the order the stylesheet writes them.
+fn states_of(family: &Family) -> Vec<State> {
+    STATES
+        .into_iter()
+        .filter(|one| *one != State::Disabled && family.states.contains(one))
+        .collect()
+}
+
+/// Every set of two or more of the states `family` names that a part can be in at once, but
+/// disabled: the smaller first.
+fn combined(family: &Family) -> Vec<Vec<State>> {
+    let states = states_of(family);
+    let mut sets: Vec<Vec<State>> = (0u32..1 << states.len())
+        .filter(|bits| bits.count_ones() >= 2)
+        .map(|bits| {
+            states
+                .iter()
+                .enumerate()
+                .filter(|(at, _)| bits & (1 << at) != 0)
+                .map(|(_, one)| *one)
+                .collect()
+        })
+        .collect();
+    sets.sort_by_key(Vec::len);
+    sets
+}
+
+/// What decides how a family is drawn while `states` hold: which of them its rules name, and
+/// its defaults in each variant. Two sets alike in it draw every variant alike.
+type Alike = (Vec<State>, Vec<Look>);
+
+fn alike_as(rules: &[Rule], family: &Family, states: &[State]) -> Alike {
+    let named: Vec<State> = states
+        .iter()
+        .copied()
+        .filter(|state| {
+            rules
+                .iter()
+                .any(|rule| std::ptr::eq(rule.family, family) && rule.state == Some(*state))
+        })
+        .collect();
+    let defaults = family
+        .looks()
+        .into_iter()
+        .map(|variant| (family.defaults)(variant, states))
+        .collect();
+    (named, defaults)
+}
+
+/// The floors of one family being held: its rules, with the fallbacks added, and what fell.
+struct Held<'a> {
+    family: &'static Family,
+    rules: &'a mut Vec<Rule>,
+    fell: &'a mut Vec<Fell>,
+}
+
+impl Held<'_> {
+    /// Each variant the theme changes while `states` hold, held to the reading floors.
+    fn readable(&mut self, theme: &ResolvedTheme, states: &[State]) {
+        for variant in self.family.looks() {
+            let look = drawn(self.rules, self.family, variant, states);
+            if look == drawn(&[], self.family, variant, states) {
+                continue;
+            }
+            if let Some((floor, ratio)) = unreadable(theme, self.rules, self.family, variant, &look)
+            {
+                self.fall(variant, states, floor, ratio);
+            }
+        }
+    }
+
+    /// Each consent variant while `states` hold, held to the consent floors in every drawn theme.
+    fn consented(&mut self, drawn_in: &[ResolvedTheme], states: &[State]) {
+        let family = self.family;
+        for variant in family.variants.iter().filter(|one| one.consent.is_some()) {
+            for one in drawn_in {
+                // A variant already drawn as its default is held by the token floors; a
+                // fallback would change nothing, so what it is held apart from falls back.
+                let own_default = drawn(self.rules, family, variant.name, states)
+                    == drawn(&[], family, variant.name, states);
+                match consent_broken(one, self.rules, family, variant, states) {
+                    None => {}
+                    Some(Consented::Own(floor, ratio)) => {
+                        if !own_default {
+                            self.fall(variant.name, states, floor, ratio);
+                        }
+                    }
+                    Some(Consented::Both(floor, other)) => {
+                        if !own_default {
+                            self.fall(variant.name, states, floor.clone(), None);
+                        }
+                        if consent_broken(one, self.rules, family, variant, states).is_some() {
+                            self.fall(other, states, floor, None);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// `variant` draws its family default while `states` hold, said once in a [`Fell`] that names
+    /// them. The default is written for one state: in a set, the last of them any of the
+    /// family's rules names. A fallback is written after every theme rule, so the set draws that
+    /// state's default, which the floors already hold.
+    fn fall(&mut self, variant: &'static str, states: &[State], floor: String, ratio: Option<f64>) {
+        let family = self.family;
+        let part = named(family, variant, states);
+        if self.fell.iter().any(|one| one.part == part) {
+            return;
+        }
+        self.fell.push(Fell { part, floor, ratio });
+        let state = states
+            .iter()
+            .rev()
+            .find(|state| {
+                self.rules
+                    .iter()
+                    .any(|rule| std::ptr::eq(rule.family, family) && rule.state == Some(**state))
+            })
+            .or(states.last())
+            .copied();
+        // A family with no variants has one look, which a rule for every variant reaches.
+        let reached = (!variant.is_empty()).then_some(variant);
+        let written = self.rules.iter().any(|rule| {
+            std::ptr::eq(rule.family, family)
+                && rule.fallback
+                && rule.variant == reached
+                && rule.state == state
+                && !rule.values.contains_key(&Prop::BorderWidth)
+        });
+        if !written {
+            self.rules.extend(fallback(family, variant, state));
+        }
+    }
+}
+
+/// `<family>.<root>[.<variant>]`, with the states that hold joined by `+` (`hover+pressed`).
+fn named(family: &Family, variant: &str, states: &[State]) -> String {
     let mut named = look_named(family, family.parts[0].name, variant);
-    if let Some(state) = state {
-        let _ = write!(named, ".{}", state.name());
+    if !states.is_empty() {
+        let names: Vec<&str> = states.iter().map(|state| state.name()).collect();
+        let _ = write!(named, ".{}", names.join("+"));
     }
     named
 }
@@ -1969,7 +2146,7 @@ fn named(family: &Family, variant: &str, state: Option<State>) -> String {
 /// The rules that draw `family`'s default colours back for `variant` in `state`: the root's,
 /// and the words of every other part following it.
 fn fallback(family: &'static Family, variant: &'static str, state: Option<State>) -> Vec<Rule> {
-    let look = (family.defaults)(variant, state);
+    let look = (family.defaults)(variant, state.as_slice());
     // A family with no variants has one look, which a rule for every variant reaches.
     let variant = (!variant.is_empty()).then_some(variant);
     // Only the colours the root takes: a field's root draws none of its own.
