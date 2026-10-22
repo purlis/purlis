@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792663242198,
+  "lastUpdate": 1792663261396,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -10988,6 +10988,42 @@ window.BENCHMARK_DATA = {
             "value": 658.3,
             "unit": "MB",
             "extra": "median of 6 samples: 621, 638.4, 653.6, 663.1, 664, 759.7 MB; window 389 MB, session host 269.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "871d7c475461398bb751773df6bb81c004f5ed45",
+          "message": "Reduce motion, minimum contrast and personal colours in purlis (#2970)\n\n* Reduce motion, minimum contrast and personal colours in purlis (#2925)\n\nSettings › You gains Motion and contrast and Your colours, kept in the\nlayout file's appearance (motion, contrast, colours). Each is layered on\nthe system's setting.\n\nReduce motion draws every duration as 0ms and sets data-motion on the\nroot, which one global switch reads: no transition, and every animation\nplays at once (R152).\n\nMore contrast draws a theme's high-contrast appearance, as the system's\ndoes, and the engine raises the floors it holds: words to 7:1, marks to\n4.5:1, in the tokens, the terminal and the parts' stylesheet.\n\nThe person's layer takes colours over any theme. A colour that would put\na pair under its floor in a theme is left out there, with a Notice, and\nthe consent floors are held again after the layer. The engine draws the\nlayer into every theme it answers the window with.\n\nOne motion rule (R150): Purlis draws its eased motions on\ncubic-bezier(.22,.8,.24,1) and quick at 150 ms; new duration tokens\nslide (260), panel (240) and half (220) time a workspace switch, the\nright region and a bottom half. ADR 0097 is amended for ruling #2814.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Person layer per ask, consent held at raised floors, R150 in part (#2925)\n\nReview round. Each window hands the engine its own person's contrast\nand colours with each theme ask; nothing is kept per process. With more\ncontrast the consent floors are held at the raised floors, in every\ntint, with purlis's own values raised; a mark that grounds words may\nswap sides with them, and a grey tier is raised at most to the tier\nabove. The terminal cursor does not blink under reduced motion.\n\nR150 lands the one ease and duration.quick at 150 in Purlis; the shell's\nother steps arrive with their motions (#2915, #2917), so the crossfade\nand the region arrivals stay as they were. The ADR amendment records\nonly the ruling. Complaints link to their Settings group, and of two\ncolours in a failing pair the one that breaks it is left out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Motion e2e: a tab has no transition while motion is off (#2925)\n\nOn a runner whose system reduces motion, the global switch wins the\ncascade, so the tab's transition is none; the spec says so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Allow never draws as the primary through the person's colours (#2925)\n\nThe person's colours are laid before the consent floors are held, so\n#2948's floor holds over them. A test through resolve() sets Allow's fill\nto the primary's, the reverse, and each under the pointer, at the\nstandard contrast and at more.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T13:17:54+04:00",
+          "tree_id": "01bd45794cb4e6f83be597a52c7141bbb4c9f446",
+          "url": "https://github.com/purlis/purlis/commit/871d7c475461398bb751773df6bb81c004f5ed45"
+        },
+        "date": 1792663259204,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1516.6,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1416.1, 1516.6, 1677.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 680.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 635.2, 665.6, 678.2, 682.4, 683.6, 765.4 MB; window 406.9 MB, session host 273.5 MB"
           }
         ]
       }
