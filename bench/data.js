@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792697491966,
+  "lastUpdate": 1792699120053,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -21966,6 +21966,48 @@ window.BENCHMARK_DATA = {
             "value": 104.673157,
             "unit": "ms",
             "extra": "median of 5 runs: 103.679, 103.776, 104.673, 106.027, 106.835 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "197993bf695f784da3c16d06805bb242998ecf4a",
+          "message": "Browsers: the field blanked is the one with the document's focus (#2988)\n\n* Browsers: the field blanked is the one with the document's focus (#2972)\n\nWhere the tree marks one element focused, its document is asked which\nelement has its focus; where that is another element, as a field naming an\nactive option is, that element is the one blanked and read. A real-Chrome\ntest types into a combo box with an active option.\n\nCloses #2972\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Browsers: a field inside a shadow root stays the field blanked (#2972)\n\nWhere the document names the shadow host and the tree marks a field inside\nit, its shadow roots included, the field stays the one blanked and read. A\nreal-engine test types into fields in an open and a closed shadow root that\nchange what was typed, and posts it outside their hosts.\n\nRefs #2972\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T23:57:13+04:00",
+          "tree_id": "92a6ec69ddac1ee91c67548758e85c0865f59321",
+          "url": "https://github.com/purlis/purlis/commit/197993bf695f784da3c16d06805bb242998ecf4a"
+        },
+        "date": 1792699117332,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.59491,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.574, 0.591, 0.595, 0.611, 0.615 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2673835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.975, 16.149, 16.267, 16.353, 16.547 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0877525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.779, 101.691, 102.088, 102.553, 102.695 ms"
           }
         ]
       }
