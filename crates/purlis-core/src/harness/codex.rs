@@ -4,7 +4,7 @@
 //! Codex's adapter (ADR 0073, FD-13): charter's hooks, armed on one session by Codex's own
 //! `-c hooks.<Event>=…` flags.
 
-use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, input_text};
+use super::adapter::{HarnessAdapter, RuleFile, Sandbox, SkillStart, SkillToStart, input_text};
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
@@ -200,6 +200,48 @@ impl HarnessAdapter for Codex {
             .flatten()?;
         purlis_skills::runs::is_a_plain_read(command)
             .then(|| SkillStart::Reading(command.to_owned()))
+    }
+
+    /// **Codex 0.163.0** (research of 2026-10-20, `skills/src/mentions.rs`): `$<name>` in the
+    /// prompt names a skill, and a briefed chat is told that a prompt naming a skill by its name
+    /// means its list ([`crate::skills::listing`]). Codex substitutes no arguments, so they
+    /// follow the mention as plain words the model reads: `name: value` for each named one, in
+    /// the declared order, a value left empty said as none.
+    fn skill_start_text(&self, skill: &SkillToStart<'_>) -> String {
+        use crate::skills::Given;
+        let mention = format!("${}", self.skill_name(skill.name, skill.origin));
+        match skill.given {
+            Given::Nothing => mention,
+            Given::Raw(line) => format!("{mention} {line}"),
+            Given::Named(values) => {
+                let said: Vec<String> = values
+                    .iter()
+                    .map(|one| {
+                        let value = if one.value.is_empty() {
+                            "none"
+                        } else {
+                            &one.value
+                        };
+                        format!("{}: {value}", one.name)
+                    })
+                    .collect();
+                format!("{mention} {}", said.join("; "))
+            }
+        }
+    }
+
+    /// Codex lists skills within 2% of the context window, 8,000 characters where it does not
+    /// know the window, cutting each description at 1,024 characters, and past that drops
+    /// trailing skills without saying so (0.163.0, `ext/skills/src/render.rs`). A Codex chat is
+    /// briefed on its skills, each line with its `SKILL.md`'s path, which counts; and every
+    /// skill is on it, a manual-only one too, until the briefing is handed the translation
+    /// (#2771).
+    fn skill_budget(&self) -> crate::skills::Budget {
+        crate::skills::Budget {
+            per_description: Some(1_024),
+            lists_paths: true,
+            ..super::SKILL_BUDGET
+        }
     }
 
     /// None: Codex has no command-pattern permissions, so a rule has no file to go into, and

@@ -237,8 +237,25 @@ impl Report {
                     .then(|| field("model"))
                     .flatten()
                     .and_then(|model| crate::state::Model::new(&model)),
+                // Which line starts the prompt holds, as digests and never its words: how a
+                // skill Use skill… typed is known to be in it (#2775).
+                prompt_marks: if event == Event::UserPromptSubmit {
+                    field("prompt")
+                        .map(|prompt| crate::skillspan::PromptMarks::of(&prompt))
+                        .unwrap_or_default()
+                } else {
+                    crate::skillspan::PromptMarks::default()
+                },
             },
         })
+    }
+
+    /// The report as it may be kept on disk: the same report without its prompt's marks, which
+    /// are digests of what the person typed and matter only to a host that hears it live.
+    pub(crate) fn at_rest(&self) -> Report {
+        let mut kept = self.clone();
+        kept.detail.prompt_marks = crate::skillspan::PromptMarks::default();
+        kept
     }
 }
 
@@ -2773,9 +2790,15 @@ pub fn tell_saved(
 ///
 /// **Sealed.** The drain reads these three kinds back and no other ([`spool::Spooled`]), so
 /// nothing outside this module can make a fourth kind a hook would spool.
-pub trait SpoolLine: serde::Serialize + sealed::Sealed {
+pub trait SpoolLine: serde::Serialize + sealed::Sealed + Sized {
     /// The number of the chat whose spool the line goes to.
     fn chat(&self) -> u32;
+
+    /// The line as its spool keeps it: without what only a live host may hear. The line itself
+    /// where nothing is.
+    fn kept(&self) -> Option<Self> {
+        None
+    }
 }
 
 mod sealed {
@@ -2788,6 +2811,10 @@ mod sealed {
 impl SpoolLine for Report {
     fn chat(&self) -> u32 {
         self.chat
+    }
+
+    fn kept(&self) -> Option<Self> {
+        Some(self.at_rest())
     }
 }
 
@@ -2879,7 +2906,8 @@ pub fn deliver<L: SpoolLine>(
 ) -> io::Result<Delivered> {
     use std::io::{BufRead, Read, Write};
 
-    let delivered = with_delivery(line, Delivery::new().as_ref())?;
+    let delivery = Delivery::new();
+    let delivered = with_delivery(line, delivery.as_ref())?;
     let bytes = line_with(token, &delivered)?;
     let to = path.to_path_buf();
     let answered = within(A_NOTICE_TAKES_AT_MOST, move || {
@@ -2912,7 +2940,11 @@ pub fn deliver<L: SpoolLine>(
             format!("{why}, and with no chat token it cannot be spooled, so it is lost"),
         ));
     };
-    spool::append(&spool::dir_for(path), line.chat(), token, &delivered)
+    let kept = match line.kept() {
+        Some(kept) => with_delivery(&kept, delivery.as_ref())?,
+        None => delivered,
+    };
+    spool::append(&spool::dir_for(path), line.chat(), token, &kept)
         .map(Delivered::Spooled)
         .map_err(|spooled| not_spooled(&why, spooled))
 }
@@ -3769,8 +3801,9 @@ fn serve(
         // whichever of this and the drain takes it first, and by the other not again. Its
         // hearer runs either way, for what the line moves.
         let content = match &line {
-            Line::Report(report) => Some(content_of(report)),
-            // Without its digest, which its spooled copy leaves out (#977).
+            // Each without what its spooled copy leaves out: a report its prompt's marks, a
+            // call its digest (#977).
+            Line::Report(report) => Some(content_of(&report.at_rest())),
             Line::Tool(call) => Some(content_of(&call.at_rest())),
             Line::Refused(refused) => Some(content_of(refused)),
             _ => None,

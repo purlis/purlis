@@ -159,6 +159,16 @@ pub struct Detail {
         deserialize_with = "Model::lenient"
     )]
     pub model: Option<Model>,
+    /// On a `UserPromptSubmit`: which line starts the prompt holds, as a filter of their digests
+    /// ([`crate::skillspan::PromptMarks`]), so a skill Use skill… typed is known to be in the
+    /// prompt sent (#2775). Never the prompt itself, and never kept at rest
+    /// ([`crate::hookwire::Report::at_rest`]). Absent from an older hook, and on every other
+    /// event, which reads as holding nothing.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::skillspan::PromptMarks::is_empty"
+    )]
+    pub prompt_marks: crate::skillspan::PromptMarks,
 }
 
 /// **What a harness's notification says it is** (#1691): a prompt its terminal shows, of the

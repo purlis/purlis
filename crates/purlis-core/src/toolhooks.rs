@@ -905,9 +905,13 @@ pub fn skill_started(hook: &Hook) -> Option<Box<crate::hookwire::SkillStarted>> 
     use crate::harness::{Harness, SkillStart};
     use purlis_skills::runs::StartedBy;
     let kind = crate::envvar::lookup(crate::hookwire::HARNESS_ENV, hook.env);
-    let start = Harness::of_chat(kind.as_deref())?
-        .adapter()
-        .skill_start(hook.tool_name(), hook.tool_input())?;
+    let adapter = Harness::of_chat(kind.as_deref())?.adapter();
+    // A prompt the person sent started a skill (SK-12): only the start of a skill Use skill…
+    // typed, which the host holds and alone opens; logged nowhere where no host listens.
+    if let Some(skill) = adapter.prompt_started(hook.payload) {
+        return Some(Box::new(skill_run(hook, skill, StartedBy::UseSkill)));
+    }
+    let start = adapter.skill_start(hook.tool_name(), hook.tool_input())?;
     let (skill, started_by) = match start {
         SkillStart::Named(skill) => (skill, StartedBy::SkillTool),
         SkillStart::Reading(read) => {

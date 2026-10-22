@@ -480,6 +480,7 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "type_profile_sign_in",
             "reference_into_chat",
             "references_into_chat",
+            "use_skill",
             "answer_ask",
             "smart_close_offer",
             "smart_close",
