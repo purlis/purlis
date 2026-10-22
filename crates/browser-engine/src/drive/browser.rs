@@ -607,6 +607,16 @@ impl State {
     }
 
     /// What a frame of `target`'s page shows now: the page, and its main frame's document.
+    /// The address of the document page `target` has loaded, as the engine records it, or of
+    /// the address it is loading until its document is known (#2300): never read from the page.
+    fn document_address(&self, target: &str) -> Option<String> {
+        let page = self.page(target)?;
+        Some(match page.frames.get(&page.target) {
+            Some(frame) => frame.url.clone(),
+            None => page.url.clone(),
+        })
+    }
+
     fn aim(&self, target: &str) -> Option<Aim> {
         let page = self.page(target)?;
         page.frames.get(target)?;
@@ -3427,14 +3437,14 @@ impl Inner {
     /// Takes in one event from the engine.
     fn take_in(&self, event: &Event) {
         if event.method == "Page.screencastFrame" {
-            let aim = event.session_id.as_deref().and_then(|session| {
+            let shown = event.session_id.as_deref().and_then(|session| {
                 let state = lock(&self.state);
                 let target = state.page_of_session(session)?;
-                state.aim(&target)
+                Some((state.aim(&target)?, state.document_address(&target)?))
             });
-            if let Some(aim) = aim {
+            if let Some((aim, address)) = shown {
                 self.cast
-                    .frame(&event.params, event.session_id.as_deref(), aim);
+                    .frame(&event.params, event.session_id.as_deref(), aim, address);
             }
             return;
         }

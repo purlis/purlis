@@ -67,6 +67,8 @@ pub struct BrowserWatching {
 /// Or, with `reconnection` and no image, where the view stands while the link to the runner it
 /// is drawn from is down and back (#2542): its last frame stays, dimmed, until it is
 /// reconnected.
+///
+/// Or, with `page` and no image, where the browser's page is (#2300): its origin alone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 pub struct BrowserFrame {
     pub aim: String,
@@ -74,6 +76,17 @@ pub struct BrowserFrame {
     /// Where the view stands while its runner's link is down and back (#2542): said on its
     /// own, with no image; `null` on every frame.
     pub reconnection: Option<crate::reconnecting::Reconnection>,
+    /// Where the browser's page is (#2300): said on its own, with no image, where it changed
+    /// and before the first frame of each snapshot; `null` on every frame.
+    pub page: Option<PageAt>,
+}
+
+/// **Where a browser's page is** (#2300): the origin of the document it has loaded
+/// (`http://localhost:5173`), from the engine's own record, or `null` for no page or a page
+/// with no origin of its own (`about:blank`). Never its path, query, title or text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+pub struct PageAt {
+    pub origin: Option<String>,
 }
 
 /// What the person's mouse did, in a browser they drive (#2014).
@@ -249,7 +262,7 @@ mod hosted {
 
     use super::{BrowserInput, BrowserViewRole, BrowserWatching, InputOutcome, KeyAct, Went};
     use crate::chatbrowsers::NotStarted;
-    use crate::hostedsessions::{Connection, FrameSink, HostLink, Reconnect};
+    use crate::hostedsessions::{Connection, FrameSink, HostLink, OriginSink, Reconnect};
     use crate::reconnecting::Reconnection;
 
     /// **The window's line for the end of browser `program`** (#2745): how the session host said
@@ -280,12 +293,16 @@ mod hosted {
     const A_LOGIN_TAKES_AT_MOST: Duration = Duration::from_secs(150);
 
     /// **Why a browser's start was refused**, from the host's refusal: the device's budget,
-    /// `budget` here, where the host said `device_full` (1.32, #2611), else in the host's words,
-    /// as for any code this window does not know.
+    /// `budget` here, where the host said `device_full` (1.32, #2611); the engine's sandbox
+    /// where it said `no_engine_sandbox` (1.36, #2899), or its words for it from any host (one
+    /// before 1.36, or a relaying host that passed the words on without the code); else in the
+    /// host's words, as for any code this window does not know.
     pub(super) fn not_started(refused: session::Refusal, budget: usize) -> NotStarted {
         if refused.code == session::DEVICE_FULL {
             NotStarted::Full { most: budget }
-        } else if crate::enginesandbox::is_no_sandbox(&refused.why) {
+        } else if refused.code == session::NO_ENGINE_SANDBOX
+            || crate::enginesandbox::is_no_sandbox(&refused.why)
+        {
             NotStarted::NoSandbox
         } else {
             NotStarted::Failed(refused.why)
@@ -712,14 +729,15 @@ mod hosted {
             }
         }
 
-        /// Attaches a view of `program` as `role`, its whole frames handed to `frames`, and
-        /// `link_said` told where it stands while the link to the runner it is drawn from is down and
-        /// back (#2542).
+        /// Attaches a view of `program` as `role`, its whole frames handed to `frames`, its
+        /// page's origin to `origins` (#2300), and `link_said` told where it stands while the
+        /// link to the runner it is drawn from is down and back (#2542).
         pub(crate) fn watch(
             &self,
             program: &str,
             role: BrowserViewRole,
             frames: FrameSink,
+            origins: OriginSink,
             link_said: LinkSaid,
         ) -> Result<BrowserWatching, String> {
             let link = self.link()?;
@@ -742,7 +760,7 @@ mod hosted {
             };
             // Followed before it draws, so its first frame finds it.
             self.follow(&link, attached.view, link_said);
-            link.draw_frames(attached.view, frames);
+            link.draw_frames(attached.view, frames, origins);
             // The lease is the host's: a view opened again says whether the person still drives.
             let person_drives = matches!(
                 link.call(Command::List),
@@ -1196,42 +1214,64 @@ pub const A_CHATS_BROWSER: &str = "This browser is a chat's, and goes where its 
 #[specta::specta]
 pub async fn watch_browser(
     app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
     program: String,
     role: BrowserViewRole,
     frames: Channel<BrowserFrame>,
 ) -> Result<BrowserWatching, String> {
+    let projects = planes.every_held();
     #[cfg(unix)]
     {
         use base64::Engine as _;
         let browsers = browsers(&app)?;
         let said = frames.clone();
+        let paged = frames.clone();
         crate::off_the_window("opening a browser view", move || {
-            browsers.watch(
-                &program,
-                role,
-                Box::new(move |aim, image| {
-                    // A window that has gone drops what it cannot take; the browser runs on.
-                    let _ = frames.send(BrowserFrame {
-                        aim: aim.unwrap_or_default(),
-                        jpeg: base64::engine::general_purpose::STANDARD.encode(&image),
-                        reconnection: None,
-                    });
-                }),
-                // Where it stands while its runner's link is down and back (#2542).
-                std::sync::Arc::new(move |reconnection| {
-                    let _ = said.send(BrowserFrame {
-                        aim: String::new(),
-                        jpeg: String::new(),
-                        reconnection: Some(reconnection),
-                    });
-                }),
-            )
+            browsers
+                .watch(
+                    &program,
+                    role,
+                    Box::new(move |aim, image| {
+                        // A window that has gone drops what it cannot take; the browser runs on.
+                        let _ = frames.send(BrowserFrame {
+                            aim: aim.unwrap_or_default(),
+                            jpeg: base64::engine::general_purpose::STANDARD.encode(&image),
+                            reconnection: None,
+                            page: None,
+                        });
+                    }),
+                    // Where its page is (#2300).
+                    Box::new(move |origin| {
+                        let _ = paged.send(BrowserFrame {
+                            aim: String::new(),
+                            jpeg: String::new(),
+                            reconnection: None,
+                            page: Some(PageAt { origin }),
+                        });
+                    }),
+                    // Where it stands while its runner's link is down and back (#2542).
+                    std::sync::Arc::new(move |reconnection| {
+                        let _ = said.send(BrowserFrame {
+                            aim: String::new(),
+                            jpeg: String::new(),
+                            reconnection: Some(reconnection),
+                            page: None,
+                        });
+                    }),
+                )
+                .inspect(|watching| {
+                    // The host's word that the person still drives it, after a crash of the window
+                    // too: its rows say so (#2300).
+                    if watching.person_drives {
+                        crate::chatbrowsers::person_drove(&projects, &program, true);
+                    }
+                })
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, program, role, frames);
+        let _ = (app, program, role, frames, projects);
         Err("browsers run on macOS and Linux only".to_owned())
     }
 }

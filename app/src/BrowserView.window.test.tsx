@@ -81,9 +81,10 @@ function core(
   );
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map(({ args }) => args),
-    send: (jpeg: string, aim = "p1:1") => frames?.onmessage({ aim, jpeg, reconnection: null }),
+    send: (jpeg: string, aim = "p1:1") =>
+      frames?.onmessage({ aim, jpeg, reconnection: null, page: null }),
     reconnection: (reconnection: "reconnecting" | "reconnected") =>
-      frames?.onmessage({ aim: "", jpeg: "", reconnection }),
+      frames?.onmessage({ aim: "", jpeg: "", reconnection, page: null }),
     order: () => asked.map(({ cmd }) => cmd),
   };
 }
@@ -698,6 +699,7 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
           pinned: false,
           was: null,
           login: null,
+          driver: null,
         },
       ];
     };

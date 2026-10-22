@@ -11,7 +11,8 @@ use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, LogIn, Secre
 use purlis_core::sandbox::persona::Browser;
 
 use super::{
-    AsPersona, ChatBrowsers, Driver, Ended, HandOver, HeldLogin, NotStarted, Posture, Refused,
+    AsPersona, BrowserDriver, ChatBrowsers, Driver, Ended, HandOver, HeldLogin, NotStarted,
+    Posture, Refused,
 };
 
 /// A driver that stands in for the session host: it starts numbered browsers, answers every
@@ -2610,4 +2611,82 @@ fn the_window_says_why_it_ends_each_chats_browser() {
     ] {
         assert!(super::ending_said(&browser, why).contains(said), "{why:?}");
     }
+}
+
+// ---- Who drives, on a browser's row (#2300) ----
+
+#[test]
+fn a_browsers_row_says_the_person_drives_it_from_their_take_over_until_they_hand_it_back() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    used_at_1000(&browsers, &hosted);
+    let driver = |browsers: &ChatBrowsers| browsers.listed()[0].driver;
+    assert_eq!(driver(&browsers), None, "its agent drives it");
+
+    let before = browsers.listing();
+    browsers.driven("program-1", true, 1000);
+    assert_ne!(browsers.listing(), before, "its row moves");
+    assert_eq!(driver(&browsers), Some(BrowserDriver::Person));
+
+    let taken = browsers.listing();
+    browsers.driven("program-1", true, 1001);
+    assert_eq!(
+        browsers.listing(),
+        taken,
+        "taken over again, it does not move"
+    );
+
+    browsers.driven("program-1", false, 2000);
+    assert_eq!(driver(&browsers), None);
+}
+
+#[test]
+fn a_browsers_row_says_purlis_drives_it_while_it_logs_in_and_the_window_is_told_at_once() {
+    let seen: Arc<Mutex<Vec<Option<BrowserDriver>>>> = Arc::default();
+    let browsers = Arc::new_cyclic(|me: &std::sync::Weak<ChatBrowsers>| {
+        let me = me.clone();
+        let seen = Arc::clone(&seen);
+        ChatBrowsers::default().telling(Arc::new(move || {
+            if let Some(browsers) = me.upgrade() {
+                seen.lock()
+                    .unwrap()
+                    .extend(browsers.listed().iter().map(|one| one.driver));
+            }
+        }))
+    });
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    browsers.allow(3, false);
+    answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [Some(BrowserDriver::Purlis)],
+        "told as the login starts"
+    );
+    assert_eq!(
+        browsers.listed()[0].driver,
+        None,
+        "handed back once it answered"
+    );
+}
+
+#[test]
+fn two_logins_at_once_in_one_browser_hold_its_purlis_mark_until_both_have_answered() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    used_at_1000(&browsers, &hosted);
+    let driver = |browsers: &ChatBrowsers| browsers.listed()[0].driver;
+
+    browsers.purlis_drives("program-1", true);
+    browsers.purlis_drives("program-1", true);
+    browsers.purlis_drives("program-1", false);
+    assert_eq!(
+        driver(&browsers),
+        Some(BrowserDriver::Purlis),
+        "the other login still runs"
+    );
+
+    browsers.purlis_drives("program-1", false);
+    assert_eq!(driver(&browsers), None);
 }

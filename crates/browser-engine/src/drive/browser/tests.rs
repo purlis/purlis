@@ -2903,6 +2903,39 @@ fn each_frame_shown_is_handed_over_as_its_image_and_acknowledged() {
 }
 
 #[test]
+fn each_frame_names_the_document_its_page_has_loaded_as_the_engine_records_it() {
+    // #2300: what a browser view's chip names, from the engine's record, never the page.
+    let (browser, engine) = browser();
+    let addresses: Arc<Mutex<Vec<String>>> = Arc::default();
+    let seen = Arc::clone(&addresses);
+    browser.show(Arc::new(move |painted: crate::drive::Painted| {
+        super::lock(&seen).push(painted.address);
+    }));
+    wait_for("started", || {
+        !engine.sent("Page.startScreencast").is_empty()
+    });
+    a_frame(&engine, b"\xff\xd8 one", 1);
+    wait_for("the first frame", || super::lock(&addresses).len() == 1);
+
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-5","url":"http://fixture.test/more.html?q=1","name":"","securityOrigin":"http://fixture.test","mimeType":"text/html"},"type":"Navigation"}),
+        Some("S-PAGE-1"),
+    );
+    std::thread::sleep(Duration::from_millis(50));
+    a_frame(&engine, b"\xff\xd8 two", 2);
+    wait_for("the second frame", || super::lock(&addresses).len() == 2);
+
+    assert_eq!(
+        *super::lock(&addresses),
+        [
+            "http://fixture.test/frames.html",
+            "http://fixture.test/more.html?q=1"
+        ]
+    );
+}
+
+#[test]
 fn a_paced_browser_acknowledges_no_sooner_than_its_pace_so_the_engine_makes_fewer_frames() {
     let (browser, engine) = browser();
     let shown: Shown = Arc::default();
