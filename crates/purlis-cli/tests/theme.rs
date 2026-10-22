@@ -2193,7 +2193,13 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
         .iter()
         .filter_map(|one| one["name"].as_str())
         .collect();
-    for family in ["panel", "panel-section", "empty-state", "status-item", "tooltip"] {
+    for family in [
+        "panel",
+        "panel-section",
+        "empty-state",
+        "status-item",
+        "tooltip",
+    ] {
         assert!(names.contains(&family), "{family}: {names:?}");
     }
     let corner = json["properties"]
