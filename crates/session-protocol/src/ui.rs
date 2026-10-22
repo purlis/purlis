@@ -610,6 +610,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_restore",
     "skill_grant",
     "skill_turn",
+    // A draft skill accepted or rejected, and a chat opened to draft one or to try one (SK-9,
+    // #2772): an accept is one commit to the project, and a chat starts a program as the person.
+    // The person's own press in their window, as every skill change is.
+    "skill_draft_accept",
+    "skill_draft_reject",
+    "skill_draft_chat",
+    "skill_draft_try",
     // A harness's plugin or skill turned on or off in the Skill studio (#2769): it writes this
     // machine's project file, or the workspace's settings. The person's own press in their
     // window.

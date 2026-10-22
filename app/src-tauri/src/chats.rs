@@ -3789,6 +3789,15 @@ impl Chats {
         lock(&self.starting_as).remove(&session);
         lock(&self.untaken).remove(&session);
         let gone = lock(&self.open).remove(&session);
+        // A Try it's scratch chat takes its throwaway piece with it, where no other open chat
+        // stands in it (SK-9): a restart starts before the chat it replaces ends.
+        if let Some(cwd) = gone.as_ref().and_then(|gone| gone.chat.cwd.clone())
+            && !lock(&self.open)
+                .values()
+                .any(|one| one.chat.cwd.as_deref() == Some(cwd.as_path()))
+        {
+            crate::skilldrafts::closed_in(&self.project, &cwd);
+        }
         self.project_settings.forget(session);
         lock(&self.sizes).remove(&session);
         lock(&self.owed).remove(&session);

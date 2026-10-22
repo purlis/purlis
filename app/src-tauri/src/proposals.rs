@@ -183,6 +183,10 @@ pub fn asked(held: &Held, ask: &ProposeAsk) -> Answer {
     if let Err(why) = held.brokered().allow(ask.chat, std::time::Instant::now()) {
         return no(why);
     }
+    // A plane skill's file is kept as a draft skill, in the Skill studio alone (SK-9, #2772).
+    if let Some(answer) = crate::skilldrafts::drafted(held, ask) {
+        return answer;
+    }
     match asked_in(
         held.root(),
         held.proposals(),
@@ -372,7 +376,7 @@ pub fn whole_of(one: &Proposal, now: &Now) -> ProposedWhole {
 /// The lines that changed between `before` and `after` as the tab draws them: git's hunks, by
 /// the one line diff every comparison uses (#2121), so the merge view marks those lines and
 /// folds the unchanged stretches between them.
-fn lines_changed(before: &str, after: &str) -> Vec<crate::piecefiles::GitHunk> {
+pub(crate) fn lines_changed(before: &str, after: &str) -> Vec<crate::piecefiles::GitHunk> {
     purlis_core::files::line_hunks(before, after)
         .into_iter()
         .map(crate::piecefiles::GitHunk::from)

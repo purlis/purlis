@@ -334,6 +334,8 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`save-branch.json`](#save-branchjson)
   - [`save-journal.jsonl`](#save-journaljsonl)
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
+  - [`skill-drafts/<id>/`](#skill-draftsid)
+  - [`skill-tries/<id>/`](#skill-triesid)
   - [`ws-edit-nudge/<sid>-<workspace>`](#ws-edit-nudgesid-workspace)
   - [`ws-autosave/<workspace>`](#ws-autosaveworkspace)
   - [`workspace-tab-order`](#workspace-tab-order)
@@ -1349,6 +1351,12 @@ outside the project and removes it when the flow ends, so it adds none of them (
   removes it from git, and Restore brings it back from that commit. A skill git does not track
   is kept in [`skills-deleted/`](#skills-deletedstamp-name) instead. When a chat runs
   `purlis skill` to write, it is refused: a chat's change becomes a draft the person accepts (SK-9).
+  **A chat never writes a skill's files** (SK-9, #2772): while the `skill-studio` flag is on, a
+  sandboxed chat is denied writing every level's `skills/` and `skills.local/` (at the root, in
+  each workspace and in each persona's folder, `sandbox::skills_held`), and a chat's `Write`,
+  `Edit` or `MultiEdit` of a skill's file, or its `purlis propose` of one, is kept as a
+  [draft skill](#skill-draftsid) instead. Accept writes the draft's files here as one commit of
+  exactly those files.
 - **Read by:** `purlis-skills`' `skill_set` (`crates/skills/src/lib.rs`), the one place a
   chat's skills are worked out, for every chat purlis starts and for `purlis skill list` and
   `show` and the Skill studio. A project skill is in the set of a chat at the plane root; a chat
@@ -6817,6 +6825,44 @@ rewritten.
   never kept here: git keeps it. Every read, write and removal here goes through folders held
   open with `O_NOFOLLOW`.
 - **Git:** gitignored, under the state directory.
+
+### `skill-drafts/<id>/`
+- **Format:** one folder per draft skill (SK-9, #2772): a chat's write to a skill's files, kept
+  for the person to try, accept or reject in the Skill studio. `<id>` is sixteen hex characters
+  of a SHA-256 over the level's folder and the skill's folder name, so a skill has one draft and a
+  second write adds to it. It holds `draft.json` (`level`: the level's folder relative to the
+  plane, `skills` or `workspaces/ops/skills.local`; `folder`: the skill's folder name; `chat`: the
+  number of the chat that wrote it last; `bases`: each file the draft changed, below the skill's
+  folder, with the SHA-256 of what the project held there when the draft first changed it, `null`
+  for nothing) and `files/`, each drafted file at its path below the skill's folder. Folders are
+  private to the person, as the state directory is.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state — this machine's. A draft is never committed: Accept writes its files into
+  the skill's folder and commits exactly those (a local skill's are only written), and Reject
+  deletes the folder.
+- **Written by:** the app, as `purlis_core::skills::verbs::drafts::take`, for a chat's `Write`,
+  `Edit` or `MultiEdit` of a plane skill's file (its `pretooluse-edit` hook) or its `purlis
+  propose` of one, which reach the app as a proposed change does. Never by a chat.
+- **Read by:** `drafts::list`, for the Skill studio's Draft skills and the chat's "Draft ready in
+  Skill studio". Deleted ⇒ the drafts are lost; nothing in the project changes. Every read, write
+  and removal goes through folders held open with `O_NOFOLLOW`.
+- **Git:** gitignored, under the state directory.
+
+### `skill-tries/<id>/`
+- **Format:** one folder per Try it of a draft skill (SK-9, #2772), `<id>` sixteen random hex
+  characters. `skills/<name>/` holds the skill as the draft makes it: the project's files of the
+  skill, with the draft's over them. `piece` names the try's **throwaway piece**: a folder
+  `purlis-try-<id>` made new, `0700`, in the person's temp folder, which the scratch chat starts in.
+  A chat started in that folder is armed with the built-in skills and this one skill alone, as if
+  `skill-tries/<id>/` were a project of its own (`drafts::tried`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Transient — it lasts as long as its chat.
+- **Written by:** `drafts::try_out`, from the studio's Try it.
+- **Removed by:** the app when the chat closes (`drafts::end_try_at`), with its throwaway piece;
+  and by the next Try it, for one no open chat stands in (a quit or a crash left it). Only the
+  names this module made are removed, through the handle of the folder that holds them, and no
+  link is followed. What is left is the skill run the chat recorded, under the skill's name.
+- **Git:** gitignored, under the state directory. The piece is outside the project.
 
 ### `save-journal.jsonl`
 - **Format:** JSON Lines, one object per save attempt, appended. Capped at the newest 500

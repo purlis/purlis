@@ -275,7 +275,12 @@ pub fn propose(root: &Path, file: &Path, draft: &Path) -> Result<u8, String> {
         return Err(why);
     }
     let here = std::env::current_dir().map_err(|e| e.to_string())?;
-    let rel = proposed::proposable(root, &here.join(file))?;
+    // A plane skill's file is kept by the app as a draft skill instead (SK-9, #2772).
+    let rel = proposed::proposable(root, &here.join(file)).or_else(|why| {
+        purlis_core::skills::verbs::drafts::draftable(root, &here.join(file))
+            .map(|skill| std::path::PathBuf::from(skill.rel()))
+            .ok_or(why)
+    })?;
     // The draft is the chat's own: in its folder, by the path the kernel names it by.
     let real =
         |path: &Path| std::fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()));

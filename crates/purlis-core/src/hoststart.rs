@@ -678,6 +678,15 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     // turns the set into words (ADR 0063 as amended 2026-10-20).
     let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
     let on = studio;
+    // A Try it's scratch chat (SK-9, #2772): its project skills are the one skill its try laid
+    // out, at a root of its own, so it gets the built-in skills and the draft alone.
+    let tried = cwd
+        .filter(|_| on)
+        .and_then(|cwd| crate::skills::verbs::drafts::tried(root, cwd));
+    let (skills_root, workspace, skills_persona) = match tried.as_deref() {
+        Some(tried) => (tried, None, None),
+        None => (root, workspace, persona),
+    };
     // And the repo skills of the clone it works in, read here too, so a narrower repo copy of a
     // plane skill is the one its harness gets where purlis builds what it is handed (SK-6).
     let repo = match (on, workspace.as_deref(), cwd) {
@@ -686,15 +695,15 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     };
     let linked = laid_out_on(
         on,
-        root,
+        skills_root,
         workspace.as_deref(),
-        persona,
+        skills_persona,
         kit,
         harness.skills(),
         &repo,
     );
     let skills = on.then_some(crate::skills::PlaneSkills {
-        plane: root,
+        plane: skills_root,
         workspace: workspace.as_deref(),
         linked: linked.as_deref(),
         repo: &repo,

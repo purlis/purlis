@@ -994,6 +994,45 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
     out
 }
 
+/// **The skills of the project at `root` a chat is denied writing** (SK-9, #2772; ADR 0099 as
+/// amended 2026-10-22): every plane level's folder of skills, shared and local, at the project's
+/// root, in each workspace and in each persona's folder, whether or not it is there yet. A skill
+/// runs its `!` commands when it is used and reaches other chats, as `.claude/skills` does
+/// ([`PLANTED`]), so a chat's write of one becomes a draft skill the person tries and accepts
+/// ([`crate::skills::verbs::drafts`]). A workspace or persona made after the chat started is not
+/// in its list.
+pub fn skills_held(root: &Path) -> Vec<Denial> {
+    let levels = [purlis_skills::PROJECT_DIR, purlis_skills::LOCAL_DIR];
+    let mut owners: Vec<PathBuf> = vec![root.to_path_buf()];
+    for ws in crate::workspaces::Plane::open(root)
+        .workspaces()
+        .unwrap_or_default()
+    {
+        owners.push(root.join("workspaces").join(ws));
+    }
+    if let Ok(personas) = std::fs::read_dir(root.join("personas")) {
+        let mut found: Vec<PathBuf> = personas
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .map(|entry| entry.path())
+            .collect();
+        found.sort();
+        owners.extend(found);
+    }
+    owners
+        .iter()
+        .flat_map(|owner| levels.iter().map(move |level| owner.join(level)))
+        .map(|path| Denial {
+            class: Class::LaterCode,
+            path,
+            access: Access::Write,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
+        })
+        .collect()
+}
+
 /// Whether this process runs in a chat the app started under a sandbox
 /// ([`crate::hookwire::SANDBOXED_ENV`] is `1`): a tool hook of that chat inherits it.
 pub fn chat_is_sandboxed() -> bool {
@@ -1272,6 +1311,11 @@ impl Denied {
             reach: Reach::AndBelow,
             any_case: false,
         });
+        // …and the project's skills, while the Skill studio's flag lets them into chats (SK-9,
+        // #2772): a chat's write of one is a draft the person accepts, never the file itself.
+        if crate::skills::studio_on_here() {
+            paths.extend(skills_held(root));
+        }
         // …and where Docker Desktop, OrbStack and Rancher Desktop link `docker` and its
         // credential helpers in the home folder (#2752), which purlis runs outside any sandbox
         // for a Docker pool ([`crate::dockerpool::Docker::on_this_machine`]): each `bin` folder

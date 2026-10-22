@@ -637,8 +637,20 @@ pub fn briefed(
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
     let dir = env(LISTED_ENV).filter(|dir| !dir.is_empty())?;
-    let persona = crate::envvar::lookup(crate::active::PERSONA_ENV, env).filter(|p| !p.is_empty());
+    let mut persona =
+        crate::envvar::lookup(crate::active::PERSONA_ENV, env).filter(|p| !p.is_empty());
     let plane = env(PLANE_LISTED_ENV).is_some_and(|on| on == "1");
+    // A Try it's scratch chat (SK-9): briefed on the one skill its try laid out, as it is armed.
+    let tried = cwd
+        .filter(|_| plane)
+        .and_then(|cwd| verbs::drafts::tried(root, cwd));
+    let (root, workspace) = match tried.as_deref() {
+        Some(tried) => {
+            persona = None;
+            (tried, None)
+        }
+        None => (root, workspace),
+    };
     // The repo skills of the clone the chat works in, as each briefed harness reads them: the
     // briefing lists one copy of a name, the narrower (SK-6, decision 51).
     let repo: Vec<OutsideSkill> = match (plane, workspace, cwd) {
@@ -673,15 +685,23 @@ pub fn briefed(
 
 /// **The skills a briefed chat may start by reading their `SKILL.md`** (SK-3): every skill in
 /// the directory it was started with in [`LISTED_ENV`], and the plane's at `root` where
-/// [`PLANE_LISTED_ENV`] says its set holds them. Empty for a chat that was not briefed: a
-/// harness that loads its skills itself starts them by its own tool.
-pub fn readable_by_a_briefed_chat(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Vec<Skill> {
+/// [`PLANE_LISTED_ENV`] says its set holds them; for a Try it's scratch chat in `cwd`, the one
+/// skill its try laid out (SK-9). Empty for a chat that was not briefed: a harness that loads its
+/// skills itself starts them by its own tool.
+pub fn readable_by_a_briefed_chat(
+    root: &Path,
+    cwd: &Path,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Vec<Skill> {
     let Some(dir) = env(LISTED_ENV).filter(|dir| !dir.is_empty()) else {
         return Vec::new();
     };
     let mut skills = read(Path::new(&dir));
     if env(PLANE_LISTED_ENV).is_some_and(|on| on == "1") {
-        skills.extend(read(&root.join(purlis_skills::PROJECT_DIR)));
+        let tried = verbs::drafts::tried(root, cwd);
+        skills.extend(read(
+            &tried.as_deref().unwrap_or(root).join(purlis_skills::PROJECT_DIR),
+        ));
     }
     skills
 }

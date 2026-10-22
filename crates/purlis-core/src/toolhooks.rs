@@ -389,7 +389,54 @@ pub fn pretooluse_edit_proposing(
     hook: &Hook,
     hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool,
 ) -> Answer {
-    proposing(hook, hand).unwrap_or_else(|| pretooluse_edit(hook))
+    drafting(hook, hand)
+        .or_else(|| proposing(hook, hand))
+        .unwrap_or_else(|| pretooluse_edit(hook))
+}
+
+/// **The answer to an edit of a plane skill's file, which becomes a draft skill** (SK-9, #2772,
+/// decision 38): in a Claude Code chat, sandboxed or not, a `Write`, `Edit` or `MultiEdit` of a
+/// file below a plane level's skills ([`crate::skills::verbs::drafts::draftable`]) is handed to
+/// the app on the proposed change's road, and the tool is refused with
+/// [`crate::skills::verbs::drafts::DRAFTED_SAID`]: the harness never writes the skill, and the
+/// app keeps the change as a draft in the Skill studio. None where the edit is not one, or where
+/// the app does not take it (no app, an older one, or the `skill-studio` flag off there): the
+/// edit is then [`proposing`]'s and [`pretooluse_edit`]'s, as before.
+fn drafting(hook: &Hook, hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool) -> Option<Answer> {
+    use crate::skills::verbs::drafts;
+    if !hook.in_plane {
+        return None;
+    }
+    let tool = hook.payload["tool_name"].as_str()?;
+    if !matches!(tool, "Write" | "Edit" | "MultiEdit") {
+        return None;
+    }
+    let harness = (hook.env)(crate::hookwire::HARNESS_ENV);
+    if harness
+        .as_deref()
+        .and_then(crate::sandbox::harness_of_registry)
+        != Some(crate::harness::Harness::ClaudeCode)
+    {
+        return None;
+    }
+    let chat: u32 = (hook.env)(crate::hookwire::CHAT_ENV)?.parse().ok()?;
+    let cwd = match hook.text("cwd") {
+        "" => hook.cwd.to_path_buf(),
+        given => PathBuf::from(given),
+    };
+    let named = hook.payload["tool_input"]["file_path"].as_str()?;
+    let file = drafts::draftable(hook.root, &cwd.join(named))?;
+    let change = match crate::proposed::Change::of_tool(tool, &hook.payload["tool_input"]) {
+        Ok(change) if change.carried() <= crate::proposed::MOST_BYTES => change,
+        _ => return Some(deny(crate::proposed::UNPREPARED.to_owned())),
+    };
+    hand(crate::hookwire::ProposeAsk {
+        chat,
+        path: file.rel(),
+        base: None,
+        change,
+    })
+    .then(|| deny(drafts::DRAFTED_SAID.to_owned()))
 }
 
 /// The answer to a proposable edit, or none where the edit is not one.
@@ -915,12 +962,12 @@ pub fn skill_started(hook: &Hook) -> Option<Box<crate::hookwire::SkillStarted>> 
     let (skill, started_by) = match start {
         SkillStart::Named(skill) => (skill, StartedBy::SkillTool),
         SkillStart::Reading(read) => {
-            let skills = crate::skills::readable_by_a_briefed_chat(hook.root, hook.env);
             let cwd = hook
                 .payload
                 .get("cwd")
                 .and_then(Value::as_str)
                 .map_or(hook.cwd, Path::new);
+            let skills = crate::skills::readable_by_a_briefed_chat(hook.root, cwd, hook.env);
             let skill = purlis_skills::runs::started_by_a_read(&read, cwd, &skills)?;
             (skill.name.clone(), StartedBy::Read)
         }
