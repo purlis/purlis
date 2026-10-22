@@ -1,0 +1,92 @@
+{
+ "linux": {
+  "devices": null
+ },
+ "mounts": [
+  {
+   "destination": "/sys",
+   "source": "sysfs",
+   "type": "sysfs"
+  },
+  {
+   "destination": "/tmp",
+   "source": "tmpfs",
+   "type": "tmpfs"
+  },
+  {
+   "destination": "/run",
+   "source": "tmpfs",
+   "type": "tmpfs"
+  },
+  {
+   "destination": "/proc",
+   "source": "proc",
+   "type": "proc"
+  },
+  {
+   "destination": "/dev",
+   "source": "tmpfs",
+   "type": "tmpfs"
+  },
+  {
+   "destination": "/etc/hostname",
+   "source": "/run/user/1001/containers/overlay-containers/66f5e71bafe375c7e698f5eb79c2538ee80f9efc15215885fdb8bcd3868bd27d/userdata/hostname",
+   "type": "bind"
+  },
+  {
+   "destination": "/dev/mqueue",
+   "source": "mqueue",
+   "type": "mqueue"
+  },
+  {
+   "destination": "/dev/pts",
+   "source": "devpts",
+   "type": "devpts"
+  },
+  {
+   "destination": "/home/purlis",
+   "source": "/home/runner/.local/share/containers/storage/volumes/purlis-runner-measured-8364-home/_data",
+   "type": "bind"
+  },
+  {
+   "destination": "/etc/group",
+   "source": "/home/runner/.local/share/containers/storage/overlay-containers/66f5e71bafe375c7e698f5eb79c2538ee80f9efc15215885fdb8bcd3868bd27d/userdata/group",
+   "type": "bind"
+  },
+  {
+   "destination": "/run/.containerenv",
+   "source": "/run/user/1001/containers/overlay-containers/66f5e71bafe375c7e698f5eb79c2538ee80f9efc15215885fdb8bcd3868bd27d/userdata/.containerenv",
+   "type": "bind"
+  },
+  {
+   "destination": "/var/tmp",
+   "source": "tmpfs",
+   "type": "tmpfs"
+  },
+  {
+   "destination": "/etc/resolv.conf",
+   "source": "/run/user/1001/containers/overlay-containers/66f5e71bafe375c7e698f5eb79c2538ee80f9efc15215885fdb8bcd3868bd27d/userdata/resolv.conf",
+   "type": "bind"
+  },
+  {
+   "destination": "/etc/hosts",
+   "source": "/run/user/1001/containers/overlay-containers/66f5e71bafe375c7e698f5eb79c2538ee80f9efc15215885fdb8bcd3868bd27d/userdata/hosts",
+   "type": "bind"
+  },
+  {
+   "destination": "/dev/shm",
+   "source": "/home/runner/.local/share/containers/storage/overlay-containers/66f5e71bafe375c7e698f5eb79c2538ee80f9efc15215885fdb8bcd3868bd27d/userdata/shm",
+   "type": "bind"
+  },
+  {
+   "destination": "/etc/passwd",
+   "source": "/home/runner/.local/share/containers/storage/overlay-containers/66f5e71bafe375c7e698f5eb79c2538ee80f9efc15215885fdb8bcd3868bd27d/userdata/passwd",
+   "type": "bind"
+  },
+  {
+   "destination": "/sys/fs/cgroup",
+   "source": "cgroup",
+   "type": "cgroup"
+  }
+ ]
+}

@@ -1,0 +1,97 @@
+{
+ "linux": {
+  "devices": null
+ },
+ "mounts": [
+  {
+   "destination": "/sys",
+   "source": "sysfs",
+   "type": "sysfs"
+  },
+  {
+   "destination": "/run",
+   "source": "tmpfs",
+   "type": "tmpfs"
+  },
+  {
+   "destination": "/tmp",
+   "source": "tmpfs",
+   "type": "tmpfs"
+  },
+  {
+   "destination": "/host",
+   "source": "/",
+   "type": "bind"
+  },
+  {
+   "destination": "/proc",
+   "source": "proc",
+   "type": "proc"
+  },
+  {
+   "destination": "/dev",
+   "source": "tmpfs",
+   "type": "tmpfs"
+  },
+  {
+   "destination": "/dev/pts",
+   "source": "devpts",
+   "type": "devpts"
+  },
+  {
+   "destination": "/dev/mqueue",
+   "source": "mqueue",
+   "type": "mqueue"
+  },
+  {
+   "destination": "/etc/resolv.conf",
+   "source": "/run/user/1001/containers/overlay-containers/4ee096741b6d69c8973698654ccee450ae4d949e7c58fddf6c5b0f2116d82349/userdata/resolv.conf",
+   "type": "bind"
+  },
+  {
+   "destination": "/var/tmp",
+   "source": "tmpfs",
+   "type": "tmpfs"
+  },
+  {
+   "destination": "/home/purlis",
+   "source": "/home/runner/.local/share/containers/storage/volumes/purlis-runner-host-folder-8364-home/_data",
+   "type": "bind"
+  },
+  {
+   "destination": "/etc/hosts",
+   "source": "/run/user/1001/containers/overlay-containers/4ee096741b6d69c8973698654ccee450ae4d949e7c58fddf6c5b0f2116d82349/userdata/hosts",
+   "type": "bind"
+  },
+  {
+   "destination": "/dev/shm",
+   "source": "/home/runner/.local/share/containers/storage/overlay-containers/4ee096741b6d69c8973698654ccee450ae4d949e7c58fddf6c5b0f2116d82349/userdata/shm",
+   "type": "bind"
+  },
+  {
+   "destination": "/etc/passwd",
+   "source": "/home/runner/.local/share/containers/storage/overlay-containers/4ee096741b6d69c8973698654ccee450ae4d949e7c58fddf6c5b0f2116d82349/userdata/passwd",
+   "type": "bind"
+  },
+  {
+   "destination": "/etc/group",
+   "source": "/home/runner/.local/share/containers/storage/overlay-containers/4ee096741b6d69c8973698654ccee450ae4d949e7c58fddf6c5b0f2116d82349/userdata/group",
+   "type": "bind"
+  },
+  {
+   "destination": "/run/.containerenv",
+   "source": "/run/user/1001/containers/overlay-containers/4ee096741b6d69c8973698654ccee450ae4d949e7c58fddf6c5b0f2116d82349/userdata/.containerenv",
+   "type": "bind"
+  },
+  {
+   "destination": "/etc/hostname",
+   "source": "/run/user/1001/containers/overlay-containers/4ee096741b6d69c8973698654ccee450ae4d949e7c58fddf6c5b0f2116d82349/userdata/hostname",
+   "type": "bind"
+  },
+  {
+   "destination": "/sys/fs/cgroup",
+   "source": "cgroup",
+   "type": "cgroup"
+  }
+ ]
+}
