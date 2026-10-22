@@ -1068,6 +1068,12 @@ has it; nothing reads the key after that.
   not one is its default, and the Inbox says so. Settings and the size keys
   (`⌘`/`Ctrl` with `=`, `-`, `0`, `app/src/textSize.ts`) write it; it is in this file and not in
   a plane because a size is this machine's, and a plane would carry it to every clone.
+- **`appearance`** is what the person sets that every theme honours (#2326, #2925):
+  **`density`** (`comfortable` or `compact`), **`fonts`** (a family for `ui`, `mono` and
+  `terminal`), **`motion`** (`system` or `reduced`), **`contrast`** (`standard` or `more`) and
+  **`colours`** (a colour for each token the person sets, `#rgb`, `#rgba`, `#rrggbb` or
+  `#rrggbbaa`). Leave any out for its default; Settings › You writes them. A value the engine
+  cannot use is its default, and the Inbox says so.
 - **`editor`** is your editor (RC-20, ADR 0081 §3), where *Open in your editor* sends a file
   at a line: `vscode`, `zed`, `idea` (a JetBrains IDE) or `variable` (`$VISUAL`, else
   `$EDITOR`, from purlis's own environment, run with `+line` and the file). Leave it out and
@@ -1146,7 +1152,9 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 ### The vocabulary
 
 `DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Nine names, written to the document as
-`--motion-duration-*` and `--motion-easing-*` beside the colours:
+`--motion-duration-*` and `--motion-easing-*` beside the colours. The built-ins are Purlis
+Classic's; Purlis draws `duration.quick` at 150 ms and `easing.standard` and `easing.enter` on
+the shell's one ease (below):
 
 | token              | built-in           | what it is for                                                          |
 | ------------------ | ------------------ | ----------------------------------------------------------------------- |
@@ -1159,6 +1167,11 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 | `easing.enter`     | `[0, 0, 0.2, 1]`   | decelerating into place, which is what reads as _arrived_               |
 | `easing.steady`    | `[0, 0, 1, 1]`     | a turn; an eased one stutters once a second                             |
 | `easing.breathe`   | `[0.4, 0, 0.6, 1]` | a loop with no visible seam                                             |
+
+**The shell's motion rule** (R150, #2925): one ease, `cubic-bezier(.22, .8, .24, 1)`, which
+Purlis gives `easing.standard` and `easing.enter`, and 150 ms for a chevron and a switch's knob,
+Purlis's `duration.quick`. Each of the shell's other steps is a duration token that arrives with
+the motion it times.
 
 **Semantic, not a scale**, for the reason `needs-you.base` and `danger.base` are two tokens: a
 theme that wants arrivals quicker changes `duration.enter` and does not also speed up whatever
@@ -1195,8 +1208,15 @@ A theme file carries them under `motion`, beside `tokens`:
 
 ### Reduced motion is the layer's job, once
 
-Under `prefers-reduced-motion: reduce`, `drawIn` writes **every duration as `0ms`**, and follows
-the setting live if the operator changes it while the window is up. A transition over no time is
+Under `prefers-reduced-motion: reduce`, or with **Reduce motion** on in Settings › You › Motion
+and contrast (#2925, layered on the system's: either one is enough), `drawIn` writes **every
+duration as `0ms`**, and follows the setting live if the operator changes it while the window is
+up. It also writes `data-motion="reduced"` on the root, which **one global switch** reads
+(`app/src/theme/reduced-motion.css`, R152): no transition, and every animation plays its whole
+run at once, so a motion written without a token stops too, and a component waiting for an
+animation's end still hears it. xterm blinks its cursor on a timer of its own, so under reduced
+motion every terminal is told not to blink, whatever the theme says. The switch's declarations are important in the first layer,
+so no later layer turns motion back on. A transition over no time is
 no transition, and a looping animation with a zero duration has a zero active duration (Web
 Animations), so a spinner does not spin and a pulse does not pulse. **A component written
 tomorrow gets this for free, because it reads a token** — and `literals.test.ts` refuses a
@@ -1331,6 +1351,37 @@ it to the same closed grammar as a theme's label and writes it quoted in front o
 for the slot (`purlis_core::theme::Person`), so a family that is not installed falls back to
 core's. The terminal reads its family from the theme too (`terminalFont`), and its old literal
 is core's terminal family.
+
+**The person's colours are drawn over any theme, held to the floors** (#2925, ruling #2814·8).
+Settings › You › Your colours takes a colour for any token of the vocabulary, one
+`token #colour` a line, and the engine draws each over the theme in force, whatever it is
+(`purlis_core::theme::Layer::over`). A colour that would put a pair of the check under its floor
+in that theme, and lower than the theme has it, is left out there and the theme's is drawn; a
+Notice names each one. The consent floors are held after the person's colours, as after a
+theme's option values, so a colour can no more bring danger near the accent than a theme can.
+
+**Minimum contrast is the person's too** (#2925, ruling #2814·7). Settings › You › Motion and
+contrast offers the theme's floors or more. More is layered on the system's Increase contrast:
+it draws a theme's high-contrast appearance where it has one, as the system's does, and it
+raises the floors the engine holds, words from 4.5:1 to 7:1 (WCAG 1.4.6) and marks from 3:1
+to 4.5:1 (`purlis_core::theme::Least`). A pair under its raised floor has its front drawn
+lighter on a dark ground or darker on a light one, in small steps toward white or black, and
+then its back the other way where the back is not one of the window's grounds. Where the back
+has to move, the two may swap sides instead, dark words on a light mark, when that leaves fewer
+pairs under their floors. Marks are raised before words. A grey tier is raised as far as the
+tier above it and never past it, so muted words can at most match secondary ones and the tiers
+keep their order. A floor under a mark's, a hint's, is not raised. The consent floors are held
+at the raised floors, with purlis's own values raised where a theme's are put back, in the
+theme as written and in every workspace tint. A theme's component parts are held to the raised
+floors too, and one under them draws its family default. The window's tokens, the terminal's
+colours and the parts' stylesheet all come from the one theme the engine answers with, so the
+setting holds everywhere.
+
+**Each window asks with its own layer.** The window hands the engine its person's contrast and
+colours with each ask of a theme, and is handed its first frame drawn with the layer the layout
+file held as it was created. A theme's specimen and the gallery's card pictures show the theme
+itself and are drawn without the layer; a card drawn on the window while the pointer is on it
+wears it.
 
 ### The core tokens
 

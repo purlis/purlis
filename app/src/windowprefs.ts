@@ -7,7 +7,7 @@ import {
   AT_CREATION,
   type Complaint,
   type Theme,
-  systemAsksMoreContrast,
+  moreContrastAsked,
   systemIsLight,
 } from "./theme/theme";
 
@@ -251,7 +251,7 @@ let theirs: { theme: Theme | undefined; more: Theme | undefined } | undefined;
 export function theirThemeOnce(): Theme | undefined {
   theirs ??= { theme: theirTheme(), more: atCreation().theme.more?.theme };
   if (theirs.theme === undefined) return undefined;
-  return systemAsksMoreContrast() && theirs.more !== undefined ? theirs.more : theirs.theme;
+  return moreContrastAsked() && theirs.more !== undefined ? theirs.more : theirs.theme;
 }
 
 /** The frame drawn first, read once: so drawing it again is the same object. */
@@ -267,7 +267,7 @@ export function firstFrameOnce(): Frame | undefined {
   const handed = atCreation().first;
   if (handed === null) return undefined;
   const light = handed.follows_system && systemIsLight();
-  const more = handed.contrast === null ? systemAsksMoreContrast() : handed.contrast === "more";
+  const more = handed.contrast === null ? moreContrastAsked() : handed.contrast === "more";
   const fits = (frame: Frame) => frame.light === light;
   first =
     handed.frames.find((frame) => fits(frame) && frame.more === more) ??
@@ -284,7 +284,7 @@ export function firstFollowsSystem(): boolean {
 /** The Notice naming the consent floors the person's theme breaks as it is drawn now: for more
  *  contrast, its appearance tagged high contrast's, when it has one. */
 export function theirFloors(reading: TheirReading = atCreation().theme): string | null {
-  return systemAsksMoreContrast() && reading.more !== null ? reading.more.floors : reading.floors;
+  return moreContrastAsked() && reading.more !== null ? reading.more.floors : reading.floors;
 }
 
 /** For tests: read the handed theme again. */

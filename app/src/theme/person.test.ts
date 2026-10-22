@@ -2,7 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { DEFAULT_THEME, apply, drawnFont, type Person, type Theme } from "./theme";
+import {
+  DEFAULT_THEME,
+  apply,
+  drawPerson,
+  drawnFont,
+  moreContrastAsked,
+  onPersonLook,
+  personAsked,
+  type Person,
+  type Theme,
+} from "./theme";
 
 /**
  * **The window draws the person's layer over the theme** (#2326). What the layer holds, and
@@ -59,5 +69,46 @@ describe("the person's layer", () => {
         fonts: { terminal: '"X", monospace' },
       }),
     ).toBe('"X", monospace');
+  });
+});
+
+describe("the person's contrast and colours (#2925)", () => {
+  it("asks for more contrast when the person did, whatever the system says", () => {
+    expect(moreContrastAsked(comfortable)).toBe(false);
+    expect(moreContrastAsked({ ...comfortable, contrast: "more" })).toBe(true);
+    expect(moreContrastAsked({ ...comfortable, contrast: "standard" })).toBe(false);
+  });
+
+  it("asks for the theme again only when the colours or the contrast change", () => {
+    const told: string[] = [];
+    const stop = onPersonLook(() => told.push("again"));
+    try {
+      drawPerson({ ...comfortable, density: "compact" });
+      expect(told).toEqual([]);
+      drawPerson({ ...comfortable, colours: { "accent.base": "#8f7bff" } });
+      expect(told).toEqual(["again"]);
+      drawPerson({ ...comfortable, colours: { "accent.base": "#8f7bff" }, motion: "reduced" });
+      expect(told).toEqual(["again"]);
+      drawPerson({ ...comfortable, colours: { "accent.base": "#8f7bff" }, contrast: "more" });
+      expect(told).toEqual(["again", "again"]);
+    } finally {
+      stop();
+      drawPerson(comfortable);
+    }
+  });
+});
+
+describe("what a window hands the engine with each ask (#2925)", () => {
+  it("is its own contrast and colours, or nothing when they draw every theme as it is", () => {
+    expect(personAsked(comfortable)).toBeNull();
+    expect(personAsked({ ...comfortable, contrast: "standard", colours: {} })).toBeNull();
+    expect(JSON.parse(personAsked({ ...comfortable, contrast: "more" }) ?? "")).toEqual({
+      contrast: "more",
+      colours: {},
+    });
+    const accent = DEFAULT_THEME.values["accent.base"];
+    expect(
+      JSON.parse(personAsked({ ...comfortable, colours: { "accent.base": accent } }) ?? ""),
+    ).toEqual({ contrast: "standard", colours: { "accent.base": accent } });
   });
 });
