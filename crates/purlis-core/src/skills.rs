@@ -1087,6 +1087,12 @@ pub fn share_here(plane: &Path, workspace: Option<&str>, name: &str) -> Result<P
     share(plane, workspace, name)
 }
 
+/// The `requires` feature of a project whose skills the `project-skills` fix moved from
+/// `.claude/skills` into `skills/` (#2784): a build that has it hands every chat the project's
+/// skills by their route, and copies no `.claude/skills` into a clone
+/// ([`crate::doctor::fix::project_skills`]).
+pub const PROJECT_SKILLS_FEATURE: &str = "project-skills";
+
 /// The flag the Skill studio's slices land behind until its finish line (#2762, SK-23), and is
 /// then removed. It hides nothing yet.
 pub const STUDIO_FLAG: &str = "skill-studio";

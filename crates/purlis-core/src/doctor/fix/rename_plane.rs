@@ -57,7 +57,7 @@ use crate::counts::counted;
 pub const SUBJECT: &str = "Rename this project's files to purlis names (rename-plane)";
 
 /// How long the fix waits for a save running in this process to let go of the project.
-const CLAIM_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+pub(super) const CLAIM_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// What a chat asking for the fix is told (D-RN7-12).
 pub const FROM_A_CHAT: &str = "rename-plane rewrites this project's committed files for everyone \
@@ -152,14 +152,14 @@ pub fn apply_in(root: &Path, env: &dyn Fn(&str) -> Option<String>) -> Fixed {
 /// What the fix changed so far: each path it touched (relative to the project, as git spells
 /// it), the ones it created, and the lines it says.
 #[derive(Default)]
-struct Work {
-    touched: Vec<String>,
-    created: Vec<String>,
-    said: Vec<String>,
+pub(super) struct Work {
+    pub(super) touched: Vec<String>,
+    pub(super) created: Vec<String>,
+    pub(super) said: Vec<String>,
 }
 
 impl Work {
-    fn touch(&mut self, path: &str) {
+    pub(super) fn touch(&mut self, path: &str) {
         if !self.touched.iter().any(|p| p == path) {
             self.touched.push(path.to_owned());
         }
@@ -167,7 +167,7 @@ impl Work {
 
     /// Put every touched path back as `HEAD` has it, and remove the paths the fix created.
     /// Answers what it did, for the refusal.
-    fn undo(&self, root: &Path) -> String {
+    pub(super) fn undo(&self, root: &Path) -> String {
         if self.touched.is_empty() {
             return "nothing was written".to_owned();
         }
@@ -206,10 +206,34 @@ impl Work {
 
 /// Why the fix may not run here, or `Ok`.
 fn ready(root: &Path) -> Result<(), String> {
+    committable(root, "the rename")?;
+    for name in [crate::names::PLANE_MANIFEST, crate::names::SCAN_ALLOW] {
+        let at = name.file_in(root);
+        if !at.leftovers.is_empty() {
+            return Err(format!(
+                "this project has both {} and {}, and which of them holds what you meant is \
+                 yours to say; nothing was written. Keep one — move what you need from {} into \
+                 {} and remove {} — then run the fix again",
+                name.write,
+                name.newest_old(),
+                name.newest_old(),
+                name.write,
+                name.newest_old()
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Why a fix that makes one commit of its own (`what`, as "the rename") may not make it in the
+/// project at `root`, or `Ok`: the project must be the top of a git repository, and hold no
+/// tracked change that is not committed, so the commit holds that fix's change and nothing else.
+pub(super) fn committable(root: &Path, what: &str) -> Result<(), String> {
     let top = git(root, &["rev-parse", "--show-toplevel"]).map_err(|_| {
-        "this project is not a git repository, so there is no commit to make the rename in; \
-         nothing was written"
-            .to_owned()
+        format!(
+            "this project is not a git repository, so there is no commit to make {what} in; \
+             nothing was written"
+        )
     })?;
     let same = |a: &Path, b: &Path| match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
@@ -238,32 +262,17 @@ fn ready(root: &Path) -> Result<(), String> {
             String::new()
         };
         return Err(format!(
-            "this project has changes that are not committed ({}{more}), and the rename must be a \
+            "this project has changes that are not committed ({}{more}), and {what} must be a \
              commit of its own; nothing was written. Save or commit them first, then run the fix \
              again",
             shown.join(", ")
         ));
     }
-    for name in [crate::names::PLANE_MANIFEST, crate::names::SCAN_ALLOW] {
-        let at = name.file_in(root);
-        if !at.leftovers.is_empty() {
-            return Err(format!(
-                "this project has both {} and {}, and which of them holds what you meant is \
-                 yours to say; nothing was written. Keep one — move what you need from {} into \
-                 {} and remove {} — then run the fix again",
-                name.write,
-                name.newest_old(),
-                name.newest_old(),
-                name.write,
-                name.newest_old()
-            ));
-        }
-    }
     Ok(())
 }
 
 /// Every path git tracks in the project.
-fn tracked(root: &Path) -> Result<Vec<String>, String> {
+pub(super) fn tracked(root: &Path) -> Result<Vec<String>, String> {
     let out = git(root, &["ls-files", "-z"])
         .map_err(|why| format!("git could not list this project's files ({why})"))?;
     Ok(out
@@ -410,6 +419,13 @@ fn manifest(root: &Path, has: &dyn Fn(&str) -> bool, work: &mut Work) -> Result<
 /// `text` with `requires` holding the purlis-names feature and `schema` at least 2, in the
 /// file's own layout, or `None` when it already says both.
 fn with_feature(text: &str) -> Result<Option<String>, String> {
+    with_feature_named(text, crate::names::PURLIS_NAMES_FEATURE)
+}
+
+/// `text` with `requires` holding `feature` and `schema` at least 2, in the file's own layout,
+/// or `None` when it already says both: how a fix marks a project that a build without
+/// `feature` must open read-only.
+pub(super) fn with_feature_named(text: &str, feature: &str) -> Result<Option<String>, String> {
     let mut doc: toml_edit::DocumentMut = text
         .parse()
         .map_err(|e: toml_edit::TomlError| format!("it is not valid TOML ({})", e.message()))?;
@@ -422,7 +438,6 @@ fn with_feature(text: &str) -> Result<Option<String>, String> {
         doc["schema"] = toml_edit::value(crate::compat::SCHEMA);
         changed = true;
     }
-    let feature = crate::names::PURLIS_NAMES_FEATURE;
     let mut entry = toml_edit::InlineTable::new();
     entry.insert("feature", feature.into());
     entry.insert("since", env!("CARGO_PKG_VERSION").into());
@@ -492,7 +507,7 @@ fn swap(text: &str, names: &[crate::names::Name]) -> String {
 /// `text` with each `charter:<skill>` reference as `purlis:<skill>`: the skill namespace
 /// followed by a skill's name (`[a-z0-9][a-z0-9-]*`), not preceded by a word character, so
 /// `mycharter:x` and `charter: a sentence` are left alone.
-fn skill_refs(text: &str) -> String {
+pub(super) fn skill_refs(text: &str) -> String {
     static REF: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         let old = regex::escape(crate::names::SKILL_NAMESPACE.newest_old());
         regex::Regex::new(&format!(r"(^|[^A-Za-z0-9_.-]){old}([a-z0-9][a-z0-9-]*)"))
@@ -538,7 +553,7 @@ fn is_agent(path: &str) -> bool {
 }
 
 /// A persona's definition: `personas/<name>/persona.md`, or the flat `personas/<name>.md`.
-fn is_persona(path: &str) -> bool {
+pub(super) fn is_persona(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     match parts.as_slice() {
         ["personas", _, "persona.md"] => true,
@@ -551,7 +566,7 @@ fn read(root: &Path, rel: &str) -> Result<String, String> {
     std::fs::read_to_string(root.join(rel)).map_err(|e| format!("could not read {rel} ({e})"))
 }
 
-fn write(root: &Path, rel: &str, text: &str) -> Result<(), String> {
+pub(super) fn write(root: &Path, rel: &str, text: &str) -> Result<(), String> {
     crate::rewrite::replace(
         root,
         &root.join(rel),
@@ -583,21 +598,33 @@ fn write_if_changed(
 /// Answers the short sha, or `None` when the commit was made and git could not name it. `Err`
 /// only when no commit was made.
 fn commit(root: &Path, work: &Work) -> Result<Option<String>, String> {
-    // A path `git mv` took away is staged already, and is no pathspec `add` can match.
-    let mut args = vec!["add", "--"];
-    args.extend(
-        work.touched
-            .iter()
-            .filter(|p| root.join(p).exists())
-            .map(String::as_str),
-    );
-    git(root, &args).map_err(|why| format!("could not stage the rename ({why})"))?;
+    let paths: Vec<&str> = work.touched.iter().map(String::as_str).collect();
     let body = format!(
         "{SUBJECT}\n\nMade by `purlis doctor --fix rename-plane`. The project now requires the \
          `{}` feature, so a build without it opens it read-only.\n",
         crate::names::PURLIS_NAMES_FEATURE
     );
-    git(root, &["commit", "-q", "-m", &body])
+    commit_paths(root, &paths, &body)
+}
+
+/// Stage exactly `paths` and commit them with the message `body`; purlis's git runner runs no
+/// hooks. A path `git mv` took away is staged already, and is no pathspec `add` can match, so
+/// only the paths there now are added. Answers the short sha, or `None` when the commit was made
+/// and git could not name it. `Err` only when no commit was made.
+pub(super) fn commit_paths(
+    root: &Path,
+    paths: &[&str],
+    body: &str,
+) -> Result<Option<String>, String> {
+    let mut args = vec!["add", "--"];
+    args.extend(
+        paths
+            .iter()
+            .copied()
+            .filter(|p| root.join(p).symlink_metadata().is_ok()),
+    );
+    git(root, &args).map_err(|why| format!("could not stage the change ({why})"))?;
+    git(root, &["commit", "-q", "-m", body])
         .map_err(|why| format!("git did not make the commit ({why})"))?;
     Ok(git(root, &["rev-parse", "--short", "HEAD"])
         .ok()
@@ -605,7 +632,7 @@ fn commit(root: &Path, work: &Work) -> Result<Option<String>, String> {
 }
 
 /// `git <args>` in `root`: its stdout, or what it said when it failed.
-fn git(root: &Path, args: &[&str]) -> Result<String, String> {
+pub(super) fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     let run = crate::worktree::git::run(root, args, crate::worktree::git::NETWORK)
         .map_err(|e| e.to_string())?;
     if run.ok() {

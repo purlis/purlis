@@ -156,6 +156,18 @@ build. It refuses, writing nothing, when run from inside a chat (run it from a t
 app), on a project with uncommitted changes, outside git, with a file under both names, or one this
 purlis may not write. A step that fails puts every file back.
 
+**`project-skills` runs only by name**, as `purlis doctor --fix project-skills`, because it
+makes a commit every teammate pulls (Skill studio preview, #2784). It moves each skill folder of
+the project's `.claude/skills` into its `skills/`, shared with every workspace (`grant =
+"all"`), rewrites each `charter:<skill>` reference in a persona or a skill's `.md` files to
+`purlis:<skill>`, and makes the manifest require the `project-skills` feature, so a build
+without it opens the project read-only and clones get no copy of `.claude/skills` again. It
+reports every change, each persona reference that names no skill a chat can get, and the `git
+revert` that undoes the commit. It refuses, writing nothing, from inside a chat, while the
+Skill studio is off on this machine, on a project with uncommitted changes or outside git, when
+`.claude/skills` holds a link, a file git does not track or a file beside the skill folders,
+and when any chat would lose a skill by the move. A second run changes nothing.
+
 **`persona-agents` runs only by name**, as `purlis doctor --fix persona-agents`, because it
 changes committed files. It takes out the persona sub-agents purlis used to generate, now that
 a persona runs as its own chat: it removes each file under `.claude/agents/` that purlis

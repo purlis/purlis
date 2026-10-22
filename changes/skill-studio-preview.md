@@ -29,3 +29,12 @@
   allows it, and says plainly where it does not. A project skill that a repo or a program also
   has says that a chat gets both. With the studio on, Settings' Plugins group is a summary that
   opens it.
+- **Move your project's skills into the Skill studio in one step** (Skill studio preview,
+  #2784). `purlis doctor --fix project-skills` moves every skill in the project's
+  `.claude/skills` into its `skills/`, shared with every workspace as before, and rewrites the
+  old `charter:<skill>` names to `purlis:<skill>`, all in one commit that `git revert` undoes. It
+  checks that every chat keeps its skills first, and changes nothing if one would lose one.
+  Claude Code and opencode chats keep exactly the skills they had, and Codex chats get them too.
+  Clones stop getting a copy of `.claude/skills`, and purlis takes out the copies it made. It
+  says what it changed, and which skills a persona names that no chat can get. It needs the
+  Skill studio switched on, and refuses while the project has changes that are not committed.
