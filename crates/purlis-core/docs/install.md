@@ -163,10 +163,15 @@ the project's `.claude/skills` into its `skills/`, shared with every workspace (
 `purlis:<skill>`, and makes the manifest require the `project-skills` feature, so a build
 without it opens the project read-only and clones get no copy of `.claude/skills` again. It
 reports every change, each persona reference that names no skill a chat can get, and the `git
-revert` that undoes the commit. It refuses, writing nothing, from inside a chat, while the
-Skill studio is off on this machine, on a project with uncommitted changes or outside git, when
-`.claude/skills` holds a link, a file git does not track or a file beside the skill folders,
-and when any chat would lose a skill by the move. A second run changes nothing.
+revert` that undoes the commit. From then on the project's skills reach every chat, whether
+the Skill studio is on or off. Your own clones drop their copies at once, a teammate's the next
+time a chat starts in them, and a copy someone edited is kept and named. It refuses, writing
+nothing, from inside a chat, anywhere but the project's root, while the Skill studio is off on
+this machine, on a project with uncommitted changes, outside git, on a detached HEAD or in the
+middle of a merge, rebase or cherry-pick, when `.claude/skills` holds a link, a file git does
+not track, a file beside the skill folders or a folder that is no whole skill, and when any
+chat would lose a skill by the move. A failed step, the commit included, puts everything back.
+A second run changes nothing.
 
 **`persona-agents` runs only by name**, as `purlis doctor --fix persona-agents`, because it
 changes committed files. It takes out the persona sub-agents purlis used to generate, now that

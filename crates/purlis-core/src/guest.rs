@@ -102,7 +102,7 @@ const WALKUP_DIRS: [&str; 2] = [".claude/agents", RETIRED_MIRROR];
 /// own route. From then on a checkout gets no copy, and the copies purlis made are withdrawn as
 /// any other copy the project stopped having is, whatever the plane's `.claude/skills` holds:
 /// purlis never writes into a harness's own skills folder for the project's skills again.
-const RETIRED_MIRROR: &str = ".claude/skills";
+pub(crate) const RETIRED_MIRROR: &str = ".claude/skills";
 
 /// The roots of [`WALKUP_DIRS`] the plane at `plane` is copied from: every one, but
 /// [`RETIRED_MIRROR`] once the project requires [`crate::skills::PROJECT_SKILLS_FEATURE`].
@@ -443,7 +443,7 @@ fn mirrored_path(rel: &str) -> bool {
 }
 
 /// Whether `rel` is one of `roots`, or under one.
-fn under(roots: &[&str], rel: &str) -> bool {
+pub(crate) fn under(roots: &[&str], rel: &str) -> bool {
     roots.iter().any(|sub| {
         rel.strip_prefix(sub)
             .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))

@@ -18,6 +18,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use purlis_core::compat::{self, Compat};
+
 use purlis_core::doctor::fix::{Fixed, project_skills};
 use purlis_core::guest;
 use purlis_core::harness::Harness;
@@ -31,7 +32,8 @@ fn built_in() -> PathBuf {
 const DEPLOY: &str = "---\nname: deploy\ndescription: Ship the service.\n---\nHand off with \
                       `charter:handoff` once it is live.\n";
 const REVIEW: &str = "---\nname: review\ndescription: Review a change.\n---\nRead the notes.\n";
-const NOTES: &str = "# Notes\n\nAsk charter:secrets for the token. charter: is prose.\n";
+const NOTES: &str = "# Notes\n\nAsk charter:secrets for the token. charter: is prose.\nPull \
+                     ghcr.io/acme/charter:v1 first.\n```sh\npurlis run charter:fenced\n```\n";
 const PERSONA: &str = "---\nrole: Ops\nskills: charter:handoff, deploy, charter:nope\n---\nUse \
                        `charter:secrets` for tokens.\n";
 
@@ -162,7 +164,7 @@ fn every_chat_keeps_its_skills_on_every_program_and_the_clone_loses_its_copy() {
         assert_eq!(skills::grant_of(&folder), Ok(Grant::All));
         assert!(
             report.contains(&format!(
-                "moved .claude/skills/{skill} to skills/{skill}, granted to every workspace"
+                "the skill {skill} is a project skill now, shared with every workspace as before"
             )),
             "{report}"
         );
@@ -179,8 +181,21 @@ fn every_chat_keeps_its_skills_on_every_program_and_the_clone_loses_its_copy() {
     let notes = std::fs::read_to_string(f.plane.join("skills/review/notes/token.md")).unwrap();
     assert_eq!(
         notes,
-        "# Notes\n\nAsk purlis:secrets for the token. charter: is prose.\n"
+        "# Notes\n\nAsk purlis:secrets for the token. charter: is prose.\nPull \
+         ghcr.io/acme/charter:v1 first.\n```sh\npurlis run charter:fenced\n```\n",
+        "a reference is rewritten, and an image name and a code block are not"
     );
+    // The report speaks the window's words: no file layouts, keys or programs.
+    for word in [
+        ".claude",
+        ".toml",
+        "requires",
+        "Claude Code",
+        "Codex",
+        "opencode",
+    ] {
+        assert!(!report.contains(word), "{word} in {report}");
+    }
     // Every reference resolved, or said with why.
     assert!(
         report.contains("the persona ops names purlis:nope: its persona names it, and purlis has no built-in skill of this name"),
@@ -296,14 +311,15 @@ fn a_skill_a_chat_would_lose_is_refused_before_anything_moves() {
     // A built-in skill's name is never taken, so this copy would be left out of every chat.
     let at = f.plane.join(".claude/skills/hand-off/SKILL.md");
     std::fs::create_dir_all(at.parent().unwrap()).unwrap();
-    std::fs::write(&at, "---\nname: handoff\ndescription: Mine.\n---\n").unwrap();
+    // In any case: `Handoff` is purlis's `handoff` to every program that folds case.
+    std::fs::write(&at, "---\nname: Handoff\ndescription: Mine.\n---\n").unwrap();
     f.commit(&f.plane, "mine");
     let head_was = head(&f.plane);
 
     let why = refused(apply(&f.plane));
 
     assert!(
-        why.contains("the skill handoff in .claude/skills/hand-off"),
+        why.contains("the skill folder hand-off would be left out of every chat"),
         "{why}"
     );
     assert!(why.contains("a built-in skill has this name"), "{why}");
@@ -319,7 +335,7 @@ fn what_a_move_cannot_carry_is_refused() {
     std::fs::write(f.plane.join(".claude/skills/deploy/draft.md"), "draft\n").unwrap();
     let why = refused(apply(&f.plane));
     assert!(
-        why.contains("holds files git does not track (.claude/skills/deploy/draft.md)"),
+        why.contains("holds files git does not track (the skill folder deploy's draft.md)"),
         "{why}"
     );
     assert!(!f.plane.join("skills").exists());
@@ -336,7 +352,7 @@ fn what_a_move_cannot_carry_is_refused() {
         f.commit(&f.plane, "a link");
         let why = refused(apply(&f.plane));
         assert!(
-            why.contains(".claude/skills/review/link.md is a link"),
+            why.contains("the skill folder review's link.md is a link"),
             "{why}"
         );
         assert!(!f.plane.join("skills").exists());
@@ -360,5 +376,153 @@ fn a_project_with_nothing_to_move_says_so() {
 
     assert!(report.contains("nothing to do"), "{report}");
     assert_eq!(head(&f.plane), at);
-    assert!(!compat::requires(&f.plane, skills::PROJECT_SKILLS_FEATURE));
+    assert!(!skills::reach_chats(&f.plane, false));
+}
+
+#[test]
+fn a_moved_projects_skills_reach_its_chats_with_the_studio_off() {
+    purlis_core::unsteered!();
+    let f = project();
+    assert!(
+        !skills::reach_chats(&f.plane, false),
+        "before the move, the flag alone lets the project's skills in"
+    );
+
+    said(&apply(&f.plane));
+
+    // The dispatcher's ruling on #2784: the flag shows the studio; the manifest says where the
+    // project's skills live. A teammate with the flag off loses no skill when the copy retires.
+    assert!(skills::reach_chats(&f.plane, false));
+    let set = skills::of_a_chat(
+        Some(&built_in()),
+        &f.plane,
+        Some("alpha"),
+        None,
+        Harness::ClaudeCode.skills(),
+    );
+    for skill in ["deploy", "review"] {
+        assert!(
+            set.effective.iter().any(|one| one.skill.name == skill),
+            "{set:?}"
+        );
+    }
+}
+
+#[test]
+fn a_failed_commit_puts_the_index_and_every_file_back() {
+    purlis_core::unsteered!();
+    let f = project();
+    // A signer the repository's own config names: purlis's git runner refuses the commit.
+    support::git(&f.plane, &["config", "commit.gpgsign", "true"]);
+    support::git(&f.plane, &["config", "gpg.program", "/usr/bin/false"]);
+    let at = head(&f.plane);
+
+    let why = refused(apply(&f.plane));
+
+    assert!(
+        why.contains("every file it changed was put back as it was"),
+        "{why}"
+    );
+    assert_eq!(head(&f.plane), at);
+    assert_eq!(
+        f.status(&f.plane),
+        "",
+        "the index and the tree are as HEAD has them"
+    );
+    assert_eq!(
+        std::fs::read_to_string(f.plane.join(".claude/skills/deploy/SKILL.md")).unwrap(),
+        DEPLOY
+    );
+    assert_eq!(
+        std::fs::read_to_string(f.plane.join("personas/ops/persona.md")).unwrap(),
+        PERSONA
+    );
+    assert!(
+        !f.plane.join("skills").exists(),
+        "what the fix made is gone"
+    );
+}
+
+#[test]
+fn a_folder_that_is_no_whole_skill_is_refused() {
+    purlis_core::unsteered!();
+    let f = project();
+    let at = f.plane.join(".claude/skills/half/SKILL.md");
+    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+    std::fs::write(&at, "---\ndescription: No name.\n---\n").unwrap();
+    f.commit(&f.plane, "half");
+
+    let why = refused(apply(&f.plane));
+
+    assert!(
+        why.contains("the skill folder half would be left out of every chat"),
+        "{why}"
+    );
+    assert!(why.contains("names no `name`"), "{why}");
+    assert!(!f.plane.join("skills").exists());
+}
+
+#[test]
+fn a_detached_head_and_a_clone_are_refused_before_anything_is_touched() {
+    purlis_core::unsteered!();
+    let f = project();
+    support::git(&f.plane, &["checkout", "-q", "--detach"]);
+    let why = refused(apply(&f.plane));
+    assert!(why.contains("detached HEAD"), "{why}");
+
+    let why = refused(apply(&f.clone));
+    assert!(why.contains("not a project's root"), "{why}");
+    assert!(!f.clone.join("skills").exists());
+}
+
+#[test]
+fn a_clones_own_skill_of_the_same_name_is_said_and_kept() {
+    purlis_core::unsteered!();
+    let f = project();
+    // The repo commits a skill of its own named as one of the project's.
+    let own = "---\nname: deploy\ndescription: The repo's way.\n---\n";
+    let at = f.clone.join(".claude/skills/deploy/SKILL.md");
+    std::fs::remove_dir_all(f.clone.join(".claude/skills")).unwrap();
+    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+    std::fs::write(&at, own).unwrap();
+    support::git(&f.clone, &["add", "-f", ".claude/skills/deploy/SKILL.md"]);
+    support::git(&f.clone, &["commit", "-q", "-m", "our deploy"]);
+
+    let report = said(&apply(&f.plane));
+
+    assert!(
+        report.contains("the repo svc in the workspace alpha has its own skill deploy"),
+        "{report}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&at).unwrap(),
+        own,
+        "the repo's is the repo's"
+    );
+}
+
+#[test]
+fn an_edited_copy_in_a_clone_is_kept_and_named() {
+    purlis_core::unsteered!();
+    let f = project();
+    let copy = f.clone.join(".claude/skills/review/SKILL.md");
+    std::fs::write(&copy, "---\nname: review\ndescription: Mine now.\n---\n").unwrap();
+
+    let report = said(&apply(&f.plane));
+
+    assert!(
+        report.contains(
+            "the repo svc in the workspace alpha keeps its copy of the skill folder review"
+        ),
+        "{report}"
+    );
+    assert!(copy.is_file(), "an edited copy is the person's");
+    assert!(
+        !f.clone.join(".claude/skills/deploy").exists(),
+        "an unedited one is gone at once"
+    );
+    assert!(
+        report.contains("A teammate's clones lose their copies the next time a chat starts"),
+        "{report}"
+    );
 }

@@ -734,14 +734,17 @@ fn fix_project_skills_by_name_moves_the_skills_in_one_commit() {
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(said.contains("fix project-skills:"), "{said}");
     assert!(
-        said.contains("✓ moved .claude/skills/deploy to skills/deploy, granted to every workspace"),
+        said.contains("✓ the skill deploy is a project skill now, shared with every workspace"),
         "{said}"
     );
     assert!(
-        said.contains("skill references under purlis's name"),
+        said.contains("the skill deploy names purlis's skills by purlis's name"),
         "{said}"
     );
-    assert!(said.contains("requires `project-skills`"), "{said}");
+    assert!(
+        said.contains("needs a purlis that has project skills"),
+        "{said}"
+    );
     assert!(said.contains("✓ committed"), "{said}");
     assert!(said.contains("To undo it: `git revert "), "{said}");
     assert!(root.join("skills/deploy/SKILL.md").is_file(), "{said}");
@@ -756,7 +759,7 @@ fn fix_project_skills_by_name_moves_the_skills_in_one_commit() {
     assert!(said.contains("nothing to do"), "{said}");
 }
 
-/// With the Skill studio off, the move would lose every chat its skills: refused, nothing moved.
+/// The move is part of the Skill studio's preview: with it off, refused, and nothing moved.
 #[test]
 fn fix_project_skills_is_refused_while_the_skill_studio_is_off() {
     let (_d, root) = plane_with_claude_skills();

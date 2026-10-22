@@ -77,7 +77,7 @@ pub const KNOWN: &[&str] = &[
 /// Whether the manifest of the project at `root` lists `feature` in its `requires`, in the one
 /// shape [`read`] reads an entry in (`{ feature = "…", since = "…" }`). A manifest that is not
 /// there, cannot be read or is not TOML lists nothing.
-pub fn requires(root: &Path, feature: &str) -> bool {
+pub(crate) fn requires(root: &Path, feature: &str) -> bool {
     std::fs::read_to_string(crate::names::manifest(root))
         .ok()
         .and_then(|text| text.parse::<toml::Table>().ok())

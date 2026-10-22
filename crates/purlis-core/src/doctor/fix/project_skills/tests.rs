@@ -27,19 +27,34 @@ fn only_a_skills_own_md_files_have_their_references_rewritten() {
 }
 
 #[test]
-fn a_path_is_under_a_root_only_past_its_slash() {
-    assert!(under(".claude/skills/a", FROM));
-    assert!(!under(".claude/skills", FROM));
-    assert!(!under(".claude/skillset/a", FROM));
+fn a_rewritten_file_is_named_in_the_windows_words() {
+    assert_eq!(whose("personas/ops/persona.md"), "the persona ops");
+    assert_eq!(whose("personas/ops.md"), "the persona ops");
+    assert_eq!(whose(".claude/skills/deploy/SKILL.md"), "the skill deploy");
+    assert_eq!(whose("skills/deploy/notes/a.md"), "the skill deploy");
+    assert_eq!(
+        whose("workspaces/alpha/skills/deploy/SKILL.md"),
+        "the skill deploy of the workspace alpha"
+    );
+    assert_eq!(
+        whose("personas/ops/skills/deploy/SKILL.md"),
+        "the skill deploy of the persona ops"
+    );
+    assert_eq!(
+        shown(".claude/skills/deploy/draft.md"),
+        "the skill folder deploy's draft.md"
+    );
 }
 
 #[test]
 fn the_message_lists_each_move() {
+    let folder = |name: &str| Folder {
+        folder: name.to_owned(),
+        name: name.to_owned(),
+    };
     let plan = Plan {
-        folders: vec!["deploy".to_owned(), "review".to_owned()],
-        skills: Vec::new(),
+        folders: vec![folder("deploy"), folder("review")],
         make_to: true,
-        workspaces: 0,
     };
     let body = body(&plan);
     assert!(body.starts_with(&format!("{SUBJECT}\n\n")), "{body}");

@@ -33,6 +33,7 @@ use std::path::Path;
 
 use crate::scaffold::Say;
 
+mod commit;
 pub mod identity;
 pub mod persona_agents;
 pub mod project_skills;

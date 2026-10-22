@@ -498,10 +498,13 @@ read-only to it:
   says which version has it, so it never writes charter's names beside purlis's.
 - **`project-skills`** (SK-21, #2784). The project's skills are in
   [`skills/`](#skills--the-projects-skills), and no longer in `.claude/skills`: every chat is
-  handed them by its own route, and a clone gets no copy of `.claude/skills` from purlis. `purlis
-  doctor --fix project-skills` adds it, in the one commit that moves them; nothing else does. A
-  purlis without the feature opens the project read-only, so it never quietly starts chats
-  without the project's skills.
+  handed them by its own route, whether this machine's Skill studio flag is on or off
+  (`skills::reach_chats`, the dispatcher's ruling on #2784), and a clone gets no copy of
+  `.claude/skills` from purlis. `purlis doctor --fix project-skills` adds it, in the one commit
+  that moves them; nothing else does. A purlis without the feature opens the project read-only,
+  so it never quietly starts chats without the project's skills. A teammate's clones lose their
+  copies the next time a chat starts in each one; a copy somebody edited is kept, and the fix
+  names the ones on its own machine.
 
 Read by `crates/purlis-core/src/compat.rs` (`read`, `SCHEMA`), and checked by the `purlis`
 command before it runs a command that could write (`crates/purlis-cli/src/main.rs`) and by
