@@ -257,8 +257,8 @@
         "icon.pink": "#c2185b",
 
         "state.running": "#0966d4",
-        "state.waiting": "#906000",
-        "state.waiting-glow": "#90600045",
+        "state.waiting": "#805500",
+        "state.waiting-glow": "#80550045",
         "state.failed": "#cf222e",
         "state.success": "#197a35",
         "state.unreadable": "#b34800",

@@ -6,15 +6,19 @@
  * axe, its frame is compared with the baseline drawn for this story in this browser. Loaded only
  * in the pinned Playwright image (`vitest.project.ts`, `PURLIS_STORY_PICTURES`).
  *
- * A baseline is `src/<dir>/__screenshots__/<file>.stories.tsx/<story id>-<browser>-linux.png`.
+ * Loaded only in the matrix cells `pictured.json` names (`matrix.ts`), each its own baseline:
+ * `src/<dir>/__screenshots__/<file>.stories.tsx/<story id>_<theme>_<appearance>-<browser>-linux.png`.
  * A missing one fails, as a changed one does; both are written only by the labelled job
  * (`.github/workflows/stories-baselines.yml`, `docs/component-stories.md`).
  *
  * A story says what is taken with `parameters.screenshot`: the frame (the default), `"page"` for
  * one that draws outside its frame (a dialog, a menu, a popover), or `false` for none.
  */
+import "./handed";
 import { afterEach, expect } from "vitest";
 import { page } from "vitest/browser";
+import { facesLoaded } from "../src/theme/theme";
+import { cellInTest, pictureOf } from "./matrix";
 
 type Ran = { story?: { id: string; parameters: { screenshot?: false | "frame" | "page" } } };
 
@@ -32,6 +36,10 @@ afterEach(async (context) => {
   const frames = document.querySelectorAll("[data-story-frame]");
   const frame = taken === "page" ? document.body : frames[frames.length - 1];
   if (!frame) throw new Error(`story ${story.id} drew no [data-story-frame] to take a picture of`);
+  const cell = cellInTest();
+  if (!cell) throw new Error(`story ${story.id} ran in no cell of the matrix (cell.setup.ts)`);
+  // In the theme's own fonts: every face it asked for made, then laid out.
+  await facesLoaded();
   await document.fonts.ready;
-  await expect.element(page.elementLocator(frame)).toMatchScreenshot(story.id);
+  await expect.element(page.elementLocator(frame)).toMatchScreenshot(pictureOf(story.id, cell));
 });

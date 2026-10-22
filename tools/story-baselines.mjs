@@ -5,7 +5,8 @@
 // compared with, drawn only in the pinned Playwright image of `.github/workflows/stories.yml`.
 //
 //   node tools/story-baselines.mjs check <index>    every baseline is one that image drew, of a
-//                                                   story the index has (the stories job)
+//                                                   story the index has, in a pictured cell of
+//                                                   the matrix (the stories job)
 //   node tools/story-baselines.mjs gather <index> <out>
 //                                                   copy the baseline of every story the index
 //                                                   has to <out>, under its path in `app/` (the
@@ -17,11 +18,16 @@
 //                                                   checkout against the pull request's)
 //
 // <index> is Storybook's own index of the stories, which `storybook index` writes. A story is
-// live when the index has it with the `test` tag, the stories the Vitest addon runs; every other
-// baseline is obsolete, and `check` fails on it, naming its story.
+// live when the index has it with the `test` tag, the stories the Vitest addon runs, and a
+// picture of it is taken in each cell of the matrix `app/.storybook/pictured.json` names
+// (`app/.storybook/matrix.ts`); every other baseline is obsolete, and `check` fails on it,
+// naming its story and cell.
 //
-// A baseline is `app/src/<dir>/__screenshots__/<name>.stories.tsx/<story id>-<browser>-linux.png`,
-// where Vitest's `toMatchScreenshot` keeps it (`app/.storybook/screenshots.setup.ts`).
+// A baseline is
+// `app/src/<dir>/__screenshots__/<name>.stories.tsx/<story id>_<cell>-<browser>-linux.png`, where
+// Vitest's `toMatchScreenshot` keeps it (`app/.storybook/screenshots.setup.ts`), and a cell is
+// `<theme>_<appearance>`, with `_<density>` after it for any density but the default
+// (`app/.storybook/matrix.ts`).
 import {
   constants,
   copyFileSync,
@@ -37,13 +43,20 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32 } from "node:zlib";
 
-/** A baseline's path inside `app/`, with `/` between its parts. */
-const BASELINE =
-  /^src\/(?:[\w.-]+\/)*__screenshots__\/[\w.-]+\.stories\.tsx\/[\w.-]+-(?:chromium|webkit)-linux\.png$/;
+/** A baseline's path inside `app/`, with `/` between its parts: its story's id, then its cell,
+ *  `_<theme>_<appearance>` and `_<density>` for a density but the default. */
+export const BASELINE =
+  /^src\/(?:[\w.-]+\/)*__screenshots__\/[\w.-]+\.stories\.tsx\/[a-z0-9-]+_[a-z0-9-]+_[a-z0-9-]+(?:_[a-z]+)?-(?:chromium|webkit)-linux\.png$/;
 
-/** How much `take` takes at most: bytes in one baseline, baselines in one run. A story's
- *  picture is tens of kilobytes; a dialog's on the page, a few hundred. */
-export const LIMITS = { bytes: 2 * 1024 * 1024, files: 500 };
+/** How much `take` takes at most: bytes in one baseline, baselines in one run, and bytes in
+ *  all of them together, which bounds what one commit pushes. A story's picture is tens of
+ *  kilobytes; a dialog's on the page, a few hundred. Each story has a picture in each pictured
+ *  cell and each browser, eight today. */
+export const LIMITS = {
+  bytes: 2 * 1024 * 1024,
+  files: 5000,
+  total: 256 * 1024 * 1024,
+};
 
 /** The widest and tallest picture a story is drawn at, in pixels. */
 const SIDE = 4096;
@@ -62,9 +75,16 @@ export function pictureName(id) {
     .replace(/-{2,}/g, "-");
 }
 
+/** The cells of the matrix a picture is taken in (`app/.storybook/pictured.json`). */
+export function picturedCells(app) {
+  return JSON.parse(
+    readFileSync(join(app, ".storybook", "pictured.json"), "utf8"),
+  );
+}
+
 /** The pictures each story file's live stories are drawn as: story file path in `app/` (with
- *  `/`), to the picture names of its stories that run as tests. */
-export function liveStories(index) {
+ *  `/`), to the picture names of its stories that run as tests, one in each of `cells`. */
+export function liveStories(index, cells) {
   if (
     typeof index !== "object" ||
     index === null ||
@@ -79,12 +99,13 @@ export function liveStories(index) {
     if (entry?.type !== "story" || !entry.tags?.includes(TESTED)) continue;
     const file = String(entry.importPath).replace(/^\.\//, "");
     if (!live.has(file)) live.set(file, new Set());
-    live.get(file).add(pictureName(String(entry.id)));
+    for (const cell of cells)
+      live.get(file).add(`${pictureName(String(entry.id))}_${cell}`);
   }
   return live;
 }
 
-/** A baseline's story file, and the picture name of its story. */
+/** A baseline's story file, and the picture name of its story in its cell. */
 function storyOf(path) {
   const parts = path.split("/");
   const at = parts.indexOf("__screenshots__");
@@ -166,13 +187,14 @@ function confined(root, path) {
   }
 }
 
-/** What is wrong with the baselines in `app`, one line each, against Storybook's `index`. */
-export function problems(app, index) {
-  const live = liveStories(index);
+/** What is wrong with the baselines in `app`, one line each, against Storybook's `index` and
+ *  the pictured `cells`. */
+export function problems(app, index, cells = picturedCells(app)) {
+  const live = liveStories(index, cells);
   return baselinesIn(app).flatMap((path) => {
     if (!BASELINE.test(path))
       return [
-        `${path}: not a baseline the pinned image draws (<story id>-<chromium|webkit>-linux.png); ` +
+        `${path}: not a baseline the pinned image draws (<story id>_<theme>_<appearance>-<chromium|webkit>-linux.png); ` +
           "baselines are drawn only by the update-baselines label (docs/component-stories.md)",
       ];
     const { file, story } = storyOf(path);
@@ -182,7 +204,7 @@ export function problems(app, index) {
       ];
     if (!live.get(file)?.has(story))
       return [
-        `${path}: no story ${story} in ${file} runs as a test, so the baseline is obsolete; ` +
+        `${path}: no story ${story} in ${file} runs as a test in a pictured cell, so the baseline is obsolete; ` +
           "the update-baselines label deletes it, or delete it with the story (docs/component-stories.md)",
       ];
     return [];
@@ -191,8 +213,8 @@ export function problems(app, index) {
 
 /** Copies the baseline of every live story in `app` to `out`, under the same path, and says
  *  which: an obsolete one is left out, so `take` deletes it. */
-export function gather(app, index, out) {
-  const live = liveStories(index);
+export function gather(app, index, out, cells = picturedCells(app)) {
+  const live = liveStories(index, cells);
   const all = baselinesIn(app).filter((path) => {
     if (!BASELINE.test(path)) return false;
     const { file, story } = storyOf(path);
@@ -209,11 +231,12 @@ export function gather(app, index, out) {
  * Writes the baselines `gather` copied to `drawn` into `app`, deletes every other file in a
  * `__screenshots__` directory of `app/src`, and says which it wrote and which it deleted.
  * Everything in `drawn` must be a baseline: a path a baseline has, a plain file reached through
- * no link, a whole PNG within {@link LIMITS}. Nothing in `app` written or deleted may be a link
+ * no link, a whole PNG, all of them within {@link LIMITS}. Nothing in `app` written or deleted may be a link
  * or be reached through one, `app` included. Unless all of it holds, nothing is written or
  * deleted.
  */
-export function take(drawn, app, limits = LIMITS) {
+export function take(drawn, app, within = LIMITS) {
+  const limits = { ...LIMITS, ...within };
   if (lstatSync(app).isSymbolicLink())
     throw new Error(`not a baseline, so nothing was taken: ${app} is a link`);
   const all = files(drawn).sort();
@@ -221,6 +244,7 @@ export function take(drawn, app, limits = LIMITS) {
     throw new Error(
       `not a baseline, so nothing was taken: more than ${limits.files} files`,
     );
+  let total = 0;
   const taken = all.map((path) => {
     if (!BASELINE.test(path))
       throw new Error(`not a baseline, so nothing was taken: ${path}`);
@@ -232,6 +256,11 @@ export function take(drawn, app, limits = LIMITS) {
     if (lstatSync(from).size > limits.bytes)
       throw new Error(
         `not a baseline, so nothing was taken: ${path} is over the cap of ${limits.bytes} bytes`,
+      );
+    total += lstatSync(from).size;
+    if (total > limits.total)
+      throw new Error(
+        `not a baseline, so nothing was taken: the baselines are over the cap of ${limits.total} bytes in all`,
       );
     const bytes = readFileSync(from);
     if (!isWholePng(bytes))

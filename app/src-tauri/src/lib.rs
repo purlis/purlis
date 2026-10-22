@@ -148,6 +148,8 @@ mod smartclose;
 mod specimen;
 mod staleclones;
 mod stopping;
+#[cfg(test)]
+mod storythemes;
 mod syscontrast;
 mod taskblocks;
 mod taskbrief;
