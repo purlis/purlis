@@ -980,6 +980,79 @@ fn a_move_onto_a_frame_swapped_into_a_process_of_its_own_since_is_dropped() {
 }
 
 #[test]
+fn the_first_key_into_the_first_field_reads_only_the_tree_around_it() {
+    // #2967: the field that has the document's focus is blanked from the tree around it alone.
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    let field = super::ax_backend_focused(&engine, "PAGE-1");
+    super::super::lock(&engine.model).focused_backend = Some(field);
+    let reads = page_reads(&engine);
+
+    browser.person_input(&key(&aim, "x", true)).unwrap();
+
+    assert_eq!(page_reads(&engine), reads, "the whole tree was read");
+    assert!(!engine.sent("Accessibility.getPartialAXTree").is_empty());
+    let resolved = engine.sent("DOM.resolveNode");
+    assert_eq!(
+        resolved.last().map(|s| s.params["backendNodeId"].as_i64()),
+        Some(Some(field)),
+        "the field was read after the key"
+    );
+    super::super::lock(&engine.model).value = "first-field-secret".into();
+    browser.person_input(&key(&aim, "y", true)).unwrap();
+    browser.hand_back();
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("first-field-secret"), "{text}");
+}
+
+#[test]
+fn a_first_key_on_an_element_that_is_no_field_reads_the_whole_tree() {
+    // Only a field the person types into is read from the tree around it: a link, or a frame's
+    // element, is not (#2967).
+    for backend in [12, 50] {
+        let (browser, engine) = browser();
+        let node = super::super::lock(&engine.model).ax["PAGE-1"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["backendDOMNodeId"] == backend)
+            .and_then(|n| n["nodeId"].as_str().map(str::to_owned))
+            .unwrap();
+        super::focus_on(&engine, &[("PAGE-1", node.as_str())]);
+        super::super::lock(&engine.model).focused_backend = Some(backend);
+        browser.take_over();
+        let aim = aim_now(&browser);
+        let reads = page_reads(&engine);
+
+        let _ = browser.person_input(&key(&aim, "x", true));
+
+        assert!(
+            page_reads(&engine) > reads,
+            "{backend}: the whole tree was not read"
+        );
+    }
+}
+
+#[test]
+fn a_key_into_a_second_field_reads_the_whole_tree() {
+    // A code typed one box at a time is kept out whole from the whole page's tree (#2144).
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    let field = super::ax_backend_focused(&engine, "PAGE-1");
+    super::super::lock(&engine.model).focused_backend = Some(field);
+    browser.person_input(&key(&aim, "x", true)).unwrap();
+    // The page moves the focus to another field.
+    super::super::lock(&engine.model).focused_backend = Some(field + 1000);
+    let reads = page_reads(&engine);
+
+    let _ = browser.person_input(&key(&aim, "y", true));
+
+    assert!(page_reads(&engine) > reads, "the whole tree was not read");
+}
+
+#[test]
 fn a_value_typed_key_by_key_leaves_no_part_of_it_in_any_later_answer() {
     let (browser, engine) = browser();
     browser.take_over();
