@@ -133,6 +133,8 @@ describe("draft skills in the Skill studio", function () {
   });
 
   it("opens a chat to draft a skill", async () => {
+    // The chat Try it opened went, so the studio is brought to the front again.
+    await runFromThePalette("Open Skill studio", "skills.studio");
     const ask = await $("button=Ask a chat to draft a skill");
     await ask.waitForClickable({ timeout: 20_000 });
     const tabsBefore = (await tabNames()).length;
