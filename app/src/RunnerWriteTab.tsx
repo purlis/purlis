@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { commands, type PlaneId, type RunnerWriteWhole } from "./bindings";
 import { asksMoved } from "./asks";
 import { EmptyState } from "./EmptyState";
-import { GrantsMark } from "./primitives/Grants";
 import { LoaderCircle, Server } from "lucide-react";
+import { Button, ButtonRow } from "./ui/button/Button";
 
 /**
  * **A runner chat's change to the project, whole, in its own tab** (#2046): one its row cannot
@@ -72,30 +72,17 @@ export function RunnerWriteTab({ plane, id }: { plane: PlaneId; id: number }) {
           {read.why}
         </p>
       )}
-      <div className="ui-button-row">
+      <ButtonRow>
         {read.applies && (
-          <button
-            type="button"
-            // Apply grants what the change writes: drawn as every grant is (ADR 0097 §6).
-            className="ui-button ui-button-grants"
-            tabIndex={0}
-            aria-disabled={busy}
-            onClick={() => answer(true)}
-          >
-            <GrantsMark />
+          // Apply grants what the change writes: drawn as every grant is (ADR 0097 §6).
+          <Button variant="grants" aria-disabled={busy} onPress={() => answer(true)}>
             Apply
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          className="ui-button"
-          tabIndex={0}
-          aria-disabled={busy}
-          onClick={() => answer(false)}
-        >
+        <Button aria-disabled={busy} onPress={() => answer(false)}>
           Dismiss
-        </button>
-      </div>
+        </Button>
+      </ButtonRow>
       {said !== undefined && <p className="inbox-refused">{said}</p>}
     </section>
   );

@@ -53,7 +53,7 @@ describe("a runner chat's change in its own tab", () => {
     expect(shown.textContent).toContain("line 30 of the lesson");
     expect(screen.getByText(/on pool builds/)).toBeInTheDocument();
     // Apply is a grant (ADR 0097 §6).
-    expect(screen.getByRole("button", { name: "Apply" })).toHaveClass("ui-button-grants");
+    expect(screen.getByRole("button", { name: "Apply" })).toHaveAttribute("data-variant", "grants");
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(screen.getByTestId("runner-write-answered")).toBeInTheDocument());
     expect(sent("apply_runner_write")).toEqual([{ plane: PLANE, id: 3, from: "tab" }]);
