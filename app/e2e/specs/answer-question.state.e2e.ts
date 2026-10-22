@@ -153,10 +153,18 @@ const formButton = (says: string) =>
     says,
   );
 
-/** What the form says is wrong, or nothing. */
+/** What the form says is wrong, or nothing: the answer's refusal, on the field's error line
+ *  (#2905), or that the question closed. */
 const refusal = () =>
   browser.execute(
-    (form: string) => document.querySelector(`${form} .answer-refused`)?.textContent ?? "",
+    (form: string) =>
+      [
+        ...document.querySelectorAll(
+          `${form} [data-scope="field"][data-part="error"], ${form} .answer-refused`,
+        ),
+      ]
+        .map((one) => one.textContent ?? "")
+        .join(""),
     FORM,
   );
 

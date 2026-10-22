@@ -14,8 +14,16 @@
  *   family's old classes (`ui-button`, `ui-button-primary`, `ui-button-row`, …), whose look the
  *   family draws from its wrapper's attributes. A screen gives a `Button` a place (`className`
  *   for margin, width, order), never a look.
- * - `purlis/field-family` (warning until the field families move): a raw `<input>`, `<select>`
- *   or `<textarea>`.
+ * - `purlis/field-family` (error: the field family has moved, #2905): a raw `<textarea>`, or a
+ *   raw `<input>` a person types in (no `type`, or `text`, `search`, `password`, `url`, `email`,
+ *   `tel`, `number`, or a `type` decided at run time), is the family's `TextField` or `TextArea`
+ *   (`ui/field/Field`); and no control wears the family's old classes (`ui-input`,
+ *   `ui-input-lead`, `ui-list-field`, …).
+ * - `purlis/select-family` (warning until the select and combobox families move): a raw
+ *   `<select>`, or an `<input role="combobox">` (the palette's), which is the combobox's and not
+ *   the field family's.
+ * - `purlis/choice-family` (warning until the choice families move): a raw checkbox, radio,
+ *   slider (`range`) or colour well (`color`) `<input>`.
  * - `purlis/dialog-family` (warning until the dialog family moves): a `role="dialog"`.
  * - `purlis/tooltip-family` (warning until the tooltip family moves): a native `title=`.
  *
@@ -137,13 +145,76 @@ function unmoved({ description, message, test }) {
   };
 }
 
-const FIELDS = new Set(["input", "select", "textarea"]);
+/** The field family's old styling classes: `ui-input`, every `ui-input-*`, `ui-list-field`. */
+const FIELD_CLASS = /(?:^|\s)(ui-input(?:-[\w-]+)?|ui-list-field)(?=\s|$)/;
 
-const fieldFamily = unmoved({
-  description: "A field is drawn from its family in src/ui once the field families move",
+/** The kinds of `<input>` another family draws: a choice, a slider, a colour well. */
+const CHOICES = new Set(["checkbox", "radio", "range", "color", "file"]);
+
+/** An `<input>`'s `type` as written, `null` for one decided at run time, `""` for none. */
+function typeOf(node) {
+  const type = attributeOf(node, "type")?.value;
+  if (!type) return "";
+  return type.type === "Literal" && typeof type.value === "string" ? type.value : null;
+}
+
+const fieldFamily = {
+  meta: {
+    type: "problem",
+    docs: { description: "A box a person types in is the shared field family" },
+    messages: {
+      raw: "A raw `<{{tag}}>`: draw it as `<TextField>` or `<TextArea>` from `ui/field/Field`, with its label, help and validation (docs/ui-primitives.md).",
+      oldClass:
+        "`{{word}}` is the field family's old class: draw the box as `<TextField>` or `<TextArea>` from `ui/field/Field` (docs/ui-primitives.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      JSXAttribute(node) {
+        if (node.name.name !== "className") return;
+        for (const [at, text] of classStrings(node.value)) {
+          const found = FIELD_CLASS.exec(text);
+          if (found) context.report({ node: at, messageId: "oldClass", data: { word: found[1] } });
+        }
+      },
+      JSXOpeningElement(node) {
+        if (node.name.type !== "JSXIdentifier") return;
+        const tag = node.name.name;
+        if (tag === "textarea") context.report({ node, messageId: "raw", data: { tag } });
+        if (tag !== "input") return;
+        const type = typeOf(node);
+        if (type === "hidden" || (type !== null && CHOICES.has(type))) return;
+        if (combobox(node)) return;
+        context.report({ node, messageId: "raw", data: { tag } });
+      },
+    };
+  },
+};
+
+/** Whether an `<input>` is a combobox's, by its role. */
+function combobox(node) {
+  const role = attributeOf(node, "role")?.value;
+  return role?.type === "Literal" && role.value === "combobox";
+}
+
+const selectFamily = unmoved({
+  description: "A select or a combobox is drawn from its family in src/ui once it moves",
   message:
-    "A raw field: draw it from its component family in `src/ui` once that family has moved (spec #2897).",
-  test: (node) => (FIELDS.has(node.name.name) ? [node] : []),
+    "A raw `<select>` or combobox: draw it from its family in `src/ui` once that family has moved (spec #2897).",
+  test: (node) =>
+    node.name.name === "select" || (node.name.name === "input" && combobox(node)) ? [node] : [],
+});
+
+const choiceFamily = unmoved({
+  description: "A checkbox, radio, slider or colour well is drawn from its family once it moves",
+  message:
+    "A raw choice `<input>`: draw it from its family in `src/ui` once that family has moved (spec #2897).",
+  test: (node) => {
+    if (node.name.name !== "input") return [];
+    const type = typeOf(node);
+    return type !== null && type !== "hidden" && CHOICES.has(type) ? [node] : [];
+  },
 });
 
 const dialogFamily = unmoved({
@@ -172,6 +243,8 @@ export const purlisUi = {
   rules: {
     "button-family": buttonFamily,
     "field-family": fieldFamily,
+    "select-family": selectFamily,
+    "choice-family": choiceFamily,
     "dialog-family": dialogFamily,
     "tooltip-family": tooltipFamily,
   },

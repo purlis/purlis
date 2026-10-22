@@ -748,6 +748,171 @@ fn a_lay_out_into_sets_that_are_a_link_is_refused() {
     );
 }
 
+/// A plane for Use skill… (SK-12): a workspace `smart-ide` granted a project skill `review` that
+/// takes arguments, a project skill `release` that is manual-only and granted nowhere, and a
+/// workspace skill `lint`; and a bundle with the built-in `handoff`.
+fn use_skill_plane() -> (tempfile::TempDir, PathBuf) {
+    let tmp = granting_plane();
+    let write = |dir: PathBuf, text: &str| {
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), text).unwrap();
+    };
+    let root = tmp.path();
+    write(
+        root.join("skills/review"),
+        "---\nname: review\ndescription: Reviews a PR.\narguments: pr focus\n---\n",
+    );
+    std::fs::write(root.join("skills/review.toml"), "grant = \"all\"\n").unwrap();
+    write(
+        root.join("skills/release"),
+        "---\nname: release\ndescription: Cuts a release.\ndisable-model-invocation: true\n---\n",
+    );
+    write(
+        root.join("workspaces/smart-ide/skills/lint"),
+        "---\nname: lint\ndescription: Lints.\n---\n",
+    );
+    let bundle = root.join("bundle");
+    write(
+        bundle.join("handoff"),
+        "---\nname: handoff\ndescription: Hands off.\n---\n",
+    );
+    (tmp, bundle)
+}
+
+fn running<'a>(root: &'a Path, bundle: &'a Path, workspace: Option<&'a str>) -> Running<'a> {
+    Running {
+        plane: root,
+        workspace,
+        persona: None,
+        harness: Harness::ClaudeCode,
+        built_in: Some(bundle),
+        plane_skills: true,
+    }
+}
+
+fn offered_names(skills: &ChatSkills) -> Vec<&str> {
+    skills
+        .offered
+        .iter()
+        .map(|one| one.effective.skill.name.as_str())
+        .collect()
+}
+
+#[test]
+fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_only_on_claude_code() {
+    let (tmp, bundle) = use_skill_plane();
+    let root = tmp.path();
+
+    let at_the_root = for_use_skill(&running(root, &bundle, None));
+    assert_eq!(
+        offered_names(&at_the_root),
+        ["deploy", "handoff", "release", "review"]
+    );
+    let release = &at_the_root.offered[2];
+    assert!(release.declared.manual);
+    assert!(!release.takes_arguments);
+    assert!(at_the_root.offered[3].takes_arguments, "review names two");
+    assert_eq!(release.known_as, "skills:release");
+    assert_eq!(at_the_root.offered[1].known_as, "purlis:handoff");
+    assert_eq!(
+        at_the_root.spent.skills, 3,
+        "Claude Code leaves release out"
+    );
+    assert_eq!(at_the_root.spent.manual, 1);
+    assert_eq!(
+        at_the_root.spent.chars,
+        "Ships it.".len() + "Hands off.".len() + "Reviews a PR.".len()
+    );
+    assert_eq!(at_the_root.spent.warns(), None);
+
+    // opencode lists it still (#2771): it is counted there.
+    let on_opencode = for_use_skill(&Running {
+        harness: Harness::Opencode,
+        ..running(root, &bundle, None)
+    });
+    assert_eq!(on_opencode.spent.skills, 4);
+    assert_eq!(on_opencode.spent.manual, 1);
+
+    // In the workspace: its own skill and the granted one, never one it was not granted.
+    let in_smart_ide = for_use_skill(&running(root, &bundle, Some("smart-ide")));
+    assert_eq!(offered_names(&in_smart_ide), ["handoff", "lint", "review"]);
+
+    // With the flag off, a chat's set is the built-in skills alone, as at its start.
+    let flag_off = for_use_skill(&Running {
+        plane_skills: false,
+        ..running(root, &bundle, None)
+    });
+    assert_eq!(offered_names(&flag_off), ["handoff"]);
+}
+
+#[test]
+fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_it_starts() {
+    let (tmp, bundle) = use_skill_plane();
+    let root = tmp.path();
+    let values = vec!["42".to_owned(), "the tests".to_owned()];
+    for (harness, text, known_as, confirmed) in [
+        (
+            Harness::ClaudeCode,
+            "/skills:review 42 \"the tests\"",
+            "skills:review",
+            crate::skillspan::Confirmed::ByName,
+        ),
+        (
+            Harness::Opencode,
+            "/review 42 \"the tests\"",
+            "review",
+            crate::skillspan::Confirmed::ByPrompt,
+        ),
+        (
+            Harness::Codex,
+            "$review pr: 42; focus: the tests",
+            "review",
+            crate::skillspan::Confirmed::ByPrompt,
+        ),
+    ] {
+        let chat = for_use_skill(&Running {
+            harness,
+            ..running(root, &bundle, Some("smart-ide"))
+        });
+        let typing = chat.typed("review", &values).unwrap();
+        assert_eq!(typing.text, text, "{harness:?}");
+        assert_eq!(typing.held.skill, known_as, "{harness:?}");
+        assert_eq!(typing.held.confirmed, confirmed, "{harness:?}");
+        assert_eq!(typing.held.workspace.as_deref(), Some("smart-ide"));
+        assert_eq!(
+            typing.held.level.map(|level| level.origin),
+            Some(Origin::Project)
+        );
+        // What a prompt holding the text is marked with.
+        let sent = crate::skillspan::PromptMarks::of(&format!("{text} and more"));
+        assert!(sent.holds(typing.held.text), "{harness:?}");
+        let refused = chat.typed("deploy", &[]).unwrap_err();
+        assert!(
+            refused.contains("not one of this chat's skills"),
+            "{refused}"
+        );
+    }
+}
+
+#[test]
+fn a_set_at_four_fifths_of_its_harnesss_budget_warns() {
+    let (tmp, bundle) = use_skill_plane();
+    let root = tmp.path();
+    // 3 skills listed already; 21 more make 24, four fifths of 30.
+    for n in 0..21 {
+        let dir = root.join(format!("skills/s{n:02}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            format!("---\nname: s{n:02}\ndescription: d\n---\n"),
+        )
+        .unwrap();
+    }
+    let chat = for_use_skill(&running(root, &bundle, None));
+    assert_eq!(chat.spent.skills, 24);
+    assert_eq!(chat.spent.warns(), Some(Over::Skills));
+}
+
 #[test]
 fn the_studio_checks_every_harness_the_projects_profiles_run_and_claude_code_for_none() {
     use crate::harness::Harness;

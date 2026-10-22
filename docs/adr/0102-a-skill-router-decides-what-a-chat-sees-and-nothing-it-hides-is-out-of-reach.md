@@ -133,3 +133,10 @@ graded on, recorded with that library's commit.
   exact start on every harness.
 - Router choice and pins are persona and workspace settings, and are documented in
   `docs/plane-format.md` before code.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0102/`](0102/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

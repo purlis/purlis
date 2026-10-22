@@ -19,6 +19,7 @@ import { useNewerTrouble } from "./pickTrouble";
 import { harnessSays } from "./harnessSays";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * **Create a project: the page behind the welcome's first door** (#1812; FR-4 #603, FR-17).
@@ -198,7 +199,7 @@ export function FirstRun({
           </SettingActions>
 
           {/* The path and the template are rows of the settings set (DS-3d, #1176). */}
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               started();
@@ -224,7 +225,7 @@ export function FirstRun({
                 Open repo
               </Button>
             </SettingActions>
-          </form>
+          </Form>
 
           {opening && (
             <p className="came-back" role="status">

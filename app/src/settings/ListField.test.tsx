@@ -42,11 +42,13 @@ function laidOut(element: HTMLElement, { needs, shows, borders = 2 }: Record<str
 }
 
 describe("a list field", () => {
-  it("is the shared field, drawn under its name at the row's width", () => {
+  it("is the field family's textarea, drawn under its name at the row's width", () => {
     render(<Hosts />);
 
-    expect(box()).toHaveClass("ui-input");
-    expect(drawnWith(box(), "inline-size")).toBe("100%");
+    expect(box().parentElement).toHaveAttribute("data-scope", "textarea");
+    expect(box().parentElement).toHaveAttribute("data-grows");
+    const field = box().closest(".ui-setting-list") as Element;
+    expect(drawnWith(field, "flex")).toBe("1 1 auto");
     // Its control takes a line of its own, under the label, rather than the space beside it.
     const control = box().closest(".ui-setting-control");
     expect(control).not.toBeNull();

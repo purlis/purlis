@@ -7,7 +7,12 @@ import type { Rule } from "eslint";
 export const purlisUi: {
   meta: { name: string };
   rules: Record<
-    "button-family" | "field-family" | "dialog-family" | "tooltip-family",
+    | "button-family"
+    | "field-family"
+    | "select-family"
+    | "choice-family"
+    | "dialog-family"
+    | "tooltip-family",
     Rule.RuleModule
   >;
 };

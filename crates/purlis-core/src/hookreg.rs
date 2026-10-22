@@ -52,10 +52,16 @@ impl Handler {
     pub fn hears_a_call_come_back(&self) -> bool {
         self.matcher.is_some() && self.event == "PostToolUse"
     }
+
+    /// Whether this hook is heard as a prompt the person sent started a skill (SK-12): where a
+    /// skill Use skill… typed is named as started.
+    pub fn hears_a_prompt_start(&self) -> bool {
+        self.event == "UserPromptExpansion"
+    }
 }
 
 /// Every hook the Rust `charter` answers, in the order a session meets them.
-pub const HANDLERS: [Handler; 15] = [
+pub const HANDLERS: [Handler; 16] = [
     Handler {
         name: "sessionstart",
         event: "SessionStart",
@@ -65,6 +71,14 @@ pub const HANDLERS: [Handler; 15] = [
     Handler {
         name: "userpromptsubmit",
         event: "UserPromptSubmit",
+        matcher: None,
+        timeout: 5,
+    },
+    // A `/<skill>` the person sent expanding into its skill (SK-12, #2775): which skill a prompt
+    // started, the start of a skill Use skill… typed. It answers nothing.
+    Handler {
+        name: "userpromptexpansion",
+        event: "UserPromptExpansion",
         matcher: None,
         timeout: 5,
     },

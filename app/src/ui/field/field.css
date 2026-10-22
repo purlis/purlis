@@ -1,0 +1,187 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The field family's default** (#2905, ADR 0103, ADR 0104): how `TextField` and `TextArea` are
+   drawn when a theme names none of their parts. Three families meet here, each keyed on the
+   wrapper's attributes and React Aria's state attributes, never on a class:
+
+   - `field`: the field itself, which stacks its `label`, its control, its `help` and its `error`;
+   - `text-input`: the box for one line, its `icon` at its start and the input inside it;
+   - `textarea`: the box for lines.
+
+   **It is in the `components` layer** (`styles.css`), above `App.css`: a view places a field
+   (margin, width, flex, order) and nothing it writes redraws one.
+
+   **Only tokens.** Every colour is one `var()` per declaration, so `contrast.test.ts` reads each
+   pair a rule draws; every size is a core geometry token.
+
+   **A state never changes size** (#2800): under the pointer, with the caret, refused or
+   unavailable, a field changes a colour or a ring, never a padding, a border width or a height. */
+
+/* ---------------------------------------------------------------------------------------------
+   The field: its label, its control, its help and its error, one under another.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="field"][data-part="root"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+[data-scope="field"][data-part="label"] {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Its help is information about the field, so it takes the quiet tier (the palette rules). */
+[data-scope="field"][data-part="help"] {
+  margin: 0;
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+}
+
+/* Why its value is refused: in the danger colour, under the control, beside the edge that says
+   so too. Its words are the cue that is not colour. **Its line is kept whether it says anything
+   or not**, one line tall, so a refusal coming or going moves nothing; a long one is cut short
+   here and read whole as the box's description. */
+[data-scope="field"][data-part="error"] {
+  margin: 0;
+  overflow: hidden;
+  color: var(--danger-text);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  block-size: calc(var(--font-size-xs) * var(--line-height-body));
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The boxes, at rest: the text input, md, and the textarea.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="text-input"][data-part="root"],
+[data-scope="textarea"][data-part="root"] {
+  display: flex;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background-color: var(--surface-sunken);
+  font-size: var(--font-size-base);
+  cursor: text;
+}
+
+[data-scope="text-input"][data-part="root"] {
+  align-items: center;
+  gap: var(--text-input-gap, var(--space-2));
+  block-size: var(--size-control);
+  padding-block: 0;
+  padding-inline: var(--space-4);
+}
+
+/* **A box with a mark at its start** (#1856): the mark inset from the box's start by the box's
+   own small step, the words one more step past it, so what is typed never runs under it. A view
+   whose words must line up with something else (the Chats filter with the chats' names, DS-11)
+   hands the box three sizes, and only these: `--text-input-start`, `--text-input-icon` and
+   `--text-input-gap`. */
+[data-scope="text-input"][data-part="root"][data-icon] {
+  padding-inline-start: var(--text-input-start, var(--space-3));
+}
+
+/* A textarea is the lines it holds: three controls tall at least, as tall as a person drags it,
+   in the mono face, since what is typed in one is a list of entries or an answer that keeps its
+   lines. */
+[data-scope="textarea"][data-part="root"] {
+  min-block-size: calc(var(--size-control) * 3);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-4);
+  font-family: var(--font-mono);
+}
+
+/* The element typed in fills its box and draws nothing of its own: the box is the field. */
+[data-scope="text-input"][data-part="root"] > input,
+[data-scope="textarea"][data-part="root"] > textarea {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  color: inherit;
+  background: none;
+  font: inherit;
+  appearance: none;
+}
+
+[data-scope="text-input"][data-part="root"] > input {
+  align-self: stretch;
+}
+
+[data-scope="textarea"][data-part="root"] > textarea {
+  resize: vertical;
+}
+
+/* A textarea that grows with its lines (a list field) is as tall as they are, and never dragged:
+   its height is set as it is typed (`grownTo`, settings/components.tsx), so it never scrolls. */
+[data-scope="textarea"][data-part="root"][data-grows] > textarea {
+  overflow-y: hidden;
+  resize: none;
+}
+
+/* The mark at the start of a filter or a search: the text's size, and no target of its own: a
+   press on it lands in the field. A mark and not words, it is held at 3:1. */
+[data-scope="text-input"][data-part="icon"] {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+[data-scope="text-input"][data-part="icon"] > svg {
+  inline-size: var(--text-input-icon, 1em);
+  block-size: var(--text-input-icon, 1em);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   States.
+   --------------------------------------------------------------------------------------------- */
+
+/* A value the field refuses: the danger colour on its edge, beside the words that say why. */
+:is([data-scope="text-input"], [data-scope="textarea"])[data-part="root"][data-invalid] {
+  border-color: var(--danger-base);
+}
+
+/* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves. */
+[data-scope="text-input"][data-part="root"][data-disabled],
+[data-scope="textarea"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+/* The ring: whenever it holds the caret, from the keyboard or a press, as a text box's
+   `:focus-visible` has it; 2px in the focus colour at 2px outside the box (R162). */
+:is([data-scope="text-input"], [data-scope="textarea"])[data-part="root"][data-focus-within] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Sizes: sm 24, md 28, lg 32 at the default text size and density (#2793, #2877), as the
+   button's. lg is only for a list's main filter field.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="text-input"][data-part="root"][data-size="sm"] {
+  block-size: max(var(--size-chrome), var(--space-7));
+  padding-inline: var(--space-3);
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="text-input"][data-part="root"][data-size="lg"] {
+  block-size: calc(var(--size-control) + var(--space-2));
+  padding-inline: var(--space-5);
+}

@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import { useFocusBack } from "./EndingChat";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /**
  * **Link to work item…**, from a chat tab's menu or the palette (V60, ADR 0088 §3).
@@ -74,7 +75,7 @@ export function LinkWorkItem({
             For <code>{chat}</code>
           </Dialog.Description>
 
-          <form
+          <Form
             onSubmit={(event) => {
               event.preventDefault();
               link();
@@ -124,7 +125,7 @@ export function LinkWorkItem({
               </Button>
               <Button onPress={onCancel}>Cancel</Button>
             </SettingActions>
-          </form>
+          </Form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

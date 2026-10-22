@@ -75,7 +75,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -360,125 +360,382 @@ pub struct Family {
     border_width: f64,
     /// Its colours at rest and in each state, as the window's own stylesheet draws them.
     defaults: fn(&str, Option<State>) -> Look,
+    /// The states a key may name for it: the ones its wrapper marks (#2905). A text box is never
+    /// pressed, chosen or open, and a field's root is only ever unavailable.
+    pub states: &'static [State],
+    /// The attribute its root is keyed on while it has the focus: React Aria's keyboard focus
+    /// for a button, and for a field whenever it holds the caret, as a text box's `:focus-visible`
+    /// has it (#2905).
+    focused: &'static str,
+    /// The words of a part that are not drawn in the root's colour, by the part's name: a field's
+    /// help in the quiet tier and its error in the danger colour (#2905).
+    words: &'static [(&'static str, &'static str)],
+}
+
+impl Family {
+    /// The attribute `state` is keyed on, on this family's root.
+    fn attribute(&self, state: State) -> &'static str {
+        if state == State::Focused {
+            self.focused
+        } else {
+            state.attribute()
+        }
+    }
+
+    /// **The looks it is measured in**: each of its variants, or for a family that has none (a
+    /// field, a text input), its one look, named `""`.
+    fn looks(&self) -> Vec<&'static str> {
+        if self.variants.is_empty() {
+            vec![""]
+        } else {
+            self.variants.iter().map(|one| one.name).collect()
+        }
+    }
+
+    /// The colour `part`'s words are drawn in by default, when it is not the root's.
+    fn own_words(&self, part: usize) -> Option<&'static str> {
+        let name = self.parts.get(part)?.name;
+        self.words
+            .iter()
+            .find(|(one, _)| *one == name)
+            .map(|(_, token)| *token)
+    }
+}
+
+/// A part of a family in a look, as a sentence names it: `button.root.primary`, or
+/// `text-input.root` for a family that has no variants.
+fn look_named(family: &Family, part: &str, variant: &str) -> String {
+    if variant.is_empty() {
+        format!("{}.{part}", family.name)
+    } else {
+        format!("{}.{part}.{variant}", family.name)
+    }
 }
 
 /// What a theme may set on a part with words: every property.
 const ALL: &[Prop] = &PROPERTIES;
 
 /// **The closed manifest**: every family a theme may name, at [`VERSION`].
-pub const MANIFEST: &[Family] = &[Family {
-    name: "button",
-    description: "A button, an icon button or a link button.",
-    since: 1,
-    parts: &[
-        Part {
+pub const MANIFEST: &[Family] = &[
+    Family {
+        name: "button",
+        description: "A button, an icon button or a link button.",
+        since: 1,
+        parts: &[
+            Part {
+                name: "root",
+                since: 1,
+                description: "The button itself: its fill, border, corners and size.",
+                properties: ALL,
+            },
+            Part {
+                name: "label",
+                since: 1,
+                description: "Its words.",
+                properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
+            },
+            Part {
+                name: "icon",
+                since: 1,
+                description: "Its icon.",
+                properties: &[Prop::Text],
+            },
+        ],
+        variants: &[
+            Variant {
+                name: "secondary",
+                since: 1,
+                description: "The plain button.",
+                consent: None,
+            },
+            Variant {
+                name: "primary",
+                since: 1,
+                description: "The answer purlis suggests.",
+                consent: None,
+            },
+            Variant {
+                name: "ghost",
+                since: 1,
+                description: "A button with no box until the pointer reaches it.",
+                consent: None,
+            },
+            Variant {
+                name: "danger",
+                since: 1,
+                description: "What cannot be undone.",
+                consent: Some(Consent::Danger),
+            },
+            Variant {
+                name: "grants",
+                since: 1,
+                description: "An answer that grants: an Allow, an Accept.",
+                consent: Some(Consent::Grants),
+            },
+            Variant {
+                name: "soft-accent",
+                since: 2,
+                description: "A suggestion that is not the answer: the accent's ground, no edge.",
+                consent: None,
+            },
+            Variant {
+                name: "warning-soft",
+                since: 2,
+                description: "What asks for care without ending anything.",
+                consent: None,
+            },
+            Variant {
+                name: "link",
+                since: 2,
+                description: "A button that reads as a link: no box, as tall as its words.",
+                consent: None,
+            },
+        ],
+        // Every surface a button is drawn on in the window, as `app/src/theme/grounds.test.ts` finds
+        // them from the components; that test fails until a new one is listed here.
+        grounds: &[
+            "surface.base",
+            "surface.raised",
+            "surface.overlay",
+            "surface.sunken",
+            "surface.deep",
+            "border.subtle",
+            "tab.active",
+            "danger.surface",
+            "danger.wash",
+            "layer.project",
+            "layer.workspace",
+            "layer.chat",
+            "layer.selected",
+            "terminal.background",
+        ],
+        keeps_size: &[
+            "[data-size=\"sm\"]",
+            "[data-size=\"lg\"]",
+            "[data-scope=\"button-row\"][data-wraps] > *",
+        ],
+        sized_apart: &[
+            (
+                "[data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]",
+                "max(var(--size-chrome), var(--space-7))",
+            ),
+            (
+                "[data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]",
+                "calc(var(--size-control) + var(--space-2))",
+            ),
+        ],
+        height: "size.control",
+        font_size: "font-size.base",
+        line_height: 1.0,
+        border_width: 1.0,
+        defaults: button_look,
+        states: &STATES,
+        focused: "[data-focus-visible]",
+        words: &[],
+    },
+    Family {
+        name: "field",
+        description: "A field: its label, its control, its help and its error, as one.",
+        since: 3,
+        parts: &[
+            Part {
+                name: "root",
+                since: 3,
+                description: "The field itself, which stacks its label, its control, its help and \
+                          its error: the room between them.",
+                properties: &[Prop::Gap],
+            },
+            Part {
+                name: "label",
+                since: 3,
+                description: "Its name, over its control.",
+                properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
+            },
+            Part {
+                name: "help",
+                since: 3,
+                description: "Its line of help, under its control.",
+                properties: &[Prop::Text, Prop::FontSize],
+            },
+            Part {
+                name: "error",
+                since: 3,
+                description: "Why its value is refused, under its control.",
+                properties: &[Prop::Text, Prop::FontSize],
+            },
+        ],
+        variants: &[],
+        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
+        // the components): a field stands where a button does, a filter on a list's layer.
+        grounds: &[
+            "surface.base",
+            "surface.raised",
+            "surface.overlay",
+            "surface.sunken",
+            "surface.deep",
+            "border.subtle",
+            "tab.active",
+            "danger.surface",
+            "danger.wash",
+            "layer.project",
+            "layer.workspace",
+            "layer.chat",
+            "layer.selected",
+            "terminal.background",
+        ],
+        keeps_size: &[],
+        sized_apart: &[],
+        height: "size.control",
+        font_size: "font-size.base",
+        line_height: 1.0,
+        border_width: 0.0,
+        defaults: field_look,
+        states: &[State::Disabled],
+        focused: "[data-focus-within]",
+        words: &[("help", "text.quiet"), ("error", "danger.text")],
+    },
+    Family {
+        name: "text-input",
+        description: "A box for one line of text: a name, a token, a filter.",
+        since: 3,
+        parts: &[
+            Part {
+                name: "root",
+                since: 3,
+                description: "The box itself: its fill, border, corners and size, and the words \
+                          typed in it.",
+                properties: &[
+                    Prop::Fill,
+                    Prop::Text,
+                    Prop::BorderColour,
+                    Prop::Shadow,
+                    Prop::BorderWidth,
+                    Prop::CornerRadius,
+                    Prop::Padding,
+                    Prop::Gap,
+                    Prop::FontSize,
+                    Prop::Height,
+                ],
+            },
+            Part {
+                name: "icon",
+                since: 3,
+                description: "The mark at its start: a filter's or a search's glass.",
+                properties: &[Prop::Text],
+            },
+        ],
+        variants: &[],
+        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
+        // the components): a field stands where a button does, a filter on a list's layer.
+        grounds: &[
+            "surface.base",
+            "surface.raised",
+            "surface.overlay",
+            "surface.sunken",
+            "surface.deep",
+            "border.subtle",
+            "tab.active",
+            "danger.surface",
+            "danger.wash",
+            "layer.project",
+            "layer.workspace",
+            "layer.chat",
+            "layer.selected",
+            "terminal.background",
+        ],
+        keeps_size: &["[data-size=\"sm\"]", "[data-size=\"lg\"]"],
+        sized_apart: &[
+            (
+                "[data-scope=\"text-input\"][data-part=\"root\"][data-size=\"sm\"]",
+                "max(var(--size-chrome), var(--space-7))",
+            ),
+            (
+                "[data-scope=\"text-input\"][data-part=\"root\"][data-size=\"lg\"]",
+                "calc(var(--size-control) + var(--space-2))",
+            ),
+        ],
+        height: "size.control",
+        font_size: "font-size.base",
+        line_height: 1.0,
+        border_width: 1.0,
+        defaults: box_look,
+        states: &[State::Hover, State::Focused, State::Disabled],
+        focused: "[data-focus-within]",
+        words: &[],
+    },
+    Family {
+        name: "textarea",
+        description: "A box for lines of text: an answer, a list of entries.",
+        since: 3,
+        parts: &[Part {
             name: "root",
-            since: 1,
-            description: "The button itself: its fill, border, corners and size.",
-            properties: ALL,
-        },
-        Part {
-            name: "label",
-            since: 1,
-            description: "Its words.",
-            properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
-        },
-        Part {
-            name: "icon",
-            since: 1,
-            description: "Its icon.",
-            properties: &[Prop::Text],
-        },
-    ],
-    variants: &[
-        Variant {
-            name: "secondary",
-            since: 1,
-            description: "The plain button.",
-            consent: None,
-        },
-        Variant {
-            name: "primary",
-            since: 1,
-            description: "The answer purlis suggests.",
-            consent: None,
-        },
-        Variant {
-            name: "ghost",
-            since: 1,
-            description: "A button with no box until the pointer reaches it.",
-            consent: None,
-        },
-        Variant {
-            name: "danger",
-            since: 1,
-            description: "What cannot be undone.",
-            consent: Some(Consent::Danger),
-        },
-        Variant {
-            name: "grants",
-            since: 1,
-            description: "An answer that grants: an Allow, an Accept.",
-            consent: Some(Consent::Grants),
-        },
-        Variant {
-            name: "soft-accent",
-            since: 2,
-            description: "A suggestion that is not the answer: the accent's ground, no edge.",
-            consent: None,
-        },
-        Variant {
-            name: "warning-soft",
-            since: 2,
-            description: "What asks for care without ending anything.",
-            consent: None,
-        },
-        Variant {
-            name: "link",
-            since: 2,
-            description: "A button that reads as a link: no box, as tall as its words.",
-            consent: None,
-        },
-    ],
-    // Every surface a button is drawn on in the window, as `app/src/theme/grounds.test.ts` finds
-    // them from the components; that test fails until a new one is listed here.
-    grounds: &[
-        "surface.base",
-        "surface.raised",
-        "surface.overlay",
-        "surface.sunken",
-        "surface.deep",
-        "border.subtle",
-        "tab.active",
-        "danger.surface",
-        "danger.wash",
-        "layer.project",
-        "layer.workspace",
-        "layer.chat",
-        "layer.selected",
-        "terminal.background",
-    ],
-    keeps_size: &[
-        "[data-size=\"sm\"]",
-        "[data-size=\"lg\"]",
-        "[data-scope=\"button-row\"][data-wraps] > *",
-    ],
-    sized_apart: &[
-        (
-            "[data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]",
-            "max(var(--size-chrome), var(--space-7))",
-        ),
-        (
-            "[data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]",
-            "calc(var(--size-control) + var(--space-2))",
-        ),
-    ],
-    height: "size.control",
-    font_size: "font-size.base",
-    line_height: 1.0,
-    border_width: 1.0,
-    defaults: button_look,
-}];
+            since: 3,
+            description: "The box itself: its fill, border, corners and room, and the words typed \
+                      in it. As tall as its lines.",
+            properties: &[
+                Prop::Fill,
+                Prop::Text,
+                Prop::BorderColour,
+                Prop::Shadow,
+                Prop::BorderWidth,
+                Prop::CornerRadius,
+                Prop::Padding,
+                Prop::FontSize,
+            ],
+        }],
+        variants: &[],
+        // Every surface a control is drawn on (the button's, which `grounds.test.ts` finds from
+        // the components): a field stands where a button does, a filter on a list's layer.
+        grounds: &[
+            "surface.base",
+            "surface.raised",
+            "surface.overlay",
+            "surface.sunken",
+            "surface.deep",
+            "border.subtle",
+            "tab.active",
+            "danger.surface",
+            "danger.wash",
+            "layer.project",
+            "layer.workspace",
+            "layer.chat",
+            "layer.selected",
+            "terminal.background",
+        ],
+        keeps_size: &[],
+        sized_apart: &[],
+        height: "size.control",
+        font_size: "font-size.base",
+        line_height: 1.0,
+        border_width: 1.0,
+        defaults: box_look,
+        states: &[State::Hover, State::Focused, State::Disabled],
+        focused: "[data-focus-within]",
+        words: &[],
+    },
+];
+
+/// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
+/// its own, its label in the primary tier. Its help's and its error's words are the family's
+/// `words`.
+fn field_look(_variant: &str, _state: Option<State>) -> Look {
+    Look {
+        fill: TRANSPARENT,
+        text: "text.primary",
+        border: TRANSPARENT,
+    }
+}
+
+/// **A text input's and a textarea's colours as `app/src/ui/field/field.css` draws them**: the
+/// sunken ground behind the strong edge, in every state; the keyboard's ring and a refused value's
+/// danger edge are drawn by the family, outside the parts.
+fn box_look(_variant: &str, _state: Option<State>) -> Look {
+    Look {
+        fill: "surface.sunken",
+        text: "text.primary",
+        border: "border.strong",
+    }
+}
 
 /// The colours of a part: its fill, its words and its border, each a token or `transparent`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -681,6 +938,25 @@ pub(super) fn defaults_json(variant: &str) -> Value {
     })
 }
 
+/// The field families' colours as the engine holds them, for the test that holds them to
+/// `field.css`: the boxes', and each of the field's words.
+#[cfg(test)]
+pub(super) fn field_defaults_json() -> Value {
+    let boxes = box_look("", None);
+    let field = family("field").expect("the field family");
+    let words = |part: &str| {
+        let at = field.parts.iter().position(|one| one.name == part);
+        at.and_then(|at| field.own_words(at))
+            .unwrap_or(field_look("", None).text)
+    };
+    json!({
+        "box": { "fill": boxes.fill, "text": boxes.text, "border": boxes.border },
+        "label": words("label"),
+        "help": words("help"),
+        "error": words("error"),
+    })
+}
+
 /// The family `name` names.
 pub fn family(name: &str) -> Option<&'static Family> {
     MANIFEST.iter().find(|one| one.name == name)
@@ -798,7 +1074,12 @@ fn key(raw: &str) -> Result<Key, String> {
         next = middle.next();
     }
     if let Some(name) = next {
-        state = Some(State::named(name).ok_or_else(said)?);
+        let named = State::named(name).ok_or_else(said)?;
+        // A state the family's wrapper never marks would reach nothing on screen.
+        if !family.states.contains(&named) {
+            return Err(said());
+        }
+        state = Some(named);
         next = middle.next();
     }
     if next.is_some() {
@@ -1114,18 +1395,18 @@ pub(super) fn fits(parts: &Parts, comfortable: &Geometry, compact: &Geometry) ->
     let mut said = bounded(parts, comfortable, compact);
     for family in MANIFEST {
         let root = family.parts[0].name;
-        for variant in family.variants {
+        for variant in family.looks() {
             let sizes = [
                 Prop::Height,
                 Prop::Padding,
                 Prop::FontSize,
                 Prop::BorderWidth,
             ]
-            .map(|property| at_rest(parts, family.name, root, variant.name, property));
+            .map(|property| at_rest(parts, family.name, root, variant, property));
             if sizes.iter().all(Option::is_none) {
                 continue;
             }
-            let label = at_rest(parts, family.name, "label", variant.name, Prop::FontSize);
+            let label = at_rest(parts, family.name, "label", variant, Prop::FontSize);
             for (density, geometry) in [("comfortable", comfortable), ("compact", compact)] {
                 let length_of = |value: Option<PartValue>, default: Length| match value {
                     Some(PartValue::Length(length)) => px(length, geometry),
@@ -1138,7 +1419,7 @@ pub(super) fn fits(parts: &Parts, comfortable: &Geometry, compact: &Geometry) ->
                 };
                 let size = length_of(label.or(sizes[2]), Length::Token(family.font_size));
                 let border = length_of(sizes[3], Length::Number(family.border_width));
-                let named = format!("{}.{root}.{}", family.name, variant.name);
+                let named = look_named(family, root, variant);
                 if height < LEAST_TARGET {
                     said.push(format!(
                         "parts: {named} is {}px tall in {density}, below the {}px a control keeps \
@@ -1266,8 +1547,11 @@ fn drawn_colour(
             Some(PartValue::Colour(token)) => Some(*token),
             _ => None,
         });
-    if set.is_some() || part != 0 {
+    if set.is_some() {
         return set;
+    }
+    if part != 0 {
+        return family.own_words(part);
     }
     let look = (family.defaults)(variant, state);
     Some(match property {
@@ -1633,15 +1917,14 @@ fn held(theme: &ResolvedTheme) -> (Vec<Rule>, Vec<Fell>) {
                 });
             }
         }
-        for variant in family.variants {
+        for variant in family.looks() {
             for state in &states {
-                let look = drawn(&rules, family, variant.name, *state);
-                if look == drawn(&[], family, variant.name, *state) {
+                let look = drawn(&rules, family, variant, *state);
+                if look == drawn(&[], family, variant, *state) {
                     continue;
                 }
-                if let Some((floor, ratio)) = unreadable(theme, &rules, family, variant.name, &look)
-                {
-                    fall(&mut rules, variant.name, *state, floor, ratio);
+                if let Some((floor, ratio)) = unreadable(theme, &rules, family, variant, &look) {
+                    fall(&mut rules, variant, *state, floor, ratio);
                 }
             }
         }
@@ -1676,7 +1959,7 @@ fn held(theme: &ResolvedTheme) -> (Vec<Rule>, Vec<Fell>) {
 }
 
 fn named(family: &Family, variant: &str, state: Option<State>) -> String {
-    let mut named = format!("{}.{}.{variant}", family.name, family.parts[0].name);
+    let mut named = look_named(family, family.parts[0].name, variant);
     if let Some(state) = state {
         let _ = write!(named, ".{}", state.name());
     }
@@ -1687,26 +1970,38 @@ fn named(family: &Family, variant: &str, state: Option<State>) -> String {
 /// and the words of every other part following it.
 fn fallback(family: &'static Family, variant: &'static str, state: Option<State>) -> Vec<Rule> {
     let look = (family.defaults)(variant, state);
-    let mut rules = vec![Rule {
-        family,
-        part: 0,
-        variant: Some(variant),
-        state,
-        values: BTreeMap::from([
-            (Prop::Fill, PartValue::Colour(look.fill)),
-            (Prop::Text, PartValue::Colour(look.text)),
-            (Prop::BorderColour, PartValue::Colour(look.border)),
-        ]),
-        fallback: true,
-    }];
+    // A family with no variants has one look, which a rule for every variant reaches.
+    let variant = (!variant.is_empty()).then_some(variant);
+    // Only the colours the root takes: a field's root draws none of its own.
+    let root: BTreeMap<Prop, PartValue> = [
+        (Prop::Fill, look.fill),
+        (Prop::Text, look.text),
+        (Prop::BorderColour, look.border),
+    ]
+    .into_iter()
+    .filter(|(property, _)| family.parts[0].properties.contains(property))
+    .map(|(property, token)| (property, PartValue::Colour(token)))
+    .collect();
+    let mut rules = Vec::new();
+    if !root.is_empty() {
+        rules.push(Rule {
+            family,
+            part: 0,
+            variant,
+            state,
+            values: root,
+            fallback: true,
+        });
+    }
     for part in 1..family.parts.len() {
         if family.parts[part].properties.contains(&Prop::Text) {
+            let words = family.own_words(part).unwrap_or(look.text);
             rules.push(Rule {
                 family,
                 part,
-                variant: Some(variant),
+                variant,
                 state,
-                values: BTreeMap::from([(Prop::Text, PartValue::Colour(look.text))]),
+                values: BTreeMap::from([(Prop::Text, PartValue::Colour(words))]),
                 fallback: true,
             });
         }
@@ -1891,7 +2186,7 @@ fn root_selectors(rule: &Rule, sized: bool) -> Vec<String> {
         let _ = write!(data, ":not({})", family.keeps_size.join(", "));
     }
     if let Some(state) = rule.state {
-        data.push_str(state.attribute());
+        data.push_str(family.attribute(state));
     }
     vec![data]
 }
@@ -1936,11 +2231,16 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
     }
     rules.sort_by_key(Rule::order);
     let mut sheet = String::from("@layer parts {\n");
-    // The roots at another of the family's sizes are clamped to their own height.
-    let corners = rules
-        .iter()
-        .any(|rule| rule.part == 0 && rule.values.contains_key(&Prop::CornerRadius));
-    for family in MANIFEST.iter().filter(|_| corners) {
+    // The roots at another of the family's sizes are clamped to their own height, in each
+    // family whose corners the theme sets.
+    let corners = |family: &Family| {
+        rules.iter().any(|rule| {
+            std::ptr::eq(rule.family, family)
+                && rule.part == 0
+                && rule.values.contains_key(&Prop::CornerRadius)
+        })
+    };
+    for family in MANIFEST.iter().filter(|family| corners(family)) {
         for (root, height) in family.sized_apart {
             let _ = writeln!(sheet, "  :where({root}) {{ {HEIGHT_PROPERTY}: {height}; }}");
         }
@@ -2039,6 +2339,8 @@ pub fn manifest_json() -> Value {
                 "name": family.name,
                 "description": family.description,
                 "since": family.since,
+                "focused": family.focused,
+                "states": family.states.iter().map(|state| state.name()).collect::<Vec<_>>(),
                 "parts": family.parts.iter().map(|part| json!({
                     "name": part.name,
                     "description": part.description,
@@ -2075,7 +2377,7 @@ pub(super) fn schema() -> Value {
             let variants =
                 std::iter::once(None).chain(family.variants.iter().map(|one| Some(one.name)));
             for variant in variants {
-                let states = std::iter::once(None).chain(STATES.map(Some));
+                let states = std::iter::once(None).chain(family.states.iter().copied().map(Some));
                 for state in states {
                     for property in part.properties {
                         if state.is_some() && !property.in_state() {

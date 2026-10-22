@@ -22,7 +22,22 @@ pub mod opencode;
 #[cfg(test)]
 pub(crate) mod testing;
 
-pub use adapter::{HarnessAdapter, SkillStart};
+pub use adapter::{HarnessAdapter, SkillStart, SkillToStart};
+
+/// **purlis's skill budget for one chat** (SK-12, #2775; ADR 0102 §1 as amended 2026-10-21): 30
+/// skills and 6,000 characters of their descriptions, on every harness. Under the smallest
+/// harness limit measured on 2026-10-20 (Claude Code's 1% of a 200k-token window, about 8,000
+/// characters for names, descriptions and their lines together), with room for 30 names and the
+/// lines they sit on, so no harness has to cut anything. Each adapter adds its own cap on one
+/// description, whether it lists a skill's path and whether it leaves a manual-only skill out
+/// ([`HarnessAdapter::skill_budget`]).
+pub(crate) const SKILL_BUDGET: crate::skills::Budget = crate::skills::Budget {
+    skills: 30,
+    chars: 6_000,
+    per_description: None,
+    lists_paths: false,
+    manual_free: false,
+};
 pub use claude::SMART_CLOSE_ALLOW;
 
 /// A harness session's id, held to a shape that cannot be read as a flag.
@@ -353,6 +368,30 @@ impl Harness {
             Self::Codex => &codex::ADAPTER,
             Self::Opencode => &opencode::ADAPTER,
         }
+    }
+
+    /// [`HarnessAdapter::skill_start_text`]: what Use skill… types to start `skill` (SK-12).
+    pub fn skill_start_text(self, skill: &SkillToStart<'_>) -> String {
+        self.adapter().skill_start_text(skill)
+    }
+
+    /// [`HarnessAdapter::skill_name`]: what this harness calls a skill of a chat's set (SK-12).
+    pub fn skill_name(self, name: &str, origin: crate::skills::Origin) -> String {
+        self.adapter().skill_name(name, origin)
+    }
+
+    /// [`HarnessAdapter::typed_start_named`]: how a skill Use skill… typed is confirmed sent.
+    pub fn typed_start(self) -> crate::skillspan::Confirmed {
+        if self.adapter().typed_start_named() {
+            crate::skillspan::Confirmed::ByName
+        } else {
+            crate::skillspan::Confirmed::ByPrompt
+        }
+    }
+
+    /// [`HarnessAdapter::skill_budget`]: one chat's skill budget on this harness (SK-12).
+    pub fn skill_budget(self) -> crate::skills::Budget {
+        self.adapter().skill_budget()
     }
 
     /// How a chat on this harness comes to know charter's skills, for that chat alone and with

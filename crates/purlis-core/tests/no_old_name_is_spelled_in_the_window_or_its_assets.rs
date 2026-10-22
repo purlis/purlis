@@ -81,8 +81,9 @@ const STILL_SPELLED: &[(&str, usize, Why)] = &[
     // The built-in icon theme's old id, in the window's alias table `ICON_THEME_ALIASES`, read
     // as `purlis-icons` until 1.0 (#1854); `themeIds.test.ts` holds it to `ICON_THEME`.
     ("app/src/theme/icons.ts", 1, Why::Compat),
-    // The hook binary's variable, kept until 1.0: #1305, RN-14 (#1273).
-    ("app/src-tauri/plugin/hooks/hooks.json", 15, Why::HookBinary),
+    // The hook binary's variable, kept until 1.0: #1305, RN-14 (#1273). Once in each generated
+    // hook's command: sixteen since `userpromptexpansion` (#2775).
+    ("app/src-tauri/plugin/hooks/hooks.json", 16, Why::HookBinary),
     ("app/src-tauri/plugin/opencode/purlis.ts", 1, Why::HookBinary),
     // purlis's own panels' and views' namespace: #1284.
     ("app/src/Panels.tsx", 8, Why::Unlisted),

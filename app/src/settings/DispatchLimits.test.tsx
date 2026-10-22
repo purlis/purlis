@@ -195,7 +195,7 @@ describe("Settings › Project › Dispatch", () => {
     expect(depth).toHaveAttribute("placeholder", "3");
     // The set's Field, as a table's cell (#626): its own name, its help as its tooltip, and a
     // count's keyboard.
-    expect(depth).toHaveClass("ui-field");
+    expect(depth.closest(".ui-setting-box")).toHaveAttribute("data-scope", "field");
     expect(depth).toHaveAttribute("title", "What depth limits.");
     expect(depth).toHaveAttribute("inputmode", "numeric");
     // A persona's limits are not the project's to set.
@@ -1075,8 +1075,8 @@ describe("the limits table's look (DS-9, #1841)", () => {
     const table = await drawn();
 
     const box = screen.getByLabelText("Depth for the persona devops");
-    expect(box).toHaveClass("ui-input");
-    expect(drawnWith(box, "block-size")).toBe("var(--size-control)");
+    expect(box.parentElement).toHaveAttribute("data-scope", "text-input");
+    expect(drawnWith(box.parentElement as Element, "block-size")).toBe("var(--size-control)");
     for (const button of [
       within(table).getByRole("button", { name: "Remove the override for the persona devops" }),
       within(table).getByRole("button", { name: "Show devops" }),

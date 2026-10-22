@@ -1686,6 +1686,13 @@ its harness. purlis sets it below each harness's own limit and shows it on the c
 it, the skill router hides skills behind the index skill (ADR 0102).
 _Avoid_: context budget (for this), skill limit
 
+**Use skill…**:
+Picking one of a chat's skills, from the palette, the chat's tab menu or the Skills chip on its
+pane, and having it typed into the chat in its harness's syntax, with the arguments the skill
+declares, for the person to send. It lists exactly that chat's skill set, manual-only skills
+included, and its run starts when that prompt is sent (#2775).
+_Avoid_: skill picker (for the act), run skill, invoke
+
 **Index skill**:
 An always-loaded skill a skill router shows whenever it hides any skill, listing every hidden
 skill by name and one line and saying that `skill_load` loads it (ADR 0102).

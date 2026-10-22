@@ -8,6 +8,7 @@ import { DoorPage } from "./DoorPage";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { YourRepos } from "./YourRepos";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /** Where the folder the person last picked to hold their projects is kept, on this machine. */
 export const REMEMBERED_PARENT = "purlis.getProject.parent";
@@ -169,7 +170,7 @@ export function GetProject({
 
   return (
     <DoorPage title="Get a project from your forge" className="get-project" onBack={onBack}>
-      <form
+      <Form
         className="by-path"
         aria-busy={getting}
         onSubmit={(event) => {
@@ -208,7 +209,7 @@ export function GetProject({
             Get project
           </Button>
         </SettingActions>
-      </form>
+      </Form>
 
       <div role="status" className="get-project-progress">
         {doing.kind === "getting" && (

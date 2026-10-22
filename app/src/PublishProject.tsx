@@ -10,6 +10,7 @@ import { FORGE_NAME, OwnerAndVisibility, StagesShown, useForgeOwners } from "./C
 import { askSettingsLink } from "./settings/links";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /** The forges a project is published to. */
 type Forge = keyof typeof FORGE_NAME;
@@ -138,7 +139,7 @@ export function PublishProject({
                 project&apos;s history to it, and makes it the project&apos;s remote. Cancel takes
                 back everything it made.
               </p>
-              <form
+              <Form
                 aria-busy={publishing}
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -217,7 +218,7 @@ export function PublishProject({
                   </Button>
                   {!publishing && <Button onPress={onClose}>Close</Button>}
                 </SettingActions>
-              </form>
+              </Form>
 
               <div role="status" className="create-on-forge-progress">
                 {doing.kind === "publishing" && (

@@ -8,6 +8,7 @@ import { commands, type CreateProgress, type ForgeOwners, type TemplateRow } fro
 import { REMEMBERED_PARENT } from "./GetProject";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Form } from "./ui/field/Field";
 
 /** Where a project lives: on a forge, or only on this machine. */
 export type Where = "mac" | "github" | "gitlab";
@@ -338,7 +339,7 @@ export function CreateOnForge({
         {listed?.host ? ` (${listed.host}, as ${listed.login})` : ""}, lays out the project in it,
         pushes the first commit and opens it. Cancel takes back everything it made.
       </p>
-      <form
+      <Form
         aria-busy={creating}
         onSubmit={(event) => {
           event.preventDefault();
@@ -412,7 +413,7 @@ export function CreateOnForge({
             Create project
           </Button>
         </SettingActions>
-      </form>
+      </Form>
 
       <div role="status" className="create-on-forge-progress">
         {doing.kind === "creating" && (

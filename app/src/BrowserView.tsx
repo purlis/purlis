@@ -40,6 +40,7 @@ import { RECONNECTING_SAID } from "./reconnecting";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { onAMac } from "./tabKeys";
 import { Button } from "./ui/button/Button";
+import { Form, TextField } from "./ui/field/Field";
 
 /** The keys that are only held with another. */
 const ONLY_HELD = new Set(["Shift", "Control", "Alt", "Meta"]);
@@ -465,18 +466,15 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   return (
     <div className="browser-view" data-testid="browser-view">
       {theirs && (
-        <form className="browser-address" aria-label="Go to an address" onSubmit={onGo}>
-          <input
-            type="text"
-            className="ui-input browser-address-text"
-            // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
-            tabIndex={0}
+        <Form className="browser-address" aria-label="Go to an address" onSubmit={onGo}>
+          {/* One size for the row: the box is as small as Go beside it. */}
+          <TextField
+            size="sm"
+            className="browser-address-text"
             aria-label="Address"
             placeholder="Type an address, such as https://example.com"
-            autoComplete="off"
-            spellCheck={false}
             value={typed}
-            onChange={(e) => setTyped(e.target.value)}
+            onChange={setTyped}
           />
           <Button
             size="sm"
@@ -485,7 +483,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           >
             Go
           </Button>
-        </form>
+        </Form>
       )}
       {theirs && asking !== null && (
         <NoticePaneRow>
