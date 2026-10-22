@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792663261396,
+  "lastUpdate": 1792669105037,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5422,6 +5422,42 @@ window.BENCHMARK_DATA = {
             "value": 330.6,
             "unit": "MB",
             "extra": "median of 6 samples: 342.7, 328.4, 326.9, 332.8, 333.7, 236.8 MB; window 150.2 MB, session host 176.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "777759cba0029d00bb25018271e290caa2704920",
+          "message": "SK-6: harness and repo skills in the studio, with on/off on every harness (#2983)\n\n* SK-6: harness and repo skills in the studio, with on/off on every harness\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-6: on SK-7, with \"Rename the project's copy\" on the clash mark (R1)\n\nThe clash mark's button opens the studio's own Rename for the\nproject's copy, which runs SK-7's skill_rename, so there is one\nrename. The studio's switches use the window's Button, the MCP route's\nreload and stamp know the outside skills, and the bindings are\ngenerated again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-6: SK-7's studio test mocks carry harnesses and clashes\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-6: a built-in skill never loses to a repo or harness copy\n\nwith_outside matched built-in skills by name too, so a clone's\nSKILL.md named secrets won RepoWins on Codex and opencode and took\npurlis's own away. Now a built-in skill is always the one handed, on\nevery route, and the other copy is listed \"hidden by purlis's built-in\nskill of this name\". Tested on the Config and Briefing routes and\nthrough the host's repo skills.\n\nAlso: opencode's not-supported sentence says what 1.18.33 measured, in\nwindow words; one list of built-in names; no silent Claude Code\nfallback for a harness in the studio; the ADR note uses the new names\nand cites #2932.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-22T14:53:47+04:00",
+          "tree_id": "697241967c2a8a31dfd87c33ea27da71e6260495",
+          "url": "https://github.com/purlis/purlis/commit/777759cba0029d00bb25018271e290caa2704920"
+        },
+        "date": 1792669103629,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 913,
+            "unit": "MB",
+            "extra": "median of 3 samples: 844, 913, 1059 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 359.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 406.7, 412.1, 364.2, 353.5, 354.6, 261.8 MB; window 165.6 MB, session host 193.8 MB"
           }
         ]
       }
