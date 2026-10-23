@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { CloudDownload, FolderOpen, FolderPlus, LogIn } from "lucide-react";
 import { commands, type ForgeRow, type Recents, type TemplateChoice } from "./bindings";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { CreateOnForge, type Where, WhereItLives } from "./CreateOnForge";
 import { ForgeSignIn } from "./ForgeSignIn";
 import type { ForgeAsk } from "./ForgeQuestion";
@@ -568,7 +568,7 @@ export function Welcome({
       )}
       {nothingRecent && (
         <EmptyState
-          size="panel"
+          variant="panel"
           headline="No recent projects yet"
           body="Each project you open is listed here, one press from opening again."
         />

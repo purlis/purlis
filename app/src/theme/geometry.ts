@@ -60,6 +60,10 @@ export const GEOMETRY = {
   radius: ["--radius-sm", "--radius-md", "--radius-lg", "--radius-xl", "--radius-full"],
   /** One height for every control (28px) and one for every strip and pane header (21px). */
   size: ["--size-control", "--size-chrome"],
+  /** The window's geometry (#2805, #2913): the gap between its regions, a region panel's
+   *  corners, and the hairline between regions. Classic is 0, 0 and 1: flush, as it always
+   *  drew. */
+  window: ["--window-gutter", "--panel-corner-radius", "--panel-border-width"],
   /** The two focus-ring rules: outside a control, inside a row or a tab. */
   focus: ["--focus-ring-width", "--focus-ring-offset", "--focus-ring-inset"],
   /** How far a surface is lifted: a bar floating over a pane, and every overlay (a dialog, a

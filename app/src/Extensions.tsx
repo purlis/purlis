@@ -48,7 +48,7 @@ import {
 } from "./windowprefs";
 import { drawNatively, forgetNativeWindow } from "./theme/native";
 import { AnswerBar } from "./AnswerBar";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { yourEditor } from "./yourEditor";
 import { setDraftHere } from "./themeDrafts";
 import { Button } from "./ui/button/Button";
@@ -240,7 +240,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
           {/* A claim, then the way out as the window names it (`docs/ui-copy.md`, #630). */}
           {listed && listed.extensions.length === 0 && (
             <EmptyState
-              size="panel"
+              variant="panel"
               headline="No extensions installed yet"
               body="Add an extension… points purlis at the directory that holds one."
             />

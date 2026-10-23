@@ -1849,7 +1849,12 @@ impl Hosting {
         let reach = start.reach.clone();
         let kept = start.kept.clone();
         let started = tokio::task::spawn_blocking(move || {
-            let data = hosting.inner.browsers.data_folders()?.join(&named);
+            let data = hosting
+                .inner
+                .browsers
+                .data_folders()
+                .map_err(crate::browsers::NotStarted::Failed)?
+                .join(&named);
             match hosting
                 .inner
                 .browsers
@@ -1864,7 +1869,7 @@ impl Hosting {
         })
         .await
         .map_err(|why| not_started(why.to_string()))
-        .and_then(|started| started.map_err(not_started));
+        .and_then(|started| started.map_err(browser_not_started));
         let (screen, data) = started?;
         let (columns, rows) = screen.size();
         // The host's own act that ends it, for the line its end leaves in the host's log
@@ -3287,6 +3292,18 @@ impl Drop for PlaceInTheBudget {
         if let Some(hosting) = self.hosting.take() {
             hosting.state().browsers_starting -= 1;
         }
+    }
+}
+
+/// The refusal of a browser that did not start (#2899): `no_engine_sandbox` where its engine
+/// cannot make its sandbox here, `not_started` for anything else; in the binary's words.
+fn browser_not_started(why: crate::browsers::NotStarted) -> Refusal {
+    match why {
+        crate::browsers::NotStarted::NoEngineSandbox(why) => Refusal {
+            code: session::NO_ENGINE_SANDBOX.into(),
+            why,
+        },
+        crate::browsers::NotStarted::Failed(why) => not_started(why),
     }
 }
 

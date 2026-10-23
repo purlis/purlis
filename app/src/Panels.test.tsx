@@ -427,8 +427,9 @@ describe("a panel", () => {
     const sections = screen.getByTestId("panels").querySelectorAll(".panels > section");
     expect(sections).toHaveLength(4);
     for (const section of sections) {
-      expect(within(section as HTMLElement).getByRole("heading", { level: 2 })).toHaveClass(
-        "sidebar-title",
+      expect(within(section as HTMLElement).getByRole("heading", { level: 2 })).toHaveAttribute(
+        "data-part",
+        "title",
       );
     }
   });

@@ -50,9 +50,9 @@ mod stamp;
 
 pub use budget::{Budget, Over, Spent};
 pub use declared::{Argument, Declared, Given, declared};
-pub use grant::{Grant, grant_of, set_grant};
+pub use grant::{Grant, grant_file, grant_of, set_grant};
 pub use load::{Loaded, Narrowing, POINTER, by_name, find, load};
-pub use read::{DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read};
+pub use read::{DIR_IN_BUNDLE, FILE, frontmatter, in_bundle, listing, parsed, read, scan};
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
 pub use share::{named, share};

@@ -786,7 +786,7 @@ fn the_buttons_family_default_is_what_button_css_draws() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 3);
+    assert_eq!(manifest["version"], 4);
     for list in ["states", "properties"] {
         for one in manifest[list].as_array().unwrap() {
             assert_eq!(one["since"], 1, "{one}");
@@ -968,6 +968,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         3,
         "a59f1d43e8ea81fd5d4379743664d436979ec1cf53324f1346c2712b805dbe55",
+    ),
+    (
+        4,
+        "dc6e2997214e822fdd97166f037b2d83091813f11701ce0bbfe06fa1403041f3",
     ),
 ];
 

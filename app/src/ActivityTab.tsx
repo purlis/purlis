@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Activity as ActivityMark, LoaderCircle, TriangleAlert } from "lucide-react";
 import { AnswerQuestion } from "./AnswerQuestion";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
 import {
   commands,

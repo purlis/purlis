@@ -429,7 +429,7 @@ describe("the workspace strip", () => {
     const hand = await screen.findByRole("button", {
       name: "Nothing has asked for you, but steward 5 can't tell purlis it's waiting",
     });
-    expect(hand).toHaveClass("muted");
+    expect(hand).toHaveAttribute("data-tone", "quiet");
     expect(screen.getByTestId("title-bar")).toContainElement(hand);
 
     // And a real request is the ordinary hand with its count.
@@ -446,7 +446,7 @@ describe("the workspace strip", () => {
       children: [],
     });
     const asking = await screen.findByRole("button", { name: "1 chat needs you" });
-    expect(asking).not.toHaveClass("muted");
+    expect(asking).not.toHaveAttribute("data-tone");
   });
 
   it("takes the count off a workspace tab when its chat is ignored (charter-app#248)", async () => {

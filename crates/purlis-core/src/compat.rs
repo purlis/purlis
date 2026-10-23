@@ -65,7 +65,29 @@ pub fn schema(cfg: &toml::Table) -> Schema {
 ///   `rename-plane` fix adds it in the one commit that renames them (RN-7), so a build that
 ///   cannot read those names opens the project read-only instead of writing charter's beside
 ///   them.
-pub const KNOWN: &[&str] = &[crate::names::PURLIS_NAMES_FEATURE];
+/// - `project-skills` ([`crate::skills::PROJECT_SKILLS_FEATURE`], #2784): the project's skills
+///   are in `skills/` and no longer in `.claude/skills`, which clones stop getting a copy of.
+///   The `project-skills` fix adds it in the one commit that moves them, so a build that hands a
+///   chat no project skill opens the project read-only instead of losing them quietly.
+pub const KNOWN: &[&str] = &[
+    crate::names::PURLIS_NAMES_FEATURE,
+    crate::skills::PROJECT_SKILLS_FEATURE,
+];
+
+/// Whether the manifest of the project at `root` lists `feature` in its `requires`, in the one
+/// shape [`read`] reads an entry in (`{ feature = "…", since = "…" }`). A manifest that is not
+/// there, cannot be read or is not TOML lists nothing.
+pub(crate) fn requires(root: &Path, feature: &str) -> bool {
+    std::fs::read_to_string(crate::names::manifest(root))
+        .ok()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .and_then(|cfg| cfg.get("requires")?.as_array().cloned())
+        .is_some_and(|entries| {
+            entries
+                .iter()
+                .any(|entry| entry.get("feature").and_then(toml::Value::as_str) == Some(feature))
+        })
+}
 
 /// What this charter may do with a project.
 #[derive(Debug, Clone, PartialEq, Eq)]

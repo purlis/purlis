@@ -21,7 +21,7 @@ import { PersonaMark } from "./PersonaMark";
 import type { Offer } from "./actions";
 import type { PanelEmpty, PanelRow, RowAction } from "./bindings";
 import { byDay, isDated, type Day } from "./dayGroups";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { useTabStop } from "./roving";
 import { Button } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
@@ -232,7 +232,7 @@ export function PanelList({
     const offer = empty.offer === null || onRun === undefined ? undefined : offerFor?.(empty.offer);
     return (
       <EmptyState
-        size="panel"
+        variant="panel"
         headline={empty.headline}
         body={empty.body === null ? undefined : codeSpans(empty.body)}
         action={

@@ -854,7 +854,7 @@ describe("a moved view keeps what it held (#1752)", () => {
     // In the sidebar, on its own heading.
     const button = screen.getByRole("button", { name: "New memory" });
     expect(button.closest(".half-head")).toBeNull();
-    expect(button.closest(".panel-head")).not.toBeNull();
+    expect(button.closest('[data-scope="panel-section"][data-part="head"]')).not.toBeNull();
   });
 
   it("keeps the keyboard in a view moved while the person is in it", () => {

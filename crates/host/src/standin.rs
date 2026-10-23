@@ -873,7 +873,12 @@ struct StartsHeld {
     holding: bool,
     waiting: usize,
     fail_next: bool,
+    /// The next start fails as an engine that cannot make its sandbox does (#2899).
+    no_sandbox_next: bool,
 }
+
+/// What a stand-in browser's start that fails for the engine's sandbox says (#2899).
+pub const NO_SANDBOX_SAID: &str = "the stand-in engine cannot make its sandbox here";
 
 impl StandInBrowsers {
     /// Browsers whose data folders are made in `folder`.
@@ -916,6 +921,11 @@ impl StandInBrowsers {
         self.held().fail_next = true;
     }
 
+    /// The next start fails as an engine that cannot make its sandbox here does (#2899).
+    pub fn fails_next_for_the_engines_sandbox(&self) {
+        self.held().no_sandbox_next = true;
+    }
+
     fn held(&self) -> std::sync::MutexGuard<'_, StartsHeld> {
         self.starts
             .held
@@ -943,9 +953,14 @@ impl crate::browsers::Browsers for StandInBrowsers {
         data: &std::path::Path,
         reach: Option<&purlis_session_protocol::browsing::BrowserReach>,
         kept: Option<&purlis_session_protocol::browsing::KeptLogin>,
-    ) -> Result<Arc<dyn crate::browsers::Screen>, String> {
+    ) -> Result<Arc<dyn crate::browsers::Screen>, crate::browsers::NotStarted> {
         {
             let mut held = self.held();
+            if std::mem::take(&mut held.no_sandbox_next) {
+                return Err(crate::browsers::NotStarted::NoEngineSandbox(
+                    NO_SANDBOX_SAID.to_owned(),
+                ));
+            }
             if std::mem::take(&mut held.fail_next) {
                 return Err("the stand-in engine did not start".into());
             }
