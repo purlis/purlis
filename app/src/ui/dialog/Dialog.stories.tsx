@@ -178,7 +178,9 @@ export const EscapeClosesOneLayer: Story = {
       expect(within(menu).getByRole("menuitem", { name: "Rename" })).toHaveFocus(),
     );
     await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(page.queryByRole("menu")).toBeNull());
+    // A menu may take a moment to go: WebKit draws the next frame late in a busy run (as the menu
+    // family's own stories allow).
+    await waitFor(() => expect(page.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
     await waitFor(() => expect(more).toHaveFocus());
     await expect(page.getByRole("dialog", { name: "Workspace" })).toBeVisible();
     await expect(page.getByRole("status", { hidden: true })).toHaveTextContent("Not answered yet");
