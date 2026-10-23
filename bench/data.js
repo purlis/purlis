@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792738305014,
+  "lastUpdate": 1792741386773,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22470,6 +22470,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3522605,
             "unit": "ms",
             "extra": "median of 5 runs: 100.385, 100.988, 101.352, 101.785, 102.356 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "19ef01ff9ae19348bd81a15661b07e2a2b1fcf74",
+          "message": "Cargo.lock: move clipboard-win off a yanked release (#3065)\n\nclipboard-win 5.4.1 is yanked, and cargo-deny denies yanked crates.\n5.4.3 is the patch release after it.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T11:41:38+04:00",
+          "tree_id": "042167eb9f6d2a391ee2de86e8a8f390637941f7",
+          "url": "https://github.com/purlis/purlis/commit/19ef01ff9ae19348bd81a15661b07e2a2b1fcf74"
+        },
+        "date": 1792741383999,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2790565,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.267, 0.279, 0.279, 0.286, 0.295 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.572816500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.485, 16.492, 16.573, 16.620, 16.681 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.24326400000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.697, 101.160, 101.243, 101.570, 101.777 ms"
           }
         ]
       }
