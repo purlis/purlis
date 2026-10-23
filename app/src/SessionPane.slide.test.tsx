@@ -68,6 +68,19 @@ describe("a chat's terminal while the project rail slides", () => {
     expect(fit.mock.calls.length).toBe(before + 1);
   });
 
+  it("fits nothing at the slide's end once the pane has gone", () => {
+    const fit = vi.spyOn(FitAddon.prototype, "fit").mockImplementation(() => {});
+    const { unmount } = render(
+      <SessionPane plane="/planes/one" session={1} focused={false} onFocus={() => {}} />,
+    );
+    slideStarted();
+    for (const heard of observers) heard();
+    unmount();
+    const before = fit.mock.calls.length;
+    slideEnded();
+    expect(fit.mock.calls.length).toBe(before);
+  });
+
   it("fits at once when nothing slides", () => {
     const fit = vi.spyOn(FitAddon.prototype, "fit").mockImplementation(() => {});
     render(<SessionPane plane="/planes/one" session={1} focused={false} onFocus={() => {}} />);

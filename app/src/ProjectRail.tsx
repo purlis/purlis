@@ -142,6 +142,9 @@ export function ProjectRail({
     const timer = setTimeout(slideEnded, inForce().motion.durations["duration.slide"] + 100);
     return () => clearTimeout(timer);
   }, [hidden]);
+  // The rail gone mid-slide (its last project closed) ends the slide: what waits for its end
+  // would otherwise wait for good, and no terminal would fit itself again.
+  useEffect(() => () => slideEnded(), []);
 
   const hide = useCallback(() => {
     peek.close(true);
@@ -491,6 +494,7 @@ function useEdgePeek(active: boolean, edge: RefObject<HTMLElement | null>) {
       outside = true;
       clearTimeout(rest);
       const was = now.current;
+      if (was.peek !== "open" && was.since === null) return;
       const next: Peeking =
         was.peek === "open" ? { peek: "leaving", since: null } : { ...was, since: null };
       now.current = next;
@@ -499,7 +503,14 @@ function useEdgePeek(active: boolean, edge: RefObject<HTMLElement | null>) {
     const root = document.documentElement;
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerdown", move);
+    // Gone from the window: an `out` into nothing, which WebKit says where it does not say the
+    // root's `pointerleave`.
+    const out = (event: MouseEvent) => {
+      if (event.relatedTarget === null) away();
+    };
     root.addEventListener("pointerleave", away);
+    document.addEventListener("pointerout", out);
+    document.addEventListener("mouseout", out);
     window.addEventListener("blur", away);
     return () => {
       clearTimeout(rest);
@@ -507,6 +518,8 @@ function useEdgePeek(active: boolean, edge: RefObject<HTMLElement | null>) {
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerdown", move);
       root.removeEventListener("pointerleave", away);
+      document.removeEventListener("pointerout", out);
+      document.removeEventListener("mouseout", out);
       window.removeEventListener("blur", away);
     };
   }, [active, edge]);

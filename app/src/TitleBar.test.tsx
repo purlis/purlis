@@ -695,7 +695,7 @@ describe("the title bar in the window, and the project rail below it (#2915)", (
     );
     await waitFor(() => expect(stripNamed("Workspaces")).toHaveTextContent("alpha"));
 
-    expect(within(bar()).getByTestId("title-project")).toHaveTextContent("one/");
+    expect(within(bar()).getByTestId("title-project")).toHaveTextContent(/^one$/);
     expect(bar()).not.toHaveTextContent("alpha");
     expect(bar()).not.toHaveTextContent(/running|counting chats/);
   });

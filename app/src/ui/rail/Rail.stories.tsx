@@ -165,8 +165,9 @@ export const Peek: Story = {
 };
 
 /**
- * The keyboard on the current project (S2): its focus ring stands beyond its selection ring, with
- * the rail's ground between them, and nothing changes size.
+ * The keyboard on the current project (S2): its focus ring is drawn inside the button, its
+ * selection ring outside, so the list's clip and the next button leave both whole; nothing
+ * changes size.
  */
 export const FocusedCurrent: Story = {
   play: async ({ canvas, userEvent }) => {
@@ -176,7 +177,8 @@ export const FocusedCurrent: Story = {
     await expect(current).toHaveFocus();
     await expect(current).toHaveAttribute("data-focus-visible");
     const style = getComputedStyle(current);
-    await expect(Number.parseFloat(style.outlineOffset)).toBeGreaterThan(4);
+    // Inside the button: nothing it draws reaches past the selection ring.
+    await expect(Number.parseFloat(style.outlineOffset)).toBeLessThan(0);
     const after = current.getBoundingClientRect();
     await expect([after.width, after.height]).toEqual([before.width, before.height]);
     // Its tooltip, which the keyboard opened, taken down by Esc: the picture is of the rings.

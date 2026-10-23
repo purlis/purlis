@@ -5528,16 +5528,17 @@ button.show-more:focus-visible {
    window controls (R91). */
 .title-bar-leading {
   display: flex;
-  flex: none;
+  flex: 0 1 auto;
   gap: var(--space-2);
   align-items: center;
+  min-width: 0;
 }
 
 /* The project in front, before the workspaces #2916 draws (the prototype's layout D): its name
-   in the quiet tier, a little heavier, and a faint separator. */
+   in the quiet tier, a little heavier, cut short rather than pressing on the bar's middle. Its
+   "/" comes with what #2916 draws after it. */
 .title-bar-crumb {
   display: inline-flex;
-  gap: var(--space-3);
   align-items: center;
   min-width: 0;
   font-size: var(--font-size-sm);
@@ -5549,10 +5550,6 @@ button.show-more:focus-visible {
   font-weight: var(--font-weight-medium);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.title-bar-crumb-sep {
-  color: var(--text-faint);
 }
 
 /* The right-hand end, which never gives way. At the far end whether or not there is a strip

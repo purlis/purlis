@@ -191,10 +191,11 @@
   outline-offset: var(--focus-ring-offset);
 }
 
-/* The keyboard on the current project: its ring beyond the selection's, with the rail's ground
-   between the two, so the focus is plainly there (WCAG 2.4.7, 2.4.11). No size changes. */
+/* The keyboard on the current project: its ring inside the button, 2px in from the edge the
+   selection's ring stands outside, so the focus is plainly there (WCAG 2.4.7, 2.4.11) and the
+   list's clip and the next button leave it whole. No size changes. */
 [data-part="button"][data-scope="rail"][data-selected][data-focus-visible] {
-  outline-offset: calc(var(--focus-ring-offset) * 3);
+  outline-offset: calc((var(--focus-ring-width) + var(--focus-ring-offset)) * -1);
 }
 
 /* ---------------------------------------------------------------------------------------------

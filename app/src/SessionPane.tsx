@@ -357,7 +357,10 @@ export function SessionPane({
     // Once the project rail's slide is over, not on each of its frames (`railSlide.ts`): the
     // program is told one new size per hide or show.
     const refit = () => fit.fit();
-    const watching = new ResizeObserver(() => afterTheSlide(refit));
+    let unqueue = () => {};
+    const watching = new ResizeObserver(() => {
+      unqueue = afterTheSlide(refit);
+    });
     watching.observe(where);
 
     let view: number | undefined;
@@ -409,6 +412,8 @@ export function SessionPane({
       unfont();
       unread();
       watching.disconnect();
+      // A pane gone before the slide's end fits nothing at it.
+      unqueue();
       wheeling.dispose();
       typed.dispose();
       bytes.dispose();

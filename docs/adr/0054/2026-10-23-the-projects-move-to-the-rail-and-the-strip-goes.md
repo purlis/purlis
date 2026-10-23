@@ -10,11 +10,11 @@ a project, and at the bottom the rail's own button that hides it.
 
 **What stands of this ADR.** The title bar is still the window's row, and its right-hand end
 still never gives way (the needs-you hand, the update, the save, the kill switch, About). What
-a project offers is still the catalogue's `projectRows`: the rail's button switches to it, its
-menu is the same rows (close, its settings, a window of its own), Delete closes it, and the
-order is still the window's arrangement, which a drag up or down the rail changes (SI-6). The
-menu's rows are the strip's: switch to it, **pin or unpin it** (pinned projects stand first on
-the rail), its settings, its Saving, a window of its own (or back to the main one), and close it.
+a project offers is still the catalogue's `projectRows`: the rail's button switches to it,
+Delete closes it, and the order is still the window's arrangement, which a drag up or down the
+rail changes (SI-6). Its menu's rows are the strip's: switch to it, **pin or unpin it** (pinned
+projects stand first on the rail), its settings, its Saving, a window of its own (or back to the
+main one), and close it.
 With the pin mark gone, the menu and the palette are where a project is pinned.
 
 **What goes with the strip.**
@@ -30,8 +30,8 @@ With the pin mark gone, the menu and the palette are where a project is pinned.
   bar that is not a control is drag region.
 
 **The title bar's left end** holds, while the rail hides itself, the button that shows it again,
-first after the window controls (R91). The project's crumb and its pinned workspaces follow it
-(#2916).
+first after the window controls (R91). The project in front's name follows it, as the
+prototype's crumb. The switcher that crumb opens and the pinned workspaces after it are #2916's.
 
 **The rail's mode** — always shown, or hiding itself — is the person's, on this machine: the
 layout file's `rail` (`docs/design-system.md`), read before the first frame. Only the person's own

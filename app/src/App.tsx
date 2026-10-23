@@ -1981,14 +1981,11 @@ function App() {
                   onPress={showRail}
                 />
               )}
-              {/* The project in front, as the prototype's title bar says it: its name, quiet,
-                  then a faint "/" before what #2916 draws after it (its workspaces). */}
+              {/* The project in front, as the prototype's title bar says it: its name, quiet.
+                  The "/" before its workspaces comes with them (#2916). */}
               {inFront !== undefined && (
                 <span className="title-bar-crumb" data-testid="title-project">
                   <span className="title-bar-project">{calledOn(inFront)}</span>
-                  <span className="title-bar-crumb-sep" aria-hidden="true">
-                    /
-                  </span>
                 </span>
               )}
             </>

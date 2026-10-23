@@ -9,7 +9,8 @@
  *
  * Window-wide state, as the slide is the window's: the rail starts it as its column starts to move
  * ({@link slideStarted}) and ends it when the column's transition ends, or its length has passed
- * ({@link slideEnded}).
+ * ({@link slideEnded}). A rail that goes mid-slide ends it, so nothing waits for an end that would
+ * never come.
  */
 
 let sliding = false;
@@ -37,11 +38,15 @@ export function railSliding(): boolean {
 
 /**
  * Runs `refit` now, or once the slide is over when the rail is moving: the same function asked
- * for on every frame of a slide runs once at its end.
+ * for on every frame of a slide runs once at its end. What it gives back withdraws a `refit` still
+ * waiting, for what goes before the slide ends.
  */
-export function afterTheSlide(refit: () => void): void {
+export function afterTheSlide(refit: () => void): () => void {
   if (sliding) waiting.add(refit);
   else refit();
+  return () => {
+    waiting.delete(refit);
+  };
 }
 
 /** Forgets a slide a test left unfinished, and what waited for it. For tests. */

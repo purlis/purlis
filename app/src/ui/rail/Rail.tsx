@@ -122,7 +122,9 @@ export function RailProject({
       .join(" ") || undefined;
   return (
     // Its name first, as an icon button's tooltip is, and what the Saving tab would say of its
-    // unsaved work as the second line (R89): the button shows no words of its own.
+    // unsaved work as the second line (R89, S1). The two lines come from the tooltip family's
+    // icon-only rule (`Tooltip.tsx`: a button with no words of its own and an aria-label puts
+    // the label first and `tip` under it), so the button must keep showing no words of its own.
     <Tooltip tip={unsaved?.says ?? name}>
       <button
         type="button"
