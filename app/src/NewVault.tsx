@@ -2,13 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
-import * as Dialog from "./overlays/dialog";
 import type { SetupDone } from "./bindings";
-import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Choice, Field, SettingRow } from "./settings/components";
 import { VaultSignIn } from "./VaultSignIn";
 import { PROVIDERS } from "./vaultProviders";
-import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * Making a vault, asked where the answer is given — `NewWorkspace`'s shape, for `charter vault
@@ -59,92 +57,71 @@ export function NewVault({
     if (ready) onCreate(name.trim(), provider, null);
   };
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
+    <Dialog
+      onClose={() => {
         // Not while charter is making it: a vault made behind a closed dialog would open a tab
         // nobody asked to see, and a refusal would land where nobody is looking.
-        if (!open && !busy) onCancel();
+        if (!busy) onCancel();
+      }}
+      title="New vault"
+      subtitle={
+        <>
+          on <code>{plane}</code>, for this machine only
+        </>
+      }
+      // The guided set-up draws its own answers in the footer (`VaultSignIn`).
+      cancel={{ isDisabled: making, onPress: onCancel }}
+      main={{
+        children: making ? "Creating…" : "Create vault",
+        reserve: ["Create vault", "Creating…"],
+        isDisabled: !ready,
+        onPress: create,
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning"
-          aria-describedby={undefined}
-          // A click outside answers nothing (`docs/ui-primitives.md`). Escape is Cancel.
-          onInteractOutside={(e) => e.preventDefault()}
-          // Radix focuses the first box as it opens, which is the name: nothing to override.
-        >
-          <Dialog.Title>New vault</Dialog.Title>
-          <p className="where">
-            on <code>{plane}</code>, for this machine only
+      <SettingRow
+        label="Name"
+        help={
+          <>
+            Letters, digits, <code>.</code>, <code>_</code> and <code>-</code>.
+          </>
+        }
+        control={(ids) => <Field kind="text" ids={ids} value={name} onChange={setName} />}
+      />
+
+      <SettingRow
+        label="Kept in"
+        grouped
+        control={(ids) => (
+          <Choice
+            kind="radio"
+            ids={ids}
+            options={PROVIDERS.map((one) => ({
+              value: one.id,
+              label: one.name,
+              says: one.says,
+            }))}
+            value={provider}
+            onValueChange={setProvider}
+            disabled={settingUp}
+          />
+        )}
+      />
+
+      {guided ? (
+        <VaultSignIn
+          plane={plane}
+          name={name}
+          onBusy={setSettingUp}
+          onDone={onMade}
+          onCancel={onCancel}
+        />
+      ) : (
+        trouble && (
+          <p className="trouble" role="alert">
+            {trouble}
           </p>
-
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              create();
-            }}
-          >
-            <SettingRow
-              label="Name"
-              help={
-                <>
-                  Letters, digits, <code>.</code>, <code>_</code> and <code>-</code>.
-                </>
-              }
-              control={(ids) => <Field kind="text" ids={ids} value={name} onChange={setName} />}
-            />
-
-            <SettingRow
-              label="Kept in"
-              grouped
-              control={(ids) => (
-                <Choice
-                  kind="radio"
-                  ids={ids}
-                  options={PROVIDERS.map((one) => ({
-                    value: one.id,
-                    label: one.name,
-                    says: one.says,
-                  }))}
-                  value={provider}
-                  onValueChange={setProvider}
-                  disabled={settingUp}
-                />
-              )}
-            />
-
-            {guided ? (
-              <VaultSignIn
-                plane={plane}
-                name={name}
-                onBusy={setSettingUp}
-                onDone={onMade}
-                onCancel={onCancel}
-              />
-            ) : (
-              <>
-                {trouble && (
-                  <p className="trouble" role="alert">
-                    {trouble}
-                  </p>
-                )}
-
-                <SettingActions>
-                  <Button variant="primary" type="submit" isDisabled={!ready}>
-                    {making ? "Creating…" : "Create vault"}
-                  </Button>
-                  <Button isDisabled={making} onPress={onCancel}>
-                    Cancel
-                  </Button>
-                </SettingActions>
-              </>
-            )}
-          </Form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        )
+      )}
+    </Dialog>
   );
 }

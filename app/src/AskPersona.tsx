@@ -1,12 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
-import { useFocusBack } from "./EndingChat";
-import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
-import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { createContext, useContext, useEffect, useState } from "react";
+import { Choice, Field, SettingRow } from "./settings/components";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /** Where the new chat works, as the dialog holds the pick. */
 type Where = "here" | "branch" | "workspace";
@@ -83,10 +80,6 @@ export function AskPersona({
   const [ask, setAsk] = useState(prefill?.ask ?? "");
   const [where, setWhere] = useState<Where>("here");
   const [workspace, setWorkspace] = useState("");
-  // The dialog, so the first box can be found in it on opening: the row draws the box, and a
-  // setting's field takes no ref.
-  const content = useRef<HTMLDivElement>(null);
-  const handBack = useFocusBack();
   // Another workspace is a pick that needs its second half before there is something to send.
   const placed = where !== "workspace" || workspace !== "";
   /** Who already works where it would, for the place it is said of. */
@@ -109,146 +102,121 @@ export function AskPersona({
   const send = () => {
     if (ready) onAsk(name, ask, placeOf(where, workspace));
   };
+  // The focus goes back, as the dialog closes, to where it was as it opened, as `EndingChat`'s
+  // does.
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <Dialog
+      onClose={onCancel}
+      title={`Ask ${persona}`}
+      subtitle={
+        <>
+          From <code>{chat}</code>
+        </>
+      }
+      className="ask-persona"
+      // A prefilled name leaves the question as the first thing to write.
+      initialFocus={(dialog) => {
+        const boxes = dialog.querySelectorAll<HTMLElement>(
+          '[data-part="body"] input, [data-part="body"] textarea',
+        );
+        return (prefill?.name ? boxes[1] : boxes[0]) ?? boxes[0];
+      }}
+      main={{
+        children: asking ? `Asking ${persona}…` : `Ask ${persona}`,
+        reserve: [`Ask ${persona}`, `Asking ${persona}…`],
+        isDisabled: !ready,
+        onPress: send,
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          ref={content}
-          className="ui-dialog warning ask-persona"
-          // Its rows' help says what each box is for; the dialog has no one sentence to read.
-          aria-describedby={undefined}
-          // A click outside answers nothing, as in every dialog here (`docs/ui-primitives.md`).
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            // A prefilled name leaves the question as the first thing to write.
-            const boxes = content.current?.querySelectorAll<HTMLElement>("input, textarea");
-            const first = prefill?.name ? boxes?.[1] : boxes?.[0];
-            (first ?? boxes?.[0])?.focus();
-          }}
-          // The focus goes back to where it was as the dialog opened, as `EndingChat`'s does.
-          onCloseAutoFocus={handBack}
-        >
-          <Dialog.Title>Ask {persona}</Dialog.Title>
-          <p className="where">
-            From <code>{chat}</code>
-          </p>
+      <SettingRow
+        label="Task name"
+        help="What the task is called, on its tab and under this chat."
+        control={(ids) => (
+          <Field
+            ids={ids}
+            kind="text"
+            value={name}
+            placeholder="Check the queue"
+            onChange={setName}
+          />
+        )}
+      />
+      <SettingRow
+        label="What to ask"
+        help={
+          <>
+            A task starts as {persona} on these words, with {persona}&apos;s own sandbox, hosts and
+            vaults. Its report comes back to <code>{chat}</code>, marked as started by you.
+            {/* Opened from a chat's Notice, the empty box is a question: the chat said what it
+                wanted, and none of it is here. That is the rule, said once. */}
+            {from === "notice" &&
+              " Write the request yourself: the chat's own words are not copied here."}
+          </>
+        }
+        control={(ids) => <Field ids={ids} kind="list" value={ask} minRows={4} onChange={setAsk} />}
+      />
 
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              send();
-            }}
-          >
-            <SettingRow
-              label="Task name"
-              help="What the task is called, on its tab and under this chat."
-              control={(ids) => (
-                <Field
-                  ids={ids}
-                  kind="text"
-                  value={name}
-                  placeholder="Check the queue"
-                  onChange={setName}
-                />
-              )}
+      <SettingRow
+        label="Where it works"
+        control={(ids) => (
+          <Choice
+            ids={ids}
+            kind="radio"
+            value={where}
+            onValueChange={(to) => setWhere(to as Where)}
+            options={[
+              {
+                value: "here",
+                label: "This chat's folder",
+                says: (
+                  <>
+                    Beside <code>{chat}</code>, in the same files.
+                  </>
+                ),
+              },
+              {
+                value: "branch",
+                label: "A branch of its own",
+                says: "purlis cuts a new branch, in a folder of its own, from the repo this chat works in. Nothing is merged for it: its report names the branch.",
+              },
+              {
+                value: "workspace",
+                label: "Another workspace",
+                says: "In that workspace's folder, with its todos, memory and session records.",
+                disabled: workspaces.length === 0,
+              },
+            ]}
+          />
+        )}
+      />
+      {where === "workspace" && (
+        <SettingRow
+          label="Workspace"
+          control={(ids) => (
+            <Choice
+              ids={ids}
+              kind="select"
+              value={workspace}
+              unset="Choose a workspace"
+              onValueChange={setWorkspace}
+              options={workspaces.map((one) => ({ value: one, label: one }))}
             />
-            <SettingRow
-              label="What to ask"
-              help={
-                <>
-                  A task starts as {persona} on these words, with {persona}&apos;s own sandbox,
-                  hosts and vaults. Its report comes back to <code>{chat}</code>, marked as started
-                  by you.
-                  {/* Opened from a chat's Notice, the empty box is a question: the chat said
-                      what it wanted, and none of it is here. That is the rule, said once. */}
-                  {from === "notice" &&
-                    " Write the request yourself: the chat's own words are not copied here."}
-                </>
-              }
-              control={(ids) => (
-                <Field ids={ids} kind="list" value={ask} minRows={4} onChange={setAsk} />
-              )}
-            />
+          )}
+        />
+      )}
 
-            <SettingRow
-              label="Where it works"
-              control={(ids) => (
-                <Choice
-                  ids={ids}
-                  kind="radio"
-                  value={where}
-                  onValueChange={(to) => setWhere(to as Where)}
-                  options={[
-                    {
-                      value: "here",
-                      label: "This chat's folder",
-                      says: (
-                        <>
-                          Beside <code>{chat}</code>, in the same files.
-                        </>
-                      ),
-                    },
-                    {
-                      value: "branch",
-                      label: "A branch of its own",
-                      says: "purlis cuts a new branch, in a folder of its own, from the repo this chat works in. Nothing is merged for it: its report names the branch.",
-                    },
-                    {
-                      value: "workspace",
-                      label: "Another workspace",
-                      says: "In that workspace's folder, with its todos, memory and session records.",
-                      disabled: workspaces.length === 0,
-                    },
-                  ]}
-                />
-              )}
-            />
-            {where === "workspace" && (
-              <SettingRow
-                label="Workspace"
-                control={(ids) => (
-                  <Choice
-                    ids={ids}
-                    kind="select"
-                    value={workspace}
-                    unset="Choose a workspace"
-                    onValueChange={setWorkspace}
-                    options={workspaces.map((one) => ({ value: one, label: one }))}
-                  />
-                )}
-              />
-            )}
+      {shared !== undefined && shared.place === place && (
+        <p className="honest" data-testid="ask-folder-shared">
+          {shared.says}
+        </p>
+      )}
 
-            {shared !== undefined && shared.place === place && (
-              <p className="honest" data-testid="ask-folder-shared">
-                {shared.says}
-              </p>
-            )}
-
-            {trouble && (
-              <p className="trouble" role="alert">
-                {trouble}
-              </p>
-            )}
-
-            {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
-            <SettingActions>
-              <Button variant="primary" type="submit" isDisabled={!ready}>
-                {asking ? `Asking ${persona}…` : `Ask ${persona}`}
-              </Button>
-              <Button onPress={onCancel}>Cancel</Button>
-            </SettingActions>
-          </Form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
   );
 }
 

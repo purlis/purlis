@@ -3,6 +3,7 @@
 
 import * as Radix from "@radix-ui/react-select";
 import { holdingOnlyWhileShown, onlyWhileShown } from "../projectShown";
+import { inTheTopLayer } from "./topLayer";
 
 /**
  * Radix's `select`, with what it puts over the window **drawn only while its project is in
@@ -36,5 +37,5 @@ export {
   Arrow,
 } from "@radix-ui/react-select";
 
-export const Portal = holdingOnlyWhileShown(Radix.Portal);
+export const Portal = holdingOnlyWhileShown(inTheTopLayer(Radix.Portal));
 export const Content = onlyWhileShown(Radix.Content);

@@ -1,8 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { KeyRound } from "lucide-react";
 import { PanelList } from "./PanelList";
 import { Menued } from "./Menus";
@@ -10,9 +9,9 @@ import { HeadingOffer, PanelSection } from "./PanelSection";
 import { Notice } from "./Notice";
 import type { Catalogued, Offer } from "./actions";
 import { commands, type PanelRow, type VaultSummary } from "./bindings";
-import { AnswerBar } from "./AnswerBar";
 import { providerName } from "./vaultProviders";
-import { Button } from "./ui/button/Button";
+import { Dialog } from "./ui/dialog/Dialog";
+import { ListFilter, noMatchSaid, useListFilter } from "./ui/dialog/ListFilter";
 
 /**
  * The plane's vaults, in the Attention region: each vault with its provider and how many
@@ -150,49 +149,49 @@ export function OpenVault({
   onPress: (offer: Offer) => void;
   onCancel: () => void;
 }) {
-  const list = useRef<HTMLDivElement>(null);
+  // More than about seven vaults are filtered (#2910). The keyboard lands on the filter, or on a
+  // short list's first vault, and Up, Down and Enter are all it takes.
+  const { query, setQuery, shown, filtered } = useListFilter(vaults, vaultName);
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
+    <Dialog
+      onClose={onCancel}
+      title="Open vault"
+      initialFocus={(dialog) =>
+        filtered
+          ? dialog.querySelector<HTMLElement>(".dialog-filter input")
+          : dialog.querySelector<HTMLElement>("button.row")
+      }
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning"
-          aria-describedby={undefined}
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            list.current?.querySelector<HTMLElement>("button.row")?.focus();
+      {filtered && (
+        <ListFilter noun={VAULTS} total={vaults.length} query={query} onQuery={setQuery} />
+      )}
+      {filtered && shown.length === 0 ? (
+        <p className="came-back" role="status">
+          {noMatchSaid(VAULTS, query)}
+        </p>
+      ) : (
+        <PanelList
+          rows={shown.map(rowOf)}
+          empty={NO_VAULTS_TO_OPEN}
+          label="Vaults to open"
+          open={undefined}
+          onOpen={() => undefined}
+          onRun={(id) => {
+            const offer = offers.get(id);
+            if (!offer) return;
+            onCancel();
+            onPress(offer);
           }}
-        >
-          <Dialog.Title>Open vault</Dialog.Title>
-          <div ref={list}>
-            <PanelList
-              rows={vaults.map(rowOf)}
-              empty={NO_VAULTS_TO_OPEN}
-              label="Vaults to open"
-              open={undefined}
-              onOpen={() => undefined}
-              onRun={(id) => {
-                const offer = offers.get(id);
-                if (!offer) return;
-                onCancel();
-                onPress(offer);
-              }}
-            />
-          </div>
-          <AnswerBar>
-            <Button onPress={onCancel}>Cancel</Button>
-          </AnswerBar>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        />
+      )}
+    </Dialog>
   );
 }
+
+/** What a vault is filtered by: its name. */
+const vaultName = (vault: VaultSummary) => vault.name;
+
+const VAULTS = { one: "vault", many: "vaults" };
 
 /** What `vault_list` said for a plane, and a way to ask it again. */
 export type VaultsSaid = { vaults?: VaultSummary[]; trouble?: string; reload: () => void };

@@ -1,12 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
 import { ChatState } from "./NeedsYou";
 import { type State } from "./chatState";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /**
  * One chat a quit is about to end, whichever project it is in.
@@ -65,56 +62,22 @@ export function QuitWarning({
   onQuit: () => void;
   onCancel: () => void;
 }) {
-  // Cancel, focused by the dialog itself rather than by `autoFocus`: see `StartChat`.
-  const cancel = useRef<HTMLButtonElement>(null);
+  // A click outside answers nothing, as an alert dialog's never does. Cancel and Escape are the
+  // two ways out, and Cancel leads with the keyboard on it: the destructive answer is never the
+  // one a stray Return key finds.
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
+    <AlertDialog
+      onClose={onCancel}
+      title={chats.length === 1 ? "Quitting ends 1 chat" : `Quitting ends ${chats.length} chats`}
+      titleId="quit-warning"
+      aria-describedby="quit-warning-said"
+      main={{ children: "Quit purlis", variant: "danger", onPress: onQuit }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        {/* A click outside answers nothing, as an alert dialog's never does. Cancel and Escape
-            are the two ways out. */}
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          aria-labelledby="quit-warning"
-          aria-describedby="quit-warning-said"
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <AlertDialog.Title id="quit-warning">
-            {chats.length === 1 ? "Quitting ends 1 chat" : `Quitting ends ${chats.length} chats`}
-          </AlertDialog.Title>
-          <EndingList chats={chats} />
-          <AlertDialog.Description asChild>
-            <div id="quit-warning-said">
-              <MidTurnSaid chats={chats} />
-            </div>
-          </AlertDialog.Description>
-          {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186): WebKit
-              leaves a `<button>` out of the tab sequence unless its `tabindex` is written
-              down. These two were reachable anyway, because they are the two edges Radix's
-              focus scope handles — but "reachable because there are only two of them" is a
-              property that goes away the moment a third control arrives, and the attribute is
-              what makes it not depend on the count. */}
-          <AnswerBar>
-            {/* Cancel first, and focused: the destructive answer is never the one a stray
-              Return key finds. */}
-            <Button ref={cancel} onPress={onCancel}>
-              Cancel
-            </Button>
-            <Button variant="danger" onPress={onQuit}>
-              Quit purlis
-            </Button>
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      <EndingList chats={chats} />
+      <div id="quit-warning-said">
+        <MidTurnSaid chats={chats} />
+      </div>
+    </AlertDialog>
   );
 }
 
@@ -198,12 +161,10 @@ export function MidTurnSaid({ chats }: { chats: readonly Ending[] }) {
  * back. A chat that reports no state is asked about too, for the quit warning's reason: it could
  * be mid-turn and charter would never know.
  *
- * **Radix's `AlertDialog`**, per `docs/ui-primitives.md`: it arrives because of what the
- * operator pressed, a click outside answers nothing, and its `Cancel` — **Wait** — is first and
- * has the keyboard, so the answer a stray Return or Escape finds interrupts nothing. **Restart
- * now is a plain button, not the primitive's `Action`**, for `RelaunchAsk`'s reason: an `Action`
- * also closes the dialog, and closing is this dialog's Wait. The list is live: a chat that
- * finishes its turn while this is up leaves it.
+ * **The family's `AlertDialog`**, per `docs/ui-primitives.md`: it arrives because of what the
+ * operator pressed, a click outside answers nothing, and its way out — **Wait** — leads and has
+ * the keyboard, so the answer a stray Return or Escape finds interrupts nothing. The list is
+ * live: a chat that finishes its turn while this is up leaves it.
  */
 export function MidTurn({
   chats,
@@ -218,37 +179,21 @@ export function MidTurn({
   title?: string;
 }) {
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onWait();
-      }}
+    <AlertDialog
+      onClose={onWait}
+      title={title}
+      aria-describedby="restart-mid-turn-said"
+      cancel={{ children: "Wait" }}
+      main={{ children: "Restart now", variant: "danger", onPress: onRestart }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content className="ui-dialog warning" aria-describedby="restart-mid-turn-said">
-          <AlertDialog.Title>{title}</AlertDialog.Title>
-          <EndingList chats={chats} />
-          <AlertDialog.Description asChild>
-            <div id="restart-mid-turn-said">
-              <MidTurnSaid chats={chats} />
-              <p className="honest">
-                Every chat is offered back when purlis starts again. Wait to let a turn finish, or
-                restart now.
-              </p>
-            </div>
-          </AlertDialog.Description>
-          {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button>Wait</Button>
-            </AlertDialog.Cancel>
-            <Button variant="danger" onPress={onRestart}>
-              Restart now
-            </Button>
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      <EndingList chats={chats} />
+      <div id="restart-mid-turn-said">
+        <MidTurnSaid chats={chats} />
+        <p className="honest">
+          Every chat is offered back when purlis starts again. Wait to let a turn finish, or restart
+          now.
+        </p>
+      </div>
+    </AlertDialog>
   );
 }

@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { DialogAnswers, useInADialog } from "./ui/dialog/Dialog";
 
 /**
  * **The git identity form** (FX-3): the fix for the doctor's `git identity` row, which needs a
@@ -54,7 +54,8 @@ export function GitIdentityForm({
   const [email, setEmail] = useState("");
   const [refused, setRefused] = useState<IdentityRefused>();
   const [sending, setSending] = useState(false);
-  const form = useRef<HTMLFormElement>(null);
+  const form = useRef<HTMLDivElement>(null);
+  const inADialog = useInADialog();
   const nameSet = current.name !== "";
   const emailSet = current.email !== "";
 
@@ -75,18 +76,30 @@ export function GitIdentityForm({
 
   const locked = "Already set in git's global config; this fix leaves it as it is.";
 
+  const send = () => {
+    if (busy || sending) return;
+    setSending(true);
+    void submit(nameSet ? "" : name, emailSet ? "" : email)
+      .then(setRefused)
+      .finally(() => setSending(false));
+  };
+
+  // **A form by its role, not a `<form>` element** (#2910): it is drawn in the Doctor dialog's
+  // body, which is the dialog's own form, and a form element is never inside another. Return in
+  // its fields sets the identity, as its own form's Return did, and goes no further.
   return (
-    <Form
+    <div
       id={id}
       ref={form}
       className="doctor-form"
+      role="form"
       aria-label="Git identity"
-      onSubmit={(event) => {
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+        if (!(event.target instanceof HTMLInputElement)) return;
         event.preventDefault();
-        setSending(true);
-        void submit(nameSet ? "" : name, emailSet ? "" : email)
-          .then(setRefused)
-          .finally(() => setSending(false));
+        event.stopPropagation();
+        send();
       }}
     >
       <SettingRow
@@ -125,13 +138,26 @@ export function GitIdentityForm({
           />
         )}
       />
-      {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
-      <SettingActions>
-        <Button type="submit" isDisabled={busy || sending}>
-          {sending ? "Setting…" : "Set identity"}
-        </Button>
-        <Button onPress={onCancel}>Cancel</Button>
-      </SettingActions>
-    </Form>
+      {/* In a dialog its answers are the dialog's, in its footer, so the main action is where
+        it is in every dialog (#2910); elsewhere (a Notice) they end the form, Cancel first. */}
+      {inADialog ? (
+        <DialogAnswers
+          cancel={{ children: "Cancel", onPress: onCancel }}
+          main={{
+            children: sending ? "Setting…" : "Set identity",
+            reserve: ["Set identity", "Setting…"],
+            isDisabled: busy || sending,
+            onPress: send,
+          }}
+        />
+      ) : (
+        <SettingActions>
+          <Button onPress={onCancel}>Cancel</Button>
+          <Button variant="primary" isDisabled={busy || sending} onPress={send}>
+            {sending ? "Setting…" : "Set identity"}
+          </Button>
+        </SettingActions>
+      )}
+    </div>
   );
 }

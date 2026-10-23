@@ -1,11 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
+import { useState } from "react";
 import { commands, type ActionAnswer, type PlaneId, type RowAction } from "./bindings";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /**
  * **An extension's action, run** — from a row of its view or from a palette command
@@ -81,74 +79,58 @@ export function AskFirst({
   const [trouble, setTrouble] = useState<string>();
   const [seen, setSeen] = useState<string>();
   const [running, setRunning] = useState(false);
-  const cancel = useRef<HTMLButtonElement>(null);
+  const run = () => {
+    setRunning(true);
+    void onRun().then((ran) => {
+      if (ran === undefined) return;
+      if ("refused" in ran) setTrouble(ran.refused);
+      else {
+        setTrouble(undefined);
+        setSeen(ran.seen);
+      }
+      setRunning(false);
+    });
+  };
+  const verb = action.deletes ? "Delete" : "Run";
+  const doing = action.deletes ? "Deleting…" : "Running…";
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
+    <AlertDialog
+      onClose={() => {
         // Not while the core is running it: the answer would land on a dialog nobody sees.
-        if (!open && !running) onCancel();
+        if (!running) onCancel();
+      }}
+      title={
+        <>
+          Run “{action.title}” from {extension}?
+        </>
+      }
+      description={
+        <p className="came-back">
+          {action.deletes
+            ? "This action deletes. purlis asks before every action that deletes. The extension decides what it deletes. purlis does not stop it."
+            : `${extension} asks purlis to ask you before it runs this.`}
+        </p>
+      }
+      cancel={{
+        children: seen === undefined ? "Cancel" : "Close",
+        reserve: ["Cancel", "Close"],
+        isDisabled: running,
+      }}
+      main={{
+        // Said while the core runs it (D-630-3): a button that only greys out says nothing
+        // about whether the press was taken. Once it has run, it stays where it was, done.
+        children: running ? doing : verb,
+        reserve: [verb, doing],
+        variant: action.deletes ? "danger" : "secondary",
+        isDisabled: running || seen !== undefined,
+        onPress: run,
       }}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <AlertDialog.Title>
-            Run “{action.title}” from {extension}?
-          </AlertDialog.Title>
-          <AlertDialog.Description className="came-back">
-            {action.deletes
-              ? "This action deletes. purlis asks before every action that deletes. The extension decides what it deletes. purlis does not stop it."
-              : `${extension} asks purlis to ask you before it runs this.`}
-          </AlertDialog.Description>
-          {(trouble ?? seen) !== undefined && (
-            <p className="trouble" role="alert">
-              {trouble ?? seen}
-            </p>
-          )}
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button isDisabled={running} ref={cancel}>
-                {seen === undefined ? "Cancel" : "Close"}
-              </Button>
-            </AlertDialog.Cancel>
-            {seen === undefined && (
-              <Button
-                variant={action.deletes ? "danger" : "secondary"}
-                isDisabled={running}
-                onPress={() => {
-                  setRunning(true);
-                  void onRun().then((ran) => {
-                    if (ran === undefined) return;
-                    if ("refused" in ran) setTrouble(ran.refused);
-                    else {
-                      setTrouble(undefined);
-                      setSeen(ran.seen);
-                    }
-                    setRunning(false);
-                  });
-                }}
-              >
-                {/* Said while the core runs it (D-630-3): a button that only greys out says
-                    nothing about whether the press was taken. */}
-                {running
-                  ? action.deletes
-                    ? "Deleting…"
-                    : "Running…"
-                  : action.deletes
-                    ? "Delete"
-                    : "Run"}
-              </Button>
-            )}
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      {(trouble ?? seen) !== undefined && (
+        <p className="trouble" role="alert">
+          {trouble ?? seen}
+        </p>
+      )}
+    </AlertDialog>
   );
 }

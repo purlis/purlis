@@ -18,9 +18,9 @@
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
  * - `primitives/controls.css`, `ui/button/button.css`, `ui/field/field.css`, the window's own
- *   families (`ui/panel`, `ui/empty-state`, `ui/status`), `primitives/overlays.css`,
- *   `ui/tooltip/tooltip.css` and the popover and menu families' sheets are in the `components`
- *   layer,
+ *   families (`ui/panel`, `ui/empty-state`, `ui/status`), `ui/dialog/dialog.css`,
+ *   `primitives/overlays.css`, `ui/tooltip/tooltip.css` and the popover and menu families' sheets
+ *   are in the `components` layer,
  *   above `App.css`'s `charter` (`styles.css`), so a primitive's rule beats any of `App.css`'s that
  *   sets the same property, at any specificity;
  * - inside one layer, the winner is the highest specificity, then the last in the file.
@@ -109,7 +109,7 @@ function rulesOf(css: string, layer = 0, from = 0): Rule[] {
 
 /** The window's cascade: `App.css`, and in the layer above it the collections, the control
  *  classes, the button family (#2904), the field family (#2905), the window's own families
- *  (#2913), the overlay surface, the tooltip family (#2908), the popover and menu families (#2909) and then the text roles,
+ *  (#2913), the dialog family (#2910), the overlay surface, the tooltip family (#2908), the popover and menu families (#2909) and then the text roles,
  *  in the order `styles.css` imports them. */
 const COMPONENTS = [
   "primitives/collections.css",
@@ -119,6 +119,7 @@ const COMPONENTS = [
   "ui/panel/panel.css",
   "ui/empty-state/empty-state.css",
   "ui/status/status.css",
+  "ui/dialog/dialog.css",
   "primitives/overlays.css",
   "ui/tooltip/tooltip.css",
   "ui/popover/popover.css",

@@ -3,7 +3,6 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PersonaMark } from "./PersonaMark";
-import * as Dialog from "./overlays/dialog";
 import { HarnessSummary } from "./HarnessCard";
 import { FirstOnHarness, noteHarness } from "./cardLink";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
@@ -12,7 +11,8 @@ import { useChatsHere } from "./chatState";
 import { Choice, Field, SettingActions, SettingGroup, SettingRow } from "./settings/components";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 import { Button } from "./ui/button/Button";
-import { submitKeyShortcut, submits } from "./ui/field/submitKey";
+import { Dialog } from "./ui/dialog/Dialog";
+import { submitKeyShortcut } from "./ui/field/submitKey";
 
 /**
  * The value that stands for "no persona at all".
@@ -236,375 +236,296 @@ export function StartChat({
       : null;
   const blockedByPolicy = refused && locked !== null;
   const startWord = withoutSandbox !== null ? "Start without the sandbox" : "Start";
-  // Cancel, so the dialog can put the keyboard on it itself. React's `autoFocus` and the
-  // focus trap's own opening move both aim at mount, and which of them lands last is not
-  // something to leave to ordering: the trap is told to do nothing and this is focused here.
-  const cancel = useRef<HTMLButtonElement>(null);
-  // What had the keyboard when the dialog came up — the `+` it was opened from, or the terminal
-  // a shortcut was typed in — read once, on the first draw (#1600). The window closes the dialog
-  // by no longer drawing it, and the focus trap's own way back lands on the page instead.
-  const [opener] = useState(() =>
-    document.activeElement instanceof HTMLElement && document.activeElement !== document.body
-      ? document.activeElement
-      : null,
-  );
-  // Whether it was left with nothing started — Escape or Cancel. Only then does the keyboard go
-  // back to the opener: a start hands it to the new chat, and Settings or the install shell take
-  // it where they open.
-  const cancelled = useRef(false);
   // The project's Local file, by the name the core read, for the two lines that name it.
   const localFile = useLocalFile(
     useChatsHere().plane,
     options.ignore_fix !== null || options.declares_none,
   );
+  // Whether it was left with nothing started — Escape or Cancel. Only then does the keyboard go
+  // back to what had it: a start hands it to the new chat, and Settings or the install shell
+  // take it where they open.
+  const cancelled = useRef(false);
   const leave = () => {
     cancelled.current = true;
     onCancel();
   };
-  const startable = profile !== undefined && profile !== null && !starting && !blockedByPolicy;
   const start = () => {
+    if (picked?.approval) {
+      if (picked.harness) noteHarness(picked.harness.name);
+      onApprove(picked.name, persona, showFooter, picked.shown, label, newBranch, withoutSandbox);
+      return;
+    }
     if (!profile) return;
     if (picked?.harness) noteHarness(picked.harness.name);
     onStart(profile, persona, showFooter, label, newBranch, withoutSandbox);
   };
+  const approves = Boolean(picked?.approval);
+  const chord = !approves && withoutSandbox === null;
 
+  // **Its own rows, moved onto the dialog family as they are** (#2910; its own redesign is
+  // #2918). Escape starts nothing, and it is the dialog's own Escape. A click outside answers
+  // nothing — Cancel and Escape are the two ways out, as they have always been. Left with nothing
+  // started, the keyboard goes back to what had it as the dialog came up (#1600), the `+` it was
+  // opened from or the terminal a shortcut was typed in; a start hands it to the new chat.
   return (
-    // Escape starts nothing, and it is the dialog's own Escape rather than a listener on the
-    // window: focus is trapped inside, so "wherever focus happens to be inside it" is now a
-    // property of the surface rather than a thing this component has to arrange.
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) leave();
+    <Dialog
+      onClose={leave}
+      returnFocus={() => cancelled.current}
+      title="Start a chat"
+      titleId="start-chat"
+      className="starting"
+      // Cancel, and not the first thing in tab order: starting a chat runs a command with
+      // nothing between the key and the exec, so it is never what a stray Return key finds.
+      initialFocus="cancel"
+      main={{
+        // Approving a profile's command grants it its run: drawn as every grant is (ADR 0097
+        // §6), never the primary look.
+        children: starting
+          ? "Starting…"
+          : approves
+            ? `Approve and ${startWord.toLowerCase()}`
+            : startWord,
+        // Every word it can say, and the lock's room, whatever is chosen: choosing a profile
+        // that asks for approval moves and widens nothing (R163).
+        reserve: [
+          "Start",
+          "Start without the sandbox",
+          "Starting…",
+          "Approve and start",
+          "Approve and start without the sandbox",
+        ],
+        reserveGrant: true,
+        variant: approves ? "grants" : "primary",
+        isDisabled: approves
+          ? !picked || starting || blockedByPolicy
+          : !profile || starting || blockedByPolicy,
+        // Return in the Name box never starts a command: Start is pressed (D-1719-3). The
+        // command is said above before the press (V69), and the chat it starts can be closed.
+        byReturn: false,
+        // **⌘⏎ starts the chat** (N26, Ctrl+Enter off macOS), from anywhere in the dialog: a
+        // chord, never a stray Return. Never an approval, and never a start without the
+        // sandbox: each grants the chat more than the sandbox gives, and a grant is only ever a
+        // press of its own button (ADR 0097 §6).
+        byChord: chord,
+        "aria-keyshortcuts": chord ? submitKeyShortcut() : undefined,
+        onPress: start,
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning starting"
-          aria-labelledby="start-chat"
-          // A click outside answers nothing — Cancel and Escape are the two ways out, as they
-          // have always been. Turned off explicitly rather than left to the default, so a
-          // reviewer sees it was decided rather than inherited.
-          onInteractOutside={(e) => e.preventDefault()}
-          // **⌘⏎ starts the chat** (N26, Ctrl+Enter off macOS), from anywhere in the dialog: a
-          // chord, never a stray Return. Never an approval, and never a start without the
-          // sandbox: each grants the chat more than the sandbox gives, and a grant is only ever a
-          // press of its own button (ADR 0097 §6). Never from a list drawn outside the dialog
-          // (the profile picker's open list), whose keys are its own.
-          onKeyDown={(e) => {
-            if (!submits(e.nativeEvent) || !e.currentTarget.contains(e.target as Node)) return;
-            if (picked?.approval || withoutSandbox !== null || !startable) return;
-            e.preventDefault();
-            start();
-          }}
-          onOpenAutoFocus={(e) => {
-            // Cancel, and not the first thing in tab order: starting a chat runs a command
-            // with nothing between the key and the exec, so it is never what a stray Return
-            // key finds.
-            e.preventDefault();
-            cancel.current?.focus();
-          }}
-          // Left with nothing started, the keyboard goes back where it was, when that is still
-          // on the page; otherwise the trap's default.
-          onCloseAutoFocus={(e) => {
-            if (!cancelled.current || opener === null || !opener.isConnected) return;
-            e.preventDefault();
-            opener.focus({ preventScroll: true });
-          }}
-        >
-          <Dialog.Title id="start-chat">Start a chat</Dialog.Title>
+      {/* These two lines are drawn once the file's name is known (a read of a moment), so the
+        alert is said once, and with the name. */}
+      {options.ignore_fix && localFile !== undefined && (
+        <p className="honest mid-turn" role="alert">
+          git would carry {localFile}, so every profile it declares is refused until that is fixed:{" "}
+          <code>{options.ignore_fix}</code>
+        </p>
+      )}
+      {/* The doctor's own fix for this state (NO-8, #1233), the one its `harness profiles`
+        row offers, where one ignore line is the whole cure. */}
+      {options.ignore_fix_id && onFix && (
+        <SettingActions>
+          <Button
+            isDisabled={fixing}
+            onPress={() => options.ignore_fix_id && onFix(options.ignore_fix_id)}
+          >
+            {fixing ? "Adding the ignore line…" : "Add the ignore line"}
+          </Button>
+        </SettingActions>
+      )}
+      {options.declares_none && !options.ignore_fix && localFile !== undefined && (
+        <p className="honest">
+          {/* Said rather than shown as an empty list: a project that declares nothing is the
+          ordinary first state, not a fault, and the built-ins below still start. */}
+          This project declares no profiles of its own, so these are purlis&apos;s built-ins.
+          Declare your own in {localFile}, which stays on this machine.
+        </p>
+      )}
 
-          {/* These two lines are drawn once the file's name is known (a read of a moment), so the
-              alert is said once, and with the name. */}
-          {options.ignore_fix && localFile !== undefined && (
-            <p className="honest mid-turn" role="alert">
-              git would carry {localFile}, so every profile it declares is refused until that is
-              fixed: <code>{options.ignore_fix}</code>
-            </p>
-          )}
-          {/* The doctor's own fix for this state (NO-8, #1233), the one its `harness profiles`
-              row offers, where one ignore line is the whole cure. */}
-          {options.ignore_fix_id && onFix && (
-            <SettingActions>
-              <Button
-                isDisabled={fixing}
-                onPress={() => options.ignore_fix_id && onFix(options.ignore_fix_id)}
-              >
-                {fixing ? "Adding the ignore line…" : "Add the ignore line"}
-              </Button>
-            </SettingActions>
-          )}
-          {options.declares_none && !options.ignore_fix && localFile !== undefined && (
-            <p className="honest">
-              {/* Said rather than shown as an empty list: a project that declares nothing is the
-                ordinary first state, not a fault, and the built-ins below still start. */}
-              This project declares no profiles of its own, so these are purlis&apos;s built-ins.
-              Declare your own in {localFile}, which stays on this machine.
-            </p>
-          )}
-
-          {/* Every control is a row of the settings set (DS-3d, #1176), as Settings draws one:
-              a name, the control, and the line that says what it means. */}
-          <SettingRow
-            label="Harness"
-            grouped
-            control={(ids) => (
-              <Choice
-                ids={ids}
-                kind="radio"
-                options={options.profiles.map((row) => ({
-                  value: row.name,
-                  label: row.name,
-                  says: <ProfileMeta row={row} />,
-                }))}
-                value={profile}
-                onValueChange={pickProfile}
-              />
-            )}
+      {/* Every control is a row of the settings set (DS-3d, #1176), as Settings draws one:
+        a name, the control, and the line that says what it means. */}
+      <SettingRow
+        label="Harness"
+        grouped
+        control={(ids) => (
+          <Choice
+            ids={ids}
+            kind="radio"
+            options={options.profiles.map((row) => ({
+              value: row.name,
+              label: row.name,
+              says: <ProfileMeta row={row} />,
+            }))}
+            value={profile}
+            onValueChange={pickProfile}
           />
-          {/* The picked harness's card, at a glance (HP-19): what it runs at and lacks, before
-              anything starts. Its whole card is a tab, opened from the chat's header. */}
-          {picked?.harness && <HarnessSummary glance={picked.harness} />}
+        )}
+      />
+      {/* The picked harness's card, at a glance (HP-19): what it runs at and lacks, before
+        anything starts. Its whole card is a tab, opened from the chat's header. */}
+      {picked?.harness && <HarnessSummary glance={picked.harness} />}
 
-          <SettingRow
-            label="Persona"
-            grouped
-            control={(ids) => (
-              <Choice
-                ids={ids}
-                kind="radio"
-                options={[
-                  { value: NO_PERSONA, label: "None" },
-                  ...options.personas.map((who) => {
-                    const own = ownProfile(who);
-                    const says = [
-                      // What the persona says of itself in a line (#1460).
-                      options.persona_descriptions?.[who],
-                      who === options.persona ? "project default" : undefined,
-                      own === undefined ? undefined : `its profile is ${own}`,
-                    ].filter((word) => word !== undefined);
-                    return {
-                      value: who,
-                      label: who,
-                      mark: <PersonaMark persona={who} />,
-                      says: says.length === 0 ? undefined : says.join(" · "),
-                    };
-                  }),
-                ]}
-                value={persona ?? NO_PERSONA}
-                onValueChange={(value) => pickPersona(value === NO_PERSONA ? null : value)}
-              />
-            )}
+      <SettingRow
+        label="Persona"
+        grouped
+        control={(ids) => (
+          <Choice
+            ids={ids}
+            kind="radio"
+            options={[
+              { value: NO_PERSONA, label: "None" },
+              ...options.personas.map((who) => {
+                const own = ownProfile(who);
+                const says = [
+                  // What the persona says of itself in a line (#1460).
+                  options.persona_descriptions?.[who],
+                  who === options.persona ? "project default" : undefined,
+                  own === undefined ? undefined : `its profile is ${own}`,
+                ].filter((word) => word !== undefined);
+                return {
+                  value: who,
+                  label: who,
+                  mark: <PersonaMark persona={who} />,
+                  says: says.length === 0 ? undefined : says.join(" · "),
+                };
+              }),
+            ]}
+            value={persona ?? NO_PERSONA}
+            onValueChange={(value) => pickPersona(value === NO_PERSONA ? null : value)}
           />
+        )}
+      />
 
-          {/* The reason for the default and the reason against it both belong on screen: the
-              panels repeat most of what the footer says, and the footer says it about THIS
-              chat's own workspace. */}
-          <SettingRow
-            label="Draw purlis's footer in this chat"
-            help={
-              "Blank by default, because the panels already draw the project. The footer says " +
-              "which workspace this chat is on, which the panels say only for the focused one. " +
-              "This chat only, and only from its next start."
-            }
-            control={(ids) => (
-              <Choice
-                ids={ids}
-                kind="toggle"
-                checked={showFooter}
-                onCheckedChange={setShowFooter}
-              />
-            )}
-          />
+      {/* The reason for the default and the reason against it both belong on screen: the
+        panels repeat most of what the footer says, and the footer says it about THIS
+        chat's own workspace. */}
+      <SettingRow
+        label="Draw purlis's footer in this chat"
+        help={
+          "Blank by default, because the panels already draw the project. The footer says " +
+          "which workspace this chat is on, which the panels say only for the focused one. " +
+          "This chat only, and only from its next start."
+        }
+        control={(ids) => (
+          <Choice ids={ids} kind="toggle" checked={showFooter} onCheckedChange={setShowFooter} />
+        )}
+      />
 
-          {repo !== undefined && (
+      {repo !== undefined && (
+        <SettingRow
+          label={`Start on a new branch in ${repo}`}
+          help={
+            `Its own branch and folder, cut from what ${repo} has checked out, so this ` +
+            "chat's changes stay apart from other chats'. Named after the chat, or chat-1, " +
+            `chat-2 and on. Cleared, it works on the branch ${repo} has checked out, shared ` +
+            "with every chat there."
+          }
+          control={(ids) => (
+            <Choice ids={ids} kind="toggle" checked={onABranch} onCheckedChange={setOnABranch} />
+          )}
+        />
+      )}
+
+      <SettingRow
+        label="Name"
+        help={
+          "Optional. Left empty, the chat is named after its persona, or its harness, and " +
+          "its number. You can rename it from its tab later."
+        }
+        control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
+      />
+
+      {/* One heading over every state of it, so the sentence about a sandbox that is off
+        or cannot be applied is not a stray line under the Name box. */}
+      {sandbox !== null && (
+        <SettingGroup label="Sandbox">
+          {sandbox.state === "sandboxed" && locked === null && (
             <SettingRow
-              label={`Start on a new branch in ${repo}`}
+              label="Start without the sandbox"
               help={
-                `Its own branch and folder, cut from what ${repo} has checked out, so this ` +
-                "chat's changes stay apart from other chats'. Named after the chat, or chat-1, " +
-                `chat-2 and on. Cleared, it works on the branch ${repo} has checked out, shared ` +
-                "with every chat there."
+                "This project runs every chat sandboxed: it reaches only the hosts the " +
+                "project allows, and never your vaults. Ticked, this one chat runs without " +
+                "it, its tab says so, and purlis records that you turned it off. Nothing " +
+                "inherits it: a relaunch or a resume asks the sandbox again."
               }
               control={(ids) => (
-                <Choice
-                  ids={ids}
-                  kind="toggle"
-                  checked={onABranch}
-                  onCheckedChange={setOnABranch}
-                />
+                <Choice ids={ids} kind="toggle" checked={optedOut} onCheckedChange={setOptedOut} />
               )}
             />
           )}
-
-          <SettingRow
-            label="Name"
-            help={
-              "Optional. Left empty, the chat is named after its persona, or its harness, and " +
-              "its number. You can rename it from its tab later."
-            }
-            control={(ids) => <Field ids={ids} kind="text" value={name} onChange={setName} />}
-          />
-
-          {/* One heading over every state of it, so the sentence about a sandbox that is off
-              or cannot be applied is not a stray line under the Name box. */}
-          {sandbox !== null && (
-            <SettingGroup label="Sandbox">
-              {sandbox.state === "sandboxed" && locked === null && (
-                <SettingRow
-                  label="Start without the sandbox"
-                  help={
-                    "This project runs every chat sandboxed: it reaches only the hosts the " +
-                    "project allows, and never your vaults. Ticked, this one chat runs without " +
-                    "it, its tab says so, and purlis records that you turned it off. Nothing " +
-                    "inherits it: a relaunch or a resume asks the sandbox again."
-                  }
-                  control={(ids) => (
-                    <Choice
-                      ids={ids}
-                      kind="toggle"
-                      checked={optedOut}
-                      onCheckedChange={setOptedOut}
-                    />
-                  )}
-                />
-              )}
-              {/* Sandboxed, with what the picker could not check yet: a profile nobody has
-                  approved is not run, not even to ask its version (ruling V87g). */}
-              {sandbox.state === "sandboxed" && sandbox.said !== "" && (
-                <p className="honest">{sandbox.said}</p>
-              )}
-              {sandbox.state === "unsandboxed" && <p className="honest">{sandbox.said}</p>}
-              {refused && (
-                <>
-                  <p className="honest mid-turn" role="alert">
-                    {sandbox.said}
-                  </p>
-                  {sandbox.install !== null && (
-                    <p className="honest">
-                      Install it with <code>{sandbox.install}</code>. It needs sudo, so purlis types
-                      it in a shell tab and leaves running it to you.{" "}
-                      {onInstall && <Button onPress={onInstall}>Type it in a shell tab</Button>}
-                    </p>
-                  )}
-                </>
-              )}
-              {locked !== null && <p className="honest">{locked}</p>}
-              {withoutSandbox !== null && (
-                <SettingRow
-                  label="Why, if you want it recorded"
-                  help="Optional. Kept on this machine with the record that this chat ran without the sandbox."
-                  control={(ids) => (
-                    <Field ids={ids} kind="text" value={reason} onChange={setReason} />
-                  )}
-                />
-              )}
-            </SettingGroup>
+          {/* Sandboxed, with what the picker could not check yet: a profile nobody has
+            approved is not run, not even to ask its version (ruling V87g). */}
+          {sandbox.state === "sandboxed" && sandbox.said !== "" && (
+            <p className="honest">{sandbox.said}</p>
           )}
-
-          {options.refused.length > 0 && (
-            <details className="refused">
-              {/* A missing profile is a row that is not in the list — easy to miss in a way a
-                missing panel is not — so the ones purlis will not use say why. */}
-              <summary>{options.refused.length} refused</summary>
-              <ul>
-                {options.refused.map(([name, why]) => (
-                  <li key={name}>
-                    <span>{name}</span> {why}
-                    {/* Where the profile is mended (NO-8, #1296): its own page, its command
-                      focused. One with no page (a committed profile, a whole file) lands on
-                      Harness & profiles, the group its page would be under. */}
-                    {onOpenSettings && (
-                      <>
-                        {" "}
-                        <Button
-                          onPress={() => onOpenSettings(profilePage(name), profileCommand(name))}
-                        >
-                          Open {name} in Settings
-                        </Button>
-                      </>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </details>
+          {sandbox.state === "unsandboxed" && <p className="honest">{sandbox.said}</p>}
+          {refused && (
+            <>
+              <p className="honest mid-turn" role="alert">
+                {sandbox.said}
+              </p>
+              {sandbox.install !== null && (
+                <p className="honest">
+                  Install it with <code>{sandbox.install}</code>. It needs sudo, so purlis types it
+                  in a shell tab and leaves running it to you.{" "}
+                  {onInstall && <Button onPress={onInstall}>Type it in a shell tab</Button>}
+                </p>
+              )}
+            </>
           )}
-
-          <ApprovalSentence row={picked} />
-          {/* What the picked harness lacks, said once by Start: the first chat on it here
-              (#1134, W10). */}
-          <FirstOnHarness glance={picked?.harness} />
-          {trouble && (
-            <p className="honest mid-turn" role="alert">
-              {trouble}
-            </p>
+          {locked !== null && <p className="honest">{locked}</p>}
+          {withoutSandbox !== null && (
+            <SettingRow
+              label="Why, if you want it recorded"
+              help="Optional. Kept on this machine with the record that this chat ran without the sandbox."
+              control={(ids) => <Field ids={ids} kind="text" value={reason} onChange={setReason} />}
+            />
           )}
-          {trouble && signIn !== undefined && onShowSignIn && (
-            <p className="honest">
-              {/* One Ask per profile, in the Inbox: its Sign in runs the harness's own sign-in in
-                  a shell tab the person drives (#2035). */}
-              Sign in {signIn} waits in the Inbox.{" "}
-              <Button onPress={onShowSignIn}>Go to the Inbox</Button>
-            </p>
-          )}
+        </SettingGroup>
+      )}
 
-          {/* **Every button here says `tabIndex={0}`, and on this dialog it is what makes
-              `Start` reachable at all** (charter-app#186). WebKit leaves a `<button>` out of
-              the tab sequence unless its `tabindex` is written down, and Radix's focus scope
-              only acts at the scope's two edges — so `Cancel`, which is neither edge nor
-              engine-tabbable, could be reached only by being focused on opening, and a
-              keyboard that left it could not come back. ADR 0022 makes this dialog the only
-              way a chat starts, so that was the keyboard-only path to starting one.
-              `docs/ui-primitives.md` holds the measurement and the engine's own rule. */}
-          {/* **The dialog ends in its form's row** (#1719, `docs/design-system.md`): it holds a
-              form that makes a chat, so its act stands first at the row's leading edge and
-              Cancel after it, as New vault's and New workspace's do. Both are plain buttons and
-              there is no `<form>`: Return in the Name box never starts a command; ⌘⏎ does,
-              as it sends every form's primary action (N26). Approving the
-              command is this form's act, not a confirm that ends something (D-1719-3): the
-              command is said above before the press (V69), and the chat it starts can be
-              closed. */}
-          <SettingActions>
-            {picked?.approval ? (
-              // Approving a profile's command grants it its run: drawn as every grant is
-              // (ADR 0097 §6), as plain as Cancel beside it.
-              <Button
-                variant="grants"
-                onPress={() => {
-                  if (picked.harness) noteHarness(picked.harness.name);
-                  onApprove(
-                    picked.name,
-                    persona,
-                    showFooter,
-                    picked.shown,
-                    label,
-                    newBranch,
-                    withoutSandbox,
-                  );
-                }}
-                isDisabled={!picked || starting || blockedByPolicy}
-              >
-                {starting ? "Starting…" : `Approve and ${startWord.toLowerCase()}`}
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                onPress={start}
-                aria-keyshortcuts={submitKeyShortcut()}
-                isDisabled={!startable}
-              >
-                {starting ? "Starting…" : startWord}
-              </Button>
-            )}
-            {/* Focused on opening, though second: see `onOpenAutoFocus` above. */}
-            <Button ref={cancel} onPress={leave}>
-              Cancel
-            </Button>
-          </SettingActions>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {options.refused.length > 0 && (
+        <details className="refused">
+          {/* A missing profile is a row that is not in the list — easy to miss in a way a
+          missing panel is not — so the ones purlis will not use say why. */}
+          <summary>{options.refused.length} refused</summary>
+          <ul>
+            {options.refused.map(([name, why]) => (
+              <li key={name}>
+                <span>{name}</span> {why}
+                {/* Where the profile is mended (NO-8, #1296): its own page, its command
+                focused. One with no page (a committed profile, a whole file) lands on
+                Harness & profiles, the group its page would be under. */}
+                {onOpenSettings && (
+                  <>
+                    {" "}
+                    <Button onPress={() => onOpenSettings(profilePage(name), profileCommand(name))}>
+                      Open {name} in Settings
+                    </Button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <ApprovalSentence row={picked} />
+      {/* What the picked harness lacks, said once by Start: the first chat on it here
+        (#1134, W10). */}
+      <FirstOnHarness glance={picked?.harness} />
+      {trouble && (
+        <p className="honest mid-turn" role="alert">
+          {trouble}
+        </p>
+      )}
+      {trouble && signIn !== undefined && onShowSignIn && (
+        <p className="honest">
+          {/* One Ask per profile, in the Inbox: its Sign in runs the harness's own sign-in in
+            a shell tab the person drives (#2035). */}
+          Sign in {signIn} waits in the Inbox.{" "}
+          <Button onPress={onShowSignIn}>Go to the Inbox</Button>
+        </p>
+      )}
+    </Dialog>
   );
 }
 

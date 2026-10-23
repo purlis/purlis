@@ -257,6 +257,7 @@
           "--font-weight-strong": "600",
           "--line-height-body": "1.55",
           "--line-height-tight": "1.2",
+          "--pane-border-width": "0px",
           "--panel-border-width": "0px",
           "--panel-corner-radius": "12px",
           "--radius-full": "9999px",
@@ -295,6 +296,7 @@
           "--font-weight-strong": "600",
           "--line-height-body": "1.3",
           "--line-height-tight": "1.2",
+          "--pane-border-width": "0px",
           "--panel-border-width": "0px",
           "--panel-corner-radius": "12px",
           "--radius-full": "9999px",
@@ -788,6 +790,7 @@
           "--font-weight-strong": "600",
           "--line-height-body": "1.55",
           "--line-height-tight": "1.2",
+          "--pane-border-width": "0px",
           "--panel-border-width": "0px",
           "--panel-corner-radius": "12px",
           "--radius-full": "9999px",
@@ -826,6 +829,7 @@
           "--font-weight-strong": "600",
           "--line-height-body": "1.3",
           "--line-height-tight": "1.2",
+          "--pane-border-width": "0px",
           "--panel-border-width": "0px",
           "--panel-corner-radius": "12px",
           "--radius-full": "9999px",
@@ -1319,6 +1323,7 @@
           "--font-weight-strong": "600",
           "--line-height-body": "1.55",
           "--line-height-tight": "1.2",
+          "--pane-border-width": "0px",
           "--panel-border-width": "0px",
           "--panel-corner-radius": "12px",
           "--radius-full": "9999px",
@@ -1357,6 +1362,7 @@
           "--font-weight-strong": "600",
           "--line-height-body": "1.3",
           "--line-height-tight": "1.2",
+          "--pane-border-width": "0px",
           "--panel-border-width": "0px",
           "--panel-corner-radius": "12px",
           "--radius-full": "9999px",
@@ -1777,6 +1783,7 @@
           "--font-weight-strong": "600",
           "--line-height-body": "1.4",
           "--line-height-tight": "1.2",
+          "--pane-border-width": "1px",
           "--panel-border-width": "1px",
           "--panel-corner-radius": "0px",
           "--radius-full": "9999px",
@@ -1815,6 +1822,7 @@
           "--font-weight-strong": "600",
           "--line-height-body": "1.3",
           "--line-height-tight": "1.2",
+          "--pane-border-width": "1px",
           "--panel-border-width": "1px",
           "--panel-corner-radius": "0px",
           "--radius-full": "9999px",
@@ -1986,7 +1994,7 @@
           }
         ]
       },
-      "parts": ""
+      "parts": "@layer parts {\n  :where([data-scope=\"tabs\"][data-part=\"layout\"]) { --tabs-joined: 0; }\n  :where([data-scope=\"tabs\"][data-part=\"strip\"]) { background-color: var(--tabs-strip-shade); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]:not([data-variant=\"file\"])), :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]:not([data-variant=\"file\"]))::before, :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]:not([data-variant=\"file\"]))::after { background-color: var(--tabs-chosen-shade); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"]) { color: var(--text-muted); border-radius: min(0px, calc(var(--purlis-part-height, var(--size-control)) / 2)); max-inline-size: calc(240rem / 14); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"]) { padding-block: 0; padding-inline: calc(8rem / 14); block-size: calc(24rem / 14); --purlis-part-height: calc(24rem / 14); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"] [data-scope=\"tabs\"][data-part=\"closer\"]) { border-radius: min(0px, 50%); }\n  :where([data-scope=\"tabs\"][data-part=\"layout\"]) { --tabs-grow: 1; --tabs-basis: 0px; --tabs-divider: 1px; }\n  :where([data-scope=\"tabs\"][data-part=\"layout\"]) { --tabs-gap: 0; }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-hovered]:not([data-disabled]):not([data-selected]))::before { background-color: var(--surface-hover); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-hovered]:not([data-disabled])) { --tabs-hover-inset: 0px 0px 0px; --tabs-hover-corner: 0px; }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]) { background-color: var(--layer-selected); --tabs-flare: 0px; }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected])::before { background-color: var(--layer-selected); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected])::after { background-color: var(--layer-selected); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-variant=\"file\"][data-selected]) { background-color: var(--terminal-background); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-variant=\"file\"][data-selected])::before { background-color: var(--terminal-background); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-variant=\"file\"][data-selected])::after { background-color: var(--terminal-background); }\n}\n"
     },
     "light": {
       "name": "Purlis Classic",
@@ -2170,6 +2178,7 @@
           "--font-weight-strong": "600",
           "--line-height-body": "1.4",
           "--line-height-tight": "1.2",
+          "--pane-border-width": "1px",
           "--panel-border-width": "1px",
           "--panel-corner-radius": "0px",
           "--radius-full": "9999px",
@@ -2208,6 +2217,7 @@
           "--font-weight-strong": "600",
           "--line-height-body": "1.3",
           "--line-height-tight": "1.2",
+          "--pane-border-width": "1px",
           "--panel-border-width": "1px",
           "--panel-corner-radius": "0px",
           "--radius-full": "9999px",
@@ -2379,7 +2389,7 @@
           }
         ]
       },
-      "parts": ""
+      "parts": "@layer parts {\n  :where([data-scope=\"tabs\"][data-part=\"layout\"]) { --tabs-joined: 0; }\n  :where([data-scope=\"tabs\"][data-part=\"strip\"]) { background-color: var(--tabs-strip-shade); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]:not([data-variant=\"file\"])), :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]:not([data-variant=\"file\"]))::before, :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]:not([data-variant=\"file\"]))::after { background-color: var(--tabs-chosen-shade); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"]) { color: var(--text-muted); border-radius: min(0px, calc(var(--purlis-part-height, var(--size-control)) / 2)); max-inline-size: calc(240rem / 14); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"]) { padding-block: 0; padding-inline: calc(8rem / 14); block-size: calc(24rem / 14); --purlis-part-height: calc(24rem / 14); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"] [data-scope=\"tabs\"][data-part=\"closer\"]) { border-radius: min(0px, 50%); }\n  :where([data-scope=\"tabs\"][data-part=\"layout\"]) { --tabs-grow: 1; --tabs-basis: 0px; --tabs-divider: 1px; }\n  :where([data-scope=\"tabs\"][data-part=\"layout\"]) { --tabs-gap: 0; }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-hovered]:not([data-disabled]):not([data-selected]))::before { background-color: var(--surface-hover); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-hovered]:not([data-disabled])) { --tabs-hover-inset: 0px 0px 0px; --tabs-hover-corner: 0px; }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected]) { background-color: var(--layer-selected); --tabs-flare: 0px; }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected])::before { background-color: var(--layer-selected); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-selected])::after { background-color: var(--layer-selected); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-variant=\"file\"][data-selected]) { background-color: var(--terminal-background); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-variant=\"file\"][data-selected])::before { background-color: var(--terminal-background); }\n  :where([data-scope=\"tabs\"][data-part=\"tab\"][data-variant=\"file\"][data-selected])::after { background-color: var(--terminal-background); }\n}\n"
     }
   }
 }

@@ -3,11 +3,7 @@
 
 import { createElement, type ElementType, type ReactNode } from "react";
 import { cleanup, render } from "@testing-library/react";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import * as Dialog from "@radix-ui/react-dialog";
 import * as Select from "@radix-ui/react-select";
-import * as OurAlertDialog from "./overlays/alert-dialog";
-import * as OurDialog from "./overlays/dialog";
 import * as OurSelect from "./overlays/select";
 import { ProjectShownProvider } from "./projectShown";
 
@@ -51,38 +47,6 @@ const openIn =
     createElement(Root, { open: true }, children);
 
 export const PACKAGES: Record<string, Package> = {
-  "alert-dialog": {
-    real: AlertDialog,
-    parts: {
-      over: ["Portal", "Overlay", "Content"],
-      notOver: [
-        "Root",
-        "Trigger",
-        "Title",
-        "Description",
-        "Action",
-        "Cancel",
-        "createAlertDialogScope",
-      ],
-    },
-    Within: openIn(OurAlertDialog.Root),
-  },
-  dialog: {
-    real: Dialog,
-    parts: {
-      over: ["Portal", "Overlay", "Content"],
-      notOver: [
-        "Root",
-        "Trigger",
-        "Title",
-        "Description",
-        "Close",
-        "createDialogScope",
-        "WarningProvider",
-      ],
-    },
-    Within: openIn(OurDialog.Root),
-  },
   select: {
     real: Select,
     parts: {

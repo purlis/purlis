@@ -83,6 +83,16 @@ export function pieceDiffOf(view: ViewRef): { place: Place; path: string } | und
   return of?.path === undefined ? undefined : { place: of.place, path: of.path };
 }
 
+/**
+ * **Whether a view is one file in an editor** (#2914): a piece's file, a plane root's file, or a
+ * file's comparison. Its tab is a file tab, which joins the editor's toolbar under it.
+ */
+export function isFileView(view: ViewRef): boolean {
+  return (
+    view.from === null && (view.view === FILE || view.view === DIFF || view.view === PLANE_FILE)
+  );
+}
+
 /** What a piece tab is called. */
 export function pieceFilesTitle(place: Place): string {
   return `Files · ${placeName(place)}`;

@@ -66,6 +66,8 @@ export const GEOMETRY = {
   window: ["--window-gutter", "--panel-corner-radius", "--panel-border-width"],
   /** The two focus-ring rules: outside a control, inside a row or a tab. */
   focus: ["--focus-ring-width", "--focus-ring-offset", "--focus-ring-inset"],
+  /** The line around a pane (#2914): 1px in Classic, none in Purlis. */
+  pane: ["--pane-border-width"],
   /** How far a surface is lifted: a bar floating over a pane, and every overlay (a dialog, a
    *  popover, a menu, a tooltip), which is one surface at one lift (#1845). */
   elevation: ["--elevation-raised", "--elevation-overlay"],

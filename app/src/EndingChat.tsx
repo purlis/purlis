@@ -2,13 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useRef, useState } from "react";
-import * as Alert from "./overlays/alert-dialog";
 import { ENDS_IT, type Offer } from "./actions";
-import { AnswerBar } from "./AnswerBar";
 import { Choice, SettingRow } from "./settings/components";
 import type { WindowDraft } from "./bindings";
 import { keepSays } from "./themeDrafts";
-import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /** The two answers about the chats at work below a closing chat. */
 const KEEP = "keep";
@@ -139,151 +137,113 @@ export function EndingChat({
   const [drafted, setDrafted] = useState<"" | typeof KEEP_DRAFTS | typeof REVERT_DRAFTS>("");
   const unanswered = drafts.length > 0 && drafted === "";
   const keepDrafts = drafts.length > 0 ? drafted === KEEP_DRAFTS : undefined;
-  // Focused by the dialog itself rather than by `autoFocus`: see `StartChat` for why.
   const cancel = useRef<HTMLButtonElement>(null);
   const close = useRef<HTMLButtonElement>(null);
   const smartClose = useRef<HTMLButtonElement>(null);
-  const handBack = useFocusBack();
   // A close a link asked for starts on Cancel: a Return the person meant for something else
   // never ends a chat they did not ask to close here.
   const first = fromALink ? "cancel" : firstAnswer(smart);
   return (
-    <Alert.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <AlertDialog
+      onClose={onCancel}
+      title={`${offer.title}?`}
+      // The catalogue's own sentence, not a second one written here. It is the same string the
+      // `×`'s tooltip has carried since charter-app#130.
+      description={
+        <p className="honest mid-turn">
+          {ENDS_IT} {smart?.available ? SMART_CLOSE_SAYS : null}
+        </p>
+      }
+      // **The focus is put on the default answer** (`firstAnswer`): Smart close for a chat with
+      // turns behind it, Close for one with at most one (the operator's ruling, ADR 0064), and
+      // Cancel wherever charter cannot say — so a stray Return never ends a chat charter knows
+      // nothing about.
+      initialFocus={{ cancel, close, smart: smartClose }[first]}
+      // Cancel first and Smart close last, at the edge where the main answer sits.
+      cancel={{ ref: cancel }}
+      alternative={{
+        children: "Close",
+        variant: "danger",
+        ref: close,
+        isDisabled: unanswered,
+        tooltip: unanswered ? CHOOSE_DRAFTS : undefined,
+        onPress: () => (keepDrafts === undefined ? onEnd(stop) : onEnd(stop, keepDrafts)),
+      }}
+      main={{
+        children: "Smart close",
+        ref: smartClose,
+        isDisabled: !smart?.available || unanswered,
+        tooltip: unanswered ? CHOOSE_DRAFTS : undefined,
+        "aria-describedby": smart?.why ? "smart-close-why" : undefined,
+        onPress: () =>
+          keepDrafts === undefined ? onSmartClose(stop) : onSmartClose(stop, keepDrafts),
+        className: "smart-close",
       }}
     >
-      <Alert.Portal>
-        <Alert.Overlay className="ui-scrim" />
-        <Alert.Content
-          className="ui-dialog warning"
-          // **No `onInteractOutside` here, and that is the primitive rather than an
-          // omission.** `AlertDialogContent` does not take one: it prevents outside
-          // interaction itself, because an alert dialog is a question that must be answered.
-          // The four `Dialog`s in `docs/ui-primitives.md` write the same rule out by hand
-          // because `Dialog` would otherwise close on a click outside; this one cannot.
-          // **The focus is put on the default answer here** (`firstAnswer`): Smart close for a
-          // chat with turns behind it, Close for one with at most one (the operator's ruling,
-          // ADR 0064), and Cancel wherever charter cannot say — so a stray Return never ends a
-          // chat charter knows nothing about.
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            const focus = { cancel, close, smart: smartClose }[first];
-            focus.current?.focus();
-          }}
-          onCloseAutoFocus={handBack}
-        >
-          <Alert.Title>{offer.title}?</Alert.Title>
-          {/* The catalogue's own sentence, not a second one written here. It is the same
-              string the `×`'s tooltip has carried since charter-app#130. */}
-          <Alert.Description className="honest mid-turn">
-            {ENDS_IT} {smart?.available ? SMART_CLOSE_SAYS : null}
-          </Alert.Description>
-          {fromALink && <p className="honest">{FROM_A_LINK_SAYS}</p>}
-          {smart?.why && (
-            <p className="honest" id="smart-close-why">
-              {smart.why}
-            </p>
-          )}
-          {/* The tab shows a task: what ends is the session, not what is on screen. */}
-          {shows !== undefined && (
-            <p className="honest">
-              This tab is showing {shows.task}, a task of {shows.session}. Closing the tab ends{" "}
-              {shows.session}, not {shows.task}.
-            </p>
-          )}
-          {/* Tasks among them are not ended by a close: said, so the count is not a surprise. */}
-          {/* And its tasks in tabs of their own: no tab of theirs outlives the session's
-              (#1489). One line for both: they are the same thing, a task whose tab goes. */}
-          {(back.length > 0 || ownTabs > 0) && (
-            <p className="honest">{TASK_TABS_SAY(back, ownTabs)}</p>
-          )}
-          {/* What else this close closes, said before it is answered. */}
-          {closing.length > 0 && <p className="honest">{CLOSING_SAYS(closing)}</p>}
-          {/* Several chats at once: nothing is asked about what each started, so it is said. */}
-          {keeps && <p className="honest">{KEEPS_SAYS}</p>}
-          {/* **Asked once, here, with both answers** (`RUNNING_SAYS`): the chats this one
-              asked for are not ended by its close unless the person says so. */}
-          {running.length > 0 && (
-            // The settings set's radio group (#630, DS-8): a Radix radio group, in WebKit's tab
-            // sequence where a native radio `<input>` is not (`docs/ui-primitives.md`), and each
-            // answer says what it does under itself.
-            <SettingRow
-              label={RUNNING_SAYS(running)}
-              grouped
-              control={(ids) => (
-                <Choice
-                  ids={ids}
-                  kind="radio"
-                  options={[
-                    { value: KEEP, label: "Keep them running", says: KEEP_SAYS },
-                    { value: STOP, label: "Stop them", says: STOP_SAYS },
-                  ]}
-                  value={stop ? STOP : KEEP}
-                  onValueChange={(to) => setStop(to === STOP)}
-                />
-              )}
+      {fromALink && <p className="honest">{FROM_A_LINK_SAYS}</p>}
+      {smart?.why && (
+        <p className="honest" id="smart-close-why">
+          {smart.why}
+        </p>
+      )}
+      {/* The tab shows a task: what ends is the session, not what is on screen. */}
+      {shows !== undefined && (
+        <p className="honest">
+          This tab is showing {shows.task}, a task of {shows.session}. Closing the tab ends{" "}
+          {shows.session}, not {shows.task}.
+        </p>
+      )}
+      {/* Tasks among them are not ended by a close: said, so the count is not a surprise. And
+          its tasks in tabs of their own: no tab of theirs outlives the session's (#1489). One
+          line for both: they are the same thing, a task whose tab goes. */}
+      {(back.length > 0 || ownTabs > 0) && <p className="honest">{TASK_TABS_SAY(back, ownTabs)}</p>}
+      {/* What else this close closes, said before it is answered. */}
+      {closing.length > 0 && <p className="honest">{CLOSING_SAYS(closing)}</p>}
+      {/* Several chats at once: nothing is asked about what each started, so it is said. */}
+      {keeps && <p className="honest">{KEEPS_SAYS}</p>}
+      {/* **Asked once, here, with both answers** (`RUNNING_SAYS`): the chats this one asked for
+          are not ended by its close unless the person says so. */}
+      {running.length > 0 && (
+        // The settings set's radio group (#630, DS-8), each answer saying what it does under
+        // itself.
+        <SettingRow
+          label={RUNNING_SAYS(running)}
+          grouped
+          control={(ids) => (
+            <Choice
+              ids={ids}
+              kind="radio"
+              options={[
+                { value: KEEP, label: "Keep them running", says: KEEP_SAYS },
+                { value: STOP, label: "Stop them", says: STOP_SAYS },
+              ]}
+              value={stop ? STOP : KEEP}
+              onValueChange={(to) => setStop(to === STOP)}
             />
           )}
-          {/* **Its theme drafts are asked about here** (#2332): Keep puts each in the folder it
-              is a draft of, Revert deletes it. */}
-          {drafts.length > 0 && (
-            <SettingRow
-              label={DRAFTS_SAY(drafts.map((one) => one.folder))}
-              grouped
-              control={(ids) => (
-                <Choice
-                  ids={ids}
-                  kind="radio"
-                  options={[
-                    { value: KEEP_DRAFTS, label: "Keep", says: KEEP_DRAFTS_SAY(drafts) },
-                    { value: REVERT_DRAFTS, label: "Revert", says: REVERT_DRAFTS_SAYS },
-                  ]}
-                  value={drafted === "" ? undefined : drafted}
-                  onValueChange={(to) =>
-                    setDrafted(to === KEEP_DRAFTS ? KEEP_DRAFTS : REVERT_DRAFTS)
-                  }
-                />
-              )}
+        />
+      )}
+      {/* **Its theme drafts are asked about here** (#2332): Keep puts each in the folder it is a
+          draft of, Revert deletes it. */}
+      {drafts.length > 0 && (
+        <SettingRow
+          label={DRAFTS_SAY(drafts.map((one) => one.folder))}
+          grouped
+          control={(ids) => (
+            <Choice
+              ids={ids}
+              kind="radio"
+              options={[
+                { value: KEEP_DRAFTS, label: "Keep", says: KEEP_DRAFTS_SAY(drafts) },
+                { value: REVERT_DRAFTS, label: "Revert", says: REVERT_DRAFTS_SAYS },
+              ]}
+              value={drafted === "" ? undefined : drafted}
+              onValueChange={(to) => setDrafted(to === KEEP_DRAFTS ? KEEP_DRAFTS : REVERT_DRAFTS)}
             />
           )}
-          {/* `tabIndex={0}` on each, per `docs/ui-primitives.md` (charter-app#186). Cancel
-              first and Smart close last, at the edge where a primary answer sits. */}
-          <AnswerBar>
-            <Alert.Cancel asChild>
-              <Button ref={cancel}>Cancel</Button>
-            </Alert.Cancel>
-            <Alert.Action asChild>
-              <Button
-                variant="danger"
-                ref={close}
-                isDisabled={unanswered}
-                tooltip={unanswered ? CHOOSE_DRAFTS : undefined}
-                onPress={() => (keepDrafts === undefined ? onEnd(stop) : onEnd(stop, keepDrafts))}
-              >
-                Close
-              </Button>
-            </Alert.Action>
-            <Alert.Action asChild>
-              <Button
-                variant="primary"
-                ref={smartClose}
-                isDisabled={!smart?.available || unanswered}
-                tooltip={unanswered ? CHOOSE_DRAFTS : undefined}
-                aria-describedby={smart?.why ? "smart-close-why" : undefined}
-                onPress={() =>
-                  keepDrafts === undefined ? onSmartClose(stop) : onSmartClose(stop, keepDrafts)
-                }
-                className="smart-close"
-              >
-                Smart close
-              </Button>
-            </Alert.Action>
-          </AnswerBar>
-        </Alert.Content>
-      </Alert.Portal>
-    </Alert.Root>
+        />
+      )}
+    </AlertDialog>
   );
 }
 
@@ -389,25 +349,4 @@ export function firstAnswer(smart: SmartAsk | undefined): "smart" | "close" | "c
   if (smart === undefined) return "cancel";
   if (smart.close_first) return "close";
   return smart.available ? "smart" : "cancel";
-}
-
-/**
- * **Where the focus was when a question arrived, handed back when it goes** — for an
- * `AlertDialog` that has no `Trigger`, as a dialog the window raises on the operator's behalf
- * does not.
- *
- * Radix returns the focus to the dialog's trigger, and with none it returns it nowhere: the
- * page. That was invisible while these questions came from a click on a `×`. Since
- * charter-app#239 they also come from Delete on a focused tab, and a Cancel that dropped the
- * keyboard on the page would leave the operator nowhere with nothing ended. So the element
- * that had the focus as the dialog opened gets it back — when it is still there. When it is not
- * (the tab it was on has just closed), the focus is left for whoever put it there to place:
- * `tabKeys.ts` puts it back on the strip.
- */
-export function useFocusBack() {
-  const [had] = useState(() => document.activeElement);
-  return (event: Event) => {
-    event.preventDefault();
-    if (had instanceof HTMLElement && had.isConnected) had.focus();
-  };
 }

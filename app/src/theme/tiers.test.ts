@@ -20,7 +20,8 @@ const SRC = join(process.cwd(), "src");
 
 /** The rules that may draw in faint: each is a mark that is not words (or disabled words). */
 const FAINT: ReadonlySet<string> = new Set([
-  ".tab .closer",
+  // A session tab's `×`, a mark (`ui/tabs/tabs.css`, #2914).
+  '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]',
   ".project .closer",
   ".pinned",
   ".pane-crumbs .crumb-sep",

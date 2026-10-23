@@ -4,13 +4,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Palette } from "lucide-react";
 
-import * as Alert from "./overlays/alert-dialog";
-import { AnswerBar } from "./AnswerBar";
 import { commands, type PlaneId, type SettingsChange } from "./bindings";
 import { compareWithKept, drawWhatIsInForce } from "./Extensions";
 import { isRevertKey, keepSays, revertKeySaid, useDraftHere } from "./themeDrafts";
-import { useFocusBack } from "./EndingChat";
 import { Button } from "./ui/button/Button";
+import { AlertDialog } from "./ui/dialog/Dialog";
 
 /** What Keep asks once it has kept: the theme, and the level it went to. */
 type Kept = { folder: string; workspace: string | null; keptTo: string };
@@ -201,42 +199,15 @@ function ReplaceAsk({
   onReplace: () => void;
   onCancel: () => void;
 }) {
-  const cancel = useRef<HTMLButtonElement>(null);
-  const handBack = useFocusBack();
   return (
-    <Alert.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
-    >
-      <Alert.Portal>
-        <Alert.Overlay className="ui-scrim" />
-        <Alert.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-          onCloseAutoFocus={handBack}
-        >
-          <Alert.Title>Replace {folder}?</Alert.Title>
-          <Alert.Description className="honest">
-            {says} The theme there now is gone once you replace it.
-          </Alert.Description>
-          <AnswerBar>
-            <Alert.Cancel asChild>
-              <Button ref={cancel}>Cancel</Button>
-            </Alert.Cancel>
-            <Alert.Action asChild>
-              <Button variant="danger" onPress={onReplace}>
-                Replace
-              </Button>
-            </Alert.Action>
-          </AnswerBar>
-        </Alert.Content>
-      </Alert.Portal>
-    </Alert.Root>
+    <AlertDialog
+      onClose={onCancel}
+      title={`Replace ${folder}?`}
+      description={
+        <p className="honest">{says} The theme there now is gone once you replace it.</p>
+      }
+      main={{ children: "Replace", variant: "danger", onPress: onReplace }}
+    />
   );
 }
 
@@ -270,8 +241,6 @@ export function KeepAsk({
   onDone: () => void;
 }) {
   const [said, setSaid] = useState<string>();
-  const mine = useRef<HTMLButtonElement>(null);
-  const handBack = useFocusBack();
   const workspace = keptTo === "project" ? null : worked;
   const where = workspace === null ? "the project" : `the workspace ${workspace}`;
   const done = () => {
@@ -315,43 +284,26 @@ export function KeepAsk({
     else if (wrote.data.kind === "refused") setSaid(wrote.data.reasons.join(" "));
     else done();
   };
+  // **Placed as every dialog is** (#2910): it had no place of its own and sat wherever the
+  // window drew it. The person's own choice leads and has the keyboard, as Escape is.
   return (
-    <Alert.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) asMine();
-      }}
+    <AlertDialog
+      onClose={asMine}
+      title={`Who draws ${folder}?`}
+      description={
+        <p className="honest">
+          {folder} is kept. It can be your own choice in {where} on this machine, or {where}'s
+          default, which is saved with the project for everyone who works in it.
+        </p>
+      }
+      cancel={{ children: "Only for me" }}
+      main={{ children: `Make it ${where}'s default`, onPress: () => void asDefault() }}
     >
-      <Alert.Portal>
-        <Alert.Overlay className="ui-scrim" />
-        <Alert.Content
-          className="ui-dialog"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            mine.current?.focus();
-          }}
-          onCloseAutoFocus={handBack}
-        >
-          <Alert.Title>Who draws {folder}?</Alert.Title>
-          <Alert.Description className="honest">
-            {folder} is kept. It can be your own choice in {where} on this machine, or {where}'s
-            default, which is saved with the project for everyone who works in it.
-          </Alert.Description>
-          {said !== undefined && (
-            <p className="honest" role="status">
-              {said}
-            </p>
-          )}
-          <AnswerBar>
-            <Alert.Cancel asChild>
-              <Button ref={mine}>Only for me</Button>
-            </Alert.Cancel>
-            <Button variant="primary" onPress={() => void asDefault()}>
-              Make it {where}'s default
-            </Button>
-          </AnswerBar>
-        </Alert.Content>
-      </Alert.Portal>
-    </Alert.Root>
+      {said !== undefined && (
+        <p className="honest" role="status">
+          {said}
+        </p>
+      )}
+    </AlertDialog>
   );
 }

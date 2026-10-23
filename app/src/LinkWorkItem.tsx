@@ -1,12 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
-import { useFocusBack } from "./EndingChat";
-import { Field, SettingActions, SettingRow } from "./settings/components";
-import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { useState } from "react";
+import { Field, SettingRow } from "./settings/components";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * **Link to work item…**, from a chat tab's menu or the palette (V60, ADR 0088 §3).
@@ -39,95 +36,65 @@ export function LinkWorkItem({
   onCancel: () => void;
 }) {
   const [key, setKey] = useState("");
-  // The dialog, so the box can be found in it on opening: the row draws the box, and a
-  // setting's field takes no ref.
-  const content = useRef<HTMLDivElement>(null);
-  const handBack = useFocusBack();
   // Sent as typed, spaces and all: a key is refused, never rewritten (D-0021), so the core's
   // sentence says what is wrong with it.
   const link = () => {
     if (!linking) onLink(key);
   };
+  // The keyboard starts in the box and goes back, as the dialog closes, to where it was as it
+  // opened, as `EndingChat`'s does.
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <Dialog
+      onClose={onCancel}
+      title="Link to work item"
+      // Where the link goes, said with the title (#1719).
+      subtitle={
+        <>
+          For <code>{chat}</code>
+        </>
+      }
+      main={{
+        // A verb and what it acts on, and what it is doing while it does it (#630).
+        children: linking ? "Linking…" : "Link work item",
+        reserve: ["Link work item", "Linking…"],
+        isDisabled: linking,
+        onPress: link,
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          ref={content}
-          className="ui-dialog warning"
-          // A click outside answers nothing, as in every dialog here (`docs/ui-primitives.md`).
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            content.current?.querySelector("input")?.focus();
-          }}
-          // The focus goes back to where it was as the dialog opened, as `EndingChat`'s does.
-          onCloseAutoFocus={handBack}
-        >
-          <Dialog.Title>Link to work item</Dialog.Title>
-          {/* The dialog's description (#1719): where the link goes, said with the title. */}
-          <Dialog.Description className="where">
-            For <code>{chat}</code>
-          </Dialog.Description>
-
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              link();
-            }}
-          >
-            <SettingRow
-              label="Tracker key"
-              help={
-                <>
-                  On GitHub, a key looks like <code>github:github.com/owner/repo#12</code>; on
-                  GitLab, like <code>gitlab:gitlab.com/group/repo#12</code>.{" "}
-                  {linked ? (
-                    <>
-                      This chat works on <code>{linked}</code>. Linking another item replaces that
-                      link.
-                    </>
-                  ) : (
-                    <>
-                      A chat works on one work item at a time. The link is kept with the workspace,
-                      so your other devices see it when the workspace is LIVE.
-                    </>
-                  )}
-                </>
-              }
-              control={(ids) => (
-                <Field
-                  ids={ids}
-                  kind="text"
-                  value={key}
-                  placeholder="github:github.com/owner/repo#12"
-                  onChange={setKey}
-                />
-              )}
-            />
-
-            {trouble && (
-              <p className="trouble" role="alert">
-                {trouble}
-              </p>
+      <SettingRow
+        label="Tracker key"
+        help={
+          <>
+            On GitHub, a key looks like <code>github:github.com/owner/repo#12</code>; on GitLab,
+            like <code>gitlab:gitlab.com/group/repo#12</code>.{" "}
+            {linked ? (
+              <>
+                This chat works on <code>{linked}</code>. Linking another item replaces that link.
+              </>
+            ) : (
+              <>
+                A chat works on one work item at a time. The link is kept with the workspace, so
+                your other devices see it when the workspace is LIVE.
+              </>
             )}
+          </>
+        }
+        control={(ids) => (
+          <Field
+            ids={ids}
+            kind="text"
+            value={key}
+            placeholder="github:github.com/owner/repo#12"
+            onChange={setKey}
+          />
+        )}
+      />
 
-            {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
-            <SettingActions>
-              {/* A verb and what it acts on, and what it is doing while it does it (#630). */}
-              <Button variant="primary" type="submit" isDisabled={linking}>
-                {linking ? "Linking…" : "Link work item"}
-              </Button>
-              <Button onPress={onCancel}>Cancel</Button>
-            </SettingActions>
-          </Form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {trouble && (
+        <p className="trouble" role="alert">
+          {trouble}
+        </p>
+      )}
+    </Dialog>
   );
 }

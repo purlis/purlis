@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useState } from "react";
-import * as Dialog from "./overlays/dialog";
 import { commands } from "./bindings";
 import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { useNewerTrouble } from "./pickTrouble";
-import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
+import { Choice, Field, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
-import { Form } from "./ui/field/Field";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * Making a new project — a plane charter scaffolds — and the one decision it asks about.
@@ -127,202 +126,173 @@ export function NewProject({
     [pickFailed, started],
   );
 
+  // **One main action, the one for the part the person is in**: Open repo, or, with Advanced
+  // open, Create project. It stays in its place and keeps the room of the longer, so opening
+  // Advanced moves nothing.
+  const [advanced, setAdvanced] = useState(false);
+  const openRepo = () => {
+    started();
+    if (repo.trim() !== "" && !opening) onOpenRepo(repo.trim());
+  };
+  const create = () => {
+    started();
+    // The box and the adopt field are two answers to one question — which repository this plane
+    // starts from — so a ticked box sends no repo, rather than sending both and letting the core
+    // rank them.
+    if (ready) onCreate(path.trim(), planeIsThisRepo, planeIsThisRepo ? "" : adopt.trim());
+  };
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
+    <Dialog
+      onClose={onCancel}
+      title="New project"
+      titleId="new-project"
+      main={
+        // While a project of its own is made, its act says so, whatever is open.
+        advanced || making
+          ? {
+              children: making ? "Creating…" : "Create project",
+              reserve: ["Open repo", "Create project", "Creating…"],
+              isDisabled: !ready,
+              onPress: create,
+            }
+          : {
+              children: "Open repo",
+              reserve: ["Open repo", "Create project", "Creating…"],
+              isDisabled: repo.trim() === "" || opening,
+              onPress: openRepo,
+            }
+      }
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning"
-          aria-labelledby="new-project"
-          onInteractOutside={(e) => e.preventDefault()}
-          // Radix focuses the first box as it opens, which is the repo: nothing to override.
-        >
-          <Dialog.Title id="new-project">New project</Dialog.Title>
-          <p className="came-back">
-            Pick a repo. purlis opens it in a workspace of its own, in the project it keeps on this
-            machine. Nothing is written into your repo.
-          </p>
+      <p className="came-back">
+        Pick a repo. purlis opens it in a workspace of its own, in the project it keeps on this
+        machine. Nothing is written into your repo.
+      </p>
 
-          <Form
-            onSubmit={(event) => {
-              event.preventDefault();
-              started();
-              if (repo.trim() !== "" && !opening) onOpenRepo(repo.trim());
-            }}
-          >
-            <SettingRow
-              label="Repo"
-              control={(ids) => (
-                <>
-                  <Field
-                    kind="text"
-                    ids={ids}
-                    value={repo}
-                    placeholder="/where/the/repo/is"
-                    onChange={setRepo}
-                  />
-                  {/* `tabIndex={0}`, per `docs/ui-primitives.md` (charter-app#186). */}
-                  <Button aria-label="Browse for the repo" onPress={() => pick(setRepo)}>
-                    Browse…
-                  </Button>
-                </>
-              )}
+      <SettingRow
+        label="Repo"
+        control={(ids) => (
+          <>
+            <Field
+              kind="text"
+              ids={ids}
+              value={repo}
+              placeholder="/where/the/repo/is"
+              onChange={setRepo}
             />
-            {/* The core's refusal, all of it, for whichever form was sent last. */}
-            {said && (
-              <p className="trouble said-in-full" role="alert">
-                {said}
-              </p>
-            )}
-            {/* What it is doing, in the first run's words, while a repo opens (#630). */}
-            {opening && (
-              <p className="pending" role="status" aria-busy="true">
-                Copying your repo into its workspace…
-              </p>
-            )}
-            {/* Asked for whichever form was sent last, as the refusal is (#839). */}
-            {forgeAsk && <ForgeQuestion ask={forgeAsk} />}
-            <SettingActions>
-              <Button variant="primary" type="submit" isDisabled={repo.trim() === "" || opening}>
-                Open repo
+            <Button aria-label="Browse for the repo" onPress={() => pick(setRepo)}>
+              Browse…
+            </Button>
+          </>
+        )}
+      />
+      {/* The core's refusal, all of it, for whichever form was sent last. */}
+      {said && (
+        <p className="trouble said-in-full" role="alert">
+          {said}
+        </p>
+      )}
+      {/* What it is doing, in the first run's words, while a repo opens (#630). */}
+      {opening && (
+        <p className="pending" role="status" aria-busy="true">
+          Copying your repo into its workspace…
+        </p>
+      )}
+      {/* Asked for whichever form was sent last, as the refusal is (#839). */}
+      {forgeAsk && <ForgeQuestion ask={forgeAsk} />}
+
+      {/* The two-directory form (ADR 0035), for a project of its own somewhere the operator
+          chooses. Closed until asked for. */}
+      <details
+        className="advanced"
+        onToggle={(event) => setAdvanced((event.currentTarget as HTMLDetailsElement).open)}
+      >
+        <summary tabIndex={0}>Advanced</summary>
+        <p className="came-back">
+          A project of its own, in a folder you choose, holding workspaces, personas and the repos
+          work happens in.
+        </p>
+        <SettingRow
+          label="Folder"
+          help="It does not have to exist yet. purlis makes it, and writes the project into it."
+          control={(ids) => (
+            <>
+              <Field
+                kind="text"
+                ids={ids}
+                value={path}
+                placeholder="/where/it/goes"
+                onChange={setPath}
+              />
+              {/* **The name says which box it fills**, because there are two of them. Two
+                  buttons reading `Browse…` announce identically and pick different directories,
+                  which is a question a screen reader cannot answer and a sighted operator answers
+                  only from where the button sits. */}
+              <Button aria-label="Browse for the folder" onPress={() => pick(setPath)}>
+                Browse…
               </Button>
-              <Button onPress={onCancel}>Cancel</Button>
-            </SettingActions>
-          </Form>
+            </>
+          )}
+        />
 
-          {/* The two-directory form (ADR 0035), for a project of its own somewhere the operator
-              chooses. Closed until asked for. */}
-          <details className="advanced">
-            <summary tabIndex={0}>Advanced</summary>
-            <p className="came-back">
-              A project of its own, in a folder you choose, holding workspaces, personas and the
-              repos work happens in.
-            </p>
-            <Form
-              onSubmit={(event) => {
-                event.preventDefault();
-                started();
-                // The box and the adopt field are two answers to one question — which
-                // repository this plane starts from — so a ticked box sends no repo, rather
-                // than sending both and letting the core rank them.
-                if (ready)
-                  onCreate(path.trim(), planeIsThisRepo, planeIsThisRepo ? "" : adopt.trim());
-              }}
-            >
-              <SettingRow
-                label="Folder"
-                help="It does not have to exist yet. purlis makes it, and writes the project into it."
-                control={(ids) => (
-                  <>
-                    <Field
-                      kind="text"
-                      ids={ids}
-                      value={path}
-                      placeholder="/where/it/goes"
-                      onChange={setPath}
-                    />
-                    {/* `tabIndex={0}`, per `docs/ui-primitives.md` (charter-app#186): WebKit
-                      leaves a `<button>` out of the tab sequence unless its `tabindex` is
-                      written down, and the folder box beside this one is the scope's first
-                      edge, so nothing reached this at all.
-
-                      **The name says which box it fills**, because there are two of them. Two
-                      buttons reading `Browse…` announce identically and pick different
-                      directories, which is a question a screen reader cannot answer and a
-                      sighted operator answers only from where the button sits. */}
-                    <Button aria-label="Browse for the folder" onPress={() => pick(setPath)}>
-                      Browse…
-                    </Button>
-                  </>
-                )}
+        {/* ADR 0035's default, as a second directory rather than a refusal about one. */}
+        <SettingRow
+          label="Repo to adopt"
+          help={
+            <>
+              Optional: the project goes in the folder above, and this repo is cloned into its{" "}
+              <code>workspaces/</code>. Nothing is written into the repo — it is read, and only
+              read. Leave it empty for a project with no repos yet.
+            </>
+          }
+          control={(ids) => (
+            <>
+              <Field
+                kind="text"
+                ids={ids}
+                value={adopt}
+                placeholder="/where/the/repo/is"
+                disabled={planeIsThisRepo}
+                onChange={setAdopt}
               />
+              <Button
+                aria-label="Browse for the repo to adopt"
+                isDisabled={planeIsThisRepo}
+                onPress={() => pick(setAdopt)}
+              >
+                Browse…
+              </Button>
+            </>
+          )}
+        />
 
-              {/* ADR 0035's default, as a second directory rather than a refusal about one. */}
-              <SettingRow
-                label="Repo to adopt"
-                help={
-                  <>
-                    Optional: the project goes in the folder above, and this repo is cloned into its{" "}
-                    <code>workspaces/</code>. Nothing is written into the repo — it is read, and
-                    only read. Leave it empty for a project with no repos yet.
-                  </>
-                }
-                control={(ids) => (
-                  <>
-                    <Field
-                      kind="text"
-                      ids={ids}
-                      value={adopt}
-                      placeholder="/where/the/repo/is"
-                      disabled={planeIsThisRepo}
-                      onChange={setAdopt}
-                    />
-                    {/* `tabIndex={0}` here too: this button was written after the sweep that
-                      put the attribute on every other one (charter-app#186), which is exactly
-                      how a fixed class of defect comes back. */}
-                    <Button
-                      aria-label="Browse for the repo to adopt"
-                      isDisabled={planeIsThisRepo}
-                      onPress={() => pick(setAdopt)}
-                    >
-                      Browse…
-                    </Button>
-                  </>
-                )}
-              />
+        {/* The one decision, and it is the operator's: the set's toggle, because it is the one
+            answer on this dialog that writes into a repository the operator already has. */}
+        <SettingRow
+          label="Make this repo itself the project"
+          help={
+            <>
+              Only for a folder that is the top of a git repo, and only when you mean it: it writes{" "}
+              <code>purlis.toml</code>, <code>personas/</code>, <code>workspaces/</code> and
+              purlis&rsquo;s rules into that repo&rsquo;s tracked <code>.gitignore</code>.
+              purlis&rsquo;s own project is one of these. Left unticked, purlis writes nothing into
+              a repo and says how to make a project beside it.
+            </>
+          }
+          control={(ids) => (
+            <Choice
+              kind="toggle"
+              ids={ids}
+              checked={planeIsThisRepo}
+              onCheckedChange={setPlaneIsThisRepo}
+            />
+          )}
+        />
 
-              {/* The one decision, and it is the operator's: the set's toggle, a Radix
-                checkbox in the tab sequence (`docs/ui-primitives.md`, charter-app#186), because
-                it is the one answer on this dialog that writes into a repository the operator
-                already has. */}
-              <SettingRow
-                label="Make this repo itself the project"
-                help={
-                  <>
-                    Only for a folder that is the top of a git repo, and only when you mean it: it
-                    writes <code>purlis.toml</code>, <code>personas/</code>,{" "}
-                    <code>workspaces/</code> and purlis&rsquo;s rules into that repo&rsquo;s tracked{" "}
-                    <code>.gitignore</code>. purlis&rsquo;s own project is one of these. Left
-                    unticked, purlis writes nothing into a repo and says how to make a project
-                    beside it.
-                  </>
-                }
-                control={(ids) => (
-                  <Choice
-                    kind="toggle"
-                    ids={ids}
-                    checked={planeIsThisRepo}
-                    onCheckedChange={setPlaneIsThisRepo}
-                  />
-                )}
-              />
-
-              {/* `init`'s refusal in a repository is four lines — what it will not do, the
-                commands that make a plane beside the repo, what asking for the old shape would
-                write, and where the decision is recorded — and it is drawn in full above, where
-                every refusal this dialog is given goes. */}
-
-              {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). Only the
-                folder box was in WebKit's tab sequence here: it is this scope's first edge and
-                `Cancel` is its last, so `Browse…`, the checkbox and `Create project` were all
-                in the middle, where neither the engine nor Radix reaches. */}
-              <SettingActions>
-                <Button variant="primary" type="submit" isDisabled={!ready}>
-                  {making ? "Creating…" : "Create project"}
-                </Button>
-                {/* A Cancel of its own (#1719): a form ends in its act and its way out, and the
-                    main form's Cancel above is out of sight once this one is open and long. */}
-                <Button onPress={onCancel}>Cancel</Button>
-              </SettingActions>
-            </Form>
-          </details>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        {/* `init`'s refusal in a repository is four lines — what it will not do, the commands
+            that make a plane beside the repo, what asking for the old shape would write, and
+            where the decision is recorded — and it is drawn in full above, where every refusal
+            this dialog is given goes. */}
+      </details>
+    </Dialog>
   );
 }

@@ -142,10 +142,13 @@ export function PaneFrame({
   asked,
   others,
   doing,
+  focused = false,
   children,
 }: {
   plane: PlaneId;
   session: number;
+  /** Whether the keyboard is in this pane: a split says which of its panes has it (#2914). */
+  focused?: boolean;
   /** While the pane shows a task of its tab's session: the path to it (#1486). Also for a task
    *  in a pane of its own, and the session it is beside (#1489). */
   crumbs?: Crumbs;
@@ -187,6 +190,7 @@ export function PaneFrame({
     <div
       ref={frame}
       className="pane-frame"
+      data-focused={focused || undefined}
       // A reference dropped on the chat's pane is typed into it, unsent (FM-9).
       onDragOver={overChat}
       onDrop={(event) => {
@@ -503,7 +507,11 @@ export function LayoutPanes({
       // chat's pane has, so a view can be split to start a chat beside it and closed from where
       // it is. Clicking anywhere in it focuses it, which is what a terminal's click does.
       return (
-        <div className="pane-frame" onPointerDown={() => onFocus(layout.pane)}>
+        <div
+          className="pane-frame"
+          data-focused={layout.pane === focused || undefined}
+          onPointerDown={() => onFocus(layout.pane)}
+        >
           {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. */}
           <div className="pane-corner at-end">
             <PaneDoing
@@ -599,7 +607,11 @@ export function LayoutPanes({
       const ended = row === undefined ? endedState(gone.crumbs) : shownOf(row);
       const last = gone.crumbs.path[gone.crumbs.path.length - 1].session;
       return (
-        <div className="pane-frame" onPointerDown={() => onFocus(layout.pane)}>
+        <div
+          className="pane-frame"
+          data-focused={layout.pane === focused || undefined}
+          onPointerDown={() => onFocus(layout.pane)}
+        >
           {/* As `PaneFrame` draws them: a row of their own, above what the pane shows. */}
           <PaneNotices
             notices={null}
@@ -651,6 +663,7 @@ export function LayoutPanes({
       <PaneFrame
         plane={plane}
         session={content.session}
+        focused={layout.pane === focused}
         crumbs={path}
         // **The two ways to end the task this pane shows**, beside its path (#1488): on a
         // session's pane switched to a task, and on a task's own pane, in a tab of its own or

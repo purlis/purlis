@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { answersOf } from "./ui/dialog/dialog.testkit";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -96,11 +97,7 @@ describe("the update button", () => {
     await userEvent.click(button());
 
     const dialog = await screen.findByRole("dialog");
-    const bar = dialog.querySelector(".answer");
-    const names = within(bar as HTMLElement)
-      .getAllByRole("button")
-      .map((b) => b.textContent);
-    expect(names).toEqual(["Close", "Check now", "Install 0.2.0"]);
+    expect(answersOf(dialog)).toEqual(["Close", "Check now", "Install 0.2.0"]);
   });
 
   it("ends in Restart to update, after Close, once the update is installed", async () => {
@@ -109,11 +106,7 @@ describe("the update button", () => {
     await userEvent.click(button());
 
     const dialog = await screen.findByRole("dialog");
-    const bar = dialog.querySelector(".answer");
-    const names = within(bar as HTMLElement)
-      .getAllByRole("button")
-      .map((b) => b.textContent);
-    expect(names).toEqual(["Close", "Restart to update"]);
+    expect(answersOf(dialog)).toEqual(["Close", "Restart to update"]);
   });
 
   it("offers no Install when there is nothing on offer", async () => {
