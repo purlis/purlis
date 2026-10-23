@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792746899258,
+  "lastUpdate": 1792753395038,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6104,6 +6104,42 @@ window.BENCHMARK_DATA = {
             "value": 333.4,
             "unit": "MB",
             "extra": "median of 6 samples: 271.4, 334.8, 335, 332.9, 333.9, 239.1 MB; window 166.8 MB, session host 166.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "51db9061a013003db05feecd6635b2c681ab3cc3",
+          "message": "Cargo.lock: move ctutils to 0.4.5 for RUSTSEC-2026-0385 (#3075)\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T14:18:29+04:00",
+          "tree_id": "772b593cc3f608a7dd11e74a8c65978b43808838",
+          "url": "https://github.com/purlis/purlis/commit/51db9061a013003db05feecd6635b2c681ab3cc3"
+        },
+        "date": 1792753392889,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1068,
+            "unit": "MB",
+            "extra": "median of 3 samples: 970, 1068, 1078 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 321.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 283.6, 339.4, 328.1, 321.4, 322.3, 253.3 MB; window 166.6 MB, session host 154.8 MB"
           }
         ]
       }
