@@ -26,6 +26,9 @@ pub use purlis_skills::{
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
 pub use purlis_skills::runs;
+/// The install review's summary and a source's tree (SK-10).
+pub use purlis_skills::{review, tree};
+pub mod source;
 pub mod verbs;
 
 use crate::harness::{Harness, Kit};

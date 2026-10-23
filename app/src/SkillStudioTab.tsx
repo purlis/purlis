@@ -25,6 +25,7 @@ import { SkillCompatBadges } from "./SkillCompatBadges";
 import { SkillRowActions } from "./SkillRowActions";
 import { SkillDrafts } from "./SkillDrafts";
 import { askSkillChat, useSkillDrafts } from "./skillDraftAsks";
+import { SkillSources } from "./SkillSources";
 import { Select } from "./primitives/Select";
 import { Field, SettingRow } from "./settings/components";
 import {
@@ -354,6 +355,17 @@ export function SkillStudioTab({
       </ul>
     </section>
   );
+  /* Skill sources (SK-10): install from a git repository, and each newer commit's review. */
+  const sourcesSection = (
+    <SkillSources
+      plane={plane}
+      levels={levels}
+      start={levelFrom(scope)}
+      busy={busy}
+      change={change}
+      changed={changed + done}
+    />
+  );
   if (studio.skills.length === 0)
     return (
       <div className="skill-studio">
@@ -375,6 +387,7 @@ export function SkillStudioTab({
           harnesses={studio.harnesses}
           onSwitched={() => setSwitched((n) => n + 1)}
         />
+        {sourcesSection}
         {restorable}
       </div>
     );
@@ -657,6 +670,7 @@ export function SkillStudioTab({
         harnesses={studio.harnesses}
         onSwitched={() => setSwitched((n) => n + 1)}
       />
+      {sourcesSection}
       {restorable}
     </div>
   );

@@ -622,6 +622,19 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
     // reach chats, so only the person's own press in their window does it.
     "skill_level_accept",
+    // Skill sources (#2773): each reaches a git repository the person named, a private one with
+    // a credential read from a vault, and an install or an update is one commit to the project.
+    // The person's own press in their window, never a link's.
+    "skill_sources",
+    "skill_source_add",
+    "skill_source_remove",
+    "skill_source_confirm",
+    "skill_source_browse",
+    "skill_install_review",
+    "skill_install",
+    "skill_updates",
+    "skill_update_review",
+    "skill_update",
     // A harness's plugin or skill turned on or off in the Skill studio (#2769): it writes this
     // machine's project file, or the workspace's settings. The person's own press in their
     // window.
@@ -655,6 +668,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // workspace's code, so only the person's own choice in their window sets it.
     "chats_run_on",
     "set_chats_run_on",
+    // What a workspace's sends to a runner leave out (#2046): the person's list, in their window.
+    "send_leaves_out",
+    "set_send_leaves_out",
     // A runner chat's held change to the project (#2046): only the person's press applies it,
     // and the change whole, for its own tab, is the person's to read.
     "apply_runner_write",

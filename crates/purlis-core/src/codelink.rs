@@ -251,18 +251,19 @@ pub fn snapshot_leaving(
     let _ = std::fs::remove_file(&index);
     let empty = empty_tree(tree)?;
     let attr = format!("--attr-source={empty}");
-    // An ignored name is never staged, and git refuses a pathspec that names one: only what
-    // the work tree does not ignore is left out by name.
+    // An ignored name that git does not track is never staged, and git refuses a pathspec that
+    // names one: only such a name goes unnamed. One git tracks is staged with its changes however
+    // it is ignored, so it is left out by name. Where the repository ignores case, so does the
+    // name: `Secrets` leaves out `secrets/`.
+    let magic = if ignores_case(tree) {
+        "top,exclude,literal,icase"
+    } else {
+        "top,exclude,literal"
+    };
     let excluded: Vec<String> = leave_out
         .iter()
-        .filter(|left| {
-            !run(
-                tree,
-                &["check-ignore", "--quiet", "--no-index", "--", left.as_str()],
-            )
-            .is_ok_and(|ran| ran.ok())
-        })
-        .map(|left| format!(":(top,exclude,literal){left}"))
+        .filter(|left| !ignored_and_untracked(tree, left))
+        .map(|left| format!(":({magic}){left}"))
         .collect();
     let mut adding = vec![
         "-c",
@@ -322,6 +323,30 @@ pub fn snapshot_leaving(
         return Err(git_failed("keep the uncommitted work", &commit));
     }
     Ok(Some(commit.line().to_owned()))
+}
+
+/// Whether the repository at `tree` ignores case in its names (`core.ignorecase`), as git sets
+/// it on a file system that does.
+fn ignores_case(tree: &Path) -> bool {
+    run(tree, &["config", "--type=bool", "--get", "core.ignorecase"])
+        .is_ok_and(|ran| ran.ok() && ran.line() == "true")
+}
+
+/// Whether `name`, relative to the top of `tree`, is ignored there and git tracks nothing by it.
+fn ignored_and_untracked(tree: &Path, name: &str) -> bool {
+    let ignored =
+        run(tree, &["check-ignore", "--quiet", "--no-index", "--", name]).is_ok_and(|ran| ran.ok());
+    ignored
+        && !run(
+            tree,
+            &[
+                "ls-files",
+                "--error-unmatch",
+                "--",
+                &format!(":(top,literal){name}"),
+            ],
+        )
+        .is_ok_and(|ran| ran.ok())
 }
 
 /// **Takes out of the snapshot staged in `index` of `tree`** every changed or new file a save to
@@ -930,16 +955,17 @@ pub struct Sending<'a> {
 /// uncommitted work less `leave_out`, leaving out what `have` (the runner's refs the last send
 /// answered) reaches, through `through`: the link's `take_code`, which answers the refs the
 /// runner holds after. A repository on no branch is refused in a sentence, and one that is not a
-/// repository sends nothing.
+/// repository sends nothing. Answers those refs, and the changed or new files the snapshot left
+/// out as a save to the forge would refuse them ([`Sent::left_out`]).
 pub fn send(
     repo: &Path,
     leave_out: &[String],
     have: &[String],
     scratch: &Path,
     through: impl FnOnce(Sending<'_>) -> Result<Vec<Ref>, String>,
-) -> Result<Vec<Ref>, Refused> {
+) -> Result<(Vec<Ref>, Vec<String>), Refused> {
     if !a_repository(repo) {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let branch = current_branch(repo).ok_or_else(|| {
         not_allowed(format!(
@@ -957,7 +983,7 @@ pub fn send(
     })
     .map_err(Refused::Git);
     let _ = std::fs::remove_file(&into);
-    held
+    Ok((held?, sent.left_out))
 }
 
 /// **The desktop fetches a runner's branches back into `repo`** ([`take_back`]), as

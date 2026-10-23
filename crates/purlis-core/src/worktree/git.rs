@@ -1757,6 +1757,59 @@ pub(crate) fn run_until(
     })
 }
 
+/// [`run`], bytes back, its standard output **read as it comes and held to `most_records`
+/// NUL-ended records** (a `-z` listing): past them git is stopped, its group with it, and the
+/// answer is `None`. A listing a small tree expands into far more than memory holds is never
+/// read whole (SK-10, #2773).
+pub(crate) fn run_capped(
+    dir: &Path,
+    args: &[&str],
+    timeout: Duration,
+    most_records: usize,
+) -> Result<Option<RawRun>, GitUnavailable> {
+    use std::sync::Arc;
+    let extra = match held(dir, args, Extra::default())? {
+        Ok(extra) => extra,
+        Err(answer) => return Ok(Some(answer)),
+    };
+    counted(dir, args, || {
+        let mut child = spawn_with(dir, args, &extra)?;
+        let mut stdout = child.stdout.take().expect("stdout is piped");
+        let over = Arc::new(AtomicBool::new(false));
+        let (out_tx, out_rx) = std::sync::mpsc::channel();
+        {
+            let over = Arc::clone(&over);
+            std::thread::spawn(move || {
+                let mut kept = Vec::new();
+                let mut records = 0usize;
+                let mut chunk = [0u8; 64 * 1024];
+                loop {
+                    match stdout.read(&mut chunk) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            records += chunk[..n].iter().filter(|b| **b == 0).count();
+                            if records > most_records {
+                                over.store(true, Ordering::Relaxed);
+                                break;
+                            }
+                            kept.extend_from_slice(&chunk[..n]);
+                        }
+                    }
+                }
+                let _ = out_tx.send(kept);
+            });
+        }
+        let raw = wait_raw_until(child, timeout, Some(&over))?;
+        if over.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        let out = out_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap_or_default();
+        Ok(Some(RawRun { out, ..raw }))
+    })
+}
+
 /// What one git call answered, as the BYTES it wrote. `code` is `None` when the deadline passed.
 ///
 /// For a caller that must tell "git wrote something that is not UTF-8" from "git wrote U+FFFD",
@@ -1900,6 +1953,38 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
     })?;
     // Listed once git has run (#959): a call refused before it started reached nobody. Each
     // place git sent it, read as git reads it (#1853, #1828).
+    for (operation, remote) in destinations(dir, args) {
+        crate::netlog::git_call(operation, &remote, run.ok(), started.elapsed());
+    }
+    Ok(run)
+}
+
+/// [`run_network`] for a skill source (SK-10, #2773; ADR 0100 §5): `config` after the
+/// one-credential rule, and `pass` handed to git by name, so a credential helper that reads one
+/// variable of it is the only credential git has. The values in `pass` never reach a command
+/// line, and git's output is the caller's to redact before it says any of it.
+pub(crate) fn run_network_handing(
+    dir: &Path,
+    config: &[String],
+    pass: Vec<(String, std::ffi::OsString)>,
+    args: &[&str],
+) -> Result<Run, GitUnavailable> {
+    let mut all: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
+    all.extend(config.iter().cloned());
+    let extra = Extra {
+        config: all,
+        network: true,
+        pass,
+        ..Extra::default()
+    };
+    let extra = match held(dir, args, extra)? {
+        Ok(extra) => extra,
+        Err(answer) => return Ok(as_text(answer)),
+    };
+    let started = Instant::now();
+    let run = counted(dir, args, || {
+        Ok::<_, GitUnavailable>(wait(spawn_with(dir, args, &extra)?, NETWORK)?)
+    })?;
     for (operation, remote) in destinations(dir, args) {
         crate::netlog::git_call(operation, &remote, run.ok(), started.elapsed());
     }
@@ -2076,13 +2161,16 @@ fn wait_raw_until(
     timeout: Duration,
     called_off: Option<&AtomicBool>,
 ) -> std::io::Result<RawRun> {
-    let mut stdout = child.stdout.take().expect("stdout is piped");
+    // A caller that reads the output as it comes ([`run_capped`]) took it already.
+    let stdout = child.stdout.take();
     let mut stderr = child.stderr.take().expect("stderr is piped");
     let (out_tx, out_rx) = std::sync::mpsc::channel();
     let (err_tx, err_rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = Vec::new();
-        let _ = stdout.read_to_end(&mut buf);
+        if let Some(mut stdout) = stdout {
+            let _ = stdout.read_to_end(&mut buf);
+        }
         let _ = out_tx.send(buf);
     });
     std::thread::spawn(move || {

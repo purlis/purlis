@@ -47,9 +47,11 @@ pub mod lint;
 mod load;
 mod read;
 mod reference;
+pub mod review;
 pub mod runs;
 mod share;
 mod stamp;
+pub mod tree;
 
 pub use budget::{Budget, Over, Spent};
 pub use compat::{Compat, Field, Fit, Honours, ManualOnly, compat, handed_text, widening_said};

@@ -2084,18 +2084,20 @@ const WHOLE_TREE_PATHSPECS: [&str; 4] = [".", "./", ":/", ":/:"];
 /// operator's mid-edit `charter.toml`.
 const WHOLE_TREE_FLAGS: [&str; 5] = ["-A", "--all", "--no-ignore-removal", "-u", "--update"];
 
-/// **What a save never stages** ([`SAVE_STAGES`]): a level's local skills (ADR 0099 §1, #2767),
-/// whatever the plane's `.gitignore` says, since `skills.local/` is this machine's own and a
-/// plane whose `.gitignore` lost its line would otherwise commit it to the team; and a Try it's
-/// throwaway pieces (#2772), which last as long as their chats.
-pub const NEVER_STAGED: [&str; 3] = [
+/// **What a save never stages** ([`SAVE_STAGES`]): a level's local skills (ADR 0099 §1, #2767)
+/// and the lockfile of the skills installed there (ADR 0100 §2, #2773), whatever the plane's
+/// `.gitignore` says, since `skills.local/` is this machine's own and a plane whose `.gitignore`
+/// lost its line would otherwise commit it to the team; and a Try it's throwaway pieces (#2772),
+/// which last as long as their chats.
+pub const NEVER_STAGED: [&str; 4] = [
     ":(exclude,glob)skills.local/**",
     ":(exclude,glob)workspaces/*/skills.local/**",
+    ":(exclude,literal)skills.local.lock",
     ":(exclude,glob)workspaces/.throwaway/**",
 ];
 
 /// **What a plane save stages**: the whole tree, but what is [`NEVER_STAGED`].
-pub const SAVE_STAGES: [&str; 7] = [
+pub const SAVE_STAGES: [&str; 8] = [
     "add",
     "-A",
     "--",
@@ -2103,6 +2105,7 @@ pub const SAVE_STAGES: [&str; 7] = [
     NEVER_STAGED[0],
     NEVER_STAGED[1],
     NEVER_STAGED[2],
+    NEVER_STAGED[3],
 ];
 
 /// Would `add_cmd` stage EVERYTHING under the root it is run in?
@@ -2645,12 +2648,14 @@ pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Si
     save_staging(request, trigger, &claim, &add, say)
 }
 
-/// Whether `path` (plane-relative) is inside what a save never stages ([`NEVER_STAGED`]): a level's `skills.local/`, or a throwaway piece.
+/// Whether `path` (plane-relative) is inside what a save never stages ([`NEVER_STAGED`]): a
+/// level's `skills.local/`, the installed skills' local lockfile, or a throwaway piece.
 fn kept_out(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     matches!(
         parts.as_slice(),
         ["skills.local", ..]
+            | ["skills.local.lock"]
             | ["workspaces", ".throwaway", ..]
             | ["workspaces", _, "skills.local", ..]
     )
