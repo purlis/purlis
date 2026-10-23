@@ -11,6 +11,7 @@ import App from "./App";
 import type { NotStarted, OpenChat } from "./bindings";
 import { forgetThisLaunch } from "./regions";
 import { restoredSince, RESTORING_HAS_NO_CLOSE } from "./restoringChats";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A launch's chats come back behind the window** (`restoring.rs`), against the whole window:
@@ -148,8 +149,7 @@ describe("a launch's chats, coming back behind the window", () => {
     expect(pane).toHaveTextContent("Restoring");
     expect(screen.queryByTestId("pane")).toBeNull();
     // Its tab says so too, where a pointer rests on it.
-    expect(document.querySelector('.tab[data-restoring] [role="tab"]')).toHaveAttribute(
-      "title",
+    expect(tipOf(document.querySelector('.tab[data-restoring] [role="tab"]'))).toEqual(
       "Restoring…",
     );
   });
@@ -220,7 +220,8 @@ describe("a launch's chats, coming back behind the window", () => {
     await userEvent.click(close);
 
     // Nothing was ended and nothing was asked: the tab is there, and the line says why.
-    await screen.findByText(RESTORING_HAS_NO_CLOSE);
+    // The line, and not the close's own reason, kept for a screen reader as its description.
+    await screen.findByText(RESTORING_HAS_NO_CLOSE, { ignore: "script, style, [hidden]" });
     expect(tabs()).toHaveLength(1);
     expect(the.asked("close_session")).toBe(0);
     expect(screen.queryByRole("alertdialog")).toBeNull();

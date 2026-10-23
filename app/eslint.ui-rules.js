@@ -25,7 +25,16 @@
  * - `purlis/choice-family` (warning until the choice families move): a raw checkbox, radio,
  *   slider (`range`) or colour well (`color`) `<input>`.
  * - `purlis/dialog-family` (warning until the dialog family moves): a `role="dialog"`.
- * - `purlis/tooltip-family` (warning until the tooltip family moves): a native `title=`.
+ * - `purlis/tooltip-family` (error: the tooltip family has moved, #2908): a native `title=` on an
+ *   element, a primitive's part (`RadioGroup.Item`), a member of the button or status item
+ *   family, or a house component that hands it on to its element (`handsOn`, set in
+ *   `eslint.config.js`). A hint is the shared tooltip: `<Tooltip tip>` from `ui/tooltip/Tooltip`
+ *   around any element, `tooltip` on a `Button`, a `ToggleButton`, a `StatusItem` or a
+ *   `StatusCell`, and an `IconButton`'s name, which its tooltip shows. A frame's `title` is its
+ *   name, not a tooltip, and stays.
+ * - `purlis/panel-family`, `purlis/panel-section-family`, `purlis/empty-state-family` and
+ *   `purlis/status-item-family` (errors: these families have moved, #2913): each family's old
+ *   classes, and its `data-scope` written by hand, which only its wrapper draws.
  *
  * The primitives library itself is refused outside `src/ui` by `no-restricted-imports`, in
  * `eslint.config.js`: one wrapper per primitive, and screens never import it.
@@ -78,8 +87,12 @@ const attributeOf = (node, name) =>
 const classWordsOf = (attribute) =>
   [...classStrings(attribute?.value)].flatMap(([, text]) => text.split(/\s+/)).filter(Boolean);
 
-/** The button family's members, which hand a `title` on to their element as a native tooltip. */
-const BUTTONS = new Set(["Button", "IconButton", "ToggleButton"]);
+/** The members of a family whose hint is their `tooltip`, never a `title`: the button family's,
+ *  and the status item family's. */
+const BUTTONS = new Set(["Button", "IconButton", "ToggleButton", "StatusItem", "StatusCell"]);
+
+/** The elements whose `title` is their accessible name, which no tooltip replaces. */
+const TITLED = new Set(["iframe", "frame"]);
 
 const buttonFamily = {
   meta: {
@@ -227,15 +240,176 @@ const dialogFamily = unmoved({
   },
 });
 
-const tooltipFamily = unmoved({
-  description: "A tooltip is the shared tooltip once that family moves",
-  message:
-    "A native `title=` tooltip: the shared tooltip replaces it once that family has moved (spec #2897).",
-  test: (node) => {
-    const tag = node.name.name;
-    const title = attributeOf(node, "title");
-    return title && (/^[a-z]/.test(tag) || BUTTONS.has(tag)) ? [title] : [];
+/** The `title` key an object written as a literal holds, if it holds one. */
+const titleKeyOf = (object) =>
+  object?.type === "ObjectExpression"
+    ? object.properties.find(
+        (one) =>
+          one.type === "Property" &&
+          ((one.key.type === "Identifier" && one.key.name === "title") ||
+            (one.key.type === "Literal" && one.key.value === "title")),
+      )
+    : undefined;
+
+/** The object literal a spread hands on: written in place, or a `const` of this scope. */
+function spreadObject(context, spread) {
+  const argument = spread.argument;
+  if (argument.type === "ObjectExpression") return argument;
+  if (argument.type !== "Identifier") return undefined;
+  let scope = context.sourceCode.getScope(spread);
+  while (scope) {
+    const variable = scope.set.get(argument.name);
+    if (variable) {
+      const definition = variable.defs[0];
+      return definition?.type === "Variable" ? definition.node.init : undefined;
+    }
+    scope = scope.upper;
+  }
+  return undefined;
+}
+
+const tooltipFamily = {
+  meta: {
+    type: "problem",
+    docs: { description: "A hint is the shared tooltip, never a native title" },
+    messages: {
+      title:
+        "A native `title=` tooltip: draw the hint with the shared tooltip, `<Tooltip tip>` from `ui/tooltip/Tooltip`, or a button's `tooltip`; an `IconButton`'s tooltip is its `aria-label` (docs/ui-primitives.md).",
+      svgTitle:
+        "An SVG `<title>` is a native tooltip: draw the hint with the shared tooltip around the drawing (`<Tooltip tip>`), and name the drawing with `aria-label` where it needs a name.",
+    },
+    schema: [
+      {
+        type: "object",
+        properties: {
+          // The house components that hand a `title` on to their element as it is.
+          handsOn: { type: "array", items: { type: "string" } },
+        },
+        additionalProperties: false,
+      },
+    ],
   },
+  create(context) {
+    const { handsOn = [] } = context.options[0] ?? {};
+    /** Whether `node`'s element hands a `title` on to the DOM as a native tooltip. */
+    const handsTitleOn = (node) => {
+      if (node.name.type === "JSXMemberExpression") return true;
+      if (node.name.type !== "JSXIdentifier") return false;
+      const tag = node.name.name;
+      if (TITLED.has(tag)) return false;
+      return /^[a-z]/.test(tag) || BUTTONS.has(tag) || handsOn.includes(tag);
+    };
+    return {
+      JSXOpeningElement(node) {
+        if (node.name.type === "JSXIdentifier" && node.name.name === "title") {
+          context.report({ node, messageId: "svgTitle" });
+          return;
+        }
+        if (!handsTitleOn(node)) return;
+        const title = attributeOf(node, "title");
+        if (title) context.report({ node: title, messageId: "title" });
+        // A `title` handed on through a spread of an object written here (`{...shared}`).
+        for (const spread of node.attributes.filter((one) => one.type === "JSXSpreadAttribute")) {
+          const key = titleKeyOf(spreadObject(context, spread));
+          if (key) context.report({ node: key, messageId: "title" });
+        }
+      },
+    };
+  },
+};
+
+/**
+ * **A family that has moved** (#2913): its old styling classes are an error outside `src/ui`, and
+ * so is its `data-scope` written by hand, since only its wrapper draws it. `classes` are whole
+ * words of a `className`, or a prefix where one ends in `*`.
+ */
+function moved({ description, scopes, classes, message }) {
+  const named = (word) =>
+    classes.some((one) => (one.endsWith("*") ? word.startsWith(one.slice(0, -1)) : word === one));
+  return {
+    meta: {
+      type: "problem",
+      docs: { description },
+      messages: {
+        oldClass: `\`{{word}}\` is the old class of ${message}`,
+        scope: `\`data-scope="{{scope}}"\` is drawn by its family's wrapper only: ${message}`,
+      },
+      schema: [],
+    },
+    create(context) {
+      return {
+        JSXAttribute(node) {
+          if (node.name.name === "className") {
+            for (const [at, text] of classStrings(node.value))
+              for (const word of text.split(/\s+/).filter(Boolean))
+                if (named(word))
+                  context.report({ node: at, messageId: "oldClass", data: { word } });
+            return;
+          }
+          if (
+            node.name.name === "data-scope" &&
+            node.value?.type === "Literal" &&
+            scopes.includes(node.value.value)
+          )
+            context.report({ node, messageId: "scope", data: { scope: node.value.value } });
+        },
+      };
+    },
+  };
+}
+
+const panelFamily = moved({
+  description: "A region panel is the shared Panel family",
+  scopes: ["panel"],
+  classes: [],
+  message:
+    "a region panel: draw it as `<Panel>`, or give a library's panel `panelRoot(variant)`, from `ui/panel/Panel` (#2913).",
+});
+
+const panelSectionFamily = moved({
+  description: "A panel's section and its title are the shared panel section family",
+  scopes: ["panel-section"],
+  classes: ["sidebar-title", "panel-head"],
+  message:
+    "a panel's section: draw it as `<PanelSection>`, `<PanelSectionHead>` and `<PanelSectionTitle>` from `ui/panel/Panel` (#2913).",
+});
+
+const emptyStateFamily = moved({
+  description: "An empty state is the shared EmptyState family",
+  scopes: ["empty-state"],
+  classes: ["empty-state", "empty-state-*"],
+  message: "an empty state: draw it as `<EmptyState>` from `ui/empty-state/EmptyState` (#2913).",
+});
+
+const statusItemFamily = moved({
+  description: "A status bar item or a status pill is the shared status item family",
+  scopes: ["status-item", "status-bar"],
+  classes: [
+    "status-line",
+    "status-context",
+    "status-health",
+    "status-cell",
+    "status-label",
+    "status-glyph",
+    "status-workspace",
+    "status-project",
+    "status-project-*",
+    "status-count",
+    "status-unknown",
+    "status-badge",
+    "status-update",
+    "status-pin",
+    "status-doctor",
+    "status-alerts",
+    "doctor-said",
+    "doctor-tone-*",
+    "needs-you-button",
+    "needs-you-number",
+    "title-about",
+    "title-kill-switch",
+  ],
+  message:
+    "a status item: draw it as `<StatusItem>` or `<StatusCell>` from `ui/status/StatusItem`, on a `<StatusBar>` (`ui/status/StatusBar`) where it is the bar's (#2913).",
 });
 
 export const purlisUi = {
@@ -247,5 +421,9 @@ export const purlisUi = {
     "choice-family": choiceFamily,
     "dialog-family": dialogFamily,
     "tooltip-family": tooltipFamily,
+    "panel-family": panelFamily,
+    "panel-section-family": panelSectionFamily,
+    "empty-state-family": emptyStateFamily,
+    "status-item-family": statusItemFamily,
   },
 };

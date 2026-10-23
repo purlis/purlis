@@ -50,7 +50,7 @@ export function UpdateFromRemote({
       <Button
         size="sm"
         data-testid="saving-update"
-        title={
+        tooltip={
           saveFirst
             ? `Save what changed here, then bring in ${incomingSaid(incoming)} from the remote`
             : updateSaid(incoming)

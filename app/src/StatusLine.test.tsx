@@ -11,6 +11,7 @@ import { StatusLine, projectName, runningIn } from "./StatusLine";
 import type { DoctorState } from "./Doctor";
 import type { DoctorReport, DoctorRow, FactBadge, Panels, PanelTodo, Piece } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The status line's own rules**, on the component and nothing else.
@@ -201,7 +202,13 @@ describe("the Notices button (#1695)", () => {
     draw();
 
     const button = screen.getByRole("button", { name: "Notices — nothing to open here" });
-    expect(button).toBeDisabled();
+    // Unavailable, and still a Tab stop: the bar's menu always opens from Notices (#2913), and
+    // its tooltip says why (#2908).
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute("data-disabled", "true");
+    expect(button).toHaveAttribute("tabindex", "0");
+    expect(button).toHaveAccessibleDescription("This status line has no Inbox behind it.");
   });
 
   it("drops a count purlis cannot stand behind and still opens the Inbox", async () => {
@@ -294,14 +301,15 @@ describe("the project, as its name (qw357)", () => {
     expect(project()).toHaveAttribute("data-directory", PLANE);
   });
 
-  it("cuts a long name with an ellipsis, and never the health end of the line", () => {
-    const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8");
-    const rule = (selector: string) =>
-      css.slice(css.indexOf(`\n${selector} {`), css.indexOf("}", css.indexOf(`\n${selector} {`)));
-
-    expect(rule(".status-project-name")).toContain("text-overflow: ellipsis");
-    expect(rule(".status-context")).toContain("flex: 0 1 auto");
-    expect(rule(".status-health")).toContain("flex: none");
+  it("gives way first, a long name cut with an ellipsis, with a line after it", () => {
+    // The layout itself is the story's to measure (`ui/status/StatusItem.stories.tsx`,
+    // NarrowWithAPinArriving): jsdom lays nothing out.
+    draw();
+    expect(project()).toHaveAttribute("data-shrinks");
+    expect(project().closest('[data-part="slot"]')?.nextElementSibling).toHaveAttribute(
+      "data-part",
+      "separator",
+    );
   });
 });
 
@@ -330,13 +338,14 @@ describe("the line is one status bar (qw357)", () => {
 
     const [context, health, ...more] = [...screen.getByTestId("status-line").children];
     expect(more).toEqual([]);
-    expect(context).toHaveClass("status-context");
-    expect(context.firstElementChild).toBe(screen.getByTestId("status-project"));
+    expect(context).toHaveAttribute("data-part", "start");
+    expect(context.firstElementChild?.firstElementChild).toBe(screen.getByTestId("status-project"));
     expect(context).toHaveTextContent("alpha");
-    expect(health).toHaveClass("status-health");
+    expect(health).toHaveAttribute("data-part", "end");
+    // The doctor inside, Notices outermost: the one that always stays never moves (#2913).
     expect(within(health as HTMLElement).getAllByRole("button")).toEqual([
-      screen.getByTestId("status-alerts"),
       screen.getByTestId("status-doctor"),
+      screen.getByTestId("status-alerts"),
     ]);
   });
 
@@ -344,8 +353,8 @@ describe("the line is one status bar (qw357)", () => {
     draw({ alerts: { count: 2, open: vi.fn() }, doctor: doctor([row("git", "warn")]) });
 
     for (const item of [screen.getByTestId("status-alerts"), screen.getByTestId("status-doctor")]) {
-      expect(item).toHaveAttribute("data-variant", "ghost");
-      expect(item).toHaveAttribute("data-size", "sm");
+      expect(item).toHaveAttribute("data-scope", "status-item");
+      expect(item).toHaveAttribute("data-variant", "bar");
     }
     // And no rule of the window's own boxes them again: the look is the family's, whole.
     const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8");
@@ -357,14 +366,12 @@ describe("the line is one status bar (qw357)", () => {
   it("says the doctor's count in words, in its verdict's colour class, and nothing at zero", () => {
     const { unmount } = draw({ doctor: doctor([row("git", "warn"), row("gh", "warn")]) });
     const warned = screen.getByRole("button", { name: "Doctor: 2 warnings" });
-    expect(warned).toHaveClass("doctor-tone-warn");
-    expect(warned.querySelector(".doctor-said")).toHaveTextContent(/^2 warnings$/);
+    expect(warned.querySelector('[data-verdict="waiting"]')).toHaveTextContent(/^2 warnings$/);
     unmount();
 
     draw({ doctor: doctor([row("git", "ok")]) });
     const clean = screen.getByTestId("status-doctor");
-    expect(clean).toHaveClass("doctor-tone-quiet");
-    expect(clean.querySelector(".doctor-said")).toBeNull();
+    expect(clean.querySelector("[data-verdict]")).toBeNull();
     expect(clean).toHaveAccessibleName(/nothing wrong/);
   });
 
@@ -416,15 +423,15 @@ describe("an extension's badges (charter-app#340)", () => {
 
     const drawn = screen.getByTestId("status-badge-prs-open");
     expect(drawn).toHaveTextContent("PRs 3");
-    expect(drawn).not.toHaveClass("stale");
-    expect(drawn.getAttribute("title")).toContain("Pull requests");
+    expect(drawn).not.toHaveAttribute("data-tone");
+    expect(tipOf(drawn)).toContain("Pull requests");
   });
 
   it("dims a value older than its extension declared fresh, and says how old it is", () => {
     draw({ badges: [badge({ stale: true, age_seconds: 7200 })] });
 
     const drawn = screen.getByTestId("status-badge-prs-open");
-    expect(drawn).toHaveClass("stale");
+    expect(drawn).toHaveAttribute("data-tone", "quiet");
     expect(drawn).toHaveTextContent("PRs 3 · 2h ago");
   });
 
@@ -433,7 +440,7 @@ describe("an extension's badges (charter-app#340)", () => {
 
     const said = screen.getByTestId("status-fact-notes");
     expect(said).toHaveTextContent("1 extension note");
-    expect(said.getAttribute("title")).toBe("Pull requests changed since you approved it");
+    expect(tipOf(said)).toBe("Pull requests changed since you approved it");
   });
 
   it("draws no badge when no extension has one", () => {

@@ -41,7 +41,7 @@ import {
 import { PersonaMark } from "./PersonaMark";
 import { PersonaMarkPicker } from "./PersonaMarkPicker";
 import { PersonaProfileMissing } from "./PersonaProfileMissing";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { OffWhenReadOnly, useReadOnlySaid } from "./ReadOnlyLine";
 import { LandAsk, PushAsk, askLand } from "./ChangeActions";
@@ -127,6 +127,7 @@ import {
   type About,
 } from "./planeChanged";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What `workspaceSettingsView` names Settings at a workspace's level (SE-20). */
 const WORKSPACE_SETTINGS = "workspace-settings";
@@ -475,7 +476,7 @@ export function ViewPane({
             <Button
               size="sm"
               key={`${one.extension}/${one.id}`}
-              title={`Asks ${one.extension}, in a tab of its own`}
+              tooltip={`Asks ${one.extension}, in a tab of its own`}
               onPress={() => onOpenView({ from: one.extension, view: one.id, key }, called)}
               icon={<ChartColumn className="node-icon" aria-hidden="true" />}
             >
@@ -782,7 +783,7 @@ function OfferButton({ offer, onPress }: { offer?: Offer; onPress?: (offer: Offe
     <Button
       size="sm"
       isDisabled={!offer.available}
-      title={offer.available ? offer.note : offer.reason}
+      tooltip={offer.available ? offer.note : offer.reason}
       onPress={() => onPress(offer)}
     >
       {offer.title}
@@ -1362,9 +1363,9 @@ function ChartPoint({
   const size = `${percent}%`;
   return (
     <li className="chart-point">
-      <span className="chart-label" title={point.label}>
-        {point.label}
-      </span>
+      <Tooltip tip={point.label}>
+        <span className="chart-label">{point.label}</span>
+      </Tooltip>
       <span className="chart-track" aria-hidden="true">
         <span
           className="chart-bar"

@@ -378,12 +378,13 @@ describe("the window's tab order", () => {
       "button Project settings…",
       "button Open a project…",
       "button New project…",
-      // …then the right-hand end: the needs-you button (charter-app#249), the kill switch (OV-1),
-      // then the app's own two.
+      // …then the right-hand end: what comes and goes on its inner side, the needs-you button
+      // (charter-app#249) and the update pill, then the kill switch (OV-1) and About, which
+      // stays at the bar's end (#2913).
       "button 2 chats need you",
+      "button Updates — … channel, nothing new known",
       "button Stop every chat and shell purlis started, in every project and window",
       "button About purlis — what this version brought",
-      "button Updates — … channel, nothing new known",
       // The workspace strip.
       "tab alpha32",
       // The focused workspace's settings gear (SE-23), for the same reason.
@@ -437,10 +438,11 @@ describe("the window's tab order", () => {
       "tab Inbox",
       "tab Memory",
       // The status line: the project by its name, whose tooltip is its directory (qw357), then
-      // Notices and the doctor. The region toggles went; a side's bar is its way away and back.
+      // the doctor and Notices, which stays outermost (#2913). The region toggles went; a side's
+      // bar is its way away and back.
       "span plane",
-      "button Notices: none",
       "button Doctor",
+      "button Notices: none",
     ]);
   });
 

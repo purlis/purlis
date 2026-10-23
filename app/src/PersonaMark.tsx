@@ -55,6 +55,7 @@ import {
 } from "lucide-react";
 import type { PersonaImage, PersonaMark as Mark } from "./bindings";
 import { inForce, onDrawn, tintVariables, WORKSPACE_COLOURS, type Token } from "./theme/theme";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **A persona's mark** (#1449): the one thing that draws a persona, wherever one appears — a
@@ -284,24 +285,25 @@ export function PersonaMark({
     image !== null ? (image === failed ? "initials" : "image") : Icon ? "icon" : "initials";
   const colour = given?.colour ?? colourOfName(persona);
   return (
-    <span
-      className={className ? `persona-mark ${className}` : "persona-mark"}
-      data-persona={persona}
-      data-mark={shows}
-      data-icon={shows === "icon" ? (given?.icon ?? undefined) : undefined}
-      // Drawn by the stylesheet from this attribute and never as text of the page: a tab's
-      // words are its name, and two letters in front of them would be read as part of it.
-      data-initials={shows === "initials" ? initialsOf(persona) : undefined}
-      data-colour={colour}
-      style={tintVariables(theme, colour, MARK_TOKENS) as CSSProperties}
-      title={persona}
-      aria-hidden="true"
-    >
-      {shows === "image" && image !== null ? (
-        <Drawn image={image} onTrouble={failedNow} />
-      ) : Icon && shows === "icon" ? (
-        <Icon />
-      ) : null}
-    </span>
+    <Tooltip tip={persona}>
+      <span
+        className={className ? `persona-mark ${className}` : "persona-mark"}
+        data-persona={persona}
+        data-mark={shows}
+        data-icon={shows === "icon" ? (given?.icon ?? undefined) : undefined}
+        // Drawn by the stylesheet from this attribute and never as text of the page: a tab's
+        // words are its name, and two letters in front of them would be read as part of it.
+        data-initials={shows === "initials" ? initialsOf(persona) : undefined}
+        data-colour={colour}
+        style={tintVariables(theme, colour, MARK_TOKENS) as CSSProperties}
+        aria-hidden="true"
+      >
+        {shows === "image" && image !== null ? (
+          <Drawn image={image} onTrouble={failedNow} />
+        ) : Icon && shows === "icon" ? (
+          <Icon />
+        ) : null}
+      </span>
+    </Tooltip>
   );
 }

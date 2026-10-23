@@ -26,11 +26,14 @@ const FAINT: ReadonlySet<string> = new Set([
   ".pane-crumbs .crumb-sep",
   ".tab-task-sep",
   ".ui-tree-twist",
-  // A disabled button's words (#2897's palette rules, #2904).
+  // A disabled button's words (#2897's palette rules, #2904), and a disabled status item's.
   '[data-scope="button"][data-part="root"][data-disabled]',
   // An unavailable box's words (#2905).
   '[data-scope="text-input"][data-part="root"][data-disabled]',
   '[data-scope="textarea"][data-part="root"][data-disabled]',
+  '[data-scope="status-item"][data-part="root"][data-disabled]',
+  // An empty state's mark, above its words (#2913).
+  '[data-scope="empty-state"][data-part="icon"]',
 ]);
 
 /** Informational words, each drawn in quiet: line numbers, placeholders, counts, paths, group
@@ -40,7 +43,8 @@ const QUIET: readonly string[] = [
   ".ui-select[data-placeholder]",
   ".pane-find-count",
   ".ui-level-count",
-  ".status-label",
+  // A status cell's word before its count (#2913).
+  '[data-static]:has(> [data-part="count"]) > [data-scope="status-item"][data-part="label"]',
   ".panel-day",
   ".search-file-folder",
   ".search-file-rest",

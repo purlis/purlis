@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { untilTheStripLists } from "../reading.js";
 import { bringSideBack, putSideAway } from "../sides.js";
+import { tooltipOf } from "../tooltips.js";
 
 /**
  * **charter's status line**, against the real app (`app/src/StatusLine.tsx`).
@@ -191,22 +192,11 @@ describe("the status line", () => {
     expect(directory.replace(/[/\\]+$/, "").endsWith(name)).toBe(true);
 
     // By the keyboard's way in, which opens the same tooltip the pointer does: focused by the
-    // page, since a hover's timing is the driver's. `StatusLine.test.tsx` holds the hover.
-    const focusIt = (on: boolean) =>
-      browser.execute((focus: boolean) => {
-        const item = document.querySelector<HTMLElement>('[data-testid="status-project"]');
-        if (focus) item?.focus();
-        else item?.blur();
-      }, on);
-    await focusIt(true);
-    const tip = await $(".ui-tooltip");
-    await tip.waitForDisplayed({ timeout: 20_000 });
-    expect(await tip.getText()).toContain(directory);
-    // Off it again, so no tooltip stands over the specs after this one.
-    await focusIt(false);
-    await tip.waitForExist({ timeout: 20_000, reverse: true });
+    // page, since a hover's timing is the driver's. `Tooltip.test.tsx` holds the hover. It is
+    // let go again, so no tooltip stands over the specs after this one.
+    expect(await tooltipOf('[data-testid="status-project"]')).toContain(directory);
 
-    const onTheBar = await $("header.bar .status-project");
+    const onTheBar = await $('header.bar [data-testid="status-project"]');
     expect(await onTheBar.isExisting()).toBe(false);
   });
 
@@ -237,7 +227,7 @@ describe("the status line", () => {
       return {
         line: box('[data-testid="status-line"]'),
         project: box('[data-testid="status-project"]'),
-        where: box(".status-where"),
+        where: box('[data-testid="status-where"]'),
         notices: box('[data-testid="status-alerts"]'),
         doctor: box('[data-testid="status-doctor"]'),
       };
@@ -248,9 +238,10 @@ describe("the status line", () => {
 
     // Context first, from the left edge; health last, to the right edge.
     expect(project.left).toBeLessThan(where.left);
-    expect(where.right).toBeLessThanOrEqual(notices.left);
-    expect(notices.right).toBeLessThanOrEqual(doctor.left + 1);
-    expect(line.right - doctor.right).toBeLessThanOrEqual(24);
+    // The doctor inside, Notices outermost: the one that always stays (#2913).
+    expect(where.right).toBeLessThanOrEqual(doctor.left);
+    expect(doctor.right).toBeLessThanOrEqual(notices.left + 1);
+    expect(line.right - notices.right).toBeLessThanOrEqual(24);
     expect(project.left - line.left).toBeLessThanOrEqual(24);
     // One height for the two items, inside the line, with room around them.
     expect(Math.abs(notices.height - doctor.height)).toBeLessThanOrEqual(1);

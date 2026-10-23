@@ -24,6 +24,17 @@ const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 /** The Inbox view (#1692), and the chat waiting on you in it. */
 const WAITING_IN_THE_INBOX = '[role="tabpanel"][data-view="inbox"] .inbox-ask';
 
+/**
+ * Presses the hand with the page's own `click()`: a WebDriver click is a `mousedown` and a
+ * `click` with no pointer events (`acting.ts`), and the hand is a status item on React Aria's
+ * press, which a pointer starts (#2913).
+ */
+async function pressTheHand(): Promise<void> {
+  await browser.execute((hand: string) => {
+    document.querySelector<HTMLElement>(hand)?.click();
+  }, HAND);
+}
+
 /** Waits until the hand's name says `want`, and says what it said instead if it never does. */
 async function untilTheHandSays(want: RegExp): Promise<WebdriverIO.Element> {
   let last = "";
@@ -118,7 +129,7 @@ describe("what a chat is doing", () => {
     const faint = await untilTheHandSays(
       /^Nothing has asked for you, but .+ can't tell purlis it's waiting$/,
     );
-    await expect(faint).toHaveElementClass("muted");
+    await expect(faint).toHaveAttribute("data-tone", "quiet");
     await expect(faint).toHaveAttribute("tabindex", "0");
     await expect(faint).not.toHaveText(expect.stringMatching(/\d/));
 
@@ -141,14 +152,13 @@ describe("what a chat is doing", () => {
     // Queued, in the title bar: a hand and a count (charter-app#249), the asks registry's
     // (#1690): one thing waits on you.
     const hand = await untilTheHandSays(/^1 thing waits on you$/);
-    await expect(hand).not.toHaveElementClass("muted");
+    await expect(hand).toHaveAttribute("data-variant", "waiting");
     await expect(hand).toHaveText("1");
     await expect(hand).toHaveAttribute("tabindex", "0");
   });
 
   it("lists the chat in the Inbox the hand opens, and Go to chat brings it forward", async () => {
-    const hand = await $(HAND);
-    await hand.click();
+    await pressTheHand();
 
     const ask = await $(WAITING_IN_THE_INBOX);
     await ask.waitForDisplayed({ timeout: 10_000 });
@@ -169,7 +179,7 @@ describe("what a chat is doing", () => {
 
   it("ignores the chat from the Inbox, and the hand goes faint again", async () => {
     const ignore = await $(`${WAITING_IN_THE_INBOX} button[aria-label^="Ignore "]`);
-    if (!(await ignore.isDisplayed())) await $(HAND).click();
+    if (!(await ignore.isDisplayed())) await pressTheHand();
     await ignore.waitForDisplayed({ timeout: 10_000 });
 
     await ignore.click();
@@ -179,7 +189,7 @@ describe("what a chat is doing", () => {
     // The hand does not go: this chat still cannot say whether it is waiting, so it is the
     // faint hand again rather than the count.
     const faint = await untilTheHandSays(/^Nothing has asked for you, but /);
-    await expect(faint).toHaveElementClass("muted");
+    await expect(faint).toHaveAttribute("data-tone", "quiet");
     expect(await doing(await theTab())).toBe("waiting on you");
   });
 });

@@ -12,6 +12,8 @@ import { Notice } from "./Notice";
 import type { Needing, Quiet } from "./NeedsYou";
 import { PersonaMark } from "./PersonaMark";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { PanelSectionTitle } from "./ui/panel/Panel";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **What waits on the person where this project's asks registry cannot see** (#1695): what the
@@ -104,7 +106,9 @@ export function OtherProjects({
 }) {
   return (
     <section className="inbox-chat inbox-elsewhere" aria-label={OTHER_PROJECTS}>
-      <h3 className="inbox-chain sidebar-title">{OTHER_PROJECTS}</h3>
+      <PanelSectionTitle level={3} className="inbox-chain">
+        {OTHER_PROJECTS}
+      </PanelSectionTitle>
       <ul>
         {others.map((one) => (
           <RovingFocusGroup.Item asChild tabStopId={hereKey(one.plane)} key={one.plane}>
@@ -122,19 +126,17 @@ export function OtherProjects({
                     return (
                       <li key={`${ask.session}\u0000${ask.ask}`} className="inbox-says">
                         <KindMark kind={kindOfAsk(ask.source)} />
-                        <span
-                          className="ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"
-                          title={says}
-                        >
-                          {says}
-                        </span>
-                        {who !== "" && (
-                          <span
-                            className="inbox-where inbox-secondary ui-text-secondary"
-                            title={who}
-                          >
-                            {who}
+                        <Tooltip tip={says}>
+                          <span className="ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped">
+                            {says}
                           </span>
+                        </Tooltip>
+                        {who !== "" && (
+                          <Tooltip tip={who}>
+                            <span className="inbox-where inbox-secondary ui-text-secondary">
+                              {who}
+                            </span>
+                          </Tooltip>
                         )}
                         {typeof ask.since === "number" && now !== undefined && (
                           <span className="inbox-meta ui-text-meta">
@@ -230,16 +232,17 @@ export function ElsewhereGroup({
           >
             <p className="inbox-says">
               <KindMark kind="elsewhere" />
-              <span
-                id={`${id}-says`}
-                className="ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"
-                title={says}
-              >
-                {says}
-              </span>
-              <span className="inbox-where inbox-secondary ui-text-secondary" title={where}>
-                {where}
-              </span>
+              <Tooltip tip={says}>
+                <span
+                  id={`${id}-says`}
+                  className="ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"
+                >
+                  {says}
+                </span>
+              </Tooltip>
+              <Tooltip tip={where}>
+                <span className="inbox-where inbox-secondary ui-text-secondary">{where}</span>
+              </Tooltip>
               <span className="inbox-meta ui-text-meta">
                 <span id={`${id}-whose`} className="inbox-source">
                   {IN_ANOTHER_WINDOW}
@@ -264,7 +267,7 @@ export function ElsewhereGroup({
                     size="sm"
                     variant="ghost"
                     aria-label={item.ignore.title}
-                    title={item.ignore.title}
+                    tooltip={item.ignore.title}
                     onPress={() => item.ignore && onPress(item.plane, item.ignore)}
                     className="inbox-go"
                   >

@@ -880,7 +880,7 @@ describe("a Notice in a pane", () => {
     }
     // And the band and the sidebar start where the window does.
     const starts = await browser.execute(() =>
-      [".title-bar", 'nav[aria-label="Explorer"]', ".status-line"].map(
+      [".title-bar", 'nav[aria-label="Explorer"]', '[data-testid="status-line"]'].map(
         // A region that is put away is not cut: only one that is drawn is measured.
         (where) => document.querySelector(where)?.getBoundingClientRect().left ?? 0,
       ),

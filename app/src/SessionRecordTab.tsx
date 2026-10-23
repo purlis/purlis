@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import { LoaderCircle } from "lucide-react";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
 import { ExternalLink } from "./ReleaseNotes";
 import { Facts } from "./Views";
@@ -207,7 +207,7 @@ function withRefs(plane: PlaneId, place: string, repos: readonly string[]): Comp
         <Button
           variant="link"
           aria-label={`Open ${children}`}
-          title={`Open ${ref.path} at line ${ref.line}`}
+          tooltip={`Open ${ref.path} at line ${ref.line}`}
           onPress={() => jumpTo({ plane, ...ref })}
           className="record-ref"
         >

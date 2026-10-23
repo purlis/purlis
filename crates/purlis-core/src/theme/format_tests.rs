@@ -120,14 +120,15 @@ fn purlis_classic_draws_exactly_today_s_values() {
     // in Classic changes one of these. Dark's `needs-you.base` moved from `#b85050` to
     // `#bd5654` for the mark on a hovered control (#2504). Light's `state.waiting` (and its
     // glow) moved from `#906000` to `#805500`, so the words of a warning-soft button hold 4.5:1
-    // on a control and a hovered one (#2945).
+    // on a control and a hovered one (#2945). Both gained `wash.warning`, the amber wash a
+    // waiting pill stands on (#2913).
     assert_eq!(
         digest(classic_dark()),
-        "b612dcdabecf1c81bbde32cb5a5c8f0bcc7774d0d70aac68e27cd8771136e9df"
+        "68453900caa95f256c23066c41c78c6eecbf5ea43cf3d81e0e0c76dead0f90f8"
     );
     assert_eq!(
         digest(classic_light()),
-        "dcde57746655f6d64dff15e2f0fdcb9799bec9b1852573970a05468a495edbf9"
+        "c145aaff06315773308942327a71ef738a1ed5f02b5fedc354cf64bb79429433"
     );
     for theme in [classic_dark(), classic_light()] {
         assert_eq!(theme.motion.durations["duration.quick"], 120);

@@ -22,12 +22,19 @@
  * - **Behaviour is React Aria's**: press by pointer, Enter and Space, focus on press in WebKit,
  *   a visible focus ring only from the keyboard. Every button is in the tab sequence, which
  *   WebKit leaves a button out of without `tabIndex` (#190).
+ * - **Its hint is the shared tooltip** (#2908, `ui/tooltip`), never a native `title`: `tooltip`
+ *   on a `Button` or a `ToggleButton`. **An icon button's tooltip is its name** (its
+ *   `aria-label`), with its `tooltip` as a second line under it, so what the tooltip shows and
+ *   what a screen reader hears always agree; a hint that only repeats a button's name is shown
+ *   and not heard twice. **A disabled button with a hint keeps the focus** and says it is
+ *   unavailable (`aria-disabled`), so the hint, which says why, is reached by the keyboard and
+ *   the pointer alike, and nothing presses it.
  */
 import {
   Children,
   createContext,
   useContext,
-  type ButtonHTMLAttributes,
+  useState,
   type ComponentPropsWithRef,
   type CSSProperties,
   type ReactNode,
@@ -37,10 +44,11 @@ import {
   Button as AriaButton,
   ToggleButton as AriaToggleButton,
   type ButtonProps as AriaButtonProps,
-  type KeyboardEvent,
   type ToggleButtonProps as AriaToggleButtonProps,
 } from "react-aria-components";
 import { LockOpen } from "lucide-react";
+import { pressable, renderPressed, usePressTip, type Native } from "../pressable";
+import { Tipped, type Tip } from "../tooltip/Tooltip";
 
 /** The family's variants, in the order the manifest names them. */
 export const BUTTON_VARIANTS = [
@@ -59,36 +67,6 @@ export type ButtonVariant = (typeof BUTTON_VARIANTS)[number];
 export const BUTTON_SIZES = ["sm", "md", "lg"] as const;
 export type ButtonSize = (typeof BUTTON_SIZES)[number];
 
-/**
- * The native attributes React Aria does not hand to its element, which a call site still needs:
- * a tooltip (until the shared tooltip replaces `title`, #2897), a busy press (#1190), a
- * shortcut, and the place in a roving group's tab sequence.
- */
-type Native = Pick<
-  ButtonHTMLAttributes<HTMLButtonElement>,
-  | "title"
-  | "tabIndex"
-  | "aria-busy"
-  | "aria-keyshortcuts"
-  | "aria-live"
-  | "aria-atomic"
-  | "aria-owns"
-  | "aria-roledescription"
-  | "aria-errormessage"
->;
-
-const NATIVE_KEYS = [
-  "title",
-  "tabIndex",
-  "aria-busy",
-  "aria-keyshortcuts",
-  "aria-live",
-  "aria-atomic",
-  "aria-owns",
-  "aria-roledescription",
-  "aria-errormessage",
-] as const satisfies readonly (keyof Native)[];
-
 /** What every member of the family takes beside React Aria's own props. */
 interface Drawn extends Native {
   variant?: ButtonVariant;
@@ -99,6 +77,11 @@ interface Drawn extends Native {
   style?: CSSProperties;
   /** An icon before the words: the family's `icon` part. */
   icon?: ReactNode;
+  /**
+   * **Its hint**, the shared tooltip (#2908): what the button does that its words do not say, or
+   * why it cannot be pressed now. On an icon button, a second line under its name.
+   */
+  tooltip?: Tip;
   ref?: Ref<HTMLButtonElement>;
   /** `data-*` attributes reach the element as they are. */
   [data: `data-${string}`]: string | number | boolean | undefined;
@@ -197,18 +180,10 @@ function GrantsLock() {
   );
 }
 
-/** Splits a call's props into what React Aria takes and the native attributes it would drop. */
-function split<T extends Drawn>(props: T) {
-  const native: Record<string, unknown> = {};
-  const aria: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(props)) {
-    if ((NATIVE_KEYS as readonly string[]).includes(key)) native[key] = value;
-    else aria[key] = value;
-  }
-  return { native, aria };
-}
-
-function useDrawn(props: Drawn & { children?: ReactNode; isDisabled?: boolean }, iconOnly = false) {
+function useDrawn(
+  props: Drawn & { children?: ReactNode; isDisabled?: boolean; "aria-label"?: string },
+  iconOnly = false,
+) {
   const rowSize = useContext(RowSize);
   const {
     variant = "secondary",
@@ -218,20 +193,15 @@ function useDrawn(props: Drawn & { children?: ReactNode; isDisabled?: boolean },
     className,
     style,
     ref,
+    tooltip,
     ...rest
   } = props;
+  const tip = usePressTip(props["aria-label"], tooltip, iconOnly, props.isDisabled === true);
   const size = rowSize ?? ownSize;
-  const { native, aria } = split(rest);
-  // A key a button's own handler does not stop goes on to its row, its list and the window, as
-  // a native button's does; React Aria stops every key at a handler unless told otherwise.
-  for (const name of ["onKeyDown", "onKeyUp"] as const) {
-    const handler = aria[name] as ((event: KeyboardEvent) => void) | undefined;
-    if (handler)
-      aria[name] = (event: KeyboardEvent) => {
-        event.continuePropagation();
-        handler(event);
-      };
-  }
+  // The press every pressable family shares (`ui/pressable.tsx`): the native attributes, the
+  // keys a handler does not stop going on, a disabled button with a hint that keeps the focus
+  // and does nothing, and the element.
+  const { native, aria, own } = pressable(rest, tip);
   const content = (
     <>
       {variant === "grants" ? <GrantsLock /> : null}
@@ -239,7 +209,7 @@ function useDrawn(props: Drawn & { children?: ReactNode; isDisabled?: boolean },
       {iconOnly ? null : labelled(children)}
     </>
   );
-  return {
+  const drawn = {
     ...aria,
     ref,
     className,
@@ -249,46 +219,60 @@ function useDrawn(props: Drawn & { children?: ReactNode; isDisabled?: boolean },
     "data-variant": variant,
     "data-size": size,
     "data-icon-only": iconOnly ? "" : undefined,
-    // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-    render: (domProps: ComponentPropsWithRef<"button">) => {
-      // A button that says it is unavailable but keeps the focus (`aria-disabled`, #1700) is
-      // drawn and themed as disabled, and never as under the pointer or pressed: React Aria
-      // marks only `isDisabled` so.
-      const unavailable = String(domProps["aria-disabled"]) === "true";
-      const {
-        "data-hovered": hovered,
-        "data-pressed": pressed,
-        ...rest
-      } = domProps as ComponentPropsWithRef<"button"> & Record<`data-${string}`, unknown>;
-      return (
-        <button
-          {...rest}
-          data-hovered={unavailable ? undefined : (hovered as string | undefined)}
-          data-pressed={unavailable ? undefined : (pressed as string | undefined)}
-          data-disabled={unavailable ? "true" : (rest["data-disabled"] as string | undefined)}
-          tabIndex={domProps.tabIndex ?? 0}
-          {...native}
-        />
-      );
-    },
+    // #190, #1700, #2908: `ui/pressable.tsx`.
+    render: renderPressed(native, tip, own),
     children: content,
   };
+  return { drawn, surface: tip.surface, reason: tip.reason };
 }
 
 /** **A button**: words, an icon before them if it has one, in a variant and a size. */
 export function Button(props: ButtonProps) {
-  const drawn = useDrawn(props);
-  return <AriaButton {...(drawn as AriaButtonProps)} />;
+  const { drawn, surface, reason } = useDrawn(props);
+  return (
+    <Tipped surface={surface}>
+      <AriaButton {...(drawn as AriaButtonProps)} />
+      {reason}
+    </Tipped>
+  );
 }
 
-/** **An icon button**: square at its size, named by its `aria-label`. */
+/**
+ * **An icon button**: square at its size, named by its `aria-label`, which its tooltip shows;
+ * its `tooltip` is a second line under the name.
+ */
 export function IconButton(props: IconButtonProps) {
-  const drawn = useDrawn(props as Drawn, true);
-  return <AriaButton {...(drawn as AriaButtonProps)} />;
+  const { drawn, surface, reason } = useDrawn(props as Drawn, true);
+  return (
+    <Tipped surface={surface}>
+      <AriaButton {...(drawn as AriaButtonProps)} />
+      {reason}
+    </Tipped>
+  );
 }
 
 /** **A toggle button**: pressed or not (`aria-pressed`), told by its edge and its ground. */
-export function ToggleButton(props: ToggleButtonProps) {
-  const drawn = useDrawn(props);
-  return <AriaToggleButton {...(drawn as AriaToggleButtonProps)} />;
+export function ToggleButton(given: ToggleButtonProps) {
+  // Held here when the call does not hold it, so an unavailable toggle, whose `onChange` is
+  // dropped with its other handlers, never flips: React Aria's own state would.
+  const [held, hold] = useState(given.defaultSelected ?? false);
+  const props: ToggleButtonProps =
+    given.isSelected !== undefined
+      ? given
+      : {
+          ...given,
+          defaultSelected: undefined,
+          isSelected: held,
+          onChange: (selected: boolean) => {
+            hold(selected);
+            given.onChange?.(selected);
+          },
+        };
+  const { drawn, surface, reason } = useDrawn(props);
+  return (
+    <Tipped surface={surface}>
+      <AriaToggleButton {...(drawn as AriaToggleButtonProps)} />
+      {reason}
+    </Tipped>
+  );
 }

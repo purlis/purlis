@@ -4,7 +4,7 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 import Markdown from "react-markdown";
 import { LoaderCircle } from "lucide-react";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { COMPONENTS } from "./SessionRecordTab";
 import {
@@ -246,7 +246,7 @@ export function MemoryTab({
                 <Button
                   variant="danger"
                   isDisabled={saving || readOnly !== undefined}
-                  title={readOnly}
+                  tooltip={readOnly}
                   onPress={() => void save(true)}
                 >
                   Overwrite
@@ -265,7 +265,7 @@ export function MemoryTab({
             variant="primary"
             type="submit"
             isDisabled={saving || stale !== undefined || readOnly !== undefined}
-            title={readOnly}
+            tooltip={readOnly}
           >
             Save
           </Button>

@@ -27,7 +27,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CaseSensitive, LoaderCircle, Regex, Search, WholeWord } from "lucide-react";
 import type { PlaneId, SearchedFile } from "./bindings";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { FileIcon } from "./FileIcon";
 import { useFileIcons } from "./projectTheme";
 import { iconFor } from "./theme/icons";
@@ -59,6 +59,7 @@ import { Select } from "./primitives/Select";
 import type { ViewRef } from "./tabs";
 import { Button, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** How long the query is still before it is asked. */
 const SETTLE = 250;
@@ -119,7 +120,7 @@ export function SearchTab({
       <EmptyState
         headline="This search could not be read"
         body="Show Search again to start a new one."
-        size="panel"
+        variant="panel"
       />
     );
   }
@@ -225,7 +226,7 @@ function Switch({
     <ToggleButton
       isSelected={on}
       aria-label={label}
-      title={label}
+      tooltip={label}
       onPress={onPress}
       className="search-switch"
     >
@@ -343,13 +344,13 @@ function Hits({
         mark={Search}
         headline="Search the content of the files"
         body="What git ignores, links, vaults, files named like a credential and binary files are never searched."
-        size="panel"
+        variant="panel"
         testid="search-empty"
       />
     );
   }
   if (heard.trouble !== undefined) {
-    return <EmptyState headline={heard.trouble} size="panel" testid="search-trouble" />;
+    return <EmptyState headline={heard.trouble} variant="panel" testid="search-trouble" />;
   }
   // **A finished search that found nothing says so, and what to try** (FR-19, #614), where the
   // hits would be. The status line above still counts it, and still names a branch it could
@@ -472,13 +473,11 @@ function Hits({
           </span>
         ))}
         {heard.unsearched.length > 0 && (
-          <span
-            className="search-unsearched"
-            title={heard.unsearched.join("\n")}
-            data-testid="search-unsearched"
-          >
-            {`${heard.unsearched.length} file${heard.unsearched.length === 1 ? "" : "s"} not searched: ${heard.unsearched.join("; ")}`}
-          </span>
+          <Tooltip tip={heard.unsearched.join("\n")}>
+            <span className="search-unsearched" data-testid="search-unsearched">
+              {`${heard.unsearched.length} file${heard.unsearched.length === 1 ? "" : "s"} not searched: ${heard.unsearched.join("; ")}`}
+            </span>
+          </Tooltip>
         )}
         {handed !== undefined && (
           <span className={handed.refused ? "search-refused" : "search-handed"}>
@@ -500,7 +499,7 @@ function Hits({
           mark={Search}
           headline={`Nothing matches “${query.trim()}”`}
           body="Search a wider scope, or loosen the match: turn off match case, whole word or the regular expression."
-          size="panel"
+          variant="panel"
           testid="search-none"
         />
       ) : (

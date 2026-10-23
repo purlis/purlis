@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { browser, expect } from "@wdio/globals";
 import { showView } from "../opening.js";
 import { focusWorkspace, projectInFront } from "../reach.js";
+import { tooltipsOf } from "../tooltips.js";
 
 /**
  * **The right side's dated rows under Today, Yesterday and Earlier** (#1674, B-9), in the built
@@ -43,20 +44,30 @@ function aTodo(store: string, title: string, slug: string, when: Date): string {
 
 /** Each day heading the Todos view draws, with the titles under it, in order. */
 async function days(): Promise<{ day: string; rows: { text: string; hover: string }[] }[]> {
-  return browser.execute((panel: string) => {
+  // Each row's hover is its tooltip (#2908), read as the keyboard reads it, in document order.
+  const hovers = await tooltipsOf(`${TODOS} .panel-days .panel-row .row`);
+  const drawn = await browser.execute((panel: string) => {
     const list = document.querySelector(`${panel} .panel-days`);
     if (!list) return [];
+    const every = [...list.querySelectorAll(".panel-row .row")];
     return [...list.querySelectorAll("h3.panel-day")].map((heading) => {
       const rows = heading.nextElementSibling;
       return {
         day: heading.textContent ?? "",
-        rows: [...(rows?.querySelectorAll(".panel-row") ?? [])].map((row) => ({
-          text: row.querySelector(".row-text")?.textContent ?? "",
-          hover: row.querySelector(".row")?.getAttribute("title") ?? "",
-        })),
+        rows: [...(rows?.querySelectorAll(".panel-row") ?? [])].map((row) => {
+          const own = row.querySelector(".row");
+          return {
+            text: row.querySelector(".row-text")?.textContent ?? "",
+            at: own === null ? -1 : every.indexOf(own),
+          };
+        }),
       };
     });
   }, TODOS);
+  return drawn.map(({ day, rows }) => ({
+    day,
+    rows: rows.map(({ text, at }) => ({ text, hover: (at < 0 ? null : hovers[at]) ?? "" })),
+  }));
 }
 
 /** The titles the Todos view lists, whatever it groups them under. */

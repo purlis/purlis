@@ -25,6 +25,7 @@ import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 import type { Shown } from "./shownState";
 import { stripNamed } from "./test-strips";
+import { findByTip, getByTip, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The Chats section, against the whole window** (#1447): every running chat of the project
@@ -424,7 +425,9 @@ describe("the Chats section", () => {
     );
     // Each row says who runs it and what it is doing, and its card says where (#1675).
     const first = row(tree, "steward 1");
-    expect(first.querySelector('[title="steward"]')?.getAttribute("data-initials")).toBe("ST");
+    expect(first.querySelector('[data-persona="steward"]')?.getAttribute("data-initials")).toBe(
+      "ST",
+    );
     expect(within(first).getByText("running (no detail from claude)")).toBeTruthy();
     expect((await cardOf(tree, "steward 1")).facts.Workspace).toBe("alpha");
     expect((await cardOf(tree, "devops 4")).facts.Workspace).toBe("beta");
@@ -490,7 +493,7 @@ describe("the Chats section", () => {
     const one = await screen.findByTestId("on-memory-1");
     expect(one.textContent).toBe("1 dispatch waits on memory");
     // Where they are named, on the line's hover.
-    expect(one.getAttribute("title")).toContain("The Dispatches tab lists them under Not started.");
+    expect(tipOf(one)).toContain("The Dispatches tab lists them under Not started.");
     expect((await screen.findByTestId("on-memory-4")).textContent).toBe(
       "3 dispatches wait on memory",
     );
@@ -787,7 +790,7 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
 
     // The grandchild asks (its path is opened, #1675), and the person folds its rows away.
     move(3, "waiting", 10, [3]);
-    await userEvent.click(within(tree).getByTitle("Fold the chats under steward 1"));
+    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
     expect(shape(tree)).toEqual(["1 steward 1", "1 steward 4"]);
     expect(row(tree, "steward 1").getAttribute("aria-expanded")).toBe("false");
 
@@ -799,7 +802,7 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
-    await userEvent.click(within(tree).getByTitle("Fold the chats under steward 1"));
+    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
     move(3, "waiting", 10, [3]);
 
     const tabsBefore = tabNames();
@@ -955,7 +958,7 @@ describe("what needs you (#1448)", () => {
     const row = said.closest("li");
     if (row === null) throw new Error("the update has no row");
     const dismiss = within(row).getByRole("button", { name: /^Dismiss: / });
-    expect(dismiss).toHaveAttribute("title", "Put this update away. What the chat asks stays");
+    expect(tipOf(dismiss)).toEqual("Put this update away. What the chat asks stays");
     await userEvent.click(dismiss);
 
     // Dismissing an update answers no ask: the chat's needs-you item is not ignored.
@@ -1104,7 +1107,7 @@ describe("how the tree reads to a screen reader (#1448)", () => {
     expect(row(tree, "steward 4").getAttribute("aria-description")).toBeNull();
     // The fold is the pointer's: the row says expanded and folds on the arrows, so the button
     // is not a second thing to read.
-    const fold = within(tree).getByTitle("Fold the chats under steward 1");
+    const fold = getByTip("Fold the chats under steward 1", tree);
     expect(fold.getAttribute("aria-hidden")).toBe("true");
     // Inside the row, and no control of its own: nothing for the keyboard to reach.
     expect(fold.tagName).toBe("SPAN");
@@ -1401,7 +1404,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     await waitFor(() => expect(says(row(tree, "talk")).word).toBe("working"));
     move(2, "done", 11);
     // Its one task is over, so the session folded by itself (#1499): opened by hand.
-    fireEvent.click(within(tree).getByTitle("Show the chats under steward 1"));
+    fireEvent.click(getByTip("Show the chats under steward 1", tree));
 
     const done = { word: "done", shape: "tick" };
     expect(says(row(tree, "talk"))).toEqual(done);
@@ -1415,7 +1418,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     render(<App />);
     const tree = await section();
     // Its one task is over, so the session folded by itself (#1499): opened by hand.
-    fireEvent.click(await within(tree).findByTitle("Show the chats under steward 1"));
+    fireEvent.click(await findByTip("Show the chats under steward 1", tree));
     await waitFor(() => expect(shape(tree)).toHaveLength(2));
     const both = async (state: { word: string; shape: string }) => {
       expect(says(row(tree, "talk"))).toEqual(state);
@@ -2025,7 +2028,7 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
     expect(row(tree, "devops 3").textContent).not.toContain("beta");
     expect(row(tree, "devops 3").textContent).not.toContain("fix-the-login");
     // And the details are no native tooltip.
-    expect(row(tree, "devops 3").getAttribute("title")).toBeNull();
+    expect(tipOf(row(tree, "devops 3"))).toBeNull();
   });
 
   it("shows its details in a card under a resting pointer, and takes it down when it leaves", async () => {
@@ -2190,7 +2193,7 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
     expect(drawnAs(row(tree, "devops 3"), "background-image")).toContain("var(--tree-guide)");
     expect(row(tree, "steward 1").querySelector(".task-count")).toBeNull();
 
-    await userEvent.click(within(tree).getByTitle("Fold the chats under steward 1"));
+    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
 
     expect(shape(tree)).toEqual(["1 steward 1"]);
     const count = row(tree, "steward 1").querySelector(".task-count");
@@ -2205,7 +2208,7 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(2));
-    await userEvent.click(within(tree).getByTitle("Fold the chats under steward 1"));
+    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
     expect(shape(tree)).toEqual(["1 steward 1"]);
     // The pointer leaves the list, which holds no arrival back then (V100-47).
     fireEvent.pointerLeave(tree.closest(".chats-list") as HTMLElement);
@@ -2223,7 +2226,7 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
-    await userEvent.click(within(tree).getByTitle("Fold the chats under steward 1"));
+    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
     expect(shape(tree)).toEqual(["1 steward 1", "1 steward 4"]);
 
     move(3, "waiting", 10, [3]);
@@ -2232,7 +2235,7 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
       expect(shape(tree)).toEqual(["1 steward 1", "2 drop commons", "3 devops 3", "1 steward 4"]),
     );
     // Opened once, for the asking: a fold set again afterwards is the person's, and holds.
-    await userEvent.click(within(tree).getByTitle("Fold the chats under steward 1"));
+    await userEvent.click(getByTip("Fold the chats under steward 1", tree));
     expect(shape(tree)).toEqual(["1 steward 1", "1 steward 4"]);
     move(3, "waiting", 11, [3]);
     expect(shape(tree)).toEqual(["1 steward 1", "1 steward 4"]);

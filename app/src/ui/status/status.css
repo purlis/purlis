@@ -1,0 +1,257 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The status item family's default, and the status bar** (#2913, N28, R115, ADR 0103,
+   ADR 0104): how `StatusItem`, `StatusCell` and `StatusBar` are drawn when a theme names none of
+   their parts. Keyed on the wrappers' attributes alone; `purlis_core::theme::parts` holds a copy
+   of the items' colours.
+
+   **At least 24px tall and wide, in either density and at every text size** (R115): the least
+   target WCAG 2.2 asks for, in CSS px, and a pill's height. A state changes a colour, never a
+   size.
+
+   In the `components` layer (`styles.css`), above `App.css`. */
+
+/* ---------------------------------------------------------------------------------------------
+   The bar: context on its left end, what wants a look on its right. The left end gives way
+   first, its last item first; the right end never does.
+   --------------------------------------------------------------------------------------------- */
+
+footer[data-scope="status-bar"] {
+  display: flex;
+  flex: none;
+  gap: var(--space-5);
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  background-color: var(--surface-deep);
+  border-block-start: var(--panel-border-width) solid var(--border-subtle);
+}
+
+/* It clips what goes off its end; its padding is the room a focused item's ring takes inside the
+   clip, given back by its margin so nothing moves. */
+[data-scope="status-bar"][data-part="start"] {
+  display: flex;
+  flex: 0 1 auto;
+  gap: var(--space-5);
+  align-items: center;
+  min-inline-size: 0;
+  margin: calc(var(--space-2) * -1);
+  padding: var(--space-2);
+  overflow: hidden;
+}
+
+[data-scope="status-bar"][data-part="end"] {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+  margin-inline-start: auto;
+}
+
+/* The line after an item that parts it from what follows (the project from the workspace in it):
+   a separator of its own, never an item's border, and the hairline the window's others are. */
+[data-scope="status-bar"][data-part="separator"] {
+  flex: none;
+  align-self: stretch;
+  inline-size: 1px;
+  background-color: var(--border-subtle);
+}
+
+/* Each item's place, which says its id and is no box of its own. */
+[data-scope="status-bar"][data-part="slot"] {
+  display: contents;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   An item, at rest: a cell of the bar, no box until the pointer reaches it.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="status-item"][data-part="root"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  /* In CSS px, as WCAG measures a target: no text size draws it smaller. */
+  block-size: max(24px, var(--size-chrome));
+  min-inline-size: 24px;
+  padding-block: 0;
+  padding-inline: var(--space-3);
+  border: 0 solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background-color: transparent;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  appearance: none;
+}
+
+[data-scope="status-item"][data-part="root"][data-hovered]:not([data-disabled]) {
+  background-color: var(--surface-hover);
+}
+
+/* An item that gives way first in a narrow bar (a long project name): it shrinks, and its words
+   are cut with an ellipsis. */
+[data-scope="status-item"][data-part="root"][data-shrinks] {
+  flex: 0 1 auto;
+}
+
+/* A cell says something and runs nothing: its words, with no room of a box around them. */
+[data-scope="status-item"][data-part="root"][data-static] {
+  padding-inline: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-scope="status-item"][data-part="icon"] {
+  display: inline-flex;
+  flex: none;
+}
+
+[data-scope="status-item"][data-part="icon"] > svg {
+  inline-size: 1em;
+  block-size: 1em;
+}
+
+[data-scope="status-item"][data-part="label"] {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-scope="status-item"][data-part="root"][data-strong] [data-part="label"] {
+  font-weight: var(--font-weight-strong);
+}
+
+/* A cell's count is what is read; the word before it only says what it counts, so quiet. */
+[data-static]:has(> [data-part="count"]) > [data-scope="status-item"][data-part="label"] {
+  color: var(--text-quiet);
+}
+
+/* A pressable item's count is the neutral count pill, at the count's size. */
+[data-scope="status-item"][data-part="root"]:not([data-static]) > [data-part="count"] {
+  padding: var(--space-0) var(--space-2);
+  border-radius: var(--radius-full);
+  background-color: var(--control-count);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Variants: the status pills at the title bar's right (R115): 24px, full corners, 12px words.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="status-item"][data-part="root"][data-variant="pill"],
+[data-scope="status-item"][data-part="root"][data-variant="waiting"],
+[data-scope="status-item"][data-part="root"][data-variant="accent"] {
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-full);
+}
+
+[data-scope="status-item"][data-part="root"][data-variant="pill"] {
+  color: var(--text-muted);
+}
+
+/* What waits on the person: on the amber wash (`wash.warning`, #2804's wash rule), its hand and
+   its count in the needs-you colour (#249), its words the window's. */
+[data-scope="status-item"][data-part="root"][data-variant="waiting"] {
+  background-color: var(--wash-warning);
+}
+
+[data-scope="status-item"][data-part="root"][data-variant="waiting"] > [data-part="icon"] {
+  color: var(--needs-you-base);
+}
+
+[data-scope="status-item"][data-part="root"][data-variant="waiting"] > [data-part="count"] {
+  color: var(--needs-you-text);
+  background-color: var(--needs-you-base);
+  font-weight: var(--font-weight-strong);
+}
+
+/* The pill that is news: an update on offer, on the accent's ground. */
+[data-scope="status-item"][data-part="root"][data-variant="accent"] {
+  color: var(--text-primary);
+  background-color: var(--accent-surface);
+}
+
+[data-scope="status-item"][data-part="root"][data-variant="accent"][data-hovered]:not(
+    [data-disabled]
+  ) {
+  background-color: var(--list-selected);
+}
+
+[data-scope="status-item"][data-part="root"][data-variant="accent"] > [data-part="icon"] {
+  color: var(--accent-base);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Tones: a colour beside the words, never instead of them (qw357).
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="status-item"][data-tone="waiting"] > [data-part="icon"] {
+  color: var(--state-waiting);
+}
+
+[data-scope="status-item"][data-tone="failed"] > [data-part="icon"] {
+  color: var(--state-failed);
+}
+
+[data-scope="status-item"][data-tone="success"] > [data-part="icon"] {
+  color: var(--state-success);
+}
+
+[data-scope="status-item"][data-tone="accent"] > [data-part="icon"] {
+  color: var(--accent-base);
+}
+
+/* A verdict among the words (`StatusVerdict`) takes its severity's colour. */
+[data-scope="status-item"][data-part="label"][data-verdict="waiting"] {
+  color: var(--state-waiting);
+}
+
+[data-scope="status-item"][data-part="label"][data-verdict="failed"] {
+  color: var(--state-failed);
+}
+
+/* Quiet: what purlis cannot vouch for, or a value older than it declared fresh, dimmed whole. */
+[data-scope="status-item"][data-part="root"][data-tone="quiet"] {
+  color: var(--text-muted);
+}
+
+/* What has stopped everything: the danger colours, so it never reads as idle. */
+[data-scope="status-item"][data-part="root"][data-tone="danger"] {
+  color: var(--danger-text);
+  background-color: var(--danger-surface);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   States every variant shares.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="status-item"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+}
+
+[data-scope="status-item"][data-part="root"][aria-busy="true"] {
+  cursor: progress;
+}
+
+/* The ring, from the keyboard only, outside the item (R162); the bar's padding is its room. A
+   cell made focusable for its tooltip rings the same. */
+[data-scope="status-item"][data-part="root"][data-focus-visible],
+[data-scope="status-item"][data-part="root"][data-static]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* An item appearing while the window is up, never at launch (the needs-you pill when the first
+   chat asks, `useArrived`): it fades in where it lands, and only then. */
+[data-scope="status-item"][data-part="root"][data-arrived] {
+  animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
+}

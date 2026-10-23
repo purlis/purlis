@@ -1766,7 +1766,7 @@ async function startARawPromptChat(plane: string): Promise<void> {
     () =>
       browser.execute(() => {
         const start = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
-          .filter((button) => !button.disabled)
+          .filter((button) => !button.disabled && button.getAttribute("aria-disabled") !== "true")
           .find((button) => ["Approve and start", "Start"].includes(button.textContent ?? ""));
         start?.click();
         return start !== undefined;

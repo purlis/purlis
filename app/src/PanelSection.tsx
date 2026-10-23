@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import type { Offer } from "./actions";
 import { HalfActions } from "./halfHead";
 import { IconButton } from "./ui/button/Button";
+import { PanelSection as Section, PanelSectionHead, PanelSectionTitle } from "./ui/panel/Panel";
 
 /**
  * One section of the Attention region: **its heading, and whatever it holds under it.**
@@ -17,8 +18,8 @@ import { IconButton } from "./ui/button/Button";
  * panel is declared data, and drawing it is charter's job).
  *
  * **A title, not a row.** The heading keeps the panel's mark, because the mark is the one place
- * a panel's declared `mark` is drawn; its look (`.sidebar-title`) is what makes it read as the
- * start of a section rather than the first item in one.
+ * a panel's declared `mark` is drawn; its look (the panel family's section title, `ui/panel`) is
+ * what makes it read as the start of a section rather than the first item in one.
  *
  * **In a half of the Panel the heading is the half's** (#1738, P-11): one line, `RegionFrame`'s,
  * with the view's title and the chevron that puts the half away. This section's actions go on
@@ -37,7 +38,7 @@ export function PanelSection({
   testid: string;
   /** Who contributed it, for `data-panel-from`; left off a section that is not a panel. */
   from?: string;
-  mark: ComponentType<{ className?: string }>;
+  mark: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
   title: string;
   /** Whose panel this is, beside the title, when it is not charter's own. */
   provenance?: string;
@@ -48,17 +49,16 @@ export function PanelSection({
   const half = useContext(HalfActions);
   if (half !== undefined) {
     return (
-      <section data-testid={testid} data-panel-from={from}>
+      <Section data-testid={testid} data-panel-from={from}>
         {half !== null && actions !== undefined && createPortal(actions, half)}
         {children}
-      </section>
+      </Section>
     );
   }
   return (
-    <section data-testid={testid} data-panel-from={from}>
-      <div className="panel-head">
-        <h2 className="sidebar-title ui-text-label">
-          <Mark className="node-icon" />
+    <Section data-testid={testid} data-panel-from={from}>
+      <PanelSectionHead>
+        <PanelSectionTitle mark={Mark}>
           {title}
           {/* **What is in force, after approval and not only at it** — ADR 0041 item
               5. An operator has to be able to tell a panel his own charter draws from one a
@@ -66,11 +66,11 @@ export function PanelSection({
           {provenance !== undefined && (
             <span className="panel-from ui-text-secondary">{` · ${provenance}`}</span>
           )}
-        </h2>
+        </PanelSectionTitle>
         {actions}
-      </div>
+      </PanelSectionHead>
       {children}
-    </section>
+    </Section>
   );
 }
 
@@ -98,7 +98,7 @@ export function HeadingOffer({
     <IconButton
       size="sm"
       aria-label={offer.title}
-      title={offer.available ? (offer.note ?? offer.title) : offer.reason}
+      tooltip={offer.available ? (offer.note ?? offer.title) : offer.reason}
       isDisabled={!offer.available}
       onPress={() => onPress(offer)}
       icon={<Mark className="node-icon" aria-hidden="true" />}

@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 
 import type { Offer } from "./actions";
 import { commands, type PlaneId, type PlaneUpdated } from "./bindings";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** The files each chat started on that have changed since, by session. */
 export type PlaneUpdates = Readonly<Record<number, readonly string[]>>;
@@ -78,14 +79,17 @@ export function planeUpdatedAt(plane: PlaneId, at: number): Promise<readonly Pla
 export function PlaneUpdatedMark({ files }: { files?: readonly string[] }) {
   if (!files || files.length === 0) return null;
   return (
-    <span
-      className="plane-updated"
-      role="img"
-      aria-label="project updated since this chat started"
-      title={`Project updated since this chat started: ${files.join(", ")}. It runs on what it read at its start until it is started fresh.`}
+    <Tooltip
+      tip={`Project updated since this chat started: ${files.join(", ")}. It runs on what it read at its start until it is started fresh.`}
     >
-      <RefreshCw />
-    </span>
+      <span
+        className="plane-updated"
+        role="img"
+        aria-label="project updated since this chat started"
+      >
+        <RefreshCw />
+      </span>
+    </Tooltip>
   );
 }
 
@@ -114,17 +118,20 @@ export function FreshMark({
 }) {
   if (!offer || !files || !freshMarkShown(offer, files)) return null;
   return (
-    <button
-      id={id}
-      type="button"
-      className="plane-updated fresh-mark"
-      tabIndex={-1}
-      aria-label={`${offer.title} — project updated since this chat started`}
-      title={`Project updated since this chat started: ${files.join(", ")}. Press to start it fresh on what is there now.`}
-      onClick={() => onPress(offer)}
+    <Tooltip
+      tip={`Project updated since this chat started: ${files.join(", ")}. Press to start it fresh on what is there now.`}
     >
-      <RefreshCw />
-    </button>
+      <button
+        id={id}
+        type="button"
+        className="plane-updated fresh-mark"
+        tabIndex={-1}
+        aria-label={`${offer.title} — project updated since this chat started`}
+        onClick={() => onPress(offer)}
+      >
+        <RefreshCw />
+      </button>
+    </Tooltip>
   );
 }
 

@@ -36,14 +36,8 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "HarnessCard.tsx": [
     "<button className=\"pane-harness\">",
   ],
-  "KillSwitch.tsx": [
-    "<button className=\"title-kill-switch\">",
-  ],
   "LayoutPanes.tsx": [
     "<button className={offer.id === \"pane.close\" && !closesOnly(offer.does) ? \"ends-a-chat\" : undefined}>",
-  ],
-  "NeedsYou.tsx": [
-    "<button className={`needs-you-button${asking ? \"\" : \" muted\"}${arrived && asking ? \" arrived\" : \"\"}`}>",
   ],
   "PaneCrumbs.tsx": [
     "<button className={at === 0 ? \"crumb own\" : \"crumb between\"}>",
@@ -67,9 +61,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "TaskEnd.tsx": [
     "<button className=\"task-end\">",
-  ],
-  "Updates.tsx": [
-    "<button className={`status-update update-${state.kind}`}>",
   ],
   "Welcome.tsx": [
     "<button className=\"welcome-door\">",

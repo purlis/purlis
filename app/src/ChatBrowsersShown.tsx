@@ -11,6 +11,7 @@ import { THUMBNAIL_ACROSS, useBrowserOrigin, useBrowserWatch, useWindowSeen } fr
 import { useProjectShown } from "./projectShown";
 import { onAMac } from "./tabKeys";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **A chat's browsers, where the window draws them besides their view tab** (#2024, spec
@@ -117,12 +118,14 @@ export function TabBrowsers({
   const said = browsersSaid(used.length);
   return (
     <span className="tab-browsers">
-      <span className="count-pill tab-browsers-count" role="img" aria-label={said} title={said}>
-        <Globe aria-hidden="true" />
-        <span className="count-pill-chats" aria-hidden="true">
-          {used.length}
+      <Tooltip tip={said}>
+        <span className="count-pill tab-browsers-count" role="img" aria-label={said}>
+          <Globe aria-hidden="true" />
+          <span className="count-pill-chats" aria-hidden="true">
+            {used.length}
+          </span>
         </span>
-      </span>
+      </Tooltip>
       {used.map((shown) => (
         <TabBrowser key={shown.browser.program} shown={shown} onOpen={onOpen} />
       ))}
@@ -147,7 +150,7 @@ function TabBrowser({
       aria-label={`Open browser ${shown.browser.name} of ${shown.chat}${
         driver !== null ? `, ${DRIVEN[driver].mark}` : ""
       }`}
-      title={browserSaid(shown, origin, onAMac()).join("\n")}
+      tooltip={browserSaid(shown, origin, onAMac()).join("\n")}
       onPress={() => onOpen(shown)}
       className="tab-browser"
     >
@@ -227,56 +230,48 @@ function BrowserRow({
       offers={offers}
       onPress={onPress ?? (() => undefined)}
     >
-      <button
-        type="button"
-        className="ui-row ui-tree-row chat-browser"
-        // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-        tabIndex={0}
-        title={[
+      {/* The row's one hint says what each of its marks means: a mark inside a row takes no
+          keyboard of its own. */}
+      <Tooltip
+        tip={[
           ...browserSaid(shown, origin, onAMac()),
+          ...(driver !== null ? [DRIVEN[driver].said] : []),
+          ...(shown.browser.login !== null ? [`Signed in with ${shown.browser.login}`] : []),
           ...(shown.browser.unended ? [NOT_ENDED_YET] : []),
           ...(shown.browser.pinned ? [PINNED] : []),
         ].join("\n")}
-        onClick={() => onOpen(shown)}
       >
-        <Globe className="node-icon" aria-hidden="true" />
-        <span className="session ui-text-secondary">Browser {shown.browser.name}</span>
-        {/* A pinned one whose chat closed says which chat it was of (#2022). */}
-        {shown.browser.was !== null && (
-          <span className="chat-browser-was ui-text-meta">{shown.browser.was}</span>
-        )}
-        {/* Who drives it, where its agent does not (#2300). */}
-        {driver !== null && (
-          <span
-            className="chat-browser-driver ui-text-meta"
-            data-driver={driver}
-            title={DRIVEN[driver].said}
-          >
-            {DRIVEN[driver].mark}
-          </span>
-        )}
-        {/* Signed in with a login purlis performed (#2022): it goes only to a chat that may
-          log in with it. */}
-        {shown.browser.login !== null && (
-          <span
-            className="chat-browser-login ui-text-meta"
-            title={`Signed in with ${shown.browser.login}`}
-          >
-            signed in
-          </span>
-        )}
-        {shown.browser.pinned && (
-          <span className="chat-browser-pinned ui-text-meta" title={PINNED}>
-            pinned
-          </span>
-        )}
-        {/* Could not be ended yet (D-2013-16): its chat no longer uses it. */}
-        {shown.browser.unended && (
-          <span className="chat-browser-unended ui-text-meta" title={NOT_ENDED_YET}>
-            not ended yet
-          </span>
-        )}
-      </button>
+        <button
+          type="button"
+          className="ui-row ui-tree-row chat-browser"
+          // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+          tabIndex={0}
+          onClick={() => onOpen(shown)}
+        >
+          <Globe className="node-icon" aria-hidden="true" />
+          <span className="session ui-text-secondary">Browser {shown.browser.name}</span>
+          {/* A pinned one whose chat closed says which chat it was of (#2022). */}
+          {shown.browser.was !== null && (
+            <span className="chat-browser-was ui-text-meta">{shown.browser.was}</span>
+          )}
+          {/* Who drives it, where its agent does not (#2300). */}
+          {driver !== null && (
+            <span className="chat-browser-driver ui-text-meta" data-driver={driver}>
+              {DRIVEN[driver].mark}
+            </span>
+          )}
+          {/* Signed in with a login purlis performed (#2022): it goes only to a chat that may
+            log in with it. */}
+          {shown.browser.login !== null && (
+            <span className="chat-browser-login ui-text-meta">signed in</span>
+          )}
+          {shown.browser.pinned && <span className="chat-browser-pinned ui-text-meta">pinned</span>}
+          {/* Could not be ended yet (D-2013-16): its chat no longer uses it. */}
+          {shown.browser.unended && (
+            <span className="chat-browser-unended ui-text-meta">not ended yet</span>
+          )}
+        </button>
+      </Tooltip>
     </Menued>
   );
 }

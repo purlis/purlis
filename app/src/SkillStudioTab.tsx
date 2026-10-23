@@ -17,7 +17,7 @@ import {
   type StudioSkill,
 } from "./bindings";
 import { counted } from "./dispatches";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { clashSaid, SkillStudioHarnesses } from "./SkillStudioHarnesses";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Notice } from "./Notice";
@@ -442,7 +442,7 @@ export function SkillStudioTab({
                       {" "}
                       <Button
                         onPress={() => share(skill)}
-                        title="Give it to the team: it is committed with the project"
+                        tooltip="Give it to the team: it is committed with the project"
                       >
                         Share
                       </Button>

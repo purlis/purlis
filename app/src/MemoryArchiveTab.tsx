@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { Archive, LoaderCircle, Search } from "lucide-react";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { COMPONENTS } from "./SessionRecordTab";
 import { commands, type ArchivedMemory, type MemoryScope, type PlaneId } from "./bindings";
 import { archiveWhere, memoryOf, scopeKey, scopeWord, unnumbered } from "./memories";

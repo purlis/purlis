@@ -17,6 +17,7 @@ import { fitWaysOn } from "./wholeWays";
 import { AnswerBar } from "./AnswerBar";
 import { Choice, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** The two answers about the tasks at work below the one being ended. */
 const TOO = "too";
@@ -290,9 +291,11 @@ export function TaskEndConfirm({
       }}
     >
       {/* The whole question is its tooltip: on a narrow pane's line its end is cut. */}
-      <span className="task-end-says" id={asked} title={says}>
-        {says}
-      </span>
+      <Tooltip tip={says}>
+        <span className="task-end-says" id={asked}>
+          {says}
+        </span>
+      </Tooltip>
       {/* The way out first, then the answer at the edge: the answer bar's order, which every
           question keeps, inline ones too (#1719). */}
       <Button ref={keep} isDisabled={busy} onPress={onKeep}>
@@ -303,9 +306,11 @@ export function TaskEndConfirm({
       </Button>
       {trouble && (
         // Cut where the line is short, as the question is: the title says it whole.
-        <span className="trouble" role="alert" title={trouble}>
-          {trouble}
-        </span>
+        <Tooltip tip={trouble}>
+          <span className="trouble" role="alert">
+            {trouble}
+          </span>
+        </Tooltip>
       )}
     </span>
   );
@@ -390,21 +395,24 @@ export function TaskEnds({
       {drawn.map(([offer, way]) =>
         offer === undefined ? null : (
           <Fragment key={offer.id}>
-            <button
-              type="button"
-              className="task-end"
-              // In the tab sequence, said out loud (`docs/ui-primitives.md`).
-              tabIndex={0}
-              aria-label={offer.title}
-              aria-disabled={!offer.available || undefined}
-              aria-describedby={offer.available ? undefined : `${why}-${way}`}
-              title={offer.reason || (offer.note ? `${offer.title}. ${offer.note}` : offer.title)}
-              onClick={() => {
-                if (offer.available) hand.onEnd(session, way);
-              }}
+            <Tooltip
+              tip={offer.reason || (offer.note ? `${offer.title}. ${offer.note}` : offer.title)}
             >
-              {WORDS[way]}
-            </button>
+              <button
+                type="button"
+                className="task-end"
+                // In the tab sequence, said out loud (`docs/ui-primitives.md`).
+                tabIndex={0}
+                aria-label={offer.title}
+                aria-disabled={!offer.available || undefined}
+                aria-describedby={offer.available ? undefined : `${why}-${way}`}
+                onClick={() => {
+                  if (offer.available) hand.onEnd(session, way);
+                }}
+              >
+                {WORDS[way]}
+              </button>
+            </Tooltip>
             {/* Why it cannot run, for whoever cannot see a tooltip: the button's description. */}
             {!offer.available && (
               <span hidden id={`${why}-${way}`}>

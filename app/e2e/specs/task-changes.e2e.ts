@@ -117,7 +117,10 @@ async function answer(says: string): Promise<void> {
       browser.execute(
         (dialog: string, words: string) => {
           const button = [...document.querySelectorAll<HTMLButtonElement>(`${dialog} button`)].find(
-            (one) => one.textContent?.trim() === words && !one.disabled,
+            (one) =>
+              one.textContent?.trim() === words &&
+              !one.disabled &&
+              one.getAttribute("aria-disabled") !== "true",
           );
           button?.click();
           return button !== undefined;

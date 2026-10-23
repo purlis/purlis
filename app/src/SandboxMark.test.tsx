@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { SandboxMark } from "./SandboxMark";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 afterEach(cleanup);
 
@@ -17,7 +18,7 @@ describe("the sandbox mark", () => {
     const { container } = render(<SandboxMark level={level} />);
     const mark = container.querySelector(`[data-sandbox="${level}"]`);
     expect(mark).not.toBeNull();
-    expect(mark).toHaveAttribute("title", said);
+    expect(tipOf(mark)).toEqual(said);
     expect(mark).toHaveAccessibleName(said);
     // The tab's text stays the chat's name alone.
     expect(mark).toHaveTextContent("");
@@ -27,7 +28,7 @@ describe("the sandbox mark", () => {
     const why = "purlis runs Codex inside a sandbox of its own, which it can apply on macOS only";
     const { container } = render(<SandboxMark level="none" why={why} />);
     const mark = container.querySelector('[data-sandbox="none"]');
-    expect(mark).toHaveAttribute("title", `no sandbox: ${why}`);
+    expect(tipOf(mark)).toEqual(`no sandbox: ${why}`);
     expect(mark).toHaveAccessibleName(`no sandbox: ${why}`);
   });
 
@@ -35,7 +36,7 @@ describe("the sandbox mark", () => {
     const { container, rerender } = render(<SandboxMark level="full" sites={2} />);
     const mark = container.querySelector('[data-sandbox="full"]');
     const said = "full sandbox; its browser reaches 2 sites of its own";
-    expect(mark).toHaveAttribute("title", said);
+    expect(tipOf(mark)).toEqual(said);
     expect(mark).toHaveAccessibleName(said);
     rerender(<SandboxMark level="full" sites={1} of="The chat in front" />);
     expect(container.querySelector('[data-sandbox="full"]')).toHaveAccessibleName(

@@ -75,7 +75,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 5;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -352,8 +352,11 @@ pub struct Family {
     /// The roots drawn at another of the family's sizes, and the height each is drawn at, as the
     /// family's stylesheet writes it, which their corners are clamped to.
     sized_apart: &'static [(&'static str, &'static str)],
-    /// The root's height at rest, the size token it is drawn at, which a corner is clamped to.
-    height: &'static str,
+    /// The root's height at rest, which a corner is clamped to and a control keeps at least
+    /// [`LEAST_TARGET`]: a size token, or a number of px it is drawn at in every density. `None`
+    /// for a box that is as tall as what it holds (a panel, a section, an empty state), whose
+    /// corners the browser keeps inside it and which is no target of its own.
+    height: Option<Length>,
     /// Its words' size and line height at rest, and its border's width: what fits in its height.
     font_size: &'static str,
     line_height: f64,
@@ -415,6 +418,17 @@ fn look_named(family: &Family, part: &str, variant: &str) -> String {
 
 /// What a theme may set on a part with words: every property.
 const ALL: &[Prop] = &PROPERTIES;
+
+/// What a theme may set on a tooltip's surface: its colours, its edge, its corners and its
+/// shadow. Its size is its words', so none of its sizes is a theme's.
+const SURFACE: &[Prop] = &[
+    Prop::Fill,
+    Prop::Text,
+    Prop::BorderColour,
+    Prop::Shadow,
+    Prop::BorderWidth,
+    Prop::CornerRadius,
+];
 
 /// **The closed manifest**: every family a theme may name, at [`VERSION`].
 pub const MANIFEST: &[Family] = &[
@@ -525,7 +539,7 @@ pub const MANIFEST: &[Family] = &[
                 "calc(var(--size-control) + var(--space-2))",
             ),
         ],
-        height: "size.control",
+        height: Some(Length::Token("size.control")),
         font_size: "font-size.base",
         line_height: 1.0,
         border_width: 1.0,
@@ -586,7 +600,7 @@ pub const MANIFEST: &[Family] = &[
         ],
         keeps_size: &[],
         sized_apart: &[],
-        height: "size.control",
+        height: Some(Length::Token("size.control")),
         font_size: "font-size.base",
         line_height: 1.0,
         border_width: 0.0,
@@ -655,7 +669,7 @@ pub const MANIFEST: &[Family] = &[
                 "calc(var(--size-control) + var(--space-2))",
             ),
         ],
-        height: "size.control",
+        height: Some(Length::Token("size.control")),
         font_size: "font-size.base",
         line_height: 1.0,
         border_width: 1.0,
@@ -705,7 +719,7 @@ pub const MANIFEST: &[Family] = &[
         ],
         keeps_size: &[],
         sized_apart: &[],
-        height: "size.control",
+        height: Some(Length::Token("size.control")),
         font_size: "font-size.base",
         line_height: 1.0,
         border_width: 1.0,
@@ -714,7 +728,51 @@ pub const MANIFEST: &[Family] = &[
         focused: "[data-focus-within]",
         words: &[],
     },
+    shell::PANEL,
+    shell::PANEL_SECTION,
+    shell::EMPTY_STATE,
+    shell::STATUS_ITEM,
+    // **The tooltip** (#2908): every hint in the window, `app/src/ui/tooltip`. One look, so a key
+    // names the part alone; no state a theme keys, since nothing on it is pressed or chosen.
+    Family {
+        name: "tooltip",
+        description: "A hint beside what it is about, under the pointer or the keyboard.",
+        since: 5,
+        parts: &[
+            Part {
+                name: "root",
+                since: 5,
+                description: "The tooltip's surface: its fill, words, edge, corners and shadow. \
+                          Its size is its words'.",
+                properties: SURFACE,
+            },
+            Part {
+                name: "detail",
+                since: 5,
+                description: "A second line under an icon button's name.",
+                properties: &[Prop::Text],
+            },
+        ],
+        variants: &[],
+        // Drawn over the window, wherever its target is: on the grounds an overlay stands on.
+        grounds: &["surface.base", "surface.raised", "surface.overlay"],
+        keeps_size: &[],
+        sized_apart: &[],
+        height: None,
+        font_size: "font-size.sm",
+        line_height: 1.4,
+        border_width: 1.0,
+        defaults: tooltip_look,
+        states: &[],
+        focused: "[data-focus-visible]",
+        words: &[("detail", "text.secondary")],
+    },
 ];
+
+/// The window's own families (#2913): the region panel, its sections, an empty state and a
+/// status item.
+#[path = "parts_shell.rs"]
+mod shell;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
@@ -832,6 +890,16 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
         _ => {}
     }
     look
+}
+
+/// **The tooltip's colours as `app/src/ui/tooltip/tooltip.css` draws them**, which a test holds
+/// to that file: the overlay surface's, in every state, since nothing on it is pressed.
+fn tooltip_look(_variant: &str, _states: &[State]) -> Look {
+    Look {
+        fill: "surface.overlay",
+        text: "text.primary",
+        border: "border.subtle",
+    }
 }
 
 /// **The distance in OKLab below which a person sees one colour** (`floors.rs`'s scale): how
@@ -978,6 +1046,16 @@ pub(super) fn field_defaults_json() -> Value {
         "help": words("help"),
         "error": words("error"),
     })
+}
+
+/// A family's colours at rest and under the pointer, as the engine holds them, for the tests that
+/// hold them to the family's stylesheet: fill, text, border and the fill under the pointer.
+#[cfg(test)]
+pub(super) fn look_json(family_name: &str, variant: &str) -> Value {
+    let family = family(family_name).expect("a family of the manifest");
+    let rest = (family.defaults)(variant, &[]);
+    let hover = (family.defaults)(variant, &[State::Hover]);
+    json!({ "fill": rest.fill, "text": rest.text, "border": rest.border, "hover": hover.fill })
 }
 
 /// The family `name` names.
@@ -1417,6 +1495,10 @@ fn bounded(parts: &Parts, comfortable: &Geometry, compact: &Geometry) -> Vec<Str
 pub(super) fn fits(parts: &Parts, comfortable: &Geometry, compact: &Geometry) -> Vec<String> {
     let mut said = bounded(parts, comfortable, compact);
     for family in MANIFEST {
+        // A box as tall as what it holds is no target, and holds its words by growing.
+        let Some(own_height) = family.height else {
+            continue;
+        };
         let root = family.parts[0].name;
         for variant in family.looks() {
             let sizes = [
@@ -1435,7 +1517,7 @@ pub(super) fn fits(parts: &Parts, comfortable: &Geometry, compact: &Geometry) ->
                     Some(PartValue::Length(length)) => px(length, geometry),
                     _ => px(default, geometry),
                 };
-                let height = length_of(sizes[0], Length::Token(family.height));
+                let height = length_of(sizes[0], own_height);
                 let padding = match sizes[1] {
                     Some(PartValue::Padding(block, _)) => px(block, geometry),
                     _ => 0.0,
@@ -2285,11 +2367,15 @@ fn written_length(length: Length, unit: geometry::Unit) -> String {
 /// every variant sets.
 const HEIGHT_PROPERTY: &str = "--purlis-part-height";
 
-/// Half the root's height as it is drawn, which a corner is clamped to.
-fn half_height(family: &Family) -> String {
-    let own = geometry::step_of(family.height)
-        .map_or_else(String::new, |step| format!("var({})", step.property));
-    format!("calc(var({HEIGHT_PROPERTY}, {own}) / 2)")
+/// Half the root's height as it is drawn, which a corner is clamped to: `None` for a box as
+/// tall as what it holds, whose corners the browser keeps inside it.
+fn half_height(family: &Family) -> Option<String> {
+    let own = match family.height? {
+        Length::Token(token) => geometry::step_of(token)
+            .map_or_else(String::new, |step| format!("var({})", step.property)),
+        Length::Number(px) => format!("{}px", geometry::show(px)),
+    };
+    Some(format!("calc(var({HEIGHT_PROPERTY}, {own}) / 2)"))
 }
 
 /// One property's declarations, written from its parsed value.
@@ -2311,16 +2397,22 @@ fn declarations(rule: &Rule, property: Prop, value: PartValue) -> String {
         PartValue::Corners(corners) => {
             // A corner is clamped to half the root's height as it is drawn. `full` is the
             // largest corner, which the browser draws as a pill at any height.
-            let half = (rule.part == 0).then(|| half_height(rule.family));
-            let one = |corner: Corner| match (corner, &half) {
-                (Corner::Full, _) => format!("{}px", geometry::show(MOST_CORNER)),
+            // A control's corner is clamped to half the height it is drawn at; a box's, which is as
+            // tall as what it holds, to half its own box, corner by corner (`50%` resolves on each
+            // axis), and `full` on a box is that half (ADR 0103, amended 2026-10-22).
+            let control = (rule.part == 0).then(|| half_height(rule.family)).flatten();
+            let one = |corner: Corner| match (corner, &control) {
+                (Corner::Full, Some(_)) => format!("{}px", geometry::show(MOST_CORNER)),
+                (Corner::Full, None) => "50%".to_owned(),
                 (Corner::Length(length), Some(half)) => {
                     format!(
                         "min({}, {half})",
                         written_length(length, geometry::Unit::Px)
                     )
                 }
-                (Corner::Length(length), None) => written_length(length, geometry::Unit::Px),
+                (Corner::Length(length), None) => {
+                    format!("min({}, 50%)", written_length(length, geometry::Unit::Px))
+                }
             };
             let written: Vec<String> = if corners.iter().all(|c| *c == corners[0]) {
                 vec![one(corners[0])]

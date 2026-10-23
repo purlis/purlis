@@ -8,6 +8,7 @@ import { commands, type LandQuestion, type PlaneId, type PushQuestion } from "./
 import { Choice, SettingRow } from "./settings/components";
 import { AnswerBar } from "./AnswerBar";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **A cross-repo change's Push and Land, from its changes view** (#474, ADR 0060).
@@ -315,7 +316,9 @@ export function LandAsk({
             <dd>{q.url}</dd>
             <dt>head</dt>
             <dd>
-              <code title={q.head}>{q.head}</code>
+              <Tooltip tip={q.head}>
+                <code>{q.head}</code>
+              </Tooltip>
             </dd>
             <dt>how</dt>
             <dd>

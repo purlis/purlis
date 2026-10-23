@@ -10,6 +10,7 @@ import type { PlaneId, WindowDraft } from "./bindings";
 import { CHOOSE_DRAFTS, DRAFTS_SAY, EndingChat } from "./EndingChat";
 import { KEPT_REFUSED_WAITS, ThemeDraftStrip } from "./ThemeDraftStrip";
 import { forgetDraftHere, isRevertKey, setDraftHere } from "./themeDrafts";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The theme draft strip** (#2332): the window names a chat's draft where it is drawn, with
@@ -187,8 +188,8 @@ describe("closing a chat with a theme draft", () => {
     );
     expect(screen.getByRole("radiogroup", { name: DRAFTS_SAY(["dusk"]) })).toBeTruthy();
     const close = screen.getByRole("button", { name: "Close" }) as HTMLButtonElement;
-    expect(close.disabled).toBe(true);
-    expect(close.title).toBe(CHOOSE_DRAFTS);
+    expect(close).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(close)).toBe(CHOOSE_DRAFTS);
     fireEvent.click(screen.getByRole("radio", { name: "Revert" }));
     expect(close.disabled).toBe(false);
     fireEvent.click(close);

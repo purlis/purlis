@@ -13,6 +13,7 @@ import {
 } from "./actions";
 import type { CloneState } from "./repoClones";
 import { Button } from "./ui/button/Button";
+import { PanelSectionTitle } from "./ui/panel/Panel";
 
 /** What this window is cloning into the focused workspace, by repo (`repoClones`). */
 export type Cloning = ReadonlyMap<string, CloneState>;
@@ -54,13 +55,13 @@ export function NotClonedHere({
   return (
     <section className="absent" data-testid="absent">
       <div className="absent-heading">
-        <h2 className="sidebar-title ui-text-label">Not cloned here</h2>
+        <PanelSectionTitle>Not cloned here</PanelSectionTitle>
         {absent.length > 1 && all !== undefined && (
           <div className="absent-actions">
             <SettingActions>
               <Button
                 isDisabled={!all.available}
-                title={all.available ? all.title : all.reason}
+                tooltip={all.available ? all.title : all.reason}
                 onPress={() => onPress(all)}
               >
                 Clone all
@@ -133,7 +134,7 @@ function AbsentRow({
                     <Button
                       aria-label={state?.state === "failed" ? `Retry ${repo}` : offer.title}
                       isDisabled={!offer.available}
-                      title={offer.available ? offer.note : offer.reason}
+                      tooltip={offer.available ? offer.note : offer.reason}
                       onPress={press}
                     >
                       {state?.state === "failed" ? "Retry" : "Clone"}
@@ -144,7 +145,7 @@ function AbsentRow({
                       variant="danger"
                       aria-label={drop.title}
                       isDisabled={!drop.available}
-                      title={drop.available ? drop.note : drop.reason}
+                      tooltip={drop.available ? drop.note : drop.reason}
                       onPress={() => onPress(drop)}
                     >
                       Remove…

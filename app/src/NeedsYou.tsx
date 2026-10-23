@@ -9,6 +9,8 @@ import type { State } from "./chatState";
 import type { PersonaMarkData } from "./PersonaMark";
 import { useArrived } from "./lib/arrived";
 import { moveAlong } from "./tabSequence";
+import { StatusItem } from "./ui/status/StatusItem";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** The word beside a chat's name. */
 const WORDS: Record<State, string> = {
@@ -24,16 +26,17 @@ export function ChatState({ state }: { state: State }) {
   // so a workspace's tabs coming back into view do not all pulse at once (`useArrived`).
   const arrived = useArrived(state);
   return (
-    <span
-      className={`state state-${state}${arrived ? " arrived" : ""}`}
-      data-state={state}
-      // The word, never only a colour: a state told apart by colour alone is no state at all
-      // to anyone who cannot see it, and `title` alone is no use on a touch screen or to a
-      // screen reader reading a list. The mark is decorative; the label carries the meaning.
-      role="img"
-      aria-label={WORDS[state]}
-      title={WORDS[state]}
-    />
+    <Tooltip tip={WORDS[state]}>
+      <span
+        className={`state state-${state}${arrived ? " arrived" : ""}`}
+        data-state={state}
+        // The word, never only a colour: a state told apart by colour alone is no state at all
+        // to anyone who cannot see it, and `title` alone is no use on a touch screen or to a
+        // screen reader reading a list. The mark is decorative; the label carries the meaning.
+        role="img"
+        aria-label={WORDS[state]}
+      />
+    </Tooltip>
   );
 }
 
@@ -61,13 +64,14 @@ export function chipSays(name: string): string {
 export function WrappingUp({ held }: { held: boolean }) {
   if (!held) return null;
   return (
-    <span
-      className="wrapping-up breathing"
-      data-mark="wrapping-up"
-      role="img"
-      aria-label="wrapping up"
-      title={WRAPPING_UP}
-    />
+    <Tooltip tip={WRAPPING_UP}>
+      <span
+        className="wrapping-up breathing"
+        data-mark="wrapping-up"
+        role="img"
+        aria-label="wrapping up"
+      />
+    </Tooltip>
   );
 }
 
@@ -83,13 +87,14 @@ export const STOPPING = "Stopping: it is writing what it did, then it ends. Its 
 export function StoppingMark({ held }: { held: boolean }) {
   if (!held) return null;
   return (
-    <span
-      className="stopping-mark breathing"
-      data-mark="stopping"
-      role="img"
-      aria-label="stopping"
-      title={STOPPING}
-    />
+    <Tooltip tip={STOPPING}>
+      <span
+        className="stopping-mark breathing"
+        data-mark="stopping"
+        role="img"
+        aria-label="stopping"
+      />
+    </Tooltip>
   );
 }
 
@@ -226,21 +231,21 @@ export function NeedsYouButton({
       }}
     >
       {!none && (
-        // `tabIndex={0}`: WebKit leaves a `<button>` out of the tab sequence unless its
-        // `tabindex` is written down (`docs/ui-primitives.md`, charter-app#186), and Tauri's
-        // drag handler stops at it either way because it is a `<button>`.
-        <button
-          type="button"
-          className={`needs-you-button${asking ? "" : " muted"}${arrived && asking ? " arrived" : ""}`}
+        // A status pill (R115): what waits on the person, its hand and its count in the
+        // needs-you colours; the faint hand (nothing asked, but a chat that cannot say so is
+        // open) is the plain pill in the quiet tone, which reads as "purlis cannot vouch for
+        // this" and never as a request.
+        <StatusItem
+          variant={asking ? "waiting" : "pill"}
+          tone={asking ? undefined : "quiet"}
           data-testid="needs-you-button"
-          tabIndex={0}
+          data-arrived={arrived && asking ? "" : undefined}
           aria-label={said}
-          title={said}
-          onClick={onInbox}
-        >
-          <Hand aria-hidden="true" />
-          {asking && <span className="needs-you-number">{count}</span>}
-        </button>
+          tooltip={said}
+          onPress={onInbox}
+          icon={<Hand aria-hidden="true" />}
+          count={asking ? count : undefined}
+        />
       )}
     </span>
   );

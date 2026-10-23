@@ -5,6 +5,7 @@ import { browser, expect, $, $$ } from "@wdio/globals";
 import { untilTheStripLists } from "../reading.js";
 import { showView } from "../opening.js";
 import { bringSideBack, putSideAway } from "../sides.js";
+import { tooltipOf } from "../tooltips.js";
 
 /**
  * The right region and the Changes view (ADR 0038; the bottom region until #1676, the left
@@ -264,7 +265,7 @@ describe("the right-hand region", () => {
     // A persona's row is its badge and its name (#1674); the default says so on hover.
     const fallback = await $('[data-testid="panel-personas"] .is-default .row');
     await fallback.waitForExist({ timeout: 30_000 });
-    expect(await fallback.getAttribute("title")).toContain("default");
+    expect(await tooltipOf('[data-testid="panel-personas"] .is-default .row')).toContain("default");
     // As the window was found: the sidebar on the Inbox, the right half on Memory.
     await showView("Inbox");
     await showView("Memory");
@@ -709,7 +710,7 @@ describe("the Panel", () => {
   it("heads each half with one line: its title, its actions and its chevron side by side", async () => {
     for (const side of ["left", "right"]) {
       const head = await boxOf(`${HALF(side)} .half-head`);
-      const title = await boxOf(`${HALF(side)} .half-head .sidebar-title`);
+      const title = await boxOf(`${HALF(side)} .half-head [data-part="title"]`);
       const chevron = await boxOf(`${HALF(side)} .half-head ${AWAY(side)}`);
       if (head === null || title === null || chevron === null)
         throw new Error(`no line to measure on the ${side} half`);
@@ -739,7 +740,9 @@ describe("the Panel", () => {
         one === null ? Number.NaN : Number.parseFloat(getComputedStyle(one).fontSize);
       return {
         text: px(document.documentElement),
-        titles: [...document.querySelectorAll(".panel-half .half-head .sidebar-title")].map(px),
+        titles: [...document.querySelectorAll('.panel-half .half-head [data-part="title"]')].map(
+          px,
+        ),
         memory: px(document.querySelector('.panel-half .panels[data-view="memory"]')),
         repos: px(document.querySelector(".panel-half .explorer")),
       };

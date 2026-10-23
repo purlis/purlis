@@ -215,7 +215,7 @@ describe("forced colours", () => {
       ".count-pill-needs",
       ".show-more-needs",
       '.activity-count[data-tone="needs-you"]',
-      ".needs-you-number",
+      '[data-scope="status-item"][data-variant="waiting"] > [data-part="count"]',
       ".repo-instruction-text .invisible-char",
     ]) {
       const it = drawn(needs);
@@ -229,7 +229,7 @@ describe("forced colours", () => {
     for (const danger of [
       '[data-scope="button"][data-part="root"][data-variant="danger"]',
       ".ui-menu-item-danger",
-      '.title-kill-switch[data-stopped="yes"]',
+      '[data-scope="status-item"][data-part="root"][data-tone="danger"]',
       ".trouble",
       ".ui-inline-surface-trouble",
       ".notice-list .notice-inbox.notice-trouble",

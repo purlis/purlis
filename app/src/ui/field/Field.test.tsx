@@ -107,6 +107,23 @@ describe("a text field", () => {
     expect(box).toBeDisabled();
     expect(box.parentElement).toHaveAttribute("data-disabled", "true");
   });
+
+  it("is described by its hint for good while disabled, as a disabled button is (#2908)", () => {
+    const why = "This project is read-only here.";
+    render(
+      <>
+        <TextField aria-label="Skill" isDisabled tooltip={why} value="" onChange={() => {}} />
+        <TextField aria-label="Secret" type="password" isDisabled tooltip={why} />
+        <TextArea aria-label="Todo" isDisabled tooltip={why} value="" onChange={() => {}} />
+        <TextField aria-label="Open" tooltip={why} value="" onChange={() => {}} />
+      </>,
+    );
+    expect(screen.getByRole("textbox", { name: "Skill" })).toHaveAccessibleDescription(why);
+    expect(screen.getByLabelText("Secret")).toHaveAccessibleDescription(why);
+    expect(screen.getByRole("textbox", { name: "Todo" })).toHaveAccessibleDescription(why);
+    // An enabled field's hint is its tooltip's alone, heard while it is shown.
+    expect(screen.getByRole("textbox", { name: "Open" })).toHaveAccessibleDescription("");
+  });
 });
 
 describe("a box that holds its own words (a secret's value)", () => {

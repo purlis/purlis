@@ -155,7 +155,7 @@ function AwayPart({
       <Button
         variant="link"
         aria-label={`${says}: ${named}`}
-        title={named}
+        tooltip={named}
         onPress={() => onGo(items[0].go)}
         className="away-part"
       >

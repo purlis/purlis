@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { CircleSlash, GitCompare, LoaderCircle } from "lucide-react";
 import { ChatAsk } from "./ChatAsk";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
 import {
   commands,
@@ -27,6 +27,7 @@ import {
   SHARED_SAID,
 } from "./taskChanges";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** A file's mark, as the explorer says it. */
 const MARKS: Record<TaskFile["mark"], string> = {
@@ -188,7 +189,7 @@ export function TaskChangesTab({
       )}
       {read.unknown === null && filesIn(read) === 0 && (
         <EmptyState
-          size="panel"
+          variant="panel"
           mark={GitCompare}
           headline={
             own === null
@@ -272,18 +273,19 @@ function Place({
       <ul className="task-changes-files">
         {place.files.map((file) => (
           <li key={file.path} data-mark={file.mark}>
-            <button
-              type="button"
-              className="vault-secret"
-              tabIndex={0}
-              title="Show what changed"
-              onClick={() =>
-                onOpenView(pieceDiffView(where, file.path), pieceDiffTitle(where, file.path))
-              }
-            >
-              <GitCompare className="node-icon" aria-hidden="true" />
-              {file.path}
-            </button>
+            <Tooltip tip="Show what changed">
+              <button
+                type="button"
+                className="vault-secret"
+                tabIndex={0}
+                onClick={() =>
+                  onOpenView(pieceDiffView(where, file.path), pieceDiffTitle(where, file.path))
+                }
+              >
+                <GitCompare className="node-icon" aria-hidden="true" />
+                {file.path}
+              </button>
+            </Tooltip>
             <span className="outcome"> {MARKS[file.mark]}</span>
             {file.from !== null && <span className="none"> from {file.from}</span>}
             {file.uncommitted && <span className="none"> · not committed</span>}

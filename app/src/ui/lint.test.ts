@@ -115,9 +115,95 @@ tester.run("purlis/dialog-family", purlisUi.rules["dialog-family"], {
 });
 
 tester.run("purlis/tooltip-family", purlisUi.rules["tooltip-family"], {
-  valid: [{ code: `<Field title="x" />` }],
+  valid: [
+    // A component's own `title` prop is its heading, not a tooltip.
+    { code: `<Field title="x" />` },
+    { code: `<Tooltip tip="Saved at 10:02"><span>Saved</span></Tooltip>` },
+    { code: `<Button tooltip="Saves every file">Save</Button>` },
+    { code: `<IconButton aria-label="Close" icon={<X />} />` },
+    // A frame's title is its name.
+    { code: `<iframe title="The page" src={url} />` },
+    // A spread with no title, and a component's own props.
+    { code: `function Row() { const shared = { disabled: off }; return <button {...shared} />; }` },
+    { code: `<Field {...{ title: "Depth" }} />` },
+  ],
   invalid: [
-    { code: `<span title="Saved">x</span>`, errors: [{ messageId: "unmoved" }] },
-    { code: `<Button title="Saves">Save</Button>`, errors: [{ messageId: "unmoved" }] },
+    { code: `<span title="Saved">x</span>`, errors: [{ messageId: "title" }] },
+    { code: `<button role="tab" title={path}>x</button>`, errors: [{ messageId: "title" }] },
+    { code: `<Button title="Saves">Save</Button>`, errors: [{ messageId: "title" }] },
+    {
+      code: `<IconButton aria-label="Close" title="Close" icon={<X />} />`,
+      errors: [{ messageId: "title" }],
+    },
+    // A primitive's part hands it on to its element.
+    { code: `<RadioGroup.Item value="a" title="Initials" />`, errors: [{ messageId: "title" }] },
+    // Through a spread of an object written in place, or of a `const` in scope.
+    { code: `<button {...{ title: why }}>x</button>`, errors: [{ messageId: "title" }] },
+    {
+      code: `function Row() { const shared = { disabled: off, title: why }; return <Menu.Item {...shared} />; }`,
+      errors: [{ messageId: "title" }],
+    },
+    // An SVG's own title is a native tooltip too.
+    { code: `<svg><rect><title>turn 1</title></rect></svg>`, errors: [{ messageId: "svgTitle" }] },
+    // A house component that hands it on, as `eslint.config.js` names them.
+    {
+      code: `<Select title={why} value={v} />`,
+      options: [{ handsOn: ["Select"] }],
+      errors: [{ messageId: "title" }],
+    },
+  ],
+});
+
+tester.run("purlis/panel-family", purlisUi.rules["panel-family"], {
+  valid: [
+    { code: `<Panel variant="side" className="region-slot">x</Panel>` },
+    { code: `<Group {...panelRoot("content")} className="region-centre">x</Group>` },
+  ],
+  invalid: [{ code: `<div data-scope="panel">x</div>`, errors: [{ messageId: "scope" }] }],
+});
+
+tester.run("purlis/panel-section-family", purlisUi.rules["panel-section-family"], {
+  valid: [{ code: `<PanelSectionTitle className="inbox-chain">Updates</PanelSectionTitle>` }],
+  invalid: [
+    {
+      code: `<h2 className="sidebar-title ui-text-label">Chats</h2>`,
+      errors: [{ messageId: "oldClass" }],
+    },
+    {
+      code: `<div className={on ? "panel-head x" : "x"}>x</div>`,
+      errors: [{ messageId: "oldClass" }],
+    },
+    { code: `<h2 data-scope="panel-section">x</h2>`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
+tester.run("purlis/empty-state-family", purlisUi.rules["empty-state-family"], {
+  valid: [{ code: `<EmptyState headline="No todos" variant="panel" />` }],
+  invalid: [
+    {
+      code: `<div className="empty-state empty-state-page">x</div>`,
+      errors: [{ messageId: "oldClass" }, { messageId: "oldClass" }],
+    },
+    { code: `<p className="empty-state-headline">x</p>`, errors: [{ messageId: "oldClass" }] },
+  ],
+});
+
+tester.run("purlis/status-item-family", purlisUi.rules["status-item-family"], {
+  valid: [
+    { code: `<StatusItem variant="pill" onPress={go}>About</StatusItem>` },
+    { code: `<span className="title-kill-switch-trouble">x</span>` },
+    { code: `<span className="save-indicator-words">Saved</span>` },
+  ],
+  invalid: [
+    { code: `<footer className="status-line">x</footer>`, errors: [{ messageId: "oldClass" }] },
+    {
+      code: `<button className="needs-you-button">x</button>`,
+      errors: [{ messageId: "oldClass" }],
+    },
+    {
+      code: "<b className={`status-doctor doctor-tone-${tone}`}>x</b>",
+      errors: [{ messageId: "oldClass" }, { messageId: "oldClass" }],
+    },
+    { code: `<span data-scope="status-item">x</span>`, errors: [{ messageId: "scope" }] },
   ],
 });

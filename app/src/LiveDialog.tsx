@@ -8,6 +8,7 @@ import { commands, type LivePreview, type PlaneId, type RemoteReaders } from "./
 import { askSavingTab, tellSaved } from "./saving";
 import { AnswerBar } from "./AnswerBar";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **Make a workspace LIVE or LOCAL** (charter-app#301, ADR 0051): what it publishes, where it
@@ -270,13 +271,10 @@ function ReadersLine({ readers }: { readers: RemoteReaders | "asking" | null }) 
  */
 export function LiveMark({ dot }: { dot?: boolean }) {
   return (
-    <span
-      className={dot ? "live-mark live-dot" : "live-mark"}
-      role="img"
-      aria-label="Live"
-      title="Live: published with the project"
-    >
-      {!dot && <Radio aria-hidden="true" />}
-    </span>
+    <Tooltip tip="Live: published with the project">
+      <span className={dot ? "live-mark live-dot" : "live-mark"} role="img" aria-label="Live">
+        {!dot && <Radio aria-hidden="true" />}
+      </span>
+    </Tooltip>
   );
 }

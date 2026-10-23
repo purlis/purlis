@@ -27,7 +27,7 @@ export async function projectInFront(): Promise<string> {
     () =>
       document
         .querySelector('[data-strip="Projects"] [role="tab"][aria-selected="true"]')
-        ?.getAttribute("title") ?? null,
+        ?.getAttribute("data-directory") ?? null,
   );
   let open: string[] = [];
   await browser.waitUntil(

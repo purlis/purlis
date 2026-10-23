@@ -161,7 +161,7 @@ describe("the file preview, from bytes", function () {
       const head = document.querySelector(`${shown} header.piece-files-head`);
       return [...(head?.querySelectorAll<HTMLButtonElement>("button") ?? [])].map((button) => ({
         words: (button.textContent ?? "").trim(),
-        enabled: !button.disabled,
+        enabled: !button.disabled && button.getAttribute("aria-disabled") !== "true",
       }));
     }, SHOWN(SVG));
 

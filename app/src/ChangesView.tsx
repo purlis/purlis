@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import type { FactCell, FactColumn, Piece, RepoState, RunnerBranch } from "./bindings";
 import { inertly } from "./sandboxBlocks";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { treeKey, type Row } from "./Explorer";
 import { Menued } from "./Menus";
 import type { Catalogued, Offer } from "./actions";
@@ -31,6 +31,7 @@ import type { Cloning } from "./NotCloned";
 import type { CloneState } from "./repoClones";
 import { useArrived } from "./lib/arrived";
 import { useTabStop } from "./roving";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * The Changes view: what the focused workspace's repos are doing (ADR 0038 as amended
@@ -145,7 +146,7 @@ export function ChangesView({
           headline="No workspace focused"
           body="Focus a workspace, and the branch, changes and pipeline of each of its repos are listed here."
           mark={GitFork}
-          size="panel"
+          variant="panel"
           testid="changes-empty"
         />
       </section>
@@ -214,7 +215,7 @@ export function ChangesView({
           headline="No repos in this workspace"
           body="Each repo the workspace names is listed here: the branch it is on, its changes, the branches cut off it and its pipeline."
           mark={FolderGit2}
-          size="panel"
+          variant="panel"
           testid="changes-empty"
         />
       ) : (
@@ -641,9 +642,9 @@ function FactOf({ column, cell }: { column: FactColumn; cell: FactCell }) {
   return (
     <>
       <Puzzle className="node-icon" />
-      <span className="stamp" title={`From the extension ${column.extension}`}>
-        {column.title}
-      </span>{" "}
+      <Tooltip tip={`From the extension ${column.extension}`}>
+        <span className="stamp">{column.title}</span>
+      </Tooltip>{" "}
       {cell.value}
       {cell.stale && <span className="stamp"> · {ago(cell.age_seconds)}</span>}
     </>
