@@ -215,21 +215,45 @@ pub fn with_name(text: &str, new: &str) -> Option<String> {
     found.then_some(out)
 }
 
-/// Where each reference to the skill `name` in the namespace `namespace` (`skills:name`) is in
-/// `text`, as byte offsets of its name: the namespace not preceded by a word character, the name
-/// not followed by one, so `myskills:name` and `skills:named` are not references.
-fn reference_spans(text: &str, namespace: &str, name: &str) -> Vec<(usize, usize)> {
-    let needle = format!("{namespace}:{name}");
+/// Where each reference to a skill in the namespace `namespace` (`skills:<name>`) is in `text`,
+/// as byte offsets of its name: the namespace not preceded by a word character, the name a run of
+/// the characters a skill's name may hold. The one rule a reference is read by.
+fn every_reference(text: &str, namespace: &str) -> Vec<(usize, usize)> {
+    let needle = format!("{namespace}:");
     let word = |c: char| c.is_ascii_alphanumeric() || "_.-".contains(c);
+    let named = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-';
     text.match_indices(&needle)
-        .filter(|(at, _)| {
-            let before = text[..*at].chars().next_back();
-            let after = text[at + needle.len()..].chars().next();
-            !before.is_some_and(word)
-                && !after.is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        .filter(|(at, _)| !text[..*at].chars().next_back().is_some_and(word))
+        .map(|(at, _)| {
+            let start = at + needle.len();
+            let len = text[start..]
+                .find(|c: char| !named(c))
+                .unwrap_or(text.len() - start);
+            (start, start + len)
         })
-        .map(|(at, _)| (at + namespace.len() + 1, at + needle.len()))
+        .filter(|(start, end)| start < end)
         .collect()
+}
+
+/// Where each reference to the skill `name` in the namespace `namespace` (`skills:name`) is in
+/// `text` ([`every_reference`]), so `myskills:name` and `skills:named` are not references.
+fn reference_spans(text: &str, namespace: &str, name: &str) -> Vec<(usize, usize)> {
+    every_reference(text, namespace)
+        .into_iter()
+        .filter(|(start, end)| &text[*start..*end] == name)
+        .collect()
+}
+
+/// **Every skill `text` refers to in `namespace`**, by name, each once, in the order first named.
+pub fn referenced(text: &str, namespace: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (start, end) in every_reference(text, namespace) {
+        let name = &text[start..end];
+        if !out.iter().any(|one| one == name) {
+            out.push(name.to_owned());
+        }
+    }
+    out
 }
 
 /// `text` with every reference to the skill `old` in `namespace` (`skills:old`) naming `new`
