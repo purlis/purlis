@@ -171,9 +171,15 @@ export const EscapeClosesOneLayer: Story = {
     const more = page.getByRole("button", { name: "More" });
     await waitFor(() => expect(more).toHaveFocus());
     await userEvent.keyboard("{Enter}");
-    await page.findByRole("menu");
+    const menu = await page.findByRole("menu");
+    // React Aria puts the keyboard on the menu's first row on the next frame, which WebKit may
+    // draw late: the Esc is the menu's once the keyboard is in it.
+    await waitFor(() =>
+      expect(within(menu).getByRole("menuitem", { name: "Rename" })).toHaveFocus(),
+    );
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(page.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(more).toHaveFocus());
     await expect(page.getByRole("dialog", { name: "Workspace" })).toBeVisible();
     await expect(page.getByRole("status", { hidden: true })).toHaveTextContent("Not answered yet");
     await userEvent.keyboard("{Escape}");
