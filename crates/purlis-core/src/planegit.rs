@@ -1380,6 +1380,7 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
             ".",
             SAVE_STAGES[4],
             SAVE_STAGES[5],
+            SAVE_STAGES[6],
         ],
         git::READ,
     ) else {
@@ -2085,15 +2086,17 @@ const WHOLE_TREE_PATHSPECS: [&str; 4] = [".", "./", ":/", ":/:"];
 const WHOLE_TREE_FLAGS: [&str; 5] = ["-A", "--all", "--no-ignore-removal", "-u", "--update"];
 
 /// **What a plane save stages**: the whole tree, but never a level's local skills (ADR 0099 §1,
-/// #2767), whatever the plane's `.gitignore` says. `skills.local/` is this machine's own, and
-/// a plane whose `.gitignore` lost its line would otherwise commit it to the team.
-pub const SAVE_STAGES: [&str; 6] = [
+/// #2767) nor the lockfile of the skills installed there (ADR 0100 §2, #2773), whatever the
+/// plane's `.gitignore` says. `skills.local/` is this machine's own, and a plane whose
+/// `.gitignore` lost its line would otherwise commit it to the team.
+pub const SAVE_STAGES: [&str; 7] = [
     "add",
     "-A",
     "--",
     ".",
     ":(exclude,glob)skills.local/**",
     ":(exclude,glob)workspaces/*/skills.local/**",
+    ":(exclude,literal)skills.local.lock",
 ];
 
 /// Would `add_cmd` stage EVERYTHING under the root it is run in?

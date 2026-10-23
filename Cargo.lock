@@ -5737,6 +5737,7 @@ dependencies = [
  "regex",
  "ring",
  "rustix",
+ "rustls",
  "secrecy",
  "security-framework",
  "semver",

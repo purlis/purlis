@@ -610,6 +610,19 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_restore",
     "skill_grant",
     "skill_turn",
+    // Skill sources (#2773): each reaches a git repository the person named, a private one with
+    // a credential read from a vault, and an install or an update is one commit to the project.
+    // The person's own press in their window, never a link's.
+    "skill_sources",
+    "skill_source_add",
+    "skill_source_remove",
+    "skill_source_confirm",
+    "skill_source_browse",
+    "skill_install_review",
+    "skill_install",
+    "skill_updates",
+    "skill_update_review",
+    "skill_update",
     // A harness's plugin or skill turned on or off in the Skill studio (#2769): it writes this
     // machine's project file, or the workspace's settings. The person's own press in their
     // window.

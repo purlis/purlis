@@ -154,3 +154,10 @@ source is SkillSource's first user.
 - A non-git source waits for its extension, and for the confinement that lets a third-party
   extension declare a studio capability (ADR 0101).
 - Signing (PE-36) can be added to the review later without changing the pin or the lockfile.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0100/`](0100/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).
