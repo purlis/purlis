@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792744185658,
+  "lastUpdate": 1792744204697,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -12356,6 +12356,42 @@ window.BENCHMARK_DATA = {
             "value": 707.3,
             "unit": "MB",
             "extra": "median of 6 samples: 659.6, 689, 696.4, 718.2, 719.6, 804.1 MB; window 414 MB, session host 293.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "19ef01ff9ae19348bd81a15661b07e2a2b1fcf74",
+          "message": "Cargo.lock: move clipboard-win off a yanked release (#3065)\n\nclipboard-win 5.4.1 is yanked, and cargo-deny denies yanked crates.\n5.4.3 is the patch release after it.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T11:41:38+04:00",
+          "tree_id": "042167eb9f6d2a391ee2de86e8a8f390637941f7",
+          "url": "https://github.com/purlis/purlis/commit/19ef01ff9ae19348bd81a15661b07e2a2b1fcf74"
+        },
+        "date": 1792744202019,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1677.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1605.3, 1677.5, 1803.3 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 721.4,
+            "unit": "MB",
+            "extra": "median of 6 samples: 669.3, 713.2, 718.3, 724.5, 725.3, 802.1 MB; window 415.6 MB, session host 306.2 MB"
           }
         ]
       }
