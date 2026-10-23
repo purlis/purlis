@@ -86,7 +86,7 @@ async function theDialogHasGone(role: string, text: string, timeoutMsg: string):
         [...document.querySelectorAll(`[role="${wanted}"]`)]
           .map((one) => (one.textContent ?? "").replace(/\s+/g, " ").trim())
           .join(" | ")
-          .slice(0, 2000),
+          .slice(-1500),
       role,
     );
     throw new Error(`${timeoutMsg}. It reads: ${says}`);
