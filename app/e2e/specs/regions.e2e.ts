@@ -423,37 +423,43 @@ describe("the left side's activity bar", () => {
     await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
   });
 
-  it("puts the side away on a press of the open view, keeps the bar, and brings it back", async () => {
+  it("leaves the side out on a press of the open view, and its key puts it away and back", async () => {
     await untilTheStripIsRead();
     await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
-
-    await (await tab("Chats")).click();
     const slot = await $('[data-panel][id="region-left"]');
+
+    // R121 (#2917): its tabs are across its own top, so a press of the open one is nothing.
+    await (await tab("Chats")).click();
+    await browser.pause(400);
+    expect((await slot.getSize("width")) as number).toBeGreaterThan(0);
+
+    const view = await putSideAway("Navigation");
     await browser.waitUntil(async () => ((await slot.getSize("width")) as number) === 0, {
       timeout: 20_000,
-      timeoutMsg: "the left slot did not go to nothing when its open view was pressed",
+      timeoutMsg: "the left slot did not go to nothing on its key",
     });
-    await expect(await $(BAR)).toBeDisplayed();
     // Hidden, never unmounted: the list is still in the document.
     await expect(await $('[data-testid="chats-section"]')).toBeExisting();
 
-    await (await tab("Chats")).click();
+    await bringSideBack("Navigation", view);
     await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
     expect((await slot.getSize("width")) as number).toBeGreaterThan(0);
   });
 
-  it("stands at the window's edge, and nothing on the left lies over the terminals", async () => {
+  it("is tabs across the side panel's top, and nothing on the left lies over the terminals", async () => {
     await untilTheStripIsRead();
     await $('[data-testid="chats-section"]').waitForDisplayed({ timeout: 20_000 });
 
-    // The window's edge is the project rail's, where it is shown (#2915).
+    // The window's edge is the project rail's, where it is shown (#2915); the bar is inside the
+    // side panel, not a column beside it (N36, R116, #2917).
     const rail = await box('[data-scope="rail"][data-part="slot"]');
     const bar = await box(".activity-bar[data-side='left']");
     const slot = await box('[data-panel][id="region-left"]');
     const centre = await box('[data-panel][id="region-centre"]');
     expect(bar).not.toBeNull();
-    expect(bar?.left ?? -1).toBeLessThanOrEqual((rail?.right ?? 0) + 1);
-    expect(bar?.right ?? Infinity).toBeLessThanOrEqual((slot?.left ?? 0) + 1);
+    expect(slot?.left ?? -1).toBeGreaterThanOrEqual((rail?.right ?? 0) - 1);
+    expect(bar?.left ?? -1).toBeGreaterThanOrEqual((slot?.left ?? 0) - 1);
+    expect(bar?.right ?? Infinity).toBeLessThanOrEqual((slot?.right ?? 0) + 1);
     expect(slot?.right ?? Infinity).toBeLessThanOrEqual((centre?.left ?? 0) + 1);
   });
 });
@@ -511,7 +517,7 @@ describe("the right side's activity bar (#1678)", () => {
     await onAlpha();
     await $(INBOX).waitForDisplayed({ timeout: 20_000 });
 
-    const bar = await box(".activity-bar[data-side='right']");
+    const bar = await box(".activity-column[data-side='right']");
     const slot = await box('[data-panel][id="region-right"]');
     const centre = await box('[data-panel][id="region-centre"]');
     const width = await browser.execute(() => document.documentElement.clientWidth);
@@ -593,7 +599,7 @@ describe("the views and the terminals", () => {
 /**
  * **The Panel** (spec #1736, P-1, P-12; #1737), at real sizes, which only a window that lays out
  * can give: under both sidebars and the editor, the window's whole width between the activity
- * bars, 30% of the regions' height by default, never past 70%, and back to 30% on a double-click
+ * bars, 34% of the regions' height by default, never past 70%, and back to 34% on a double-click
  * of its handle. What a press decides is `regions.test.ts`'s and `FourRegions.test.tsx`'s.
  */
 describe("the Panel", () => {
@@ -629,37 +635,49 @@ describe("the Panel", () => {
     await $('[data-testid="repos-view"]').waitForDisplayed({ timeout: 20_000 });
   });
 
-  it("holds the Repos view, open, its icon below the left bar's divider", async () => {
+  it("holds the Repos view, open, its icon at the end of the side panel's tab row", async () => {
     await expect(await $(`${PANEL} [data-testid="repos-view"]`)).toBeDisplayed();
     const lower = await boxOf('[role="tablist"][aria-label="Panel, left half"]');
     const upper = await boxOf('[role="tablist"][aria-label="Navigation"]');
-    const divider = await boxOf(".activity-column[data-side='left'] > .activity-divider");
-    if (lower === null || upper === null || divider === null)
-      throw new Error("no Lower icons, upper icons or divider to measure");
-    expect(divider.top).toBeGreaterThanOrEqual(upper.bottom - 1);
-    expect(lower.top).toBeGreaterThanOrEqual(divider.bottom - 1);
+    if (lower === null || upper === null) throw new Error("no Lower or upper icons to measure");
+    // One row (R116): the bottom group after the top group's, on its line.
+    expect(Math.abs(lower.top - upper.top)).toBeLessThanOrEqual(1);
+    expect(lower.left).toBeGreaterThanOrEqual(upper.right - 1);
   });
 
   it("runs under both sidebars and the editor, the whole width between the bars", async () => {
     const panel = await boxOf(PANEL);
     const left = await boxOf('[data-panel][id="region-left"]');
     const right = await boxOf('[data-panel][id="region-right"]');
-    const leftBar = await boxOf(".activity-column[data-side='left']");
     const rightBar = await boxOf(".activity-column[data-side='right']");
-    if ([panel, left, right, leftBar, rightBar].includes(null))
-      throw new Error("nothing to measure");
-    // Flush with the bars, or the theme's gutter from them (#3034).
+    if ([panel, left, right, rightBar].includes(null)) throw new Error("nothing to measure");
+    // From the side panel's edge (R126): the left bar is inside the side panel now; flush with
+    // the right bar, or the theme's gutter from it (#3034).
     const apart = (await gutter()) + 2;
-    expect(Math.abs((panel as Box).left - (leftBar as Box).right)).toBeLessThanOrEqual(apart);
+    expect(Math.abs((panel as Box).left - (left as Box).left)).toBeLessThanOrEqual(2);
     expect(Math.abs((panel as Box).right - (rightBar as Box).left)).toBeLessThanOrEqual(apart);
     expect((panel as Box).top).toBeGreaterThanOrEqual((left as Box).bottom - 1);
     expect((panel as Box).top).toBeGreaterThanOrEqual((right as Box).bottom - 1);
   });
 
-  it("is 30% of the regions' height by default, and never under 120px", async () => {
-    expect(await share()).toBeGreaterThan(0.27);
-    expect(await share()).toBeLessThan(0.33);
-    expect(((await boxOf(PANEL)) as Box).height).toBeGreaterThanOrEqual(119);
+  /** **The most of the column the Panel may take**: 70%, or less where the work above it would go
+   *  under its least height (30rem, D-2917-17). */
+  const ceiling = async () => {
+    const column = await boxOf(COLUMN);
+    const rem = await browser.execute(() =>
+      Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+    );
+    if (column === null || column.height <= 0) return 0.7;
+    return Math.min(0.7, 1 - (30 * rem) / column.height);
+  };
+  /** The bottom row's default share (R126, #2917): 34%, under that {@link ceiling}. */
+  const defaultShare = async () => Math.min(0.34, await ceiling());
+
+  it("is 34% of the regions' height by default, the work keeping its least, and never under 160px (R126)", async () => {
+    const wanted = await defaultShare();
+    expect(await share()).toBeGreaterThan(wanted - 0.04);
+    expect(await share()).toBeLessThan(wanted + 0.04);
+    expect(((await boxOf(PANEL)) as Box).height).toBeGreaterThanOrEqual(159);
   });
 
   it("grows no taller than 70% however far it is dragged, and a double-click puts it back", async () => {
@@ -667,11 +685,12 @@ describe("the Panel", () => {
     // reports exactly as it reports a drag. Whatever the library's step, the handle is pressed
     // until the Panel reaches its ceiling (or 60 presses), and a range is asserted, not a pixel:
     // well past where it started, and never past 70%, give or take a pixel's rounding.
+    const most = await ceiling();
     await focusOn(HANDLE);
-    for (let press = 0; press < 60 && (await share()) < 0.69; press++) {
+    for (let press = 0; press < 60 && (await share()) < most - 0.01; press++) {
       await browser.keys(["ArrowUp"]);
     }
-    await browser.waitUntil(async () => (await share()) > 0.6, {
+    await browser.waitUntil(async () => (await share()) > Math.min(0.6, most - 0.08), {
       timeout: 20_000,
       timeoutMsg: "the Panel never got taller",
     });
@@ -679,9 +698,10 @@ describe("the Panel", () => {
 
     await doubleClickOn(HANDLE);
 
-    await browser.waitUntil(async () => Math.abs((await share()) - 0.3) < 0.03, {
+    const wanted = await defaultShare();
+    await browser.waitUntil(async () => Math.abs((await share()) - wanted) < 0.04, {
       timeout: 20_000,
-      timeoutMsg: "a double-click did not put the Panel back at 30%",
+      timeoutMsg: "a double-click did not put the Panel back at its default height",
     });
   });
 
@@ -702,17 +722,15 @@ describe("the Panel", () => {
   /** A half's chevron, by the name a person and a screen reader are given. */
   const AWAY = (side: string) => `[aria-label="Put the panel's ${side} half away"]`;
 
-  it("holds Memory in its right half, its icon below the right bar's divider", async () => {
+  it("holds Memory in its right half, its icon at the right bar's foot", async () => {
     // Memory is a workspace's: focused, so its panel and its + are drawn.
     await onAlpha();
     await $(`${HALF("right")} [data-testid="panel-memory"]`).waitForDisplayed({ timeout: 20_000 });
     const lower = await boxOf('[role="tablist"][aria-label="Panel, right half"]');
     const upper = await boxOf('[role="tablist"][aria-label="Attention"]');
-    const divider = await boxOf(".activity-column[data-side='right'] > .activity-divider");
-    if (lower === null || upper === null || divider === null)
-      throw new Error("no Lower icons, upper icons or divider to measure");
-    expect(divider.top).toBeGreaterThanOrEqual(upper.bottom - 1);
-    expect(lower.top).toBeGreaterThanOrEqual(divider.bottom - 1);
+    if (lower === null || upper === null) throw new Error("no Lower or upper icons to measure");
+    // The gap between the groups (R117): the Lower icons below the top group, at the foot.
+    expect(lower.top).toBeGreaterThanOrEqual(upper.bottom + 11);
   });
 
   it("heads each half with one line: its title, its actions and its chevron side by side", async () => {

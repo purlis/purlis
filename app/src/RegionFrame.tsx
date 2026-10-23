@@ -15,7 +15,7 @@ import { createPortal } from "react-dom";
 import { Group, Panel, usePanelRef, type Layout } from "react-resizable-panels";
 import { Separator } from "./shownSeparator";
 import { useProjectShown } from "./projectShown";
-import { ChevronDown } from "lucide-react";
+import { X } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
 import {
   CATALOGUE,
@@ -29,11 +29,11 @@ import {
   placeOf,
   shownIn,
   sizeForgotten,
-  slotSize,
+  slotLength,
   SLOT_IDS,
   SLOTS,
   SPLIT,
-  startingSize,
+  startingLength,
   tabsOf,
   VIEWS,
   type Arrangement,
@@ -55,6 +55,7 @@ import { CHAT_KEYBOARD } from "./actions";
 import { forgetFrameScroll, useViewScroll } from "./viewScroll";
 import { IconButton } from "./ui/button/Button";
 import { PanelSectionTitle, panelRoot } from "./ui/panel/Panel";
+import { ActivityBarFrame, type ActivityVariant } from "./ui/activity/ActivityItem";
 
 /**
  * **The window, drawn from the arrangement** (ADR 0038, and `regions.ts` for why the
@@ -86,6 +87,7 @@ export function RegionFrame({
   onReset,
   onSplit,
   menu,
+  heads,
   keyboard = true,
 }: {
   arrangement: Arrangement;
@@ -125,6 +127,10 @@ export function RegionFrame({
   /** **A view's icon with its context menu around it** (#1740): told the view and where it can
    *  move — its side's other place, or nothing for the Inbox, which is pinned. */
   menu?: (view: ViewId, to: ViewPlace | undefined, tab: ReactElement) => ReactNode;
+  /** **What the side panel's header says for each view** (R123, #2917), in the label's
+   *  capitals: the view's name where nothing is given; `null` for a view that draws its own
+   *  heading (Chats, which names the workspace and the project on its title's line). */
+  heads?: Partial<Record<ViewId, ReactNode | null>>;
   /** Whether this window's keys are this frame's: F6 (P-13) is held by the project in front. */
   keyboard?: boolean;
 }) {
@@ -182,14 +188,15 @@ export function RegionFrame({
           const to = movesTo(arrangement, view);
           return menu(view, to === undefined ? undefined : placeOf(to), tab);
         };
-  /** A region's bar, at its side's edge. */
-  const barOf = (one: Placement, side: Side, away?: string) => (
+  /** A region's bar: tabs across the side panel's top on the left, a column on the right. */
+  const barOf = (one: Placement, side: Side, variant: ActivityVariant, away?: string) => (
     <ActivityBar
       key={one.id}
       side={side}
+      variant={variant}
       region={one.id}
       name={CATALOGUE[one.id].name}
-      away={away}
+      away={CATALOGUE[one.id].stays === true ? null : away}
       views={tabbed(one.id)}
       open={one.collapsed ? undefined : openView(one, present)}
       keys={keys}
@@ -199,26 +206,76 @@ export function RegionFrame({
       menu={menuOf}
     />
   );
+  /** A side's own bar and its Lower icons (the bars of its halves of the Panel): the top group,
+   *  then the bottom group. A half with no views has no icons. */
+  const barsOf = (side: Side, variant: ActivityVariant) => ({
+    // A sidebar every view has moved out of draws no icons (#1740), as an empty half does not.
+    upper: slots[side]
+      .filter((one) => withViews(one) && tabbed(one.id).length > 0)
+      .map((one) => barOf(one, side, variant)),
+    lower: slots.panel
+      .filter((one) => one.side === side && withViews(one) && tabbed(one.id).length > 0)
+      .map((one) => barOf(one, side, variant, `Put the panel's ${side} half away`)),
+  });
   /**
-   * **A side's icon column** (P-1, #1737): the bars of the regions in its sidebar, then, below a
-   * divider, the **Lower icons** — the bars of its halves of the Panel. One column the window's
-   * whole height, so one strip of icons serves the sidebar and the half under it. A half with
-   * no views has no icons, and no divider is drawn for nothing.
+   * **The right bar** (R117, #2917): a 44px column at the window's edge, the whole height beside
+   * the right panel and the Panel's right half, its own icons at the top and the Lower icons at
+   * its foot.
    */
   const column = (side: Side) => {
-    // A sidebar every view has moved out of draws no icons (#1740), as an empty half does not.
-    const upper = slots[side]
-      .filter((one) => withViews(one) && tabbed(one.id).length > 0)
-      .map((one) => barOf(one, side));
-    const lower = slots.panel
-      .filter((one) => one.side === side && withViews(one) && tabbed(one.id).length > 0)
-      .map((one) => barOf(one, side, `Put the panel's ${side} half away`));
+    const { upper, lower } = barsOf(side, "bar");
     if (upper.length === 0 && lower.length === 0) return null;
     return (
-      <div className="activity-column" data-side={side}>
-        {upper}
-        {lower.length > 0 && <div className="activity-divider" aria-hidden="true" />}
-        {lower}
+      <ActivityBarFrame
+        variant="bar"
+        className="activity-column"
+        data-side={side}
+        top={upper}
+        bottom={lower}
+      />
+    );
+  };
+  /**
+   * **What a side panel draws above its views** (N36, R116, R123, R125): on the left, its bar as
+   * tabs across its top (the side panel's views, then its half of the Panel's at the row's end)
+   * and the open view's header in the label's capitals; on the right, the open view's title and
+   * the × that closes it. Nothing while the side is away.
+   */
+  const sideTop = (side: Side): ReactNode => {
+    const first = shownIn(slots[side]).find(withViews);
+    if (first === undefined) return null;
+    const open = openView(first, present);
+    const named = tabbed(first.id).find((one) => one.view === open)?.name;
+    if (side === "left") {
+      const { upper, lower } = barsOf(side, "tab");
+      const head = open === undefined ? undefined : heads?.[open];
+      return (
+        <>
+          <ActivityBarFrame variant="tab" top={upper} bottom={lower} />
+          {open !== undefined && head !== null && (
+            <div className="side-head" data-side={side}>
+              <PanelSectionTitle>{head ?? named}</PanelSectionTitle>
+            </div>
+          )}
+        </>
+      );
+    }
+    if (open === undefined || named === undefined) return null;
+    return (
+      <div className="side-head" data-side={side}>
+        <h2 className="side-title">{named}</h2>
+        <IconButton
+          size="sm"
+          aria-label={`Close ${named}`}
+          tooltip={`Close ${named}`}
+          onPress={() => {
+            // The keyboard back on the icon that opened it (WCAG 2.4.3): the head goes with it.
+            document.getElementById(ids.tabOf(open))?.focus();
+            pick(open);
+          }}
+          icon={<X className="node-icon" aria-hidden="true" />}
+          className="side-close"
+        />
       </div>
     );
   };
@@ -299,6 +356,7 @@ export function RegionFrame({
     hostOf,
     actionRef,
     focusMoving,
+    sideTop,
   };
   /** Every view drawn now, with the region it is in: each one's content, drawn once. */
   const placedViews =
@@ -313,7 +371,7 @@ export function RegionFrame({
   const panelSlot = usePanelRef();
   const resetPanel = () => {
     panelSlot.current?.resize(
-      `${slotSize("panel", inSlots(sizeForgotten(arrangement, "panel")).panel)}%`,
+      slotLength("panel", inSlots(sizeForgotten(arrangement, "panel")).panel),
     );
     onReset?.("panel");
   };
@@ -398,9 +456,13 @@ export function RegionFrame({
   // above it, so it runs under all three, and an activity bar the whole height beside both.
   return (
     <div className="region-frame" ref={frame} data-cycle={order}>
-      {column("left")}
+      {/* **The left bar while its side panel is away** (D-2917-18, VS Code's): its icons as a
+          narrow column at the window's edge, so a press brings the side back on that view. */}
+      {shownIn(slots.left).length === 0 && column("left")}
       <Group className="regions" orientation="vertical" onLayoutChanged={settled}>
-        <Panel id="region-upper" className="region-upper" minSize="20%">
+        {/* At least a pane's line and its Notice tall (D-2917-17): in a short window the Panel
+            gives way to its 160px floor before the work goes under that. */}
+        <Panel id="region-upper" className="region-upper" minSize="30rem">
           <Group className="region-row" orientation="horizontal" onLayoutChanged={settled}>
             <Slot side="left" placed={slots.left} started={started.left} drawn={drawn} />
             <Edge open={shownIn(slots.left).length > 0} named="Resize the left sidebar" />
@@ -481,6 +543,8 @@ type SlotContent = {
   /** Where the keyboard was in a view whose element is being moved, for the region it lands in
    *  to give back. */
   focusMoving: FocusMoving;
+  /** What a side panel draws above its views: its tabs and header, or its title and ×. */
+  sideTop: (side: Side) => ReactNode;
 };
 
 /** The keyboard kept across a view's move (#1752): see `RegionFrame`'s `focusMoving`. */
@@ -502,9 +566,20 @@ type FocusMoving = {
  * bar's order: their content is drawn once, by the frame ({@link ViewHost}), so a view that
  * moves here from another region arrives as it was (#1752).
  */
-function RegionViews({ placed, drawn }: { placed: Placement; drawn: SlotContent }) {
+function RegionViews({
+  placed,
+  drawn,
+  swaps = false,
+}: {
+  placed: Placement;
+  drawn: SlotContent;
+  /** A view picked in place of another fades its list in (R122): the side panel's. */
+  swaps?: boolean;
+}) {
   const open = placed.collapsed ? undefined : openView(placed, drawn.present);
   const box = useRef<HTMLDivElement>(null);
+  // The view shown last while the region was out: a change from one to another is a swap.
+  const shownBefore = useRef(open);
   const order = drawn
     .tabbed(placed.id)
     .map(({ view }) => view)
@@ -519,9 +594,12 @@ function RegionViews({ placed, drawn }: { placed: Placement; drawn: SlotContent 
     const hosts = views.map(hostOf);
     hosts.forEach((host, at) => {
       host.hidden = views[at] !== open;
+      // A list hidden or moved has finished arriving: shown again, it does not replay (R151).
+      if (host.hidden) host.removeAttribute(SWAPPED);
       // Moved only where it is not in its place already: an element taken out of the document
       // and put back loses its scroll.
       if (root.children[at] !== host) {
+        host.removeAttribute(SWAPPED);
         focusMoving.noted(host);
         root.insertBefore(host, root.children[at] ?? null);
       }
@@ -534,7 +612,13 @@ function RegionViews({ placed, drawn }: { placed: Placement; drawn: SlotContent 
         focusMoving.noted(child);
         root.removeChild(child);
       }
-  }, [order, open, hostOf, focusMoving]);
+    const before = shownBefore.current;
+    shownBefore.current = open;
+    // **Only the list that just took another's place moves** (R122, R151): never on a mount, a
+    // re-render, the side coming back or a view moved here.
+    if (swaps && before !== undefined && open !== undefined && before !== open)
+      swapIn(hostOf(open));
+  }, [order, open, hostOf, focusMoving, swaps]);
   return (
     <div className="region-views" data-region={placed.id} hidden={placed.collapsed} ref={box} />
   );
@@ -677,6 +761,17 @@ function Half({
     it.expand();
     it.resize(`${wanted}%`);
   }, [handle, shown, wanted]);
+  // **Only a half that just opened arrives** (R127): never at launch, never the other half, and
+  // never again once it has arrived (a project brought back in front, S7).
+  const [arrived, arrivedEnd] = useArrival(shown);
+  const halfBox = useRef<HTMLDivElement>(null);
+  // Heard as the browser says it, as the slot's is: the event itself, not React's name for it.
+  useEffect(() => {
+    const element = halfBox.current;
+    if (element === null) return;
+    element.addEventListener("animationend", arrivedEnd);
+    return () => element.removeEventListener("animationend", arrivedEnd);
+  }, [arrivedEnd]);
   const open = placed === undefined || !shown ? undefined : openView(placed, drawn.present);
   const views = placed === undefined ? [] : drawn.tabbed(placed.id);
   const title = views.find((one) => one.view === open)?.name;
@@ -691,7 +786,8 @@ function Half({
       maxSize="100%"
     >
       <div
-        className="panel-half"
+        className={arrived ? "panel-half arrived" : "panel-half"}
+        ref={halfBox}
         // A half of the bottom panel is a panel of its own (`ui/panel`).
         {...panelRoot("bottom")}
         data-side={side}
@@ -717,8 +813,13 @@ function Half({
                 excludeFromTabOrder
                 aria-label={`Put the panel's ${side} half away`}
                 tooltip={`Put the panel's ${side} half away`}
-                onPress={() => open !== undefined && drawn.onPick?.(open)}
-                icon={<ChevronDown className="node-icon" aria-hidden="true" />}
+                onPress={() => {
+                  if (open === undefined) return;
+                  // The keyboard back on the icon that opened it (WCAG 2.4.3).
+                  document.getElementById(drawn.ids.tabOf(open))?.focus();
+                  drawn.onPick?.(open);
+                }}
+                icon={<X className="node-icon" aria-hidden="true" />}
                 className="half-away"
               />
             </div>
@@ -728,6 +829,45 @@ function Half({
       </div>
     </Panel>
   );
+}
+
+/**
+ * **Whether a part is arriving now**, and what ends it: true from the moment it opens while the
+ * window is up until its animation ends, so taking the element out of the document and putting
+ * it back (a project brought in front again) never replays it (R151).
+ */
+function useArrival(
+  open: boolean,
+): readonly [boolean, (e: { target: unknown; currentTarget: unknown }) => void] {
+  const moved = useArrived(open) && open;
+  const [ended, setEnded] = useState(false);
+  const [was, setWas] = useState(open);
+  if (was !== open) {
+    setWas(open);
+    setEnded(false);
+  }
+  const [end] = useState(() => (e: { target: unknown; currentTarget: unknown }) => {
+    if (e.target === e.currentTarget) setEnded(true);
+  });
+  return [moved && !ended, end] as const;
+}
+
+/** The attribute a side view's list carries while it fades in (R122), which `App.css` draws. */
+const SWAPPED = "data-swapped";
+
+/**
+ * **A side view's list fading in from 4px below** (R122), over `duration.swap`: the stylesheet's
+ * animation, on the element, until it ends. The mark is taken off a view that is hidden or moved,
+ * so nothing replays when it is shown again; under reduced motion the duration is 0ms.
+ */
+function swapIn(host: HTMLElement) {
+  host.setAttribute(SWAPPED, "");
+  const ended = (e: AnimationEvent) => {
+    if (e.target !== host) return;
+    host.removeAttribute(SWAPPED);
+    host.removeEventListener("animationend", ended);
+  };
+  host.addEventListener("animationend", ended);
 }
 
 /** What the editor region is called: its region's name, for F6 and a screen reader (#1751). */
@@ -891,10 +1031,18 @@ function Slot({
   const panel = handle ?? own;
   // Brought back while the window is up, as opposed to open since launch: only the first is
   // drawn arriving, so a window does not fade its own regions in every time it starts.
-  const arrived = useArrived(open) && open;
+  const [arrived, arrivedEnd] = useArrival(open);
+  // The library's panel takes no handler of ours: its element is heard by its id.
+  useEffect(() => {
+    const element = document.getElementById(panelOf(side));
+    if (element === null) return;
+    const ended = (e: AnimationEvent) => arrivedEnd(e);
+    element.addEventListener("animationend", ended);
+    return () => element.removeEventListener("animationend", ended);
+  }, [side, arrivedEnd]);
 
   /** How big it should be when it is brought back. */
-  const wanted = slotSize(side, placed);
+  const wanted = slotLength(side, placed);
 
   const before = useRef(open);
   useEffect(() => {
@@ -921,13 +1069,14 @@ function Slot({
     // already away when the window launched never had one — it started at nothing, so the
     // library would bring it back at its minimum. The remembered size is what it should come
     // back to, and saying so is cheaper than painting it once to find out.
-    it.resize(`${wanted}%`);
+    it.resize(wanted);
   }, [panel, open, wanted]);
 
   return (
     <Panel
       id={panelOf(side)}
       className={`region-slot slot-${side}${arrived ? " arrived" : ""}`}
+      data-slot={side}
       // A side is a panel (`ui/panel`); the bottom slot only holds its halves, each one.
       {...(side === "panel" ? {} : panelRoot("side"))}
       // A region only while it has a name: an unnamed one is no landmark.
@@ -940,22 +1089,27 @@ function Slot({
       // `started` is the arrangement the window launched with, snapshotted for this reason.
       collapsible
       collapsedSize="0%"
-      defaultSize={`${startingSize(side, started)}%`}
+      defaultSize={startingLength(side, started)}
       minSize={leastOf(side)}
       maxSize={`${SLOTS[side].most}%`}
     >
       {/* A region without views put away is unmounted (above); one with views is kept,
           hidden, because its views are where the person's folds and scroll are (#1673). */}
-      {children !== undefined
-        ? // **The Panel's halves** (P-1, #1738): `Halves`.
-          children
-        : placed.map((one) =>
+      {children !== undefined ? (
+        // **The Panel's halves** (P-1, #1738): `Halves`.
+        children
+      ) : (
+        <div className="slot-body">
+          {side === "panel" ? null : drawn.sideTop(side)}
+          {placed.map((one) =>
             drawn.withViews(one) ? (
-              <RegionViews key={one.id} placed={one} drawn={drawn} />
+              <RegionViews key={one.id} placed={one} drawn={drawn} swaps={side === "left"} />
             ) : one.collapsed ? null : (
               <Fragment key={one.id}>{drawn.content[one.id]}</Fragment>
             ),
           )}
+        </div>
+      )}
     </Panel>
   );
 }

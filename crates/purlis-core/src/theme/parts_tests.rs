@@ -32,18 +32,26 @@ fn sheet_of(parts: Value) -> String {
 }
 
 /// A stylesheet less the rules Purlis Classic's parts write, which are its tabs' strip look
-/// (#2914): the family defaults draw Purlis's docked tabs, and Classic keeps its strip through
-/// parts. Empty when nothing else is written.
+/// (#2914) and its activity items' look (#2917): the family defaults draw Purlis, and Classic
+/// keeps its own looks through parts. Empty when nothing else is written.
 fn over_classic(sheet: &str) -> String {
     let classic = parts::stylesheet(classic().first());
     let own: Vec<&str> = sheet
         .lines()
-        .filter(|line| !(line.contains("[data-scope=\"tabs\"]") && classic.contains(line)))
+        .filter(|line| {
+            !((line.starts_with("  :where(") || line.contains("[data-scope=\"tabs\"]"))
+                && classic.lines().any(|one| one == *line))
+        })
         .collect();
     if own.len() <= 2 {
         return String::new();
     }
     own.join("\n") + "\n"
+}
+
+/// Whether a key is one of Purlis Classic's own parts.
+fn classics(key: &parts::Key) -> bool {
+    classic().first().parts.contains_key(key)
 }
 
 /// The sentences a refused theme says.
@@ -73,11 +81,15 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
 
 #[test]
 fn a_theme_that_names_no_parts_draws_exactly_as_today() {
-    // Purlis Classic names only its tabs' strip look (#2914); nothing it draws falls back.
+    // Purlis Classic names only its tabs' strip look (#2914) and its activity items' (#2917);
+    // nothing it draws falls back.
     for theme in built_ins() {
         assert!(
-            theme.parts.keys().all(|key| key.family == "tabs"),
-            "{} names parts beyond its tabs",
+            theme
+                .parts
+                .keys()
+                .all(|key| key.family == "tabs" || key.family == "activity"),
+            "{} names parts beyond its tabs and its activity items",
             theme.name
         );
         assert!(parts::fallen(theme).is_empty());
@@ -193,7 +205,7 @@ fn a_key_naming_nothing_purlis_has_is_said_and_left_out() {
             .first()
             .parts
             .keys()
-            .filter(|key| key.family == "button")
+            .filter(|key| !classics(key))
             .count(),
         1
     );
@@ -968,7 +980,7 @@ fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 9);
+    assert_eq!(manifest["version"], 10);
     for one in manifest["states"].as_array().unwrap() {
         assert_eq!(one["since"], 1, "{one}");
     }
@@ -1266,6 +1278,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         9,
         "f9ce10aed0e38be894b68e8d340ec365a805608c9914086c62cc7958926db105",
+    ),
+    (
+        10,
+        "8b7b25d3c753717356057f18fdadbe9cab063dd7e08523ae33a4deafddd85a82",
     ),
 ];
 
@@ -1742,7 +1758,7 @@ fn a_state_a_fields_wrapper_never_marks_is_no_part() {
             .first()
             .parts
             .keys()
-            .filter(|key| key.family != "tabs")
+            .filter(|key| !classics(key))
             .count(),
         1
     );

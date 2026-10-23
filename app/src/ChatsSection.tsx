@@ -288,6 +288,7 @@ export function ChatsSection({
   browsers,
   kept,
   onBrowser,
+  heading,
 }: {
   rows: readonly ChatRow[];
   /** The workspace in the strip, by the word a row says for where it works: the rows listed
@@ -347,6 +348,9 @@ export function ChatsSection({
   kept?: readonly BrowserShown[];
   /** A browser's row was pressed: open its view. No rows are drawn without it. */
   onBrowser?: (shown: BrowserShown) => void;
+  /** **What its title says** (R123, #2917): the workspace and, after it, the project. Absent,
+   *  "Chats". The section is named Chats either way. */
+  heading?: ReactNode;
 }) {
   const prefs = useChatsListPrefs();
   const chats = useChatsHere();
@@ -849,13 +853,16 @@ export function ChatsSection({
       ref={section}
       className="chats-section ui-text-body"
       data-testid="chats-section"
-      aria-labelledby="chats-title"
+      aria-label="Chats"
     >
       {/* The title and the filter stay at the top of the section while its rows scroll. */}
       <div className="chats-head">
         <div className="chats-top">
-          <PanelSectionTitle id="chats-title" mark={MessagesSquare}>
-            Chats
+          <PanelSectionTitle
+            id="chats-title"
+            mark={heading === undefined ? MessagesSquare : undefined}
+          >
+            {heading ?? "Chats"}
           </PanelSectionTitle>
           {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
               DS-11): both status lines are always in the accessibility tree, so what they come

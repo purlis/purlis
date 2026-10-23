@@ -184,10 +184,10 @@ describe("forced colours", () => {
     ])
       expect(drawn(shaped).get("text-decoration-line"), shaped).toBe("underline");
     expect(
-      drawn('.activity-bar[data-side="left"] .activity-tab[aria-selected="true"]').get(
-        "box-shadow",
-      ),
-    ).toMatch(/^inset 2px 0 0 SelectedItemText$/);
+      drawn(
+        '[data-scope="activity"][data-part="item"][data-selected] > [data-part="indicator"]',
+      ).get("background-color"),
+    ).toBe("SelectedItemText");
   });
 
   it("keep each state mark's shape, which tells the states apart without colour", () => {
@@ -217,7 +217,7 @@ describe("forced colours", () => {
     for (const needs of [
       ".count-pill-needs",
       ".show-more-needs",
-      '.activity-count[data-tone="needs-you"]',
+      '[data-scope="activity"][data-part="count"][data-tone="needs-you"]',
       '[data-scope="status-item"][data-variant="waiting"] > [data-part="count"]',
       ".repo-instruction-text .invisible-char",
     ]) {

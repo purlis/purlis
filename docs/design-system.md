@@ -1177,7 +1177,7 @@ pipelines with animation"_), and adding it on top of that shape would have multi
 
 ### The vocabulary
 
-`DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Twelve names, written to the document as
+`DURATIONS` and `EASINGS` in `app/src/theme/motion.ts`. Fourteen names, written to the document as
 `--motion-duration-*` and `--motion-easing-*` beside the colours. The built-ins are Purlis
 Classic's; Purlis draws `duration.quick` at 150 ms and `easing.standard` and `easing.enter` on
 the shell's one ease (below):
@@ -1190,8 +1190,10 @@ the shell's one ease (below):
 | `duration.spin`    | 900 ms             | one turn of _still running_                                             |
 | `duration.breathe` | 1600 ms            | one breath of _queued, not yet running_                                 |
 | `duration.slide`   | 260 ms             | the project rail hiding and showing, the work column gliding with it    |
-| `duration.reveal`  | 220 ms             | the rail's peek coming in from the window's edge                        |
+| `duration.reveal`  | 220 ms             | the rail's peek coming in from the window's edge, a bottom half rising  |
 | `duration.leave`   | 200 ms             | the peek going, and the rail fading out as it hides                     |
+| `duration.open`    | 160 ms             | a panel opening beside the work: the right panel (Purlis 240)           |
+| `duration.swap`    | 0 ms               | one side view's list taking another's place (Purlis 180)                |
 | `easing.standard`  | `[0.2, 0, 0, 1]`   | a state changing in place                                               |
 | `easing.enter`     | `[0, 0, 0.2, 1]`   | decelerating into place, which is what reads as _arrived_               |
 | `easing.steady`    | `[0, 0, 1, 1]`     | a turn; an eased one stutters once a second                             |
@@ -1201,7 +1203,9 @@ the shell's one ease (below):
 Purlis gives `easing.standard` and `easing.enter`, and 150 ms for a chevron and a switch's knob,
 Purlis's `duration.quick`. Each of the shell's other steps is a duration token that arrives with
 the motion it times: `slide`, `reveal` and `leave` came with the project rail (#2915), at the same
-values in both built-ins.
+values in both built-ins; `open` and `swap` came with the four corners (#2917), and a bottom half
+rises over `reveal`. Each corner motion plays only on the part that just appeared. Nothing leaves
+with motion there: a part that closes is gone.
 
 **Semantic, not a scale**, for the reason `needs-you.base` and `danger.base` are two tokens: a
 theme that wants arrivals quicker changes `duration.enter` and does not also speed up whatever

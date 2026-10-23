@@ -310,7 +310,7 @@ describe("Settings' tables, in the real WebView", function () {
   });
 
   /**
-   * **The width they stack at, against the real window** (#1865): 29rem was set between
+   * **The width they stack at, against the real window** (#1865): 32rem (29rem before #2917) sits between
    * Settings' body at the default window and at the narrowest (#1859), both estimated from the
    * layout. CI's runs of this spec (a table at the default window, its headings each on one line)
    * and of `settings-limits.e2e.ts` (a form at the narrowest) held it; this says it outright, for

@@ -28,6 +28,9 @@ import {
   HALVES,
   halvesSplit,
   useArrangement,
+  rowWidth,
+  slotLength,
+  type Arrangement,
 } from "./regions";
 import { setYourEditor } from "./yourEditor";
 import {
@@ -795,15 +798,52 @@ describe("the open view of a side (#1673)", () => {
     });
   });
 
-  it("puts the side away on a pick of the view already open, and brings it back on the next", () => {
+  it("starts the right panel at 300px where the window has room, else at its 20% (R124)", () => {
+    const right = inSlots(DEFAULT_ARRANGEMENT).right;
+    expect(slotLength("right", right, 1600)).toBe("300px");
+    expect(slotLength("right", right, 1280)).toBe("20%");
+    const dragged = right.map((one) => ({ ...one, size: 25 }));
+    expect(slotLength("right", dragged, 1600)).toBe("25%");
+  });
+
+  it("starts the bottom row at 34% whatever the window's height (R126)", () => {
+    const panel = inSlots(DEFAULT_ARRANGEMENT).panel;
+    expect(slotLength("panel", panel, 1600)).toBe("34%");
+    expect(slotLength("panel", panel, 900)).toBe("34%");
+  });
+
+  it("measures the right panel's share against the row, not the window", () => {
+    const right = inSlots(DEFAULT_ARRANGEMENT).right;
+    // A 1530px window's row is 1530 less the 44px bar: 300px is more than its 20% there.
+    expect(slotLength("right", right, rowWidth(1530))).toBe("20%");
+    expect(slotLength("right", right, rowWidth(1600))).toBe("300px");
+  });
+
+  it("leaves the side panel out on a pick of its view already open (R121)", () => {
     const { result } = renderHook(() => useArrangement("/one"));
+    const before = result.current.arrangement;
 
     act(() => result.current.pick("chats"));
-    expect(navigation(result.current.arrangement).collapsed).toBe(true);
 
-    act(() => result.current.pick("chats"));
     expect(navigation(result.current.arrangement)).toMatchObject({ collapsed: false });
     expect(openView(navigation(result.current.arrangement))).toBe("chats");
+    expect(result.current.arrangement).toBe(before);
+  });
+
+  it("puts the right panel away on a pick of the view already open, and brings it back on the next", () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+    const aside = (arrangement: Arrangement) => {
+      const found = arrangement.find((one) => one.id === "aside");
+      if (found === undefined) throw new Error("no aside placed");
+      return found;
+    };
+
+    act(() => result.current.pick("inbox"));
+    expect(aside(result.current.arrangement).collapsed).toBe(true);
+
+    act(() => result.current.pick("inbox"));
+    expect(aside(result.current.arrangement)).toMatchObject({ collapsed: false });
+    expect(openView(aside(result.current.arrangement))).toBe("inbox");
   });
 
   it("brings a side that is away back on the view picked", () => {
@@ -985,7 +1025,7 @@ describe("the Panel (#1737)", () => {
     return found;
   };
 
-  it("is under both sidebars, its left half open on Repos, at 30% of the window", () => {
+  it("is under both sidebars, its left half open on Repos, at 34% of the window (R126)", () => {
     const slots = inSlots(remembered());
 
     expect(slots.panel.map((one) => one.id)).toEqual(["panel-left", "panel-right"]);
@@ -993,7 +1033,7 @@ describe("the Panel (#1737)", () => {
     expect(slots.right.map((one) => one.id)).toEqual(["aside"]);
     expect(openView(half(remembered(), "left"))).toBe("repos");
     expect(panelShown(remembered())).toBe(true);
-    expect(slotSize("panel", slots.panel)).toBe(30);
+    expect(slotSize("panel", slots.panel)).toBe(34);
   });
 
   it("puts a half away on a press of its open Lower icon, and the Panel with it (P-5)", () => {
@@ -1072,16 +1112,16 @@ describe("the Panel (#1737)", () => {
 
     expect(slotSize("panel", inSlots(remembered()).panel)).toBe(70);
     // In pixels too: the floor is the slot's, whatever the window's height (P-12).
-    expect(leastOf("panel")).toBe("120px");
+    expect(leastOf("panel")).toBe("160px");
   });
 
-  it("goes back to 30% on a double-click of its handle, and remembers that", async () => {
+  it("goes back to 34% on a double-click of its handle, and remembers that", async () => {
     const { result } = renderHook(() => useArrangement("/one"));
     act(() => result.current.resized({ panel: 55 }));
 
     act(() => result.current.reset("panel"));
 
-    expect(slotSize("panel", inSlots(result.current.arrangement).panel)).toBe(30);
+    expect(slotSize("panel", inSlots(result.current.arrangement).panel)).toBe(34);
     await vi.waitFor(() => expect(sent).toHaveLength(2));
     expect(
       lastWritten().projects["/one"].regions.find((one: { id: string }) => one.id === "panel-left"),
@@ -1116,7 +1156,7 @@ describe("the Panel (#1737)", () => {
       projects: { "/one": { regions: [{ id: "aside", side: "right", order: 0, view: "todos" }] } },
     });
     expect(panelShown(remembered("/one"))).toBe(true);
-    expect(slotSize("panel", inSlots(remembered("/one")).panel)).toBe(30);
+    expect(slotSize("panel", inSlots(remembered("/one")).panel)).toBe(34);
     await settleLayout();
     // Nothing to say: a region a file does not place is drawn where it starts.
     expect(aboutThisMachine()).toEqual([]);
@@ -1139,7 +1179,7 @@ describe("the Panel (#1737)", () => {
     act(() => usingTheDefaultLayout());
 
     expect(panelShown(remembered("/one"))).toBe(true);
-    expect(slotSize("panel", inSlots(remembered("/one")).panel)).toBe(30);
+    expect(slotSize("panel", inSlots(remembered("/one")).panel)).toBe(34);
   });
 
   it("holds Changes in its left half, after Repos, and the left sidebar keeps Chats, Explorer and Search (#1739, P-2)", () => {
