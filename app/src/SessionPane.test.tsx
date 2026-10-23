@@ -11,7 +11,8 @@ import { ProjectShownProvider } from "./projectShown";
 import { forgetScreenReaderMode } from "./screenReader";
 import { DEFAULT_TEXT, forgetTextSizes, setTextSize } from "./textSize";
 import { GLOBAL } from "./windowprefs";
-import { BUILT_IN, DEFAULT_THEME, drawIn, xtermTheme } from "./theme/theme";
+import { DEFAULT_THEME, drawIn, xtermTheme } from "./theme/theme";
+import { PURLIS_LIGHT } from "./theme/handed.testkit";
 
 /**
  * **The terminal follows a theme switched while it is up** (M6.7).
@@ -49,7 +50,7 @@ vi.stubGlobal("matchMedia", (query: string) => ({
 }));
 
 const PLANE = "/planes/one";
-const LIGHT = BUILT_IN["purlis-light"];
+const LIGHT = PURLIS_LIGHT;
 
 beforeEach(() => {
   made.length = 0;

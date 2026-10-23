@@ -208,10 +208,14 @@ async function pressInTheTab(words: string): Promise<void> {
     `//div[@class="first-task"]//button[substring(normalize-space(), string-length(normalize-space()) - ${words.length - 1}) = "${words}"]`,
   );
   await button.waitForExist({ timeout: 30_000, timeoutMsg: `the First task tab has no ${words}` });
-  await browser.waitUntil(async () => await button.isEnabled(), {
-    timeout: 30_000,
-    timeoutMsg: `${words} never became pressable`,
-  });
+  await browser.waitUntil(
+    async () =>
+      (await button.isEnabled()) && (await button.getAttribute("aria-disabled")) !== "true",
+    {
+      timeout: 30_000,
+      timeoutMsg: `${words} never became pressable`,
+    },
+  );
   await browser.execute((el: HTMLElement) => el.click(), button as unknown as HTMLElement);
 }
 

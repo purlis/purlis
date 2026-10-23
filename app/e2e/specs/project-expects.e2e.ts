@@ -256,7 +256,7 @@ describe("the Notice of what a project expects", function () {
         await browser.execute(
           (strip: string, path: string) =>
             [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)]
-              .find((tab) => tab.getAttribute("title") === path)
+              .find((tab) => tab.getAttribute("data-directory") === path)
               ?.click(),
           PROJECTS,
           first,

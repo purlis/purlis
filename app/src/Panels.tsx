@@ -525,7 +525,7 @@ function AddTodo({
           // and the next todo is typed into the same box.
           isReadOnly={busy}
           isDisabled={readOnly !== undefined}
-          title={readOnly}
+          tooltip={readOnly}
           onChange={setText}
         />
       </Form>

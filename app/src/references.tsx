@@ -24,6 +24,8 @@ import { MessageSquarePlus } from "lucide-react";
 import { commands, type Handed, type PlaneId } from "./bindings";
 import type { Ran } from "./actions";
 import { Button, IconButton } from "./ui/button/Button";
+import { InlineMenu, Menu, MenuItem, MenuTrigger } from "./ui/menu/Menu";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** The drag's own type: only charter's rows carry it, so a file dragged in from the desktop or
  *  text from another app is never taken for a reference. */
@@ -154,32 +156,43 @@ export function useReferenceChats(): ChatsForReferences | undefined {
  */
 export function PickAChat({ referenced, how }: { referenced: Referenced; how: "ask" | "add" }) {
   const lent = useReferenceChats();
-  const [open, setOpen] = useState(false);
+  const [said, setSaid] = useState(false);
   const label = how === "ask" ? "Ask a chat about this" : "Add to a chat's context";
   if (lent === undefined) return null;
   const chats = lent.chats;
+  const button = (
+    <Button
+      size="sm"
+      variant="ghost"
+      icon={<MessageSquarePlus className="node-icon" aria-hidden="true" />}
+      onPress={chats.length === 0 ? () => setSaid((was) => !was) : undefined}
+      aria-expanded={chats.length === 0 ? said : undefined}
+    >
+      {label}
+    </Button>
+  );
+  // No chat to pick: the button says so in a line under it, and opens no empty menu.
+  if (chats.length === 0)
+    return (
+      <span className="pick-a-chat">
+        {button}
+        {said && <NoChatToPick />}
+      </span>
+    );
   return (
     <span className="pick-a-chat">
-      <Button
-        size="sm"
-        variant="ghost"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onPress={() => setOpen((was) => !was)}
-        icon={<MessageSquarePlus className="node-icon" aria-hidden="true" />}
-      >
-        {label}
-      </Button>
-      {open && (
-        <ChatsToPick
-          chats={chats}
-          label={label}
-          onPick={(chat) => {
-            setOpen(false);
-            lent.hand(referenced, chat.session, how);
-          }}
-        />
-      )}
+      <MenuTrigger>
+        {button}
+        <Menu aria-label={label}>
+          {chats.map((chat) => (
+            <ChatToPick
+              key={chat.session}
+              chat={chat}
+              onPick={() => lent.hand(referenced, chat.session, how)}
+            />
+          ))}
+        </Menu>
+      </MenuTrigger>
     </span>
   );
 }
@@ -209,43 +222,54 @@ export function StartAChatHere({ referenced }: { referenced: Referenced }) {
 const NO_CHAT_OPEN =
   "No chat is open in this project. Start one from the file's row with Start a chat here.";
 
+/** The sentence a picker says where the project has no chat to hand a reference to. */
+function NoChatToPick() {
+  return (
+    <span className="pick-a-chat-none" role="status">
+      {NO_CHAT_OPEN}
+    </span>
+  );
+}
+
+/** One chat of a picker, carrying its number: two chats may share a name, and a spec finds the
+ *  one it started by this (#1796). */
+function ChatToPick({ chat, onPick }: { chat: ChatHere; onPick: () => void }) {
+  return (
+    <MenuItem id={chat.session} textValue={chat.name} data-session={chat.session} onAction={onPick}>
+      {chat.name}
+    </MenuItem>
+  );
+}
+
 /**
- * **The chats to pick from**, as a menu named `label`: one item per chat, in the order given,
- * or the sentence that says none is open. `PickAChat` draws it under its button, and the Search
- * tab under its hits (#1151).
+ * **The chats to pick from**, as a menu named `label` drawn in place (`InlineMenu`): one row
+ * per chat, in the order given, walked by the arrows and chosen by Enter, or the sentence that
+ * says none is open. The Search tab draws it under its hits, and Add to a chat in its dialog
+ * (#1151).
  */
 export function ChatsToPick({
   chats,
   label,
+  autoFocus = false,
   onPick,
 }: {
   chats: readonly ChatHere[];
   label: string;
+  /** Takes the keyboard as it is drawn, on its first chat. */
+  autoFocus?: boolean;
   onPick: (chat: ChatHere) => void;
 }) {
-  if (chats.length === 0)
-    return (
-      <span className="pick-a-chat-none" role="status">
-        {NO_CHAT_OPEN}
-      </span>
-    );
+  if (chats.length === 0) return <NoChatToPick />;
   return (
-    <span className="pick-a-chat-list" role="menu" aria-label={label}>
+    <InlineMenu
+      className="pick-a-chat-list"
+      aria-label={label}
+      autoFocus={autoFocus ? "first" : undefined}
+    >
       {chats.map((chat) => (
-        <button
-          key={chat.session}
-          type="button"
-          role="menuitem"
-          tabIndex={0}
-          // The chat's number, as its pane and its Chats-list row carry it: two chats may share
-          // a name, and a spec finds the one it started by this (#1796).
-          data-session={chat.session}
-          onClick={() => onPick(chat)}
-        >
-          {chat.name}
-        </button>
+        <ChatToPick key={chat.session} chat={chat} onPick={() => onPick(chat)} />
       ))}
-    </span>
+    </InlineMenu>
   );
 }
 
@@ -255,15 +279,16 @@ export function ChatsToPick({
  */
 export function DragHandle({ referenced }: { referenced: Referenced }) {
   return (
-    <span
-      className="reference-handle"
-      draggable
-      role="note"
-      title="Drag onto a chat to type a reference to this into it"
-      data-testid="reference-handle"
-      onDragStart={(event) => dragReference(event, referenced)}
-    >
-      {referenceSaid(referenced)}
-    </span>
+    <Tooltip tip="Drag onto a chat to type a reference to this into it">
+      <span
+        className="reference-handle"
+        draggable
+        role="note"
+        data-testid="reference-handle"
+        onDragStart={(event) => dragReference(event, referenced)}
+      >
+        {referenceSaid(referenced)}
+      </span>
+    </Tooltip>
   );
 }

@@ -105,6 +105,10 @@ pub struct Wrap {
     /// The folders of this machine's profiles (`<data>/profiles`), denied to a chat but its own
     /// profile's.
     pub profiles: Option<PathBuf>,
+    /// The plane roots whose `workspaces` folder and each workspace's folder in it no chat
+    /// makes, moves or removes (#2046), set as the sandbox is compiled for a chat
+    /// ([`super::Form::hold_workspace_folders`]).
+    pub planes: Vec<PathBuf>,
 }
 
 /// The folders in the project's Codex home a turn writes into, each everything under it and
@@ -170,6 +174,7 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
         operator: compiled.homes.codex.clone(),
         former: compiled.homes.codex_project.clone(),
         profiles: compiled.homes.profiles.clone(),
+        planes: Vec::new(),
     })
 }
 
@@ -640,6 +645,8 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     };
     seatbelt::widen(&mut own, &wrap.widened)?;
     seatbelt::granted(&mut own, &wrap.granted)?;
+    own.deny
+        .extend(seatbelt::workspace_folder_rules(&wrap.planes)?);
     own.dirs.extend(wrap.operator.iter().cloned());
     // Codex's installed program, in the operator's home, is read to be run, never written.
     if let Some(operator) = &wrap.operator {

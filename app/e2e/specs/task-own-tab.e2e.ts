@@ -122,7 +122,8 @@ async function openMenuOf(session: number): Promise<void> {
       ?.click();
   }, SELECTED_TAB);
   await browser.waitUntil(
-    async () => browser.execute(() => document.querySelector('[role="menu"].tasks-menu') !== null),
+    async () =>
+      browser.execute(() => document.querySelector('.tasks-menu[data-part="root"]') !== null),
     { timeout: 10_000, interval: 100, timeoutMsg: `chat ${session}'s task menu never opened` },
   );
 }

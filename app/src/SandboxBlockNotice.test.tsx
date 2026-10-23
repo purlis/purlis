@@ -10,6 +10,7 @@ import type { ChatBlocked, PlaneId } from "./bindings";
 import { askOfBlock } from "./test-asks";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { heardMore } from "./refusedMore";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The host to allow, for a block that named none** (#626): the set's `Field`, in a form row
@@ -140,7 +141,7 @@ describe("the project-level Allow on a read-only project (#1759)", () => {
     const { sent } = drawn({ ...NAMED, levels: ["project"] }, SENTENCE);
     const everyone = screen.getByRole("button", { name: "Allow for everyone in this project" });
     expect(everyone).toHaveAttribute("aria-disabled", "true");
-    expect(everyone).toHaveAttribute("title", SENTENCE);
+    expect(tipOf(everyone)).toEqual(SENTENCE);
     await userEvent.click(everyone);
     expect(sent("allow_sandbox_block")).toEqual([]);
   });
@@ -149,8 +150,8 @@ describe("the project-level Allow on a read-only project (#1759)", () => {
     const { sent } = drawn(NAMED, SENTENCE);
     await userEvent.click(screen.getByRole("button", { name: "Other scopes…" }));
     const everyone = screen.getByRole("button", { name: "Allow for everyone in this project" });
-    expect(everyone).toBeDisabled();
-    expect(everyone).toHaveAttribute("title", SENTENCE);
+    expect(everyone).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(everyone)).toEqual(SENTENCE);
     await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
     await waitFor(() =>
       expect(sent("allow_sandbox_block")).toEqual([

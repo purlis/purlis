@@ -10,6 +10,7 @@ import { chatsTree, type ListedChat } from "./chatsTree";
 import { facetsOf } from "./projectViews";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
+import { getByTip } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The Chats list's folds across a relaunch** (#1687): a fold set by hand is kept by the
@@ -79,7 +80,7 @@ describe("the Chats list's folds (#1687)", () => {
   it("come back after a relaunch on the same chats under their new numbers", async () => {
     const first = draw(1, 2);
     expect(names()).toEqual(["steward 1", "devops 2"]);
-    await userEvent.click(screen.getByTitle("Fold the chats under steward 1"));
+    await userEvent.click(getByTip("Fold the chats under steward 1"));
     expect(names()).toEqual(["steward 1"]);
     // What the window writes for the project, read back from the file at the next launch.
     const written = facetsOf(PLANE);
@@ -99,7 +100,7 @@ describe("the Chats list's folds (#1687)", () => {
     draw(7, 8);
 
     await waitFor(() => expect(names()).toEqual(["steward 7"]));
-    await userEvent.click(screen.getByTitle("Show the chats under steward 7"));
+    await userEvent.click(getByTip("Show the chats under steward 7"));
     expect(names()).toEqual(["steward 7", "devops 8"]);
   });
 });

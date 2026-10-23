@@ -22,6 +22,7 @@ import type {
   VaultSummary,
 } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
+import { hoverTipOf, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 afterEach(() => {
   cleanup();
@@ -542,7 +543,7 @@ describe("charter's own panels", () => {
     expect(within(screen.getByTestId("panel-personas")).queryByText(/memories/)).toBeNull();
     expect(steward).toHaveClass("is-default");
     expect(devops).not.toHaveClass("is-default");
-    expect(within(steward).getByRole("button")).toHaveAttribute("title", "default · 2 memories");
+    expect(tipOf(within(steward).getByRole("button"))).toEqual("default · 2 memories");
   });
 });
 
@@ -561,7 +562,7 @@ describe("rows on the right are one line (#1674)", () => {
     const todos = screen.getByTestId("panel-todos");
     const todo = within(todos).getByRole("button", { name: "Review the rollout plan" });
     expect(todo).toHaveTextContent(/^Review the rollout plan$/);
-    expect(todo).toHaveAttribute("title", "2026-03-02");
+    expect(tipOf(todo)).toEqual("2026-03-02");
     expect(within(todos).getByRole("heading", { name: "Yesterday" })).toBeInTheDocument();
     expect(within(todos).getByRole("list", { name: "Yesterday" })).toContainElement(todo);
   });
@@ -573,7 +574,7 @@ describe("rows on the right are one line (#1674)", () => {
       name: "The API returns 418 on Mondays",
     });
     expect(memory).toHaveTextContent(/^The API returns 418 on Mondays$/);
-    expect(memory).toHaveAttribute("title", "2026-03-02 09:12");
+    expect(tipOf(memory)).toEqual("2026-03-02 09:12");
     expect(
       within(screen.getByTestId("panel-memory")).getByRole("heading", { name: "Yesterday" }),
     ).toBeInTheDocument();
@@ -990,7 +991,7 @@ describe("the shared row in Personas", () => {
       name: /^shared/,
     });
     expect(shared).toHaveTextContent(/^shared$/);
-    expect(shared).toHaveAttribute("title", "1 memory");
+    expect(tipOf(shared)).toEqual("1 memory");
     await userEvent.click(shared);
 
     expect(pressed.map((offer) => offer.id)).toEqual(["memory.shared"]);
@@ -1024,7 +1025,7 @@ describe("the Todos box on a read-only project (#826)", () => {
       name: "New todo in alpha",
     });
     expect(box).toBeDisabled();
-    expect(box).toHaveAttribute("title", SENTENCE);
+    expect(await hoverTipOf(box)).toEqual(SENTENCE);
     await userEvent.type(box, "Cut the release{Enter}");
     expect(added).toEqual([]);
   });

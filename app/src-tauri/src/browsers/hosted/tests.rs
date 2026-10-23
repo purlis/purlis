@@ -313,6 +313,19 @@ fn a_start_the_host_refused_for_the_engines_sandbox_is_not_started_for_it() {
     assert_eq!(super::not_started(refused, 3), NotStarted::NoSandbox);
 }
 
+#[test]
+fn a_start_whose_engine_download_the_person_cancelled_is_not_a_failure() {
+    // #2207: the host's words for a cancel, in the core's sentence, are told apart from any
+    // failure, so neither the chat nor the person is told to try again as if it broke.
+    use crate::chatbrowsers::NotStarted;
+    use purlis_session_protocol::session::Refusal;
+    let refused = Refusal {
+        code: "browser_failed".into(),
+        why: purlis_core::browsers::download_cancelled_said(),
+    };
+    assert_eq!(super::not_started(refused, 3), NotStarted::Cancelled);
+}
+
 /// A key the person pressed, aimed at what a frame said it showed.
 fn a_key(aim: &str) -> BrowserInput {
     BrowserInput::Key {

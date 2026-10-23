@@ -44,6 +44,8 @@ struct Hosted {
     at: Mutex<Option<String>>,
     /// The device's budget, where the host says it is reached.
     full: Mutex<Option<usize>>,
+    /// Where set, every start is refused so (#2207).
+    refuses: Mutex<Option<NotStarted>>,
     /// The browsers the host lists with a driver (#2023), and whether its list fails.
     host_drives: Mutex<Vec<String>>,
     list_fails: Mutex<bool>,
@@ -100,6 +102,9 @@ impl Driver for Hosted {
     ) -> Result<String, NotStarted> {
         if let Some(most) = *self.full.lock().unwrap() {
             return Err(NotStarted::Full { most });
+        }
+        if let Some(not) = self.refuses.lock().unwrap().clone() {
+            return Err(not);
         }
         self.kept.lock().unwrap().push(kept);
         let mut started = self.started.lock().unwrap();
@@ -517,6 +522,25 @@ fn past_the_devices_budget_a_chats_browser_is_refused_in_words_that_say_not_to_r
         "{why}"
     );
     assert!(why.contains("browser_close"), "{why}");
+    assert!(!why.contains("Try once more"), "{why}");
+}
+
+#[test]
+fn a_browser_whose_engine_download_the_person_cancelled_is_refused_in_words_that_say_not_to_retry()
+{
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    *hosted.refuses.lock().unwrap() = Some(NotStarted::Cancelled);
+
+    let why = refusal(answered(&browsers, &hosted, &ask(3, Browsing::New)).0);
+
+    assert!(
+        why.contains("The person cancelled the browser engine's download"),
+        "{why}"
+    );
+    assert!(why.contains("Don't retry"), "{why}");
     assert!(!why.contains("Try once more"), "{why}");
 }
 

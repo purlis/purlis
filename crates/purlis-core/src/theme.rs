@@ -24,12 +24,17 @@
 //!   and a key format 1 does not have, is said and left out; a value that is there and outside
 //!   its type or bound, a key format 2 does not have, geometry in format 1, or a document that
 //!   is not a theme **refuses the theme whole**
-//!   (ADR 0097 §2). A refused theme draws Purlis, and the complaints name each value.
+//!   (ADR 0097 §2). A refused theme draws the default, Purlis, and the complaints name each
+//!   value.
 //!   **It never fails**: ADR 0026 holds cold start at 2 s, and the window has to come up
 //!   whatever a file says.
-//! - [`classic`] is Purlis Classic, the theme purlis ships, compiled into the core from its theme
-//!   folder (`theme/built-in/purlis-classic/`); [`built_ins`] and [`built_in`] are its
-//!   appearances by the ids a pick names them by, old ones included (#1838).
+//! - **Two themes ship, compiled into the core from their folders** (`theme/built-in/`):
+//!   [`purlis`], the default ([`DEFAULT`], #3034), which [`default_theme`] draws when nothing
+//!   chose a theme; and [`classic`], Purlis Classic, the alternative a person or a project picks
+//!   by its id, `purlis-classic`. [`shipped_pick`] and [`built_in`] read a built-in pick: the
+//!   ids `purlis-dark` and `purlis-light`, and the ids they had before the rename (#1838), name
+//!   Purlis's dark and light now (#3034), as the default's appearances, so a file that holds one
+//!   draws Purlis; only `purlis-classic` names Classic. No file is rewritten.
 //! - [`resolve`] decides which theme, and which of its appearances, the window draws from every
 //!   source there is today: the project's or workspace's pick, the person's own theme file, the
 //!   themes approved extensions contribute, and the operating system's appearance ([`Inputs`]).
@@ -137,8 +142,8 @@ pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
 pub use tiers::Lifted;
 pub use tint::{
-    ACCENT_KIN, APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, hue_of,
-    tint_hex, tint_hex_within, tinted,
+    ACCENT_KIN, APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, chroma_for,
+    held_apart, hue_of, tint_hex, tint_hex_within, tinted,
 };
 pub use typed::Typed;
 use vocabulary::{
@@ -504,10 +509,10 @@ impl Resolved {
         Self::refusal(vec![Complaint::said(why)])
     }
 
-    /// The document refused, for `complaints`: Purlis is drawn in its place.
+    /// The document refused, for `complaints`: the default, Purlis, is drawn in its place.
     fn refusal(complaints: Vec<Complaint>) -> Self {
         Self {
-            theme: classic().clone(),
+            theme: purlis().clone(),
             complaints,
             refused: true,
         }
@@ -524,15 +529,16 @@ pub const CLASSIC_THEME_JSON: &str = CLASSIC_FILE;
 /// Purlis Classic's id: its folder's name, which a theme `extends` it by.
 pub const CLASSIC: &str = "purlis-classic";
 
-/// **Purlis Classic**, the theme purlis ships: today's look, a dark and a light appearance. Its
-/// appearances are named by the ids a pick names them by ([`crate::extension::BUILT_IN_THEMES`],
-/// which a test holds to these), dark first: the theme the window comes up in.
+/// **Purlis Classic**, the alternative built-in theme (#3034): the look purlis had before Purlis
+/// became the default, a dark and a light appearance, dark first, each named by the theme's name.
+/// A pick names it by its id ([`CLASSIC`]) and an appearance. Every token a theme does not name falls back to Classic's of its appearance
+/// ([`built_in_for`]), so a theme written before the switch draws as it did.
 pub fn classic() -> &'static Theme {
     static BUILT: OnceLock<Theme> = OnceLock::new();
     BUILT.get_or_init(|| built_in_of(CLASSIC_FILE))
 }
 
-/// **The appearances purlis ships**, dark first: Purlis Classic's.
+/// **Purlis Classic's appearances**, dark first.
 pub fn built_ins() -> &'static [ResolvedTheme] {
     &classic().appearances
 }
@@ -547,17 +553,12 @@ fn built_in_of(text: &str) -> Theme {
         .and_then(Value::as_str)
         .expect("a built-in theme has a name")
         .to_owned();
-    let picks = [
-        crate::names::THEME_DARK.write,
-        crate::names::THEME_LIGHT.write,
-    ];
     let appearances = document
         .get("appearances")
         .and_then(Value::as_array)
         .expect("a built-in theme has appearances")
         .iter()
-        .zip(picks)
-        .map(|(one, pick)| {
+        .map(|one| {
             let field = |key: &str| one.get(key).and_then(Value::as_str);
             let appearance = match field("appearance") {
                 Some("light") => Appearance::Light,
@@ -580,7 +581,7 @@ fn built_in_of(text: &str) -> Theme {
             let typed = typed::complete(tokens)
                 .unwrap_or_else(|missing| panic!("the built-in theme {name} has no {missing}"));
             ResolvedTheme {
-                name: pick.to_owned(),
+                name: name.clone(),
                 id: field("id")
                     .expect("a built-in appearance has an id")
                     .to_owned(),
@@ -624,10 +625,18 @@ fn motion_of(raw: Option<&Value>) -> Result<Motion, &'static str> {
 /// by. No theme folder takes it.
 pub const PURLIS: &str = "purlis";
 
-/// Whether the built-in theme `id` ships as a preview: Purlis, until it becomes the default
-/// (spec #2313, "Preview theme"). The gallery and `purlis theme list` say so beside its name.
+/// **The theme drawn when nothing chose one** (#3034): Purlis. A pick that cannot be drawn draws
+/// it too. Purlis Classic stays a theme a person or a project picks ([`CLASSIC`]).
+pub const DEFAULT: &str = PURLIS;
+
+/// The built-in themes that ship as a preview (spec #2313, "Preview theme"): none, since Purlis
+/// became the default (#3034).
+const PREVIEWS: &[&str] = &[];
+
+/// Whether the built-in theme `id` ships as a preview. The gallery and `purlis theme list` say
+/// so beside its name.
 pub fn is_preview(id: &str) -> bool {
-    id == PURLIS
+    PREVIEWS.contains(&id)
 }
 
 /// Purlis's folder, compiled in: its `theme.json`, its icon set and its fonts.
@@ -682,10 +691,9 @@ mod purlis_folder {
 
 /// **Purlis** (#2336), built from the designer's foundation (`docs/design/foundation/`): a dark
 /// appearance, a light one derived from it and a high-contrast dark, in IBM Plex Sans and
-/// JetBrains Mono with Lucide's icons. It ships as a preview ([`is_preview`]) and is not the
-/// default: [`default_theme`] is Purlis Classic's until the switch-over. Its folder is read as
-/// any theme folder is, from the files compiled in; a test proves it complete and clean, so a gap
-/// here is a defect of this build.
+/// JetBrains Mono with Lucide's icons. It is the default ([`DEFAULT`], #3034): [`default_theme`]
+/// is its dark. Its folder is read as any theme folder is, from the files compiled in; a test
+/// proves it complete and clean, so a gap here is a defect of this build.
 pub fn purlis() -> &'static Theme {
     static BUILT: OnceLock<Theme> = OnceLock::new();
     BUILT.get_or_init(|| {
@@ -728,44 +736,63 @@ pub fn purlis_files() -> Files {
     files
 }
 
-/// **The theme built into purlis that `id` names**: Purlis Classic by its id or an id its
-/// appearances have had, or Purlis by its id; `None` for any other.
+/// **The theme built into purlis that `id` names**: Purlis by its id, by `purlis-dark` or
+/// `purlis-light`, or by an id either had before the rename; Purlis Classic by its id; `None` for
+/// any other.
 pub fn shipped(id: &str) -> Option<&'static Theme> {
-    if id == PURLIS {
-        return Some(purlis());
-    }
-    built_in(id).map(|_| classic())
+    shipped_pick(id).map(|(theme, _)| theme)
 }
 
-/// The appearance purlis draws when nothing has said otherwise: Purlis Classic's dark.
+/// **What a built-in pick names** (#3034): the theme, and the appearance its id implies, by the
+/// appearance's id. `purlis-dark` and `charter-dark` name Purlis's first appearance, its dark
+/// (`None`, so more contrast draws its high-contrast dark, as nothing chosen does);
+/// `purlis-light` and `charter-light` its `light`; `purlis` Purlis, `purlis-classic` Purlis
+/// Classic, each with no appearance implied. Those ids were written as a pick of the default's
+/// dark or light, so they draw the default's; only `purlis-classic` names Classic.
+pub fn shipped_pick(id: &str) -> Option<(&'static Theme, Option<&'static str>)> {
+    if id == CLASSIC {
+        return Some((classic(), None));
+    }
+    if id == PURLIS || crate::names::THEME_DARK.recognises(id) {
+        return Some((purlis(), None));
+    }
+    crate::names::THEME_LIGHT
+        .recognises(id)
+        .then_some((purlis(), Some(LIGHT)))
+}
+
+/// The id of Purlis's light appearance, which `purlis-light` names.
+const LIGHT: &str = "light";
+
+/// The appearance purlis draws when nothing has said otherwise: Purlis's dark (#3034).
 pub fn default_theme() -> &'static ResolvedTheme {
-    classic().first()
+    purlis().first()
+}
+
+/// The appearance purlis draws when nothing chose a theme, with `contrast` asked for: Purlis's
+/// dark, or its high-contrast dark when more contrast is asked for.
+pub fn default_for(contrast: Contrast) -> &'static ResolvedTheme {
+    purlis().first_for(contrast)
 }
 
 /// Purlis Classic's appearance of `appearance`: what a theme's appearance of that tag falls back
 /// to, token by token.
 pub fn built_in_for(appearance: Appearance) -> &'static ResolvedTheme {
-    classic().of(appearance).unwrap_or_else(default_theme)
+    classic()
+        .of(appearance)
+        .unwrap_or_else(|| classic().first())
 }
 
-/// The built-in appearance `id` names, by its id or by an id it had before the rename (#1838):
-/// the old ids map as the spec's table says, each to Purlis Classic's appearance of its tag
-/// until the switch-over to Purlis. Purlis Classic and Purlis by their own ids are each theme's
-/// first appearance.
+/// **The built-in appearance `id` names** ([`shipped_pick`]): Purlis's dark by `purlis-dark` or
+/// `charter-dark`, its light by `purlis-light` or `charter-light` (#3034); Purlis and Purlis
+/// Classic by their own ids are each theme's first appearance.
 pub fn built_in(id: &str) -> Option<&'static ResolvedTheme> {
-    // Purlis Classic by its own id is the theme, which draws its first appearance when nothing
-    // chose another; so is Purlis by its own (#2336).
-    if id == CLASSIC {
-        return Some(classic().first());
-    }
-    if id == PURLIS {
-        return Some(purlis().first());
-    }
-    let id = [crate::names::THEME_DARK, crate::names::THEME_LIGHT]
-        .into_iter()
-        .find(|name| name.recognises(id))
-        .map_or(id, |name| name.write);
-    built_ins().iter().find(|theme| theme.name == id)
+    let (theme, implied) = shipped_pick(id)?;
+    Some(
+        implied
+            .and_then(|wanted| theme.appearances.iter().find(|one| one.id == wanted))
+            .unwrap_or_else(|| theme.first()),
+    )
 }
 
 /// Why a format 1 theme that names geometry is refused, after the key that named it: geometry

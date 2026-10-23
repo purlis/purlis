@@ -174,7 +174,11 @@ describe("a workspace's changes", function () {
       timeout: 30_000,
       timeoutMsg: "the push question never named svc",
     });
-    expect(await asking.$("button=Push").isEnabled()).toBe(false);
+    const push = asking.$("button=Push");
+    // Off: disabled, or unavailable and kept in reach for its reason (#2908).
+    expect((await push.isEnabled()) && (await push.getAttribute("aria-disabled")) !== "true").toBe(
+      false,
+    );
     await asking.$("button=Cancel").click();
     await asking.waitForExist({ timeout: 10_000, reverse: true });
   });

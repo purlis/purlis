@@ -8,6 +8,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { NeedsYouButton, type Quiet } from "./NeedsYou";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 afterEach(cleanup);
 
@@ -94,7 +95,7 @@ describe("the muted hand: a chat that cannot say it is waiting (charter-app#52, 
     });
     expect(hand).toHaveAttribute("data-tone", "quiet");
     expect(hand).toHaveAttribute("data-variant", "pill");
-    expect(hand).toHaveAttribute("title", hand.getAttribute("aria-label"));
+    expect(tipOf(hand)).toEqual(hand.getAttribute("aria-label"));
     expect(hand).toHaveTextContent(/^$/);
     expect(hand).toHaveAttribute("tabindex", "0");
   });

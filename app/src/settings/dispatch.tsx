@@ -461,7 +461,7 @@ function useDispatchTable(
                         <Button
                           aria-label={`Remove the override for ${whose}`}
                           isDisabled={offFor(one) !== undefined}
-                          title={offFor(one)}
+                          tooltip={offFor(one)}
                           onPress={() => remove(one)}
                         >
                           Remove override
@@ -534,7 +534,7 @@ function useDispatchTable(
             />
             <Button
               isDisabled={chosen === undefined || readOnly !== undefined}
-              title={readOnly}
+              tooltip={readOnly}
               onPress={() => {
                 if (chosen === undefined) return;
                 setDrafts((was) => [...was, chosen]);

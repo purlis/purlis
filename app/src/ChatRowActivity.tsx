@@ -3,6 +3,7 @@
 
 import { memo } from "react";
 import { saidWhole, useDoingSaid } from "./chatDoing";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **What a working chat is doing, in one line** (#1493, V100-42): "running cargo", "editing
@@ -53,8 +54,10 @@ export const ChatDoingLine = memo(function ChatDoingLine({
   );
   if (heard) return <p className="chat-doing">{words}</p>;
   return (
-    <span className="chat-doing" id={id} aria-hidden="true" title={saidWhole(says)}>
-      {words}
-    </span>
+    <Tooltip tip={saidWhole(says)}>
+      <span className="chat-doing" id={id} aria-hidden="true">
+        {words}
+      </span>
+    </Tooltip>
   );
 });

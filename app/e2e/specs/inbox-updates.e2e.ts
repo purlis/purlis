@@ -87,7 +87,10 @@ async function pressInUpdates(words: string): Promise<void> {
   const pressed = await browser.execute(
     (section: string, said: string) => {
       const button = [...document.querySelectorAll<HTMLButtonElement>(`${section} button`)].find(
-        (one) => one.textContent?.trim() === said && !one.disabled,
+        (one) =>
+          one.textContent?.trim() === said &&
+          !one.disabled &&
+          one.getAttribute("aria-disabled") !== "true",
       );
       button?.click();
       return button !== undefined;
@@ -126,7 +129,7 @@ describe("the Inbox's updates", function () {
         await browser.execute(
           (strip: string, path: string) =>
             [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)]
-              .find((tab) => tab.getAttribute("title") === path)
+              .find((tab) => tab.getAttribute("data-directory") === path)
               ?.click(),
           PROJECTS,
           first,

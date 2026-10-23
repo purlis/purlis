@@ -44,12 +44,9 @@ export function AddToAChat({
           className="ui-dialog warning"
           aria-describedby={undefined}
           onOpenAutoFocus={(event) => {
-            // The keyboard starts on the first chat, as the vault picker's starts on its first row.
-            const first = list.current?.querySelector<HTMLElement>("button");
-            if (first) {
-              event.preventDefault();
-              first.focus();
-            }
+            // The keyboard starts on the first chat, as the vault picker's starts on its first
+            // row: the list takes it as it is drawn.
+            if (chats.length > 0) event.preventDefault();
           }}
         >
           <Dialog.Title>{label}</Dialog.Title>
@@ -57,6 +54,7 @@ export function AddToAChat({
             <ChatsToPick
               chats={chats}
               label="Chats"
+              autoFocus
               onPick={(chat) => {
                 onCancel();
                 onPick(chat);

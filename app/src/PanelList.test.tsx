@@ -10,6 +10,7 @@ import type { Offer } from "./actions";
 import type { PanelRow } from "./bindings";
 import { drawnWith } from "./cascade.testkit";
 import { wears } from "./textRoles.testkit";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 afterEach(cleanup);
 
@@ -116,8 +117,8 @@ describe("a row is one line", () => {
     draw([row("a", long), row("b", "Short")]);
 
     const [shortened, fits] = screen.getAllByRole("button");
-    expect(shortened.querySelector(".row-text")).toHaveAttribute("title", long);
-    expect(fits.querySelector(".row-text")).not.toHaveAttribute("title");
+    expect(tipOf(shortened.querySelector(".row-text"))).toEqual(long);
+    expect(tipOf(fits.querySelector(".row-text"))).toBeNull();
   });
 
   it("carries no native title on a row that opens a tab, which holds the whole of it", () => {
@@ -126,7 +127,7 @@ describe("a row is one line", () => {
     const long = `Land ${"the contract ".repeat(8)}`.trim();
     draw([row("a", long, { runs: "memory.open:shared/a" })]);
 
-    expect(screen.getByRole("button").querySelector(".row-text")).not.toHaveAttribute("title");
+    expect(tipOf(screen.getByRole("button").querySelector(".row-text"))).toBeNull();
   });
 });
 
@@ -413,8 +414,8 @@ describe("an empty list's way out", () => {
     );
 
     const button = within(screen.getByTestId("list-empty")).getByRole("button");
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute("title", "No project is open.");
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(button)).toEqual("No project is open.");
   });
 
   it("draws a command in code font, without its backticks", () => {
@@ -492,7 +493,7 @@ describe("a row on the right is its title alone (#1674)", () => {
 
     const button = screen.getByRole("button", { name: "Deploys freeze on Fridays" });
     expect(button).toHaveTextContent(/^Deploys freeze on Fridays$/);
-    expect(button).toHaveAttribute("title", "2026-10-10 09:12");
+    expect(tipOf(button)).toEqual("2026-10-10 09:12");
   });
 
   it("keeps the note beside the title where a list is not one of the right side's", () => {

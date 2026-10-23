@@ -327,7 +327,7 @@ export function UpdateItem({
             data-testid="status-update"
             data-kind={state.kind}
             aria-label={label}
-            title={label}
+            tooltip={label}
             icon={
               state.kind === "installing" ? (
                 <LoaderCircle aria-hidden="true" className="spinning" />
@@ -518,7 +518,7 @@ export function usePin(plane: PlaneId): {
  * read (`trouble`), which it says rather than hiding.
  *
  * **Named by its words** ("Pin 9.0.0", WCAG 2.5.3, as the kill switch is); the sentence that
- * says both versions is its `title`, read as its description.
+ * says both versions is its tooltip, its description while it is shown.
  */
 export function PinItem({
   pin,
@@ -541,7 +541,7 @@ export function PinItem({
       <Dialog.Trigger asChild>
         <StatusItem
           data-testid="status-pin"
-          title={label}
+          tooltip={label}
           tone="waiting"
           icon={<Pin aria-hidden="true" />}
         >

@@ -99,6 +99,8 @@ import { TaskChangesTab } from "./TaskChangesTab";
 import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } from "./taskChanges";
 import { PROPOSED_CHANGE_VIEW } from "./proposedChangeOpen";
 import { ProposedChangeTab } from "./ProposedChangeTab";
+import { RUNNER_WRITE_VIEW } from "./runnerWriteOpen";
+import { RunnerWriteTab } from "./RunnerWriteTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
@@ -127,6 +129,7 @@ import {
   type About,
 } from "./planeChanged";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What `workspaceSettingsView` names Settings at a workspace's level (SE-20). */
 const WORKSPACE_SETTINGS = "workspace-settings";
@@ -307,6 +310,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [TASK_CHANGES_VIEW]: GitCompare,
   /** A change a chat proposed, whole (#1975, `proposedChangeOpen.ts`). */
   [PROPOSED_CHANGE_VIEW]: GitCompare,
+  /** A runner chat's change to the project, whole (#2046, `runnerWriteOpen.ts`). */
+  [RUNNER_WRITE_VIEW]: GitCompare,
   /** A browser, drawn live (#2012, `browsers.ts`). */
   [BROWSER_VIEW]: Globe,
 };
@@ -475,7 +480,7 @@ export function ViewPane({
             <Button
               size="sm"
               key={`${one.extension}/${one.id}`}
-              title={`Asks ${one.extension}, in a tab of its own`}
+              tooltip={`Asks ${one.extension}, in a tab of its own`}
               onPress={() => onOpenView({ from: one.extension, view: one.id, key }, called)}
               icon={<ChartColumn className="node-icon" aria-hidden="true" />}
             >
@@ -509,6 +514,10 @@ export function ViewPane({
             plane={plane}
             id={Number(view.key)}
           />
+        ) : view.from === null && view.view === RUNNER_WRITE_VIEW ? (
+          /* A runner chat's change to the project, whole, with Apply where it may be applied
+             (#2046). Keyed by the held change, which is the project's. */
+          <RunnerWriteTab key={`${plane}\u0000${view.key}`} plane={plane} id={Number(view.key)} />
         ) : isBrowser(view) ? (
           /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the
              browser, so a pane that comes to show another one opens its own view. */
@@ -782,7 +791,7 @@ function OfferButton({ offer, onPress }: { offer?: Offer; onPress?: (offer: Offe
     <Button
       size="sm"
       isDisabled={!offer.available}
-      title={offer.available ? offer.note : offer.reason}
+      tooltip={offer.available ? offer.note : offer.reason}
       onPress={() => onPress(offer)}
     >
       {offer.title}
@@ -1362,9 +1371,9 @@ function ChartPoint({
   const size = `${percent}%`;
   return (
     <li className="chart-point">
-      <span className="chart-label" title={point.label}>
-        {point.label}
-      </span>
+      <Tooltip tip={point.label}>
+        <span className="chart-label">{point.label}</span>
+      </Tooltip>
       <span className="chart-track" aria-hidden="true">
         <span
           className="chart-bar"
