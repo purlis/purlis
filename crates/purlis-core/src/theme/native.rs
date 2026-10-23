@@ -15,7 +15,9 @@
 use std::sync::Arc;
 
 use super::vocabulary::is_colour;
-use super::{Appearance, Drawn, LevelInputs, ResolvedTheme, default_theme, draw, resolve_levels};
+use super::{
+    Appearance, Drawn, LevelInputs, ResolvedTheme, default_for, default_theme, draw, resolve_levels,
+};
 
 /// **What the operating system draws of the window**: the appearance its own parts take, and
 /// the colour the window is before the page paints, opaque.
@@ -82,7 +84,7 @@ pub fn first_frame(inputs: &LevelInputs<'_>) -> Drawn {
         return drawn;
     }
     inputs.theirs.map_or_else(
-        || draw(default_theme()),
+        || draw(default_for(inputs.contrast)),
         |theme| draw(theme.first_for(inputs.contrast)),
     )
 }

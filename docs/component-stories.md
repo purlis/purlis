@@ -50,7 +50,11 @@ stops Storybook and the stories from loading, rather than drawing the fallback.
 **The themes are the core's.** A story's page cannot ask the core for anything, so what the core
 hands a window for each built-in appearance is kept in `app/.storybook/built-in-themes.json`, and
 a test of the app's crate (`app/src-tauri/src/storythemes.rs`) fails when it is not what the core
-resolves now. After a change to a built-in theme, write it again and commit it:
+resolves now. Beside it, `app/.storybook/at-creation.json` names, by theme and appearance, what a
+window is handed as it is created: the default's appearance, Purlis's dark (#3034), and each
+built-in pick's. A unit test's window and a story's page are handed those, and the toolbar
+starts on the default's cell; the same test holds the file to the core, so no story file spells
+a default. After a change to a built-in theme, write both again and commit them:
 
 ```bash
 mkdir -p app/dist && PURLIS_WRITE_STORY_THEMES=1 cargo test -p purlis-app --lib storythemes

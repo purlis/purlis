@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { ActivityBar, VIEW_MARKS, type Tabbed } from "./ActivityBar";
 import { symbolOf } from "./theme/railIcons";
-import { DEFAULT_THEME, drawIn, type Theme } from "./theme/theme";
+import { CLASSIC_THEME, drawIn, type Theme } from "./theme/theme";
 
 /**
  * **A theme's icon set on the rails** (#2337): the view a theme draws is its symbol, stroked as
@@ -35,19 +35,19 @@ function bar() {
 const iconOf = (name: string) => screen.getByRole("tab", { name }).querySelector("svg");
 
 const DUSK: Theme = {
-  ...DEFAULT_THEME,
+  ...CLASSIC_THEME,
   name: "Dusk",
   icons: { chats: { paths: ["M3 3h18v18H3z", "M8 8h8"] } },
 };
 
 afterEach(() => {
-  act(() => drawIn(DEFAULT_THEME));
+  act(() => drawIn(CLASSIC_THEME));
   cleanup();
 });
 
 describe("the rails' icons", () => {
   it("are the window's own marks under Purlis Classic", () => {
-    act(() => drawIn(DEFAULT_THEME));
+    act(() => drawIn(CLASSIC_THEME));
     bar();
     for (const name of ["Chats", "Search"]) {
       expect(iconOf(name)?.classList.contains("lucide")).toBe(true);
@@ -75,18 +75,19 @@ describe("the rails' icons", () => {
   });
 
   it("follow the theme in force as it changes", () => {
+    act(() => drawIn(CLASSIC_THEME));
     bar();
     expect(iconOf("Chats")?.classList.contains("lucide")).toBe(true);
     act(() => drawIn(DUSK));
     expect(iconOf("Chats")?.getAttribute("data-icon")).toBe("chats");
-    act(() => drawIn(DEFAULT_THEME));
+    act(() => drawIn(CLASSIC_THEME));
     expect(iconOf("Chats")?.classList.contains("lucide")).toBe(true);
   });
 
   it("draw no path outside the path grammar, whatever reached the window", () => {
     act(() =>
       drawIn({
-        ...DEFAULT_THEME,
+        ...CLASSIC_THEME,
         name: "Odd",
         icons: { chats: { paths: ["M1 1h2", 'M1 1"/><g onload="x', "L1 1"] } },
       }),

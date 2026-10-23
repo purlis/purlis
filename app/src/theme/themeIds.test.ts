@@ -6,7 +6,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BUILT_IN_ICONS, DEFAULT_ICONS, ICON_THEME_ALIASES, builtInIcons } from "./icons";
-import { BUILT_IN, DEFAULT_THEME, THEME_ALIASES } from "./theme";
+import { BUILT_IN, CLASSIC_THEME, DEFAULT_THEME, THEME_ALIASES } from "./theme";
+import { PURLIS_LIGHT } from "./handed.testkit";
 
 /**
  * **The built-in themes' ids** (#1838, the #1719 theme-id item). The two themes are
@@ -35,10 +36,18 @@ function nameEntry(source: string, constant: string): { write: string; reads: st
 
 describe("the built-in themes' ids", () => {
   it("are purlis-dark and purlis-light, and the window comes up in the dark one", () => {
-    expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-dark", "purlis-light"]);
-    expect(BUILT_IN["purlis-dark"].appearance).toBe("dark");
-    expect(BUILT_IN["purlis-light"].appearance).toBe("light");
-    expect(DEFAULT_THEME).toBe(BUILT_IN["purlis-dark"]);
+    // `purlis-dark` and `purlis-light` name Purlis's dark and light; `purlis-classic` Classic.
+    // Handed: the default's pick and Classic's; `purlis-light` asks the core (#3034).
+    expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-classic", "purlis-dark"]);
+    expect([BUILT_IN["purlis-dark"].name, BUILT_IN["purlis-dark"].appearance]).toEqual([
+      "Purlis",
+      "dark",
+    ]);
+    expect([PURLIS_LIGHT.name, PURLIS_LIGHT.appearance]).toEqual(["Purlis", "light"]);
+    // Purlis Classic's dark by its pick id; the window comes up in Purlis's (#3034).
+    expect(CLASSIC_THEME).toBe(BUILT_IN["purlis-classic"]);
+    expect(CLASSIC_THEME.name).toBe("Purlis Classic");
+    expect(DEFAULT_THEME).toEqual(BUILT_IN["purlis-dark"]);
   });
 
   it("name a built-in for each old id: which theme an old id draws is the core's", () => {
@@ -46,9 +55,10 @@ describe("the built-in themes' ids", () => {
     // appearance; the window spells the old ids only to label a pick that names one.
     const old = Object.keys(THEME_ALIASES);
     expect(old.length).toBeGreaterThan(0);
+    const drawn = (pick: string) => (pick === "purlis-light" ? PURLIS_LIGHT : BUILT_IN[pick]);
     for (const id of old) {
-      expect(BUILT_IN[THEME_ALIASES[id]], `${id} names no built-in`).toBeDefined();
-      expect(BUILT_IN[THEME_ALIASES[id]].appearance).toBe(id.endsWith("light") ? "light" : "dark");
+      expect(drawn(THEME_ALIASES[id]), `${id} names no built-in`).toBeDefined();
+      expect(drawn(THEME_ALIASES[id]).appearance).toBe(id.endsWith("light") ? "light" : "dark");
     }
   });
 
@@ -59,8 +69,8 @@ describe("the built-in themes' ids", () => {
     for (const constant of ["THEME_DARK", "THEME_LIGHT"]) {
       const { write, reads } = nameEntry(source, constant);
       expect(
-        BUILT_IN[write],
-        `${constant} writes ${write}, which the window does not ship`,
+        write === "purlis-light" ? PURLIS_LIGHT : BUILT_IN[write],
+        `${constant} writes ${write}, which names no built-in`,
       ).toBeDefined();
       for (const old of reads) fromCore[old] = write;
     }

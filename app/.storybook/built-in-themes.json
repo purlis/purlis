@@ -1596,7 +1596,7 @@
   },
   "purlis-classic": {
     "dark": {
-      "name": "purlis-dark",
+      "name": "Purlis Classic",
       "appearance": "dark",
       "values": {
         "accent.base": "#52c4a6",
@@ -1989,7 +1989,7 @@
       "parts": ""
     },
     "light": {
-      "name": "purlis-light",
+      "name": "Purlis Classic",
       "appearance": "light",
       "values": {
         "accent.base": "#086a56",

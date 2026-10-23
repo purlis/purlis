@@ -314,9 +314,10 @@ to change that changes one value rather than hunting for the second one.
 
 ## The brand: Verdigris
 
-purlis ships **Purlis Classic**, one theme folder with a dark and a light appearance
-(`crates/purlis-core/src/theme/built-in/purlis-classic/theme.json`), picked as `purlis-dark` and
-`purlis-light`. Both appearances are drawn in **Verdigris** (#1838, the operator's D1 and D4 on #1832): a slightly desaturated teal
+purlis ships two themes: **Purlis**, the default (below, #3034), and **Purlis Classic**, the
+alternative, one theme folder with a dark and a light appearance
+(`crates/purlis-core/src/theme/built-in/purlis-classic/theme.json`), picked as
+`purlis-classic` with an appearance. Both appearances are drawn in **Verdigris** (#1838, the operator's D1 and D4 on #1832): a slightly desaturated teal
 accent on warm-grey neutrals. It is calm and technical, easy on the eyes in a long session, and
 not the blue most developer tools use.
 
@@ -352,20 +353,40 @@ in Settings.
 `themeIds.test.ts` holds the two tables to each other and fails on an old id spelled anywhere
 else in the window; `no_old_name_is_spelled_outside_the_name_module` does the same for the Rust.
 A file that still names an old id is shown in Settings under the renamed theme's label. Nothing
-rewrites the file; the next pick made in Settings writes the new id.
+rewrites the file; the next pick made in Settings writes the new id. Now that Purlis is the
+default (#3034), `purlis-dark` and `purlis-light`, and their old ids, name Purlis's dark and
+light (`theme::shipped_pick`): they were written as the default's dark or light, so they draw the
+default's. Settings no longer offers them, and labels a file that holds one. The old `system` id
+follows the system with the person's own theme, else Purlis. Only `purlis-classic` names
+Classic.
 
-### Purlis, the preview theme
+### Purlis, the default theme
 
 **Purlis** (#2336) is the second built-in theme, built from the designer's foundation
 (`docs/design/foundation/README.md`): a lavender accent on cool dark neutrals, in IBM Plex Sans
 for the interface and JetBrains Mono for code, paths and the terminal, with Lucide's icons. Its
 folder is `crates/purlis-core/src/theme/built-in/purlis/`, compiled into the core and read by
 the same reader as any theme folder, its fonts and icon set included (`theme::purlis`). A pick
-names it `purlis`; no theme folder takes that id, and a theme may `extend` it. It ships as a
-**preview**: the gallery marks its card Preview, `purlis theme list` names it "Purlis
-(preview)", each built-in theme's entry in `purlis theme list --json` has `"preview"` (true for
-Purlis, false for Purlis Classic, absent on every other theme), and Purlis Classic stays the
-theme the window comes up in until the switch-over (#2338).
+names it `purlis`; no theme folder takes that id, and a theme may `extend` it.
+
+**It is the default** (#3034, the operator's ruling of 2026-10-22; folds in #2338): where no level
+chose a theme, the window draws Purlis's dark (`theme::DEFAULT`, `theme::default_theme`), or its
+high-contrast dark when the system asks for more contrast, and a pick that cannot be drawn draws
+it too. The window is handed it as it is created (`default_theme`, and by `purlis-dark` beside
+Classic's dark by `purlis-classic`, `windowprefs.rs`); Purlis's light is not handed, since its
+parts are measured across every tint before they are drawn, and a pick of `purlis-light` asks
+the core. Its faces wait for the first frame to be on screen (`holdFacesForTheFirstFrame`,
+ADR 0026's 2 s cold start). The gallery and `purlis theme list` show it first, then Purlis Classic, and
+a new theme draft extends it. No stored value is rewritten; how one is read is the table under
+**The ids** above: `purlis-classic` draws Classic, and every other built-in id draws Purlis. A
+token a theme does not name still falls back to Classic's of its appearance, so a theme written
+before the switch draws as it did. A workspace's colour dims only the tokens a tint rule holds
+apart from danger (`tint::chroma_for`); its strip keeps the colour's full hue in Purlis too.
+No built-in theme ships as a preview now; each built-in theme's entry in `purlis theme list
+--json` keeps its `"preview"` key, false for both. The component stories run in every cell of
+the theme matrix, and Storybook starts on the default's cell, which
+`app/.storybook/at-creation.json` names and a test of the app's core holds to the engine
+(`docs/component-stories.md`).
 
 It has three appearances, `dark`, `light` and `dark-high-contrast` (dark, high contrast), each
 naming every token itself, so nothing in it is Purlis Classic's by falling back. Every
