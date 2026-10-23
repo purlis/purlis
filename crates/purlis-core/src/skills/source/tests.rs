@@ -1330,7 +1330,9 @@ fn a_private_sources_token_reaches_its_own_host_alone_through_a_401_and_a_redire
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     // Each request's host and the credential it carried, if any.
-    let seen: Arc<Mutex<Vec<(String, Option<String>)>>> = Arc::new(Mutex::new(Vec::new()));
+    /// One request the server took: its host, and the credential it carried.
+    type Asked = (String, Option<String>);
+    let seen: Arc<Mutex<Vec<Asked>>> = Arc::new(Mutex::new(Vec::new()));
     {
         let seen = Arc::clone(&seen);
         std::thread::spawn(move || {
