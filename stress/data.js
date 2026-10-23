@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792761793671,
+  "lastUpdate": 1792765467456,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6248,6 +6248,42 @@ window.BENCHMARK_DATA = {
             "value": 504.1,
             "unit": "MB",
             "extra": "median of 6 samples: 489.9, 496.5, 503.6, 504.6, 505.6, 579.8 MB; window 240.8 MB, session host 262.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4772ca211f9ba863516fedfe71b673b73816ad45",
+          "message": "Bump the actions group across 1 directory with 2 updates (#3057)\n\nBumps the actions group with 2 updates in the / directory: [taiki-e/install-action](https://github.com/taiki-e/install-action) and [github/codeql-action/upload-sarif](https://github.com/github/codeql-action).\n\n\nUpdates `taiki-e/install-action` from 2.87.28 to 2.87.29\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/1168f6810a3cb30a3514bf5756a3b7f0422c6df8...8cca0918f8471c33515202b73f56ab27f2bed283)\n\nUpdates `github/codeql-action/upload-sarif` from 4.38.3 to 4.39.0\n- [Release notes](https://github.com/github/codeql-action/releases)\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/github/codeql-action/compare/24c54180a607b1449ed407dd24f251e4e9147c8d...6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.87.29\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: actions\n- dependency-name: github/codeql-action/upload-sarif\n  dependency-version: 4.39.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: actions\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-23T17:24:33+04:00",
+          "tree_id": "53214594c3b0864f54ba3cd91444d59d2c9995ff",
+          "url": "https://github.com/purlis/purlis/commit/4772ca211f9ba863516fedfe71b673b73816ad45"
+        },
+        "date": 1792765465534,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1095,
+            "unit": "MB",
+            "extra": "median of 3 samples: 793, 1095, 1438 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 358.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 354.2, 388, 358.9, 358.7, 359.9, 232.5 MB; window 200.6 MB, session host 158.8 MB"
           }
         ]
       }
