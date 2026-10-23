@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792759178205,
+  "lastUpdate": 1792761728407,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6212,6 +6212,42 @@ window.BENCHMARK_DATA = {
             "value": 382.7,
             "unit": "MB",
             "extra": "median of 6 samples: 363.4, 405.2, 381.1, 384.2, 385.2, 281 MB; window 206.6 MB, session host 176.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "50cd58b9415dd176f7c6e5947552715c378ad8ab",
+          "message": "Bump ubuntu in /runner-image in the runner-image group (#3053)\n\nBumps the runner-image group in /runner-image with 1 update: ubuntu.\n\n\nUpdates `ubuntu` from `f144425` to `c098726`\n\n---\nupdated-dependencies:\n- dependency-name: ubuntu\n  dependency-version: '26.04'\n  dependency-type: direct:production\n  dependency-group: runner-image\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-23T16:27:45+04:00",
+          "tree_id": "1107bae05e87856de16d9357d67aafc6fbc55a9c",
+          "url": "https://github.com/purlis/purlis/commit/50cd58b9415dd176f7c6e5947552715c378ad8ab"
+        },
+        "date": 1792761726232,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 592,
+            "unit": "MB",
+            "extra": "median of 3 samples: 575, 592, 684 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 504.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 489.9, 496.5, 503.6, 504.6, 505.6, 579.8 MB; window 240.8 MB, session host 262.9 MB"
           }
         ]
       }
