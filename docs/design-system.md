@@ -157,7 +157,7 @@ the badge that failed is the count of chats waiting for the operator. `needs-you
 cannot make that move; that is the whole argument for semantic names in one change.
 
 It paid again the other way (#1210). `danger.base` is the _words_ of an answer that ends
-something (`.ends-it` in an `AnswerBar`, a form's `SettingActions` and a menu), and `#c05c5c` on
+something (`.ends-it` in the answer bar a dialog's footer has since replaced, a form's `SettingActions` and a menu), and `#c05c5c` on
 the button's `control.base` was **3.73:1**, under the 4.5:1 that text at the window's 14px asks
 for. purlis-dark's `danger.base` is now `#c97474`, the same hue made lighter: **4.50:1** on
 `control.base` (Verdigris's warm `#262623`, #1838), 4.94:1 on `danger.surface` (the same button
@@ -2125,44 +2125,31 @@ SettingActions in `app/src/settings/components.tsx`, six thin pieces over the Ra
 and native elements already in use, drawn in tokens. `docs/ui-primitives.md` gives the reasons. Nothing else joins it without a new
 amendment.
 
-**The answer bar** (`app/src/AnswerBar.tsx`, #1210) is the one row a question dialog is answered
-from: the quit warning, a delete's confirm, approving a project, Restart to update, About. A
-question with a way out and an act or two and nothing to fill in ends in it, as a form ends in
-`SettingActions`. It is a `<div className="answer">` and no more, so it is neither a settings
-piece nor an API in front of a primitive: the buttons inside it are native `<button>`s, or
-Radix's own `Cancel`, `Action` and `Close` around one, written by the dialog. The rules it
-carries are the dialog's to keep, and every question keeps the same ones:
+**A dialog's footer** (the dialog family, `app/src/ui/dialog/Dialog.tsx`, #2910, which replaced
+the answer bar of #1210) is the one row every dialog is answered from, a question's and a form's
+alike: the quit warning, a delete's confirm, approving a project, Restart to update, About, New
+workspace, Rename, Start a chat. Its answers are the dialog's props, so the rules are kept by
+construction:
 
-- **At the trailing edge.** `.answer` is a flex row pushed to the end, with a gap, so every
-  question's answers stand where the reader's eye ends the dialog.
-- **The way out first, then the acts**, and the answer that moves things on last, at the edge:
-  Cancel then Delete, Close then Read again, Cancel then Close then Smart close.
-  A question asked inline, where the press that raised it was made, keeps the same order:
-  a task's second step reads Keep, then Stop it (#1719).
-- **What cannot be taken back says so** with `ends-it` (which acts those are: `ui-primitives.md`,
-  D-1719-3), and it is never the one Return finds:
-  the dialog focuses its way out (or, for Reopen your sessions, the answer that loses nothing;
-  for a confirm by typed name, the name box, whose Return ends nothing until the name is exact,
-  D-1210-9).
-- **Focus and Escape stay the dialog's.** The bar handles no key. Escape is the dialog's Cancel,
-  or whatever that dialog says it is.
+- **At the trailing edge, always in view.** The footer is the dialog's last row, under its rule,
+  and the body above it is what scrolls, so every dialog's answers stand where the reader's eye
+  ends it.
+- **The way out first, then at most one other answer, and the main action last**, at the edge,
+  in the same place in every dialog: Cancel then Delete, Close then Check again then Install,
+  Cancel then Close then Smart close, Cancel then Create workspace. **One rule for forms and
+  questions** (N2): a form's act no longer leads its row, as `SettingActions` had it (V89j); it is
+  the footer's main action, trailing.
+- **What cannot be taken back says so** with `danger` (which acts those are: `ui-primitives.md`,
+  D-1719-3), and it is never the one Return finds from a field: an alert dialog starts on its way
+  out (or, for Reopen your sessions, the answer that loses nothing). A confirm by typed name keeps
+  its exception (D-1210-9): its keyboard lands in the name box, and Return there deletes only
+  once the name is typed exactly, while the delete is enabled.
+- **⏎ is the main action and Esc closes.** Return in a field answers with the main action;
+  Start a chat's is pressed, never found by Return, since a start runs a command. Escape is the
+  dialog's way out, or whatever that dialog says it is.
 
-`answerBar.guard.test.ts` fails on a dialog that builds an `answer` or `doing` row by hand, and
-on a dialog that puts an `ends-it` act in a form's `SettingActions` (D-1210-8).
-
-**One rule for both rows.** A form's `SettingActions` stands at the leading edge, in the form's
-flow, with its act first (Create workspace, then Cancel). A question's bar stands at the
-trailing edge with its act last. In both, the act that moves things on stands at the edge the
-row is anchored to, and the way out sits inward of it. A dialog that holds a form that makes or
-changes something (New vault, Rename, Start a chat) ends in the form's row, not the bar. Start
-a chat keeps Cancel focused and has no `<form>`, so a stray Return never starts it: a start runs
-a command. Its Approve and start is the form's act, not a confirm (D-1719-3): the command is
-said above it before the press, and the chat it starts can be closed. **A confirm whose
-only field is the typed name of what it ends is a question** (D-1210-8): Delete vault ends in the
-bar, Cancel first and the delete last, as Delete workspace does. Its keyboard lands in the name
-box, because typing is the answer, and Return there deletes only once the name is typed exactly
-(D-1210-9). Whether every dialog that holds a form should end at the trailing edge would amend
-V89j, and is left open.
+`dialogAnswers.guard.test.ts` fails on a dialog that builds an answer row by hand, and on a
+dialog that puts a `danger` act in a form's `SettingActions` (D-1210-8).
 
 **Lucide** is the icon set (`lucide-react`). The property that matters is that it draws with
 `stroke="currentColor"` and `fill="none"`, so an icon takes the colour of the text it sits in

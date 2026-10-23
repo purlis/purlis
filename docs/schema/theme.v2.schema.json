@@ -387,7 +387,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 6): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 7): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -3521,6 +3521,546 @@
           "$ref": "#/$defs/part-text"
         },
         "menu.indicator.danger.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "dialog.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "dialog.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.pressed.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.open.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.open.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.dialog.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.dialog.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.dialog.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "dialog.root.dialog.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "dialog.root.dialog.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.dialog.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.dialog.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.dialog.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.dialog.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.dialog.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.dialog.pressed.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.dialog.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.dialog.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.dialog.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.dialog.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.dialog.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.dialog.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.dialog.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.dialog.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.dialog.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.dialog.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.dialog.open.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.dialog.open.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.alert.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.alert.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.alert.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "dialog.root.alert.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "dialog.root.alert.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.alert.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.alert.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.alert.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.alert.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.alert.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.alert.pressed.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.alert.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.alert.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.alert.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.alert.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.alert.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.alert.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.alert.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.alert.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.alert.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.root.alert.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.root.alert.open.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "dialog.root.alert.open.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "dialog.title.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "dialog.title.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "dialog.title.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.dialog.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.dialog.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "dialog.title.dialog.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "dialog.title.dialog.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.dialog.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.dialog.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.dialog.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.dialog.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.dialog.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.alert.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.alert.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "dialog.title.alert.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "dialog.title.alert.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.alert.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.alert.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.alert.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.alert.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.title.alert.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.dialog.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.dialog.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.dialog.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.dialog.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.dialog.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.dialog.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.dialog.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.alert.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.alert.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.alert.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.alert.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.alert.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.alert.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.subtitle.alert.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.dialog.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.dialog.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.dialog.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.dialog.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.dialog.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.dialog.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.dialog.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.alert.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.alert.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.alert.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.alert.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.alert.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.alert.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.description.alert.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.separator.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.dialog.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.dialog.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.dialog.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.dialog.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.dialog.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.dialog.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.dialog.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.alert.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.alert.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.alert.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.alert.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.alert.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.alert.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.separator.alert.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "dialog.summary.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.dialog.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.dialog.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.dialog.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.dialog.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.dialog.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.dialog.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.dialog.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.alert.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.alert.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.alert.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.alert.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.alert.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.alert.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "dialog.summary.alert.open.text": {
           "$ref": "#/$defs/part-text"
         }
       }

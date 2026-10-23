@@ -20,7 +20,6 @@ import { EditorView, lineNumbers } from "@codemirror/view";
 import { rust } from "@codemirror/lang-rust";
 import { Terminal } from "@xterm/xterm";
 import { Notice, NoticeList } from "../Notice";
-import { AnswerBar } from "../AnswerBar";
 import {
   Choice,
   Field,
@@ -34,6 +33,7 @@ import { DEFAULT_TEXT } from "../textDefaults";
 import { drawnFont, xtermTheme, type Theme } from "../theme/theme";
 import { CHAT_LINES, EDITOR_FILE, EDITOR_TEXT, TERMINAL_LINES } from "./fixture";
 import { Button } from "../ui/button/Button";
+import { DialogInPlace } from "../ui/dialog/Dialog";
 
 /** What a control is handed to do: nothing, the specimen never changes. */
 const still = () => {};
@@ -230,24 +230,22 @@ function SpecimenSettings() {
   );
 }
 
-/** A dialog, drawn in place: the dialog surface and its answer bar, open, with nothing behind
- *  it to hold. */
+/** A dialog, drawn in place: the dialog family's surface, rows and footer, open, with nothing
+ *  behind it to hold. */
 export function SpecimenDialog() {
   return (
-    <div className="ui-dialog warning" role="dialog" aria-labelledby="specimen-dialog-title">
-      <h2 id="specimen-dialog-title">Delete the branch sample/header?</h2>
-      <p className="came-back">Its two commits are not on any other branch.</p>
+    <DialogInPlace
+      onClose={still}
+      title="Delete the branch sample/header?"
+      titleId="specimen-dialog-title"
+      description={<p className="came-back">Its two commits are not on any other branch.</p>}
+      main={{ children: "Delete branch", variant: "danger", onPress: still }}
+    >
       <SettingRow
         label="Type sample/header to confirm"
         control={(ids) => <Field ids={ids} kind="text" value="sample/he" onChange={still} />}
       />
-      <AnswerBar>
-        <Button onPress={still}>Cancel</Button>
-        <Button variant="danger" onPress={still}>
-          Delete branch
-        </Button>
-      </AnswerBar>
-    </div>
+    </DialogInPlace>
   );
 }
 

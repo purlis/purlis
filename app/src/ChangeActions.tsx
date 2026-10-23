@@ -1,13 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState } from "react";
-import * as AlertDialog from "./overlays/alert-dialog";
+import { useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { commands, type LandQuestion, type PlaneId, type PushQuestion } from "./bindings";
 import { Choice, SettingRow } from "./settings/components";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { AlertDialog, type DialogProps } from "./ui/dialog/Dialog";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -47,42 +45,38 @@ export function askLand(
   return asked(() => commands.changeLandQuestion(plane, workspace, change, repo));
 }
 
-/** The buttons a question ends with: Cancel, which has the focus, then the act at the edge. */
-function Doing({
+/** The answers a question ends with: Cancel, which has the focus, then the act at the edge.
+ *  The act stays in its place once it has run, done, and Cancel says Close. */
+function doing({
   act,
   running,
   done,
   disabled,
   onAct,
-  cancel,
 }: {
   act: string;
   running: boolean;
   done: boolean;
   disabled?: boolean;
   onAct: () => void;
-  cancel: React.RefObject<HTMLButtonElement | null>;
-}) {
-  return (
-    <AnswerBar>
-      <AlertDialog.Cancel asChild>
-        <Button isDisabled={running} ref={cancel}>
-          {done ? "Close" : "Cancel"}
-        </Button>
-      </AlertDialog.Cancel>
-      {!done && (
-        <Button
-          variant="danger"
-          isDisabled={running || disabled}
-          aria-busy={running}
-          onPress={onAct}
-        >
-          {running && <LoaderCircle className="node-icon spinning" aria-hidden="true" />}
-          {act}
-        </Button>
-      )}
-    </AnswerBar>
-  );
+}): Pick<DialogProps, "cancel" | "main"> {
+  return {
+    cancel: {
+      children: done ? "Close" : "Cancel",
+      reserve: ["Cancel", "Close"],
+      isDisabled: running,
+    },
+    main: {
+      children: act,
+      icon: running ? (
+        <LoaderCircle className="node-icon spinning" aria-hidden="true" />
+      ) : undefined,
+      variant: "danger",
+      isDisabled: running || disabled || done,
+      "aria-busy": running,
+      onPress: onAct,
+    },
+  };
 }
 
 /** What an act came to: the core's lines, or its refusal. */
@@ -125,7 +119,6 @@ export function PushAsk({
   const [question, setQuestion] = useState<Said<PushQuestion>>();
   const [running, setRunning] = useState(false);
   const [ran, setRan] = useState<Said<string[]>>();
-  const cancel = useRef<HTMLButtonElement>(null);
 
   // Bumped when a push was refused: what it would push now is asked again, so the list on
   // screen is always the one the next press hands back.
@@ -156,78 +149,66 @@ export function PushAsk({
 
   const done = ran !== undefined && "ok" in ran;
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open && !running) onClose(ran !== undefined);
+    <AlertDialog
+      onClose={() => {
+        if (!running) onClose(ran !== undefined);
       }}
+      title={`Push ${change}?`}
+      description={
+        question === undefined ? (
+          <p className="pending" aria-busy="true">
+            <LoaderCircle className="node-icon spinning" aria-hidden="true" />
+            Reading where each branch goes…
+          </p>
+        ) : "refused" in question ? (
+          <p className="trouble" role="alert">
+            {question.refused}
+          </p>
+        ) : (
+          <p className="came-back">
+            {question.ok.destinations.length === 0
+              ? "No member of this change can be pushed."
+              : "Each branch is pushed to its own name, and only fast-forwarded: nothing is committed and nothing is forced. Then each request is opened or found, and its description gets the change's links."}
+          </p>
+        )
+      }
+      {...doing({
+        act: "Push",
+        running,
+        done,
+        disabled:
+          question === undefined || "refused" in question || question.ok.destinations.length === 0,
+        onAct: () => {
+          if (question !== undefined && "ok" in question) push(question.ok.destinations);
+        },
+      })}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <AlertDialog.Title>Push {change}?</AlertDialog.Title>
-          {question === undefined ? (
-            <AlertDialog.Description className="pending" aria-busy="true">
-              <LoaderCircle className="node-icon spinning" aria-hidden="true" />
-              Reading where each branch goes…
-            </AlertDialog.Description>
-          ) : "refused" in question ? (
-            <AlertDialog.Description className="trouble" role="alert">
-              {question.refused}
-            </AlertDialog.Description>
-          ) : (
-            <>
-              <AlertDialog.Description className="came-back">
-                {question.ok.destinations.length === 0
-                  ? "No member of this change can be pushed."
-                  : "Each branch is pushed to its own name, and only fast-forwarded: nothing is committed and nothing is forced. Then each request is opened or found, and its description gets the change's links."}
-              </AlertDialog.Description>
-              {question.ok.destinations.length > 0 && (
-                <ul className="saving-files" aria-label="What is pushed">
-                  {question.ok.destinations.map((d) => (
-                    <li key={d.repo}>
-                      <strong>{d.repo}</strong>: branch {d.branch} at {d.head_short} → {d.to}
-                      {d.base !== null && `, its ${d.request} into ${d.base}`}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {question.ok.not_pushed.map((line, at) => (
-                <p key={at} className="trouble" role="alert">
-                  {line}
-                </p>
+      {question !== undefined && "ok" in question && (
+        <>
+          {question.ok.destinations.length > 0 && (
+            <ul className="saving-files" aria-label="What is pushed">
+              {question.ok.destinations.map((d) => (
+                <li key={d.repo}>
+                  <strong>{d.repo}</strong>: branch {d.branch} at {d.head_short} → {d.to}
+                  {d.base !== null && `, its ${d.request} into ${d.base}`}
+                </li>
               ))}
-            </>
+            </ul>
           )}
-          {ran !== undefined && (
-            <Outcome
-              lines={"ok" in ran ? ran.ok : undefined}
-              refused={"refused" in ran ? ran.refused : undefined}
-            />
-          )}
-          <Doing
-            act="Push"
-            running={running}
-            done={done}
-            disabled={
-              question === undefined ||
-              "refused" in question ||
-              question.ok.destinations.length === 0
-            }
-            onAct={() => {
-              if (question !== undefined && "ok" in question) push(question.ok.destinations);
-            }}
-            cancel={cancel}
-          />
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+          {question.ok.not_pushed.map((line, at) => (
+            <p key={at} className="trouble" role="alert">
+              {line}
+            </p>
+          ))}
+        </>
+      )}
+      {ran !== undefined && (
+        <Outcome
+          lines={"ok" in ran ? ran.ok : undefined}
+          refused={"refused" in ran ? ran.refused : undefined}
+        />
+      )}
+    </AlertDialog>
   );
 }
 
@@ -257,7 +238,6 @@ export function LandAsk({
   // or, after a landing was refused, the core's answer asked again — `undefined` while that
   // is asked, and a refusal when its gates now refuse.
   const [now, setNow] = useState<Said<LandQuestion> | undefined>({ ok: question });
-  const cancel = useRef<HTMLButtonElement>(null);
   const q = now !== undefined && "ok" in now ? now.ok : question;
   const askable = now !== undefined && "ok" in now;
   const done = ran !== undefined && "ok" in ran;
@@ -278,92 +258,81 @@ export function LandAsk({
   };
 
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open && !running) onClose(ran !== undefined);
+    <AlertDialog
+      onClose={() => {
+        if (!running) onClose(ran !== undefined);
       }}
+      title={
+        <>
+          {q.through === "record" ? "Record" : "Land"} {q.repo}&apos;s {q.request} {q.sigil}
+          {q.number}?
+        </>
+      }
+      description={<p className="came-back">{q.how}</p>}
+      {...doing({
+        act: q.through === "record" ? "Record" : "Land",
+        running,
+        done,
+        disabled: !askable,
+        onAct: land,
+      })}
     >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content
-          className="ui-dialog warning"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <AlertDialog.Title>
-            {q.through === "record" ? "Record" : "Land"} {q.repo}&apos;s {q.request} {q.sigil}
-            {q.number}?
-          </AlertDialog.Title>
-          <AlertDialog.Description className="came-back">{q.how}</AlertDialog.Description>
-          {now === undefined && (
-            <p className="pending" aria-busy="true">
-              <LoaderCircle className="node-icon spinning" aria-hidden="true" />
-              Checking it again…
-            </p>
-          )}
-          {now !== undefined && "refused" in now && (
-            <p className="trouble" role="alert">
-              {now.refused}
-            </p>
-          )}
-          <dl className="facts">
-            <dt>change</dt>
-            <dd>{change}</dd>
-            <dt>{q.request}</dt>
-            <dd>{q.url}</dd>
-            <dt>head</dt>
-            <dd>
-              <Tooltip tip={q.head}>
-                <code>{q.head}</code>
-              </Tooltip>
-            </dd>
-            <dt>how</dt>
-            <dd>
-              {q.through === "queue"
-                ? `into the ${q.queue}`
-                : q.through === "record"
-                  ? "recorded only"
-                  : `merged now, at ${q.head_short}`}
-            </dd>
-          </dl>
-          {q.said.map((line, at) => (
-            <p key={at} className="note">
-              {line}
-            </p>
-          ))}
-          {q.squash && !done && (
-            <SettingRow
-              label="Squash it into one commit"
-              control={(ids) => (
-                <Choice
-                  ids={ids}
-                  kind="toggle"
-                  checked={squash}
-                  disabled={running}
-                  onCheckedChange={setSquash}
-                />
-              )}
+      {now === undefined && (
+        <p className="pending" aria-busy="true">
+          <LoaderCircle className="node-icon spinning" aria-hidden="true" />
+          Checking it again…
+        </p>
+      )}
+      {now !== undefined && "refused" in now && (
+        <p className="trouble" role="alert">
+          {now.refused}
+        </p>
+      )}
+      <dl className="facts">
+        <dt>change</dt>
+        <dd>{change}</dd>
+        <dt>{q.request}</dt>
+        <dd>{q.url}</dd>
+        <dt>head</dt>
+        <dd>
+          <Tooltip tip={q.head}>
+            <code>{q.head}</code>
+          </Tooltip>
+        </dd>
+        <dt>how</dt>
+        <dd>
+          {q.through === "queue"
+            ? `into the ${q.queue}`
+            : q.through === "record"
+              ? "recorded only"
+              : `merged now, at ${q.head_short}`}
+        </dd>
+      </dl>
+      {q.said.map((line, at) => (
+        <p key={at} className="note">
+          {line}
+        </p>
+      ))}
+      {q.squash && !done && (
+        <SettingRow
+          label="Squash it into one commit"
+          control={(ids) => (
+            <Choice
+              ids={ids}
+              kind="toggle"
+              checked={squash}
+              disabled={running}
+              onCheckedChange={setSquash}
             />
           )}
-          {ran !== undefined && (
-            <Outcome
-              lines={"ok" in ran ? ran.ok : undefined}
-              refused={"refused" in ran ? ran.refused : undefined}
-            />
-          )}
-          <Doing
-            act={q.through === "record" ? "Record" : "Land"}
-            running={running}
-            done={done}
-            disabled={!askable}
-            onAct={land}
-            cancel={cancel}
-          />
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+        />
+      )}
+      {ran !== undefined && (
+        <Outcome
+          lines={"ok" in ran ? ran.ok : undefined}
+          refused={"refused" in ran ? ran.refused : undefined}
+        />
+      )}
+    </AlertDialog>
   );
 }

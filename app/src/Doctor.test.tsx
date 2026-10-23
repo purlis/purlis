@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { answersOf } from "./ui/dialog/dialog.testkit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -581,7 +582,7 @@ describe("the git identity form (FX-3)", () => {
 
     await userEvent.type(within(form).getByLabelText("Name"), "Ann Example");
     await userEvent.type(within(form).getByLabelText("Email"), "ann@example.invalid");
-    await userEvent.click(within(form).getByRole("button", { name: "Set identity" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Set identity" }));
 
     expect(asked).toContainEqual([
       "plane_doctor_fix_identity",
@@ -613,7 +614,7 @@ describe("the git identity form (FX-3)", () => {
     const { dialog, form } = await openForm();
     await userEvent.type(within(form).getByLabelText("Name"), "Ann");
     await userEvent.type(within(form).getByLabelText("Email"), "nope");
-    await userEvent.click(within(form).getByRole("button", { name: "Set identity" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Set identity" }));
 
     const email = within(form).getByLabelText("Email");
     await waitFor(() => expect(email).toHaveAccessibleDescription(/does not look like an email/));
@@ -633,11 +634,15 @@ describe("the git identity form (FX-3)", () => {
       return cmd === "plane_doctor" ? report([unset]) : null;
     });
     render(<Wired />);
-    const { dialog, form } = await openForm();
+    const { dialog } = await openForm();
 
-    await userEvent.click(within(form).getByRole("button", { name: "Cancel" }));
+    // The form's answers are the dialog's while it is open, in its footer: Cancel first and the
+    // main action last, where it is in every dialog (#2910).
+    expect(answersOf(dialog)).toEqual(["Cancel", "Set identity"]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(within(dialog).queryByRole("form", { name: "Git identity" })).toBeNull();
+    expect(answersOf(dialog)).toEqual(["Close", "Check again"]);
     expect(asked).not.toContain("plane_doctor_fix_identity");
   });
 });
@@ -703,7 +708,7 @@ describe("the git identity form fills in, never replaces (FX-3, D-FX3-8)", () =>
     await waitFor(() => expect(email).toHaveFocus());
 
     await userEvent.type(email, "bea@example.invalid");
-    await userEvent.click(within(form).getByRole("button", { name: "Set identity" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Set identity" }));
 
     expect(asked).toContainEqual([
       "plane_doctor_fix_identity",

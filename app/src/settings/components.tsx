@@ -973,7 +973,7 @@ export function Choice(props: ChoiceProps) {
  * them all alike, from the same tokens as a row's reset; a button on a page whose act cannot
  * be undone from purlis says so with `className="ends-it"` (D-1719-3,
  * `docs/ui-primitives.md`). A dialog never puts one here: a confirm that
- * ends something is a question, and ends in the `AnswerBar` (D-1210-8, `answerBar.guard.test.ts`).
+ * ends something is a question, and ends in the dialog's footer (D-1210-8, `dialogAnswers.guard.test.ts`).
  *
  * Every button in it still needs `tabIndex={0}`: WebKit leaves a `<button>` out of the Tab order
  * without one (#190), and the row cannot add it to buttons it does not draw.

@@ -3,14 +3,13 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import type { PoolLink, PoolRow, PoolVersion, ProjectNotHeld } from "../bindings";
-import * as AlertDialog from "../overlays/alert-dialog";
-import { AnswerBar } from "../AnswerBar";
 import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
 import { askLink, askVersion, removePool, startAddingAPool, usePools } from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button } from "../ui/button/Button";
 import { Tooltip } from "../ui/tooltip/Tooltip";
+import { AlertDialog } from "../ui/dialog/Dialog";
 
 /**
  * **You › This machine › Pools** (#2679, the person's rulings of 2026-10-20): the Docker pools
@@ -116,32 +115,17 @@ export function RemovePool({
   onCancel: () => void;
 }) {
   return (
-    <AlertDialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
-    >
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="ui-scrim" />
-        <AlertDialog.Content className="ui-dialog warning">
-          <AlertDialog.Title>Remove pool {name}?</AlertDialog.Title>
-          <AlertDialog.Description className="came-back">
-            Its runner&apos;s container and home are removed from your Docker, with everything chats
-            left in them, and this machine is taken out of the runner&apos;s peers. There is no
-            undo.
-          </AlertDialog.Description>
-          <AnswerBar>
-            <AlertDialog.Cancel asChild>
-              <Button onPress={onCancel}>Cancel</Button>
-            </AlertDialog.Cancel>
-            <Button variant="danger" onPress={onRemove}>
-              Remove pool
-            </Button>
-          </AnswerBar>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+    <AlertDialog
+      onClose={onCancel}
+      title={`Remove pool ${name}?`}
+      description={
+        <p className="came-back">
+          Its runner&apos;s container and home are removed from your Docker, with everything chats
+          left in them, and this machine is taken out of the runner&apos;s peers. There is no undo.
+        </p>
+      }
+      main={{ children: "Remove pool", variant: "danger", onPress: onRemove }}
+    />
   );
 }
 

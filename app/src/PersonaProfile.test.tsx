@@ -113,6 +113,7 @@ describe("a persona's profile, set from its view (#1445)", () => {
     const { dialog } = draw({ read: null, unreadable: "no persona 'ops' on this plane" });
 
     expect(within(dialog).getByRole("alert")).toHaveTextContent("no persona 'ops'");
-    expect(within(dialog).queryByRole("button", { name: "Save profile" })).not.toBeInTheDocument();
+    // In its place, with nothing it can save (#2910): the footer does not move as it reads.
+    expect(within(dialog).getByRole("button", { name: "Save profile" })).toBeDisabled();
   });
 });

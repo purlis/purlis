@@ -327,7 +327,7 @@ describe("RequestMerge", () => {
     // Another project comes to the front: nothing of this one is drawn over it.
     rerender(under(false));
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(document.querySelector(".ui-scrim")).toBeNull();
+    expect(document.querySelector('[data-scope="dialog"][data-part="scrim"]')).toBeNull();
     expect(sent.filter((one) => one.cmd === "merge_save_request")).toEqual([]);
 
     // Back in front: the same question, about what the look found, and its answer carries

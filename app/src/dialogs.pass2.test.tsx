@@ -171,7 +171,7 @@ describe("asking a persona", () => {
     );
 
     const dialog = screen.getByRole("dialog", { name: "Ask devops" });
-    expect(dialog.querySelector(".where")?.textContent).toBe("From steward 3");
+    expect(dialog.querySelector('[data-part="subtitle"]')?.textContent).toBe("From steward 3");
     expect(within(dialog).getByLabelText("Task name")).toHaveAttribute(
       "placeholder",
       "Check the queue",

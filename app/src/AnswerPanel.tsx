@@ -1,11 +1,17 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext, useContext, useRef, type ReactNode } from "react";
-import * as Dialog from "./overlays/dialog";
-import { AnswerQuestion } from "./AnswerQuestion";
+import { createContext, useContext, type ReactNode } from "react";
+import {
+  AnswerBox,
+  answerHowSaid,
+  NoQuestion,
+  ReadingTheQuestion,
+  useAnswerQuestion,
+} from "./AnswerQuestion";
 import { useKeyboardBack } from "./Brief";
 import type { PlaneId } from "./bindings";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * **Answer a task's question from where the task is listed** (#1496, #1551): its row in the
@@ -72,43 +78,55 @@ export function AnswerPanel({
   onClose: () => void;
 }) {
   const handBack = useKeyboardBack();
-  const content = useRef<HTMLDivElement>(null);
+  const answering = useAnswerQuestion({
+    plane,
+    session: of.chat,
+    task: of.name,
+    closed: asking ? undefined : noLongerAsking(of.name),
+    onDone: onClose,
+  });
+  const { asked, refused, shut, sending, send, ids } = answering;
+  const title = (
+    <>
+      Answer <bdi>{of.name}</bdi>&apos;s question
+    </>
+  );
+  // **The keyboard is in the dialog from its first frame**, in every state: on the dialog itself
+  // while the question is read, or where there is none to answer (then Tab reaches Close and
+  // nothing behind it), and in the box once the form has it. Send and Cancel are the footer's.
+  const answers = asked !== undefined && asked !== null;
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <Dialog
+      onClose={onClose}
+      title={title}
+      className="answer-panel"
+      initialFocus="dialog"
+      afterClose={handBack}
+      summary={
+        answers && shut === undefined ? (
+          <span id={`${ids}-how`}>{answerHowSaid(of.name)}</span>
+        ) : undefined
+      }
+      cancel={{ children: answers && shut === undefined ? "Cancel" : "Close" }}
+      main={
+        answers
+          ? {
+              children: "Send",
+              isDisabled: sending || shut !== undefined,
+              onPress: () => void send(),
+            }
+          : undefined
+      }
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          ref={content}
-          className="ui-dialog warning answer-panel"
-          aria-describedby={undefined}
-          // **The keyboard is in the dialog from its first frame**, in every state: on the
-          // dialog itself while the question is read, or where there is none to answer (then
-          // Tab reaches Close and nothing behind it), and in the box once the form has it.
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            content.current?.focus();
-          }}
-          onPointerDownOutside={(event) => event.preventDefault()}
-          onCloseAutoFocus={handBack}
-        >
-          <Dialog.Title>
-            Answer <bdi>{of.name}</bdi>&apos;s question
-          </Dialog.Title>
-          <AnswerQuestion
-            plane={plane}
-            session={of.chat}
-            task={of.name}
-            closed={asking ? undefined : noLongerAsking(of.name)}
-            onDone={onClose}
-            onCancel={onClose}
-          />
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      <div data-testid="answer-question">
+        {asked === undefined ? (
+          <ReadingTheQuestion />
+        ) : asked === null ? (
+          <NoQuestion task={of.name} refused={refused} />
+        ) : (
+          <AnswerBox answering={answering} />
+        )}
+      </div>
+    </Dialog>
   );
 }
