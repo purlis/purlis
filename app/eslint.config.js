@@ -97,7 +97,7 @@ export default tseslint.config(
       "purlis/choice-family": "warn",
       // The menu, context menu and popover families have moved (#2909).
       "purlis/menu-family": "error",
-      "purlis/dialog-family": "warn",
+      "purlis/dialog-family": "error",
       "purlis/tooltip-family": ["error", { handsOn: ["Select"] }],
       "purlis/panel-family": "error",
       "purlis/panel-section-family": "error",

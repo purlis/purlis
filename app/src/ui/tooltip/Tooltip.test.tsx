@@ -12,10 +12,10 @@ import { cloneElement, useEffect, useRef, useState, type ReactElement } from "re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import { ProjectShownProvider } from "../../projectShown";
 import { Button, IconButton, ToggleButton } from "../button/Button";
+import { Dialog } from "../dialog/Dialog";
 import { StatusCell, StatusItem } from "../status/StatusItem";
 import {
   Tooltip,
@@ -201,14 +201,9 @@ describe("a tooltip from the keyboard", () => {
     function Asking() {
       const [open, setOpen] = useState(true);
       return open ? (
-        <Dialog.Root open onOpenChange={setOpen}>
-          <Dialog.Portal>
-            <Dialog.Content aria-describedby={undefined}>
-              <Dialog.Title>Delete persona steward?</Dialog.Title>
-              <Button tooltip="Its memory is archived, never removed">Delete</Button>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
+        <Dialog onClose={() => setOpen(false)} title="Delete persona steward?" cancel={false}>
+          <Button tooltip="Its memory is archived, never removed">Delete</Button>
+        </Dialog>
       ) : (
         <p>closed</p>
       );

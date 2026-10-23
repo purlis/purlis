@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { answersOf } from "./ui/dialog/dialog.testkit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { ChatAsk } from "./ChatAsk";
@@ -24,7 +25,7 @@ const none = () => undefined;
  */
 
 describe("New project's Advanced form", () => {
-  it("ends in a Cancel of its own, after its act, as every form's row does", async () => {
+  it("takes the footer's main action for its act, with Cancel before it (#2910)", async () => {
     const onCancel = vi.fn();
     render(
       <NewProject
@@ -35,16 +36,13 @@ describe("New project's Advanced form", () => {
         onCancel={onCancel}
       />,
     );
+    const dialog = screen.getByRole("dialog", { name: "New project" });
+    expect(answersOf(dialog)).toEqual(["Cancel", "Open repo"]);
     await userEvent.click(screen.getByText("Advanced"));
-    const advanced = screen.getByText("Advanced").closest("details");
-    if (advanced === null) throw new Error("no Advanced section");
-    const buttons = within(advanced)
-      .getAllByRole("button")
-      .filter((button) => !button.getAttribute("aria-label")?.startsWith("Browse"))
-      .map((button) => button.textContent);
-    expect(buttons).toEqual(["Create project", "Cancel"]);
+    // The main action is the part the person is in, in the same place, always in view.
+    await waitFor(() => expect(answersOf(dialog)).toEqual(["Cancel", "Create project"]));
 
-    const cancel = within(advanced).getByRole("button", { name: "Cancel" });
+    const cancel = within(dialog).getByRole("button", { name: "Cancel" });
     expect(cancel).toHaveAttribute("type", "button");
     await userEvent.click(cancel);
     expect(onCancel).toHaveBeenCalledTimes(1);

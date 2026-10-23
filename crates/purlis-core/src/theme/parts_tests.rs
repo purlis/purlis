@@ -922,7 +922,7 @@ fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 6);
+    assert_eq!(manifest["version"], 7);
     for list in ["states", "properties"] {
         for one in manifest[list].as_array().unwrap() {
             assert_eq!(one["since"], 1, "{one}");
@@ -976,6 +976,37 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
         (height["least"].as_i64(), height["most"].as_i64()),
         (Some(24), Some(48))
     );
+    let dialog = manifest["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "dialog")
+        .expect("the dialog family");
+    assert_eq!(dialog["since"], 7);
+    let parts: Vec<&str> = dialog["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|one| one["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        parts,
+        [
+            "root",
+            "title",
+            "subtitle",
+            "description",
+            "separator",
+            "summary"
+        ]
+    );
+    let variants: Vec<&str> = dialog["variants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|one| one["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(variants, ["dialog", "alert"]);
     let button = &manifest["families"][0];
     assert_eq!(button["name"], "button");
     assert_eq!(button["since"], 1);
@@ -1156,6 +1187,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         6,
         "51e9dfc27ab31296830631003a7071db655e6aa69b7142c99fbce61550b3482c",
+    ),
+    (
+        7,
+        "67bde082299e45b7255ba4c5b05c0463e95c0262fa4430653b47b13d3b930d06",
     ),
 ];
 
@@ -1792,4 +1827,149 @@ fn a_field_familys_own_states_are_held_at_once_too() {
             .any(|one| one.contains("pressed") || one.contains("open")),
         "{fallen:?}"
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// The dialog family (#2910)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_theme_rounds_a_dialog_and_its_corner_is_not_a_controls() {
+    let sheet = sheet_of(json!({ "dialog.root.corner-radius": 12 }));
+    // A dialog is a surface, not a target: its corner is not clamped by a height, only kept
+    // within the inset of what it holds.
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"dialog\"][data-part=\"root\"]) { border-radius: min(12px, var(--space-6)); }"
+        ),
+        "{sheet}"
+    );
+    let alert = sheet_of(json!({ "dialog.title.alert.font-weight": 700 }));
+    assert!(
+        alert.contains(
+            ":where([data-scope=\"dialog\"][data-part=\"root\"][data-variant=\"alert\"] [data-scope=\"dialog\"][data-part=\"title\"])"
+        ),
+        "{alert}"
+    );
+}
+
+#[test]
+fn a_dialogs_corner_never_cuts_off_what_it_holds() {
+    // `full` on a surface is the inset of what it holds, never a pill: Cancel, bottom-leading,
+    // and the title's first word stay whole whatever a theme rounds.
+    let full = sheet_of(json!({ "dialog.root.corner-radius": "full" }));
+    assert!(
+        full.contains(
+            ":where([data-scope=\"dialog\"][data-part=\"root\"]) { border-radius: var(--space-6); }"
+        ),
+        "{full}"
+    );
+    assert!(!full.contains("9999px"), "{full}");
+    let four = sheet_of(json!({ "dialog.root.corner-radius": ["full", 0, "radius.lg", 400] }));
+    assert!(
+        four.contains(
+            "border-radius: var(--space-6) min(0px, var(--space-6)) min(var(--radius-lg), var(--space-6)) min(400px, var(--space-6));"
+        ),
+        "{four}"
+    );
+    // A control's corner is still its own, a pill at any height.
+    assert!(sheet_of(json!({ "button.root.corner-radius": "full" })).contains("9999px"));
+}
+
+#[test]
+fn a_dialogs_quieter_words_are_measured_in_the_tier_they_are_drawn_in() {
+    // The fill clears the primary words but not the quiet summary, the muted subtitle or the
+    // secondary question: the dialog's fill falls to the family default.
+    for tier in ["text.quiet", "text.muted", "text.secondary"] {
+        let fell = fallen_parts(&with_tokens_and_parts(
+            json!({ "surface.raised": "#1f1f1c", tier: "#2a2a26" }),
+            json!({ "dialog.root.fill": "surface.raised" }),
+        ));
+        assert!(
+            fell.iter().any(|one| one.starts_with("dialog.root.")),
+            "{tier}: {fell:?}"
+        );
+    }
+    // The same fill with every tier readable is drawn.
+    assert!(
+        fallen_parts(&with_tokens_and_parts(
+            json!({ "surface.raised": "#1f1f1c" }),
+            json!({ "dialog.root.fill": "surface.raised" }),
+        ))
+        .is_empty()
+    );
+}
+
+#[test]
+fn the_dialogs_tiers_are_what_dialog_css_draws() {
+    let css = include_str!("../../../../app/src/ui/dialog/dialog.css");
+    for (part, tier) in parts::DIALOG_TIERS {
+        let drawn = rule(
+            css,
+            &format!("[data-scope=\"dialog\"][data-part=\"{part}\"]"),
+        );
+        let colour = declared(drawn, "color").expect("its words");
+        assert_eq!(
+            colour,
+            format!("var(--{})", tier.replace('.', "-")),
+            "{part}"
+        );
+    }
+}
+
+#[test]
+fn a_dialog_takes_no_height_and_no_size_inside_a_state() {
+    // Its height is the dialog rules', never a theme's: the key is said and left out.
+    let loaded = load(&with_parts(json!({ "dialog.root.height": 400 })));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.dialog.root.height is not")),
+        "{:?}",
+        said(&loaded)
+    );
+    let refused = refusal(json!({ "dialog.title.hover.font-size": 18 }));
+    assert!(
+        refused
+            .iter()
+            .any(|one| one.contains("a state never changes")),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_dialogs_words_that_break_their_floor_draw_the_family_default() {
+    let loaded = load(&with_parts(
+        json!({ "dialog.title.text": "surface.overlay" }),
+    ));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let fell = parts::fallen(loaded.theme.first());
+    assert!(
+        fell.iter().any(|one| one.part.starts_with("dialog.root.")),
+        "{fell:?}"
+    );
+}
+
+#[test]
+fn the_dialogs_family_default_is_what_dialog_css_draws() {
+    let css = include_str!("../../../../app/src/ui/dialog/dialog.css");
+    let root = rule(css, "[data-scope=\"dialog\"][data-part=\"root\"]");
+    let token = |var: &str| {
+        var.trim_start_matches("var(--")
+            .trim_end_matches(')')
+            .replacen('-', ".", 1)
+    };
+    let border = declared(root, "border")
+        .and_then(|it| it.split_whitespace().last())
+        .expect("the dialog's border");
+    let drawn = json!({
+        "fill": token(declared(root, "background-color").expect("its fill")),
+        "text": token(declared(root, "color").expect("its words")),
+        "border": token(border),
+    });
+    for variant in ["dialog", "alert"] {
+        let held = parts::dialog_defaults_json(variant);
+        assert_eq!(held, drawn, "{variant}");
+    }
 }

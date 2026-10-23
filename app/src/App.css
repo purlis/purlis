@@ -1503,13 +1503,8 @@ button.show-more:focus-visible {
 }
 
 /* **Use skill…** (`UseSkill.tsx`, #2775): the chat's skills to pick from, then the boxes of the
-   one picked, centred as every such dialog is. It fits the window and its list scrolls inside it; each row says the skill's
-   name, its level, whether it is manual-only, and what it does. */
-.warning.use-skill {
-  width: min(34rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem);
-}
-
+   one picked, in a dialog of the family (#2910); each row says the skill's name, its level,
+   whether it is manual-only, and what it does. */
 .use-skill-budget {
   margin: 0;
   font-size: var(--font-size-xs);
@@ -4440,67 +4435,9 @@ button.show-more:focus-visible {
   cursor: pointer;
 }
 
-/* Quitting asks first, over everything, because it ends every session.
-
-   **A dialog is drawn by the overlay surface** (`.ui-dialog` and the scrim's `.ui-scrim`,
-   `primitives/overlays.css`, #1845); `.warning` only places it and caps its size.
-
-   **The scrim and the surface are siblings**, not a box inside a box. Radix portals
-   `Dialog.Overlay` and `Dialog.Content` next to each other (`docs/ui-primitives.md`), so the
-   centring that used to be `place-items` on the scrim is now on the surface itself. */
-.warning {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  max-width: 34rem;
-  max-height: 80vh;
-  overflow: auto;
-}
-
-.warning h2 {
-  margin: 0 0 var(--space-5);
-  font-size: var(--font-size-base);
-}
-
-/* **Ask {persona}** (`AskPersona.tsx`, #1481): the tallest of the dialogs, opened over narrow
-   windows too.
-
-   - **It fits the window**, with a margin, and scrolls inside itself.
-   - **Its answers are always in reach**: the row of buttons stays at the dialog's bottom edge
-     while the form scrolls under it, on the dialog's own ground.
-   - **The box you write in takes the row**, as the name's does, and grows downwards only. */
-.warning.ask-persona {
-  width: min(34rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem);
-  --ui-dialog-padding-end: 0;
-}
-
-/* **The Brief panel** (`Brief.tsx`, #1494): the brief a task was sent, read back.
-
-   - **It fits the window**, and its title, its facts and its two buttons stay put: a column,
-     in which the brief's own box is the row that gives way.
-   - **The brief's box scrolls, and the panel cuts nothing**: every line of a long brief is
-     reached by scrolling the box. Lines wrap, and a word longer than the box breaks, so
-     nothing is ever off to the side.
-   - **Text, set as text**: one face, the lines and the spaces as they were sent. */
-.warning.brief-panel {
-  display: flex;
-  flex-direction: column;
-  width: min(44rem, calc(100vw - 2rem));
-  max-width: none;
-  max-height: calc(100vh - 2rem);
-  overflow: hidden;
-}
-
-/* **Answer a task's question, from its row or its tab menu's line** (#1551): the Activity
-   tab's form in a dialog of its own, as wide as a brief's, and no taller than the window. */
-.warning.answer-panel {
-  width: min(44rem, calc(100vw - 2rem));
-  max-width: none;
-  max-height: calc(100vh - 2rem);
-  overflow: auto;
-}
+/* **Every dialog is the dialog family's** (`ui/dialog/dialog.css`, #2910): its place, its width,
+   its height, its title and its three rows are the family's, and nothing here sets them. What
+   is below styles what a dialog holds. */
 
 .brief-panel .brief-facts {
   margin: 0 0 var(--space-5);
@@ -4517,7 +4454,6 @@ button.show-more:focus-visible {
 }
 
 .brief-panel .brief-text {
-  flex: 1 1 auto;
   min-height: 4rem;
   margin: 0 0 var(--space-5);
   padding: var(--space-3) var(--space-4);
@@ -4538,27 +4474,6 @@ button.show-more:focus-visible {
 .brief-panel .brief-text:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-ring-offset) / 2);
-}
-
-.brief-panel .answer {
-  flex: none;
-  align-items: center;
-}
-
-/* What Copy did, said at the row's start: the buttons do not move when it is said. */
-.brief-panel .brief-copied {
-  margin-right: auto;
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-}
-
-.ask-persona .ui-setting-actions {
-  position: sticky;
-  bottom: 0;
-  margin: 0;
-  padding: var(--space-5) 0 var(--space-6);
-  background: var(--surface-overlay);
-  border-top: 1px solid var(--border-subtle);
 }
 
 .ending {
@@ -4588,24 +4503,11 @@ button.show-more:focus-visible {
   white-space: nowrap;
 }
 
-/* The picker is the longest of these surfaces — three groups, a list of refusals and a
-   command line per row — so it is given room the others do not need. */
-.starting {
-  width: min(38rem, 92vw);
-  max-width: none;
-}
-
 /* The sentence that says what charter does not know. It is not a warning to be styled away. */
 .honest {
   margin: 0 0 var(--space-5);
   font-size: var(--font-size-sm);
   opacity: 0.8;
-}
-
-.answer {
-  display: flex;
-  gap: var(--space-3);
-  justify-content: flex-end;
 }
 
 /* What a chat is doing. A mark, plus a shape per state: colour alone is no state at all to
@@ -4765,8 +4667,8 @@ button.show-more:focus-visible {
    be read before it is answered. `.honest` fades what charter is being honest about; these are
    not that, so the fade comes off and the words are marked as the answer to something the
    operator just did. */
-.warning .honest.mid-turn,
-.warning .honest.approve {
+[data-scope="dialog"] .honest.mid-turn,
+[data-scope="dialog"] .honest.approve {
   padding: var(--space-3) var(--space-4);
   border-inline-start: 2px solid var(--danger-base);
   border-radius: var(--radius-sm);
@@ -4860,21 +4762,10 @@ button.show-more:focus-visible {
   margin: var(--space-2) 0;
 }
 
-/* The command palette: the primary input (spec decision 1). It sits over everything on the
-   same overlay the quit warning and the picker use, because it is modal for the same
-   reason — one surface, one question, one key that always leaves.
-
-   High on the window rather than centred on it, which is where every palette an operator has
-   used before sits. `.warning` centres both ways; this overrides the vertical half. */
-.palette {
-  top: 8vh;
-  transform: translateX(-50%);
-  width: min(42rem, 92vw);
-  max-width: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
+/* The command palette: the primary input (spec decision 1). It sits over everything as every
+   dialog does, because it is modal for the same reason — one surface, one question, one key
+   that always leaves — and it is the dialog family's surface (`DialogSurface`), anchored high
+   on the window, which is where every palette an operator has used before sits. */
 
 /* The box is labelled, and the label is read rather than only implied by a placeholder — a
    placeholder disappears the moment somebody types. */
@@ -5309,12 +5200,12 @@ button.show-more:focus-visible {
 
 /* What opening a project puts in force. Read before it is answered, so it is a list and not
    a paragraph — and every entry is `code`, because these are names and values and not prose. */
-.warning h3 {
+[data-scope="dialog"] h3 {
   margin: var(--space-5) 0 var(--space-2);
   font-size: var(--font-size-md);
 }
 
-.warning h4 {
+[data-scope="dialog"] h4 {
   margin: var(--space-5) 0 var(--space-2);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
@@ -5334,7 +5225,7 @@ button.show-more:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.warning .where {
+[data-scope="dialog"] .where {
   margin: 0;
   font-size: var(--font-size-xs);
   opacity: 0.7;
@@ -5348,7 +5239,7 @@ button.show-more:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.warning .value {
+[data-scope="dialog"] .value {
   opacity: 0.6;
 }
 
@@ -5364,10 +5255,6 @@ button.show-more:focus-visible {
   color: var(--text-muted);
 }
 
-.warning.update {
-  max-width: 40rem;
-}
-
 .update-notes {
   max-height: 12rem;
   overflow: auto;
@@ -5377,14 +5264,7 @@ button.show-more:focus-visible {
   border-radius: var(--radius-md);
 }
 
-/* The dialog. Wider than a consent prompt, because a row's detail is a sentence and its hint is
-   often a command to copy. */
-.warning.doctor {
-  max-width: 48rem;
-  width: calc(100vw - 4rem);
-}
-
-.warning.doctor h3 {
+.doctor h3 {
   margin: var(--space-5) 0 var(--space-2);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
@@ -5544,7 +5424,7 @@ button.show-more:focus-visible {
 }
 
 /* The extension list (ADR 0041 item 5: what is in force, after approval and not only
-   at it). It is a `.ui-dialog` as well, so the dialog chrome is the one every other consent
+   at it). It is a dialog of the family, so the dialog chrome is the one every other consent
    surface in this window uses rather than a second look nobody maintains. Only the row shape
    is here. */
 .extension-rows {
@@ -5597,7 +5477,7 @@ button.show-more:focus-visible {
 /* The one paragraph in this window that must never read as a reassurance. It is charter's own
    sentence about what it cannot stop an extension doing, and it is drawn as the dialog's
    loudest text rather than as small print under the buttons. */
-.warning .runs-as-you {
+[data-scope="dialog"] .runs-as-you {
   margin-top: var(--space-5);
   padding: var(--space-4) var(--space-5);
   border-left: 2px solid var(--danger-base);
@@ -5649,7 +5529,7 @@ button.show-more:focus-visible {
 /* What charter is still finding out, inside a dialog. Not the explorer's spinner: this is one
    line in a question that is already on screen, and a dialog with a spinner in it reads as a
    dialog that is loading rather than one that is asking. */
-.warning .pending {
+[data-scope="dialog"] .pending {
   margin: var(--space-3) 0 0;
   color: var(--text-muted);
 }
@@ -7049,21 +6929,11 @@ button.show-more:focus-visible {
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
 }
 
-/* **A modal surface opening** — every dialog and the scrim behind it. A fade
-   and no movement: a question should be where the eye already is. Opening only, on purpose.
-   Radix unmounts a closing surface at once unless an animation is running on it, and a close
-   that lingers leaves a dismissed question over the window the operator has gone back to. */
-.ui-scrim[data-state="open"],
-[role="dialog"][data-state="open"],
-[role="alertdialog"][data-state="open"] {
-  animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
-}
-
 /* **A popover or a menu opening** — the show-more menus, the context menus, the persona card,
    and whatever anchored surface is added next, because the rule hangs off Radix's own popper
    wrapper rather than off a class. It comes a quarter of a rem out of the side it is anchored
-   to, which is what says what opened it. After the dialog rule on purpose: a popover is also
-   `role="dialog"`, and this is the one it gets. */
+   to, which is what says what opened it. A dialog's own opening is the dialog family's
+   (`ui/dialog/dialog.css`). */
 @keyframes charter-arrive {
   from {
     opacity: 0;
@@ -8222,7 +8092,7 @@ button.show-more:focus-visible {
 /* A line made of a few facts — a harness's kind, the command it runs, where it was declared —
    wraps fact by fact. The command is what is about to run, so it is not faded with the rest,
    and a profile charter has never run says so in its own colour (Start chat, DS-3d). Three
-   deep to outrank `.warning .where`, which dims every path in a dialog. */
+   deep to outrank `[data-scope="dialog"] .where`, which dims every path in a dialog. */
 .ui-choice-says .meta {
   display: flex;
   flex-wrap: wrap;

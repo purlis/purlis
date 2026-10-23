@@ -477,14 +477,19 @@ describe("Ask {persona}'s rules", () => {
   });
 
   it("fits the window and keeps its answers at its bottom edge", () => {
-    const dialog = rule("\\.warning\\.ask-persona");
-    expect(dialog).toMatch(/width:\s*min\(34rem, calc\(100vw - 2rem\)\)/);
-    expect(dialog).toMatch(/max-height:\s*calc\(100vh - 2rem\)/);
-    const answers = rule("\\.ask-persona \\.ui-setting-actions");
-    expect(answers).toMatch(/position:\s*sticky/);
-    expect(answers).toMatch(/bottom:\s*0/);
-    // On the dialog's own ground, the overlay surface's (#1845).
-    expect(answers).toMatch(/background:\s*var\(--surface-overlay\)/);
+    // Every dialog's, Ask {persona}'s among them (#2910): at most the window's height, its body
+    // the part that scrolls, and its answers in the footer under it, always in view.
+    const family = readFileSync(join(process.cwd(), "src/ui/dialog/dialog.css"), "utf8");
+    const of = (part: string) =>
+      new RegExp(`\\[data-scope="dialog"\\]\\[data-part="${part}"\\] \\{([^}]*)\\}`).exec(
+        family,
+      )?.[1] ?? "";
+    expect(of("root")).toMatch(/max-block-size:\s*100%/);
+    expect(of("body")).toMatch(/overflow:\s*auto/);
+    expect(of("footer")).not.toMatch(/overflow/);
+    // Nothing of its own places or sizes it any more.
+    expect(css).not.toMatch(/\.warning\.ask-persona/);
+    expect(css).not.toMatch(/\.ask-persona \.ui-setting-actions/);
   });
 });
 

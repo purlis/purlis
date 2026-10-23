@@ -5836,8 +5836,7 @@ export const PlaneView = memo(function PlaneView({
     };
     setForgetting({ id, name, busy: false });
   }, []);
-  const afterForgetAsk = useCallback((event: Event) => {
-    event.preventDefault();
+  const afterForgetAsk = useCallback(() => {
     const { notice, band, forgot } = forgetAsked.current;
     const back = [...(notice?.querySelectorAll<HTMLElement>("button") ?? [])].find(
       (button) => button.textContent === FORGET_THIS_CHAT,
@@ -5877,8 +5876,7 @@ export const PlaneView = memo(function PlaneView({
     approveAsked.current = { id, approved: false };
     setApproving({ id, name, approval, busy: false });
   }, []);
-  const afterApproveAsk = useCallback((event: Event) => {
-    event.preventDefault();
+  const afterApproveAsk = useCallback(() => {
     const { id, approved } = approveAsked.current;
     const notice = [...document.querySelectorAll("[data-cause]")].find(
       (one) => one.getAttribute("data-cause") === `chat-did-not-start:${id}`,
@@ -9400,7 +9398,7 @@ export const PlaneView = memo(function PlaneView({
               busy={forgetting.busy}
               onAnswer={() => void forgetChat(forgetting.id, forgetting.name)}
               onCancel={() => setForgetting(undefined)}
-              onCloseAutoFocus={afterForgetAsk}
+              afterClose={afterForgetAsk}
             />
           )}
           {approving && (
@@ -9412,7 +9410,7 @@ export const PlaneView = memo(function PlaneView({
               busy={approving.busy}
               onAnswer={() => void approveWaiting(approving)}
               onCancel={() => setApproving(undefined)}
-              onCloseAutoFocus={afterApproveAsk}
+              afterClose={afterApproveAsk}
             >
               {/* The picker's own sentence, line and mark (`ProfileApproval.tsx`, ruling V69). */}
               <ApprovalSentence row={approving.approval} />

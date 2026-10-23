@@ -223,10 +223,14 @@ describe("what is drawn over the whole window, as a project leaves the front", (
     own.appendChild(document.createElement("ul")).setAttribute("role", "listbox");
     const tip = document.body.appendChild(document.createElement("div"));
     tip.setAttribute("role", "tooltip");
+    // The palette as the dialog family draws it: its scrim, and its root with its own hook.
     const palette = document.body.appendChild(document.createElement("div"));
-    palette.className = "ui-dialog warning palette";
-    palette.setAttribute("role", "dialog");
-    palette.appendChild(document.createElement("ul")).setAttribute("role", "listbox");
+    Object.assign(palette.dataset, { scope: "dialog", part: "scrim" });
+    const root = palette.appendChild(document.createElement("section"));
+    Object.assign(root.dataset, { scope: "dialog", part: "root" });
+    root.className = "palette";
+    root.setAttribute("role", "dialog");
+    root.appendChild(document.createElement("ul")).setAttribute("role", "listbox");
     expect(drawnOverTheWindow(slot)).toBe(false);
 
     // And a menu left open is.

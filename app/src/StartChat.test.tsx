@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { answerRowOf, answersOf } from "./ui/dialog/dialog.testkit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
@@ -287,23 +288,17 @@ describe("a chat that starts in a repo (GL-1)", () => {
   /** The dialog's last row of buttons, and the names of the buttons in it, in order. */
   const lastRow = () => {
     const dialog = screen.getByRole("dialog");
-    const rows = dialog.querySelectorAll(".ui-setting-actions, .answer");
-    const row = rows[rows.length - 1];
-    return {
-      row,
-      names: [...(row?.querySelectorAll("button") ?? [])].map((one) => one.textContent),
-    };
+    return { row: answerRowOf(dialog), names: answersOf(dialog) };
   };
 
-  it("ends in its form's row, the start first and Cancel after it (#1719)", () => {
-    // The design system's rule: a dialog that holds a form that makes something ends in the
-    // form's row (`SettingActions`), its act first at the leading edge, not in a question's bar.
+  it("ends in the dialog's footer, Cancel first and the start last (#2910)", () => {
+    // The dialog rules (#2910, N2): every dialog's main action is in one place, last in its
+    // footer, a form's as a question's.
     show({}, "api");
 
     const { row, names } = lastRow();
-    expect(row).toHaveClass("ui-setting-actions");
-    expect(screen.getByRole("dialog").querySelector(".answer")).toBeNull();
-    expect(names).toEqual(["Start", "Cancel"]);
+    expect(row).not.toBeNull();
+    expect(names).toEqual(["Cancel", "Start"]);
     const start = screen.getByRole("button", { name: "Start" });
     expect(start).toHaveAttribute("data-variant", "primary");
     // A button and not a submit: Return in the Name box never starts a command.
@@ -311,14 +306,36 @@ describe("a chat that starts in a repo (GL-1)", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveAttribute("type", "button");
   });
 
-  it("ends in the same row when the start approves a command first (#1719)", () => {
+  it("holds the room of every word its start can say, and of the grant's lock, whatever is chosen (R163)", () => {
+    // A choice that needs approval moves and widens nothing: the start keeps the room of its
+    // longest words and of the lock in both looks.
+    const roomOf = (start: HTMLElement) => ({
+      kept: [...start.querySelectorAll('[data-scope="reserved"][data-part="kept"]')].map((one) =>
+        one.getAttribute("data-text"),
+      ),
+      lock: start.querySelectorAll("svg").length,
+    });
+    show({}, "api");
+    const plain = roomOf(screen.getByRole("button", { name: "Start" }));
+    expect(plain.kept).toEqual(
+      expect.arrayContaining(["Approve and start", "Approve and start without the sandbox"]),
+    );
+    expect(plain.lock).toBe(1);
+    cleanup();
+    show({
+      profiles: [{ ...ONE.profiles[0], name: "claude", shown: "claude --x", approval: "new" }],
+    });
+    expect(roomOf(screen.getByRole("button", { name: "Approve and start" }))).toEqual(plain);
+  });
+
+  it("ends in the same footer when the start approves a command first (#2910)", () => {
     show({
       profiles: [{ ...ONE.profiles[0], name: "claude", shown: "claude --x", approval: "new" }],
     });
 
     const { row, names } = lastRow();
-    expect(row).toHaveClass("ui-setting-actions");
-    expect(names).toEqual(["Approve and start", "Cancel"]);
+    expect(row).not.toBeNull();
+    expect(names).toEqual(["Cancel", "Approve and start"]);
     const approve = screen.getByRole("button", { name: "Approve and start" });
     // Approving is the form's act, not a confirm that ends something (D-1719-3): purlis can
     // take the chat back, and the command is said above it before the press (V69).

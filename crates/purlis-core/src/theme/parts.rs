@@ -27,7 +27,8 @@
 //! - **A size is a number inside its bound, or a geometry token** (`radius.md`, `space.3`),
 //!   which follows the person's density.
 //! - **A corner is 0 up to `full`** (one value, or four: top left, top right, bottom right,
-//!   bottom left), clamped as it is drawn to half the part's height, so `full` is a pill.
+//!   bottom left), clamped as it is drawn to half the part's height, so `full` is a pill. A
+//!   family may hold its corner to less (a dialog's, to the inset of what it holds, #2910).
 //! - **Padding, gap, font size and height are bounded** so a control stays at least
 //!   [`LEAST_TARGET`] px tall and its text fits, in both densities ([`fits`]).
 //!
@@ -75,7 +76,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 6;
+pub const VERSION: u32 = 7;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -374,6 +375,10 @@ pub struct Family {
     /// The words of a part that are not drawn in the root's colour, by the part's name: a field's
     /// help in the quiet tier and its error in the danger colour (#2905).
     words: &'static [(&'static str, &'static str)],
+    /// The largest corner its root takes, a geometry token, where it holds what would be cut off
+    /// beyond it: a dialog's answers in its corners (#2910). `None` for the corner its height or
+    /// its box gives.
+    corner_most: Option<&'static str>,
 }
 
 impl Family {
@@ -547,6 +552,7 @@ pub const MANIFEST: &[Family] = &[
         states: &STATES,
         focused: "[data-focus-visible]",
         words: &[],
+        corner_most: None,
     },
     Family {
         name: "field",
@@ -608,6 +614,7 @@ pub const MANIFEST: &[Family] = &[
         states: &[State::Disabled],
         focused: "[data-focus-within]",
         words: &[("help", "text.quiet"), ("error", "danger.text")],
+        corner_most: None,
     },
     Family {
         name: "text-input",
@@ -677,6 +684,7 @@ pub const MANIFEST: &[Family] = &[
         states: &[State::Hover, State::Focused, State::Disabled],
         focused: "[data-focus-within]",
         words: &[],
+        corner_most: None,
     },
     Family {
         name: "textarea",
@@ -727,6 +735,7 @@ pub const MANIFEST: &[Family] = &[
         states: &[State::Hover, State::Focused, State::Disabled],
         focused: "[data-focus-within]",
         words: &[],
+        corner_most: None,
     },
     shell::PANEL,
     shell::PANEL_SECTION,
@@ -766,9 +775,11 @@ pub const MANIFEST: &[Family] = &[
         states: &[],
         focused: "[data-focus-visible]",
         words: &[("detail", "text.secondary")],
+        corner_most: None,
     },
     overlay::POPOVER,
     overlay::MENU,
+    dialog::DIALOG,
 ];
 
 /// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
@@ -780,6 +791,12 @@ mod overlay;
 /// status item.
 #[path = "parts_shell.rs"]
 mod shell;
+
+/// The dialog family (#2910).
+#[path = "parts_dialog.rs"]
+mod dialog;
+#[cfg(test)]
+pub(super) use dialog::DIALOG_TIERS;
 
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
@@ -1053,6 +1070,13 @@ pub(super) fn field_defaults_json() -> Value {
         "help": words("help"),
         "error": words("error"),
     })
+}
+
+/// The dialog's colours as the engine holds them, for the test that holds them to `dialog.css`.
+#[cfg(test)]
+pub(super) fn dialog_defaults_json(variant: &str) -> Value {
+    let rest = dialog::dialog_look(variant, &[]);
+    json!({ "fill": rest.fill, "text": rest.text, "border": rest.border })
 }
 
 /// A family's colours at rest and under the pointer, as the engine holds them, for the tests that
@@ -2416,17 +2440,30 @@ fn declarations(rule: &Rule, property: Prop, value: PartValue) -> String {
             // A control's corner is clamped to half the height it is drawn at; a box's, which is as
             // tall as what it holds, to half its own box, corner by corner (`50%` resolves on each
             // axis), and `full` on a box is that half (ADR 0103, amended 2026-10-22).
+            // A family that holds its corner to less draws at most that (a dialog's, the inset
+            // of what it holds, so its answers are never cut off in a corner, #2910).
             let control = (rule.part == 0).then(|| half_height(rule.family)).flatten();
-            let one = |corner: Corner| match (corner, &control) {
-                (Corner::Full, Some(_)) => format!("{}px", geometry::show(MOST_CORNER)),
-                (Corner::Full, None) => "50%".to_owned(),
-                (Corner::Length(length), Some(half)) => {
+            let most = if rule.part == 0 {
+                rule.family.corner_most
+            } else {
+                None
+            };
+            let one = |corner: Corner| match (corner, &control, most) {
+                (Corner::Full, _, Some(most)) => var(most),
+                (Corner::Length(length), _, Some(most)) => format!(
+                    "min({}, {})",
+                    written_length(length, geometry::Unit::Px),
+                    var(most)
+                ),
+                (Corner::Full, Some(_), None) => format!("{}px", geometry::show(MOST_CORNER)),
+                (Corner::Full, None, None) => "50%".to_owned(),
+                (Corner::Length(length), Some(half), None) => {
                     format!(
                         "min({}, {half})",
                         written_length(length, geometry::Unit::Px)
                     )
                 }
-                (Corner::Length(length), None) => {
+                (Corner::Length(length), None, None) => {
                     format!("min({}, 50%)", written_length(length, geometry::Unit::Px))
                 }
             };

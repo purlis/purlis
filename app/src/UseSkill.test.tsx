@@ -118,9 +118,18 @@ describe("Use skill…", () => {
     const listed = [skill("deploy", { description: "Ships the app." }), skill("review")];
     expect(skillsMatching(listed, "SHIPS app").map((one) => one.name)).toEqual(["deploy"]);
     expect(skillsMatching(listed, "").map((one) => one.name)).toEqual(["deploy", "review"]);
-    opened(skills(listed));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "nothing like it" } });
+    // A list over seven gets the family's filter (#2910), its total in its placeholder.
+    const many = [...listed, ...["a", "b", "c", "d", "e", "f"].map((name) => skill(name))];
+    opened(skills(many));
+    const filter = screen.getByRole("searchbox", { name: "Filter skills" });
+    expect(filter.getAttribute("placeholder")).toBe("Filter 8 skills");
+    fireEvent.change(filter, { target: { value: "nothing like it" } });
     expect(screen.getByText("No skill of this chat matches that.")).toBeTruthy();
+  });
+
+  it("draws no filter over a list of seven or fewer", () => {
+    opened(skills([skill("deploy"), skill("review")]));
+    expect(screen.queryByRole("searchbox")).toBeNull();
   });
 
   it("warns of a set near or past the budget, saying which part", () => {

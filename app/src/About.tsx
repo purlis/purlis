@@ -1,14 +1,13 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import * as Dialog from "./overlays/dialog";
+import { useCallback, useEffect, useState } from "react";
 import { Info } from "lucide-react";
 import { commands, type About } from "./bindings";
 import { ExternalLink, ReleaseNotes } from "./ReleaseNotes";
-import { AnswerBar } from "./AnswerBar";
 import { askLicencesTab, Licences } from "./LicencesView";
-import { Button } from "./ui/button/Button";
+import { Button, ButtonRow } from "./ui/button/Button";
+import { Dialog } from "./ui/dialog/Dialog";
 import { StatusItem } from "./ui/status/StatusItem";
 
 /** Where every version's notes are, the same text this dialog shows for one of them. */
@@ -63,7 +62,6 @@ export function AboutCharter() {
   const [open, setOpen] = useState(false);
   const [about, setAbout] = useState<About>();
   const [trouble, setTrouble] = useState<string>();
-  const close = useRef<HTMLButtonElement>(null);
   /** The licences drawn here, where no project in front took the ask for their tab (#1719). */
   const [licencesHere, setLicencesHere] = useState(false);
 
@@ -87,98 +85,91 @@ export function AboutCharter() {
   }, [ask, open]);
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger asChild>
-        {/* `tabIndex={0}`, per `docs/ui-primitives.md` (charter-app#186): WebKit leaves a
-            `<button>` out of the tab sequence unless its `tabindex` is written down. It also
-            does a second job here — Tauri's drag handler treats any element carrying a
-            `tabindex` other than `-1` as clickable and stops the drag at it, which is what
-            keeps this button a button on a bar that is otherwise a drag region. */}
-        <StatusItem
-          variant="pill"
-          data-testid="title-about"
-          aria-label="About purlis — what this version brought"
-          tooltip="About purlis — what this version brought"
-          icon={<Info aria-hidden="true" />}
-        >
-          About
-        </StatusItem>
-      </Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning update about"
-          aria-describedby="about-what"
-          // The keyboard starts on Close, as every question's does (#1719): Radix's own first
-          // tabbable is a link in the body, and Return there would leave the window.
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            close.current?.focus();
-          }}
-        >
-          <Dialog.Title>About purlis</Dialog.Title>
-          <div id="about-what">
-            {trouble !== undefined ? (
+    <>
+      {/* `tabIndex={0}`, per `docs/ui-primitives.md` (charter-app#186): WebKit leaves a
+          `<button>` out of the tab sequence unless its `tabindex` is written down. It also does
+          a second job here — Tauri's drag handler treats any element carrying a `tabindex` other
+          than `-1` as clickable and stops the drag at it, which is what keeps this button a
+          button on a bar that is otherwise a drag region. */}
+      <StatusItem
+        variant="pill"
+        data-testid="title-about"
+        aria-label="About purlis — what this version brought"
+        aria-haspopup="dialog"
+        tooltip="About purlis — what this version brought"
+        icon={<Info aria-hidden="true" />}
+        onPress={() => setOpen(true)}
+      >
+        About
+      </StatusItem>
+      <Dialog
+        isOpen={open}
+        onClose={() => setOpen(false)}
+        title="About purlis"
+        className="update about"
+        aria-describedby="about-what"
+        // The keyboard starts on Close, as every question's does (#1719): the first thing the
+        // keyboard reaches in the body is a link, and Return there would leave the window.
+        initialFocus="cancel"
+        cancel={{ children: "Close" }}
+      >
+        <div id="about-what">
+          {trouble !== undefined ? (
+            <>
               <p className="honest doctor-trouble" role="alert">
                 purlis could not read what this version brought: {trouble}
               </p>
-            ) : about === undefined ? (
-              <p className="pending">Reading what this version brought…</p>
-            ) : (
-              <Said about={about} />
-            )}
-            {/* Outside the answer, so a dialog whose changelog could not be read still says
-                where to get help. */}
-            <p className="honest">
-              Questions and ideas go to{" "}
-              <ExternalLink href={HELP.discussions}>Discussions</ExternalLink>, or you can{" "}
-              <ExternalLink href={HELP.newIssue}>report a bug</ExternalLink>. See{" "}
-              <ExternalLink href={HELP.support}>how to get help</ExternalLink>.
-            </p>
-            {/* The licences open in a view tab of the project in front (#1719), and here where
-                no project is open to hold one. */}
-            <p className="honest">
-              purlis is under the Apache License 2.0, and ships files others wrote, under{" "}
-              <a
-                href="#licences"
-                tabIndex={0}
-                onClick={(event) => {
-                  event.preventDefault();
-                  if (askLicencesTab()) setOpen(false);
-                  else setLicencesHere(true);
-                }}
-              >
-                their licences
-              </a>
-              .
-            </p>
-            {licencesHere && (
-              <div className="honest notices" data-testid="about-notices">
-                <Licences />
-              </div>
-            )}
-          </div>
-          {/* `tabIndex={0}` on each, per `docs/ui-primitives.md`, as `ExternalLink` gives each link. */}
-          <AnswerBar>
-            <Dialog.Close asChild>
-              <Button ref={close}>Close</Button>
-            </Dialog.Close>
-            {/* The dialog reads once (NO-8's follow-up, #1296): this is the retry, where closing
-                and opening it again was. In the bar, after the way out, as every act is (#1210). */}
-            {trouble !== undefined && (
-              <Button
-                onPress={() => {
-                  setTrouble(undefined);
-                  ask();
-                }}
-              >
-                Read again
-              </Button>
-            )}
-          </AnswerBar>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+              {/* The dialog reads once (NO-8's follow-up, #1296): this is the retry, where
+                  closing and opening it again was, beside what it retries. */}
+              <ButtonRow>
+                <Button
+                  onPress={() => {
+                    setTrouble(undefined);
+                    ask();
+                  }}
+                >
+                  Read again
+                </Button>
+              </ButtonRow>
+            </>
+          ) : about === undefined ? (
+            <p className="pending">Reading what this version brought…</p>
+          ) : (
+            <Said about={about} />
+          )}
+          {/* Outside the answer, so a dialog whose changelog could not be read still says where
+              to get help. */}
+          <p className="honest">
+            Questions and ideas go to{" "}
+            <ExternalLink href={HELP.discussions}>Discussions</ExternalLink>, or you can{" "}
+            <ExternalLink href={HELP.newIssue}>report a bug</ExternalLink>. See{" "}
+            <ExternalLink href={HELP.support}>how to get help</ExternalLink>.
+          </p>
+          {/* The licences open in a view tab of the project in front (#1719), and here where no
+              project is open to hold one. */}
+          <p className="honest">
+            purlis is under the Apache License 2.0, and ships files others wrote, under{" "}
+            <a
+              href="#licences"
+              tabIndex={0}
+              onClick={(event) => {
+                event.preventDefault();
+                if (askLicencesTab()) setOpen(false);
+                else setLicencesHere(true);
+              }}
+            >
+              their licences
+            </a>
+            .
+          </p>
+          {licencesHere && (
+            <div className="honest notices" data-testid="about-notices">
+              <Licences />
+            </div>
+          )}
+        </div>
+      </Dialog>
+    </>
   );
 }
 

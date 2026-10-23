@@ -37,8 +37,8 @@ import { settingsPlace } from "./links";
 export const PATIENCE = 2000;
 /**
  * How long a way in stands once its tab has the keyboard: long enough for the surface it was
- * pressed in to finish closing — Radix hands the keyboard back a turn after the surface goes,
- * and later still when it animates out — so that closing move still finds it.
+ * pressed in to finish closing — a dialog hands the keyboard back as it goes, and React Aria a
+ * frame after — so that closing move still finds it.
  */
 export const LANDED = 500;
 /** How often a standing ask is tried again. */
@@ -137,6 +137,13 @@ export function forgetEntering(): void {
   watchThePerson(false);
 }
 
+/** Whether a dialog of the dialog family is up over the window (`ui/dialog/Dialog.tsx`). */
+function aDialogIsUp(): boolean {
+  return (
+    document.querySelector('[data-scope="dialog"][data-part="root"]:not([data-in-place])') !== null
+  );
+}
+
 /**
  * **The tab's half**: while a way in is asked at `place`, puts the keyboard on the nav's current
  * group inside `holder` — unless it is already inside, on the setting a link named for one.
@@ -148,6 +155,9 @@ export function useEnteringFocus(place: string, holder: RefObject<HTMLElement | 
       const root = holder.current;
       if (root === null || !root.isConnected) return false;
       if (root.contains(document.activeElement)) return true;
+      // A dialog still up holds the keyboard in itself and takes it straight back: the ask
+      // stands, and is tried again once the dialog has gone.
+      if (aDialogIsUp()) return false;
       const nav = root.querySelector<HTMLElement>(".ui-settings-nav");
       const target =
         nav?.querySelector<HTMLElement>('[aria-current="true"]') ??

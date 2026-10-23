@@ -283,6 +283,7 @@ an unknown token is.
 | `textarea` (since version 3) | `root` (every property but `gap`, `font-weight` and `height`: a textarea is as tall as its lines) | none |
 | `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`: the surface a popover and a menu stand on), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` |
 | `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
+| `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle`, `description` and `summary` (`text`), `separator` (`fill`, the rule over the footer) | `dialog`, `alert` |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -290,10 +291,14 @@ box. A family with no variants is named by its part alone (`text-input.root.fill
 measured on its own fill as a button's are, and its floors fall back to its own default, a field's
 help to the quiet tier and its error to the danger colour.
 
+A dialog's size, height, place and rows are the dialog rules', never a theme's: a dialog key for
+its height or its padding is said and left out.
+
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
 keyboard is on it; a field whenever it holds the caret), `disabled` and `open`. A family names
 only the states its wrapper marks: the button every one; a text input and a textarea `hover`,
-`focused` and `disabled`; a field's root `disabled` alone. A key naming another is said and left
+`focused` and `disabled`; a field's root `disabled` alone; a dialog every one, though none
+changes its size. A key naming another is said and left
 out.
 
 | Property | Value | Bounds |
@@ -318,8 +323,10 @@ token follows the person's density; a number is the same in both.
 may be set, so nothing moves when the pointer, a press, the keyboard or a choice reaches a part.
 A theme that sets any other property inside a state is refused, and the check says why.
 
-**A corner is clamped as it is drawn** to half the part's height, its variant's own height
-where the theme sets one, and `full` draws a pill at any height and density. **A control stays a target and its words fit**: in both densities a button
+**A corner is clamped as it is drawn** to half a control's height, its variant's own height
+where the theme sets one, and `full` draws a pill at any height and density. A dialog's corner is
+a surface's: it is drawn at most `space.6`, the inset of what the dialog holds, and `full` is
+that, so a rounded dialog never cuts off a word or an answer in a corner. **A control stays a target and its words fit**: in both densities a button
 the theme sizes is at least 24px tall, and its words (its font size on a line of 1), its block
 padding and its border, top and bottom, fit in its height. A theme that breaks either is refused
 with the density named: Purlis Classic's compact button is 24px, so 14px words and a 1px border
@@ -335,7 +342,8 @@ densities: `"gap": "space.8"` is 32 comfortable, past a gap's 16, and refuses th
 
 **The floors hold per part and per state.** In each variant and state a theme's parts change,
 the part's words contrast 4.5:1 with its fill, and its icon 3:1, on every surface the family is
-drawn on; a border that is the part's only edge, on a fill that is its ground or none, contrasts
+drawn on, each part's words in the tier they are drawn in (a dialog's subtitle muted, its
+question secondary and its summary quiet); a border that is the part's only edge, on a fill that is its ground or none, contrasts
 3:1. A part that breaks one draws its family default in that variant and state, and the check
 says each as a `part-falls-back` warning. A disabled control is exempt, as WCAG has it.
 

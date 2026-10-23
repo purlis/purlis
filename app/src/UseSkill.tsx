@@ -1,11 +1,20 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext, memo, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { Sparkles, TriangleAlert } from "lucide-react";
-import * as Dialog from "./overlays/dialog";
-import { useFocusBack } from "./EndingChat";
-import { Field, SettingActions, SettingRow } from "./settings/components";
+import { Field, SettingRow } from "./settings/components";
+import { Dialog } from "./ui/dialog/Dialog";
+import { FILTERED_FROM, ListFilter } from "./ui/dialog/ListFilter";
 import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
 import { useSkillStudioOn } from "./skillStudio";
@@ -57,6 +66,9 @@ export function warnsSaid(budget: SkillBudget): string | undefined {
   return `This chat's ${what} near or past purlis's skill budget, past which some are hidden from what it reads. Make some skills manual-only, or turn some off for this workspace.`;
 }
 
+/** What the filter over a chat's skills calls them. */
+const SKILLS = { one: "skill", many: "skills" };
+
 /** The skills whose name or description holds every word of `query`, in their order. */
 export function skillsMatching(skills: readonly ChatSkill[], query: string): ChatSkill[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -105,7 +117,7 @@ export function UseSkill({
   const [picked, setPicked] = useState<ChatSkill>();
   const [values, setValues] = useState<string[]>([]);
   const content = useRef<HTMLDivElement>(null);
-  const handBack = useFocusBack();
+  const listId = useId();
   const listed = skills?.skills ?? [];
   const shown = skillsMatching(listed, query);
   const budget = skills?.budget ?? null;
@@ -126,56 +138,55 @@ export function UseSkill({
     setValues(skill.arguments.length > 0 ? skill.arguments.map(() => "") : [""]);
   };
 
+  // **On the dialog family** (#2910): picking a skill that takes arguments asks for them in
+  // place, and Back returns to the list. Its answers are the footer's: Cancel, Back and Type it.
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
+    <Dialog
+      onClose={onCancel}
+      title={picked === undefined ? "Use skill" : `Use ${picked.name}`}
+      subtitle={
+        <>
+          In <code>{chat}</code>. It is typed for you to send.
+        </>
+      }
+      className="use-skill"
+      data-testid="use-skill"
+      {...(picked === undefined
+        ? {}
+        : {
+            alternative: { children: "Back", onPress: () => setPicked(undefined) },
+            main: {
+              children: busy ? "Typing…" : "Type it",
+              reserve: ["Type it", "Typing…"],
+              isDisabled: busy,
+              onPress: () => onUse(picked.name, values),
+            },
+          })}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          ref={content}
-          className="ui-dialog warning use-skill"
-          data-testid="use-skill"
-          aria-describedby={undefined}
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            content.current?.querySelector<HTMLElement>("input")?.focus();
-          }}
-          onCloseAutoFocus={handBack}
-        >
-          <Dialog.Title>{picked === undefined ? "Use skill" : `Use ${picked.name}`}</Dialog.Title>
-          <p className="where">
-            In <code>{chat}</code>. It is typed for you to send.
+      <div ref={content}>
+        {budget !== null && (
+          <p className="use-skill-budget" data-testid="use-skill-budget">
+            {budgetSaid(budget)}
           </p>
-          {budget !== null && (
-            <p className="use-skill-budget" data-testid="use-skill-budget">
-              {budgetSaid(budget)}
-            </p>
-          )}
-          {warning !== undefined && (
-            <p className="honest use-skill-over" role="status">
-              <TriangleAlert aria-hidden="true" /> {warning}
-            </p>
-          )}
+        )}
+        {warning !== undefined && (
+          <p className="honest use-skill-over" role="status">
+            <TriangleAlert aria-hidden="true" /> {warning}
+          </p>
+        )}
 
-          {picked === undefined ? (
-            <>
-              <SettingRow
-                label="Find a skill"
-                control={(ids) => (
-                  <Field
-                    ids={ids}
-                    kind="text"
-                    value={query}
-                    placeholder="Name or what it does"
-                    onChange={setQuery}
-                  />
-                )}
+        {picked === undefined ? (
+          <>
+            {listed.length >= FILTERED_FROM && (
+              <ListFilter
+                noun={SKILLS}
+                total={listed.length}
+                query={query}
+                onQuery={setQuery}
+                controls={listId}
               />
+            )}
+            <div id={listId}>
               {skills === undefined ? (
                 <p className="honest">Reading this chat&apos;s skills…</p>
               ) : listed.length === 0 ? (
@@ -206,61 +217,42 @@ export function UseSkill({
                   ))}
                 </ul>
               )}
-              {trouble && (
-                <p className="trouble" role="alert">
-                  {trouble}
-                </p>
-              )}
-              <SettingActions>
-                <Button onPress={onCancel}>Cancel</Button>
-              </SettingActions>
-            </>
-          ) : (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!busy) onUse(picked.name, values);
-              }}
-            >
-              <p className="use-skill-description">{picked.description}</p>
-              {(picked.arguments.length > 0 ? picked.arguments : ["Arguments"]).map((name, at) => (
-                <SettingRow
-                  key={name}
-                  label={name}
-                  help={picked.arguments.length === 0 ? (picked.hint ?? undefined) : undefined}
-                  control={(ids) => (
-                    <Field
-                      ids={ids}
-                      kind="text"
-                      value={values[at] ?? ""}
-                      placeholder={
-                        picked.arguments.length > 0 && at === 0
-                          ? (picked.hint ?? undefined)
-                          : undefined
-                      }
-                      onChange={(to) =>
-                        setValues((was) => was.map((one, i) => (i === at ? to : one)))
-                      }
-                    />
-                  )}
-                />
-              ))}
-              {trouble && (
-                <p className="trouble" role="alert">
-                  {trouble}
-                </p>
-              )}
-              <SettingActions>
-                <Button variant="primary" type="submit" isDisabled={busy}>
-                  {busy ? "Typing…" : "Type it"}
-                </Button>
-                <Button onPress={() => setPicked(undefined)}>Back</Button>
-              </SettingActions>
-            </form>
-          )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="use-skill-description">{picked.description}</p>
+            {(picked.arguments.length > 0 ? picked.arguments : ["Arguments"]).map((name, at) => (
+              <SettingRow
+                key={name}
+                label={name}
+                help={picked.arguments.length === 0 ? (picked.hint ?? undefined) : undefined}
+                control={(ids) => (
+                  <Field
+                    ids={ids}
+                    kind="text"
+                    value={values[at] ?? ""}
+                    placeholder={
+                      picked.arguments.length > 0 && at === 0
+                        ? (picked.hint ?? undefined)
+                        : undefined
+                    }
+                    onChange={(to) =>
+                      setValues((was) => was.map((one, i) => (i === at ? to : one)))
+                    }
+                  />
+                )}
+              />
+            ))}
+          </>
+        )}
+        {trouble && (
+          <p className="trouble" role="alert">
+            {trouble}
+          </p>
+        )}
+      </div>
+    </Dialog>
   );
 }
 

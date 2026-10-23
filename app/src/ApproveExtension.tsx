@@ -1,11 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useRef } from "react";
-import * as Dialog from "./overlays/dialog";
 import type { ExtensionAsk } from "./bindings";
-import { AnswerBar } from "./AnswerBar";
-import { Button } from "./ui/button/Button";
+import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * What this extension says it brings, what charter will actually do about it, and — in charter's
@@ -40,7 +37,7 @@ import { Button } from "./ui/button/Button";
  * than in a doc comment. It is absent for an extension that declares no state directory, which
  * is the ordinary case and has no exception to state.
  *
- * A Radix dialog (`docs/ui-primitives.md`), so "has to be answered" is a property of the surface
+ * The family's dialog (`docs/ui-primitives.md`), so "has to be answered" is a property of the surface
  * rather than a claim about how it was drawn. Escape answers it the way Cancel does: nothing is
  * approved and the next ask is a first ask again. A click outside is not an answer — missing a
  * dialog is not a decision.
@@ -56,69 +53,43 @@ export function ApproveExtension({
   onApprove: (ask: ExtensionAsk) => void;
   onCancel: () => void;
 }) {
-  // Cancel, focused by the dialog itself rather than by tab order. Approving an extension puts
-  // code on this machine into charter's own trust record, and it is never what a stray Return
-  // key finds.
-  const cancel = useRef<HTMLButtonElement>(null);
+  // Cancel has the keyboard as it opens. Approving an extension puts code on this machine into
+  // charter's own trust record, and it is never what a stray Return key finds.
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel();
+    <Dialog
+      onClose={onCancel}
+      title={
+        ask.first
+          ? `Trust the extension “${ask.name}”?`
+          : `“${ask.name}” has changed since you approved it`
+      }
+      titleId="approve-extension"
+      subtitle={<code>{ask.path}</code>}
+      // Described by the sentence this dialog exists for (#630): what purlis cannot stop the
+      // extension doing is what a screen reader says as the question opens.
+      aria-describedby="approve-extension-runs-as-you"
+      initialFocus="cancel"
+      main={{
+        children: ask.first ? "Trust it" : "Trust it anyway",
+        // An answer that grants (ADR 0097 §6): its lock and its edge, never the primary look.
+        variant: "grants",
+        onPress: () => onApprove(ask),
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" />
-        <Dialog.Content
-          className="ui-dialog warning"
-          aria-labelledby="approve-extension"
-          // Described by the sentence this dialog exists for (#630): what purlis cannot stop the
-          // extension doing is what a screen reader says as the question opens.
-          aria-describedby="approve-extension-runs-as-you"
-          onInteractOutside={(e) => e.preventDefault()}
-          onOpenAutoFocus={(e) => {
-            e.preventDefault();
-            cancel.current?.focus();
-          }}
-        >
-          <Dialog.Title id="approve-extension">
-            {ask.first
-              ? `Trust the extension “${ask.name}”?`
-              : `“${ask.name}” has changed since you approved it`}
-          </Dialog.Title>
-          <p className="where">
-            <code>{ask.path}</code>
-          </p>
+      <h3>{ask.first ? "What it declares" : "What it declares now"}</h3>
+      <ul className="contributes">
+        {ask.declares.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
 
-          <h3>{ask.first ? "What it declares" : "What it declares now"}</h3>
-          <ul className="contributes">
-            {ask.declares.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-
-          {/* charter's own words, rendered as given. See this module's header for why nothing
-            here rewrites, shortens or softens them. */}
-          <p className="came-back runs-as-you" id="approve-extension-runs-as-you">
-            {ask.runs_as_you}
-          </p>
-          <p className="came-back">{ask.fingerprint_note}</p>
-          {ask.state_note ? <p className="came-back">{ask.state_note}</p> : null}
-
-          {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186): WebKit
-              leaves a `<button>` out of the tab sequence unless its `tabindex` is written
-              down. A consent surface an operator cannot reach with the keyboard is one they
-              answer with the mouse or not at all. */}
-          <AnswerBar>
-            <Button ref={cancel} onPress={onCancel}>
-              Cancel
-            </Button>
-            <Button onPress={() => onApprove(ask)}>
-              {ask.first ? "Trust it" : "Trust it anyway"}
-            </Button>
-          </AnswerBar>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {/* charter's own words, rendered as given. See this module's header for why nothing here
+          rewrites, shortens or softens them. */}
+      <p className="came-back runs-as-you" id="approve-extension-runs-as-you">
+        {ask.runs_as_you}
+      </p>
+      <p className="came-back">{ask.fingerprint_note}</p>
+      {ask.state_note ? <p className="came-back">{ask.state_note}</p> : null}
+    </Dialog>
   );
 }

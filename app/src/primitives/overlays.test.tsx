@@ -14,8 +14,8 @@
  *   leaves it; a popover opens from the keyboard and says what it is;
  * - **every overlay in the window wears the surface**, and every button in one the shared
  *   button, read from the source the way `controls.test.tsx` reads the menus;
- * - **`App.css` draws no overlay surface of its own**: the classes it keeps (`.warning`,
- *   `.row-card`) only place and size theirs.
+ * - **`App.css` draws no overlay surface of its own**: the classes it keeps (`.row-card`) only
+ *   place and size theirs.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,13 +24,13 @@ import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import * as Dialog from "@radix-ui/react-dialog";
 import { drawnWith } from "../cascade.testkit";
 import { isGeometry } from "../theme/geometry";
 import { MOTION_TOKENS, motionProperty } from "../theme/motion";
 import { property, TOKENS } from "../theme/theme";
 import { Button } from "../ui/button/Button";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
+import { Dialog } from "../ui/dialog/Dialog";
 import { PopoverDialog, PopoverTrigger } from "../ui/popover/Popover";
 
 afterEach(cleanup);
@@ -55,18 +55,13 @@ describe("the overlays stylesheet", () => {
     expect(styles.indexOf(overlays)).toBeGreaterThan(styles.indexOf(controls));
   });
 
-  it("reads only tokens, and the one size a dialog's view may hand it", () => {
+  it("reads only tokens", () => {
     const colours = new Set(TOKENS.map(property));
     const motion = new Set(MOTION_TOKENS.map(motionProperty));
-    const fromViews = new Set(["--ui-dialog-padding-end"]);
-    expect(sheet("App.css")).toMatch(/--ui-dialog-padding-end:/);
     const read = [...CSS.matchAll(/var\((--[\w-]+)/g)].map((hit) => hit[1]);
     expect(read.length).toBeGreaterThan(0);
     expect(
-      read.filter(
-        (name) =>
-          !colours.has(name) && !motion.has(name) && !isGeometry(name) && !fromViews.has(name),
-      ),
+      read.filter((name) => !colours.has(name) && !motion.has(name) && !isGeometry(name)),
     ).toEqual([]);
   });
 
@@ -94,20 +89,12 @@ describe("the overlays stylesheet", () => {
 function Asking() {
   const [open, setOpen] = useState(true);
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="ui-scrim" data-testid="scrim" />
-        <Dialog.Content className="ui-dialog warning" aria-describedby={undefined}>
-          <Dialog.Title>Rename workspace</Dialog.Title>
-          <div className="answer">
-            <Button type="submit" variant="primary">
-              Rename
-            </Button>
-            <Button onPress={() => setOpen(false)}>Cancel</Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Dialog
+      isOpen={open}
+      onClose={() => setOpen(false)}
+      title="Rename workspace"
+      main={{ children: "Rename" }}
+    />
   );
 }
 
@@ -146,6 +133,14 @@ describe("one surface", () => {
     ["border-radius", "var(--radius-lg)"],
     ["box-shadow", "var(--elevation-overlay)"],
   ];
+  /** The same, as the dialog family writes it (`ui/dialog/dialog.css`). */
+  const DIALOG_SURFACE: [string, string][] = [
+    ["background-color", "var(--surface-overlay)"],
+    ["color", "var(--text-primary)"],
+    ["border", "1px solid var(--border-subtle)"],
+    ["border-radius", "var(--radius-lg)"],
+    ["box-shadow", "var(--elevation-overlay)"],
+  ];
 
   it("draws a dialog, a popover, a menu and a tooltip on one ground, border, corner and lift", async () => {
     const user = userEvent.setup();
@@ -174,35 +169,17 @@ describe("one surface", () => {
 
     render(<Asking />);
     const dialog = screen.getByRole("dialog", { name: "Rename workspace" });
-    for (const [name, value] of SURFACE)
+    for (const [name, value] of DIALOG_SURFACE)
       expect(drawnWith(dialog, name), `dialog ${name}`).toBe(value);
-  });
-
-  it("pads a dialog and a popover alike, and lets Ask {persona} bring its answers to the edge", async () => {
-    const user = userEvent.setup();
-    render(<Card />);
-    await user.click(screen.getByRole("button", { name: "About this row" }));
-    const popover = surfaceOf(await screen.findByRole("dialog", { name: "What this row is" }));
-    const padding = drawnWith(popover, "padding");
-    expect(padding).toBe("var(--space-6)");
-    cleanup();
-    render(<Asking />);
-    const dialog = screen.getByRole("dialog", { name: "Rename workspace" });
-    expect(drawnWith(dialog, "padding")).toBe(padding);
-    expect(drawnWith(dialog, "padding-block-end")).toBe(
-      "var(--ui-dialog-padding-end, var(--space-6))",
-    );
-    // A view places and sizes its dialog: `.warning` still centres it and caps it.
-    expect(drawnWith(dialog, "position")).toBe("fixed");
-    expect(drawnWith(dialog, "max-width")).toBe("34rem");
   });
 
   it("lays a scrim over the window in the theme's scrim colour", () => {
     render(<Asking />);
-    const scrim = screen.getByTestId("scrim");
+    const scrim = document.querySelector('[data-scope="dialog"][data-part="scrim"]');
+    if (scrim === null) throw new Error("the dialog drew no scrim");
     expect(drawnWith(scrim, "position")).toBe("fixed");
     expect(drawnWith(scrim, "inset")).toBe("0");
-    expect(drawnWith(scrim, "background")).toBe("var(--overlay-scrim)");
+    expect(drawnWith(scrim, "background-color")).toBe("var(--overlay-scrim)");
   });
 
   it("draws a popover's arrow in the surface's ground", async () => {
@@ -215,13 +192,15 @@ describe("one surface", () => {
     expect(drawnWith(arrow, "fill")).toBe("var(--surface-overlay)");
   });
 
-  it("draws the dialog's answers as the shared buttons, whatever the answer bar says", () => {
+  it("draws the dialog's answers as the shared buttons, in a row that keeps their size", () => {
     render(<Asking />);
     const dialog = screen.getByRole("dialog", { name: "Rename workspace" });
     const rename = within(dialog).getByRole("button", { name: "Rename" });
     const cancel = within(dialog).getByRole("button", { name: "Cancel" });
     for (const button of [rename, cancel]) {
-      expect(drawnWith(button, "block-size")).toBe("var(--size-control)");
+      // The footer's row wraps a long answer's words inside the dialog's width, and keeps every
+      // answer at least the control's height.
+      expect(drawnWith(button, "min-block-size")).toBe("var(--size-control)");
       expect(drawnWith(button, "border-radius")).toBe("var(--radius-md)");
     }
     expect(drawnWith(rename, "background")).toBe("var(--accent-surface)");
@@ -234,11 +213,11 @@ describe("one surface", () => {
     const dialog = screen.getByRole("dialog", { name: "Rename workspace" });
     const rename = within(dialog).getByRole("button", { name: "Rename" });
     const cancel = within(dialog).getByRole("button", { name: "Cancel" });
-    expect(rename).toHaveFocus();
-    await user.tab();
     expect(cancel).toHaveFocus();
     await user.tab();
     expect(rename).toHaveFocus();
+    await user.tab();
+    expect(cancel).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -265,8 +244,6 @@ const FILES = Object.entries(
 
 /** The Radix overlay parts and the class each must wear. */
 const PARTS: [RegExp, string][] = [
-  [/^(Dialog|AlertDialog|Alert)\.Overlay$/, "ui-scrim"],
-  [/^(Dialog|AlertDialog|Alert)\.Content$/, "ui-dialog"],
   [/^(Popover|HoverCard)\.Content$/, "ui-popover"],
   [/^Tooltip\.Content$/, "ui-tooltip"],
   [/^(Popover|HoverCard|Tooltip)\.Arrow$/, "ui-overlay-arrow"],
@@ -350,12 +327,13 @@ function overlaysIn(): { parts: Found[]; controls: Found[]; families: Found[] } 
 describe("every overlay in the window", () => {
   const { parts, controls, families } = overlaysIn();
 
-  it("is found: the dialogs, the cards and the controls inside them", () => {
-    expect(parts.filter(({ tag }) => /\.Content$/.test(tag)).length).toBeGreaterThan(40);
+  it("is found: the cards, the lists and the controls inside them", () => {
+    // The dialogs are the dialog family's, whose answers it draws itself (`ui/dialog/Dialog.tsx`),
+    // and are held by its own tests: no Radix dialog is left.
+    expect(parts.filter(({ tag }) => /^(Dialog|AlertDialog)\./.test(tag))).toEqual([]);
     // The cards are the popover family's: a chat row's, a list row's and a refused name's.
     expect(families.filter(({ tag }) => /Popover/.test(tag)).length).toBe(3);
     expect(parts.filter(({ tag }) => tag === "Popover.Content").length).toBe(0);
-    expect(controls.filter(({ tag }) => tag === "Button").length).toBeGreaterThan(80);
   });
 
   it("wears the surface: a scrim, a dialog, a popover, a tooltip and an arrow each its class", () => {
@@ -418,8 +396,7 @@ describe("App.css", () => {
       selector.trim().replace(/\s+/g, " "),
       body,
     ]);
-    const surfaces =
-      /^(\.warning|\.row-card|\.ui-dialog|\.ui-popover|\.ui-tooltip|\.ui-scrim|\.palette|\.chat-card)(\.[\w-]+)*$/;
+    const surfaces = /^(\.row-card|\.ui-popover|\.ui-tooltip|\.palette|\.chat-card)(\.[\w-]+)*$/;
     const drawn = rules.flatMap(([selector, body]) =>
       selector
         .split(/\s*,\s*/)
@@ -432,6 +409,8 @@ describe("App.css", () => {
     );
     expect(drawn).toEqual([]);
     expect(app).not.toMatch(/\n\.asking \{/);
+    // A dialog's surface is the family's (`ui/dialog/dialog.css`): the window keeps no other.
+    expect(app).not.toMatch(/\.(ui-dialog|ui-scrim|warning)(?![\w-])/);
   });
 
   it("lifts nothing by a shadow of its own: every lift is an elevation token", () => {

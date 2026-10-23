@@ -267,6 +267,7 @@ export function DispatchGrantsList({
   }>({ from: "", to: "", level: "you", where: "" });
   const whole = useRef<HTMLDivElement>(null);
   const yes = useRef<HTMLButtonElement>(null);
+  const no = useRef<HTMLButtonElement>(null);
   /** Where the focus goes once a question is put away: the button that asked (Cancel), or
    *  the line acted on and how far down the table it was (a press that was confirmed). */
   const next = useRef<{ key?: string; line: string; at: number } | undefined>(undefined);
@@ -339,13 +340,15 @@ export function DispatchGrantsList({
     };
   }, [plane, read]);
 
-  // The confirming button takes the focus as it is drawn, so Enter and Escape answer it. Once
+  // The confirming button takes the focus as it is drawn, so Enter and Escape answer it, unless
+  // it grants: then Cancel, the safe choice, takes it (#2980), so a key pressed by habit never
+  // answers yes. Once
   // the question is put away the focus goes to the button that asked; where that is gone, to
   // the first button of the same line; where the line is gone, to the button now at its place
   // in the table; and only with no button left, to the table itself.
   useEffect(() => {
     if (asking !== undefined) {
-      yes.current?.focus();
+      (asking.grants === true ? no : yes).current?.focus();
       return;
     }
     const to = next.current;
@@ -1093,6 +1096,9 @@ export function DispatchGrantsList({
       }}
     >
       <p id={`${ids.id}-confirm`}>{ask.says}</p>
+      <Button ref={no} isDisabled={busy} onPress={cancel}>
+        Cancel
+      </Button>
       <Button
         variant={ask.grants === true ? "grants" : "secondary"}
         ref={yes}
@@ -1101,9 +1107,6 @@ export function DispatchGrantsList({
         onPress={() => void confirm()}
       >
         {ask.yes}
-      </Button>
-      <Button isDisabled={busy} onPress={cancel}>
-        Cancel
       </Button>
     </div>
   );

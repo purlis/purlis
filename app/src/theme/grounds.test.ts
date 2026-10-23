@@ -151,6 +151,10 @@ function groundsOfClasses(css: string[]): {
         if (classes.length === 0 && tag === "button") continue;
         // Nor is the family's own stylesheet, on its wrapper's attributes.
         if (/\[data-scope="button"\]/.test(subject)) continue;
+        // Of the dialog family's parts (#2910), only its root is a ground a button stands on: the
+        // scrim is drawn under the root, and the footer's rule holds nothing.
+        if (/\[data-scope="dialog"\]/.test(subject) && !/\[data-part="root"\]/.test(subject))
+          continue;
         const form =
           tag !== undefined
             ? `<${tag}>`
