@@ -153,6 +153,11 @@ fn lines(text: &str) -> Vec<&str> {
 ///
 /// It is what a harness with skills of its own shows its model: each skill's name, when to use
 /// it, and the file to read when it applies. The model reads that file with its own tools.
+///
+/// **A manual-only skill** ([`crate::declared`]) is purlis's equivalent of the harness's own
+/// switch ([`crate::compat::ManualOnly::Listing`], SK-8): its description stays out, so the
+/// model never picks it by itself, and it is named with its file on one line of its own, to read
+/// only when the person names it. Its description costs nothing.
 pub fn listing(skills: &[Skill]) -> Option<String> {
     if skills.is_empty() {
         return None;
@@ -162,12 +167,25 @@ pub fn listing(skills: &[Skill]) -> Option<String> {
          here. When a request matches one, read its `SKILL.md` and follow it before acting; a \
          prompt that names a skill by its name means this list.",
     );
-    for skill in skills {
+    let (manual, chosen): (Vec<&Skill>, Vec<&Skill>) = skills
+        .iter()
+        .partition(|skill| crate::declared(skill).manual);
+    for skill in chosen {
         text.push_str(&format!(
             "\n- `{}` — {} (`{}`)",
             skill.name,
             skill.description,
             skill.path.display()
+        ));
+    }
+    if !manual.is_empty() {
+        let named: Vec<String> = manual
+            .iter()
+            .map(|skill| format!("`{}` (`{}`)", skill.name, skill.path.display()))
+            .collect();
+        text.push_str(&format!(
+            "\n- Only when the person names one, never by your own choice: {}",
+            named.join(", ")
         ));
     }
     Some(text)

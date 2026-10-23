@@ -34,6 +34,8 @@ const deploy = {
   left_out: null,
   description: "Ships it.",
   folder: "skills/deploy",
+  compat: [],
+  lint: [],
   written: "deploy",
   named: false,
   unchecked: null,
@@ -136,6 +138,8 @@ describe("the Skill studio's changes", () => {
       grant: null,
       granted: null,
       folder: "workspaces/ops/skills/triage",
+      compat: [],
+      lint: [],
     };
     const asked = core([triage], "ops", {
       skill_move_needs_grant: (args) =>

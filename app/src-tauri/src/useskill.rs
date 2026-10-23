@@ -70,11 +70,9 @@ pub struct SkillBudget {
     pub skills: u32,
     /// Characters of what it lists of them.
     pub chars: u32,
-    /// Manual-only skills in the set.
+    /// Manual-only skills in the set, which cost nothing: every harness keeps them out of its
+    /// listing (SK-8).
     pub manual: u32,
-    /// Whether they cost nothing: the chat leaves them out of its listing. Where it does not
-    /// yet, they are counted in `skills` and `chars` (#2771).
-    pub manual_free: bool,
     /// The most skills the budget lists.
     pub most_skills: u32,
     /// The most characters it holds.
@@ -170,7 +168,6 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             skills: small(spent.skills),
             chars: small(spent.chars),
             manual: small(spent.manual),
-            manual_free: spent.budget.manual_free,
             most_skills: small(spent.budget.skills),
             most_chars: small(spent.budget.chars),
             warns: spent.warns().map(BudgetWarns::from),

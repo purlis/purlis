@@ -18,18 +18,12 @@ import {
 } from "./bindings";
 
 /** The budget in a line: `12 skills of 30 · 3,400 of 6,000 characters`, and the manual-only
- *  skills: free where the chat leaves them out, and counted, still listed, where it does not
- *  yet (#2771). */
+ *  skills, free on every chat (SK-8). */
 export function budgetSaid(budget: SkillBudget): string {
   const chars = `${budget.chars.toLocaleString("en-US")} of ${budget.most_chars.toLocaleString("en-US")} characters`;
   const skills = `${counted(budget.skills, "skill", "skills")} of ${budget.most_skills}`;
   const manual = counted(budget.manual, "manual-only skill", "manual-only skills");
-  const free =
-    budget.manual === 0
-      ? ""
-      : budget.manual_free
-        ? ` · ${manual} free`
-        : ` · ${manual} still listed on this chat (#2771)`;
+  const free = budget.manual === 0 ? "" : ` · ${manual} free`;
   return `${skills} · ${chars}${free}`;
 }
 
@@ -78,8 +72,8 @@ export function skillsMatching(skills: readonly ChatSkill[], query: string): Cha
  * why (the core's sentence).
  *
  * A manual-only skill is listed with the others and marked: it runs only when it is asked for by
- * name, which is what this does. It costs nothing in the budget where the chat leaves it out of
- * its listing, and is counted where it does not yet (#2771).
+ * name, which is what this does. It costs nothing in the budget: every chat leaves it out of its
+ * listing.
  */
 export function UseSkill({
   chat,
@@ -285,8 +279,7 @@ export type SkillBudgets = Readonly<Record<number, SkillBudget>>;
 export const SkillBudgetsHere = createContext<SkillBudgets>({});
 
 /** How many skills a chat's set holds, whatever its listing leaves out. */
-export const skillsInTheSet = (budget: SkillBudget) =>
-  budget.skills + (budget.manual_free ? budget.manual : 0);
+export const skillsInTheSet = (budget: SkillBudget) => budget.skills + budget.manual;
 
 /**
  * **The skill budgets of chats `sessions` of `plane`** (#2775), read once each while the Skill
