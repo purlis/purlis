@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792795517304,
+  "lastUpdate": 1792799539675,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22974,6 +22974,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5327285,
             "unit": "ms",
             "extra": "median of 5 runs: 100.720, 101.241, 101.533, 101.593, 102.786 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "99d287ee55be25665af8ed4ce562a1a3c75a5a77",
+          "message": "Bump gix from 0.89.0 to 0.90.0 (#3087)\n\nBumps [gix](https://github.com/GitoxideLabs/gitoxide) from 0.89.0 to 0.90.0.\n- [Release notes](https://github.com/GitoxideLabs/gitoxide/releases)\n- [Changelog](https://github.com/GitoxideLabs/gitoxide/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/GitoxideLabs/gitoxide/compare/gix-v0.89.0...gix-v0.90.0)\n\n---\nupdated-dependencies:\n- dependency-name: gix\n  dependency-version: 0.90.0\n  dependency-type: direct:production\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-24T03:50:44+04:00",
+          "tree_id": "02b498708fbb3be75fe97e7396104a6c9024f4f2",
+          "url": "https://github.com/purlis/purlis/commit/99d287ee55be25665af8ed4ce562a1a3c75a5a77"
+        },
+        "date": 1792799537722,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5253239999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.521, 0.525, 0.528, 0.554 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.917618,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.440, 16.628, 16.918, 17.146, 17.362 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.3766995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.879, 102.976, 104.377, 104.732, 104.968 ms"
           }
         ]
       }
