@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792716192605,
+  "lastUpdate": 1792717991519,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22176,6 +22176,48 @@ window.BENCHMARK_DATA = {
             "value": 105.2021355,
             "unit": "ms",
             "extra": "median of 5 runs: 103.887, 103.974, 105.202, 105.279, 106.199 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6d6c513c0557e596a3078d803f05c591a4ee3a7b",
+          "message": "Runners: a runner chat's change to the project arrives as a proposal (#2046, 4/4) (#2844)\n\n* Move the window's brokered write tests beside their module\n\nA move alone: no test's name or body changes.\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a runner chat's change to the project arrives as a proposal (#2046, 4/4)\n\n- A brokered write from a chat that runs on a pool's runner is held for\n  the person, in words, never made: Apply makes it as the window makes a\n  chat's write here, for the chat as the app records it; Dismiss makes\n  nothing; the chat is told which.\n- Shown in the chat's tab and the Inbox as an ask of its own\n  (runner-write), with window-only apply and dismiss commands.\n- purlis_core::runnerwrite says each kind of write in a sentence.\n\nCloses #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Say which runner writes arrive as proposals\n\nRefs #2046\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: Apply only where the person sees the whole change, held by its link\n\n- A runner write's row offers Apply only where its one line is the whole write as it would\n  be written; otherwise Open shows it whole in its own tab (RunnerWriteTab, runner_write),\n  with Apply there where every text is drawn as it is. apply_runner_write takes where it was\n  pressed and judges it again by that place's rules.\n- A write's texts are held trimmed, as shown; one that carries a credential shape or what\n  is not text is refused and never held.\n- \"(N more characters)\" agrees in number.\n- A brokered write that comes over a pool's link is held, by the link it came over.\n- The chat is told when an Apply could not be made (a memory verb that failed included),\n  and a runner chat taken back after a restart is told its earlier changes wait no more.\n  What it is told names the change in purlis's words, never its text.\n- Tests: row and tab Apply rules, a drawn-otherwise write, a refused Apply, the tab, the\n  Open path, and the view's theme state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a held change's tab shows what is written, and the chat is told once\n\n- The tab shows a held write unescaped where every character draws as itself, so a\n  backslash reads as the one that is written; drawn_as_it_is now refuses a carriage\n  return and every character the escape would write out. Tests with a backslash and a\n  CRLF.\n- The chat is told at hold time that a restart of the window drops its change; nothing\n  is told after a restart, since nothing on disk records which chat had one held.\n- The brokered write's comment says how the pool_of fallback guards.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Draw the runner write's tab with the window's own Button\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Take EmptyState from where the window keeps it now\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T05:11:39+04:00",
+          "tree_id": "e12b6dadf9427dcb0d457e9a88a5a16f4fce492d",
+          "url": "https://github.com/purlis/purlis/commit/6d6c513c0557e596a3078d803f05c591a4ee3a7b"
+        },
+        "date": 1792717988778,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.533003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.483, 0.519, 0.533, 0.538, 0.553 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.1160245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.713, 17.050, 17.116, 17.797, 17.965 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.7690985,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.285, 105.385, 105.769, 105.831, 106.579 ms"
           }
         ]
       }
