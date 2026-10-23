@@ -2552,6 +2552,18 @@ export const commands = {
 	projectsNotHeld: () => typedError<ProjectNotHeld[], string>(__TAURI_INVOKE("projects_not_held")),
 	/**  **Where a workspace's chats run** (#2046), as its settings show it. */
 	chatsRunOn: (plane: PlaneId, workspace: string) => typedError<ChatsRunOn, string>(__TAURI_INVOKE("chats_run_on", { plane, workspace })),
+	/**
+	 *  **Apply** on a held write, pressed `from` a row or its own tab: made now, exactly as held,
+	 *  for the chat as the app records it, only where it was shown whole there. Window-only.
+	 */
+	applyRunnerWrite: (plane: PlaneId, id: number, from: From) => typedError<string, string>(__TAURI_INVOKE("apply_runner_write", { plane, id, from })),
+	/**
+	 *  **Held write `id` whole, for its own tab**. Window-only: what a chat asks to write is the
+	 *  person's to read.
+	 */
+	runnerWrite: (plane: PlaneId, id: number) => typedError<RunnerWriteWhole, string>(__TAURI_INVOKE("runner_write", { plane, id })),
+	/**  **Dismiss** on a held write: nothing is made. Window-only. */
+	dismissRunnerWrite: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_runner_write", { plane, id })),
 	/**  **Sets where a workspace's chats run** (#2046): the person's choice in its settings. */
 	setChatsRunOn: (plane: PlaneId, workspace: string, pool: string | null) => typedError<ChatsRunOn, string>(__TAURI_INVOKE("set_chats_run_on", { plane, workspace, pool })),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
@@ -4011,6 +4023,11 @@ export type AnswerPath =
  */
 { via: "proposed-change"; id: number; path: string } | 
 /**
+ *  `apply_runner_write` for Apply and `dismiss_runner_write` for Dismiss, on held runner
+ *  write `id` (#2046); Open opens its own tab, which shows it whole, and sends nothing.
+ */
+{ via: "runner-write"; id: number } | 
+/**
  *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
  *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
@@ -4162,6 +4179,11 @@ export type AskSource =
  *  (#1975).
  */
 "proposed-change" | 
+/**
+ *  A change to the project a chat on a pool's runner asked for, which only the person
+ *  applies (#2046).
+ */
+"runner-write" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
@@ -9865,6 +9887,26 @@ export type RunnerBranch = {
 	 *  checkout is on where there is none.
 	 */
 	ahead: number,
+};
+
+/**
+ *  **A held write whole, as its own tab draws it**: what it would do with every text whole, and
+ *  whether Apply is offered there, or why not.
+ */
+export type RunnerWriteWhole = {
+	/**  The chat that asked for it. */
+	session: number,
+	/**  The pool it runs on. */
+	pool: string,
+	/**
+	 *  What it would do, every text whole: as it would be written where it [`Self::applies`],
+	 *  and drawn safely, its escapes written out, where it does not.
+	 */
+	said: string,
+	/**  Whether Apply is offered: every text it carries is drawn as it is. */
+	applies: boolean,
+	/**  Why Apply is not offered, in a sentence. */
+	why: string | null,
 };
 
 /**  What the picker says about the sandbox for one profile, before anything starts. */

@@ -199,6 +199,7 @@ pub mod runnerimage;
 pub mod runnerlink;
 #[cfg(unix)]
 pub mod runners;
+pub mod runnerwrite;
 pub mod sandbox;
 pub mod sandboxblock;
 pub mod savefix;

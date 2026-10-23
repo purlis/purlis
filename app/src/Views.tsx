@@ -99,6 +99,8 @@ import { TaskChangesTab } from "./TaskChangesTab";
 import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } from "./taskChanges";
 import { PROPOSED_CHANGE_VIEW } from "./proposedChangeOpen";
 import { ProposedChangeTab } from "./ProposedChangeTab";
+import { RUNNER_WRITE_VIEW } from "./runnerWriteOpen";
+import { RunnerWriteTab } from "./RunnerWriteTab";
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
@@ -308,6 +310,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [TASK_CHANGES_VIEW]: GitCompare,
   /** A change a chat proposed, whole (#1975, `proposedChangeOpen.ts`). */
   [PROPOSED_CHANGE_VIEW]: GitCompare,
+  /** A runner chat's change to the project, whole (#2046, `runnerWriteOpen.ts`). */
+  [RUNNER_WRITE_VIEW]: GitCompare,
   /** A browser, drawn live (#2012, `browsers.ts`). */
   [BROWSER_VIEW]: Globe,
 };
@@ -510,6 +514,10 @@ export function ViewPane({
             plane={plane}
             id={Number(view.key)}
           />
+        ) : view.from === null && view.view === RUNNER_WRITE_VIEW ? (
+          /* A runner chat's change to the project, whole, with Apply where it may be applied
+             (#2046). Keyed by the held change, which is the project's. */
+          <RunnerWriteTab key={`${plane}\u0000${view.key}`} plane={plane} id={Number(view.key)} />
         ) : isBrowser(view) ? (
           /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the
              browser, so a pane that comes to show another one opens its own view. */

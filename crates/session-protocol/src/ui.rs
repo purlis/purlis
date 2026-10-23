@@ -643,6 +643,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // workspace's code, so only the person's own choice in their window sets it.
     "chats_run_on",
     "set_chats_run_on",
+    // A runner chat's held change to the project (#2046): only the person's press applies it,
+    // and the change whole, for its own tab, is the person's to read.
+    "apply_runner_write",
+    "dismiss_runner_write",
+    "runner_write",
     // Taking a browser over, driving it and handing it back (#2014): what the person types into
     // a page is theirs, and only the window, where they see it, sends it.
     "take_over_browser",

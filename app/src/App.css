@@ -1998,6 +1998,16 @@ button.show-more:focus-visible {
   white-space: pre-wrap;
 }
 
+/* **A runner chat's change, whole, in its own tab** (#2046): every line as it would be written,
+   wrapped and never cut, beside the Apply that writes it. */
+.runner-write-whole {
+  max-width: 100%;
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* **A tab that shows a task says so** (#1486, V100-35): `steward 4 › talk`, the task's name
    dimmer than the session's, since the tab is the session's. Both names give way to an
    ellipsis as a tab's name always did; the task's goes first. */
