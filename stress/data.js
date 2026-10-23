@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792794648223,
+  "lastUpdate": 1792797646128,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6320,6 +6320,42 @@ window.BENCHMARK_DATA = {
             "value": 328.8,
             "unit": "MB",
             "extra": "median of 6 samples: 285.6, 349.1, 330.1, 328.3, 329.3, 224.5 MB; window 170.2 MB, session host 158.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "566ca0a313d32236b1555e79e3074ae3fe5db711",
+          "message": "Dialog family and the dialog rules (#3026)\n\n* Dialog family and the dialog rules (#2910)\n\nEvery dialog and alert dialog in the window is the dialog family (app/src/ui/dialog), on React\nAria, under the dialog rules: three rows, width by size, a fixed top, at most three answers in\ntheir places, Return and Esc (one layer at a time), no nesting, focus on the right thing, and a\ngrant never found by Return nor given the keyboard as it is drawn (#2980). The dialog's body and\nfooter are the field family's form. The dialog joins the theme's parts as a surface.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Dialog stories: the menu's Esc waits for the keyboard to be in the menu (#2910)\n\nReact Aria moves the keyboard into an opened menu on the next frame, which WebKit draws late.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Dialog stories: a menu has the menu family's time to go (#2910)\n\nWebKit draws the next frame late in a busy run; the menu family's own stories give a closing\nmenu 3 s.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T01:41:53+04:00",
+          "tree_id": "37fd2b9c799c364eded081b69de6aa539dfdcd15",
+          "url": "https://github.com/purlis/purlis/commit/566ca0a313d32236b1555e79e3074ae3fe5db711"
+        },
+        "date": 1792797643657,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1021,
+            "unit": "MB",
+            "extra": "median of 3 samples: 892, 1021, 1270 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 352.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 372.4, 360.4, 360.8, 342.8, 343.9, 217.8 MB; window 167.8 MB, session host 178.6 MB"
           }
         ]
       }
