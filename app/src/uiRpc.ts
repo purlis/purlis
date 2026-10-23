@@ -8991,7 +8991,7 @@ export type SkillLintFinding = {
 	says: string,
 };
 
-/**  How much a lint's finding stops, as the editor draws it: the core's `Level`. */
+/**  How much a lint's finding stops, as the editor draws it: the core's `Severity`. */
 export type SkillLintLevel = 
 /**  The skill is not whole: Save waits until it is. */
 "blocks" | 
