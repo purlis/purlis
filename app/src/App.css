@@ -1597,6 +1597,11 @@ button.show-more:focus-visible {
    frame before they have said theirs. Kept whether the controls are drawn or not, so the line
    does not move when the pointer comes over. */
 .pane-chips:has(.pane-crumbs) {
+  /* **A step closer on a breadcrumb's line** (#3034): the line is the narrowest thing a pane
+     draws, and in a theme that keeps a window gutter (Purlis's 8px) two panes in the narrowest
+     window leave it a few pixels short of the longest state word beside the items already cut
+     to their padding. The space between those items is what gives way, never the state. */
+  gap: var(--space-1);
   max-width: calc(100% - var(--pane-controls, calc(var(--size-control) * 2.75)) - var(--space-3));
   margin-right: calc(var(--pane-controls, calc(var(--size-control) * 2.75)) + var(--space-3));
   overflow: hidden;

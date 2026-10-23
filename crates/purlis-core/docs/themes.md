@@ -8,9 +8,11 @@ repository's `docs/design-system.md`, and its schema is `docs/schema/theme.v2.sc
 
 ## Where a theme comes from
 
-- **Built in**: Purlis Classic, `purlis-classic`, with a dark and a light appearance. The ids
-  its appearances have had (`purlis-dark`, `purlis-light`, `charter-dark`, `charter-light`)
-  still name it.
+- **Built in**: Purlis, `purlis`, the default, with a dark, a light and a high-contrast dark
+  appearance; and Purlis Classic, `purlis-classic`, the alternative, with a dark and a light
+  appearance. Where nothing chose a theme, Purlis is drawn. `purlis-dark` and `purlis-light`
+  (and `charter-dark`, `charter-light`) name Purlis's dark and light, as `system` follows the
+  system with Purlis; only `purlis-classic` names Classic.
 - **Your own**, at the machine level: `theme.json` in purlis's config folder
   (`$PURLIS_CONFIG_HOME`, else `$XDG_CONFIG_HOME`, else `~/.config`, then `purlis/`), whose id
   is `mine`, and each theme folder in that folder's `themes/`, whose id is `machine:<folder>`.
@@ -554,7 +556,7 @@ Nothing there is committed, and **no chat writes it**: the app that started a ch
 chat's drafts, in its folder, when the chat asks. In a chat purlis started:
 
 - `purlis theme draft <folder>` starts the draft (a copy of the workspace's or the project's
-  theme folder of that name, or a new theme that extends Purlis Classic) and makes a working copy
+  theme folder of that name, or a new theme that extends Purlis, the default) and makes a working copy
   for the chat to edit, in its temporary folder under the chat's id (`--from <dir>` names
   another), made again from the draft whenever the draft is made anew;
 - `purlis theme draft <folder> --save` hands the working copy's `theme.json` and icon sets to the

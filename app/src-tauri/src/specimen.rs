@@ -350,18 +350,19 @@ const NO_PAINTER: &str = "this purlis window cannot draw the theme specimen yet:
                           starting, or this platform's webview takes no picture of a page";
 
 /// **What the specimen page is handed**, as the script that runs before any of its own: the
-/// built-in themes (`__CHARTER_AT_CREATION__`'s `built_in`, which the window's theme module
-/// reads at its start), and on [`GIVEN`] the one theme to draw, the size to lay it out at, the
+/// built-in themes and the default (`__CHARTER_AT_CREATION__`'s `built_in` and `default_theme`,
+/// which the window's theme module reads at its start, `windowprefs::HANDED_AT_LOAD`), and on [`GIVEN`] the one theme to draw, the size to lay it out at, the
 /// colour to tint it with (`null` for none) and its fonts' faces, each by its digest as base64
 /// (#2536). **Nothing else**: this is the whole of what the page knows, and it is built from
 /// `handed` and the compiled-in built-ins alone.
 pub fn creation_script(handed: &Handed) -> String {
     use base64::Engine as _;
-    let built_in: Vec<WindowTheme> = purlis_core::theme::built_ins()
-        .iter()
-        .map(WindowTheme::from)
-        .collect();
-    let at_creation = serde_json::json!({ "built_in": built_in });
+    let (built_in, default_theme) =
+        crate::windowprefs::handed_with_default(&purlis_core::theme::Layer::default());
+    let at_creation = serde_json::json!({
+        "built_in": built_in,
+        "default_theme": default_theme,
+    });
     let faces: serde_json::Map<String, serde_json::Value> = handed
         .faces
         .iter()

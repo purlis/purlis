@@ -6,6 +6,7 @@ import { untilTheStripLists } from "../reading.js";
 import { showView } from "../opening.js";
 import { bringSideBack, putSideAway } from "../sides.js";
 import { tooltipOf } from "../tooltips.js";
+import { gutter } from "../gutter.js";
 
 /**
  * The right region and the Changes view (ADR 0038; the bottom region until #1676, the left
@@ -579,8 +580,10 @@ describe("the views and the terminals", () => {
     // The old bottom region is gone (#1676); the Panel is what is under the centre (#1737).
     await expect(await $('[data-panel][id="region-bottom"]')).not.toBeExisting();
     expect(overlaps(centre, panel)).toBe(false);
-    expect(Math.abs(panel.top - centre.bottom)).toBeLessThanOrEqual(2);
-    expect(Math.abs(line.top - panel.bottom)).toBeLessThanOrEqual(2);
+    // Flush, or the theme's gutter apart (#3034).
+    const apart = (await gutter()) + 2;
+    expect(Math.abs(panel.top - centre.bottom)).toBeLessThanOrEqual(apart);
+    expect(Math.abs(line.top - panel.bottom)).toBeLessThanOrEqual(apart);
   });
 });
 
@@ -642,8 +645,10 @@ describe("the Panel", () => {
     const rightBar = await boxOf(".activity-column[data-side='right']");
     if ([panel, left, right, leftBar, rightBar].includes(null))
       throw new Error("nothing to measure");
-    expect(Math.abs((panel as Box).left - (leftBar as Box).right)).toBeLessThanOrEqual(2);
-    expect(Math.abs((panel as Box).right - (rightBar as Box).left)).toBeLessThanOrEqual(2);
+    // Flush with the bars, or the theme's gutter from them (#3034).
+    const apart = (await gutter()) + 2;
+    expect(Math.abs((panel as Box).left - (leftBar as Box).right)).toBeLessThanOrEqual(apart);
+    expect(Math.abs((panel as Box).right - (rightBar as Box).left)).toBeLessThanOrEqual(apart);
     expect((panel as Box).top).toBeGreaterThanOrEqual((left as Box).bottom - 1);
     expect((panel as Box).top).toBeGreaterThanOrEqual((right as Box).bottom - 1);
   });
@@ -761,9 +766,11 @@ describe("the Panel", () => {
     const right = await boxOf(HALF("right"));
     if (line === null || panel === null || left === null || right === null)
       throw new Error("no handle, Panel or halves to measure");
-    // A hairline, a device pixel of rounding either way, and it is drawn in a colour.
+    // A hairline, a device pixel of rounding either way, and it is drawn in a colour. Where the
+    // theme keeps a gutter, the handle is the gutter wide and the line its middle (`App.css`,
+    // `.panel-halves > [data-separator]`, #3034).
     expect(line.right - line.left).toBeGreaterThanOrEqual(0.5);
-    expect(line.right - line.left).toBeLessThanOrEqual(1.5);
+    expect(line.right - line.left).toBeLessThanOrEqual(Math.max(1.5, (await gutter()) + 0.5));
     const drawnIn = await browser.execute(
       (where: string) => getComputedStyle(document.querySelector(where) as Element).backgroundColor,
       BETWEEN,

@@ -1266,13 +1266,15 @@ committed one, or Purlis when no level says. The person's own choice always beat
 _Avoid_: fallback, standard theme, base theme (that is what a theme extends)
 
 **Preview theme**:
-A shipped theme that is not the default yet and says so in its name, as "Purlis (preview)" does
-until every surface is covered. It is chosen like any theme and moves nobody to it.
+A shipped theme that is not the default yet and says so in its name, as "Purlis (preview)" did
+until Purlis became the default (#3034); none ships as one now. It is chosen like any theme and
+moves nobody to it.
 _Avoid_: beta theme, experimental theme, preview (that is drawing a theme in the window)
 
 **Purlis Classic**:
-The theme of today's look, kept unchanged as a theme of its own when Purlis becomes the default,
-in a dark and a light appearance.
+The look purlis had before Purlis became the default (#3034), kept unchanged as the alternative
+built-in theme, in a dark and a light appearance, picked by its id, `purlis-classic`. The ids
+`purlis-dark` and `purlis-light` name Purlis's dark and light.
 _Avoid_: purlis-dark, purlis-light (those are old ids), legacy theme, old theme
 
 ### Saving

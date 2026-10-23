@@ -13,11 +13,11 @@ use super::*;
 use crate::extension::project::theme::Pick;
 
 fn dark() -> &'static ResolvedTheme {
-    built_in("purlis-dark").expect("the dark built-in")
+    classic().first()
 }
 
 fn light() -> &'static ResolvedTheme {
-    built_in("purlis-light").expect("the light built-in")
+    classic().of(Appearance::Light).unwrap()
 }
 
 /// A theme file as one arrives from disk: parsed JSON and nothing more.
@@ -42,10 +42,19 @@ fn said(resolved: &Resolved) -> Vec<String> {
 // ---------------------------------------------------------------------------------------
 
 #[test]
-fn the_built_ins_are_the_registry_s_and_the_window_comes_up_in_the_dark_one() {
-    let ids: Vec<&str> = built_ins().iter().map(|it| it.name.as_str()).collect();
-    assert_eq!(ids, crate::extension::BUILT_IN_THEMES);
-    assert_eq!(default_theme().name, "purlis-dark");
+fn the_registry_s_ids_name_purlis_s_dark_and_light_and_the_window_comes_up_in_the_dark_one() {
+    // `purlis-dark` and `purlis-light` name the default's dark and light (#3034).
+    let named: Vec<(&str, &str)> = crate::extension::BUILT_IN_THEMES
+        .iter()
+        .map(|id| {
+            let one = built_in(id).expect("a built-in");
+            (one.name.as_str(), one.id.as_str())
+        })
+        .collect();
+    assert_eq!(named, [("Purlis", "dark"), ("Purlis", "light")]);
+    assert!(built_ins().iter().all(|it| it.name == "Purlis Classic"));
+    // The window comes up in the default, Purlis's dark (#3034).
+    assert_eq!(default_theme(), purlis().first());
     assert_eq!(dark().appearance, Appearance::Dark);
     assert_eq!(light().appearance, Appearance::Light);
 }
@@ -127,7 +136,7 @@ fn an_old_id_is_read_as_the_renamed_built_in_keeping_its_appearance() {
         ("charter-dark", "purlis-dark"),
         ("charter-light", "purlis-light"),
     ] {
-        assert_eq!(built_in(old).map(|it| it.name.as_str()), Some(now));
+        assert_eq!(built_in(old), built_in(now), "{old}");
     }
     for id in ["system", "solarized/Solarized Dark", "", "toString"] {
         assert!(built_in(id).is_none(), "{id}");
@@ -165,7 +174,7 @@ fn a_value_that_is_not_a_string_is_never_a_colour() {
     for value in [json!(null), json!(16_711_680), json!({}), json!([])] {
         let resolved = load(&file(json!({ "tokens": { "surface.base": value } })));
         assert!(resolved.refused);
-        assert_eq!(&resolved.theme, classic());
+        assert_eq!(&resolved.theme, purlis());
         assert_eq!(resolved.complaints.len(), 1);
     }
 }
@@ -183,7 +192,7 @@ fn a_document_that_is_not_an_object_is_the_default_with_one_complaint() {
         json!(["purlis-dark"]),
     ] {
         let resolved = load(&raw);
-        assert_eq!(&resolved.theme, classic());
+        assert_eq!(&resolved.theme, purlis());
         assert!(resolved.refused);
         assert_eq!(said(&resolved), ["a theme is a JSON object"]);
     }
@@ -196,7 +205,7 @@ fn a_value_outside_its_type_refuses_the_whole_theme_and_names_the_value() {
     })));
     // Purlis is drawn whole: not the file's one good colour beside Purlis's.
     assert!(resolved.refused);
-    assert_eq!(&resolved.theme, classic());
+    assert_eq!(&resolved.theme, purlis());
     assert_eq!(resolved.complaints.len(), 1);
     assert_eq!(
         resolved.complaints[0].token.as_deref(),
@@ -324,7 +333,7 @@ fn a_theme_that_tries_every_spelling_of_geometry_is_refused_and_told_each_is_cor
         "sizes": { "control": "60px" }, "motion": { "duration.quick": 100 },
     }));
     assert!(resolved.refused);
-    assert_eq!(&resolved.theme, classic());
+    assert_eq!(&resolved.theme, purlis());
     let said = said(&resolved);
     for key in keys
         .iter()
@@ -435,7 +444,9 @@ fn a_duration_is_a_whole_number_of_milliseconds_up_to_the_ceiling() {
         let resolved = load(&json!({ "name": "x", "appearance": "dark", "tokens": {},
             "motion": { "duration.quick": bad } }));
         assert_eq!(resolved.complaints.len(), 1, "{bad}");
-        assert_eq!(resolved.theme.first().motion, dark().motion);
+        // Refused whole: the default, Purlis, is drawn in its place, its motion with it.
+        assert!(resolved.refused, "{bad}");
+        assert_eq!(resolved.theme.first().motion, default_theme().motion);
     }
 }
 
@@ -485,7 +496,9 @@ fn a_bad_motion_value_refuses_the_theme_and_names_the_value() {
 #[test]
 fn motion_that_is_not_an_object_or_names_no_token_is_said() {
     let resolved = load(&json!({ "name": "x", "appearance": "dark", "motion": [1, 2] }));
-    assert_eq!(resolved.theme.first().motion, dark().motion);
+    // Refused whole: the default, Purlis, is drawn in its place, its motion with it.
+    assert!(resolved.refused);
+    assert_eq!(resolved.theme.first().motion, default_theme().motion);
     assert!(
         said(&resolved).contains(&"motion is an object of motion token names to values".to_owned())
     );
@@ -538,7 +551,7 @@ fn text_that_is_not_json_is_refused_like_any_theme_that_is_not_one() {
     for text in ["{ not json", "[]", "\"purlis-dark\""] {
         let resolved = load_text(text);
         assert!(resolved.refused, "{text}");
-        assert_eq!(&resolved.theme, classic());
+        assert_eq!(&resolved.theme, purlis());
         assert_eq!(resolved.complaints.len(), 1);
     }
     assert!(
@@ -633,25 +646,23 @@ fn name_of(drawn: &Drawn) -> Option<&str> {
 
 #[test]
 fn a_built_in_pick_draws_that_built_in_by_any_id_it_has_had() {
-    for (pick, name) in [
-        ("purlis-light", "purlis-light"),
-        ("charter-light", "purlis-light"),
-        ("purlis-dark", "purlis-dark"),
+    // `purlis-dark` and `purlis-light`, by any id they have had, draw Purlis's (#3034);
+    // `purlis-classic` draws Classic.
+    for (pick, name, id) in [
+        ("purlis-light", "Purlis", "light"),
+        ("charter-light", "Purlis", "light"),
+        ("purlis-dark", "Purlis", "dark"),
+        ("purlis-classic", "Purlis Classic", "dark"),
     ] {
-        assert_eq!(
-            name_of(&drawn(Some(pick), Some(classic()), On::Every)),
-            Some(name)
-        );
+        let got = drawn(Some(pick), Some(classic()), On::Every).theme.unwrap();
+        assert_eq!((got.name.as_str(), got.id.as_str()), (name, id), "{pick}");
     }
 }
 
 #[test]
-fn following_the_system_draws_the_built_in_of_its_appearance_and_says_it_follows() {
+fn following_the_system_draws_the_default_s_appearance_of_its_tag_and_says_it_follows() {
     let pick = Pick::System;
-    for (system, name) in [
-        (Appearance::Light, "purlis-light"),
-        (Appearance::Dark, "purlis-dark"),
-    ] {
+    for (system, name) in [(Appearance::Light, "Purlis"), (Appearance::Dark, "Purlis")] {
         let it = resolve(
             &Inputs {
                 pick: Some(&pick),
@@ -689,10 +700,7 @@ fn with_neither_the_first_theme_of_an_extension_that_is_on_is_drawn() {
     assert_eq!(name_of(&drawn(None, None, On::Every)), Some("Night"));
     let zed = ["zed".to_owned()];
     assert_eq!(name_of(&drawn(None, None, On::Only(&zed))), Some("Zed"));
-    assert_eq!(
-        name_of(&drawn(None, None, On::Only(&[]))),
-        Some("purlis-dark")
-    );
+    assert_eq!(name_of(&drawn(None, None, On::Only(&[]))), Some("Purlis"));
 }
 
 #[test]
@@ -703,11 +711,11 @@ fn an_extension_pick_draws_its_theme_only_while_the_extension_is_on() {
     assert_eq!(it.theme.unwrap().value("text.primary"), "#eeeeee");
     assert_eq!(
         name_of(&drawn(Some("acme/Night"), None, On::Only(&[]))),
-        Some("purlis-dark")
+        Some("Purlis")
     );
     assert_eq!(
         name_of(&drawn(Some("acme/Gone"), None, On::Every)),
-        Some("purlis-dark")
+        Some("Purlis")
     );
 }
 
@@ -753,7 +761,7 @@ fn an_extension_theme_that_is_not_json_is_passed_over_unless_it_was_picked() {
     assert_eq!(name_of(&skipped), Some("Good"));
     // Picked, it draws Purlis and says why.
     let picked = drawn(Some("acme/Broken"), None, On::Every);
-    assert_eq!(name_of(&picked), Some("purlis-dark"));
+    assert_eq!(name_of(&picked), Some("Purlis"));
     assert_eq!(picked.complaints.len(), 1);
 }
 

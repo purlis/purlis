@@ -239,6 +239,8 @@ pub const VERSION: u32 = 1;
 ///
 /// Each is a [`crate::names`] entry's purlis spelling (`THEME_DARK`, `THEME_LIGHT`, pinned by
 /// `names_tests.rs`); a pick that names one's old id is read as it ([`project::theme::Pick`]).
+///
+/// They name Purlis's dark and light appearances (#3034): `theme::shipped_pick`.
 pub const BUILT_IN_THEMES: [&str; 2] = ["purlis-dark", "purlis-light"];
 
 /// The icon theme purlis itself contributes (FM-3, #1106): compiled into the window's bundle
