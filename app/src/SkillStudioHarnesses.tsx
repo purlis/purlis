@@ -13,6 +13,7 @@ import {
   type StudioSwitched,
 } from "./bindings";
 import { Notice } from "./Notice";
+import { SkillCompatBadges } from "./SkillCompatBadges";
 import { Button } from "./ui/button/Button";
 
 /** Whose a skill from outside the project is, as a row says it. */
@@ -171,6 +172,7 @@ export function SkillStudioHarnesses({
                   <th scope="col">From</th>
                   <th scope="col">In a chat</th>
                   <th scope="col">What it does</th>
+                  <th scope="col">Works on</th>
                 </tr>
               </thead>
               <tbody>
@@ -193,6 +195,13 @@ export function SkillStudioHarnesses({
                       )}
                     </td>
                     <td>{skill.description}</td>
+                    <td>
+                      <SkillCompatBadges
+                        name={skill.name}
+                        compat={skill.compat}
+                        lint={skill.lint}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>

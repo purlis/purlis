@@ -8110,8 +8110,10 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     }
     assert_eq!(chats.skills_changed_while_on(), Vec::<u32>::new());
 
+    // A Codex chat reads the SKILL.md purlis wrote for it at its start (SK-8), so an edit to a
+    // body waits for a restart there too.
     skill("deploy", "two");
-    assert_eq!(chats.skills_changed_while_on(), [1]);
+    assert_eq!(chats.skills_changed_while_on(), [1, 2]);
 
     skill("triage", "one");
     assert_eq!(chats.skills_changed_while_on(), [1, 2]);

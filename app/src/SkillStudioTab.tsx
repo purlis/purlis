@@ -21,6 +21,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { clashSaid, SkillStudioHarnesses } from "./SkillStudioHarnesses";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Notice } from "./Notice";
+import { SkillCompatBadges } from "./SkillCompatBadges";
 import { SkillRowActions } from "./SkillRowActions";
 import { Select } from "./primitives/Select";
 import { Field, SettingRow } from "./settings/components";
@@ -401,6 +402,7 @@ export function SkillStudioTab({
             <th scope="col">Granted to</th>
             <th scope="col">In a chat</th>
             <th scope="col">What it does</th>
+            <th scope="col">Works on</th>
             <th scope="col">Change</th>
           </tr>
         </thead>
@@ -525,6 +527,9 @@ export function SkillStudioTab({
                     )}
                 </td>
                 <td>{skill.description}</td>
+                <td>
+                  <SkillCompatBadges name={skill.name} compat={skill.compat} lint={skill.lint} />
+                </td>
                 <td>
                   <SkillRowActions
                     actions={[
@@ -655,6 +660,8 @@ function ChangePanel({
           }
         >
           <SkillEditor
+            plane={plane}
+            level={doing.level}
             name={doing.skill.name}
             was={doing.was}
             saving={busy}
