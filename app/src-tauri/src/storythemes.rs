@@ -76,10 +76,10 @@ pub(crate) struct AtCreation {
 pub(crate) fn at_creation() -> AtCreation {
     AtCreation {
         default: cell_of(theme::default_theme()),
-        built_in: purlis_core::extension::BUILT_IN_THEMES
-            .iter()
-            .chain([&theme::CLASSIC])
-            .filter_map(|pick| theme::built_in(pick).map(|one| (*pick, cell_of(one))))
+        // The picks the window is handed, and no other (`windowprefs::handed_built_ins`).
+        built_in: crate::windowprefs::HANDED_PICKS
+            .into_iter()
+            .filter_map(|pick| theme::built_in(pick).map(|one| (pick, cell_of(one))))
             .collect(),
     }
 }

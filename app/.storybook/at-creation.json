@@ -11,10 +11,6 @@
     "purlis-dark": {
       "theme": "purlis",
       "appearance": "dark"
-    },
-    "purlis-light": {
-      "theme": "purlis",
-      "appearance": "light"
     }
   }
 }

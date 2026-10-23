@@ -41,6 +41,10 @@ const of = (cell: Cell) => themes[cell.theme][cell.appearance];
 /** One built-in appearance, by its id, as the core hands it. */
 export type HandedAppearance = { id: string; theme: { name: string; appearance: string } };
 
+/** Purlis's light as the core resolves it: what a pick of `purlis-light` draws, which the
+ *  window asks the core for (it is not handed, #3034). */
+export const PURLIS_LIGHT = themes.purlis.light as unknown as import("./theme").Theme;
+
 /** Purlis Classic's appearances, by their ids, dark first, as the core hands each. */
 export function classicAppearances(): HandedAppearance[] {
   return Object.entries(themes["purlis-classic"]).map(([id, theme]) => ({ id, theme }));

@@ -24,10 +24,11 @@ import type {
 import { BUILT_IN } from "../theme/theme";
 import { retype, textOf } from "../editor/typing.testkit";
 import { offeredIn, pickIn } from "../primitives/select.testkit";
+import { PURLIS_LIGHT } from "../theme/handed.testkit";
 
 /** Two custom colours, as `#rrggbb`: taken from the built-in themes, because no colour is written
  *  outside `src/theme/` — a test's included (`literals.test.ts`). */
-const PICKED = BUILT_IN["purlis-light"].values["accent.base"];
+const PICKED = PURLIS_LIGHT.values["accent.base"];
 const HELD = BUILT_IN["purlis-dark"].values["accent.base"];
 
 /**

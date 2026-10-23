@@ -24,10 +24,11 @@ import {
   queryStripNamed,
   stripNamed,
 } from "./test-strips";
-import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/theme";
+import { DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/theme";
 import { KEPT_DRAWN } from "./projectShown";
 import { onAMac } from "./tabKeys";
 import { themeInForce } from "./theme/inForce.testkit";
+import { PURLIS_LIGHT } from "./theme/handed.testkit";
 
 /**
  * A window holding more than one project (ADR 0033, spec decision 23).
@@ -545,7 +546,7 @@ describe("a window holding more than one project", () => {
     const stop = onDrawn((theme) => terminal.push(theme));
     try {
       render(<App />);
-      await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
+      await waitFor(() => expect(inForce()).toBe(PURLIS_LIGHT));
 
       await userEvent.click(screen.getByRole("button", { name: "Open a project…" }));
       await openByPath(TWO);
@@ -553,8 +554,8 @@ describe("a window holding more than one project", () => {
       await waitFor(() => expect(inForce()).toBe(DEFAULT_THEME));
 
       await userEvent.click(projectTab("one"));
-      await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
-      expect(terminal).toEqual([BUILT_IN["purlis-light"], DEFAULT_THEME, BUILT_IN["purlis-light"]]);
+      await waitFor(() => expect(inForce()).toBe(PURLIS_LIGHT));
+      expect(terminal).toEqual([PURLIS_LIGHT, DEFAULT_THEME, PURLIS_LIGHT]);
     } finally {
       stop();
       drawIn(DEFAULT_THEME);

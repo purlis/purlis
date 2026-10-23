@@ -68,7 +68,7 @@ describe("the themes the core hands the window", () => {
   });
 
   it("are the core's built-ins, complete, the window coming up in the dark one", () => {
-    expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-classic", "purlis-dark", "purlis-light"]);
+    expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-classic", "purlis-dark"]);
     // The window comes up in the default, Purlis's dark, as the core hands it (#3034).
     expect([DEFAULT_THEME.name, DEFAULT_THEME.appearance]).toEqual(["Purlis", "dark"]);
     for (const token of TOKENS) expect(DEFAULT_THEME.values[token], token).toBeTruthy();

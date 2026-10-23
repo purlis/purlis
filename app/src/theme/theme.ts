@@ -518,9 +518,10 @@ export function property(token: Token): string {
 export const AT_CREATION = "__CHARTER_AT_CREATION__";
 
 /** **The built-in appearances, by the pick that names each**, as the core resolved them and
- *  handed them to the window (`windowprefs::handed_built_ins`): `purlis-dark` and
- *  `purlis-light`, Purlis's dark and light (#3034), and `purlis-classic`, Purlis Classic's dark.
- *  The window always has them; a page opened without them is not purlis's window. */
+ *  handed them to the window (`windowprefs::handed_built_ins`): `purlis-dark`, the default's
+ *  (#3034), and `purlis-classic`, Purlis Classic's dark. A pick of any other (`purlis-light`)
+ *  asks the core. The window always has them; a page opened without them is not purlis's
+ *  window. */
 function handedBuiltIns(): Record<string, Theme> {
   const given = (globalThis as Record<string, unknown>)[AT_CREATION] as
     { built_in?: unknown } | undefined;

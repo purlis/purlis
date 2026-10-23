@@ -21,7 +21,7 @@ import {
   type Theme,
   type Token,
 } from "./theme";
-import { classicAppearances } from "./handed.testkit";
+import { PURLIS_LIGHT, classicAppearances } from "./handed.testkit";
 import { apartChroma, chromaFor, hueOf, oklabDistance, tintHex } from "./tint";
 
 /**
@@ -233,13 +233,13 @@ describe("the window's tint", () => {
   it("follows the theme drawn under it, and goes when the workspace has no colour", () => {
     const root = document.documentElement;
     drawTint("red");
-    drawIn(BUILT_IN["purlis-light"]);
+    drawIn(PURLIS_LIGHT);
     expect(root.style.getPropertyValue(property("accent.base"))).toBe(
-      tinted(BUILT_IN["purlis-light"], "red").values["accent.base"],
+      tinted(PURLIS_LIGHT, "red").values["accent.base"],
     );
     drawTint(null);
     expect(root.style.getPropertyValue(property("accent.base"))).toBe(
-      BUILT_IN["purlis-light"].values["accent.base"],
+      PURLIS_LIGHT.values["accent.base"],
     );
   });
 });

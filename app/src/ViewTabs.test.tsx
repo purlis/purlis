@@ -15,9 +15,10 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { ExtensionCommand, VaultContents, ViewTab } from "./bindings";
-import { BUILT_IN, DEFAULT_THEME, drawIn, inForce } from "./theme/theme";
+import { DEFAULT_THEME, drawIn, inForce } from "./theme/theme";
 import { findStripNamed, stripNamed, showThePanel } from "./test-strips";
 import { themeInForce } from "./theme/inForce.testkit";
+import { PURLIS_LIGHT } from "./theme/handed.testkit";
 
 /**
  * **A tab that holds something other than a chat**, against the whole window (ADR 0043,
@@ -710,7 +711,7 @@ describe("a project's own theme (charter-app#273)", () => {
   it("is drawn while that project is in front", async () => {
     const { asked } = core({ projectTheme: "purlis-light" });
     render(<App />);
-    await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
+    await waitFor(() => expect(inForce()).toBe(PURLIS_LIGHT));
     expect(asked.some((one) => one.cmd === "project_theme_drawn" && one.args.plane === PLANE)).toBe(
       true,
     );

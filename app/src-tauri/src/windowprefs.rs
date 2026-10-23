@@ -356,10 +356,11 @@ fn at_creation_from(
     let theirs = kept.get(config_root);
     let (first, native) = FirstFrame::of(config_root, on, theirs.theme.as_ref(), contrast, &layer);
     let follows_system = first.follows_system;
+    let (built_in, default_theme) = handed_with_default(&layer);
     let at = AtCreation {
         theme: TheirTheme::of(theirs, &layer),
-        built_in: handed_built_ins(&layer),
-        default_theme: built_in_under(theme::default_theme(), &layer),
+        built_in,
+        default_theme,
         person,
         layout,
         first,
@@ -383,19 +384,43 @@ fn at_creation_from(
 pub(crate) const HANDED_AT_LOAD: [&str; 2] = ["built_in", "default_theme"];
 
 /// **The built-in appearances a window is handed, by the pick that names each** (#3034):
-/// `purlis-dark` and `purlis-light`, Purlis's dark and light, and `purlis-classic`, Purlis
-/// Classic's first appearance, each under the person's `layer`. What a pick of one draws in the
-/// frame it is made, without asking the core.
+/// `purlis-dark`, the default's appearance, and `purlis-classic`, Purlis Classic's first, each
+/// under the person's `layer`. What a pick of one draws in the frame it is made, without asking
+/// the core.
+///
+/// **Only what costs the first frame nothing more**: the default is drawn anyway, and Classic
+/// draws no parts. Purlis's light is not handed: its parts are measured across every workspace
+/// tint before they are drawn (`theme::parts`), which is a pass a launch should not make for a
+/// pick that is not there, so a pick of `purlis-light` asks the core as any other theme's does
+/// (ADR 0026).
 pub(crate) fn handed_built_ins(
     layer: &theme::Layer,
 ) -> std::collections::BTreeMap<String, WindowTheme> {
-    purlis_core::extension::BUILT_IN_THEMES
-        .iter()
-        .chain([&theme::CLASSIC])
+    HANDED_PICKS
+        .into_iter()
         .filter_map(|pick| {
-            theme::built_in(pick).map(|one| ((*pick).to_owned(), built_in_under(one, layer)))
+            theme::built_in(pick).map(|one| (pick.to_owned(), built_in_under(one, layer)))
         })
         .collect()
+}
+
+/// The picks [`handed_built_ins`] hands the appearance of.
+pub(crate) const HANDED_PICKS: [&str; 2] = [purlis_core::names::THEME_DARK.write, theme::CLASSIC];
+
+/// [`handed_built_ins`] and the default's appearance, `default_theme`, drawn once: the default is
+/// one of the built-ins handed, so the window is handed the same theme for both.
+pub(crate) fn handed_with_default(
+    layer: &theme::Layer,
+) -> (std::collections::BTreeMap<String, WindowTheme>, WindowTheme) {
+    let built_in = handed_built_ins(layer);
+    let default = built_in
+        .get(purlis_core::names::THEME_DARK.write)
+        .filter(|_| {
+            theme::built_in(purlis_core::names::THEME_DARK.write) == Some(theme::default_theme())
+        })
+        .cloned()
+        .unwrap_or_else(|| built_in_under(theme::default_theme(), layer));
+    (built_in, default)
 }
 
 /// A built-in theme as the window is handed it: as it is, or with the person's colours and
@@ -633,7 +658,7 @@ mod tests {
             .keys()
             .map(String::as_str)
             .collect();
-        assert_eq!(built, ["purlis-classic", "purlis-dark", "purlis-light"]);
+        assert_eq!(built, ["purlis-classic", "purlis-dark"]);
     }
 
     #[test]
@@ -739,22 +764,18 @@ mod tests {
 
     #[test]
     fn the_window_is_handed_the_default_and_each_built_in_by_the_pick_that_names_it() {
-        // #3034: Purlis is the default; `purlis-dark` and `purlis-light` name its dark and
-        // light, and `purlis-classic` names Classic.
+        // #3034: Purlis is the default, handed as `default_theme` and by `purlis-dark`; Classic
+        // by `purlis-classic`. Purlis's light is not handed: its parts would be measured on the
+        // way to the first frame, so a pick of it asks the core.
         let at = defined(&creation_script_from(&TheirsKept::new(), None));
         let of = |one: &theme::ResolvedTheme| serde_json::to_value(WindowTheme::from(one)).unwrap();
         assert_eq!(at["default_theme"], of(theme::purlis().first()));
-        let purlis = theme::purlis();
-        assert_eq!(at["built_in"]["purlis-dark"], of(purlis.first()));
-        assert_eq!(
-            at["built_in"]["purlis-light"],
-            of(purlis.of(theme::Appearance::Light).unwrap())
-        );
+        assert_eq!(at["built_in"]["purlis-dark"], of(theme::purlis().first()));
         assert_eq!(
             at["built_in"]["purlis-classic"],
             of(theme::classic().first())
         );
-        assert_eq!(at["built_in"].as_object().unwrap().len(), 3);
+        assert_eq!(at["built_in"].as_object().unwrap().len(), 2);
     }
 
     /// **Every page that loads the window's theme module is handed what it reads at load**
@@ -1371,7 +1392,7 @@ mod tests {
         assert_eq!(at["layout"]["found"], false);
         assert_eq!(at["theme"]["found"], false);
         assert_eq!(at["theme"]["theme"], serde_json::Value::Null);
-        assert_eq!(at["built_in"].as_object().map(|it| it.len()), Some(3));
+        assert_eq!(at["built_in"].as_object().map(|it| it.len()), Some(2));
     }
 
     /// **A project at the font budget**: 64 font files, 32 MiB, in three theme folders, the one

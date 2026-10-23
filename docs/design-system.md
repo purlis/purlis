@@ -372,8 +372,11 @@ names it `purlis`; no theme folder takes that id, and a theme may `extend` it.
 **It is the default** (#3034, the operator's ruling of 2026-10-22; folds in #2338): where no level
 chose a theme, the window draws Purlis's dark (`theme::DEFAULT`, `theme::default_theme`), or its
 high-contrast dark when the system asks for more contrast, and a pick that cannot be drawn draws
-it too. The window is handed it as it is created (`default_theme` beside Classic's appearances,
-`windowprefs.rs`). The gallery and `purlis theme list` show it first, then Purlis Classic, and
+it too. The window is handed it as it is created (`default_theme`, and by `purlis-dark` beside
+Classic's dark by `purlis-classic`, `windowprefs.rs`); Purlis's light is not handed, since its
+parts are measured across every tint before they are drawn, and a pick of `purlis-light` asks
+the core. Its faces wait for the first frame to be on screen (`holdFacesForTheFirstFrame`,
+ADR 0026's 2 s cold start). The gallery and `purlis theme list` show it first, then Purlis Classic, and
 a new theme draft extends it. No stored value is rewritten; how one is read is the table under
 **The ids** above: `purlis-classic` draws Classic, and every other built-in id draws Purlis. A
 token a theme does not name still falls back to Classic's of its appearance, so a theme written

@@ -10,6 +10,7 @@ import {
   THEME_ALIASES,
   type Theme,
 } from "./theme";
+import { PURLIS_LIGHT } from "./handed.testkit";
 
 /**
  * **What the core's `theme_in_force` answers, for a test's window that picks only built-ins.**
@@ -30,13 +31,15 @@ export function themeInForce(args: unknown): {
   const pick = asked.pick ?? null;
   if (pick === SYSTEM)
     return {
-      theme: BUILT_IN[asked.light === true ? "purlis-light" : "purlis-dark"],
+      theme: asked.light === true ? PURLIS_LIGHT : BUILT_IN["purlis-dark"],
       complaints: [],
       follows_system: true,
     };
   if (pick === CLASSIC) return { theme: CLASSIC_THEME, complaints: [], follows_system: false };
   const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
   const id = pick !== null && has(THEME_ALIASES, pick) ? THEME_ALIASES[pick] : pick;
+  // `purlis-light` is not handed; the core answers it with Purlis's light (#3034).
+  if (id === "purlis-light") return { theme: PURLIS_LIGHT, complaints: [], follows_system: false };
   const theme = id !== null && has(BUILT_IN, id) ? BUILT_IN[id] : DEFAULT_THEME;
   return { theme, complaints: [], follows_system: false };
 }

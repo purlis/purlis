@@ -6,10 +6,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { BUILT_IN, DEFAULT_THEME } from "../theme/theme";
+import { DEFAULT_THEME } from "../theme/theme";
 import { Specimen, type Drawing } from "./Specimen";
 import { CHAT_LINES, EDITOR_TEXT, TERMINAL_LINES } from "./fixture";
 import { FAILED, GIVEN, READY, drawn, failed, given } from "./page";
+import { PURLIS_LIGHT } from "../theme/handed.testkit";
 
 /**
  * **The theme specimen** (#2330): what it draws, and that it draws nothing of the person's.
@@ -107,7 +108,7 @@ describe("the theme specimen", () => {
   });
 
   it("draws in the theme it is handed, each terminal from the theme's own tokens", async () => {
-    const light = BUILT_IN["purlis-light"];
+    const light = PURLIS_LIGHT;
     const { view } = await drawnSpecimen(light);
     const terminals = view.container.querySelectorAll(".specimen-terminal .xterm");
     expect(terminals).toHaveLength(2);

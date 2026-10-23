@@ -357,10 +357,11 @@ const NO_PAINTER: &str = "this purlis window cannot draw the theme specimen yet:
 /// `handed` and the compiled-in built-ins alone.
 pub fn creation_script(handed: &Handed) -> String {
     use base64::Engine as _;
-    let layer = purlis_core::theme::Layer::default();
+    let (built_in, default_theme) =
+        crate::windowprefs::handed_with_default(&purlis_core::theme::Layer::default());
     let at_creation = serde_json::json!({
-        "built_in": crate::windowprefs::handed_built_ins(&layer),
-        "default_theme": WindowTheme::from(purlis_core::theme::default_theme()),
+        "built_in": built_in,
+        "default_theme": default_theme,
     });
     let faces: serde_json::Map<String, serde_json::Value> = handed
         .faces
