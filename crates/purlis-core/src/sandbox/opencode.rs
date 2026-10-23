@@ -89,6 +89,10 @@ pub struct Wrap {
     pub config: Option<PathBuf>,
     /// opencode's cache directory, which is read-only.
     pub cache: Option<PathBuf>,
+    /// The plane roots whose `workspaces` folder and each workspace's folder in it no chat
+    /// makes, moves or removes (#2046), set as the sandbox is compiled for a chat
+    /// ([`super::Form::hold_workspace_folders`]).
+    pub planes: Vec<PathBuf>,
 }
 
 /// What a turn writes in opencode's data directory, below it, each and everything under it.
@@ -124,6 +128,7 @@ pub fn wrap(compiled: &Compiled) -> Result<Wrap, Uncompilable> {
         state: own(&compiled.homes.state),
         config: own(&compiled.homes.config),
         cache: own(&compiled.homes.cache),
+        planes: Vec::new(),
     })
 }
 
@@ -209,6 +214,8 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     };
     seatbelt::widen(&mut own, &wrap.widened)?;
     seatbelt::granted(&mut own, &wrap.granted)?;
+    own.deny
+        .extend(seatbelt::workspace_folder_rules(&wrap.planes)?);
     if let Some(data) = &wrap.data {
         own.allow.push(format!(
             "(regex {})",

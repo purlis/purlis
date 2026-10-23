@@ -12,6 +12,7 @@ import { useAwayRefusals } from "./dispatchAway";
 import { Inbox, type UpdateRow } from "./Inbox";
 import { awayUpdateKey } from "./inboxUpdates";
 import { SETTLE_MS } from "./TaskBlocksNotice";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A dispatch refused while nobody was there, an update in the Inbox** (#1507, #1693): the
@@ -149,7 +150,7 @@ describe("a dispatch refused while nobody was there, in the Inbox's updates", ()
     // and what the target works with, onward reach included.
     expect(row).toHaveTextContent(ALLOWS);
     const allow = within(row).getByRole("button", { name: ALLOW });
-    expect(allow).toHaveAttribute("title", ALLOWS);
+    expect(tipOf(allow)).toEqual(ALLOWS);
     expect(allow.getAttribute("aria-label")).not.toContain("every workspace");
     // Nothing wider is offered from here.
     expect(within(row).queryByRole("button", { name: /everyone|any persona/i })).toBe(null);

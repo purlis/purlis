@@ -8,6 +8,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { ask } from "../switching.js";
 import { openThroughTheTrustQuestion } from "../opening.js";
+import { tooltipOf } from "../tooltips.js";
 
 /**
  * **A project this purlis opens read-only says why, and the window writes nothing to it**
@@ -139,12 +140,25 @@ describe("a project this purlis opens read-only", function () {
       const button = document.querySelector<HTMLButtonElement>(
         '.workspaces .strip-doing button[aria-label="New workspace…"]',
       );
-      return button === null ? null : { disabled: button.disabled, title: button.title };
+      // Unavailable, and kept in reach so its reason can be read (#2908).
+      return button === null
+        ? null
+        : { disabled: button.disabled || button.getAttribute("aria-disabled") === "true" };
     });
     expect(plus).not.toBeNull();
     expect(plus?.disabled).toBe(true);
-    expect(plus?.title).toContain(FEATURE);
-    expect(said).toContain(plus?.title ?? "(no title)");
+    // Its tooltip says its name and then why; why is its description for good (#2908).
+    const tip = await tooltipOf('.workspaces .strip-doing button[aria-label="New workspace…"]');
+    expect(tip).toContain(FEATURE);
+    const why = await browser.execute(() => {
+      const button = document.querySelector<HTMLButtonElement>(
+        '.workspaces .strip-doing button[aria-label="New workspace…"]',
+      );
+      const id = button?.getAttribute("aria-describedby") ?? "";
+      return id === "" ? null : (document.getElementById(id)?.textContent ?? null);
+    });
+    expect(why).toContain(FEATURE);
+    expect(said).toContain(why ?? "(no description)");
   });
 
   it("writes no committed project file", async () => {

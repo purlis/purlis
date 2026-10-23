@@ -42,6 +42,7 @@ import { updateSaid, UpdateFromRemote, UpdateLeftNotice } from "./SavingUpdate";
 import { RequestMerge } from "./SavingMerge";
 import { SaveConflict } from "./SavingResolve";
 import { Button, IconButton } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** Settings › Saving › Mode: where a project's save mode is changed (SE-22's address). */
 const SAVING_MODE: SettingsLink = { group: "project.saving", setting: "project.saving.plane.mode" };
@@ -422,7 +423,7 @@ export function SavingView({
               size="sm"
               onPress={() => void save()}
               isDisabled={busy || !planeSavable(saving)}
-              title={readOnly}
+              tooltip={readOnly}
               className="panel-view"
             >
               {busy ? (
@@ -549,7 +550,7 @@ function RepoRows({
               <IconButton
                 size="sm"
                 aria-label={`Save ${repo.name}`}
-                title={`Save ${repo.name}: ${repoSaveGoesTo(repo, workspace)}`}
+                tooltip={`Save ${repo.name}: ${repoSaveGoesTo(repo, workspace)}`}
                 isDisabled={busy || !repoSavable(repo)}
                 onPress={() => onSave(repo.name)}
                 icon={<Save className="node-icon" aria-hidden="true" />}
@@ -783,7 +784,7 @@ export function SaveIndicator({
         variant="pill"
         tone={tone}
         aria-label={`Saving: ${said}`}
-        title={said}
+        tooltip={said}
         onPress={onOpen}
         data-testid="save-indicator-where"
         icon={<Mark aria-hidden="true" />}
@@ -803,7 +804,7 @@ export function SaveIndicator({
         <StatusItem
           variant="pill"
           aria-label={updateSaid(incoming)}
-          title={updateSaid(incoming)}
+          tooltip={updateSaid(incoming)}
           isDisabled={busy}
           onPress={onUpdate}
           className="save-indicator-incoming"
@@ -815,7 +816,7 @@ export function SaveIndicator({
         <StatusItem
           variant="pill"
           aria-label="Save the project"
-          title={off ?? "Save the project"}
+          tooltip={off ?? "Save the project"}
           isDisabled={busy || off !== undefined}
           onPress={onSave}
           data-testid="save-indicator-save"
@@ -961,12 +962,13 @@ export function UnsavedMark({ saving, name }: { saving: PlaneSaving | undefined;
   const blocked = saving.stage === "blocked";
   if (!blocked && !savable(saving)) return null;
   return (
-    <span
-      className="project-unsaved"
-      data-stage={saving.stage}
-      role="img"
-      aria-label={blocked ? `saving is blocked in ${name}` : `unsaved work in ${name}`}
-      title={stageText(saving)}
-    />
+    <Tooltip tip={stageText(saving)}>
+      <span
+        className="project-unsaved"
+        data-stage={saving.stage}
+        role="img"
+        aria-label={blocked ? `saving is blocked in ${name}` : `unsaved work in ${name}`}
+      />
+    </Tooltip>
   );
 }

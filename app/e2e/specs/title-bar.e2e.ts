@@ -4,6 +4,7 @@
 import { basename } from "node:path";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { untilTheStripLists } from "../reading.js";
+import { tooltipOf } from "../tooltips.js";
 
 /**
  * **The window's title bar**, against the real app (`app/src/TitleBar.tsx`, ADR 0054).
@@ -94,11 +95,12 @@ describe("the title bar", () => {
     const root = await planeRoot();
     const name = basename(root);
 
-    // The selected tab carries the project's whole path as its title, and its name is the
-    // directory's.
+    // The selected tab carries the project's whole path as its directory and its tooltip, and
+    // its name is the directory's.
     const selected = await $(`${PROJECTS} [aria-selected="true"]`);
     await selected.waitForExist({ timeout: 20_000 });
-    expect(await selected.getAttribute("title")).toBe(root);
+    expect(await selected.getAttribute("data-directory")).toBe(root);
+    expect(await tooltipOf(`${PROJECTS} [aria-selected="true"]`)).toBe(root);
     expect(await selected.getText()).toContain(name);
   });
 

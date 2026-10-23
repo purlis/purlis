@@ -332,8 +332,8 @@ describe("a task's row menu", () => {
 
     const stop = screen.getByRole("menuitem", { name: STOP_IT });
     expect(stop).toHaveAttribute("aria-disabled", "true");
-    expect(stop.getAttribute("title")).toContain("purlis does not type into");
-    expect(stop.getAttribute("title")).toContain("Close now ends it.");
+    expect(stop).toHaveAccessibleDescription(expect.stringContaining("purlis does not type into"));
+    expect(stop).toHaveAccessibleDescription(expect.stringContaining("Close now ends it."));
     expect(screen.getByRole("menuitem", { name: CLOSE_IT })).not.toHaveAttribute("aria-disabled");
   });
 });

@@ -245,7 +245,10 @@ export async function pressMenuRow(words: string): Promise<void> {
 export async function closeMenus(): Promise<void> {
   const open = async () => (await menuRows()).length > 0;
   if (!(await open())) return;
-  await keyWithFallback(["Escape"], { key: "Escape" }, async () => !(await open()));
+  // A row's note that is up takes the first Escape for itself (WCAG 1.4.13), and the next is
+  // the menu's: as many as it takes, and no more than a note, a submenu and a menu need.
+  for (let tries = 0; tries < 3 && (await open()); tries++)
+    await keyWithFallback(["Escape"], { key: "Escape" }, async () => !(await open()));
   if (await open())
     await browser.execute(() =>
       document.dispatchEvent(

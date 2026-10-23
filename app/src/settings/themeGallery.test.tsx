@@ -28,6 +28,7 @@ import {
   keptSpecimens,
   MOST_KEPT,
 } from "./themeSpecimens";
+import { tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
  * **Settings › Theme's gallery** (#2331): a card per theme the core lists, the theme drawn live
@@ -464,10 +465,8 @@ describe("under the chosen card (#2331)", () => {
     await cards();
     for (const name of ["Edit with a chat", "New theme"]) {
       const button = screen.getByRole("button", { name });
-      expect(button).toHaveProperty("disabled", true);
-      expect(button.getAttribute("title")).toBe(
-        "This project is read-only. A theme made here could not be kept.",
-      );
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(tipOf(button)).toBe("This project is read-only. A theme made here could not be kept.");
     }
   });
 
@@ -477,8 +476,8 @@ describe("under the chosen card (#2331)", () => {
     await cards();
     for (const name of ["Edit with a chat", "New theme"]) {
       const button = screen.getByRole("button", { name });
-      expect(button).toHaveProperty("disabled", true);
-      expect(button.getAttribute("title")).toContain("at the Project or Workspace level");
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(tipOf(button)).toContain("at the Project or Workspace level");
     }
   });
 
@@ -503,8 +502,14 @@ describe("under the chosen card (#2331)", () => {
     );
     render(<Group at={{ plane: PLANE, workspace: null }} />);
     await cards();
-    expect(screen.getByRole("button", { name: "Duplicate as my theme" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Open folder" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Duplicate as my theme" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Open folder" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 });
 

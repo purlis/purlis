@@ -7,6 +7,7 @@ import { commands, type InstructionFile, type PlaneId } from "./bindings";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **The agent instructions a workspace's repo carries, offered to its memory** (FR-18a, #612):
@@ -197,9 +198,9 @@ function Visible({ text }: { text: string }) {
     parts.push(rest.slice(0, hit.index));
     const code = (hit[0].codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0");
     parts.push(
-      <mark key={at++} className="invisible-char" title="An invisible character">
-        {`U+${code}`}
-      </mark>,
+      <Tooltip key={at++} tip="An invisible character">
+        <mark className="invisible-char">{`U+${code}`}</mark>
+      </Tooltip>,
     );
     rest = rest.slice(hit.index + hit[0].length);
   }

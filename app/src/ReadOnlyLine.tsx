@@ -1,11 +1,13 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { Lock } from "lucide-react";
 
 import { commands, type PlaneId, type ReadOnlyProject } from "./bindings";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
+import { ReadOnlyReasonId } from "./readOnlyReason";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * Why this purlis opens `plane` read-only, or null when it may write it (#826, FR-24).
@@ -80,16 +82,55 @@ export function useReadOnlyMendable(): boolean {
 }
 
 /**
- * **A group of controls that write a committed project file, off on a read-only project**: a
- * native `<fieldset>`, `disabled` with the sentence as its tooltip, so every box, pick and
- * button in it is off at once and says why on hover. Always drawn, so the controls under it are
- * never remounted when the answer arrives; it draws no box of its own (`.read-only-off`).
+ * **A group of controls that write a committed project file, off with the project's sentence**
+ * (#826, #2908): a native `<fieldset>`, `disabled`, so every box, pick and button in it is off
+ * at once, and each keeps its native `disabled`. A disabled control takes no keyboard, so the
+ * sentence is reached otherwise:
+ *
+ * - **its legend says "Read-only"**, the group's name, and is a Tab stop whose tooltip and
+ *   description are the sentence: the one place in the group the keyboard reaches it;
+ * - **every control in it is described by the sentence** ({@link ReadOnlyReasonId}), and so is
+ *   the group, for a screen reader that reads the controls without the keyboard.
+ *
+ * Always drawn, so the controls under it are never remounted when the answer arrives; it draws
+ * no box of its own (`.read-only-off`).
  */
-export function OffWhenReadOnly({ children }: { children: ReactNode }) {
-  const said = useReadOnlySaid();
+export function ReadOnlyFieldset({
+  said,
+  children,
+}: {
+  /** The sentence it is off with, or undefined where it is on. */
+  said: string | undefined;
+  children: ReactNode;
+}) {
+  const id = useId();
+  const off = said !== undefined;
   return (
-    <fieldset className="read-only-off" disabled={said !== undefined} title={said}>
-      {children}
+    <fieldset className="read-only-off" disabled={off} aria-describedby={off ? id : undefined}>
+      {off && (
+        // The first legend's contents are not disabled with the group, so its word takes the
+        // keyboard.
+        <legend className="read-only-why">
+          <Tooltip tip={said}>
+            <span className="ui-text-meta">
+              <Lock aria-hidden="true" />
+              Read-only
+            </span>
+          </Tooltip>
+          <span id={id} hidden>
+            {said}
+          </span>
+        </legend>
+      )}
+      <ReadOnlyReasonId.Provider value={off ? id : undefined}>{children}</ReadOnlyReasonId.Provider>
     </fieldset>
   );
+}
+
+/**
+ * **A group of controls that write a committed project file, off on a read-only project**
+ * ({@link ReadOnlyFieldset}), with the sentence its window lends it.
+ */
+export function OffWhenReadOnly({ children }: { children: ReactNode }) {
+  return <ReadOnlyFieldset said={useReadOnlySaid()}>{children}</ReadOnlyFieldset>;
 }

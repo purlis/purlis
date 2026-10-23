@@ -18,8 +18,9 @@
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
  * - `primitives/controls.css`, `ui/button/button.css`, `ui/field/field.css`, the window's own
- *   families (`ui/panel`, `ui/empty-state`, `ui/status`) and then `primitives/overlays.css` are in
- *   the `components` layer,
+ *   families (`ui/panel`, `ui/empty-state`, `ui/status`), `primitives/overlays.css`,
+ *   `ui/tooltip/tooltip.css` and the popover and menu families' sheets are in the `components`
+ *   layer,
  *   above `App.css`'s `charter` (`styles.css`), so a primitive's rule beats any of `App.css`'s that
  *   sets the same property, at any specificity;
  * - inside one layer, the winner is the highest specificity, then the last in the file.
@@ -107,48 +108,24 @@ function rulesOf(css: string, layer = 0, from = 0): Rule[] {
 }
 
 /** The window's cascade: `App.css`, and in the layer above it the collections, the control
- *  classes, the button family (#2904), the field family (#2905), the overlay surface and then the
- *  text roles, in the order `styles.css` imports them. */
-const COLLECTIONS = rulesOf(sheet("primitives/collections.css"), 1);
-const CONTROLS = rulesOf(sheet("primitives/controls.css"), 1, COLLECTIONS.length);
-const BUTTONS = rulesOf(sheet("ui/button/button.css"), 1, COLLECTIONS.length + CONTROLS.length);
-const FIELDS = rulesOf(
-  sheet("ui/field/field.css"),
-  1,
-  COLLECTIONS.length + CONTROLS.length + BUTTONS.length,
-);
-/** The window's own families (#2913), after the field's, in `styles.css`'s order. */
-const SHELL = rulesOf(
-  ["ui/panel/panel.css", "ui/empty-state/empty-state.css", "ui/status/status.css"]
-    .map(sheet)
-    .join("\n"),
-  1,
-  COLLECTIONS.length + CONTROLS.length + BUTTONS.length + FIELDS.length,
-);
-const OVERLAYS = rulesOf(
-  sheet("primitives/overlays.css"),
-  1,
-  COLLECTIONS.length + CONTROLS.length + BUTTONS.length + FIELDS.length + SHELL.length,
-);
-const RULES = [
-  ...rulesOf(sheet("App.css"), 0),
-  ...COLLECTIONS,
-  ...CONTROLS,
-  ...BUTTONS,
-  ...FIELDS,
-  ...SHELL,
-  ...OVERLAYS,
-  ...rulesOf(
-    sheet("primitives/text.css"),
-    1,
-    COLLECTIONS.length +
-      CONTROLS.length +
-      BUTTONS.length +
-      FIELDS.length +
-      SHELL.length +
-      OVERLAYS.length,
-  ),
-];
+ *  classes, the button family (#2904), the field family (#2905), the window's own families
+ *  (#2913), the overlay surface, the tooltip family (#2908), the popover and menu families (#2909) and then the text roles,
+ *  in the order `styles.css` imports them. */
+const COMPONENTS = [
+  "primitives/collections.css",
+  "primitives/controls.css",
+  "ui/button/button.css",
+  "ui/field/field.css",
+  "ui/panel/panel.css",
+  "ui/empty-state/empty-state.css",
+  "ui/status/status.css",
+  "primitives/overlays.css",
+  "ui/tooltip/tooltip.css",
+  "ui/popover/popover.css",
+  "ui/menu/menu.css",
+  "primitives/text.css",
+].reduce<Rule[]>((rules, file) => [...rules, ...rulesOf(sheet(file), 1, rules.length)], []);
+const RULES = [...rulesOf(sheet("App.css"), 0), ...COMPONENTS];
 
 /** `[ids, classes + attributes + pseudo-classes, types + pseudo-elements]`. */
 type Specificity = [number, number, number];

@@ -26,6 +26,7 @@ import {
 } from "./PersonaMark";
 import { inForce, tintVariables } from "./theme/theme";
 import { Form, TextField } from "./ui/field/Field";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **Pick a persona's icon and colour**, in its view. A pick is written to the persona's
@@ -110,24 +111,17 @@ export function PersonaMarkPicker({ plane, persona }: { plane: PlaneId; persona:
           value={icon ?? ""}
           onValueChange={(to) => pick(to === "" ? null : to, colour)}
         >
-          <RadioGroup.Item
-            className="persona-mark-choice"
-            value=""
-            aria-label="Initials"
-            title="Initials"
-          >
-            {initialsOf(persona)}
-          </RadioGroup.Item>
-          {Object.entries(PERSONA_ICONS).map(([name, Icon]) => (
-            <RadioGroup.Item
-              key={name}
-              className="persona-mark-choice"
-              value={name}
-              aria-label={name}
-              title={name}
-            >
-              <Icon aria-hidden="true" />
+          <Tooltip tip="Initials">
+            <RadioGroup.Item className="persona-mark-choice" value="" aria-label="Initials">
+              {initialsOf(persona)}
             </RadioGroup.Item>
+          </Tooltip>
+          {Object.entries(PERSONA_ICONS).map(([name, Icon]) => (
+            <Tooltip key={name} tip={name}>
+              <RadioGroup.Item className="persona-mark-choice" value={name} aria-label={name}>
+                <Icon aria-hidden="true" />
+              </RadioGroup.Item>
+            </Tooltip>
           ))}
         </RadioGroup.Root>
         <RadioGroup.Root
@@ -138,36 +132,38 @@ export function PersonaMarkPicker({ plane, persona }: { plane: PlaneId; persona:
             if (to !== "custom") pick(icon, to === "" ? null : to);
           }}
         >
-          <RadioGroup.Item
-            className="persona-mark-choice persona-mark-swatch"
-            value=""
-            aria-label="From its name"
-            title="From its name"
-          >
-            <PersonaMark persona={persona} mark={{ icon: null, colour: null, image: null }} />
-          </RadioGroup.Item>
-          {PERSONA_COLOURS.map((name) => (
+          <Tooltip tip="From its name">
             <RadioGroup.Item
-              key={name}
               className="persona-mark-choice persona-mark-swatch"
-              value={name}
-              aria-label={name}
-              title={name}
+              value=""
+              aria-label="From its name"
             >
-              <Swatch colour={name} />
+              <PersonaMark persona={persona} mark={{ icon: null, colour: null, image: null }} />
             </RadioGroup.Item>
+          </Tooltip>
+          {PERSONA_COLOURS.map((name) => (
+            <Tooltip key={name} tip={name}>
+              <RadioGroup.Item
+                className="persona-mark-choice persona-mark-swatch"
+                value={name}
+                aria-label={name}
+              >
+                <Swatch colour={name} />
+              </RadioGroup.Item>
+            </Tooltip>
           ))}
           {/* A `#rrggbb` written by hand in the definition: shown as what is picked, and kept
             until another is. The window offers the palette; the file takes any hue. */}
           {custom && colour !== null && (
-            <RadioGroup.Item
-              className="persona-mark-choice persona-mark-swatch"
-              value="custom"
-              aria-label={colour}
-              title={colour}
-            >
-              <Swatch colour={colour} />
-            </RadioGroup.Item>
+            <Tooltip tip={colour}>
+              <RadioGroup.Item
+                className="persona-mark-choice persona-mark-swatch"
+                value="custom"
+                aria-label={colour}
+              >
+                <Swatch colour={colour} />
+              </RadioGroup.Item>
+            </Tooltip>
           )}
         </RadioGroup.Root>
         <HexColour

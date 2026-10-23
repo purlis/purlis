@@ -8,6 +8,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import type { ListedChat } from "./chatsTree";
 import { PaneCrumbs } from "./PaneCrumbs";
+import { hoverTipOf, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A pane's breadcrumb, as it is drawn** (#1486). What it does in the window is
@@ -45,15 +46,16 @@ const path = [
 afterEach(cleanup);
 
 describe("a pane's breadcrumb", () => {
-  it("reads the session, each task on the way, the task shown, and its state", () => {
+  it("reads the session, each task on the way, the task shown, and its state", async () => {
     render(<PaneCrumbs crumbs={{ path, elsewhere: null }} onShow={() => undefined} />);
     const crumbs = screen.getByRole("navigation", { name: "Chat path" });
     expect(crumbs.textContent).toBe("steward 4 › talk › deep · done");
-    expect(crumbs.getAttribute("title")).toBe("steward 4 › talk › deep");
+    // The whole path for a pointer, where a narrow pane cuts it: it repeats the words.
+    expect(await hoverTipOf(crumbs)).toBe("steward 4 › talk › deep");
     // Each name is read once: a button is named by its own text and by nothing else.
     for (const button of within(crumbs).getAllByRole("button")) {
       expect(button.getAttribute("aria-label")).toBeNull();
-      expect(button.getAttribute("title")).toBeNull();
+      expect(tipOf(button)).toBeNull();
     }
   });
 
@@ -73,7 +75,7 @@ describe("a pane's breadcrumb", () => {
     render(<PaneCrumbs crumbs={{ path: theirs, elsewhere: null }} onShow={() => undefined} />);
     const crumbs = screen.getByRole("navigation", { name: "Chat path" });
     expect(crumbs.textContent).toBe("steward 4 › talk · done · asked by you");
-    expect(crumbs.getAttribute("title")).toBe("steward 4 › talk, asked by you");
+    expect(tipOf(crumbs)).toBe("steward 4 › talk, asked by you");
     // After the state, in a box of its own that gives way before the state does (`App.css`).
     expect(crumbs.lastElementChild?.className).toBe("crumb-by");
     expect(crumbs.querySelector(".shown-state")?.nextElementSibling?.className).toBe("crumb-by");

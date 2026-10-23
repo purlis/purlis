@@ -330,6 +330,15 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
                     .iter()
                     .map(|name| (format!("/**/{name}"), format!("/**/{}", either_case(name)))),
             )
+            // And every workspace's manifest (#2046).
+            .chain([(
+                format!("/**/{}/*/{}", super::WORKSPACES, super::WORKSPACE_MANIFEST),
+                format!(
+                    "/**/{}/*/{}",
+                    either_case(super::WORKSPACES),
+                    either_case(super::WORKSPACE_MANIFEST)
+                ),
+            )])
             .collect();
         for (plain, cased) in every {
             for rule in [plain, cased] {

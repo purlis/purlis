@@ -496,6 +496,15 @@ read-only to it:
   `purlis`. Hook commands keep `charter` for the rename's window. `purlis doctor --fix rename-plane` adds it, in the one commit that renames
   those files; nothing else does. A purlis without the feature opens the project read-only and
   says which version has it, so it never writes charter's names beside purlis's.
+- **`project-skills`** (SK-21, #2784). The project's skills are in
+  [`skills/`](#skills--the-projects-skills), and no longer in `.claude/skills`: every chat is
+  handed them by its own route, whether this machine's Skill studio flag is on or off
+  (`skills::reach_chats`, the dispatcher's ruling on #2784), and a clone gets no copy of
+  `.claude/skills` from purlis. `purlis doctor --fix project-skills` adds it, in the one commit
+  that moves them; nothing else does. A purlis without the feature opens the project read-only,
+  so it never quietly starts chats without the project's skills. A teammate's clones lose their
+  copies the next time a chat starts in each one; a copy somebody edited is kept, and the fix
+  names the ones on its own machine.
 
 Read by `crates/purlis-core/src/compat.rs` (`read`, `SCHEMA`), and checked by the `purlis`
 command before it runs a command that could write (`crates/purlis-cli/src/main.rs`) and by
@@ -740,7 +749,7 @@ Paths derived from the root (all in `derive`, `charter/config.py:661`) that land
 | Field | Type | Required / default | Meaning | Status | Source |
 |---|---|---|---|---|---|
 | `schema` | int (top level) | optional; absent = 1 | Project format version. charter-app understands 2, and a higher one makes the project read-only to it (V37a). `init` writes 1. A bump follows [Compatibility across charter versions](#compatibility-across-purlis-versions-fr-24). | stable | `charter/instance.py:98` |
-| `requires` | array of tables (top level) | optional; absent = none. Declared with `schema = 2` (V37a) | Features a charter must have to write this project, each `{ feature, since }` (V37b). A charter that lacks one opens the project read-only and names `since` ([Compatibility across charter versions](#compatibility-across-purlis-versions-fr-24)). | **stable**, a public format commitment (V37b): read by charter-app from FR-24; written only by the `rename-plane` fix, which adds `purlis-names` (RN-7) | `crates/purlis-core/src/compat.rs` |
+| `requires` | array of tables (top level) | optional; absent = none. Declared with `schema = 2` (V37a) | Features a charter must have to write this project, each `{ feature, since }` (V37b). A charter that lacks one opens the project read-only and names `since` ([Compatibility across charter versions](#compatibility-across-purlis-versions-fr-24)). | **stable**, a public format commitment (V37b): read by charter-app from FR-24; written only by the `rename-plane` fix, which adds `purlis-names` (RN-7), and the `project-skills` fix, which adds `project-skills` (#2784) | `crates/purlis-core/src/compat.rs` |
 | `[project].id` | str, a ULID | optional; absent = none yet | **purlis only** (V76, ADR 0068 as amended by FD-26 and for #2004). The project's stable id: what the session protocol names a project by, in `start` and in each listed chat's `project`, never its path, which differs on every clone and device. Read in its canonical (upper-case) spelling; a value that is not a ULID is reported and read as none. **Not written by this version**: holding a project in the session host writes nothing into it (ruled 2026-10-16, D-2004-7), so a project that keeps no id is held by one derived from its resolved path (a ULID of its SHA-256), the same at every launch (`planefile::id_to_hold_by`); a stored id is minted later, where something needs a project named alike on every clone and device. **Tier:** Plane, as the whole file: committed, so every clone and device of the project names it the same. | stable, a public format commitment (V76) | `crates/purlis-core/src/scaffold/planefile.rs` `project_id`, `id_to_hold_by` |
 | `[[forge]]` | array of tables | optional; none = one default GitLab forge | One block per forge tracked. Index 0 is `config.GROUP`/`EXCLUDE`. | stable | `charter/instance.py:143` |
 | `[[forge]].kind` | str | default `"gitlab"`; one of `gitlab`, `github` | Backend class. Unknown kind = that block skipped + reported. | stable | `charter/forge/registry.py:69`, `charter/forge/registry.py:15` |
@@ -1343,7 +1352,9 @@ outside the project and removes it when the flow ends, so it adds none of them (
   `<name>.toml`; and Share (`purlis skill share`, and Share in the Skill studio, #2767), which
   moves a folder in from [`skills.local/`](#skillslocal--the-projects-local-skills); and the
   Skill studio's and `purlis skill`'s new, edit, rename, move, delete and restore (#2770,
-  `purlis_core::skills::verbs`). Each of those is **one commit of exactly its own paths**
+  `purlis_core::skills::verbs`); and `purlis doctor --fix project-skills` (#2784), which moves
+  each folder of the plane's old `.claude/skills` here in one commit, granted `"all"`.
+  Each of those is **one commit of exactly its own paths**
   (`planegit::save_paths`): a skill's folder and the file beside it, and for a rename each
   persona definition, skill and `workspace.json` that named it. Deleting a committed skill
   removes it from git, and Restore brings it back from that commit. A skill git does not track
@@ -1422,9 +1433,10 @@ plane root (written by `purlis init`'s harness wiring — `charter/commands.py:2
 `charter/commands.py:2321`, `charter/commands.py:2098`, `charter/commands.py:1233` — harness
 area), `workspaces/*` (workspaces area), `personas/*` internals (personas area),
 `.charter/*` other than the profile launch record (runtime-state areas). The plane's own
-`.claude/skills/**`, `.opencode/agent/**` and `.codex/skills/**` are committed plane content
-that purlis copies into a clone rather than authors; they are described where that mirror is
-(`charter/harness/claude_code.py:53`).
+`.claude/agents/**` and `.claude/skills/**` are committed plane content that purlis copies into
+a clone rather than authors; they are described where that mirror is
+(`crates/purlis-core/src/guest.rs`, `WALKUP_DIRS`). `.claude/skills/**` is copied only until
+the project's skills move into [`skills/`](#skills--the-projects-skills) (#2784).
 
 ---
 
@@ -2444,14 +2456,16 @@ beside a purlis one is removed when the record is published (V93i).
     `charter/harness/claude_code.py:95`). It is *co-written*: the harness saves "don't ask
     again" into it, so purlis never rewrites it once edited and never withdraws its
     exclude line (`charter/harness/claude_code.py:387`, `charter/workspace.py:3353`).
-  - a 1:1 copy of the plane's `.claude/agents/**`, `.claude/skills/**`,
-    `.opencode/agent/**`, `.codex/skills/**` — every registered harness's
-    `inherited_paths` (`charter/workspace.py:2105`, `charter/harness/claude_code.py:169`,
-    `charter/harness/opencode.py:831`, `charter/harness/codex.py:236`). Keys are
-    `<declared path>/<relative posix path>` (`charter/workspace.py:2131`). **A `.claude/agents` or
+  - a 1:1 copy of the plane's `.claude/agents/**`, and of its `.claude/skills/**` until the
+    project requires `project-skills` (`guest.rs`, `WALKUP_DIRS` and `RETIRED_MIRROR`; the
+    Python also copied `.opencode/agent/**` and `.codex/skills/**`, which purlis-core never
+    has). Keys are `<declared path>/<relative posix path>`. **A `.claude/agents` or
     `.claude/skills` copy the project no longer has is withdrawn** (#1583) at the next wire, only where it is
     recorded, proved gone from the project, unedited, untracked, and a text the project
-    offered at that path (`app/mirrors-offered.json`, which lists each condition).
+    offered at that path (`app/mirrors-offered.json`, which lists each condition). Once the
+    project requires `project-skills` (#2784), every `.claude/skills` copy counts as one the
+    project no longer has, whatever its own `.claude/skills` holds: its skills reach each chat
+    by the chat's own route from [`skills/`](#skills--the-projects-skills).
   - `.charter-generated` — the marker, as above.
 - **Refs purlis writes in its git:** `refs/purlis/review/<key>`, a request's head fetched for
   its review (ADR 0084 §1–§2, #704). **Tier:** None — the repository's own git, and the only
@@ -4481,11 +4495,11 @@ harness's `workspace_files` / `checkout_files` (`charter/workspace.py:2020`
 
 **Tier:** Clone state, rebuildable — copies of committed plane content.
 
-`charter/workspace.py:2077` (`_inherited_files`) copies, 1:1 as text, every registered
-harness's `inherited_paths`: `.claude/agents`, `.claude/skills`
-(`charter/harness/claude_code.py:169`), `.opencode/agent`
-(`charter/harness/opencode.py:831`), `.codex/skills`
-(`charter/harness/codex.py:236`). **`CLAUDE.md` is deliberately never generated or
+`crates/purlis-core/src/guest.rs` (`mirrored`, `WALKUP_DIRS`) copies, 1:1 as text, the plane's
+`.claude/agents`, and its `.claude/skills` until the project requires `project-skills` (#2784,
+`RETIRED_MIRROR`), after which the copies purlis made are withdrawn. The Python
+(`charter/workspace.py:2077`, `_inherited_files`) also copied `.opencode/agent` and
+`.codex/skills`; purlis-core never has. **`CLAUDE.md` is deliberately never generated or
 mirrored, and `AGENTS.md` is never mirrored.** The one project-instructions file purlis
 writes is the next heading's `AGENTS.md`, in a piece only (ADR 0085).
 
@@ -5618,7 +5632,8 @@ down rather than read off the code.
   there, at that very path. It **withdraws** one only when every one of these holds: the
   record names it (a mirror, under `.claude/agents` or `.claude/skills`; in a workspace, a
   path under one of the layer's generated roots); the project no longer has it, and its own
-  file is proved gone (a project file purlis could not read counts as held, not gone); the copy
+  file is proved gone (a project file purlis could not read counts as held, not gone), or it is
+  a `.claude/skills` copy of a project that requires `project-skills` (#2784); the copy
   still reads, with no link on the way, as a text the record holds; this note holds that text
   at that path; and, in a checkout, git does not track it. The machine-local settings are
   noted for the refresh alone and never withdrawn, as the harness writes there too. The removal

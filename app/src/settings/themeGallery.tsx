@@ -35,6 +35,7 @@ import type { LiveSetting, SettingsGroup } from "./groups";
 import { OptionsList } from "./themeOptions";
 import { useOnScreen, useSpecimen } from "./themeSpecimens";
 import { Button } from "../ui/button/Button";
+import { Tooltip } from "../ui/tooltip/Tooltip";
 
 /**
  * **Settings › Theme is a gallery** (spec #2313, #2331): a card per theme a choice at this level
@@ -581,9 +582,11 @@ function Cards({
  *  accessible description, as the options' badges are. */
 function SourceBadge({ badge }: { badge: Badge }) {
   return (
-    <span className="ui-setting-badge" title={badge.says} aria-description={badge.says}>
-      {badge.label}
-    </span>
+    <Tooltip tip={badge.says}>
+      <span className="ui-setting-badge" aria-description={badge.says}>
+        {badge.label}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -660,10 +663,9 @@ function Picture({
       />
     );
   return (
-    <span
-      className="block aspect-video w-full min-w-0 flex-1 rounded-sm bg-surface-sunken"
-      title={picture.state === "none" ? `No picture: ${picture.why}` : undefined}
-    />
+    <Tooltip tip={picture.state === "none" ? `No picture: ${picture.why}` : undefined}>
+      <span className="block aspect-video w-full min-w-0 flex-1 rounded-sm bg-surface-sunken" />
+    </Tooltip>
   );
 }
 
@@ -957,7 +959,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
             <SettingActions>
               <Button
                 isDisabled={card === undefined || !card.duplicable}
-                title={
+                tooltip={
                   card !== undefined && !card.duplicable
                     ? "A theme of your own extends the built-in theme or another of your own."
                     : undefined
@@ -968,7 +970,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
               </Button>
               <Button
                 isDisabled={card === undefined || !card.folder}
-                title={
+                tooltip={
                   card !== undefined && !card.folder
                     ? `${card.name} has no theme folder: it is ${card.from === "built-in" ? "built into purlis" : "an extension's"}.`
                     : undefined
@@ -979,21 +981,21 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
               </Button>
               <Button
                 isDisabled={card === undefined || noChat !== undefined}
-                title={noChat}
+                tooltip={noChat}
                 onPress={() => chat(card)}
               >
                 Edit with a chat
               </Button>
               <Button
                 isDisabled={gallery === undefined || noChat !== undefined}
-                title={noChat}
+                tooltip={noChat}
                 onPress={() => chat(undefined)}
               >
                 New theme
               </Button>
               <Button
                 isDisabled={!inWorkspace}
-                title={
+                tooltip={
                   card !== undefined && !inWorkspace
                     ? `${card.name} is not a theme of this workspace.`
                     : MOVE_TO_PROJECT_SAYS
@@ -1004,7 +1006,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
               </Button>
               <Button
                 isDisabled={!inProject}
-                title={
+                tooltip={
                   card !== undefined && !inProject
                     ? `${card.name} is not a theme of this project.`
                     : undefined

@@ -3,18 +3,24 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
 import { isView, RADIX_FROM, sourceFiles, SRC, withoutComments } from "./guards.testkit";
 import { PACKAGES, partsNotHeld } from "./overlaysHeld.testkit";
-import { drawnOverTheWindow, InTheWindow, useProjectHost } from "./projectShown";
+import {
+  drawnOverTheWindow,
+  InTheWindow,
+  ProjectShownProvider,
+  useProjectHost,
+} from "./projectShown";
+import { Button } from "./ui/button/Button";
+import { ContextMenu } from "./ui/menu/ContextMenu";
+import { AnchoredMenu, InlineMenu, Menu, MenuItem, MenuTrigger } from "./ui/menu/Menu";
+import { AnchoredPopover, HeldPopover, PopoverDialog, PopoverTrigger } from "./ui/popover/Popover";
 
 /**
  * **Nothing a project's view opens over the window can stay up over another project**
@@ -32,13 +38,8 @@ afterEach(cleanup);
 /** Each Radix package the window draws with, and whether what it draws is over the window. */
 const KINDS: Record<string, "over" | "says nothing to answer" | "in place"> = {
   "@radix-ui/react-alert-dialog": "over",
-  "@radix-ui/react-context-menu": "over",
   "@radix-ui/react-dialog": "over",
-  "@radix-ui/react-dropdown-menu": "over",
-  "@radix-ui/react-popover": "over",
   "@radix-ui/react-select": "over",
-  // A tooltip asks nothing and answers nothing: it is not why a project is taken down.
-  "@radix-ui/react-tooltip": "says nothing to answer",
   "@radix-ui/react-checkbox": "in place",
   "@radix-ui/react-radio-group": "in place",
   "@radix-ui/react-roving-focus": "in place",
@@ -169,26 +170,7 @@ describe("each kind drawn over the window is found as its project leaves the fro
         </AlertDialog.Portal>
       </AlertDialog.Root>,
     ],
-    [
-      "@radix-ui/react-popover",
-      <Popover.Root open>
-        <Popover.Trigger>Scope</Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content>This tab</Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>,
-    ],
-    [
-      "@radix-ui/react-dropdown-menu",
-      <DropdownMenu.Root open>
-        <DropdownMenu.Trigger>More</DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content>
-            <DropdownMenu.Item>End chat</DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>,
-    ],
+
     [
       "@radix-ui/react-select",
       <Select.Root open value="a">
@@ -208,7 +190,27 @@ describe("each kind drawn over the window is found as its project leaves the fro
     ],
   ];
 
-  it.each(kinds)("%s", (_, drawn) => {
+  /** The families' own overlays (#2909): a menu, and a popover that asks. */
+  const families: [string, React.ReactElement][] = [
+    [
+      "the menu family",
+      <MenuTrigger defaultOpen>
+        <Button>More</Button>
+        <Menu aria-label="More">
+          <MenuItem textValue="End chat">End chat</MenuItem>
+        </Menu>
+      </MenuTrigger>,
+    ],
+    [
+      "the popover family",
+      <PopoverTrigger defaultOpen>
+        <Button>Scope</Button>
+        <PopoverDialog aria-label="Scope">This tab</PopoverDialog>
+      </PopoverTrigger>,
+    ],
+  ];
+
+  it.each([...kinds, ...families])("%s", (_, drawn) => {
     const place = slot();
     expect(drawnOverTheWindow(place)).toBe(false);
     render(drawn);
@@ -216,16 +218,11 @@ describe("each kind drawn over the window is found as its project leaves the fro
     place.parentElement?.remove();
   });
 
-  it("and every kind listed as drawn over the window is one of those, or a menu like them", () => {
+  it("and every kind listed as drawn over the window is one of those", () => {
     const over = Object.entries(KINDS)
       .filter(([, what]) => what === "over")
       .map(([kind]) => kind);
-    // The context menu opens on a right-click and not on a prop; it draws the dropdown's
-    // `role="menu"`, which is the one held above.
-    expect(ContextMenu.Content).toBeDefined();
-    expect(over.sort()).toEqual(
-      [...kinds.map(([kind]) => kind), "@radix-ui/react-context-menu"].sort(),
-    );
+    expect(over.sort()).toEqual(kinds.map(([kind]) => kind).sort());
   });
 });
 
@@ -237,16 +234,14 @@ describe("a switch made from a row of a menu", () => {
     return (
       <>
         <InTheWindow host={host} slot={slot} shown={shown} onLeftCovered={onLeftCovered} />
-        <DropdownMenu.Root defaultOpen>
-          <DropdownMenu.Trigger>More projects</DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content>
-              <DropdownMenu.Item onSelect={() => setShown(false)}>
-                Switch to project two
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
+        <MenuTrigger defaultOpen>
+          <Button>More projects</Button>
+          <Menu aria-label="More projects">
+            <MenuItem textValue="Switch to project two" onAction={() => setShown(false)}>
+              Switch to project two
+            </MenuItem>
+          </Menu>
+        </MenuTrigger>
       </>
     );
   }
@@ -254,8 +249,8 @@ describe("a switch made from a row of a menu", () => {
   it("leaves no menu over the window as the project goes, so the project is kept", () => {
     // The window's own menus are over the window too (the strip's show-more lists projects). A
     // menu that outlived the press of its row would cost every project left from one its view,
-    // and nobody would see why: Radix closes it in the render the row's press makes, and no
-    // menu here is kept for a closing animation.
+    // and nobody would see why: the family closes it in the render the row's press makes, and
+    // no menu here is kept for a closing animation.
     const own = document.body.appendChild(document.createElement("main"));
     const slot = own.appendChild(document.createElement("div"));
     const covered = vi.fn();
@@ -266,5 +261,77 @@ describe("a switch made from a row of a menu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
     expect(covered).not.toHaveBeenCalled();
     own.remove();
+  });
+});
+
+describe("the menu and popover families", () => {
+  /** Each overlay the families draw, open, as a screen writes it. */
+  function Every() {
+    const anchor = useRef<HTMLSpanElement>(null);
+    return (
+      <>
+        <span ref={anchor}>anchor</span>
+        <MenuTrigger defaultOpen>
+          <Button>More</Button>
+          <Menu aria-label="More">
+            <MenuItem textValue="End chat">drawn by a project behind</MenuItem>
+          </Menu>
+        </MenuTrigger>
+        <AnchoredMenu triggerRef={anchor} isOpen onOpenChange={() => {}}>
+          <Menu aria-label="Held">
+            <MenuItem textValue="Held">drawn by a project behind</MenuItem>
+          </Menu>
+        </AnchoredMenu>
+        <PopoverTrigger defaultOpen>
+          <Button>Scope</Button>
+          <PopoverDialog aria-label="Scope">drawn by a project behind</PopoverDialog>
+        </PopoverTrigger>
+        <AnchoredPopover triggerRef={anchor} isOpen>
+          drawn by a project behind
+        </AnchoredPopover>
+        <HeldPopover triggerRef={anchor} isOpen onOpenChange={() => {}} aria-label="Held">
+          drawn by a project behind
+        </HeldPopover>
+        <ContextMenu
+          menu={() => (
+            <Menu aria-label="Row">
+              <MenuItem textValue="Row">drawn by a project behind</MenuItem>
+            </Menu>
+          )}
+        >
+          <span>row</span>
+        </ContextMenu>
+      </>
+    );
+  }
+
+  it("draw nothing over the window while their project is behind", () => {
+    render(
+      <ProjectShownProvider value={false}>
+        <Every />
+      </ProjectShownProvider>,
+    );
+    fireEvent.contextMenu(screen.getByText("row"));
+    expect(document.body.textContent).not.toContain("drawn by a project behind");
+    cleanup();
+    // And each of them is drawn while it is in front: the guard is not passing for nothing.
+    render(
+      <ProjectShownProvider value>
+        <Every />
+      </ProjectShownProvider>,
+    );
+    fireEvent.contextMenu(screen.getByText("row"));
+    expect(document.body.textContent?.split("drawn by a project behind").length).toBe(7);
+  });
+
+  it("are drawn in place only by the inline menu, which is no overlay", () => {
+    render(
+      <ProjectShownProvider value={false}>
+        <InlineMenu aria-label="Chats">
+          <MenuItem textValue="steward">steward</MenuItem>
+        </InlineMenu>
+      </ProjectShownProvider>,
+    );
+    expect(screen.getByRole("menu", { hidden: true }).closest('[data-part="root"]')).toBeNull();
   });
 });

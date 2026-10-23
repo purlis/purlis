@@ -181,7 +181,10 @@ describe("a link's close of a chat with theme drafts", () => {
       expect(within(asking).getByRole("button", { name: "Cancel" })).toHaveFocus(),
     );
     // Nothing closes until the drafts are answered here.
-    expect(within(asking).getByRole("button", { name: "Close" })).toBeDisabled();
+    expect(within(asking).getByRole("button", { name: "Close" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(asked(log, "close_session")).toEqual([]);
     await keepAndClose();
     await waitFor(() => expect(asked(log, "theme_draft_keep")).toHaveLength(1));

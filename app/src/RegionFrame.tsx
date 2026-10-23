@@ -716,7 +716,7 @@ function Half({
                 size="sm"
                 excludeFromTabOrder
                 aria-label={`Put the panel's ${side} half away`}
-                title={`Put the panel's ${side} half away`}
+                tooltip={`Put the panel's ${side} half away`}
                 onPress={() => open !== undefined && drawn.onPick?.(open)}
                 icon={<ChevronDown className="node-icon" aria-hidden="true" />}
                 className="half-away"

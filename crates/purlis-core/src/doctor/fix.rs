@@ -33,8 +33,10 @@ use std::path::Path;
 
 use crate::scaffold::Say;
 
+mod commit;
 pub mod identity;
 pub mod persona_agents;
+pub mod project_skills;
 pub mod rename_plane;
 
 /// A fix charter can make, by the id every surface names it with.
@@ -140,11 +142,23 @@ pub enum FixId {
     /// are committed ones every teammate pulls, and a purlis older than this one has no
     /// dispatch grant, so the rule is still what asks there.
     HandoffRule,
+    /// **`project-skills`** (SK-21, #2784): the project's skills, moved out of `.claude/skills`
+    /// into the Skill studio's `skills/` in ONE commit. Each skill folder moves with `git mv` and
+    /// is granted to every workspace (`grant = "all"`, since every clone got a copy of it), each
+    /// `charter:` skill reference in a persona's definition or a skill's `.md` files becomes
+    /// `purlis:`, and the manifest requires `project-skills`, so a build without that feature
+    /// opens the project read-only and clones get no copy of `.claude/skills` again. It says
+    /// every change, each persona reference that names no skill a chat can get, and how to
+    /// `git revert` it. Applied only by name ([`FixId::by_name_only`]): it is a commit every
+    /// teammate pulls. It refuses, writing nothing, from inside a chat, while the Skill studio's
+    /// preview is off on this machine, on a project with uncommitted changes or outside git, and
+    /// where the move would leave any chat without one of its skills ([`project_skills`]).
+    ProjectSkills,
 }
 
 impl FixId {
     /// Every fix, in the order `charter doctor --fix` applies them.
-    pub const ALL: [FixId; 11] = [
+    pub const ALL: [FixId; 12] = [
         FixId::RenameLocal,
         FixId::PluginInstall,
         FixId::Reinit,
@@ -156,6 +170,7 @@ impl FixId {
         FixId::PersonaAgents,
         FixId::WorkspaceReinit,
         FixId::HandoffRule,
+        FixId::ProjectSkills,
     ];
 
     /// The id, as `charter doctor --fix <id>`, `--json` and the window spell it.
@@ -172,6 +187,7 @@ impl FixId {
             Self::PersonaAgents => "persona-agents",
             Self::WorkspaceReinit => "workspace-reinit",
             Self::HandoffRule => "handoff-rule",
+            Self::ProjectSkills => "project-skills",
         }
     }
 
@@ -184,6 +200,7 @@ impl FixId {
     /// removes and rewrites committed files, so it is the operator's to ask for (#1451).
     /// `handoff-rule` takes a rule out of committed files every teammate pulls, and a purlis
     /// older than this one still relies on that rule to ask, so it waits as well (#1444).
+    /// `project-skills` moves committed skills in a commit every teammate pulls (#2784).
     pub const fn by_name_only(self) -> bool {
         matches!(
             self,
@@ -192,6 +209,7 @@ impl FixId {
                 | Self::RenameLocal
                 | Self::PersonaAgents
                 | Self::HandoffRule
+                | Self::ProjectSkills
         )
     }
 
@@ -299,6 +317,7 @@ fn applied(root: &Path, id: FixId, machine: Option<&crate::plugin_install::Machi
         FixId::PersonaAgents => persona_agents::apply(root),
         FixId::WorkspaceReinit => workspace_reinit(root),
         FixId::HandoffRule => handoff_rule(root),
+        FixId::ProjectSkills => project_skills::apply(root),
         FixId::PluginInstall | FixId::RenameLocal => unreachable!("answered above"),
     }
 }

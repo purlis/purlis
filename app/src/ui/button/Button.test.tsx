@@ -12,6 +12,7 @@ import { userEvent } from "@testing-library/user-event";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { drawnWith } from "../../cascade.testkit";
+import { tipOf } from "../tooltip/tooltip.testkit";
 import { Button, ButtonRow, IconButton, ToggleButton, type ButtonVariant } from "./Button";
 
 afterEach(cleanup);
@@ -71,12 +72,14 @@ describe("a button", () => {
 
   it("keeps the native attributes React Aria would drop", () => {
     render(
-      <Button title="Saves every file" aria-busy="true" aria-keyshortcuts="Meta+S">
+      <Button tooltip="Saves every file" aria-busy="true" aria-keyshortcuts="Meta+S">
         Save
       </Button>,
     );
     const button = screen.getByRole("button", { name: "Save" });
-    expect(button).toHaveAttribute("title", "Saves every file");
+    // Its hint is the shared tooltip (#2908), never a native one.
+    expect(button).not.toHaveAttribute("title");
+    expect(tipOf(button)).toBe("Saves every file");
     expect(button).toHaveAttribute("aria-busy", "true");
     expect(button).toHaveAttribute("aria-keyshortcuts", "Meta+S");
   });
