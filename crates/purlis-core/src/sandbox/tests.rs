@@ -6633,10 +6633,6 @@ fn the_projects_skills_are_held_at_every_level() {
     let expected: Vec<PathBuf> = [
         "skills",
         "skills.local",
-        "workspaces/ops/skills",
-        "workspaces/ops/skills.local",
-        "personas/steward/skills",
-        "personas/steward/skills.local",
         "workspaces/*/skills",
         "workspaces/*/skills.local",
         "personas/*/skills",

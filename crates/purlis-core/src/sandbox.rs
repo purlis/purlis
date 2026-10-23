@@ -1001,33 +1001,23 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
 /// reaches other chats, as `.claude/skills` does ([`PLANTED`]), so a chat's write of one becomes
 /// a draft skill the person tries and accepts ([`crate::skills::verbs::drafts`]).
 ///
-/// The folders there now are held by their paths. The ones of levels made later are held by a
-/// pattern, a path with a [`ANY_NAME`] part, which Claude Code reads as a glob and purlis's own
+/// The project's own are held by their paths, and every workspace's and persona's, there now or
+/// made later, by a pattern, a path with a [`ANY_NAME`] part, which Claude Code reads as a glob and purlis's own
 /// wrap as a regular expression ([`seatbelt::denial_rules`]). Where a backend cannot hold a
 /// pattern, the levels a chat could have made reach no chat while it runs
 /// ([`crate::skills::levels`]). A clone is never named `skills` or `skills.local`
 /// (`repocmd::clone::destination`), so no pattern holds a clone's root.
 pub fn skills_held(root: &Path) -> Vec<Denial> {
     let levels = [purlis_skills::PROJECT_DIR, purlis_skills::LOCAL_DIR];
-    let mut owners: Vec<PathBuf> = vec![root.to_path_buf()];
-    for ws in crate::workspaces::Plane::open(root)
-        .workspaces()
-        .unwrap_or_default()
-    {
-        owners.push(root.join("workspaces").join(ws));
-    }
-    if let Ok(personas) = std::fs::read_dir(root.join("personas")) {
-        let mut found: Vec<PathBuf> = personas
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-            .map(|entry| entry.path())
-            .collect();
-        found.sort();
-        owners.extend(found);
-    }
-    // Any level made later, by its pattern.
-    owners.push(root.join("workspaces").join(ANY_NAME));
-    owners.push(root.join("personas").join(ANY_NAME));
+    // The project's own levels by their paths, and every workspace's and persona's, made now or
+    // later, by a pattern each: one rule a level, however many workspaces the project has, so a
+    // harness that carries its rules in one argument is never handed more than a system starts
+    // a program with.
+    let owners: [PathBuf; 3] = [
+        root.to_path_buf(),
+        root.join("workspaces").join(ANY_NAME),
+        root.join("personas").join(ANY_NAME),
+    ];
     owners
         .iter()
         .flat_map(|owner| levels.iter().map(move |level| owner.join(level)))
