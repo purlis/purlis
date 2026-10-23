@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792750821699,
+  "lastUpdate": 1792754099535,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22596,6 +22596,48 @@ window.BENCHMARK_DATA = {
             "value": 105.23038050000001,
             "unit": "ms",
             "extra": "median of 5 runs: 103.362, 104.654, 105.230, 105.550, 107.298 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "075b16523af956e732b1cc066eff481d5a56d789",
+          "message": "Bump the site group in /site with 2 updates (#3054)\n\nBumps the site group in /site with 2 updates: [@astrojs/markdown-remark](https://github.com/withastro/astro/tree/HEAD/packages/markdown/remark) and [astro](https://github.com/withastro/astro/tree/HEAD/packages/astro).\n\n\nUpdates `@astrojs/markdown-remark` from 7.3.2 to 7.3.3\n- [Release notes](https://github.com/withastro/astro/releases)\n- [Changelog](https://github.com/withastro/astro/blob/main/packages/markdown/remark/CHANGELOG.md)\n- [Commits](https://github.com/withastro/astro/commits/@astrojs/markdown-remark@7.3.3/packages/markdown/remark)\n\nUpdates `astro` from 7.3.8 to 7.4.1\n- [Release notes](https://github.com/withastro/astro/releases)\n- [Changelog](https://github.com/withastro/astro/blob/main/packages/astro/CHANGELOG.md)\n- [Commits](https://github.com/withastro/astro/commits/astro@7.4.1/packages/astro)\n\n---\nupdated-dependencies:\n- dependency-name: \"@astrojs/markdown-remark\"\n  dependency-version: 7.3.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: site\n- dependency-name: astro\n  dependency-version: 7.4.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: site\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-23T15:07:30+04:00",
+          "tree_id": "72210c178120817045a6d34ff92f07c49283763f",
+          "url": "https://github.com/purlis/purlis/commit/075b16523af956e732b1cc066eff481d5a56d789"
+        },
+        "date": 1792754097912,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.515262,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.502, 0.513, 0.515, 0.528, 0.539 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.874425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.430, 16.585, 16.874, 17.034, 17.165 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.49659600000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.883, 103.175, 104.497, 105.635, 106.457 ms"
           }
         ]
       }
