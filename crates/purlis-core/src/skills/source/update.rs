@@ -316,7 +316,7 @@ fn locked_at(plane: &Path, level: &Level, name: &str) -> Result<(lock::Read, usi
     match may(plane, kept, &held.lock.skills[at]) {
         May::Ask => Ok((held, at)),
         May::Confirm => Err(format!(
-            "{} is not checked on this machine yet: confirm it first",
+            "{} is not checked on this machine until it is confirmed here",
             held.lock.skills[at].source
         )),
         May::Never(why) => Err(why),
