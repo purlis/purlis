@@ -129,6 +129,9 @@ pub enum AskSource {
     /// A change a chat proposed to purlis's own configuration, which only the person applies
     /// (#1975).
     ProposedChange,
+    /// A change to the project a chat on a pool's runner asked for, which only the person
+    /// applies (#2046).
+    RunnerWrite,
     /// A prompt shown in the harness's own terminal that purlis holds nothing for.
     Terminal,
     /// A chat whose turn ended with the next move the person's.
@@ -178,6 +181,9 @@ pub enum AnswerPath {
     /// `apply_proposed_change` for Apply and `dismiss_proposed_change` for Dismiss, on held
     /// proposal `id` (#1975); Open opens its own tab, titled by `path`, and sends nothing.
     ProposedChange { id: u32, path: String },
+    /// `apply_runner_write` for Apply and `dismiss_runner_write` for Dismiss, on held runner
+    /// write `id` (#2046); Open opens its own tab, which shows it whole, and sends nothing.
+    RunnerWrite { id: u32 },
     /// Sign in sends nothing: it opens a shell tab where the core types the harness's own
     /// sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
     /// the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
@@ -1238,6 +1244,58 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
     }
 }
 
+/// The key of held runner write `id`.
+fn runner_write_key(id: u32) -> String {
+    format!("runner-write:{id}")
+}
+
+/// What a held runner write's row says.
+fn runner_write_says(one: &crate::runnerwrites::HeldWrite) -> String {
+    format!(
+        "Asks, from pool {}, to change this project: {}",
+        one.pool, one.said
+    )
+}
+
+/// **Whether held runner write `one`'s row shows it whole** (#1146's rule): its line, as the
+/// row draws it, is the line said, with no text cut, collapsed, masked or escaped; so what the
+/// person reads there is what Apply writes.
+pub fn runner_write_shown_whole(one: &crate::runnerwrites::HeldWrite) -> bool {
+    let says = runner_write_says(one);
+    !purlis_core::runnerwrite::cut(&one.write) && said_inertly(&says) == says
+}
+
+/// **The runner write adapter** (#2046): a change to the project a chat on a pool's runner
+/// asked for, said in words, held until the person answers. **Apply** is offered only where the
+/// row shows it whole ([`runner_write_shown_whole`]); otherwise **Open** shows it whole in its
+/// own tab, where Apply is pressed. **Dismiss** makes nothing. Never "always apply".
+pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
+    let mut options = Vec::new();
+    if runner_write_shown_whole(one) {
+        options.push(Offered {
+            id: APPLY.to_owned(),
+            label: "Apply".to_owned(),
+            allows: true,
+            preselected: None,
+        });
+    } else {
+        options.push(refuses(OPEN, "Open"));
+    }
+    options.push(refuses(DISMISS, "Dismiss"));
+    Shown {
+        session: one.session,
+        ask: runner_write_key(one.id),
+        says: said_inertly(&runner_write_says(one)),
+        options,
+        source: AskSource::RunnerWrite,
+        chain: Vec::new(),
+        answer: AnswerPath::RunnerWrite { id: one.id },
+        since: None,
+        held_until: None,
+        writes: None,
+    }
+}
+
 /// The option id of Sign in on a profile's Ask (#2035), and its prefix where a provider is
 /// named: `sign-in:<provider>`.
 pub const SIGN_IN: &str = "sign-in";
@@ -1399,6 +1457,8 @@ pub struct Waiting<'a> {
     pub removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
     /// The changes a chat proposed to purlis's own configuration, each as it is now (#1975).
     pub proposals: Vec<(crate::proposals::Proposal, crate::proposals::Now)>,
+    /// The changes to the project chats on a pool's runner asked for (#2046).
+    pub runner_writes: Vec<crate::runnerwrites::HeldWrite>,
     /// The profiles a start was refused on because they are not signed in here (#2035).
     pub sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
     /// Whether a sandboxed Codex chat here waits for a sandbox-only profile (#2037).
@@ -1464,6 +1524,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .iter()
             .map(|(one, now)| proposed_change(one, now)),
     );
+    // And one on a runner that asked to change the project waits on the person too (#2046).
+    asks.extend(waiting.runner_writes.iter().map(runner_write));
     // A chat whose first browser call asks the person waits on that answer too (#2013).
     asks.extend(
         waiting
@@ -1635,6 +1697,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             since.insert(proposal_key(one.id), one.since);
         })
         .collect();
+    let runner_writes = held.runner_writes().every();
+    for one in &runner_writes {
+        since.insert(runner_write_key(one.id), one.since);
+    }
     let sign_ins = purlis_core::profilestore::sign_in::waiting(root);
     for one in &sign_ins {
         since.insert(format!("sign-in:{}", one.profile.name), one.since);
@@ -1669,6 +1735,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         sign_ins,
         removals,
         proposals,
+        runner_writes,
         permissions: permissions.into_iter().map(|(raised, _)| raised).collect(),
         queue,
         at_its_prompt: &|session| board.glance(session).prompt,

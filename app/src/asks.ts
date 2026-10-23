@@ -27,6 +27,7 @@ import { askRemoveWorkspace } from "./removeWorkspaceAsk";
 import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
+import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askProfileSignIn } from "./settings/links";
 
 /**
@@ -252,6 +253,19 @@ export async function answerTaken(
           return { status: "ok" };
         }
         if (option === "dismiss") return commands.dismissProposedChange(plane, path.id);
+        break;
+      case "runner-write":
+        // A chat on a pool's runner asked to change this project (#2046): Apply makes the change
+        // as the window would for a chat here; Dismiss makes nothing. The chat is told which.
+        // Apply is offered on a row only where the row shows the change whole; otherwise Open
+        // shows it whole in its own tab, where Apply is pressed.
+        if (option === "apply") return commands.applyRunnerWrite(plane, path.id, "row");
+        if (option === "open") {
+          askOpenRunnerWrite(plane, path.id);
+          opened = true;
+          return { status: "ok" };
+        }
+        if (option === "dismiss") return commands.dismissRunnerWrite(plane, path.id);
         break;
       case "sign-in":
         // Sign in sends nothing (#2035): the project's window opens a shell tab where the core

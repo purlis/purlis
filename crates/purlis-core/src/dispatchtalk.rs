@@ -302,13 +302,19 @@ pub enum ProposalWord {
     /// The file changed since it was proposed, so it cannot be applied: read it again and
     /// propose again if it is still wanted.
     Stale { path: String },
+    /// The person applied it, and it could not be made, for `why`, purlis's own sentence:
+    /// nothing was written (#2046).
+    NotMade { path: String, why: String },
 }
 
 impl ProposalWord {
     /// The file it is about.
     pub fn path(&self) -> &str {
         match self {
-            Self::Applied { path } | Self::Dismissed { path } | Self::Stale { path } => path,
+            Self::Applied { path }
+            | Self::Dismissed { path }
+            | Self::Stale { path }
+            | Self::NotMade { path, .. } => path,
         }
     }
 }
@@ -1344,6 +1350,11 @@ pub fn proposal_said(word: &ProposalWord) -> String {
             "⬢ purlis: the change you proposed to `{path}` can no longer be applied: the file \
              changed since you read it. Read it again and propose the change again if it is \
              still wanted. This line is purlis's own."
+        ),
+        ProposalWord::NotMade { path, why } => format!(
+            "⬢ purlis: the person applied the change you asked for, `{path}`, and it could not \
+             be made: nothing was written. purlis said: {}. This line is purlis's own.",
+            why.trim_end_matches('.')
         ),
     }
 }
