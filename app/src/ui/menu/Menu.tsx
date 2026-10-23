@@ -24,6 +24,8 @@
  * - **The keyboard is React Aria's**: the arrows move and stop at the ends, Right opens a
  *   submenu, Left and Escape close it, Enter and Space choose, and typing finds a row by its
  *   `textValue`.
+ * - **A row pressed has the keyboard** (#3074), whatever pressed it, so a submenu its row opened
+ *   stays open when its menu's own hand-on of the keyboard comes after the press.
  */
 import {
   createContext,
@@ -468,6 +470,7 @@ export function MenuItem<T extends object = object>({
   "aria-expanded": expanded,
   "aria-keyshortcuts": keyShortcuts,
   onHoverStart,
+  onPressStart,
   onKeyDown,
   children,
   ...rest
@@ -497,6 +500,22 @@ export function MenuItem<T extends object = object>({
         // before the row is focused.
         if (noKeyboard) menu?.selectionManager.setFocused(false);
         onHoverStart?.(event);
+      }}
+      onPressStart={(event) => {
+        // **A row pressed is where the keyboard is** (#3074). A press that is not the pointer's
+        // (a screen reader's, `element.click()`) moves no focus, and React Aria hands a menu
+        // opened by one the keyboard only once the page's transitions end, which can be after
+        // this press. Its submenu would then close as its menu took the keyboard back. Taken
+        // here, the menu's late hand-on finds the keyboard already moved and leaves it.
+        const row = event.target;
+        if (
+          event.pointerType === "virtual" &&
+          !noKeyboard &&
+          row instanceof HTMLElement &&
+          !row.contains(document.activeElement)
+        )
+          row.focus({ preventScroll: true });
+        onPressStart?.(event);
       }}
       render={
         drawnHere

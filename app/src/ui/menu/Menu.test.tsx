@@ -277,7 +277,11 @@ describe("a menu's groups, toggles and submenus", () => {
             </MenuItem>
           </MenuSection>
           <MenuSection>
-            <Submenu row={<MenuItem textValue="Open">Open</MenuItem>} aria-label="Open">
+            <Submenu
+              row={<MenuItem textValue="Open">Open</MenuItem>}
+              aria-label="Open"
+              onAction={(key) => onAction(String(key))}
+            >
               <MenuItem id="activity" textValue="Activity">
                 Activity
               </MenuItem>
@@ -318,6 +322,25 @@ describe("a menu's groups, toggles and submenus", () => {
     await waitFor(() => expect(document.activeElement).toHaveTextContent("Activity"));
     await userEvent.keyboard("{ArrowLeft}");
     await waitFor(() => expect(screen.getAllByRole("menu")).toHaveLength(1));
+  });
+
+  // #3074: a press that is not the pointer's (a screen reader's, `element.click()`) hands the
+  // keyboard on only after the page's transitions, a frame or more late; a submenu row pressed
+  // before then stays open, and its row runs on the first click.
+  it("keeps a submenu its row opened before the menu took the keyboard, and runs its row", async () => {
+    const chose = vi.fn();
+    render(<Grouped onAction={chose} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tab" }));
+    // At once: before the frame the menu's hand-on waits for.
+    const menu = screen.getByRole("menu", { name: "Tab steward 4" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Open" }));
+    const sub = screen.getByRole("menu", { name: "Open" });
+    // Past the frames the menu's own hand-on waits for.
+    await act(() => new Promise((done) => setTimeout(done, 100)));
+    expect(sub).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toHaveTextContent("Activity"));
+    await userEvent.click(within(sub).getByRole("menuitem", { name: "Activity" }));
+    expect(chose).toHaveBeenCalledWith("activity");
   });
 });
 

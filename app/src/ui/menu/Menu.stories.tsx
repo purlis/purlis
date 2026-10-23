@@ -329,6 +329,31 @@ export const ASubmenu: Story = {
   },
 };
 
+/**
+ * **A submenu pressed at once** (#3074): a press that is not the pointer's (a screen reader's,
+ * `element.click()`) opens the menu and, before the menu has taken the keyboard, its submenu
+ * row. The submenu stays open with the keyboard on its first row, and its row runs on the first
+ * click. The picture is `ASubmenu`'s.
+ */
+export const ASubmenuPressedAtOnce: Story = {
+  render: () => <WithASubmenu />,
+  play: async ({ canvas, userEvent }) => {
+    canvas.getByRole("button", { name: "Chat steward 4" }).click();
+    // At once, before the frame the menu's own hand-on of the keyboard waits for.
+    const menu = screen.getByRole("menu", { name: "Chat steward 4" });
+    within(menu).getByRole("menuitem", { name: /Ask/ }).click();
+    const sub = screen.getByRole("menu", { name: "Ask" });
+    await untilFocused(
+      () => within(sub).getByRole("menuitem", { name: /devops/ }),
+      "A submenu pressed at once: the keyboard is on its first row",
+    );
+    await expect(sub).toBeInTheDocument();
+    await userEvent.click(within(sub).getByRole("menuitem", { name: /devops/ }));
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Asked devops"));
+  },
+  parameters: { screenshot: false },
+};
+
 /** **A context menu on a row**: Shift+F10 opens it on its first row, Escape closes it. */
 function OnARow() {
   const [said, setSaid] = useState("Nothing chosen");
