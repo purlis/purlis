@@ -476,7 +476,7 @@ fn the_macos_profile_reads_the_systems_programs_and_no_home() {
     assert!(!text.contains("user-preference-read"), "{text}");
     assert!(!text.contains("com.apple.FSEvents"), "{text}");
     assert!(!text.contains("opendirectoryd"), "{text}");
-    assert!(text.contains("(allow file-map-executable"), "{text}");
+    assert!(text.contains("(allow file-read* file-map-executable"), "{text}");
     // Of the person's home, only the extension's own folder is a subpath, and the home itself
     // only a literal its path resolves through.
     let homes: Vec<&str> = text
@@ -484,10 +484,30 @@ fn the_macos_profile_reads_the_systems_programs_and_no_home() {
         .filter(|line| line.contains("/Users/ada") && line.contains("(subpath"))
         .collect();
     assert!(
-        homes.iter().all(|line| line.contains("/Users/ada/ext/studio-x")),
+        homes
+            .iter()
+            .all(|line| line.contains("/Users/ada/ext/studio-x")),
         "{homes:?}"
     );
     assert!(text.contains("(literal \"/Users/ada\")"), "{text}");
+    // Read as Linux's reader reads it, the one operation it has no word for set aside: the data
+    // volume, which holds every home under a second name, is not the system's.
+    let read =
+        purlis_linux_sandbox::profile::Profile::parse(&text.replace(" file-map-executable", ""))
+            .expect("read");
+    assert!(reads(
+        &read,
+        "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+    ));
+    assert!(reads(&read, "/Users/ada/ext/studio-x/bin/x"));
+    for kept in [
+        "/System/Volumes/Data/Users/ada/.ssh/id_ed25519",
+        "/System/Volumes/Data/Users/ada/work/plane/charter.toml",
+        "/Users/ada/.ssh/id_ed25519",
+        "/Users/ada/Library/Keychains/login.keychain-db",
+    ] {
+        assert!(!reads(&read, kept), "{kept} is read");
+    }
 }
 
 // ---------------------------------------------------------------------------------------

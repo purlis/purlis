@@ -782,6 +782,10 @@ pub const CONFINED_SYSTEM_LINUX: [&str; 16] = [
     "/etc/localtime",
 ];
 
+/// Where macOS keeps the data volume, beside the system's own files: every home and every
+/// project is under it by a second name, so a confined program reads none of it.
+const DATA_VOLUME: &str = "/System/Volumes/Data";
+
 /// The single files every program may read on either system: the null device and the system's
 /// sources of randomness, and the files a TLS client and a name lookup read.
 const CONFINED_FILES: [&str; 9] = [
@@ -823,11 +827,20 @@ pub fn confined_profile(
         _ => &CONFINED_SYSTEM_MACOS,
     };
     // What it reads: the system, then its own, each under every name the kernel may give it.
-    let mut read_roots: Vec<PathBuf> = system.iter().map(PathBuf::from).collect();
-    read_roots.extend(reads.iter().cloned());
-    read_roots.extend(writes.iter().cloned());
-    line("(allow file-read*".to_owned());
-    for root in &read_roots {
+    let system_roots: Vec<PathBuf> = system.iter().map(PathBuf::from).collect();
+    let mut own_roots: Vec<PathBuf> = reads.to_vec();
+    own_roots.extend(writes.iter().cloned());
+    let mut read_roots = system_roots.clone();
+    read_roots.extend(own_roots.iter().cloned());
+    // On macOS a program's libraries are mapped executable from where it reads them, an
+    // operation of its own that Linux's sandbox has no word for.
+    let ops = if os == super::Os::MacOs {
+        "file-read* file-map-executable"
+    } else {
+        "file-read*"
+    };
+    line(format!("(allow {ops}"));
+    for root in &system_roots {
         for name in kernel_strings(root)? {
             line(format!("  (subpath {name})"));
         }
@@ -836,17 +849,33 @@ pub fn confined_profile(
         line(format!("  (literal {})", string(file)?));
     }
     line(")".to_owned());
-    // On macOS a program's libraries are mapped executable from where it reads them, an
-    // operation of its own that Linux's sandbox has no word for.
+    // **The data volume is not the system's**: on macOS `/System/Volumes/Data` holds every
+    // person's home and every project under another name, so it is held out of `/System` here,
+    // and only the program's own folders are given back below, under each of their names.
     if os == super::Os::MacOs {
-        line("(allow file-map-executable".to_owned());
-        for root in &read_roots {
-            for name in kernel_strings(root)? {
-                line(format!("  (subpath {name})"));
+        line(format!("(deny {ops} (subpath {}))", string(DATA_VOLUME)?));
+    }
+    line(format!("(allow {ops}"));
+    for root in &own_roots {
+        for name in kernel_strings(root)? {
+            line(format!("  (subpath {name})"));
+        }
+    }
+    // A system folder's own second name on the data volume (`/opt/homebrew`'s), given back.
+    for root in system_roots
+        .iter()
+        .filter(|root| !root.starts_with("/System"))
+    {
+        for name in super::kernel_names(root) {
+            if name.starts_with(DATA_VOLUME) {
+                line(format!(
+                    "  (subpath {})",
+                    string(&name.display().to_string())?
+                ));
             }
         }
-        line(")".to_owned());
     }
+    line(")".to_owned());
     // Of each folder above what it reads, the folder alone: what a path resolves through, never
     // what else a folder holds.
     let mut above = std::collections::BTreeSet::new();
