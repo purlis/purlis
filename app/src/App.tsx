@@ -45,6 +45,7 @@ import type { ForgeAsk } from "./ForgeQuestion";
 type RepoTried = { refused?: string; asksForge?: string };
 import { UnsavedMark } from "./SavingView";
 import { SessionBusNotice } from "./SessionBusNotice";
+import { EngineDownloadNotice } from "./EngineDownloadNotice";
 import { EngineSandboxNotice } from "./EngineSandboxNotice";
 import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
@@ -2282,6 +2283,7 @@ function App() {
         {/* A launch without the session bus, and what that run has not got (charter#746). */}
         <SessionBusNotice chats={ending} />
         {/* Browsers that cannot start for the engine's sandbox, and the ways out (#2835). */}
+        <EngineDownloadNotice />
         <EngineSandboxNotice />
 
         {/* The session host stopped unexpectedly three times in five minutes, and the window's

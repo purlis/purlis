@@ -1302,6 +1302,8 @@ export const commands = {
 	browserLimits: __WINDOW_ONLY_RESULT,
 	setBrowserLimit: __WINDOW_ONLY_RESULT,
 	engineSandbox: __WINDOW_ONLY_RESULT,
+	engineDownloads: __WINDOW_ONLY_RESULT,
+	cancelEngineDownload: __WINDOW_ONLY_RESULT,
 	useThisMachinesChrome: __WINDOW_ONLY_RESULT,
 	dockerPools: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
@@ -1954,6 +1956,8 @@ export const commands = {
 
 /* Constants */
 export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
+
+export const ENGINE_DOWNLOAD = "engine-download" as const;
 
 export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
@@ -4088,6 +4092,14 @@ export type Doing = {
 	 *  cargo"), until the next tool heard.
 	 */
 	over: boolean,
+};
+
+/**  One download, as its Notice shows it. */
+export type EngineDownloadShown = {
+	/**  The browser whose start it is for: what Cancel names. */
+	program: string,
+	/**  The sentence. */
+	says: string,
 };
 
 /**  What the Notice says and offers. */
