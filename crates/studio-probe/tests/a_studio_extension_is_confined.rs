@@ -100,7 +100,16 @@ impl Probe {
             "try",
             &words,
         )?;
-        Ok(String::from_utf8_lossy(&ran.stdout).trim().to_owned())
+        let said = String::from_utf8_lossy(&ran.stdout).trim().to_owned();
+        if said.is_empty() {
+            // A probe that printed nothing did not run: say how it ended, for the reader.
+            return Ok(format!(
+                "(nothing; status {}, stderr {:?})",
+                ran.status,
+                String::from_utf8_lossy(&ran.stderr)
+            ));
+        }
+        Ok(said)
     }
 
     /// What the probe saw trying `words` from inside its sandbox.
@@ -264,10 +273,8 @@ fn a_manifest_naming_a_model_host_is_refused_whole() {
 fn it_reads_its_own_folder_and_nothing_of_the_project() {
     let probe = Probe::approved();
     let own = probe.ext().join(extension::MANIFEST);
-    assert!(
-        probe.tried(&["read", &shown(&own)]).starts_with("ok"),
-        "it reads its own folder"
-    );
+    let said = probe.tried(&["read", &shown(&own)]);
+    assert!(said.starts_with("ok"), "it reads its own folder: {said}");
     refused(
         &probe.tried(&["read", &shown(&probe.plane().join("charter.toml"))]),
         "reading the project's file",
