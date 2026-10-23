@@ -1024,6 +1024,28 @@ export function fetchFacesWith(fetch: typeof fetchFace): void {
   fetchFace = fetch;
 }
 
+/** Whether faces wait for the first frame to be on screen ({@link holdFacesForTheFirstFrame}). */
+let facesHeld = false;
+
+/**
+ * **Holds every face back until the first frame is on screen** (ADR 0026, #3034): the window
+ * calls it before it draws its first theme, so asking purlis for a theme's faces, decoding them
+ * and laying the text out again in them is never on the way to the first frame. The default
+ * theme, Purlis, brings nine faces; the first frame is drawn in each family list's fallback.
+ * {@link facesAfterTheFirstFrame} lets them go.
+ */
+export function holdFacesForTheFirstFrame(): void {
+  facesHeld = true;
+}
+
+/** Lets the faces held back go, once the first frame is on screen, and asks for the drawn
+ *  theme's at once. */
+export function facesAfterTheFirstFrame(): void {
+  if (!facesHeld) return;
+  facesHeld = false;
+  if (drawnOn !== null) loadFaces(current, person);
+}
+
 /**
  * **Loads the faces the drawn fonts need, after the frame** (#2326): each from the bytes purlis
  * serves by digest, made with `FontFace` and added to the document's fonts under the name the
@@ -1033,7 +1055,7 @@ export function fetchFacesWith(fetch: typeof fetchFace): void {
  */
 function loadFaces(theme: Theme, over: Person): void {
   const fetch = fetchFace;
-  if (fetch === undefined || typeof FontFace === "undefined" || !theme.fonts) return;
+  if (facesHeld || fetch === undefined || typeof FontFace === "undefined" || !theme.fonts) return;
   for (const slot of ["ui", "mono", "terminal"] as const) {
     if (over.fonts[slot] !== undefined) continue;
     const font = theme.fonts[slot];

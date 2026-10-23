@@ -516,7 +516,14 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
         "atLeast",
         seen.wordNeeds - 1,
       );
-      inside(seen.state, seen.crumbs, "the state in the breadcrumb");
+      try {
+        inside(seen.state, seen.crumbs, "the state in the breadcrumb");
+      } catch (error) {
+        // What the line held, so a red run says what took the state's room.
+        throw new Error(`${(error as Error).message}; measured ${JSON.stringify(seen)}`, {
+          cause: error,
+        });
+      }
       inside(seen.where, seen.crumbs, "the workspace in the breadcrumb");
       // Brief is in the line with it, after the breadcrumb and inside the pane. It gives way
       // before the breadcrumb does (the last case measures that).
