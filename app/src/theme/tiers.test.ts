@@ -22,9 +22,10 @@ const SRC = join(process.cwd(), "src");
 const FAINT: ReadonlySet<string> = new Set([
   // A session tab's `×`, a mark (`ui/tabs/tabs.css`, #2914).
   '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]',
-  ".project .closer",
   ".pinned",
   ".pane-crumbs .crumb-sep",
+  // The "/" after the project's name in the title bar (#2915): a separator, as a crumb's is.
+  ".title-bar-crumb-sep",
   ".tab-task-sep",
   ".ui-tree-twist",
   // A disabled button's words (#2897's palette rules, #2904), and a disabled status item's.

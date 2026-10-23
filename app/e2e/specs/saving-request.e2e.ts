@@ -112,7 +112,7 @@ describe("a save's red pull request in the Saving view", function () {
   })();
 
   after(async () => {
-    const selector = `${PROJECTS} button[aria-label="Close project red-request-plane"]`;
+    const selector = `${PROJECTS} [role="tab"][aria-label="red-request-plane"]`;
     const closer = await $(selector);
     if (!(await closer.isExisting())) return;
     await closeProject(selector);

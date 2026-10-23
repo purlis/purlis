@@ -131,8 +131,11 @@
         "durations": {
           "duration.breathe": 1600,
           "duration.enter": 160,
+          "duration.leave": 200,
           "duration.quick": 150,
+          "duration.reveal": 220,
           "duration.settle": 280,
+          "duration.slide": 260,
           "duration.spin": 900
         },
         "easings": {
@@ -664,8 +667,11 @@
         "durations": {
           "duration.breathe": 1600,
           "duration.enter": 160,
+          "duration.leave": 200,
           "duration.quick": 150,
+          "duration.reveal": 220,
           "duration.settle": 280,
+          "duration.slide": 260,
           "duration.spin": 900
         },
         "easings": {
@@ -1197,8 +1203,11 @@
         "durations": {
           "duration.breathe": 1600,
           "duration.enter": 160,
+          "duration.leave": 200,
           "duration.quick": 150,
+          "duration.reveal": 220,
           "duration.settle": 280,
+          "duration.slide": 260,
           "duration.spin": 900
         },
         "easings": {
@@ -1732,8 +1741,11 @@
         "durations": {
           "duration.breathe": 1600,
           "duration.enter": 160,
+          "duration.leave": 200,
           "duration.quick": 120,
+          "duration.reveal": 220,
           "duration.settle": 280,
+          "duration.slide": 260,
           "duration.spin": 900
         },
         "easings": {
@@ -2127,8 +2139,11 @@
         "durations": {
           "duration.breathe": 1600,
           "duration.enter": 160,
+          "duration.leave": 200,
           "duration.quick": 120,
+          "duration.reveal": 220,
           "duration.settle": 280,
+          "duration.slide": 260,
           "duration.spin": 900
         },
         "easings": {

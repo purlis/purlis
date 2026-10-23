@@ -7,12 +7,11 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { LEAST, leastAt } from "./fits";
-import { DEFAULT_TEXT } from "./textSize";
 import { TitleBar } from "./TitleBar";
 import { HELP } from "./About";
 import type { About, Moved, OpenChat, PlaneSaving, RepoSaving } from "./bindings";
-import { stripNamed } from "./test-strips";
+import { queryStripNamed, stripNamed } from "./test-strips";
+import { forgetRailMode, RAIL_MODE } from "./railMode";
 
 /**
  * **The title bar's own rules**, on the component, and **what the bar holds in the window**
@@ -479,7 +478,7 @@ describe("the save indicator (charter-app#294)", () => {
   });
 });
 
-describe("the title bar in the window, which holds the project strip (ADR 0054)", () => {
+describe("the title bar in the window, and the project rail below it (#2915)", () => {
   const ONE = "/home/dev/one";
   const TWO = "/home/dev/two";
 
@@ -585,24 +584,25 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
   const bar = () => screen.getByTestId("title-bar");
   const strip = () => stripNamed("Projects");
 
-  it("holds the project tabs, the window's only project strip, each with its needs-you count", async () => {
+  it("leaves the projects to the rail, each with what waits on you there (R79, N22)", async () => {
     const { move } = core();
     render(
       <StrictMode>
         <App />
       </StrictMode>,
     );
-    await waitFor(() => expect(within(strip()).getByText("two")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(strip()).getByRole("tab", { name: "two" })).toBeInTheDocument(),
+    );
 
     move(TWO, "waiting", 1);
 
-    // On the project's own tab: the tab's name ends with what its pill says.
-    expect(
-      await within(bar()).findByRole("tab", { name: /^two.*1 chat needs you$/ }),
-    ).toBeInTheDocument();
-    expect(within(bar()).getByRole("tablist", { name: "Projects" }).closest("[data-strip]")).toBe(
-      strip(),
+    const two = within(strip()).getByRole("tab", { name: "two" });
+    await waitFor(() =>
+      expect(two.querySelector('[data-part="badge"]')).toHaveAttribute("data-count", "1"),
     );
+    expect(bar().contains(strip())).toBe(false);
+    expect(within(bar()).queryByRole("tab")).toBeNull();
   });
 
   it("shows the level of the chat in front, follows the chat brought to the front, and none for a view (#2071)", async () => {
@@ -637,44 +637,56 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
     );
   });
 
-  it("holds the project strip's show-more, with what it hides that needs you, and its +", async () => {
-    // Room for one project tab, so `two` is behind the show-more button. jsdom lays nothing
-    // out (#149): the strip answers `clientWidth` by its name, and nothing else is measured.
-    const was = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-      configurable: true,
-      get(this: HTMLElement) {
-        return this.getAttribute("data-strip") === "Projects"
-          ? leastAt(LEAST.project, DEFAULT_TEXT.window)
-          : 0;
-      },
-    });
+  it("shows the rail again from its first control while the rail hides itself (R82, R91)", async () => {
+    forgetRailMode();
+    core();
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await waitFor(() =>
+      expect(within(strip()).getByRole("tab", { name: "two" })).toBeInTheDocument(),
+    );
+    expect(within(bar()).queryByRole("button", { name: "Show the projects sidebar" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide the projects sidebar" }));
+    const show = await within(bar()).findByRole("button", { name: "Show the projects sidebar" });
+    // The button pressed has gone with the rail: the keyboard is on the one that shows it (S10).
+    await waitFor(() => expect(show).toHaveFocus());
+    expect(queryStripNamed("Projects")).toBeNull();
+    expect(RAIL_MODE.value()).toBe("auto");
+
+    await userEvent.click(show);
+    await waitFor(() =>
+      expect(within(strip()).getByRole("tab", { name: "two" })).toBeInTheDocument(),
+    );
+    // And back on the project in front once the rail is shown.
+    await waitFor(() => expect(within(strip()).getByRole("tab", { name: "one" })).toHaveFocus());
+    expect(within(bar()).queryByRole("button", { name: "Show the projects sidebar" })).toBeNull();
+    expect(RAIL_MODE.value()).toBe("shown");
+  });
+
+  it("draws the rail hidden at once when the window was left with it hidden (R83)", async () => {
+    // As the layout file hands it: kept, not written.
+    RAIL_MODE.keep("auto");
     try {
-      const { move } = core();
+      core();
       render(
         <StrictMode>
           <App />
         </StrictMode>,
       );
-      await waitFor(() => expect(within(strip()).getByText("one")).toBeInTheDocument());
-
-      move(TWO, "waiting", 1);
-
       expect(
-        await within(bar()).findByRole("button", {
-          name: "Show 1 project the strip is not showing, where 1 chat needs you",
-        }),
+        await within(bar()).findByRole("button", { name: "Show the projects sidebar" }),
       ).toBeInTheDocument();
-      expect(within(bar()).getByRole("button", { name: "Open a project…" })).toBeInTheDocument();
-      expect(within(bar()).getByRole("button", { name: "New project…" })).toBeInTheDocument();
+      expect(queryStripNamed("Projects")).toBeNull();
     } finally {
-      if (was) Object.defineProperty(HTMLElement.prototype, "clientWidth", was);
-      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+      forgetRailMode();
     }
   });
 
-  it("says no breadcrumb: the project tab and the workspace strip say where the window is", async () => {
-    // ADR 0054: a crumb repeating both spends the width the project tabs need.
+  it("names the project in front, and leaves the workspace to the strip (#2915, S7)", async () => {
     core();
     render(
       <StrictMode>
@@ -683,6 +695,7 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
     );
     await waitFor(() => expect(stripNamed("Workspaces")).toHaveTextContent("alpha"));
 
+    expect(within(bar()).getByTestId("title-project")).toHaveTextContent("one/");
     expect(bar()).not.toHaveTextContent("alpha");
     expect(bar()).not.toHaveTextContent(/running|counting chats/);
   });
@@ -694,7 +707,9 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
         <App />
       </StrictMode>,
     );
-    await waitFor(() => expect(within(strip()).getByText("two")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(strip()).getByRole("tab", { name: "two" })).toBeInTheDocument(),
+    );
 
     move(ONE, "running", 1);
     // A chat running in a project behind is that project's line's to say, not this one's.
@@ -711,7 +726,9 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
         <App />
       </StrictMode>,
     );
-    await waitFor(() => expect(within(strip()).getByText("two")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(strip()).getByRole("tab", { name: "two" })).toBeInTheDocument(),
+    );
 
     move(TWO, "waiting", 1);
 
@@ -722,23 +739,24 @@ describe("the title bar in the window, which holds the project strip (ADR 0054)"
     expect(within(bar()).getByTestId("status-update")).toBeInTheDocument();
   });
 
-  it("drags from anywhere but its controls, and every project tab is a button it stops at", async () => {
+  it("drags from anywhere but its controls, and holds no project of the rail's", async () => {
     // Tauri's `deep` handler stops at the first clickable element up the path, and `BUTTON`
-    // is one by its tag. A tab drawn as anything else would drag the window from under it.
+    // is one by its tag.
     core();
     render(
       <StrictMode>
         <App />
       </StrictMode>,
     );
-    await waitFor(() => expect(within(strip()).getByText("two")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(strip()).getByRole("tab", { name: "two" })).toBeInTheDocument(),
+    );
 
     expect(bar()).toHaveAttribute("data-tauri-drag-region", "deep");
     for (const name of ["one", "two"]) {
-      const tab = within(strip()).getByText(name).closest("button");
-      expect(tab, `${name}'s tab is not a button`).not.toBeNull();
-      expect(bar().contains(tab)).toBe(true);
-      expect(tab).not.toHaveAttribute("data-tauri-drag-region");
+      const tab = within(strip()).getByRole("tab", { name });
+      expect(tab.tagName).toBe("BUTTON");
+      expect(bar().contains(tab)).toBe(false);
     }
   });
 });

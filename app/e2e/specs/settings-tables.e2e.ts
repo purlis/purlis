@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { ask, inFront, openFromTheStrip, PROJECTS } from "../switching.js";
+import { railHidden } from "../rail.js";
 
 /**
  * **Settings' tables keep each heading on one line, whole, in the real WebView** (DS-9, #1841;
@@ -216,6 +217,10 @@ function oneLineEach(headings: readonly Heading[]): void {
 }
 
 describe("Settings' tables, in the real WebView", function () {
+  // The work measured with the project rail hidden (`rail.ts`, #2915).
+  before(() => railHidden(true));
+  after(() => railHidden(false));
+
   this.timeout(180_000);
 
   /** The project the launch opened, which this spec never touches. */

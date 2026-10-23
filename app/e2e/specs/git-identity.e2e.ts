@@ -78,7 +78,7 @@ describe("a machine with no git identity", function () {
 
   after(async () => {
     putTheIdentityBack();
-    const selector = `${PROJECTS} button[aria-label="Close project ${NAME}"]`;
+    const selector = `${PROJECTS} [role="tab"][aria-label="${NAME}"]`;
     if ((await ask<string[]>("open_planes")).includes(mine))
       await ask("close_plane", { plane: mine });
     await browser.waitUntil(async () => !(await $(selector).isExisting()), {

@@ -1,0 +1,275 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The project rail family's default** (#2915, R76–R89, ADR 0103, ADR 0104): how `Rail`,
+   `RailProject` and `RailAction` are drawn when a theme names none of their parts, which is the
+   Purlis look. Keyed on the wrappers' attributes alone; `purlis_core::theme::parts` holds a copy
+   of the buttons' colours.
+
+   A state changes a colour and the ring, never a size (R153). In the `components` layer
+   (`styles.css`), above `App.css`. Each rule names its part before its family, so a rule is read
+   as reaching only that part's elements (`theme/grounds.test.ts` reads a rule by its first
+   attribute). */
+
+/* ---------------------------------------------------------------------------------------------
+   The column: 52px, its buttons centred down it 6px apart, the last pushed to the bottom (R76).
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="column"][data-scope="rail"] {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  inline-size: 52px;
+  block-size: 100%;
+  /* 2px above the first button and 10px under the last, as the prototype draws them (R76). */
+  padding: var(--space-1) 0 calc(var(--space-4) + var(--space-1));
+}
+
+/* The projects and the +: they scroll when the window is too short for them. The list starts
+   6px higher than its first button, so the badge and the ring above it are inside the box it
+   clips to (R78, R79), and the button stands where the prototype puts it. */
+[data-part="list"][data-scope="rail"] {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: 0;
+  margin-block-start: calc(var(--space-3) * -1);
+  padding-block: var(--space-3);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+/* What the roving focus counts as the rail's own controls, not its tabs: no box of its own. */
+[data-part="column"][data-scope="rail"] > [data-strip-doing],
+[data-part="list"][data-scope="rail"] > [data-strip-doing] {
+  display: contents;
+}
+
+/* Something waits below the list's fold (N5): its count at the foot, in the badge's colours. */
+[data-part="below"][data-scope="rail"] {
+  display: grid;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: default;
+}
+
+[data-part="below"][data-scope="rail"] > [data-part="badge"][data-scope="rail"] {
+  position: static;
+}
+
+[data-part="below"][data-scope="rail"]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Its tablist owns the projects and holds nothing itself. */
+[data-part="tablist"][data-scope="rail"] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+[data-part="spacer"][data-scope="rail"] {
+  flex: 1 0 0;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A button: 36px, corners of 9 (R77).
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="button"][data-scope="rail"] {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: 36px;
+  block-size: 36px;
+  padding: 0;
+  border: 0 solid transparent;
+  /* 9px (R77): three of the scale's smallest corner. */
+  border-radius: calc(var(--radius-sm) * 3);
+  color: var(--text-muted);
+  background-color: transparent;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  cursor: default;
+  appearance: none;
+}
+
+/* A project: its monogram in its own colour, on that colour's surface (R77). The button puts
+   the accent and its surface, turned to the project's hue, on itself (`projectColour.ts`), as a
+   persona's mark does. */
+[data-part="button"][data-scope="rail"][data-variant="project"] {
+  color: var(--accent-base);
+  background-color: var(--accent-surface);
+}
+
+[data-part="monogram"][data-scope="rail"]::before {
+  content: attr(data-letters);
+}
+
+[data-part="badge"][data-scope="rail"]::before {
+  content: attr(data-count);
+}
+
+[data-part="monogram"][data-scope="rail"] {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+}
+
+/* The current project: a gap of the rail's own ground, then the accent's ring (R78). */
+[data-part="button"][data-scope="rail"][data-selected] {
+  box-shadow:
+    0 0 0 2px var(--surface-deep),
+    0 0 0 3.5px var(--focus-ring);
+}
+
+/* What waits on the person there: 16px, amber, out of the top right corner (R79). */
+[data-part="badge"][data-scope="rail"] {
+  position: absolute;
+  inset-block-start: calc(var(--space-2) * -1 - 1px);
+  inset-inline-end: calc(var(--space-2) * -1 - 1px);
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-inline-size: 16px;
+  block-size: 16px;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-full);
+  color: var(--state-waiting);
+  background-color: var(--surface-overlay);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Its unsaved work (charter-app#302): a dot at the bottom right, in the waiting colour, or the
+   failed one while its save is blocked, kept apart from the button by the rail's ground. */
+[data-part="unsaved"][data-scope="rail"] {
+  position: absolute;
+  inset-block-end: calc(var(--space-1) * -1);
+  inset-inline-end: calc(var(--space-1) * -1);
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--radius-full);
+  background-color: var(--state-waiting);
+  box-shadow: 0 0 0 2px var(--surface-deep);
+}
+
+[data-part="unsaved"][data-scope="rail"][data-blocked] {
+  background-color: var(--state-failed);
+}
+
+/* An action: an icon in the muted tier, no box until the pointer reaches it (R80). */
+[data-part="button"][data-scope="rail"][data-variant="action"][data-hovered] {
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+}
+
+[data-part="button"][data-scope="rail"][data-variant="action"] > svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+/* The ring from the keyboard only, outside the button. */
+[data-part="button"][data-scope="rail"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* The keyboard on the current project: its ring beyond the selection's, with the rail's ground
+   between the two, so the focus is plainly there (WCAG 2.4.7, 2.4.11). No size changes. */
+[data-part="button"][data-scope="rail"][data-selected][data-focus-visible] {
+  outline-offset: calc(var(--focus-ring-offset) * 3);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The peek: in auto-hide, the rail slides in over the content from the window's left edge
+   (R86): 56px, the window's fill, right corners of 12, a shadow toward the content. It comes in
+   over `duration.reveal` and goes over `duration.leave` (R87); reduced motion plays neither.
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="column"][data-scope="rail"][data-peek] {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 25;
+  inline-size: 56px;
+  block-size: auto;
+  padding-block-start: var(--space-4);
+  background-color: var(--surface-deep);
+  border-start-end-radius: calc(var(--radius-lg) * 2);
+  border-end-end-radius: calc(var(--radius-lg) * 2);
+  box-shadow: 8px 0 24px var(--overlay-shadow);
+  animation: rail-peek-in var(--motion-duration-reveal) var(--motion-easing-enter);
+}
+
+[data-part="column"][data-scope="rail"][data-peek][data-leaving] {
+  animation: rail-peek-out var(--motion-duration-leave) var(--motion-easing-standard) forwards;
+}
+
+@keyframes rail-peek-in {
+  from {
+    transform: translateX(-100%);
+    opacity: 0.4;
+  }
+}
+
+@keyframes rail-peek-out {
+  to {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Its place in the window (R84, R85): the column closes from 52 to 0 over `duration.slide` on the
+   one ease and the work glides with it, while the rail slides 56px out and fades over
+   `duration.leave`. Showing is the reverse. Hidden, it is out of sight once the slide is over.
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="slot"][data-scope="rail"] {
+  position: relative;
+  flex: none;
+  inline-size: 52px;
+  transition: inline-size var(--motion-duration-slide) var(--motion-easing-enter);
+}
+
+[data-part="slot"][data-scope="rail"] > [data-part="column"] {
+  transition:
+    transform var(--motion-duration-slide) var(--motion-easing-enter),
+    opacity var(--motion-duration-leave) var(--motion-easing-standard);
+}
+
+[data-part="slot"][data-scope="rail"][data-hidden] {
+  inline-size: 0;
+}
+
+[data-part="slot"][data-scope="rail"][data-hidden] > [data-part="column"] {
+  transform: translateX(-56px);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform var(--motion-duration-slide) var(--motion-easing-enter),
+    opacity var(--motion-duration-leave) var(--motion-easing-standard),
+    visibility var(--motion-duration-slide) var(--motion-easing-steady);
+}
+
+[data-part="slot"][data-scope="rail"][data-settling],
+[data-part="slot"][data-scope="rail"][data-settling] > [data-part="column"] {
+  transition: none;
+}

@@ -7,6 +7,7 @@ import { cleanup, render as renderBare, screen, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { closeFromTheRail } from "./test-strips";
 import type { PlaneContribution } from "./bindings";
 
 /** The project the status line names, found by its directory: the line draws the project's
@@ -383,7 +384,7 @@ describe("the welcome's way in by path and recents", () => {
     await projectAt("/home/dev/plane");
     // The `×` on the project's own tab, which IS the catalogue's row — one per project, the
     // way a chat tab's close is one per tab.
-    await person.click(await screen.findByRole("button", { name: "Close project plane" }));
+    await closeFromTheRail("plane");
     // It has a chat open, so it asks first (charter-app#239's ruling), and this answers it.
     await person.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
@@ -454,7 +455,7 @@ describe("the welcome's way in by path and recents", () => {
     await vi.waitFor(() =>
       expect(screen.getByRole("img", { name: "waiting on you" })).toBeInTheDocument(),
     );
-    await person.click(await screen.findByRole("button", { name: "Close project one" }));
+    await closeFromTheRail("one");
     // It has a chat open, so it asks first (charter-app#239's ruling), and this answers it.
     await person.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
@@ -517,7 +518,7 @@ describe("the welcome's way in by path and recents", () => {
     await vi.waitFor(() =>
       expect(screen.getByRole("img", { name: "waiting on you" })).toBeInTheDocument(),
     );
-    await person.click(await screen.findByRole("button", { name: "Close project one" }));
+    await closeFromTheRail("one");
     // It has a chat open, so it asks first (charter-app#239's ruling), and this answers it.
     await person.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {

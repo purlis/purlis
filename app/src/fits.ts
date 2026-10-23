@@ -73,8 +73,6 @@ import { onDrawn } from "./theme/theme";
  * widest thing on the window and a chat is the narrowest.
  */
 export const LEAST = {
-  /** A project: the full-width segments across the top. */
-  project: 132,
   /** A workspace: inside a project, and narrower than one. */
   workspace: 104,
   /** A chat: the innermost, and the one there are fifty of. */

@@ -11,7 +11,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { sequenceIn } from "./tabSequence";
-import { showTheExplorer, stripNamed } from "./test-strips";
+import { showTheExplorer, stripNamed, closeFromTheRail } from "./test-strips";
 
 /**
  * **Where Tab goes in the window outside its dialogs** (charter-app#189).
@@ -371,20 +371,19 @@ describe("the window's tab order", () => {
       .filter((el) => el.closest("[hidden]") === null)
       .map(said);
     expect(stops).toEqual([
-      // The title bar, left to right (ADR 0054). The project strip first: ONE stop for its
-      // tabs, then its own controls…
-      "tab plane2",
-      // The project in front's settings gear (SE-23): one stop, because only that tab has one.
-      "button Project settings…",
-      "button Open a project…",
-      "button New project…",
-      // …then the right-hand end: what comes and goes on its inner side, the needs-you button
+      // The title bar, left to right (ADR 0054): with the rail shown nothing stands at its left,
+      // so its right-hand end: what comes and goes on its inner side, the needs-you button
       // (charter-app#249) and the update pill, then the kill switch (OV-1) and About, which
       // stays at the bar's end (#2913).
       "button 2 chats need you",
       "button Updates — … channel, nothing new known",
       "button Stop every chat and shell purlis started, in every project and window",
       "button About purlis — what this version brought",
+      // The project rail at the window's left (#2915): ONE stop for its projects, then its +
+      // and its hide.
+      "tab plane",
+      "button Open a project…",
+      "button Hide the projects sidebar",
       // The workspace strip.
       "tab alpha32",
       // The focused workspace's settings gear (SE-23), for the same reason.
@@ -768,7 +767,7 @@ describe("closing a project", () => {
     render(<App />);
     await settled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Close project plane" }));
+    await closeFromTheRail("plane");
 
     const asking = await screen.findByRole("alertdialog");
     expect(asking).toHaveAccessibleName("Close project plane and end 3 chats?");

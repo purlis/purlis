@@ -116,6 +116,7 @@
 @import "./ui/status/status.css" layer(components);
 @import "./ui/dialog/dialog.css" layer(components);
 @import "./ui/tabs/tabs.css" layer(components);
+@import "./ui/rail/rail.css" layer(components);
 @import "./primitives/overlays.css" layer(components);
 @import "./ui/tooltip/tooltip.css" layer(components);
 @import "./ui/popover/popover.css" layer(components);
@@ -256,6 +257,9 @@
   --transition-duration-settle: var(--motion-duration-settle);
   --transition-duration-spin: var(--motion-duration-spin);
   --transition-duration-breathe: var(--motion-duration-breathe);
+  --transition-duration-slide: var(--motion-duration-slide);
+  --transition-duration-reveal: var(--motion-duration-reveal);
+  --transition-duration-leave: var(--motion-duration-leave);
 
   --ease-*: initial;
   --ease-standard: var(--motion-easing-standard);
