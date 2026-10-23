@@ -6,17 +6,10 @@ import { cleanup, configure, render, screen, waitFor, within } from "@testing-li
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import {
-  BUILT_IN,
-  DEFAULT_THEME,
-  drawIn,
-  drawTint,
-  inForce,
-  property,
-  tinted,
-} from "./theme/theme";
+import { DEFAULT_THEME, drawIn, drawTint, inForce, property, tinted } from "./theme/theme";
 import { stripNamed } from "./test-strips";
 import { themeInForce } from "./theme/inForce.testkit";
+import { PURLIS_LIGHT } from "./theme/handed.testkit";
 
 /**
  * **A workspace's theme and colour, against the whole window** (charter-app#281).
@@ -122,7 +115,7 @@ describe("a workspace's theme and colour", () => {
   it("draws the theme the workspace in front picks, and the project's when it picks none", async () => {
     const { asked } = core();
     render(<App />);
-    await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
+    await waitFor(() => expect(inForce()).toBe(PURLIS_LIGHT));
     expect(
       asked.some((one) => one.cmd === "project_theme_drawn" && one.args.workspace === "alpha"),
     ).toBe(true);
@@ -134,15 +127,15 @@ describe("a workspace's theme and colour", () => {
   it("tints the window's accent and focus ring with the workspace in front, live on a switch", async () => {
     core();
     render(<App />);
-    await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
-    const teal = tinted(BUILT_IN["purlis-light"], "teal");
+    await waitFor(() => expect(inForce()).toBe(PURLIS_LIGHT));
+    const teal = tinted(PURLIS_LIGHT, "teal");
     await waitFor(() =>
       expect(root().getPropertyValue(property("accent.base"))).toBe(teal.values["accent.base"]),
     );
     expect(root().getPropertyValue(property("focus.ring"))).toBe(teal.values["focus.ring"]);
     // The text is the theme's own.
     expect(root().getPropertyValue(property("text.primary"))).toBe(
-      BUILT_IN["purlis-light"].values["text.primary"],
+      PURLIS_LIGHT.values["text.primary"],
     );
 
     await userEvent.click(workspaceTab("beta"));
@@ -156,9 +149,9 @@ describe("a workspace's theme and colour", () => {
   it("draws the chat strip in the colour of the workspace whose chats it holds", async () => {
     core();
     render(<App />);
-    await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
+    await waitFor(() => expect(inForce()).toBe(PURLIS_LIGHT));
     const bar = stripNamed("Tabs").closest("header");
-    const teal = tinted(BUILT_IN["purlis-light"], "teal");
+    const teal = tinted(PURLIS_LIGHT, "teal");
     await waitFor(() =>
       expect(bar?.style.getPropertyValue(property("layer.chat"))).toBe(teal.values["layer.chat"]),
     );
@@ -170,7 +163,7 @@ describe("a workspace's theme and colour", () => {
   it("marks each workspace tab with its own colour, in front or not", async () => {
     core();
     render(<App />);
-    await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
+    await waitFor(() => expect(inForce()).toBe(PURLIS_LIGHT));
     await userEvent.click(workspaceTab("beta"));
     await waitFor(() => expect(inForce()).toBe(DEFAULT_THEME));
 

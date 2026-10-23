@@ -105,7 +105,7 @@ export function WorkspaceStrip({
                             focus, pin, make one, and — under the line — delete this one.
                             `asChild`, and on the tab and not the cell: the context-menu
                             key opens a menu only on the trigger that has the keyboard
-                            (`openFromTheKeyboard`), and that is the tab. */}
+                            (`ContextMenu`'s keys, `ui/menu/ContextMenu.tsx`), and that is the tab. */}
                         <Menued
                           on={root ? { on: "root" } : { on: "workspace", workspace }}
                           offers={found}

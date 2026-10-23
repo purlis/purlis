@@ -448,15 +448,19 @@ fn purlis_classic_chosen_in_an_appearance_draws_that_appearance() {
         ..Levels::default()
     };
     let got = drawn(&levels, &folders, None);
-    assert_eq!(got.theme.as_ref(), built_in("purlis-light"));
-    // What the window is told, so it draws it in the same frame.
-    assert_eq!(levels.machine_default.unwrap().told(), "purlis-light");
+    assert_eq!(got.theme.as_ref(), classic().of(Appearance::Light));
+    // What the window is told: Classic's id, which the window asks the engine to draw (#3034).
+    assert_eq!(levels.machine_default.unwrap().told(), "purlis-classic");
+    // Purlis's light by the id a file may still hold is drawn in the same frame.
+    assert_eq!(pick("purlis-light").unwrap().told(), "purlis-light");
+    assert_eq!(pick("charter-light").unwrap().told(), "purlis-light");
     assert_eq!(pick("dusk").unwrap().told(), "dusk");
+    // Classic following the system is the engine's to draw: the window asks it (#3034).
     assert_eq!(
         Choice::new("purlis-classic", Some("system"))
             .unwrap()
             .told(),
-        "system"
+        "purlis-classic"
     );
 }
 
@@ -1609,16 +1613,16 @@ fn system_picked(theirs: Option<&Theme>, system: Appearance, appearance: Option<
 }
 
 #[test]
-fn the_old_system_id_draws_what_it_drew_before_with_none_or_two_appearances_of_the_person_s() {
+fn the_old_system_id_follows_the_system_with_the_default_or_two_appearances_of_the_person_s() {
     let mine = load(&two("Mine")).theme;
     for system in [Appearance::Light, Appearance::Dark] {
-        // No theme of the person's: Purlis Classic follows the system, as it always did.
+        // No theme of the person's: the default, Purlis, follows the system (#3034).
         let none = system_picked(None, system, None);
         assert_eq!(
             none,
             Drawn {
                 level: Some(Level::ProjectDefault),
-                ..follow(classic(), system, Contrast::Standard)
+                ..follow(purlis(), system, Contrast::Standard)
             }
         );
         assert!(none.follows_system && !none.theirs);
@@ -1657,11 +1661,11 @@ fn the_old_system_id_with_an_appearance_named_draws_that_one_as_any_theme_does()
     assert!(drawn.theirs);
     assert_eq!(drawn.theme.map(|it| it.id), Some("day".to_owned()));
     assert!(!drawn.follows_system);
-    // With no theme of the person's, Purlis Classic's appearance of that id, whatever the system.
+    // With no theme of the person's, Purlis's appearance of that id, whatever the system.
     for system in [Appearance::Light, Appearance::Dark] {
-        let classic = system_picked(None, system, Some("light"));
-        assert_eq!(classic.theme.as_ref(), built_in("purlis-light"));
-        assert!(!classic.follows_system && !classic.theirs);
+        let light = system_picked(None, system, Some("light"));
+        assert_eq!(light.theme.as_ref(), purlis().of(Appearance::Light));
+        assert!(!light.follows_system && !light.theirs);
     }
 }
 

@@ -2512,6 +2512,13 @@ export const commands = {
 	/**  This machine's own Chrome, where one is installed. */
 	chrome: string | null,
 } | null, string>(__TAURI_INVOKE("engine_sandbox")),
+	/**  **The browser engine's downloads under way.** */
+	engineDownloads: () => typedError<EngineDownloadShown[], string>(__TAURI_INVOKE("engine_downloads")),
+	/**
+	 *  **The person cancels the engine's download for browser `program`'s start**: nothing of it
+	 *  is kept, and its start is refused in words that say so.
+	 */
+	cancelEngineDownload: (program: string) => typedError<null, string>(__TAURI_INVOKE("cancel_engine_download", { program })),
 	/**
 	 *  **Every browser starts on this machine's own Chrome from now on** (ADR 0042's choice): the
 	 *  person's press on the Notice. The next browser call starts on it.
@@ -3720,6 +3727,8 @@ export const commands = {
 
 /* Constants */
 export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
+
+export const ENGINE_DOWNLOAD = "engine-download" as const;
 
 export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
@@ -5854,6 +5863,14 @@ export type Doing = {
 	 *  cargo"), until the next tool heard.
 	 */
 	over: boolean,
+};
+
+/**  One download, as its Notice shows it. */
+export type EngineDownloadShown = {
+	/**  The browser whose start it is for: what Cancel names. */
+	program: string,
+	/**  The sentence. */
+	says: string,
 };
 
 /**  What the Notice says and offers. */

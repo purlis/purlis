@@ -1,14 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, type KeyboardEvent, type ReactNode } from "react";
-import * as ContextMenu from "./overlays/context-menu";
-import { Check, ChevronRight } from "lucide-react";
+import { useEffect, useId, type ReactNode } from "react";
 import { noteOf, type Catalogued, type MenuOn, type Offer } from "./actions";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { menuIsEmpty, menuOf, type GroupDrawn, type RowDrawn, type SubDrawn } from "./menuModel";
-import { MenuKeys, MenuTip, MenuWords, useRested } from "./primitives/MenuRow";
 import { landSettingsFocus } from "./settings/entering";
+import { ContextMenu } from "./ui/menu/ContextMenu";
+import { Menu, MenuItem, MenuSection, MenuSeparator, MenuWords, Submenu } from "./ui/menu/Menu";
+import { MenuTip, useRested } from "./ui/menu/MenuTip";
 
 /**
  * The window's context menus: right-click on a thing, and charter offers what it can do to it.
@@ -30,13 +30,9 @@ import { landSettingsFocus } from "./settings/entering";
  * up under the pointer, where the operator did not choose the layout — so the line and the
  * danger colour are the same rule with more at stake, not less.
  *
- * **Not modal** (`modal={false}`), for the show-more menu's reason (`docs/ui-primitives.md`): a
- * modal Radix surface marks the rest of the window `aria-hidden`, which is right for a question
- * that must be answered and wrong for a menu on a strip. A click outside closes it, which is
- * what every menu on every platform does, and there is no answer to lose.
- *
- * Radix's `ContextMenu` (ADR 0037), so the keyboard, the roving focus, the dismissal and the
- * collision handling are the primitive's and not a fifth hand-written `ArrowDown`.
+ * **The menu family's context menu** (`ui/menu/ContextMenu.tsx`, #2909): the keyboard, the
+ * dismissal (a click outside, Escape, a right-click elsewhere), the placement and Shift+F10 and
+ * the menu key are the family's, and not a fifth hand-written `ArrowDown`.
  */
 export function Menued({
   on,
@@ -52,8 +48,8 @@ export function Menued({
    *  again; `actions.catalogued` has what that measured and why it was changed. */
   offers: Catalogued;
   onPress: (offer: Offer) => void;
-  /** The element the menu belongs to. One element, because it is the trigger itself —
-   *  `asChild`, so no wrapper is added to a strip whose layout is measured. */
+  /** The element the menu belongs to. One element, because it is the trigger itself — no
+   *  wrapper is added to a strip whose layout is measured. */
   children: ReactNode;
 }) {
   // Nothing to offer — a project this window holds while its catalogue has not been built yet,
@@ -62,23 +58,22 @@ export function Menued({
   // `Reload` and `Inspect Element`.
   if (menuIsEmpty(on, offers)) return <>{children}</>;
   return (
-    <ContextMenu.Root modal={false}>
-      <ContextMenu.Trigger asChild onKeyDown={openFromTheKeyboard}>
-        {children}
-      </ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <Drawn on={on} offers={offers} onPress={onPress} />
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
+    <ContextMenu
+      menu={() => <CatalogueMenu on={on} offers={offers} onPress={onPress} />}
+      // A row that went into Settings sent the keyboard there, not back to the tab (#1206).
+      onClosed={landSettingsFocus}
+    >
+      {children}
+    </ContextMenu>
   );
 }
 
 /**
  * The menu's content. A component of its own so the model is made **only while the menu is
- * open**: Radix mounts what is in the portal only then, and `menuOf` scans the catalogue for
- * the Ask, Curate and Move to rows, which a strip of fifty tabs must not pay per render.
+ * open**: the context menu draws it only then, and `menuOf` scans the catalogue for the Ask,
+ * Curate and Move to rows, which a strip of fifty tabs must not pay per render.
  */
-function Drawn({
+function CatalogueMenu({
   on,
   offers,
   onPress,
@@ -89,18 +84,10 @@ function Drawn({
 }) {
   const menu = menuOf(on, offers);
   return (
-    <ContextMenu.Content
-      className="ui-menu item-menu"
-      collisionPadding={8}
-      // **The thing the menu is about is said once, here**, and by no row: "Tab steward 4".
-      aria-label={menu.about}
-      onCloseAutoFocus={(event) => {
-        // A row that went into Settings sent the keyboard there, not back to the tab (#1206).
-        if (landSettingsFocus()) event.preventDefault();
-      }}
-    >
+    // **The thing the menu is about is said once, here**, and by no row: "Tab steward 4".
+    <Menu aria-label={menu.about} className="item-menu">
       <Groups groups={menu.groups} onPress={onPress} />
-    </ContextMenu.Content>
+    </Menu>
   );
 }
 
@@ -109,8 +96,12 @@ function Drawn({
  *
  * **Exported for a context menu whose rows are not the catalogue's** (a terminal's own menu):
  * it builds its `GroupDrawn[]` itself, each row around an `Offer` made for that row as
- * `actions.fileRows` makes them, and draws them here inside its own `ContextMenu.Content`, so
- * its rows are drawn and behave as every other menu's (`docs/ui-primitives.md`, "Menus").
+ * `actions.fileRows` makes them, and draws them here inside its own `Menu`, so its rows are
+ * drawn and behave as every other menu's (`docs/ui-primitives.md`, "Menus").
+ *
+ * **A toggle is a row of a group that ticks** (`menuitemcheckbox`): the rows of a group are
+ * drawn as runs, each toggle's run a group of its own that chooses many and keeps the group's
+ * name on its first, so a group with a toggle among its rows still reads as one group.
  */
 export function Groups({
   groups,
@@ -119,32 +110,57 @@ export function Groups({
   groups: readonly GroupDrawn[];
   onPress: (offer: Offer) => void;
 }) {
-  return groups.map((group, i) => (
-    // Keyed by its first row: a group has no name of its own, and its place can change.
-    <ContextMenu.Group key={keyOf(group)}>
-      {i > 0 && <ContextMenu.Separator className="ui-menu-line" />}
-      {group.label !== undefined && (
-        // A name is data and is written as it was given; only purlis's own words wear the
-        // label role's capitals (ruling T4).
-        <ContextMenu.Label
-          className={
-            group.named
-              ? "ui-menu-label ui-menu-label-named ui-text-secondary"
-              : "ui-menu-label ui-text-label"
-          }
-        >
-          {group.label}
-        </ContextMenu.Label>
-      )}
-      {group.entries.map((entry) =>
-        entry.kind === "row" ? (
-          <Row key={entry.offer.id} row={entry} onPress={onPress} />
-        ) : (
-          <Sub key={entry.key} sub={entry} onPress={onPress} />
-        ),
-      )}
-    </ContextMenu.Group>
-  ));
+  return groups.map((group, i) => {
+    const key = keyOf(group);
+    return [
+      i > 0 && <MenuSeparator key={`${key}-line`} />,
+      ...runsOf(group).map((run, at) => {
+        const toggles = run[0].kind === "row" && run[0].checked !== undefined;
+        const ticked = new Set(
+          run.flatMap((entry) => (entry.kind === "row" && entry.checked ? [entry.offer.id] : [])),
+        );
+        return (
+          <MenuSection
+            key={`${key}-${at}`}
+            id={`${key}-${at}`}
+            // A name is data and is written as it was given; only purlis's own words wear the
+            // label role's capitals (ruling T4).
+            title={at === 0 ? group.label : undefined}
+            named={group.named}
+            {...(toggles
+              ? {
+                  selectionMode: "multiple" as const,
+                  selectedKeys: ticked,
+                  // A toggle's press is a row's press, and closes the menu as a row's does.
+                  shouldCloseOnSelect: true,
+                }
+              : {})}
+          >
+            {run.map((entry) =>
+              entry.kind === "row" ? (
+                <Row key={entry.offer.id} row={entry} onPress={onPress} />
+              ) : (
+                <Sub key={entry.key} sub={entry} onPress={onPress} />
+              ),
+            )}
+          </MenuSection>
+        );
+      }),
+    ];
+  });
+}
+
+/** A group's entries in runs: its toggles apart from its other rows, in their order. */
+function runsOf(group: GroupDrawn): GroupDrawn["entries"][] {
+  const runs: GroupDrawn["entries"][] = [];
+  let toggles: boolean | undefined;
+  for (const entry of group.entries) {
+    const toggle = entry.kind === "row" && entry.checked !== undefined;
+    if (toggle !== toggles) runs.push([]);
+    toggles = toggle;
+    runs[runs.length - 1].push(entry);
+  }
+  return runs;
 }
 
 function keyOf(group: GroupDrawn): string {
@@ -155,9 +171,9 @@ function keyOf(group: GroupDrawn): string {
 }
 
 /**
- * A row that opens a submenu: *Open*, *Ask*, *Stop*, *Curate*, *Move to*. Radix's own
- * `ContextMenu.Sub` (ADR 0037), so Right opens it, Left and Escape close it, and the hover
- * intent and the collision handling of a nested menu are the primitive's.
+ * A row that opens a submenu: *Open*, *Ask*, *Stop*, *Curate*, *Move to*. The family's own
+ * `Submenu`, so Right opens it, Left and Escape close it, and the hover intent and the
+ * placement of a nested menu are React Aria's.
  *
  * What every row inside does is said once, as this row's tooltip and description, and on the
  * side away from the submenu it opens.
@@ -166,68 +182,33 @@ function Sub({ sub, onPress }: { sub: SubDrawn; onPress: (offer: Offer) => void 
   const noted = useId();
   const { rested, rest, wake, hold } = useRested(sub.tip !== undefined);
   return (
-    <ContextMenu.Sub>
-      <ContextMenu.SubTrigger
-        className="ui-menu-item"
-        textValue={sub.said}
-        aria-label={sub.said}
-        aria-describedby={sub.tip === undefined ? undefined : noted}
-        {...rest}
-      >
-        <MenuWords said={sub.said} />
-        <span className="ui-menu-mark" aria-hidden="true">
-          <ChevronRight />
-        </span>
-        {sub.tip !== undefined && (
-          <span id={noted} hidden>
-            {sub.tip}
-          </span>
-        )}
-        {rested && (
-          <MenuTip side="left" onClose={wake} hold={hold}>
-            {sub.tip}
-          </MenuTip>
-        )}
-      </ContextMenu.SubTrigger>
-      <ContextMenu.Portal>
-        <ContextMenu.SubContent className="ui-menu item-menu" collisionPadding={8}>
-          <Groups groups={sub.groups} onPress={onPress} />
-        </ContextMenu.SubContent>
-      </ContextMenu.Portal>
-    </ContextMenu.Sub>
-  );
-}
-
-/**
- * Opens the menu from Shift+F10 or the menu key, on the element that has the keyboard
- * (charter-app#174).
- *
- * **Whether the engine raises `contextmenu` for either key is the platform's, not charter's**
- * — macOS has no such convention at all, so in the macOS WebView every menu in the window was
- * a pointer's alone, including the explorer's rows, which the keyboard otherwise reaches only
- * by arrows. This sends the event a right-click sends, at the element's lower-left corner, so
- * Radix opens exactly the menu a pointer would and nothing here decides what is in it. The
- * default is prevented; an engine that raises its own event as well only opens the same menu
- * again. Radix already knows the keyboard is in use (the key was a keydown), so it puts the
- * first row under the keyboard.
- *
- * **Only when the trigger ITSELF has the keyboard.** The panes' menu is on the box the
- * terminals are in, and a program in a terminal may want Shift+F10; a key pressed inside a
- * trigger belongs to what it was pressed in. A terminal answers the two keys itself, with its
- * own menu (`SessionPane`, `terminalRows.asksForTheMenu`).
- */
-function openFromTheKeyboard(event: KeyboardEvent<HTMLElement>) {
-  if (event.target !== event.currentTarget) return;
-  if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
-  event.preventDefault();
-  const at = event.currentTarget.getBoundingClientRect();
-  event.currentTarget.dispatchEvent(
-    new MouseEvent("contextmenu", {
-      bubbles: true,
-      cancelable: true,
-      clientX: at.left,
-      clientY: at.bottom,
-    }),
+    <Submenu
+      aria-label={sub.said}
+      className="item-menu"
+      row={
+        <MenuItem
+          id={`sub-${sub.key}`}
+          textValue={sub.said}
+          aria-label={sub.said}
+          aria-describedby={sub.tip === undefined ? undefined : noted}
+          {...rest}
+        >
+          <MenuWords said={sub.said} />
+          {sub.tip !== undefined && (
+            <span id={noted} hidden>
+              {sub.tip}
+            </span>
+          )}
+          {rested && (
+            <MenuTip side="left" onClose={wake} hold={hold}>
+              {sub.tip}
+            </MenuTip>
+          )}
+        </MenuItem>
+      }
+    >
+      <Groups groups={sub.groups} onPress={onPress} />
+    </Submenu>
   );
 }
 
@@ -255,10 +236,30 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
   const tip = offer.available && !row.untipped ? note : undefined;
   const described = offer.available ? (note ?? row.warns) : offer.reason;
   const { rested, rest, wake, hold } = useRested(tip !== undefined);
-  const inside = (
-    <>
-      <MenuWords said={said} under={under} danger={row.danger} />
-      {row.keys !== undefined && <MenuKeys>{row.keys}</MenuKeys>}
+  return (
+    <MenuItem
+      id={offer.id}
+      // `danger` is the look; `ends-it` is the house meaning, "cannot be undone from purlis"
+      // (D-1719-3), which a migrating control keeps beside its look (DS-2).
+      variant={row.danger ? "danger" : "default"}
+      className={row.danger ? "ends-it" : undefined}
+      keys={row.keys}
+      shortcut={offer.id}
+      isDisabled={!offer.available}
+      // **The row's NAME is its words and nothing else**, and its note is its description.
+      // Left to the content, an accessible name would be the words with the consequence run
+      // onto the end of them, so every row would announce as a paragraph and no surface could
+      // ask for one by name. Type-ahead reads the same words.
+      textValue={said}
+      aria-label={said}
+      aria-describedby={described ? noted : undefined}
+      onAction={() => {
+        wake();
+        onPress(offer);
+      }}
+      {...rest}
+    >
+      <MenuWords said={said} under={under} />
       {described !== undefined && described !== "" && (
         <span id={noted} hidden>
           {described}
@@ -269,42 +270,7 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
           {tip}
         </MenuTip>
       )}
-    </>
-  );
-  const shared = {
-    disabled: !offer.available,
-    // **The row's NAME is its words and nothing else**, and its note is its description. Left
-    // to the content, an accessible name would be the words with the consequence run onto the
-    // end of them, so every row would announce as a paragraph and no surface could ask for one
-    // by name. Type-ahead reads the same words.
-    textValue: said,
-    "aria-label": said,
-    "aria-describedby": described ? noted : undefined,
-    onSelect: () => {
-      wake();
-      onPress(offer);
-    },
-    ...rest,
-  };
-  // A toggle is one row with a tick while it is on, not two rows that take turns.
-  if (row.checked !== undefined)
-    return (
-      <ContextMenu.CheckboxItem className="ui-menu-item" checked={row.checked} {...shared}>
-        {inside}
-        <ContextMenu.ItemIndicator className="ui-menu-mark">
-          <Check className="node-icon" aria-hidden />
-        </ContextMenu.ItemIndicator>
-      </ContextMenu.CheckboxItem>
-    );
-  return (
-    <ContextMenu.Item
-      // `ui-menu-item-danger` is the look; `ends-it` is the house meaning, "cannot be undone
-      // from purlis" (D-1719-3), which a migrating control keeps beside its look (DS-2).
-      className={row.danger ? "ui-menu-item ui-menu-item-danger ends-it" : "ui-menu-item"}
-      {...shared}
-    >
-      {inside}
-    </ContextMenu.Item>
+    </MenuItem>
   );
 }
 
@@ -317,13 +283,13 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
  * `onContextMenu` on every element, because the thing being removed is a default and a default
  * is not per-element.
  *
- * **On the bubble phase, and that is load-bearing.** Radix opens its menu from an
- * `onContextMenu` composed with `composeEventHandlers`, which skips its own handler when the
- * event is already `defaultPrevented`. React 19 attaches its delegated listeners to the root
- * container, which is below `window`, so a CAPTURING listener here would run first, prevent the
- * default, and silently stop every menu in this file from ever opening. On the bubble phase
- * Radix has already opened — and already prevented the default itself — and this only covers
- * what it did not.
+ * **On the bubble phase, and that is load-bearing.** The family's context menu opens from an
+ * `onContextMenu` that stands back when the event is already `defaultPrevented` (a menu inside
+ * it answered). React 19 attaches its delegated listeners to the root container, which is
+ * below `window`, so a CAPTURING listener here would run first, prevent the default, and
+ * silently stop every menu in this file from ever opening. On the bubble phase the menu has
+ * already opened — and already prevented the default itself — and this only covers what it
+ * did not.
  *
  * **Except where the operator is editing text.** An `input`, a `textarea` or a contenteditable
  * answers a right-click with the platform's own Cut/Copy/Paste, and that menu is not the

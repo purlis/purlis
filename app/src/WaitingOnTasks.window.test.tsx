@@ -532,7 +532,9 @@ describe("a limit, said where it binds (#1498)", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
 
-    expect(menu.querySelector(".tasks-menu-limits")?.textContent).toBe("2 of 6 running");
+    // At the menu's foot, under its rows, on the surface it stands on.
+    const surface = menu.closest('[data-scope="popover"][data-part="root"]');
+    expect(surface?.querySelector(".tasks-menu-limits")?.textContent).toBe("2 of 6 running");
   });
 
   it("says nothing at the limit where no dispatch was refused", async () => {

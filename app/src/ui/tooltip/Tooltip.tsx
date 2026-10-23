@@ -435,7 +435,7 @@ const ALWAYS_OPEN = { isOpen: true, shouldSkipAnimation: false, open: () => {}, 
 
 /**
  * **A tooltip opened by what it stands by, not by a pointer on it**: a menu row's, which shows
- * while the keyboard or the pointer has rested on its row (`primitives/MenuRow.tsx`). It stands
+ * while the keyboard or the pointer has rested on its row (`ui/menu/MenuTip.tsx`). It stands
  * beside `anchor` as every tooltip does, at the end, or at the start where the end is taken (a
  * submenu opens there). Whoever opens it takes it down, Esc among the ways.
  */

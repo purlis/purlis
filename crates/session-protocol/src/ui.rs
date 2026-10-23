@@ -625,6 +625,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Putting a chat's missing-skills Notice away (#2768), on the chat's pane in the person's
     // window, as an MCP failure's is.
     "put_away_chat_skills_missing",
+    // The browser engine's first download, and cancelling it (#2207): the person's, in their
+    // window, of a start their window made.
+    "engine_downloads",
+    "cancel_engine_download",
     // This machine's Docker pools (#2679): adding one runs a container on the person's machine
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.

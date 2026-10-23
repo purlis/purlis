@@ -159,13 +159,13 @@ fn a_face_put_in_place_of_the_one_measured_is_hashed_again_and_refused() {
         drawn.complaints
     );
     assert_eq!(measured.hashed(), 3, "the new file is read and hashed");
-    // And no face of it is served.
-    let changed = drawn
+    // And no face of it is served: the default, Purlis, is drawn in its place, in its own faces.
+    let faces = drawn
         .theme
         .as_ref()
-        .map(|theme| theme.fonts.ui.faces.len())
+        .map(|theme| theme.fonts.ui.faces.clone())
         .unwrap_or_default();
-    assert_eq!(changed, 0);
+    assert_eq!(faces, default_theme().fonts.ui.faces);
 }
 
 #[test]

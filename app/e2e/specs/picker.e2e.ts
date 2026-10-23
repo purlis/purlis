@@ -198,7 +198,7 @@ describe("starting a chat", () => {
           );
           for (const session of sessions) {
             await point(session, true);
-            const card = await $(`[role="tooltip"][data-testid="chat-card-${session}"]`);
+            const card = await $(`[data-testid="chat-card-${session}"] [role="tooltip"]`);
             const up = await card.waitForExist({ timeout: 3_000 }).catch(() => false);
             if (up) said.push(await card.getText());
             await point(session, false);

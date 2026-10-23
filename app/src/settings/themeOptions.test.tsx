@@ -5,9 +5,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { WindowOption } from "../bindings";
-import { BUILT_IN, DEFAULT_THEME, drawIn } from "../theme/theme";
+import { DEFAULT_THEME, drawIn } from "../theme/theme";
 import { OptionsList, useOptionsInForce } from "./themeOptions";
 import { tipOf } from "../ui/tooltip/tooltip.testkit";
+import { PURLIS_LIGHT } from "../theme/handed.testkit";
 
 /** The core's answer for a theme drawn with `options`. */
 function answering(options: () => WindowOption[]) {
@@ -106,7 +107,7 @@ describe("Settings › Theme › Options (#2325, #2331)", () => {
     render(<Row />);
     await screen.findByText("The theme drawn here has no options.");
     options = [BORDERS];
-    act(() => drawIn(BUILT_IN["purlis-light"]));
+    act(() => drawIn(PURLIS_LIGHT));
     await waitFor(() => expect(screen.getByText(/^Borders: On/)).toBeTruthy());
   });
 });

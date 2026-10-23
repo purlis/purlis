@@ -38,8 +38,12 @@ async function drawn() {
       lines: menu.querySelectorAll('[role="separator"]').length,
       rows: [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].map((row) => {
         const at = row.getBoundingClientRect();
-        const title = row.querySelector<HTMLElement>(".ui-menu-title")?.getBoundingClientRect();
-        const key = row.querySelector<HTMLElement>(".ui-menu-keys")?.getBoundingClientRect();
+        const title = row
+          .querySelector<HTMLElement>('[data-part="label"]')
+          ?.getBoundingClientRect();
+        const key = row
+          .querySelector<HTMLElement>('[data-part="shortcut"]')
+          ?.getBoundingClientRect();
         return {
           name: row.getAttribute("aria-label") ?? "",
           off: row.getAttribute("aria-disabled") === "true",

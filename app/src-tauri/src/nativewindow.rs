@@ -106,19 +106,21 @@ mod tests {
 
     #[test]
     fn a_window_is_drawn_in_the_tag_and_the_opaque_colour_the_engine_answers() {
-        let light = purlis_core::theme::built_in("purlis-light")
+        let light = purlis_core::theme::classic()
+            .of(purlis_core::theme::Appearance::Light)
             .expect("Classic light")
             .native();
         assert_eq!(theme_of(light.appearance), tauri::Theme::Light);
         assert_eq!(colour_of(light), Color(0xfc, 0xfb, 0xf8, 255));
-        let dark = purlis_core::theme::default_theme().native();
+        let dark = purlis_core::theme::classic().first().native();
         assert_eq!(theme_of(dark.appearance), tauri::Theme::Dark);
         assert_eq!(colour_of(dark), Color(0x19, 0x19, 0x17, 255));
     }
 
     #[test]
     fn only_the_focused_window_sets_the_app_s_native_appearance() {
-        let light = purlis_core::theme::built_in("purlis-light")
+        let light = purlis_core::theme::classic()
+            .of(purlis_core::theme::Appearance::Light)
             .expect("Classic light")
             .native();
         // In front: its tag, or the system's while it follows.
@@ -134,7 +136,8 @@ mod tests {
 
     #[test]
     fn a_window_is_created_in_its_first_frame_s_appearance_or_the_system_s_while_it_follows() {
-        let light = purlis_core::theme::built_in("purlis-light")
+        let light = purlis_core::theme::classic()
+            .of(purlis_core::theme::Appearance::Light)
             .expect("Classic light")
             .native();
         assert_eq!(created_theme(light, false), Some(tauri::Theme::Light));

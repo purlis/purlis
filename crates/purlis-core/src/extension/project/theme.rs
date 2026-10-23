@@ -8,8 +8,10 @@
 //! A project picks in `[theme] use`, in `charter.toml` (Shared) or `charter.local.toml` (Local),
 //! and a workspace in `settings.theme.use` in its `workspace.json`:
 //!
-//! - `purlis-dark` or `purlis-light`, purlis's own — or an id either had before the rename
-//!   (`charter-*`, [`crate::names::THEME_DARK`]), which is read as the renamed theme (#1838);
+//! - `purlis` or `purlis-classic`, the two built-in themes;
+//! - `purlis-dark` or `purlis-light`, Purlis's dark or light (#3034) — or an id either had before
+//!   the rename (`charter-*`, [`crate::names::THEME_DARK`]), which is read as the renamed id
+//!   (#1838). They were written as the default's dark or light, so they draw the default's;
 //! - `system`, which follows the operating system's light or dark appearance;
 //! - `<extension-id>/<theme name>`, a theme an extension contributes.
 //!
@@ -95,8 +97,8 @@ pub const COLOUR: &str = "colour";
 /// The value that follows the operating system's appearance.
 pub const SYSTEM: &str = "system";
 
-/// The built-in a pick that cannot be drawn falls back to: the theme the window comes up in.
-pub const FALLBACK: &str = crate::names::THEME_DARK.write;
+/// The built-in a pick that cannot be drawn falls back to: the default theme, Purlis (#3034).
+pub const FALLBACK: &str = crate::theme::DEFAULT;
 
 /// The colours a workspace may name (charter-app#281). Each is a hue the window tints with;
 /// `theme.ts` holds the hues, and a test there holds the two lists to one another.
@@ -107,11 +109,13 @@ pub const PALETTE: [&str; 8] = [
 /// What a project can pick.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pick {
-    /// One of [`BUILT_IN_THEMES`], by its purlis id whichever id the file named it by, or
-    /// Purlis Classic by its own id ([`crate::theme::CLASSIC`]) or Purlis by its own
-    /// ([`crate::theme::PURLIS`], #2336), each of which draws its first appearance.
+    /// One of [`BUILT_IN_THEMES`], Purlis's dark and light (#3034), by its purlis id whichever
+    /// id the file named it by, or Purlis Classic by its own id ([`crate::theme::CLASSIC`]) or
+    /// Purlis by its own ([`crate::theme::PURLIS`], #2336), each of which draws its first
+    /// appearance ([`crate::theme::shipped_pick`]).
     BuiltIn(&'static str),
-    /// charter's light theme when the system is light, its dark one otherwise.
+    /// The default theme, Purlis, in its light appearance when the system is light and its dark
+    /// one otherwise; the person's own theme in its place when they have one (#2615, #3034).
     System,
     /// A theme an extension contributes, by the extension's id and the theme's name.
     Extension { id: String, name: String },
@@ -543,6 +547,15 @@ impl Key {
         }
     }
 
+    /// [`Self::fallback`] as a sentence names it: the colour theme by its name, the icon theme
+    /// by its id.
+    fn fallback_said(self) -> &'static str {
+        match self {
+            Self::Colours => "theme, Purlis,",
+            Self::Icons => ICONS_FALLBACK,
+        }
+    }
+
     /// What a contribution of this kind is called.
     fn noun(self) -> &'static str {
         match self {
@@ -725,7 +738,7 @@ fn unavailable(
     };
     Some(format!(
         "{file} picks “{name}” from {id}, but {because} — so the built-in {} is drawn",
-        key.fallback()
+        key.fallback_said()
     ))
 }
 

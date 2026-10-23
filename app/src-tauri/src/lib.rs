@@ -52,6 +52,8 @@ mod doing;
 #[cfg(feature = "e2e")]
 mod e2eforge;
 mod editortab;
+// The browser engine's first download, shown as it goes (#2207).
+mod enginedownload;
 // When the browser engine cannot make its sandbox here (#2835).
 mod enginesandbox;
 mod extensions;
@@ -2878,6 +2880,8 @@ fn commands() -> Builder<tauri::Wry> {
             "ENGINE_SANDBOX_NEEDED",
             enginesandbox::ENGINE_SANDBOX_NEEDED,
         )
+        // The event the engine's downloads changed on (#2207).
+        .constant("ENGINE_DOWNLOAD", enginedownload::ENGINE_DOWNLOAD)
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
         // window asks again later, matching it whole.
         .constant("SPECIMEN_BUSY", specimen::BUSY)
@@ -3543,6 +3547,13 @@ pub fn run() {
             forgeaccounts::hand_over_sign_ins();
             // And the window is told when a forge ends one of them (#729).
             forgeaccounts::tell_the_window_when_a_sign_in_ends(app.handle());
+            // The engine's first download is shown as it goes (#2207).
+            {
+                let window = app.handle().clone();
+                enginedownload::telling_the_window(Box::new(move || {
+                    let _ = window.emit(enginedownload::ENGINE_DOWNLOAD, ());
+                }));
+            }
             // A browser refused for the engine's sandbox raises its Notice (#2835).
             {
                 let window = app.handle().clone();

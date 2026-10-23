@@ -2,18 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createElement, type ElementType, type ReactNode } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
 import * as OurAlertDialog from "./overlays/alert-dialog";
-import * as OurContextMenu from "./overlays/context-menu";
 import * as OurDialog from "./overlays/dialog";
-import * as OurDropdownMenu from "./overlays/dropdown-menu";
-import * as OurPopover from "./overlays/popover";
 import * as OurSelect from "./overlays/select";
 import { ProjectShownProvider } from "./projectShown";
 
@@ -48,8 +42,6 @@ export interface Package {
   parts: Parts;
   /** Draws its children in an overlay of the kind, as the window's own file writes it. */
   Within: (props: { children: ReactNode }) => ReactNode;
-  /** Opens that overlay once it is drawn, for a kind no prop opens. */
-  open?: () => void;
 }
 
 /** Draws its children in `Root`, opened by its prop. */
@@ -58,32 +50,6 @@ const openIn =
   ({ children }: { children: ReactNode }) =>
     createElement(Root, { open: true }, children);
 
-/** What the context menu's trigger says, to right-click it by. */
-const RIGHT_CLICKED = "the place a context menu opens from";
-
-/**
- * Each of those packages as Radix exports it, every part it has by Radix's short name, said to
- * draw over the window or not, and an open overlay of the kind to draw a part in. A part the
- * package gains in an upgrade is not listed, and the guard fails until it is (#1979).
- */
-const MENU: Parts = {
-  over: ["Portal", "Content", "SubContent"],
-  notOver: [
-    "Root",
-    "Trigger",
-    "Group",
-    "Label",
-    "Item",
-    "CheckboxItem",
-    "RadioGroup",
-    "RadioItem",
-    "ItemIndicator",
-    "Separator",
-    "Arrow",
-    "Sub",
-    "SubTrigger",
-  ],
-};
 export const PACKAGES: Record<string, Package> = {
   "alert-dialog": {
     real: AlertDialog,
@@ -101,19 +67,6 @@ export const PACKAGES: Record<string, Package> = {
     },
     Within: openIn(OurAlertDialog.Root),
   },
-  "context-menu": {
-    real: ContextMenu,
-    parts: { over: MENU.over, notOver: [...MENU.notOver, "createContextMenuScope"] },
-    // Opened by a right-click on its trigger, not by a prop.
-    Within: ({ children }) =>
-      createElement(
-        OurContextMenu.Root,
-        null,
-        createElement(OurContextMenu.Trigger, null, RIGHT_CLICKED),
-        children,
-      ),
-    open: () => fireEvent.contextMenu(screen.getByText(RIGHT_CLICKED)),
-  },
   dialog: {
     real: Dialog,
     parts: {
@@ -129,28 +82,6 @@ export const PACKAGES: Record<string, Package> = {
       ],
     },
     Within: openIn(OurDialog.Root),
-  },
-  "dropdown-menu": {
-    real: DropdownMenu,
-    parts: { over: MENU.over, notOver: [...MENU.notOver, "createDropdownMenuScope"] },
-    Within: openIn(OurDropdownMenu.Root),
-  },
-  popover: {
-    real: Popover,
-    parts: {
-      over: ["Portal", "Content"],
-      notOver: [
-        "Root",
-        "Anchor",
-        "Trigger",
-        "Close",
-        "Arrow",
-        "Title",
-        "Description",
-        "createPopoverScope",
-      ],
-    },
-    Within: openIn(OurPopover.Root),
   },
   select: {
     real: Select,
@@ -188,7 +119,7 @@ const GIVEN = "drawn by a project behind the one in front";
  * it hands on: one line for each part, none when every part that draws is held back.
  */
 export function partsNotHeld(
-  { real, parts, Within, open }: Package,
+  { real, parts, Within }: Package,
   ours: Record<string, unknown>,
 ): string[] {
   const wrong: string[] = [];
@@ -213,7 +144,7 @@ export function partsNotHeld(
       if (part !== real[name]) wrong.push(`${name}: does not draw, and is not Radix's own`);
     } else if (radix.has(part)) wrong.push(`${name}: draws, and is handed on as Radix made it`);
     else {
-      const drawn = drawnWhileBehind(part as ElementType, Within, open);
+      const drawn = drawnWhileBehind(part as ElementType, Within);
       if (drawn !== null) wrong.push(`${name}: draws, and ${drawn} while its project is behind`);
     }
   }
@@ -225,11 +156,7 @@ export function partsNotHeld(
  * when it draws nothing of what it is given, and otherwise what it did, drawing it or failing to
  * be drawn there at all (with the error it threw), either way not held back.
  */
-function drawnWhileBehind(
-  Part: ElementType,
-  Within: Package["Within"],
-  open: Package["open"],
-): string | null {
+function drawnWhileBehind(Part: ElementType, Within: Package["Within"]): string | null {
   try {
     render(
       createElement(
@@ -238,7 +165,6 @@ function drawnWhileBehind(
         createElement(Within, null, createElement(Part, null, createElement("span", null, GIVEN))),
       ),
     );
-    open?.();
     return document.body.textContent?.includes(GIVEN) ? "draws what it is given" : null;
   } catch (error) {
     return `throws (${error instanceof Error ? error.message : String(error)})`;

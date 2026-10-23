@@ -11,8 +11,11 @@
  * - `virtual:purlis-handed`: every appearance of every built-in theme as the core hands it to a
  *   window, from `built-in-themes.json`, which a test of the app's crate holds to what the core
  *   resolves (`app/src-tauri/src/storythemes.rs`). Its default export is what the window is
- *   handed at creation (Purlis Classic's appearances, dark first); `themes` is every theme by its
- *   id and each appearance by its id, which the matrix draws (`matrix.ts`).
+ *   handed at creation, each built-in pick's appearance and the default's, which
+ *   `at-creation.json` names by reference and the same test holds to the core (#3034); `themes`
+ *   is every theme by its id and each appearance by its id, which the matrix draws
+ *   (`matrix.ts`); `defaultCell` is the default's theme and appearance, the cell a story is
+ *   drawn in when nothing names another.
  * - `virtual:purlis-faces`: the bytes of each face those themes name, by the digest the window
  *   asks for them by, read from the core's built-in theme folders, as purlis serves the window a
  *   face (`theme_font`).
@@ -45,6 +48,19 @@ const THEMES = fileURLToPath(new URL("built-in-themes.json", import.meta.url));
 
 function themes(): Themes {
   return JSON.parse(readFileSync(THEMES, "utf8")) as Themes;
+}
+
+/** One appearance of a built-in theme, by reference into `built-in-themes.json`. */
+type Cell = { theme: string; appearance: string };
+
+/** The file what a window is handed at creation is kept in, by reference (#3034). */
+const AT_CREATION = fileURLToPath(new URL("at-creation.json", import.meta.url));
+
+function atCreation(): { default: Cell; built_in: Record<string, Cell> } {
+  return JSON.parse(readFileSync(AT_CREATION, "utf8")) as {
+    default: Cell;
+    built_in: Record<string, Cell>;
+  };
 }
 
 /**
@@ -90,11 +106,20 @@ export function handedThemes(): Plugin {
       // Watched, so a running Storybook draws a theme written again, or a face changed.
       if (loading === `\0${HANDED}`) {
         this.addWatchFile(THEMES);
+        this.addWatchFile(AT_CREATION);
         const all = themes();
-        const classic = Object.values(all["purlis-classic"]);
+        const at = atCreation();
+        const of = (cell: Cell) => all[cell.theme]?.[cell.appearance];
+        const handed = {
+          built_in: Object.fromEntries(
+            Object.entries(at.built_in).map(([pick, cell]) => [pick, of(cell)]),
+          ),
+          default_theme: of(at.default),
+        };
         return (
-          `export default ${JSON.stringify({ built_in: classic })};\n` +
-          `export const themes = ${JSON.stringify(all)};\n`
+          `export default ${JSON.stringify(handed)};\n` +
+          `export const themes = ${JSON.stringify(all)};\n` +
+          `export const defaultCell = ${JSON.stringify(at.default)};\n`
         );
       }
       if (loading === `\0${FACES}`) {

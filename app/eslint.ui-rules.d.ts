@@ -4,10 +4,14 @@
 /** The types of `eslint.ui-rules.js`, for its test (`src/ui/lint.test.ts`). */
 import type { Rule } from "eslint";
 
+/** The words of an answer that grants, which no menu row says. */
+export const GRANT_WORDS: RegExp;
+
 export const purlisUi: {
   meta: { name: string };
   rules: Record<
     | "button-family"
+    | "menu-family"
     | "field-family"
     | "select-family"
     | "choice-family"

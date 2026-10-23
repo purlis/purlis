@@ -875,6 +875,8 @@ struct StartsHeld {
     fail_next: bool,
     /// The next start fails as an engine that cannot make its sandbox does (#2899).
     no_sandbox_next: bool,
+    /// The download the last start was given (#2207).
+    download: Option<crate::browsers::Download>,
 }
 
 /// What a stand-in browser's start that fails for the engine's sandbox says (#2899).
@@ -933,6 +935,12 @@ impl StandInBrowsers {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// The download the last start was given (#2207): what a test tells progress through, and
+    /// asks whether it was cancelled.
+    pub fn download(&self) -> Option<crate::browsers::Download> {
+        self.held().download.clone()
+    }
+
     /// Every browser it started, in order.
     pub fn started(&self) -> Vec<StandInScreen> {
         self.started.lock().unwrap().clone()
@@ -953,9 +961,11 @@ impl crate::browsers::Browsers for StandInBrowsers {
         data: &std::path::Path,
         reach: Option<&purlis_session_protocol::browsing::BrowserReach>,
         kept: Option<&purlis_session_protocol::browsing::KeptLogin>,
+        download: &crate::browsers::Download,
     ) -> Result<Arc<dyn crate::browsers::Screen>, crate::browsers::NotStarted> {
         {
             let mut held = self.held();
+            held.download = Some(download.clone());
             if std::mem::take(&mut held.no_sandbox_next) {
                 return Err(crate::browsers::NotStarted::NoEngineSandbox(
                     NO_SANDBOX_SAID.to_owned(),
@@ -973,6 +983,10 @@ impl crate::browsers::Browsers for StandInBrowsers {
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
             }
             held.waiting -= 1;
+        }
+        // A download the person cancelled keeps nothing, and the start is refused for it.
+        if download.is_cancelled() {
+            return Err(crate::browsers::ENGINE_DOWNLOAD_CANCELLED.into());
         }
         std::fs::create_dir_all(data).map_err(|why| why.to_string())?;
         let screen = StandInScreen::default();

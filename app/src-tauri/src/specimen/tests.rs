@@ -95,8 +95,12 @@ fn each_specimen_is_drawn_in_the_theme_the_engine_resolves_in_the_order_asked() 
     assert_eq!(
         painter.themes(),
         [
-            WindowTheme::from(purlis_core::theme::built_in("purlis-light").unwrap()),
-            WindowTheme::from(purlis_core::theme::built_in("purlis-dark").unwrap()),
+            WindowTheme::from(
+                purlis_core::theme::classic()
+                    .of(purlis_core::theme::Appearance::Light)
+                    .expect("Classic light")
+            ),
+            WindowTheme::from(purlis_core::theme::classic().first()),
         ]
     );
     let Answer::Previewed { painted } = answer else {
@@ -111,9 +115,13 @@ fn each_specimen_is_drawn_in_the_theme_the_engine_resolves_in_the_order_asked() 
             (
                 "purlis-classic",
                 Appearance::Light,
-                b"purlis-light".to_vec()
+                b"Purlis Classic".to_vec()
             ),
-            ("purlis-classic", Appearance::Dark, b"purlis-dark".to_vec()),
+            (
+                "purlis-classic",
+                Appearance::Dark,
+                b"Purlis Classic".to_vec()
+            ),
         ]
     );
     assert!(painted.iter().all(|p| (p.width, p.height) == (2560, 1600)));
@@ -184,7 +192,11 @@ fn the_page_is_handed_the_built_ins_and_the_one_theme_and_nothing_else() {
     // The privacy half that is the core's: the creation script is made from the theme and the
     // compiled-in built-ins alone, so nothing of the person's can be in it. Held as the script's
     // two globals, each with exactly these keys.
-    let theme = WindowTheme::from(purlis_core::theme::built_in("purlis-light").unwrap());
+    let theme = WindowTheme::from(
+        purlis_core::theme::classic()
+            .of(purlis_core::theme::Appearance::Light)
+            .expect("Classic light"),
+    );
     let script = creation_script(&Handed {
         theme: theme.clone(),
         tint: Some("teal".to_owned()),
@@ -206,19 +218,21 @@ fn the_page_is_handed_the_built_ins_and_the_one_theme_and_nothing_else() {
         serde_json::from_str(&line[from..to]).unwrap()
     };
     let at_creation = value("__CHARTER_AT_CREATION__");
+    // Each key the window's theme module reads as it loads, and no other (#3034).
     assert_eq!(
         at_creation.as_object().unwrap().keys().collect::<Vec<_>>(),
-        ["built_in"]
+        crate::windowprefs::HANDED_AT_LOAD
     );
     assert_eq!(
         at_creation["built_in"],
-        serde_json::to_value(
-            purlis_core::theme::built_ins()
-                .iter()
-                .map(WindowTheme::from)
-                .collect::<Vec<_>>()
-        )
+        serde_json::to_value(crate::windowprefs::handed_built_ins(
+            &purlis_core::theme::Layer::default()
+        ))
         .unwrap()
+    );
+    assert_eq!(
+        at_creation["default_theme"],
+        serde_json::to_value(WindowTheme::from(purlis_core::theme::default_theme())).unwrap()
     );
     let given = value(GIVEN);
     assert_eq!(
@@ -587,9 +601,7 @@ fn a_theme_whose_fonts_are_past_the_cap_is_handed_to_no_page() {
 /// Purlis Classic's dark, looked up as a specimen's lookup would.
 fn classic_dark() -> Result<Looked, String> {
     Ok(Looked {
-        handed: Handed::of(WindowTheme::from(
-            purlis_core::theme::built_in("purlis-dark").unwrap(),
-        ))?,
+        handed: Handed::of(WindowTheme::from(purlis_core::theme::classic().first()))?,
         appearance: Appearance::Dark,
         high_contrast: false,
     })
