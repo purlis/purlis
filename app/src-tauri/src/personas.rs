@@ -97,10 +97,15 @@ fn create_in(
         force: false,
     };
     let mut said = Vec::new();
+    let owner = format!("personas/{}", ask.name);
+    let was_there = purlis_core::skills::levels::there(root, &owner);
     let code = define::create(root, &ask, None, &mut |line: Say| said.push(line));
-    // The person made it, in their window: no chat did, so its skills reach chats (SK-9).
-    if code == 0 {
-        purlis_core::skills::levels::vouch(root, &format!("personas/{}", ask.name));
+    // The person made it, in their window: no chat did, so its skills reach chats (SK-9), where
+    // the create made its folder.
+    if code == 0
+        && let Some(note) = purlis_core::skills::levels::vouch_if_made(root, &owner, was_there)
+    {
+        said.push(Say::Info(note));
     }
     ran(code, said)
 }

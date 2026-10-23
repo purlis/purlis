@@ -213,3 +213,23 @@ fn a_chat_without_an_id_is_never_noted() {
     let tmp = plane(&[]);
     assert!(note(tmp.path(), "../escape", "7").is_err());
 }
+
+/// A chat makes `workspaces/foo/` first; the person's later create of `foo` takes the folder up
+/// and does not vouch for it, so its skills still wait for the person's Accept.
+#[test]
+fn a_create_vouches_only_for_a_folder_it_made() {
+    let tmp = plane(&[CHAT]);
+    let root = tmp.path();
+    note(root, CHAT, "7").unwrap();
+    skill(root, "workspaces/foo/skills/planted", "planted");
+    let was_there = there(root, "workspaces/foo");
+    assert!(was_there);
+    let said = vouch_if_made(root, "workspaces/foo", was_there).expect("said");
+    assert!(said.contains("Skill studio"), "{said}");
+    assert!(!set_in(root, "foo").0.contains(&"planted".to_owned()));
+
+    assert!(!there(root, "workspaces/fresh"));
+    assert_eq!(vouch_if_made(root, "workspaces/fresh", false), None);
+    skill(root, "workspaces/fresh/skills/mine", "mine");
+    assert!(set_in(root, "fresh").0.contains(&"mine".to_owned()));
+}

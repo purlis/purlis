@@ -410,6 +410,11 @@ pub fn compose_ready(
         }
         None => (ready.program.clone(), ready.command_line(hooks), Vec::new()),
     };
+    // Settings too long for one word of a command line go through a file of their own (SK-9).
+    let args = match start.program.as_deref() {
+        Some(id) => settings_in_a_file(root, id, args)?,
+        None => args,
+    };
     let env = finished_env(
         ready.env.clone(),
         armed_env,
@@ -602,6 +607,102 @@ fn recorded(
         (Err(why), _) => {
             tracing::warn!("purlis: a composed chat's sandbox was not recorded ({why})");
             Ok(())
+        }
+    }
+}
+
+/// The longest `--settings` JSON a chat's command line carries as it is (SK-9, #2772): well under
+/// the one word Linux starts a program with (`MAX_ARG_STRLEN`, 128 KiB). A longer one, such as a
+/// Claude Code chat's with every skill level it is denied writing, goes through a file.
+pub const SETTINGS_IN_A_WORD: usize = 32 * 1024;
+
+/// The folder of this machine's state a chat's settings file is kept in, by the chat's id.
+pub const SETTINGS_DIR: &str = "chat-settings";
+
+/// **`args` with a `--settings` JSON longer than [`SETTINGS_IN_A_WORD`] put in a file**, the
+/// chat `id`'s in this machine's state of the project at `root` (`chat-settings/<id>.json`,
+/// private, written through folder handles with no link followed), and its path in the JSON's
+/// place: Claude Code reads `--settings` as JSON or as a file. Words with a shorter one, or none,
+/// are as they were. Refused for an id that is no chat's.
+pub fn settings_in_a_file(
+    root: &Path,
+    id: &str,
+    mut args: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let Some(at) = args
+        .iter()
+        .position(|word| word == "--settings")
+        .map(|flag| flag + 1)
+        .filter(|&at| at < args.len())
+    else {
+        return Ok(args);
+    };
+    if args[at].len() <= SETTINGS_IN_A_WORD || !args[at].starts_with('{') {
+        return Ok(args);
+    }
+    if crate::reopen::a_ulid(id).is_none() {
+        return Err(
+            "a chat with no id of its own was not started: its settings are too long \
+                    for its command line"
+                .to_owned(),
+        );
+    }
+    let state = crate::plane::state_dir(root);
+    std::fs::create_dir_all(&state).map_err(|why| why.to_string())?;
+    crate::profiletrust::private_dir(&state).map_err(|why| why.to_string())?;
+    let rel = std::path::PathBuf::from(SETTINGS_DIR).join(format!("{id}.json"));
+    let was = crate::proposed::read_pinned(&state, &rel)
+        .map_err(|_| "a chat's settings file is not a plain file, so it was not started")?;
+    let base = was
+        .as_deref()
+        .and_then(|bytes| crate::proposed::base_of(Some(bytes)));
+    crate::proposed::write_pinned_making(&state, &rel, base.as_deref(), &args[at], &|_, _| true)
+        .map_err(|_| "a chat's settings could not be written to its file, so it was not started")?;
+    args[at] = state.join(&rel).display().to_string();
+    Ok(args)
+}
+
+/// **Removes every chat's settings file whose chat is not among `open`**, older than a couple of
+/// minutes (the time between a start writing it and the chat being on the app's record): the
+/// app's, each time it writes that record. Only names this module makes, through the folder's
+/// handle.
+pub fn sweep_settings(root: &Path, open: &[String]) {
+    let dir = crate::plane::state_dir(root).join(SETTINGS_DIR);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let Some(id) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.strip_suffix(".json"))
+            .and_then(crate::reopen::a_ulid)
+        else {
+            continue;
+        };
+        let young = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_some_and(|age| age < crate::skills::verbs::drafts::SWEEP_GRACE);
+        if young || open.contains(&id) {
+            continue;
+        }
+        #[cfg(unix)]
+        if let Ok(at) = rustix::fs::openat(
+            rustix::fs::CWD,
+            &dir,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::DIRECTORY
+                | rustix::fs::OFlags::NOFOLLOW,
+            rustix::fs::Mode::empty(),
+        ) {
+            let _ = rustix::fs::unlinkat(
+                &at,
+                format!("{id}.json").as_str(),
+                rustix::fs::AtFlags::empty(),
+            );
         }
     }
 }
@@ -840,3 +941,6 @@ impl crate::sandbox::HeldElsewhere for HeldByThisHost {
         None
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -338,6 +338,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skill-drafts/<id>/`](#skill-draftsid)
   - [`skill-tries/<id>/`](#skill-triesid)
   - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
+  - [`chat-settings/<chat id>.json`](#chat-settingschat-idjson)
   - [`ws-edit-nudge/<sid>-<workspace>`](#ws-edit-nudgesid-workspace)
   - [`ws-autosave/<workspace>`](#ws-autosaveworkspace)
   - [`workspace-tab-order`](#workspace-tab-order)
@@ -6918,6 +6919,20 @@ rewritten.
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** gitignored, under the state directory; the piece is ignored and never staged.
+
+### `chat-settings/<chat id>.json`
+- **Format:** a Claude Code chat's `--settings` JSON, as purlis armed it (SK-9, #2772), where it is
+  longer than one word of a command line carries (`hoststart::SETTINGS_IN_A_WORD`, 32 KiB, well
+  under Linux's 128 KiB): the chat is started with `--settings <this file>` instead. `0600` in a
+  private folder.
+- **Status:** **internal**.
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** the session host as it starts the chat (`hoststart::settings_in_a_file`),
+  through folder handles, no link followed. No chat writes the state folder.
+- **Read by:** Claude Code, at the chat's start.
+- **Removed by:** the app, each time it writes its record of open chats, for a chat not on it,
+  two minutes after it was written (`hoststart::sweep_settings`).
+- **Git:** gitignored, under the state directory.
 
 ### `skill-levels/<chat id>.json`
 - **Format:** JSON, one file per sandboxed chat that is running (SK-9, #2772): `name`, the chat's

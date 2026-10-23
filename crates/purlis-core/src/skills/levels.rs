@@ -222,6 +222,28 @@ fn an_owner(owner: &str) -> bool {
         if !name.is_empty() && !name.starts_with('.') && !name.contains('\\'))
 }
 
+/// **Whether the workspace or persona folder `owner`** (relative to the plane at `root`) **is
+/// there**: asked before a person's create, which vouches only for a folder it made
+/// ([`vouch_if_made`]).
+pub fn there(root: &Path, owner: &str) -> bool {
+    std::fs::symlink_metadata(root.join(owner)).is_ok()
+}
+
+/// **Vouches for `owner` after the person's own create, only where the create made it**: a folder
+/// that was there before (`was_there`) could be one a chat made for the create to take up, so it
+/// stays waiting for the person's Accept in the Skill studio, and the sentence that says so is
+/// answered.
+pub fn vouch_if_made(root: &Path, owner: &str, was_there: bool) -> Option<String> {
+    if was_there {
+        return Some(format!(
+            "{owner} was there before it was created, so its skills reach chats only once you \
+             accept its folder in the Skill studio, where a chat could have made it"
+        ));
+    }
+    vouch(root, owner);
+    None
+}
+
 /// **The person accepts the workspace or persona folder `owner`** (relative to the plane at
 /// `root`) in the Skill studio: its skills reach chats from now on. Vouched for in every open
 /// record, and taken off the folders not accepted yet.

@@ -1236,6 +1236,8 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
                 crate::secret::add_persona_vault(here, vault, &name);
             };
             let mut sink = crate::speak;
+            let owner = format!("personas/{name}");
+            let was_there = purlis_core::skills::levels::there(root, &owner);
             let code = purlis_core::personaverbs::define::create(
                 root,
                 &ask,
@@ -1243,8 +1245,12 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
                 &mut sink,
             );
             // The person made it from their own terminal, not a chat (SK-9).
-            if code == 0 && !in_a_chat() {
-                purlis_core::skills::levels::vouch(root, &format!("personas/{name}"));
+            if code == 0
+                && !in_a_chat()
+                && let Some(note) =
+                    purlis_core::skills::levels::vouch_if_made(root, &owner, was_there)
+            {
+                sink(purlis_core::repocmd::Say::Info(note));
             }
             Ok(code)
         }
