@@ -18,12 +18,16 @@
  * - **A tone is a colour beside words, never instead of them** (qw357): `waiting`, `failed`,
  *   `success`, `quiet`, `accent` or `danger` colours the item's icon (and, for `danger`, the item),
  *   from the state tokens a theme sets.
+ * - **Its hint is the shared tooltip** (#2908, `ui/tooltip`), never a native `title`: `tooltip`
+ *   on either member. **A disabled item with a hint keeps the focus** and does nothing, as a
+ *   disabled button with one does (`ui/pressable.tsx`): the hint says why.
  * - **24px tall in either density** (R115), which is also the least target (WCAG 2.2): a state
  *   changes a colour, never a size.
  */
 import { Children, type ComponentPropsWithRef, type ReactNode, type Ref } from "react";
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from "react-aria-components";
-import { pressable, renderPressed, type Native } from "../pressable";
+import { pressable, renderPressed, usePressTip, type Native } from "../pressable";
+import { Tipped, Tooltip, type Tip } from "../tooltip/Tooltip";
 
 /** The family's variants, in the order the manifest names them. */
 export const STATUS_VARIANTS = ["bar", "pill", "waiting", "accent"] as const;
@@ -47,6 +51,8 @@ interface Drawn {
   /** A count after the words: the `count` part. A pressable item's name says what it counts,
    *  so its count is not said twice; a cell's is read with its words. */
   count?: ReactNode;
+  /** **Its hint**, the shared tooltip (#2908): what the item is, or why it is unavailable. */
+  tooltip?: Tip;
   /** A place for the item (margin, flex, order), never a look. */
   className?: string;
   children?: ReactNode;
@@ -130,27 +136,44 @@ function root({
  * variant. A trigger's `asChild` (a dialog's, a menu's) hands it its press too.
  */
 export function StatusItem(props: StatusItemProps) {
-  const { variant, tone, strong, shrinks, icon, count, children, className, ref, ...rest } = props;
+  const {
+    variant,
+    tone,
+    strong,
+    shrinks,
+    icon,
+    count,
+    children,
+    className,
+    ref,
+    tooltip,
+    ...rest
+  } = props;
+  const tip = usePressTip(props["aria-label"], tooltip, false, props.isDisabled === true);
   // The press the button family has too (`ui/pressable.tsx`): its native attributes, the keys a
-  // handler does not stop going on (Shift F10 reaching the bar's menu), and the element.
-  const { native, aria } = pressable(rest);
+  // handler does not stop going on (Shift F10 reaching the bar's menu), a disabled item with a
+  // hint that keeps the focus and does nothing, and the element.
+  const { native, aria, own } = pressable(rest, tip);
   return (
-    <AriaButton
-      {...(aria as AriaButtonProps)}
-      ref={ref}
-      className={className}
-      {...root({ variant, tone, strong, shrinks })}
-      render={renderPressed(native)}
-    >
-      {parts({ icon, count, children }, false)}
-    </AriaButton>
+    <Tipped surface={tip.surface}>
+      <AriaButton
+        {...(aria as AriaButtonProps)}
+        ref={ref}
+        className={className}
+        {...root({ variant, tone, strong, shrinks })}
+        render={renderPressed(native, tip, own)}
+      >
+        {parts({ icon, count, children }, false)}
+      </AriaButton>
+      {tip.reason}
+    </Tipped>
   );
 }
 
 /**
  * **A status item that says something and runs nothing**: its icon, its words and its count,
- * as a cell of the bar. A tooltip's trigger may make it focusable (`tabIndex`), which is all a
- * trigger's `asChild` hands it.
+ * as a cell of the bar. Its `tooltip` makes it a Tab stop, so the hint is reached by the keyboard
+ * too (`ui/tooltip`).
  */
 export function StatusCell({
   variant,
@@ -160,12 +183,15 @@ export function StatusCell({
   icon,
   count,
   children,
+  tooltip,
   ...rest
-}: Drawn & Omit<ComponentPropsWithRef<"span">, "style" | "children">) {
+}: Drawn & Omit<ComponentPropsWithRef<"span">, "style" | "children" | "title">) {
   return (
-    <span {...rest} {...root({ variant, tone, strong, shrinks })} data-static="">
-      {parts({ icon, count, children }, true)}
-    </span>
+    <Tooltip tip={tooltip}>
+      <span {...rest} {...root({ variant, tone, strong, shrinks })} data-static="">
+        {parts({ icon, count, children }, true)}
+      </span>
+    </Tooltip>
   );
 }
 

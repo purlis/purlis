@@ -10,6 +10,7 @@ import { useProjectsNotHeld } from "../notheld";
 import { askLink, askVersion, removePool, startAddingAPool, usePools } from "../pools";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button } from "../ui/button/Button";
+import { Tooltip } from "../ui/tooltip/Tooltip";
 
 /**
  * **You › This machine › Pools** (#2679, the person's rulings of 2026-10-20): the Docker pools
@@ -165,9 +166,9 @@ function PoolEntry({
   return (
     <li className="ui-machine-entry">
       <span className="ui-machine-name">{pool.name}</span>
-      <span className="ui-machine-path" title={pool.image}>
-        {limitsSaid(pool)}
-      </span>
+      <Tooltip tip={pool.image}>
+        <span className="ui-machine-path">{limitsSaid(pool)}</span>
+      </Tooltip>
       <span className="ui-setting-badge">{linkSaid(link)}</span>
       <Button
         size="sm"

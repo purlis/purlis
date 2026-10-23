@@ -20,6 +20,7 @@ import type { Phase, SavedRecord, SmartCloseOffer } from "./bindings";
 import { LEAST, LEAST_CHIP, leastAt } from "./fits";
 import { dragWithTheKeyboard, laidOutInARow, stripNamed } from "./test-strips";
 import { DEFAULT_TEXT } from "./textSize";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **Smart close, as the window draws it** (ADR 0064, SI-8c): the close dialog's three answers,
@@ -270,7 +271,7 @@ describe("a chat wrapping up", () => {
     const chip = theChip("steward 1");
     expect(chip.closest(".tab")).toHaveAttribute("data-wrapping-up");
     expect(chip.closest(".tab")).toHaveAttribute("data-chip");
-    expect(chip).toHaveAttribute("title", "steward 1 — wrapping up");
+    expect(tipOf(chip)).toEqual("steward 1 — wrapping up");
     expect(chip.querySelector(".tab-name")).toBeNull();
     expect(chip.querySelector('[data-mark="chat"]')).not.toBeNull();
     expect(within(chip).getByRole("img", { name: "wrapping up" })).toHaveClass("breathing");
@@ -305,7 +306,7 @@ describe("a chat wrapping up", () => {
     await waitFor(() =>
       expect(theTab("steward 1").closest(".tab")).not.toHaveAttribute("data-wrapping-up"),
     );
-    expect(theTab("steward 1").getAttribute("title") ?? "").not.toContain("Wrapping up");
+    expect(tipOf(theTab("steward 1")) ?? "").not.toContain("Wrapping up");
     expect(screen.queryByRole("menuitem", { name: /Cancel smart close/ })).toBeNull();
   });
 

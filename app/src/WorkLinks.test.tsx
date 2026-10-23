@@ -16,6 +16,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * A chat's work link, against the whole window (V60, ADR 0088 §3, §4): **Link to work item…**
@@ -141,19 +142,19 @@ describe("a chat's work link", () => {
     expect(asked(asks, "chat_work_link").map((one) => one.args)).toEqual([
       { plane: PLANE, session: 1, item: ISSUE },
     ]);
-    await waitFor(() => expect(theTab().getAttribute("title")).toContain(`Work item: ${ISSUE}`));
+    await eventually(() => expect(tipOf(theTab())).toContain(`Work item: ${ISSUE}`));
     expect(screen.getByText(`Work item: ${ISSUE}`)).toBeTruthy();
   });
 
   it("is unlinked from the tab's menu", async () => {
     const { asked: asks } = core({ linked: ISSUE });
     render(<App />);
-    await waitFor(() => expect(theTab().getAttribute("title")).toContain(`Work item: ${ISSUE}`));
+    await eventually(() => expect(tipOf(theTab())).toContain(`Work item: ${ISSUE}`));
 
     await fromTheMenu("Unlink work item");
 
     await waitFor(() => expect(asked(asks, "chat_work_unlink")).toHaveLength(1));
-    await waitFor(() => expect(theTab().getAttribute("title") ?? "").not.toContain("Work item"));
+    await eventually(() => expect(tipOf(theTab()) ?? "").not.toContain("Work item"));
     expect(screen.queryByText(`Work item: ${ISSUE}`)).not.toBeInTheDocument();
   });
 
@@ -183,7 +184,7 @@ describe("a chat's work link", () => {
     expect((await within(dialog).findByRole("alert")).textContent).toBe(refused);
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(theTab().getAttribute("title") ?? "").not.toContain("Work item");
+    expect(tipOf(theTab()) ?? "").not.toContain("Work item");
   });
 
   it("is reached from the palette too", async () => {

@@ -3,6 +3,7 @@
 
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import { useArrowPick } from "./settings/components";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** One scope a {@link ScopeSwitch} offers. */
 export type ScopeOffer<S extends string> = {
@@ -51,25 +52,25 @@ export function ScopeSwitch<S extends string>({
       {...listen}
     >
       {scopes.map((one) => (
-        <RadioGroup.Item
-          key={one.scope}
-          className="ui-level"
-          value={one.scope}
-          aria-label={one.name}
-          title={one.name}
-          onFocus={() => {
-            if (arrowing.current && one.scope !== scope) onPick(one.scope);
-          }}
-        >
-          {one.count === undefined ? (
-            one.says
-          ) : (
-            <>
-              <span className="ui-level-says">{one.says}</span>
-              <span className="ui-level-count">{one.count}</span>
-            </>
-          )}
-        </RadioGroup.Item>
+        <Tooltip key={one.scope} tip={one.name}>
+          <RadioGroup.Item
+            className="ui-level"
+            value={one.scope}
+            aria-label={one.name}
+            onFocus={() => {
+              if (arrowing.current && one.scope !== scope) onPick(one.scope);
+            }}
+          >
+            {one.count === undefined ? (
+              one.says
+            ) : (
+              <>
+                <span className="ui-level-says">{one.says}</span>
+                <span className="ui-level-count">{one.count}</span>
+              </>
+            )}
+          </RadioGroup.Item>
+        </Tooltip>
       ))}
     </RadioGroup.Root>
   );

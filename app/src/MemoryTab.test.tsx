@@ -11,6 +11,7 @@ import type { MemoryEdited, MemoryView } from "./bindings";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { offeredIn, pickIn } from "./primitives/select.testkit";
 import { retype, textOf, typeIn, typeable } from "./editor/typing.testkit";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 afterEach(() => {
   cleanup();
@@ -455,8 +456,8 @@ describe("a memory's tab on a read-only project (#826)", () => {
     const title = await screen.findByRole("textbox", { name: "Title" });
 
     const save = screen.getByRole("button", { name: "Save" });
-    expect(save).toBeDisabled();
-    expect(save).toHaveAttribute("title", SENTENCE);
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(save)).toEqual(SENTENCE);
     await userEvent.type(title, " more{Enter}");
     expect(asked.some((one) => one.cmd === "memory_edit")).toBe(false);
     // Cancel still takes the person back to the memory.
@@ -470,6 +471,7 @@ describe("a memory's tab on a read-only project (#826)", () => {
     const choice = await screen.findByRole("combobox", { name: "Move to" });
     expect(choice).toBeDisabled();
     expect(screen.getByRole("button", { name: "Move" })).toBeDisabled();
-    expect(choice.closest("fieldset")).toHaveAttribute("title", SENTENCE);
+    // Why it is off: its group\'s description, which its legend\'s tooltip says too (#2908).
+    expect(choice.closest("fieldset")).toHaveAccessibleDescription(SENTENCE);
   });
 });

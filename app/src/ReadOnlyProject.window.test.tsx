@@ -9,6 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { ReadOnlyProject } from "./bindings";
 import { forgetThisLaunch } from "./regions";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A project this purlis opens read-only says why once, on its tab, and its write buttons are
@@ -100,8 +101,12 @@ describe("a project this purlis opens read-only (#826)", () => {
     render(<App />);
     await screen.findByRole("note", { name: "Read-only project" });
 
-    await waitFor(async () => expect(await newWorkspace()).toBeDisabled());
-    expect((await newWorkspace()).title).toBe(READ_ONLY.sentence);
+    await waitFor(async () =>
+      expect(await newWorkspace()).toHaveAttribute("aria-disabled", "true"),
+    );
+    // Its name, then why, as an icon button's tooltip draws them; why is its description too.
+    expect(tipOf(await newWorkspace())).toBe(`New workspace…${READ_ONLY.sentence}`);
+    expect(await newWorkspace()).toHaveAccessibleDescription(READ_ONLY.sentence);
   });
 
   it("lists the palette's row unavailable, with the sentence, rather than dropping it", async () => {

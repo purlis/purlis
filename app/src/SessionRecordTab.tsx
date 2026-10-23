@@ -207,7 +207,7 @@ function withRefs(plane: PlaneId, place: string, repos: readonly string[]): Comp
         <Button
           variant="link"
           aria-label={`Open ${children}`}
-          title={`Open ${ref.path} at line ${ref.line}`}
+          tooltip={`Open ${ref.path} at line ${ref.line}`}
           onPress={() => jumpTo({ plane, ...ref })}
           className="record-ref"
         >

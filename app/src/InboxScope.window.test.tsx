@@ -13,6 +13,7 @@ import { forgetInbox } from "./inboxRules";
 import { keepInboxScope, keptInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
 import type { Shown } from "./bindings";
+import { hoverTipOf, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The Inbox's scope, and what one of its rows is made of** (qw359): every project's, this
@@ -280,22 +281,25 @@ describe("what a row is made of", () => {
     expect(part(row(9), ".inbox-kind").getAttribute("data-kind")).toBe("reply");
   });
 
-  it("cuts a long line to two with the whole of it in the tooltip", () => {
+  it("cuts a long line to two with the whole of it in the tooltip", async () => {
     const long = `Should I ${"keep going with the migration ".repeat(20)}or stop?`;
     draw([question(9, long)], strip(ROOT));
     const primary = part(row(9), ".inbox-primary");
     expect(primary.classList.contains("inbox-clamped")).toBe(true);
-    expect(primary.getAttribute("title")).toBe(long);
+    // The whole of it for a pointer: it only repeats the words, which the keyboard and a screen
+    // reader have already, so no focus opens it.
+    expect(await hoverTipOf(primary)).toBe(long);
+    expect(tipOf(primary)).toBeNull();
     // The words are all there for a screen reader: only the drawing is cut.
     expect(primary.textContent).toBe(long);
   });
 
-  it("never cuts the words of an ask it offers to allow", () => {
+  it("never cuts the words of an ask it offers to allow", async () => {
     const long = `Run ${"cargo test --workspace ".repeat(20)}`.trim();
     draw([permission(3, "a", long)], strip("alpha"));
     const primary = part(row(3), ".inbox-primary");
     expect(primary.classList.contains("inbox-clamped")).toBe(false);
-    expect(primary.getAttribute("title")).toBe(long);
+    expect(await hoverTipOf(primary)).toBe(long);
   });
 
   it("says a group's chat in the label style, and a section's name as a section title", () => {

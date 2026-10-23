@@ -124,6 +124,7 @@ import { noTabs, SETTINGS_TAB_TITLE } from "./tabs";
 import { useTextSizes } from "./textSize";
 import { MAIN, runElsewhere, thisWindow, useOtherWindows, useRunHere } from "./windows";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * Puts the app's own `charter` on a terminal's `PATH`, and answers what the core said — the
@@ -2107,29 +2108,31 @@ function App() {
                                   tabStopId={project.plane}
                                   active={project.plane === inFront}
                                 >
-                                  <button
-                                    role="tab"
-                                    id={projectTabId(place)}
-                                    aria-selected={project.plane === inFront}
-                                    aria-describedby={sortable.attributes["aria-describedby"]}
-                                    {...sortable.listeners}
-                                    onKeyDown={(event) => {
-                                      // A tab that is up is being carried: its keys are the drag's.
-                                      keepsTheFocus(event, sortable.isDragging);
-                                      sortable.listeners?.onKeyDown?.(event);
-                                      if (!sortable.isDragging)
-                                        closeOnDelete(event, strip.close[at], press);
-                                    }}
-                                    // The path, because two projects can share a directory name and
-                                    // the name is all the tab has room for.
-                                    title={project.plane}
-                                    onClick={() => {
-                                      const offer = strip.switchTo[at];
-                                      if (offer.available) press(offer);
-                                    }}
-                                  >
-                                    {projectMarks(project)}
-                                  </button>
+                                  <Tooltip tip={project.plane}>
+                                    <button
+                                      role="tab"
+                                      id={projectTabId(place)}
+                                      // Its directory, which its tooltip shows: how a scenario
+                                      // learns which project a tab is (as the status line's).
+                                      data-directory={project.plane}
+                                      aria-selected={project.plane === inFront}
+                                      aria-describedby={sortable.attributes["aria-describedby"]}
+                                      {...sortable.listeners}
+                                      onKeyDown={(event) => {
+                                        // A tab that is up is being carried: its keys are the drag's.
+                                        keepsTheFocus(event, sortable.isDragging);
+                                        sortable.listeners?.onKeyDown?.(event);
+                                        if (!sortable.isDragging)
+                                          closeOnDelete(event, strip.close[at], press);
+                                      }}
+                                      onClick={() => {
+                                        const offer = strip.switchTo[at];
+                                        if (offer.available) press(offer);
+                                      }}
+                                    >
+                                      {projectMarks(project)}
+                                    </button>
+                                  </Tooltip>
                                 </RovingFocusGroup.Item>
                               </Menued>
                               {/* Its settings (SE-23, V89i): on the project in front only,
@@ -2537,7 +2540,7 @@ function App() {
 /**
  * What a project is called on its tab: the directory's own name.
  *
- * Two projects can share one, so the tab carries the whole path as its title and the strip is
+ * Two projects can share one, so the tab carries the whole path as its tooltip and the strip is
  * never the only way to tell them apart. Both separators, because a `PlaneId` is a root as the
  * operating system spells it and Windows spells it with backslashes.
  */

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Bell, FolderRoot } from "lucide-react";
-import * as Tooltip from "./overlays/tooltip";
 import type { WorkspaceState } from "./workspaceState";
 import { Health, type DoctorState } from "./Doctor";
 import { PinItem } from "./Updates";
@@ -185,7 +184,7 @@ export function StatusLine({
   /**
    * Why an extension that should show something here shows nothing — a facts file too big or
    * not JSON, a field its manifest did not declare, an extension that changed since it was
-   * approved — in the core's words. Drawn as one quiet count with the sentences as its title,
+   * approved — in the core's words. Drawn as one quiet count with the sentences as its tooltip,
    * so a badge never just vanishes.
    */
   factNotes?: readonly string[];
@@ -288,7 +287,7 @@ export function StatusLine({
       label: badge.label,
       value: badge.stale ? `${badge.value} · ${ago(badge.age_seconds)}` : badge.value,
       stale: badge.stale,
-      title: `${badge.label}, from ${badge.name}'s facts file — ${ago(badge.age_seconds)}`,
+      tooltip: `${badge.label}, from ${badge.name}'s facts file — ${ago(badge.age_seconds)}`,
       testid: `status-badge-${badge.extension}-${badge.id}`,
     });
   if (factNotes !== undefined && factNotes.length > 0)
@@ -298,7 +297,7 @@ export function StatusLine({
       side: "left",
       priority: 30,
       item: (
-        <StatusCell tone="quiet" data-testid="status-fact-notes" title={factNotes.join("\n")}>
+        <StatusCell tone="quiet" data-testid="status-fact-notes" tooltip={factNotes.join("\n")}>
           {`${factNotes.length} extension ${factNotes.length === 1 ? "note" : "notes"}`}
         </StatusCell>
       ),
@@ -362,7 +361,7 @@ export function projectName(plane: string): string {
  * **The project, as its name** (qw357): the operator's *"project directory is very large and
  * can be just compacted and showed only project name, and on hovering just show directory"*.
  *
- * The whole directory is the window's tooltip (`.ui-tooltip`), which opens under the pointer
+ * The whole directory is the window's tooltip (`ui/tooltip`), which opens under the pointer
  * and on keyboard focus alike, so the path is one Tab away and never only a hover's. Words and
  * no control, as a table's shortened heading is (`settings/ColumnHeading.tsx`): it presses
  * nothing, so it is no button. Two projects may share a name; the directory tells them apart,
@@ -373,32 +372,20 @@ export function projectName(plane: string): string {
  */
 function ProjectItem({ plane }: { plane: string }) {
   return (
-    <Tooltip.Provider delayDuration={300}>
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
-          <StatusCell
-            tabIndex={0}
-            strong
-            shrinks
-            data-testid="status-project"
-            data-directory={plane}
-            icon={
-              <span role="img" aria-label="Project">
-                <FolderRoot aria-hidden="true" />
-              </span>
-            }
-          >
-            {projectName(plane)}
-          </StatusCell>
-        </Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content className="ui-tooltip" side="top" align="start" sideOffset={4}>
-            <code>{plane}</code>
-            <Tooltip.Arrow className="ui-overlay-arrow" />
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
+    <StatusCell
+      tooltip={<code>{plane}</code>}
+      strong
+      shrinks
+      data-testid="status-project"
+      data-directory={plane}
+      icon={
+        <span role="img" aria-label="Project">
+          <FolderRoot aria-hidden="true" />
+        </span>
+      }
+    >
+      {projectName(plane)}
+    </StatusCell>
   );
 }
 
@@ -433,13 +420,13 @@ export type Alerts = {
 function AlertsButton({ alerts }: { alerts?: Alerts }) {
   if (alerts === undefined) {
     return (
-      // Unavailable but still a Tab stop (`aria-disabled`, #1700): Notices is the item the bar
-      // always keeps, the one its menu opens from by the keyboard.
+      // Disabled with a hint, so still a Tab stop that does nothing (#1700, #2908): Notices is
+      // the item the bar always keeps, the one its menu opens from by the keyboard.
       <StatusItem
         data-testid="status-alerts"
-        aria-disabled="true"
+        isDisabled
         aria-label="Notices — nothing to open here"
-        title="This status line has no Inbox behind it."
+        tooltip="This status line has no Inbox behind it."
         icon={<Bell aria-hidden="true" />}
         count="—"
       >
@@ -459,7 +446,7 @@ function AlertsButton({ alerts }: { alerts?: Alerts }) {
       aria-label={
         count === undefined ? "Notices: not counted" : `Notices: ${count === 0 ? "none" : count}`
       }
-      title={
+      tooltip={
         count === undefined
           ? "purlis could not count this project's Notices — open the Inbox to see why"
           : "Open the Inbox: this project's Notices, and what waits on you"

@@ -19,6 +19,7 @@ import type { State } from "./chatState";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A task stopped on its harness's permission prompt is said where the person is**
@@ -508,8 +509,7 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
       return found;
     });
     const dismiss = within(notice).getByRole("button", { name: "Dismiss" });
-    expect(dismiss).toHaveAttribute(
-      "title",
+    expect(tipOf(dismiss)).toEqual(
       "Hides this line. The chat still waits on you, and the needs-you list still shows it.",
     );
 

@@ -10,6 +10,7 @@ import { THEIR_STATUS_LINE } from "../wdio.finder.conf.js";
 import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
 import { projectInFront, runningIn } from "../running.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { escapeUntilClosed } from "../tooltips.js";
 
 /**
  * A chat started on a BUILT-IN profile, in an app launched the way Finder launches one.
@@ -229,7 +230,7 @@ describe("an app opened from Finder", () => {
     await expect(dialog()).toHaveText(expect.stringContaining(A_FINDER_LAUNCHS_PATH));
     await expect(dialog()).toHaveText(expect.stringContaining("each harness profile probed"));
 
-    await browser.keys(["Escape"]);
+    await escapeUntilClosed(() => dialog().isDisplayed());
     await expect(dialog()).not.toBeDisplayed();
   });
 
@@ -259,7 +260,7 @@ describe("an app opened from Finder", () => {
     // The launcher wrote a command that would genuinely have run.
     expect(THEIR_STATUS_LINE.startsWith("/bin/echo")).toBe(true);
 
-    await browser.keys(["Escape"]);
+    await escapeUntilClosed(() => dialog().isDisplayed());
     await expect(dialog()).not.toBeDisplayed();
   });
 });

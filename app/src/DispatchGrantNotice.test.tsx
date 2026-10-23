@@ -10,6 +10,7 @@ import { ReadOnlySaid } from "./ReadOnlyLine";
 import { NoticeOf } from "./Notice";
 import type { DispatchArrived, DispatchPending, GrantLevel } from "./bindings";
 import { askOfDispatch } from "./test-asks";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * The Notice for a dispatch to another persona that no grant covers (#1437): who wants to
@@ -1167,7 +1168,7 @@ describe("the dispatch grant Notice on a read-only project (#826)", () => {
       name: "Allow for everyone in this project, in any workspace",
     });
     expect(everyone).toHaveAttribute("aria-disabled", "true");
-    expect(everyone).toHaveAttribute("title", SENTENCE);
+    expect(tipOf(everyone)).toEqual(SENTENCE);
     await user.click(everyone);
     expect(sent(asked, "allow_dispatch")).toEqual([]);
 

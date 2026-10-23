@@ -8,6 +8,7 @@ import type { HarnessGlance, ProfileRow, StartOptions } from "./bindings";
 import { wordsOutsideTheFirstHour } from "./firstHour";
 import { HarnessChip } from "./HarnessCard";
 import { StartChat } from "./StartChat";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * The harness capability card at a glance (HP-19, W10, ADR 0072 §3): in the picker, under the
@@ -100,7 +101,7 @@ describe("a chat's header", () => {
 
     const chip = screen.getByRole("button", { name: "What opencode can do here" });
     expect(chip).toHaveTextContent("opencode");
-    expect(chip).toHaveAttribute("title", OPENCODE_LINES.join(" "));
+    expect(tipOf(chip)).toEqual(OPENCODE_LINES.join(" "));
 
     await userEvent.setup().click(chip);
 
@@ -110,8 +111,7 @@ describe("a chat's header", () => {
   it("says a harness that lacks nothing lacks nothing", () => {
     render(<HarnessChip glance={CLAUDE} onOpen={vi.fn()} />);
 
-    expect(screen.getByRole("button", { name: "What Claude Code can do here" })).toHaveAttribute(
-      "title",
+    expect(tipOf(screen.getByRole("button", { name: "What Claude Code can do here" }))).toEqual(
       "Everything purlis asks of it.",
     );
   });

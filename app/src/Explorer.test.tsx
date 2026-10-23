@@ -14,6 +14,7 @@ import { noTabs } from "./tabs";
 import type { OpenChat, Panels as PanelsModel, Piece } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
 import { drawnWith } from "./cascade.testkit";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 afterEach(cleanup);
 
@@ -304,7 +305,7 @@ describe("the explorer", () => {
 
     const mark = screen.getByTestId("piece-svc-one").querySelector("[data-testid=piece-unclaimed]");
     expect(mark).toHaveTextContent("unclaimed 3d");
-    expect(mark).toHaveAttribute("title", expect.stringContaining("never started"));
+    expect(tipOf(mark)).toEqual(expect.stringContaining("never started"));
     expect(screen.getByTestId("piece-svc-two").querySelector("[data-testid=piece-unclaimed]")).toBe(
       null,
     );
@@ -320,7 +321,7 @@ describe("the explorer", () => {
 
     const mark = screen.getByTestId("piece-svc-one").querySelector("[data-testid=piece-unread]");
     expect(mark).toHaveTextContent("unreadable");
-    expect(mark).toHaveAttribute("title", why);
+    expect(tipOf(mark)).toEqual(why);
     expect(screen.getByTestId("piece-svc-two").querySelector("[data-testid=piece-unread]")).toBe(
       null,
     );
@@ -346,7 +347,7 @@ describe("the explorer", () => {
     const row = within(screen.getByTestId("piece-svc-one")).getByRole("treeitem", {
       name: "fix/login in svc",
     });
-    expect(row).toHaveAttribute("title", `${CUT}/one`);
+    expect(tipOf(row)).toEqual(`${CUT}/one`);
     // Said once: the mark beside the row no longer repeats the branch.
     expect(within(screen.getByTestId("piece-svc-one")).getAllByText("fix/login")).toHaveLength(1);
   });
@@ -384,7 +385,7 @@ describe("the explorer", () => {
     });
 
     const count = within(screen.getByTestId("clone-svc")).getByText("unreadable");
-    expect(count).toHaveAttribute("title", "purlis will not run git through a symlink");
+    expect(tipOf(count)).toEqual("purlis will not run git through a symlink");
   });
 
   it("says the listing is still coming rather than saying there is nothing", () => {

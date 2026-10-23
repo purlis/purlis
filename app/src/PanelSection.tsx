@@ -98,7 +98,7 @@ export function HeadingOffer({
     <IconButton
       size="sm"
       aria-label={offer.title}
-      title={offer.available ? (offer.note ?? offer.title) : offer.reason}
+      tooltip={offer.available ? (offer.note ?? offer.title) : offer.reason}
       isDisabled={!offer.available}
       onPress={() => onPress(offer)}
       icon={<Mark className="node-icon" aria-hidden="true" />}

@@ -274,7 +274,7 @@ describe("Settings' tables, in the real WebView", function () {
           await browser.execute(
             (strip: string, path: string) =>
               [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)]
-                .find((tab) => tab.getAttribute("title") === path)
+                .find((tab) => tab.getAttribute("data-directory") === path)
                 ?.click(),
             PROJECTS,
             first,

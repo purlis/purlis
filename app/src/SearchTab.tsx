@@ -59,6 +59,7 @@ import { Select } from "./primitives/Select";
 import type { ViewRef } from "./tabs";
 import { Button, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** How long the query is still before it is asked. */
 const SETTLE = 250;
@@ -225,7 +226,7 @@ function Switch({
     <ToggleButton
       isSelected={on}
       aria-label={label}
-      title={label}
+      tooltip={label}
       onPress={onPress}
       className="search-switch"
     >
@@ -472,13 +473,11 @@ function Hits({
           </span>
         ))}
         {heard.unsearched.length > 0 && (
-          <span
-            className="search-unsearched"
-            title={heard.unsearched.join("\n")}
-            data-testid="search-unsearched"
-          >
-            {`${heard.unsearched.length} file${heard.unsearched.length === 1 ? "" : "s"} not searched: ${heard.unsearched.join("; ")}`}
-          </span>
+          <Tooltip tip={heard.unsearched.join("\n")}>
+            <span className="search-unsearched" data-testid="search-unsearched">
+              {`${heard.unsearched.length} file${heard.unsearched.length === 1 ? "" : "s"} not searched: ${heard.unsearched.join("; ")}`}
+            </span>
+          </Tooltip>
         )}
         {handed !== undefined && (
           <span className={handed.refused ? "search-refused" : "search-handed"}>

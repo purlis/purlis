@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { WorktreeMark } from "./Worktree";
 import type { ChatWorktree } from "./bindings";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 // This project does not run vitest with `globals`, so nothing unmounts a render on its own:
 // every test file here registers this, and without it a later test sees the earlier one's
@@ -41,12 +42,12 @@ describe("what a chat's row says about its worktree", () => {
 
     const label = screen.getByText("unwired");
     expect(label).toBeInTheDocument();
-    expect(label.title).toMatch(/no persona agents/i);
-    expect(label.title).toMatch(/ask\/deny/i);
+    expect(tipOf(label)).toMatch(/no persona agents/i);
+    expect(tipOf(label)).toMatch(/ask\/deny/i);
     // Since M1.x this state has a way out that does not involve another binary: starting a
     // chat here writes the layer, or refuses with a sentence. A label that only names the
     // hole leaves the operator with nowhere to go.
-    expect(label.title).toMatch(/starting a chat/i);
+    expect(tipOf(label)).toMatch(/starting a chat/i);
   });
 
   test("a wired worktree carries no label", () => {

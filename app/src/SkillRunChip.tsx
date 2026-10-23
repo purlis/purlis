@@ -34,7 +34,7 @@ export const SkillRunChip = memo(function SkillRunChip({
         size="sm"
         className="tab-tasks-counts"
         data-testid="tab-skill-run"
-        title={`Using the skill ${run.skill}: ${calls} so far. Open its runs.`}
+        tooltip={`Using the skill ${run.skill}: ${calls} so far. Open its runs.`}
         aria-label={`Using the skill ${run.skill}, ${calls} so far. Open its runs`}
         onPress={() => onOpen(run.skill, run.id)}
       >

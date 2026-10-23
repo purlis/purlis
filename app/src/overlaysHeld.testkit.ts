@@ -9,14 +9,12 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import * as Select from "@radix-ui/react-select";
-import * as Tooltip from "@radix-ui/react-tooltip";
 import * as OurAlertDialog from "./overlays/alert-dialog";
 import * as OurContextMenu from "./overlays/context-menu";
 import * as OurDialog from "./overlays/dialog";
 import * as OurDropdownMenu from "./overlays/dropdown-menu";
 import * as OurPopover from "./overlays/popover";
 import * as OurSelect from "./overlays/select";
-import * as OurTooltip from "./overlays/tooltip";
 import { ProjectShownProvider } from "./projectShown";
 
 /**
@@ -180,15 +178,6 @@ export const PACKAGES: Record<string, Package> = {
       ],
     },
     Within: openIn(OurSelect.Root),
-  },
-  tooltip: {
-    real: Tooltip,
-    parts: {
-      over: ["Portal", "Content"],
-      notOver: ["Provider", "Root", "Trigger", "Arrow", "createTooltipScope"],
-    },
-    Within: ({ children }) =>
-      createElement(OurTooltip.Provider, null, openIn(OurTooltip.Root)({ children })),
   },
 };
 /** What a part is given to draw, in one element as a portal takes it, to look for in the document. */

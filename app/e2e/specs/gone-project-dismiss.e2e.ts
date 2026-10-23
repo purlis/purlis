@@ -124,7 +124,7 @@ async function backTo(first: string): Promise<void> {
       await browser.execute(
         (strip: string, path: string) =>
           [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)]
-            .find((tab) => tab.getAttribute("title") === path)
+            .find((tab) => tab.getAttribute("data-directory") === path)
             ?.click(),
         PROJECTS,
         first,

@@ -21,6 +21,7 @@ import {
   type SettingsActionAsk,
 } from "./links";
 import { offeredIn, pickIn } from "../primitives/select.testkit";
+import { hoverTipOf, tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
  * **The one table of dispatch grants in Settings** (#1504): a row group per persona, each pair
@@ -1902,8 +1903,9 @@ describe("on a read-only project (#1759)", () => {
   );
   /** Off, with the project's sentence as why. */
   const off = (button: HTMLElement) => {
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute("title", SENTENCE);
+    // Unavailable, and kept in reach so its reason can be read (#2908).
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(button)).toEqual(SENTENCE);
   };
 
   it("keeps on what this machine keeps, and turns off what changes the committed file", async () => {
@@ -1937,7 +1939,7 @@ describe("on a read-only project (#1759)", () => {
       name: "Workspace: the project's grant for steward to devops",
     });
     expect(theirs).toBeDisabled();
-    expect(theirs).toHaveAttribute("title", SENTENCE);
+    expect(await hoverTipOf(theirs)).toEqual(SENTENCE);
 
     // Adding one: for me only.
     const form = screen.getByRole("group", { name: /Add a grant/ });
@@ -2019,8 +2021,7 @@ describe("the grants table's look (DS-9, #1841)", () => {
     const whole = await table();
 
     const workspace = within(whole).getByText("Workspace", { selector: "th *" });
-    workspace.focus();
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("In which workspace");
+    expect(tipOf(workspace)).toContain("In which workspace");
     // Words that fit are no stop for the keyboard and have no tooltip.
     expect(within(whole).getByRole("columnheader", { name: "Action" })).not.toContainElement(
       within(whole).queryByText("Action", { selector: "[tabindex]" }),
