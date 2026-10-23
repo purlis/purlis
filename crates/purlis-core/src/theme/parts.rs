@@ -75,7 +75,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 6;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -419,6 +419,17 @@ fn look_named(family: &Family, part: &str, variant: &str) -> String {
 /// What a theme may set on a part with words: every property.
 const ALL: &[Prop] = &PROPERTIES;
 
+/// What a theme may set on a tooltip's surface: its colours, its edge, its corners and its
+/// shadow. Its size is its words', so none of its sizes is a theme's.
+const SURFACE: &[Prop] = &[
+    Prop::Fill,
+    Prop::Text,
+    Prop::BorderColour,
+    Prop::Shadow,
+    Prop::BorderWidth,
+    Prop::CornerRadius,
+];
+
 /// **The closed manifest**: every family a theme may name, at [`VERSION`].
 pub const MANIFEST: &[Family] = &[
     Family {
@@ -721,7 +732,49 @@ pub const MANIFEST: &[Family] = &[
     shell::PANEL_SECTION,
     shell::EMPTY_STATE,
     shell::STATUS_ITEM,
+    // **The tooltip** (#2908): every hint in the window, `app/src/ui/tooltip`. One look, so a key
+    // names the part alone; no state a theme keys, since nothing on it is pressed or chosen.
+    Family {
+        name: "tooltip",
+        description: "A hint beside what it is about, under the pointer or the keyboard.",
+        since: 5,
+        parts: &[
+            Part {
+                name: "root",
+                since: 5,
+                description: "The tooltip's surface: its fill, words, edge, corners and shadow. \
+                          Its size is its words'.",
+                properties: SURFACE,
+            },
+            Part {
+                name: "detail",
+                since: 5,
+                description: "A second line under an icon button's name.",
+                properties: &[Prop::Text],
+            },
+        ],
+        variants: &[],
+        // Drawn over the window, wherever its target is: on the grounds an overlay stands on.
+        grounds: &["surface.base", "surface.raised", "surface.overlay"],
+        keeps_size: &[],
+        sized_apart: &[],
+        height: None,
+        font_size: "font-size.sm",
+        line_height: 1.4,
+        border_width: 1.0,
+        defaults: tooltip_look,
+        states: &[],
+        focused: "[data-focus-visible]",
+        words: &[("detail", "text.secondary")],
+    },
+    overlay::POPOVER,
+    overlay::MENU,
 ];
+
+/// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
+/// menu's row.
+#[path = "parts_overlay.rs"]
+mod overlay;
 
 /// The window's own families (#2913): the region panel, its sections, an empty state and a
 /// status item.
@@ -844,6 +897,16 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
         _ => {}
     }
     look
+}
+
+/// **The tooltip's colours as `app/src/ui/tooltip/tooltip.css` draws them**, which a test holds
+/// to that file: the overlay surface's, in every state, since nothing on it is pressed.
+fn tooltip_look(_variant: &str, _states: &[State]) -> Look {
+    Look {
+        fill: "surface.overlay",
+        text: "text.primary",
+        border: "border.subtle",
+    }
 }
 
 /// **The distance in OKLab below which a person sees one colour** (`floors.rs`'s scale): how
@@ -1000,6 +1063,15 @@ pub(super) fn look_json(family_name: &str, variant: &str) -> Value {
     let rest = (family.defaults)(variant, &[]);
     let hover = (family.defaults)(variant, &[State::Hover]);
     json!({ "fill": rest.fill, "text": rest.text, "border": rest.border, "hover": hover.fill })
+}
+
+/// A family's colours with `states` holding, as the engine holds them, fill, words and border, for
+/// the tests that hold them to the family's stylesheet.
+#[cfg(test)]
+pub(super) fn look_of(family_name: &str, variant: &str, states: &[State]) -> [&'static str; 3] {
+    let family = family(family_name).expect("a family of the manifest");
+    let look = (family.defaults)(variant, states);
+    [look.fill, look.text, look.border]
 }
 
 /// The family `name` names.

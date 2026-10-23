@@ -4,6 +4,7 @@
 import { memo } from "react";
 import { useChatsHere, useChatsSelect } from "./chatState";
 import { helpersCountOf, helpersCountSaid, sameHelpersCount } from "./explorerTasks";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **A chat's helpers as words on its row** (#1490): a row in the Chats list,
@@ -21,8 +22,8 @@ export const HelpersSaid = memo(function HelpersSaid({ session }: { session: num
   );
   if (count.total === 0) return null;
   return (
-    <span className="helpers" title="The helpers its harness started inside this chat">
-      {helpersCountSaid(count)}
-    </span>
+    <Tooltip tip="The helpers its harness started inside this chat">
+      <span className="helpers">{helpersCountSaid(count)}</span>
+    </Tooltip>
   );
 });

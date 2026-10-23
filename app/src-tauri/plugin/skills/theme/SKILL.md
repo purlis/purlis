@@ -31,8 +31,9 @@ Read what is here:
 purlis theme list --json
 ```
 
-Each theme's `id` is what the other commands take: `purlis-classic`, `purlis`,
-`machine:<folder>`, `project:<folder>`, `workspace:<workspace>:<folder>`, `<extension>/<theme>`.
+Each theme's `id` is what the other commands take: `purlis` (Purlis, the default theme),
+`purlis-classic` (Purlis Classic, the alternative), `machine:<folder>`, `project:<folder>`,
+`workspace:<workspace>:<folder>`, `<extension>/<theme>`.
 `theme_schema` is the address a new `theme.json` names in its `$schema`.
 
 Choose the theme folder's name: lower-case letters, digits and dashes, starting with a letter,
@@ -44,25 +45,26 @@ purlis theme draft <folder>
 ```
 
 It starts the draft (a copy of the workspace's or the project's folder of that name, or a new
-theme that extends Purlis Classic) and prints the working copy's `theme.json`. Done when it
+theme that extends Purlis, the default) and prints the working copy's `theme.json`. Done when it
 printed that path.
 
 ## 2. Write the theme
 
-Work in the working copy's `theme.json`. Purlis Classic's own file lists every token with its
-value; read it from a copy:
+Work in the working copy's `theme.json`. Purlis's own file lists every token of its three
+appearances, from the colours of its `palette`; read it from a copy:
 
 ```bash
-purlis theme export purlis-classic --to "$TMPDIR/purlis-classic.zip"
-unzip -o "$TMPDIR/purlis-classic.zip" -d "$TMPDIR/purlis-classic"
+purlis theme export purlis --to "$TMPDIR/purlis.zip"
+unzip -o "$TMPDIR/purlis.zip" -d "$TMPDIR/purlis"
 ```
 
 The format and the check are documented in full: `purlis docs show themes`. Keep it small:
-`"extends": "purlis-classic"` and only what differs. Put each colour in the `palette` once and
-name it from the tokens. Most of a look is `surface.*`, `text.*`, `border.*`, `accent.base`,
-`accent.surface`, `focus.ring`, `layer.selected`, `list.selected`, `list.selected-edge`, the
-`terminal.*` colours and its shape (below). A theme with a `dark` and a `light` appearance
-follows the system.
+`"extends": "purlis"` and only what differs. When the person wants Purlis Classic's look as the
+start, extend `purlis-classic` instead, and read its file the same way. Put each colour in the
+`palette` once and name it from the tokens. Most of a look is `surface.*`, `text.*`,
+`border.*`, `accent.base`, `accent.surface`, `focus.ring`, `layer.selected`, `list.selected`,
+`list.selected-edge`, the `terminal.*` colours and its shape (below). A theme with a `dark` and
+a `light` appearance follows the system.
 
 **The selected tab is `layer.selected`**, on all three strips; keep it apart from
 `list.selected`. `tab.active` is not a tab: it colours menu highlights and button hovers.
@@ -155,10 +157,12 @@ refused if it tries. A button stays at least 24px tall with its words fitting, i
 and a geometry token is held to the same bounds at the value the theme draws it at. Whatever the
 theme changes, Allow (`grants`) keeps its accent edge and Keep blocked's fill, and no part draws
 Allow or danger nearer the primary than the family does: a look that would is drawn as the
-family default. The button and the fields have parts so far: `field` (its label, help and
-error), `text-input` (the one-line box and its glass) and `textarea`, which have no variants, so
-a key names the part alone (`"text-input.root.border-width": 0` turns off every one-line box's
-edge). The note above still holds for tabs and rows.
+family default. The button, the fields and the tooltip have parts so far: `field` (its label,
+help and error), `text-input` (the one-line box and its glass), `textarea` and `tooltip` (its
+`root`, the surface: colours, edge, corners and shadow, no sizes; and `detail`, an icon button's
+second line), which have no variants, so a key names the part alone
+(`"text-input.root.border-width": 0` turns off every one-line box's edge). The note above still
+holds for tabs and rows.
 
 Done when the file is JSON with every value hex, a palette name, or a token's own type, and
 every shape and size inside its bounds.
@@ -178,7 +182,7 @@ answer names the pair and its ratio. Fix that first.
 Look at it with purlis's `theme_preview` tool: name the draft as `draft:<folder>` and draw the
 theme specimen in each appearance, with each option value the theme has, side by side with the
 theme as kept (`side_by_side: {"theme": "<folder>"}`). A new theme has no kept folder yet: put it
-beside the theme it extends (`side_by_side: {"theme": "purlis-classic"}`). It shows sample
+beside the theme it extends (`side_by_side: {"theme": "purlis"}`). It shows sample
 content only.
 
 ```bash

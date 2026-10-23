@@ -3,6 +3,7 @@
 
 import { useLayoutEffect, useRef } from "react";
 import { fitPillOn } from "./wholeWays";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **The one pill a tab's counts are drawn in** (qw337): how many chats are open there, in the
@@ -35,26 +36,27 @@ export function CountPill({ chats, needs }: { chats?: number; needs: number }) {
   if (!drawn) return null;
   const said = countsSaid(chats, needs);
   return (
-    <span
-      ref={pill}
-      className="count-pill"
-      role="img"
-      aria-label={said}
-      title={said}
-      data-chats={chats}
-      data-needs={needs}
-    >
-      {(chats ?? 0) > 0 && (
-        <span className="count-pill-chats" aria-hidden="true">
-          {chats}
-        </span>
-      )}
-      {needs > 0 && (
-        <span className="count-pill-needs" aria-hidden="true">
-          {needs}
-        </span>
-      )}
-    </span>
+    <Tooltip tip={said}>
+      <span
+        ref={pill}
+        className="count-pill"
+        role="img"
+        aria-label={said}
+        data-chats={chats}
+        data-needs={needs}
+      >
+        {(chats ?? 0) > 0 && (
+          <span className="count-pill-chats" aria-hidden="true">
+            {chats}
+          </span>
+        )}
+        {needs > 0 && (
+          <span className="count-pill-needs" aria-hidden="true">
+            {needs}
+          </span>
+        )}
+      </span>
+    </Tooltip>
   );
 }
 

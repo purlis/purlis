@@ -53,7 +53,9 @@
     "ansi-bright-cyan": "#83d9e0"
   },
   "parts": {
-    "panel.root.fill": "surface.raised"
+    "panel.root.fill": "surface.raised",
+    "tooltip.root.corner-radius": 8,
+    "tooltip.root.border-width": 0
   },
   "appearances": [
     {

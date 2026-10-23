@@ -15,7 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import * as Popover from "./overlays/popover";
+import { AnchoredPopover } from "./ui/popover/Popover";
 import { ChevronRight, Hand, MessagesSquare, Search, SquareTerminal } from "lucide-react";
 import {
   besideId,
@@ -87,6 +87,7 @@ import { DISPATCH } from "./settings/dispatch";
 import { Button } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
 type ShownFacts = {
@@ -867,7 +868,7 @@ export function ChatsSection({
                   size="sm"
                   data-leads-to={goesTo.session}
                   aria-label={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
-                  title={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
+                  tooltip={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
                   onPress={() => onOpen(goesTo.session)}
                   icon={<Hand aria-hidden="true" />}
                   className="chats-hidden-go"
@@ -875,16 +876,19 @@ export function ChatsSection({
                   Go
                 </Button>
               )}
-              <p
-                className={said === undefined ? "chats-hidden" : "chats-hidden away"}
-                role="status"
-                title={hides || undefined}
-              >
-                {hides}
-              </p>
-              <p className="chats-said" role="status" title={said}>
-                {said ?? ""}
-              </p>
+              <Tooltip tip={hides || undefined}>
+                <p
+                  className={said === undefined ? "chats-hidden" : "chats-hidden away"}
+                  role="status"
+                >
+                  {hides}
+                </p>
+              </Tooltip>
+              <Tooltip tip={said}>
+                <p className="chats-said" role="status">
+                  {said ?? ""}
+                </p>
+              </Tooltip>
             </div>
           )}
           {here !== undefined && every.length > 0 && (
@@ -1170,8 +1174,8 @@ export { CARD_SKIP_MS } from "./chatCard";
  *
  * **Everything else is the row's card** (`ChatCard`): its state in words, what it is doing,
  * its persona, harness and workspace, how long it has been in its state, its tasks, its own
- * branch, where its work went or came from, and a task's tokens. The card is Radix's popover,
- * opened by the row and anchored to it, with the tooltip's role: it comes up under a pointer
+ * branch, where its work went or came from, and a task's tokens. The card is the popover family's
+ * (`AnchoredPopover`), held up by the row and standing beside it, with the tooltip's role: it comes up under a pointer
  * that rests and on the keyboard resting on the row, goes on Escape, and is what the row is
  * described by while it is up.
  */
@@ -1372,150 +1376,144 @@ const Row = memo(function Row({
   };
   return (
     <li role="none" data-level={level}>
-      {/* Radix's popover, held open by the row and anchored to it, never by its trigger: a
-          trigger is a press, and a press on a row opens its chat. */}
-      <Popover.Root open={carded} onOpenChange={card}>
-        <Menued on={{ on: "listed", session, handed: handedAll }} offers={offers} onPress={onPress}>
-          <Popover.Anchor asChild>
-            <RovingFocusGroup.Item asChild tabStopId={rowId(session)}>
-              <button
-                type="button"
-                ref={self}
-                className="chat ui-row ui-tree-row"
-                role="treeitem"
-                aria-level={level}
-                aria-posinset={posinset}
-                aria-setsize={setsize}
-                aria-current={current || undefined}
-                aria-expanded={open ?? undefined}
-                // What the card says, while it is up: the row's description.
-                aria-describedby={carded ? cardId : undefined}
-                // A chat below it needs you: said on the row, which is where a screen reader
-                // is, since the hand beside it is out of the keyboard's way.
-                aria-description={
-                  needs !== null && needs !== session
-                    ? `${needsName ?? "A chat"} below it needs you`
-                    : undefined
-                }
-                data-tab={tab}
-                // The chat's number, as a pane carries it: what a reveal finds the row by (#1490).
-                data-session={session}
-                onClick={() => {
-                  // A press focuses the row too: that is no rest of the keyboard.
-                  away();
-                  onOpen(session);
-                }}
-                onPointerEnter={(event) => {
-                  if (event.pointerType !== "touch") rest("pointer");
-                }}
-                onPointerLeave={leave}
-                onFocus={rested}
-                onBlur={away}
-                onKeyDown={keys}
-                // A button presses itself as Space comes up: Space is the row's own key here.
-                onKeyUp={(event) => {
-                  if (event.key === " ") event.preventDefault();
-                }}
-              >
-                {/* **The row is the shared tree row** (DS-3, DS-11): the twist hangs in the step
+      <Menued on={{ on: "listed", session, handed: handedAll }} offers={offers} onPress={onPress}>
+        <RovingFocusGroup.Item asChild tabStopId={rowId(session)}>
+          <button
+            type="button"
+            ref={self}
+            className="chat ui-row ui-tree-row"
+            role="treeitem"
+            aria-level={level}
+            aria-posinset={posinset}
+            aria-setsize={setsize}
+            aria-current={current || undefined}
+            aria-expanded={open ?? undefined}
+            // What the card says, while it is up: the row's description.
+            aria-describedby={carded ? cardId : undefined}
+            // A chat below it needs you: said on the row, which is where a screen reader
+            // is, since the hand beside it is out of the keyboard's way.
+            aria-description={
+              needs !== null && needs !== session
+                ? `${needsName ?? "A chat"} below it needs you`
+                : undefined
+            }
+            data-tab={tab}
+            // The chat's number, as a pane carries it: what a reveal finds the row by (#1490).
+            data-session={session}
+            onClick={() => {
+              // A press focuses the row too: that is no rest of the keyboard.
+              away();
+              onOpen(session);
+            }}
+            onPointerEnter={(event) => {
+              if (event.pointerType !== "touch") rest("pointer");
+            }}
+            onPointerLeave={leave}
+            onFocus={rested}
+            onBlur={away}
+            onKeyDown={keys}
+            // A button presses itself as Space comes up: Space is the row's own key here.
+            onKeyUp={(event) => {
+              if (event.key === " ") event.preventDefault();
+            }}
+          >
+            {/* **The row is the shared tree row** (DS-3, DS-11): the twist hangs in the step
                     before the name and is drawn only on a row with chats under it, the name
                     comes first, so the row is heard by it, and the state's mark is drawn
                     before it; the persona's mark, a folded row's count and a stop in progress
                     stand at the row's end. */}
-                {open !== null && (
-                  /* The pointer's way to fold a row. **Not in the accessibility tree**: the row
+            {open !== null && (
+              /* The pointer's way to fold a row. **Not in the accessibility tree**: the row
                      itself says `aria-expanded` and folds on Left and Right, so a second
                      control saying the same would be read twice and reached by nothing. Inside
                      the row, which is a button, so it is no button itself: its press folds the
                      row and goes no further, where the row's own press would open the chat. */
-                  <span
-                    className="ui-tree-twist"
-                    aria-hidden="true"
-                    data-fold={open ? "open" : "folded"}
-                    title={open ? `Fold the chats under ${name}` : `Show the chats under ${name}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onFold(session, open);
-                    }}
-                  >
-                    <ChevronRight aria-hidden="true" />
-                  </span>
-                )}
-                {/* Cut short where the row is narrow; whole in the card, and to a screen
+              <Tooltip tip={open ? `Fold the chats under ${name}` : `Show the chats under ${name}`}>
+                <span
+                  className="ui-tree-twist"
+                  aria-hidden="true"
+                  data-fold={open ? "open" : "folded"}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onFold(session, open);
+                  }}
+                >
+                  <ChevronRight aria-hidden="true" />
+                </span>
+              </Tooltip>
+            )}
+            {/* Cut short where the row is narrow; whole in the card, and to a screen
                     reader, which is told the text. */}
-                <span className="ui-row-label session ui-text-body">{name}</span>
-                {/* A space between the words a screen reader is told, which the row's flex
+            <span className="ui-row-label session ui-text-body">{name}</span>
+            {/* A space between the words a screen reader is told, which the row's flex
                     does not draw. */}{" "}
-                {/* Its state's mark (#1484): the hand of a chat that needs you is this mark, so
+            {/* Its state's mark (#1484): the hand of a chat that needs you is this mark, so
                     the row draws no second one. Drawn first on the row, and heard after the
                     name, as the word is: out of sight, and still the row's. */}
-                <span className="ui-row-lead">
-                  <ChatShownState {...state} changed={changed} />
-                </span>
-                <span className="ui-row-trail">
-                  {open === false && (
-                    <>
-                      {" "}
-                      <TasksFolded session={session} />
-                    </>
-                  )}
-                  {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
-                  {persona === null ? (
-                    <SquareTerminal className="node-icon" aria-hidden="true" />
-                  ) : (
-                    <PersonaMark persona={persona} />
-                  )}
-                </span>
-              </button>
-            </RovingFocusGroup.Item>
-          </Popover.Anchor>
-        </Menued>
-        <Popover.Portal>
-          <Popover.Content
-            className="ui-popover row-card chat-card ui-text-secondary"
-            data-testid={`chat-card-${session}`}
-            // Words about the row, read as its description, and nothing to press: a tooltip,
-            // which leaves the keyboard on the row as it comes and goes.
-            role="tooltip"
-            id={cardId}
-            onOpenAutoFocus={(event) => event.preventDefault()}
-            onCloseAutoFocus={(event) => event.preventDefault()}
-            // Beside the row, over the centre, in the default arrangement; Radix turns it to
-            // the other side where there is no room, as a region moves (ADR 0038).
-            side="right"
-            align="start"
-            sideOffset={6}
-            collisionPadding={8}
-            // The pointer on the card holds it up (WCAG 1.4.13): it came across from the row.
-            onPointerEnter={unrest}
-            onPointerLeave={leave}
-          >
-            <ChatCard
-              state={state}
-              name={name}
-              persona={persona}
-              workspace={workspace}
-              branch={branch}
-              runsOn={runsOn ?? null}
-              cameFrom={from === null ? null : cameFromSaid(from, task, askerWaiting)}
-              wentTo={handedToName === null ? null : handedOffSaid(handedToName, handedMore)}
-              byYou={byYou}
-              clock={clock}
-              tokens={task ? used.said : undefined}
-            />
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+            <span className="ui-row-lead">
+              <ChatShownState {...state} changed={changed} />
+            </span>
+            <span className="ui-row-trail">
+              {open === false && (
+                <>
+                  {" "}
+                  <TasksFolded session={session} />
+                </>
+              )}
+              {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
+              {persona === null ? (
+                <SquareTerminal className="node-icon" aria-hidden="true" />
+              ) : (
+                <PersonaMark persona={persona} />
+              )}
+            </span>
+          </button>
+        </RovingFocusGroup.Item>
+      </Menued>
+      {/* The popover family's card, held up by the row and standing beside it, never opened
+          by a press: a press on a row opens its chat. Beside the row, over the centre, in the
+          default arrangement; it turns to the other side where there is no room, as a region
+          moves (ADR 0038). The pointer on the card holds it up (WCAG 1.4.13): it came across
+          from the row. */}
+      <AnchoredPopover
+        triggerRef={self}
+        isOpen={carded}
+        onOpenChange={card}
+        side="right"
+        align="start"
+        offset={6}
+        className="row-card chat-card"
+        data-testid={`chat-card-${session}`}
+        onPointerEnter={unrest}
+        onPointerLeave={leave}
+      >
+        {/* Words about the row, read as its description, and nothing to press: a tooltip,
+            which leaves the keyboard on the row as it comes and goes. */}
+        <div role="tooltip" id={cardId} className="ui-text-secondary">
+          <ChatCard
+            state={state}
+            name={name}
+            persona={persona}
+            workspace={workspace}
+            branch={branch}
+            runsOn={runsOn ?? null}
+            cameFrom={from === null ? null : cameFromSaid(from, task, askerWaiting)}
+            wentTo={handedToName === null ? null : handedOffSaid(handedToName, handedMore)}
+            byYou={byYou}
+            clock={clock}
+            tokens={task ? used.said : undefined}
+          />
+        </div>
+      </AnchoredPopover>
       {atLimit !== null && (
         /* **At its task limit** (#1498, V100-54): said where the limit binds, on a refusal,
            until a slot frees; with the number and the way to where it is changed. */
-        <span
-          className="at-limit ui-text-secondary"
-          data-testid={`at-limit-${session}`}
-          title={atLimit.said}
-        >
-          {/* Which limit binds, with its number: only its own is "its task limit". */}
-          <span>{atLimit.row}</span>
+        <span className="at-limit ui-text-secondary" data-testid={`at-limit-${session}`}>
+          {/* Which limit binds, with its number: only its own is "its task limit". Its words
+              carry the whole sentence, and the link beside them is its own Tab stop. */}
+          <Tooltip tip={atLimit.said}>
+            <span>{atLimit.row}</span>
+          </Tooltip>
           <Button variant="link" onPress={onLimits} className="at-limit-settings">
             Dispatch settings
           </Button>
@@ -1524,13 +1522,11 @@ const Row = memo(function Row({
       {waitingOnMemory !== null && waitingOnMemory > 0 && (
         /* **Its dispatches waiting on memory** (#1617): said on the asking chat's row, in the
            at-limit line's place and style, as the Dispatches tab's Not started list names them. */
-        <span
-          className="at-limit ui-text-secondary"
-          data-testid={`on-memory-${session}`}
-          title={ON_MEMORY_SAID}
-        >
-          {onMemoryWords(waitingOnMemory)}
-        </span>
+        <Tooltip tip={ON_MEMORY_SAID}>
+          <span className="at-limit ui-text-secondary" data-testid={`on-memory-${session}`}>
+            {onMemoryWords(waitingOnMemory)}
+          </span>
+        </Tooltip>
       )}
       {restartSaid !== null && (
         /* **A restart asked for from this row, refused or waiting** (#1462): said here, in
@@ -1562,18 +1558,19 @@ const Row = memo(function Row({
         /* **A chat below this one needs you**: the hand, and a press goes to that chat. Its
            own button beside the row, since the row goes to this row's chat. Out of the arrows'
            way; the keyboard's way to that chat is the title bar's list. */
-        <button
-          type="button"
-          className="needs-you-mark rolled-up"
-          data-mark="needs-you"
-          data-leads-to={needs}
-          tabIndex={-1}
-          aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
-          title={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
-          onClick={() => onOpen(needs)}
-        >
-          <Hand aria-hidden="true" />
-        </button>
+        <Tooltip tip={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}>
+          <button
+            type="button"
+            className="needs-you-mark rolled-up"
+            data-mark="needs-you"
+            data-leads-to={needs}
+            tabIndex={-1}
+            aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
+            onClick={() => onOpen(needs)}
+          >
+            <Hand aria-hidden="true" />
+          </button>
+        </Tooltip>
       )}
     </li>
   );

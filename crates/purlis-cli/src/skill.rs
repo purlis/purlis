@@ -470,7 +470,9 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             workspace: Some(workspace),
             on,
             ..
-        } => match verbs::switch(&mut cx, &workspace, &name, on) {
+        } => match crate::brokered::manifest_refused("skill grant --on/--off")
+            .map_or_else(|| verbs::switch(&mut cx, &workspace, &name, on), Err)
+        {
             Ok(changed) => {
                 if !changed {
                     let state = if on { "on" } else { "off" };

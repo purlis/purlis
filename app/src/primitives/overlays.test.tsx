@@ -25,13 +25,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import * as Dialog from "@radix-ui/react-dialog";
-import * as Menu from "@radix-ui/react-dropdown-menu";
-import * as Popover from "@radix-ui/react-popover";
 import { drawnWith } from "../cascade.testkit";
 import { isGeometry } from "../theme/geometry";
 import { MOTION_TOKENS, motionProperty } from "../theme/motion";
 import { property, TOKENS } from "../theme/theme";
 import { Button } from "../ui/button/Button";
+import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
+import { PopoverDialog, PopoverTrigger } from "../ui/popover/Popover";
 
 afterEach(cleanup);
 
@@ -113,34 +113,29 @@ function Asking() {
 
 function Card() {
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <Button>About this row</Button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content className="ui-popover row-card" aria-label="What this row is">
-          <p>Its facts.</p>
-          <Popover.Arrow className="ui-overlay-arrow" />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+    <PopoverTrigger>
+      <Button>About this row</Button>
+      <PopoverDialog className="row-card" aria-label="What this row is" arrow>
+        <p>Its facts.</p>
+      </PopoverDialog>
+    </PopoverTrigger>
   );
 }
 
 function Opener() {
   return (
-    <Menu.Root>
-      <Menu.Trigger asChild>
-        <Button>More</Button>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Content className="ui-menu more-menu">
-          <Menu.Item className="ui-menu-item">Rename</Menu.Item>
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
+    <MenuTrigger>
+      <Button>More</Button>
+      <Menu className="more-menu" aria-label="More">
+        <MenuItem textValue="Rename">Rename</MenuItem>
+      </Menu>
+    </MenuTrigger>
   );
 }
+
+/** The surface an overlay of the popover family stands on: its menu's or its dialog's. */
+const surfaceOf = (inside: HTMLElement): HTMLElement =>
+  inside.closest<HTMLElement>('[data-scope="popover"][data-part="root"]') ?? inside;
 
 describe("one surface", () => {
   /** What every overlay is drawn on, with, and lifted by. */
@@ -156,19 +151,19 @@ describe("one surface", () => {
     const user = userEvent.setup();
     render(<Card />);
     await user.click(screen.getByRole("button", { name: "About this row" }));
-    const popover = await screen.findByRole("dialog", { name: "What this row is" });
+    const popover = surfaceOf(await screen.findByRole("dialog", { name: "What this row is" }));
     for (const [name, value] of SURFACE)
       expect(drawnWith(popover, name), `popover ${name}`).toBe(value);
     cleanup();
 
     render(<Opener />);
     await user.click(screen.getByRole("button", { name: "More" }));
-    const menu = await screen.findByRole("menu");
+    const menu = surfaceOf(await screen.findByRole("menu"));
     for (const [name, value] of SURFACE) expect(drawnWith(menu, name), `menu ${name}`).toBe(value);
     cleanup();
 
     render(
-      <div className="ui-tooltip" role="tooltip">
+      <div data-scope="tooltip" data-part="root" role="tooltip">
         Kept in purlis.toml
       </div>,
     );
@@ -187,7 +182,7 @@ describe("one surface", () => {
     const user = userEvent.setup();
     render(<Card />);
     await user.click(screen.getByRole("button", { name: "About this row" }));
-    const popover = await screen.findByRole("dialog", { name: "What this row is" });
+    const popover = surfaceOf(await screen.findByRole("dialog", { name: "What this row is" }));
     const padding = drawnWith(popover, "padding");
     expect(padding).toBe("var(--space-6)");
     cleanup();
@@ -214,8 +209,8 @@ describe("one surface", () => {
     const user = userEvent.setup();
     render(<Card />);
     await user.click(screen.getByRole("button", { name: "About this row" }));
-    const popover = await screen.findByRole("dialog", { name: "What this row is" });
-    const arrow = popover.querySelector(".ui-overlay-arrow");
+    const popover = surfaceOf(await screen.findByRole("dialog", { name: "What this row is" }));
+    const arrow = popover.querySelector('[data-part="arrow"] svg');
     if (arrow === null) throw new Error("the popover drew no arrow");
     expect(drawnWith(arrow, "fill")).toBe("var(--surface-overlay)");
   });
@@ -266,7 +261,7 @@ const FILES = Object.entries(
     string,
     string
   >,
-).filter(([path]) => !path.includes(".test."));
+).filter(([path]) => !path.includes(".test.") && !path.includes(".stories."));
 
 /** The Radix overlay parts and the class each must wear. */
 const PARTS: [RegExp, string][] = [
@@ -276,6 +271,9 @@ const PARTS: [RegExp, string][] = [
   [/^Tooltip\.Content$/, "ui-tooltip"],
   [/^(Popover|HoverCard|Tooltip)\.Arrow$/, "ui-overlay-arrow"],
 ];
+
+/** The popover and menu families' overlays (#2909), which draw their own surface. */
+const FAMILY = /^(AnchoredPopover|HeldPopover|PopoverDialog|Menu|InlineMenu)$/;
 
 /** A native control inside an overlay, and the class it must wear. A button of the button family
  *  is `Button` (#2904), so a native `<button>` left inside one is a row, a segment or a menu's
@@ -318,9 +316,10 @@ function classesOf(attributes: ts.JsxAttributes, source: ts.SourceFile): string[
 }
 
 /** Each Radix overlay part and each native control inside an overlay's content, by file. */
-function overlaysIn(): { parts: Found[]; controls: Found[] } {
+function overlaysIn(): { parts: Found[]; controls: Found[]; families: Found[] } {
   const parts: Found[] = [];
   const controls: Found[] = [];
+  const families: Found[] = [];
   for (const [path, text] of FILES) {
     const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const visit = (node: ts.Node, inside: boolean) => {
@@ -334,6 +333,10 @@ function overlaysIn(): { parts: Found[]; controls: Found[] } {
         const classes = classesOf(open.attributes, source);
         if (PARTS.some(([part]) => part.test(tag))) parts.push({ where, tag, classes });
         if (/\.Content$/.test(tag) && PARTS.some(([part]) => part.test(tag))) within = true;
+        if (FAMILY.test(tag)) {
+          families.push({ where, tag, classes });
+          within = true;
+        }
         if (inside && tag in NATIVE) controls.push({ where, tag, classes });
         if (inside && BUTTONS.has(tag)) controls.push({ where, tag: "Button", classes });
       }
@@ -341,15 +344,17 @@ function overlaysIn(): { parts: Found[]; controls: Found[] } {
     };
     visit(source, false);
   }
-  return { parts, controls };
+  return { parts, controls, families };
 }
 
 describe("every overlay in the window", () => {
-  const { parts, controls } = overlaysIn();
+  const { parts, controls, families } = overlaysIn();
 
   it("is found: the dialogs, the cards and the controls inside them", () => {
     expect(parts.filter(({ tag }) => /\.Content$/.test(tag)).length).toBeGreaterThan(40);
-    expect(parts.filter(({ tag }) => tag === "Popover.Content").length).toBe(3);
+    // The cards are the popover family's: a chat row's, a list row's and a refused name's.
+    expect(families.filter(({ tag }) => /Popover/.test(tag)).length).toBe(3);
+    expect(parts.filter(({ tag }) => tag === "Popover.Content").length).toBe(0);
     expect(controls.filter(({ tag }) => tag === "Button").length).toBeGreaterThan(80);
   });
 

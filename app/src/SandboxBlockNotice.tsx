@@ -955,7 +955,7 @@ function AllowNotice({
               isDisabled={
                 busy || target === "" || (option.id === "project" && readOnly !== undefined)
               }
-              title={option.id === "project" ? readOnly : undefined}
+              tooltip={option.id === "project" ? readOnly : undefined}
               onPress={() => allow(option.id, option.label)}
             >
               {option.label}

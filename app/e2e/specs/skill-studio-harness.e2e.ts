@@ -106,7 +106,11 @@ describe("a repo's own skills in the Skill studio", function () {
           async () => {
             if (until.test(await (await row()).getText())) return true;
             const button = await (await row()).$(`button=${label}`);
-            if ((await button.isExisting()) && (await button.isEnabled())) {
+            if (
+              (await button.isExisting()) &&
+              (await button.isEnabled()) &&
+              (await button.getAttribute("aria-disabled")) !== "true"
+            ) {
               await button.click().catch(() => undefined);
             }
             return false;

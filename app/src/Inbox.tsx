@@ -65,6 +65,7 @@ import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Form, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What an empty Inbox says (I-12). */
 export const NOTHING_WAITS = "Nothing is waiting on you";
@@ -635,6 +636,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "sandbox-local": "Asks to reach a service on this machine",
   "workspace-removal": "Asks you to remove a workspace",
   "proposed-change": "Proposes a change for you to apply",
+  "runner-write": "Asks, from a pool's runner, to change this project",
   "sign-in": "Asks you to sign a profile in",
   "sandbox-only": "Asks you to make a sandbox-only profile",
   browser: "Asks what its browser may reach",
@@ -812,24 +814,27 @@ function Ask({
           <KindMark kind={kindOfAsk(ask.source)} />
           {/* The ask's words are the source's, drawn as text and never as a control. What an
               Allow here would let run is never cut (#1146): it is read whole first. */}
-          <span
-            id={`${id}-says`}
-            className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
-            title={shape.line}
-          >
-            {shape.line}
-          </span>
+          <Tooltip tip={shape.line}>
+            <span
+              id={`${id}-says`}
+              className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
+            >
+              {shape.line}
+            </span>
+          </Tooltip>
           {where !== "" && (
-            <span className="inbox-where inbox-secondary ui-text-secondary" title={where}>
-              {where}
-            </span>
+            <Tooltip tip={where}>
+              <span className="inbox-where inbox-secondary ui-text-secondary">{where}</span>
+            </Tooltip>
           )}
-          <span className="inbox-meta ui-text-meta" title={SOURCE_SAID[ask.source]}>
-            <span id={`${id}-whose`} className="inbox-source">
-              {SOURCE_SAID[ask.source]}
+          <Tooltip tip={SOURCE_SAID[ask.source]}>
+            <span className="inbox-meta ui-text-meta">
+              <span id={`${id}-whose`} className="inbox-source">
+                {SOURCE_SAID[ask.source]}
+              </span>
+              <RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" lead />
             </span>
-            <RowAge when={ageOf(plane, ask)[0]} now={now} since="Waiting since" lead />
-          </span>
+          </Tooltip>
         </p>
         {/* A folder or something on this machine reaches the chat only by its restart (#1986):
             what that ends is said before an Allow here, naming the chat. */}
@@ -871,7 +876,7 @@ function Ask({
                 size="sm"
                 variant="ghost"
                 aria-label={`Ignore ${who} until it asks again`}
-                title={`Ignore ${who} until it asks again`}
+                tooltip={`Ignore ${who} until it asks again`}
                 onPress={() => onIgnore(ask.session)}
                 className="inbox-go"
               >
@@ -1196,7 +1201,7 @@ function UpdateList({ updates, stops }: { updates: Updates; stops: readonly stri
             size="sm"
             variant="ghost"
             isDisabled={!unread}
-            title="Mark every update read. Nothing that waits on you is answered."
+            tooltip="Mark every update read. Nothing that waits on you is answered."
             onPress={updates.onMarkAllRead}
             className="inbox-go"
           >
@@ -1207,7 +1212,7 @@ function UpdateList({ updates, stops }: { updates: Updates; stops: readonly stri
           <Button
             size="sm"
             variant="ghost"
-            title="Put every update away. Nothing that waits on you is answered."
+            tooltip="Put every update away. Nothing that waits on you is answered."
             onPress={updates.onDismissAll}
             className="inbox-go"
           >
@@ -1314,13 +1319,14 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
           {/* Every word here is its source's, drawn as text and never as a control. An update
               whose answer allows is read whole, as an ask is (#1146). One read wears no role:
               its step back (`.inbox-update[data-read]`) is not a rank of the scale (#1920). */}
-          <span
-            id={`${id}-says`}
-            className={`ask-says inbox-primary${update.read ? "" : " ui-text-body ui-text-strong"}${answers.some((one) => one.allows) ? "" : " inbox-clamped"}`}
-            title={about}
-          >
-            {about}
-          </span>
+          <Tooltip tip={about}>
+            <span
+              id={`${id}-says`}
+              className={`ask-says inbox-primary${update.read ? "" : " ui-text-body ui-text-strong"}${answers.some((one) => one.allows) ? "" : " inbox-clamped"}`}
+            >
+              {about}
+            </span>
+          </Tooltip>
           <span className="inbox-meta ui-text-meta">
             <span id={`${id}-kind`} className="inbox-source">
               {KIND_SAID[update.kind]}
@@ -1346,7 +1352,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
                   variant={answer.allows ? "grants" : "secondary"}
                   className={answer.allows ? "inbox-answer allows" : "inbox-answer"}
                   aria-label={answer.name}
-                  title={answer.title}
+                  tooltip={answer.title}
                   onPress={() => press(answer)}
                 >
                   {answer.label}
@@ -1375,7 +1381,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
               size="sm"
               variant="ghost"
               aria-label={`Dismiss: ${about}`}
-              title={dismissSays ?? "Put this update away"}
+              tooltip={dismissSays ?? "Put this update away"}
               onPress={dismiss}
               className="inbox-go"
             >

@@ -64,8 +64,8 @@ async function ask<T>(command: string, args: Record<string, unknown> = {}): Prom
  * between (charter#506, `reading.ts`).
  */
 async function strip(): Promise<string[]> {
-  return (await attributesOfEach(`${PROJECTS} [role="tab"]`, ["title"])).map(
-    (tab) => tab.title ?? "",
+  return (await attributesOfEach(`${PROJECTS} [role="tab"]`, ["data-directory"])).map(
+    (tab) => tab["data-directory"] ?? "",
   );
 }
 

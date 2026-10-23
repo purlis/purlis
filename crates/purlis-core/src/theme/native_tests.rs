@@ -119,12 +119,20 @@ fn a_theme_with_no_high_contrast_appearance_draws_the_same_whatever_contrast_is_
             follow(&plain, system, Contrast::Standard)
         );
     }
-    let classic_pick = Pick::BuiltIn("purlis-light");
+    // `purlis-light` names Purlis's light, which has no high-contrast light (#3034).
+    let light_pick = Pick::BuiltIn("purlis-light");
     let more = resolve(
-        &inputs(Some(&classic_pick), None, Appearance::Dark, Contrast::More),
+        &inputs(Some(&light_pick), None, Appearance::Dark, Contrast::More),
         || unreachable!("a built-in pick surveys nothing"),
     );
-    assert_eq!(more.theme.as_ref(), built_in("purlis-light"));
+    assert_eq!(more.theme.as_ref(), purlis().of(Appearance::Light));
+    // `purlis-dark` names Purlis's dark, drawn high contrast as nothing chosen is.
+    let dark_pick = Pick::BuiltIn("purlis-dark");
+    let more = resolve(
+        &inputs(Some(&dark_pick), None, Appearance::Dark, Contrast::More),
+        || unreachable!("a built-in pick surveys nothing"),
+    );
+    assert_eq!(more.theme.as_ref(), Some(default_for(Contrast::More)));
 }
 
 #[test]
@@ -152,10 +160,10 @@ fn a_theme_whose_only_dark_is_high_contrast_draws_it_either_way() {
 
 #[test]
 fn the_native_window_is_drawn_in_the_appearance_s_tag_and_its_window_background() {
-    let dark = built_in("purlis-dark").expect("Classic dark").native();
+    let dark = classic().first().native();
     assert_eq!(dark.appearance, Appearance::Dark);
     assert_eq!(dark.background, [0x19, 0x19, 0x17]);
-    let light = built_in("purlis-light").expect("Classic light").native();
+    let light = classic().of(Appearance::Light).unwrap().native();
     assert_eq!(light.appearance, Appearance::Light);
     assert_eq!(light.background, [0xfc, 0xfb, 0xf8]);
 }
@@ -187,7 +195,7 @@ fn a_theme_s_window_background_reaches_the_native_window_opaque() {
 fn what_the_page_hands_the_native_window_is_read_in_the_engine_s_grammar() {
     assert_eq!(
         Native::parse("light", "#fcfbf8"),
-        Ok(built_in("purlis-light").expect("Classic light").native())
+        Ok(classic().of(Appearance::Light).unwrap().native())
     );
     assert!(Native::parse("dark", "#191917").is_ok());
     for (appearance, background) in [
@@ -353,12 +361,18 @@ fn the_first_frame_with_no_level_chosen_is_the_person_s_theme_for_the_contrast_e
     };
     assert_eq!(drawn_id(&asked(Some(&theme), Contrast::Standard)), "dark");
     assert_eq!(drawn_id(&asked(Some(&theme), Contrast::More)), "contrast");
+    // Nothing chose and no theme of the person's: the default, Purlis, in its high-contrast
+    // dark for more contrast (#3034).
     let none = asked(None, Contrast::More);
-    assert_eq!(none.theme.as_ref(), Some(default_theme()));
+    assert_eq!(none.theme.as_ref(), Some(default_for(Contrast::More)));
+    let drawn = none.theme.expect("drawn");
     assert_eq!(
-        none.theme.map(|theme| theme.native().background),
-        Some([0x19, 0x19, 0x17])
+        (drawn.name.as_str(), drawn.id.as_str()),
+        ("Purlis", "dark-high-contrast")
     );
+    let standard = asked(None, Contrast::Standard).theme.expect("drawn");
+    assert_eq!(&standard, default_theme());
+    assert_eq!(standard.native().background, [0x12, 0x12, 0x15]);
 }
 
 #[test]

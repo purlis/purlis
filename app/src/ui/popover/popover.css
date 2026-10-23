@@ -1,0 +1,216 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The popover family's default** (#2909, ADR 0103, ADR 0104): how a popover, and the surface
+   every menu stands on, is drawn when a theme names none of its parts. Every rule is keyed on
+   the wrapper's attributes (`data-scope="popover"`, `data-part`, `data-variant`) and React Aria's
+   state attributes, never on a class, so a screen cannot reach its look and a theme's parts reach
+   exactly what this file draws.
+
+   **The overlay surface** (ADR 0094 §4, #1845): one ground, one edge, one corner and one lift,
+   the same as a dialog's and a tooltip's (`primitives/overlays.css`).
+
+   **In the `components` layer** (`styles.css`), above `App.css`: a view places a popover (a
+   width) and nothing it writes redraws one. **Only tokens**, one `var()` per colour. */
+
+/* ---------------------------------------------------------------------------------------------
+   The surface.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="popover"][data-part="root"] {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+  box-shadow: var(--elevation-overlay);
+  font-size: var(--font-size-md);
+  outline: none;
+}
+
+/* A popover holds words and controls, padded as a dialog is. */
+[data-scope="popover"][data-part="root"][data-variant="popover"] {
+  padding: var(--space-6);
+}
+
+/* A menu is a list whose rows pad themselves: never narrower than a short menu reads well at,
+   nor wider than a row's words need (a long name gives way to an ellipsis). A surface that needs
+   another width hands `--menu-min` or `--menu-max` from its place. */
+[data-scope="popover"][data-part="root"][data-variant="menu"] {
+  min-inline-size: var(--menu-min, calc(var(--space-8) * 6));
+  max-inline-size: var(--menu-max, calc(var(--space-8) * 10));
+  padding: var(--space-2);
+}
+
+/* **Arriving, from the side it is anchored to**: a quarter of a rem, and a fade. Only as it
+   appears; reduced motion makes the duration nothing. */
+@keyframes popover-arrive {
+  from {
+    opacity: 0;
+    translate: var(--popover-arrive-from, 0 -0.25rem);
+  }
+}
+
+[data-scope="popover"][data-part="root"][data-entering] {
+  animation: popover-arrive var(--motion-duration-enter) var(--motion-easing-enter);
+}
+
+[data-scope="popover"][data-part="root"][data-placement="top"] {
+  --popover-arrive-from: 0 0.25rem;
+}
+
+[data-scope="popover"][data-part="root"][data-placement="left"] {
+  --popover-arrive-from: 0.25rem 0;
+}
+
+[data-scope="popover"][data-part="root"][data-placement="right"] {
+  --popover-arrive-from: -0.25rem 0;
+}
+
+/* The dialog inside a popover takes the keyboard as a whole: the surface says where it is. */
+[data-scope="popover"][data-part="body"] {
+  outline: none;
+  min-block-size: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The anatomy (R165): a filter row with a rule under it, the scrolling list, the footer.
+   --------------------------------------------------------------------------------------------- */
+
+/* A popover laid out as a list: the parts pad themselves, and only the list scrolls. */
+[data-scope="popover"][data-part="root"][data-layout="list"] {
+  padding: 0;
+}
+
+[data-scope="popover"][data-part="root"][data-layout="list"] > [data-part="body"] {
+  display: flex;
+  flex-direction: column;
+  max-block-size: inherit;
+}
+
+[data-scope="popover"][data-part="filter"] {
+  flex: none;
+  padding: var(--space-3);
+}
+
+/* **The list scrolls inside the surface**, which React Aria caps at the room the window has
+   where it opened; the filter row and the footer stay in view. Nothing in it is squeezed. */
+[data-scope="popover"][data-part="list"] {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-block-size: 0;
+  overflow-y: auto;
+  outline: none;
+}
+
+[data-scope="popover"][data-part="list"] > * {
+  flex-shrink: 0;
+}
+
+[data-scope="popover"][data-part="root"][data-layout="list"] [data-part="list"] {
+  padding: var(--space-2);
+}
+
+/* The keys the list answers to, in the quiet tier: read last, and never in the way. */
+/* The menu's own line under its rows (what binds, what was used) stays in view as the footer
+   does, and is drawn by what it holds. */
+[data-scope="popover"][data-part="footer"][data-of="rows"] {
+  flex: none;
+}
+
+[data-scope="popover"][data-part="footer"][data-of="keys"] {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-2);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-4);
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+}
+
+[data-scope="popover"][data-part="hint"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+[data-scope="popover"][data-part="dot"] {
+  padding-inline-end: var(--space-1);
+}
+
+/* A key in a mono cap. */
+[data-scope="popover"][data-part="key"] {
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background-color: var(--surface-raised);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   What stands in a menu's list beside its rows: a group, its name, and the rule between groups.
+   --------------------------------------------------------------------------------------------- */
+
+/* A group of rows is a column of its own, spaced as the list's rows are. */
+[data-scope="popover"][data-part="group"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* **The rule**: under the filter row, between a menu's groups, and above everything that loses
+   something. A part of its own: no control takes a border. */
+[data-scope="popover"][data-part="rule"] {
+  flex: none;
+  block-size: 1px;
+  background-color: var(--border-subtle);
+}
+
+/* A menu inside a popover's list lays its rows out in that list, at its gap: one list. */
+[data-scope="popover"][data-part="list"] > [data-in-list] {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+  outline: none;
+}
+
+[data-scope="popover"][data-part="list"] [data-part="rule"] {
+  margin-block: var(--space-2);
+  margin-inline: var(--space-1);
+}
+
+/* A group's name, in purlis's own words: the label role. It cannot be chosen. */
+[data-scope="popover"][data-part="header"] {
+  padding-block: var(--space-1) 0;
+  padding-inline: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* A group named by data (a persona's name) is written as the name is, in the secondary role:
+   one line, and no capitals, which are for purlis's own words. */
+[data-scope="popover"][data-part="header"][data-named] {
+  overflow: hidden;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  text-overflow: ellipsis;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
+
+/* The point a popover takes from what opened it, in the surface's own ground. */
+[data-scope="popover"][data-part="arrow"] svg {
+  display: block;
+  fill: var(--surface-overlay);
+}

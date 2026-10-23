@@ -323,10 +323,10 @@ impl Place {
     }
 
     /// **The card a choice made at a level that reaches `reach` names**, by its key: Purlis
-    /// Classic by any id one of its appearances has had; a theme folder at the level it names, or
-    /// the nearest within reach that has it; and the old `system` id, the person's own theme
-    /// when there is one (`theirs`), which is no card, else Purlis Classic. `None` when it is no
-    /// card of `cards`.
+    /// Classic by its id; Purlis by its id, by `purlis-dark` or `purlis-light` or an id either
+    /// had (#3034); a theme folder at the level it names, or the nearest within reach that has
+    /// it; and the old `system` id, the person's own theme when there is one (`theirs`), which is
+    /// no card, else Purlis. `None` when it is no card of `cards`.
     fn card_of(
         &self,
         choice: &Choice,
@@ -337,15 +337,15 @@ impl Place {
         if choice.theme == extension::project::theme::SYSTEM && theirs {
             return None;
         }
-        // Purlis by its own id is its own card (#2336); Purlis Classic by any id it has had, and
-        // by the old id with no theme of the person's.
-        let key = if choice.theme == theme::PURLIS {
-            theme::PURLIS.to_owned()
-        } else if choice.theme == theme::CLASSIC
-            || choice.theme == extension::project::theme::SYSTEM
+        // Purlis Classic by its own id is its card; Purlis by its own, by `purlis-dark`,
+        // `purlis-light` or an id either had, and by the old `system` id with no theme of the
+        // person's (#3034).
+        let key = if choice.theme == theme::CLASSIC {
+            theme::CLASSIC.to_owned()
+        } else if choice.theme == extension::project::theme::SYSTEM
             || theme::built_in(&choice.theme).is_some()
         {
-            theme::CLASSIC.to_owned()
+            theme::PURLIS.to_owned()
         } else {
             let placed = choice.clone().placed(&self.folders, reach);
             key_of(&placed.theme, placed.from)
@@ -432,11 +432,11 @@ fn gallery_of(place: &Place, theirs: Option<&theme::Theme>) -> ThemeGallery {
         .into_iter()
         .map(GalleryCard::from)
         .collect();
-    // The card the level that chose names: Purlis Classic by any id one of its appearances
-    // has had, and with nothing chosen.
+    // The card the level that chose names ([`Place::card_of`]); the default, Purlis, with
+    // nothing chosen (#3034).
     let chose = levels.of_level(level);
     let drawn_key = match chose {
-        None if level == Level::Purlis => Some(theme::CLASSIC.to_owned()),
+        None if level == Level::Purlis => Some(theme::DEFAULT.to_owned()),
         None => None,
         Some(choice) => place.card_of(choice, level.reach(), &cards, theirs.is_some()),
     };
@@ -759,7 +759,7 @@ fn choose_option_of(
             match levels.of_level(level) {
                 Some(choice) => choice.clone().placed(&place.folders, level.reach()),
                 None if level == Level::Purlis => {
-                    Choice::new(theme::CLASSIC, None).expect("Purlis Classic is a pick")
+                    Choice::new(theme::DEFAULT, None).expect("the default theme is a pick")
                 }
                 None => {
                     return Err(

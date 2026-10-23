@@ -64,7 +64,10 @@ function files(dir: string, keep: (name: string) => boolean): string[] {
 }
 
 /** Every component file the window is drawn from: not tests, which render controls freely. */
-const views = () => files(SRC, (name) => name.endsWith(".tsx") && !/\.test\.tsx$/.test(name));
+// A story draws what it holds a family to (a popover's filter field), as a test does: it is no
+// view of the window's.
+const views = () =>
+  files(SRC, (name) => name.endsWith(".tsx") && !/\.(test|stories)\.tsx$/.test(name));
 
 /** How many native form controls `source` draws, comments left out: a doc comment that names
  *  `<input>` draws nothing. */

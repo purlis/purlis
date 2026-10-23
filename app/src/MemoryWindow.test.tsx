@@ -356,8 +356,8 @@ describe("a persona's memory row", () => {
     // an archive with an Undo, so it is not drawn as a row that cannot be undone either.
     const del = within(menu).getByRole("menuitem", { name: "Delete" });
     expect(del).toHaveAccessibleDescription("Moves it to the store's archive. Undo puts it back.");
-    expect(del.querySelector(".ui-menu-note")).toBeNull();
-    expect(del).not.toHaveClass("ui-menu-item-danger");
+    expect(del.querySelector('[data-part="description"]')).toBeNull();
+    expect(del).not.toHaveAttribute("data-variant", "danger");
   });
 
   it("opens straight into the editor from Edit, and keeps the tab", async () => {

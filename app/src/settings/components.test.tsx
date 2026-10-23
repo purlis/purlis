@@ -14,6 +14,7 @@ import {
   SettingsLayout,
 } from "./components";
 import { pickIn } from "../primitives/select.testkit";
+import { hoverTipOf, tipOf } from "../ui/tooltip/tooltip.testkit";
 
 afterEach(cleanup);
 
@@ -224,7 +225,7 @@ describe("an option out of reach on its own (DS-3e)", () => {
     const beta = screen.getByRole("radio", { name: "Beta" });
 
     expect(beta).toBeDisabled();
-    expect(beta).toHaveAttribute("title", "Beta is not installed");
+    expect(await hoverTipOf(beta)).toEqual("Beta is not installed");
     await userEvent.click(beta);
     expect(onValueChange).not.toHaveBeenCalled();
   });
@@ -338,7 +339,7 @@ describe("checks: any of a few, each ticked on its own", () => {
     const { onCheckedChange } = checks();
     const ops = screen.getByRole("checkbox", { name: "ops" });
     expect(ops).toBeDisabled();
-    expect(ops).toHaveAttribute("title", "ops is not cloned");
+    expect(await hoverTipOf(ops)).toEqual("ops is not cloned");
     await userEvent.click(ops);
     expect(onCheckedChange).not.toHaveBeenCalled();
   });
@@ -420,13 +421,14 @@ describe("a control with no row: a table's cell or a pick inside a sentence", ()
       />,
     );
     const box = screen.getByRole("textbox", { name: "Depth for the project" });
-    expect(box).toHaveAttribute("title", "How deep a task may go");
     expect(box).toHaveAttribute("inputmode", "numeric");
     expect(box).toHaveAttribute("size", "5");
     expect(box).toHaveAttribute("placeholder", "no cap");
     await userEvent.type(box, "3{Enter}");
     expect(onChange).toHaveBeenCalledWith("3");
     expect(onCommit).toHaveBeenCalledTimes(1);
+    // Read last: the keyboard's way to it leaves the box, which commits it.
+    expect(tipOf(box)).toEqual("How deep a task may go");
   });
 
   it("is a select named by its own label, an option out of reach on its own", async () => {

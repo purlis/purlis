@@ -78,6 +78,27 @@ const CHROMA_STEP = 0.005;
  * theme tints.
  */
 export function apartChroma(rules: readonly Rule[], hue: number): number | undefined {
+  // The same rules at the same hue give the same answer: a strip of tabs, a list of personas and
+  // every theme the core answers again ask it over and over, and where a rule is not held at
+  // full colour (Purlis's red, orange and pink, #3034) the answer is a search.
+  const key = `${hue} ${rules
+    .map((one) => `${one.token}${one.tokenTinted} ${one.from}${one.fromTinted} ${one.distance}`)
+    .join(" ")}`;
+  if (answered.has(key)) return answered.get(key);
+  const answer = searchedChroma(rules, hue);
+  if (answered.size >= MOST_ANSWERED) answered.delete(answered.keys().next().value as string);
+  answered.set(key, answer);
+  return answer;
+}
+
+/** Each answer {@link apartChroma} gave, by its rules and hue, the oldest out first. */
+const answered = new Map<string, number | undefined>();
+
+/** How many answers {@link answered} keeps. */
+const MOST_ANSWERED = 1024;
+
+/** {@link apartChroma}, worked out. */
+function searchedChroma(rules: readonly Rule[], hue: number): number | undefined {
   const side = (value: string, tinted: boolean, most: number) =>
     tinted ? tintHex(value, hue, most) : value;
   const far = (most: number) =>
@@ -107,6 +128,22 @@ export function apartChroma(rules: readonly Rule[], hue: number): number | undef
     if (most < had && far(most)) return most;
   }
   return undefined;
+}
+
+/**
+ * **The most chroma a tint gives `token`** when {@link apartChroma} answers `most`
+ * (`purlis_core::theme::chroma_for`, #3034): `most` for a side of one of the `rules` the theme
+ * hands (`undefined`, untinted, where no amount holds them), and no limit for every other token,
+ * which no rule measures, so a workspace's strip keeps its colour's full hue.
+ */
+export function chromaFor(
+  token: string,
+  most: number | undefined,
+  rules: readonly Apart[],
+): number | undefined {
+  return rules.some((rule) => rule.token === token || rule.from === token)
+    ? most
+    : Number.POSITIVE_INFINITY;
 }
 
 /** How far two theme colours are in OKLab, their alpha left out. */

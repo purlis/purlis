@@ -34,6 +34,11 @@ const FAINT: ReadonlySet<string> = new Set([
   '[data-scope="status-item"][data-part="root"][data-disabled]',
   // An empty state's mark, above its words (#2913).
   '[data-scope="empty-state"][data-part="icon"]',
+  // A menu's row that cannot run (#2909), and an option of a select's list that cannot be
+  // chosen.
+  '[data-scope="menu"][data-part="root"][data-disabled]',
+  '[data-scope="menu"][data-part="root"][data-unavailable]',
+  ".ui-menu-item[data-disabled]",
 ]);
 
 /** Informational words, each drawn in quiet: line numbers, placeholders, counts, paths, group

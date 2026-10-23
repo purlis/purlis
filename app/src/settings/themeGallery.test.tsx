@@ -16,7 +16,7 @@ import {
   type YourTheme,
 } from "../bindings";
 import { putBack, showing } from "../theme/hoverPreview";
-import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, property } from "../theme/theme";
+import { DEFAULT_THEME, drawIn, inForce, property } from "../theme/theme";
 import type { LiveSetting } from "./groups";
 import { ReadOnlySaid } from "../ReadOnlyLine";
 import { THEME_CHAT, type ThemeChatAsk } from "./links";
@@ -28,6 +28,8 @@ import {
   keptSpecimens,
   MOST_KEPT,
 } from "./themeSpecimens";
+import { tipOf } from "../ui/tooltip/tooltip.testkit";
+import { PURLIS_LIGHT } from "../theme/handed.testkit";
 
 /**
  * **Settings › Theme's gallery** (#2331): a card per theme the core lists, the theme drawn live
@@ -39,7 +41,7 @@ import {
 
 const PLANE = "/home/dev/plane";
 
-const LIGHT = BUILT_IN["purlis-light"];
+const LIGHT = PURLIS_LIGHT;
 
 function card(over: Partial<GalleryCard> & Pick<GalleryCard, "id" | "name">): GalleryCard {
   const from = over.from ?? "machine";
@@ -464,10 +466,8 @@ describe("under the chosen card (#2331)", () => {
     await cards();
     for (const name of ["Edit with a chat", "New theme"]) {
       const button = screen.getByRole("button", { name });
-      expect(button).toHaveProperty("disabled", true);
-      expect(button.getAttribute("title")).toBe(
-        "This project is read-only. A theme made here could not be kept.",
-      );
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(tipOf(button)).toBe("This project is read-only. A theme made here could not be kept.");
     }
   });
 
@@ -477,8 +477,8 @@ describe("under the chosen card (#2331)", () => {
     await cards();
     for (const name of ["Edit with a chat", "New theme"]) {
       const button = screen.getByRole("button", { name });
-      expect(button).toHaveProperty("disabled", true);
-      expect(button.getAttribute("title")).toContain("at the Project or Workspace level");
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(tipOf(button)).toContain("at the Project or Workspace level");
     }
   });
 
@@ -503,8 +503,14 @@ describe("under the chosen card (#2331)", () => {
     );
     render(<Group at={{ plane: PLANE, workspace: null }} />);
     await cards();
-    expect(screen.getByRole("button", { name: "Duplicate as my theme" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Open folder" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Duplicate as my theme" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Open folder" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 });
 

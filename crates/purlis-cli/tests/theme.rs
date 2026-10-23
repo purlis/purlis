@@ -186,12 +186,12 @@ fn the_built_in_themes_are_listed_with_their_appearances_and_where_they_come_fro
     let ran = rig.run(&["list"]);
 
     assert_eq!(ran.code, 0, "{}", ran.err);
-    // Purlis ships as a preview (#2336), and the table says so.
+    // Purlis is the default and is listed first; Purlis Classic is the alternative (#3034).
     assert_eq!(
         ran.out,
-        "  ID              NAME              APPEARANCES                                            FROM\n\
-         \x20 purlis-classic  Purlis Classic    dark, light                                            built-in\n\
-         \x20 purlis          Purlis (preview)  dark, light, dark-high-contrast (dark, high contrast)  built-in\n"
+        "  ID              NAME            APPEARANCES                                            FROM\n\
+         \x20 purlis          Purlis          dark, light, dark-high-contrast (dark, high contrast)  built-in\n\
+         \x20 purlis-classic  Purlis Classic  dark, light                                            built-in\n"
     );
 }
 
@@ -263,8 +263,14 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearances_and_source() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     assert_eq!(ran.json()["schema"], 1);
     let themes = ran.json()["themes"].clone();
+    assert_eq!(themes[0]["id"], "purlis");
+    assert_eq!(themes[0]["name"], "Purlis");
+    assert_eq!(themes[0]["combinations"], 3);
+    // A built-in theme says whether it ships as a preview (#2336); none does since Purlis became
+    // the default (#3034), and no other theme has the key.
+    assert_eq!(themes[0]["preview"], false);
     assert_eq!(
-        themes[0],
+        themes[1],
         serde_json::json!({
             "id": "purlis-classic", "name": "Purlis Classic",
             "appearances": [
@@ -275,11 +281,6 @@ fn the_listing_as_json_says_each_theme_s_id_name_appearances_and_source() {
             "from": { "kind": "built-in" }, "refused": null, "preview": false
         })
     );
-    assert_eq!(themes[1]["id"], "purlis");
-    assert_eq!(themes[1]["name"], "Purlis");
-    assert_eq!(themes[1]["combinations"], 3);
-    // A built-in theme says whether it ships as a preview (#2336); no other theme has the key.
-    assert_eq!(themes[1]["preview"], true);
     assert!(themes[2].get("preview").is_none(), "{themes}");
     assert!(themes[3].get("preview").is_none(), "{themes}");
     assert_eq!(themes[2]["id"], "mine");
@@ -607,14 +608,15 @@ fn a_theme_that_is_not_here_is_said_and_exits_two() {
 }
 
 #[test]
-fn an_old_id_checks_purlis_classic() {
+fn an_old_id_checks_purlis() {
     let rig = Rig::new();
 
+    // `purlis-dark` and `purlis-light`, and the ids they had, name Purlis's dark and light (#3034).
     for old in ["charter-dark", "purlis-light"] {
         let ran = rig.run(&["check", old, "--json"]);
 
         assert_eq!(ran.code, 0, "{}", ran.err);
-        assert_eq!(ran.json()["theme"]["id"], "purlis-classic", "{old}");
+        assert_eq!(ran.json()["theme"]["id"], "purlis", "{old}");
         assert_eq!(ran.json()["clean"], true, "{old}");
     }
 }
@@ -838,23 +840,22 @@ fn the_theme_folders_of_every_level_are_listed_with_their_level() {
         rows,
         [
             vec![
-                "purlis-classic",
-                "Purlis",
-                "Classic",
-                "dark,",
-                "light",
-                "built-in"
-            ],
-            vec![
                 "purlis",
                 "Purlis",
-                "(preview)",
                 "dark,",
                 "light,",
                 "dark-high-contrast",
                 "(dark,",
                 "high",
                 "contrast)",
+                "built-in"
+            ],
+            vec![
+                "purlis-classic",
+                "Purlis",
+                "Classic",
+                "dark,",
+                "light",
                 "built-in"
             ],
             vec!["machine:base", "Base", "dark", "machine", &shown(&base)],
@@ -895,8 +896,8 @@ fn the_theme_folders_of_every_level_are_listed_with_their_level() {
     assert_eq!(
         levels,
         [
-            ("purlis-classic", "built-in"),
             ("purlis", "built-in"),
+            ("purlis-classic", "built-in"),
             ("machine:base", "machine"),
             ("project:team", "project"),
             ("workspace:alpha:client", "workspace"),
@@ -939,7 +940,7 @@ fn outside_a_plane_only_the_machine_s_theme_folders_are_listed() {
         .iter()
         .filter_map(|one| one["id"].as_str())
         .collect();
-    assert_eq!(ids, ["purlis-classic", "purlis", "machine:base"]);
+    assert_eq!(ids, ["purlis", "purlis-classic", "machine:base"]);
 }
 
 #[test]
@@ -2174,7 +2175,7 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     let json = ran.json();
     assert_eq!(json["schema"], 1);
-    assert_eq!(json["version"], 4);
+    assert_eq!(json["version"], 6);
     assert_eq!(
         json["theme_schema"]
             .as_str()
@@ -2186,14 +2187,22 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
         "<family>.<part>[.<variant>][.<state>].<property>"
     );
     assert_eq!(json["families"][0]["name"], "button");
-    // The window's own families (#2913).
+    // The window's own families (#2913), the tooltip (#2908), the popover and the menu (#2909).
     let names: Vec<&str> = json["families"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|one| one["name"].as_str())
         .collect();
-    for family in ["panel", "panel-section", "empty-state", "status-item"] {
+    for family in [
+        "panel",
+        "panel-section",
+        "empty-state",
+        "status-item",
+        "tooltip",
+        "popover",
+        "menu",
+    ] {
         assert!(names.contains(&family), "{family}: {names:?}");
     }
     let corner = json["properties"]

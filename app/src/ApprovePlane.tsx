@@ -6,6 +6,7 @@ import * as Dialog from "./overlays/dialog";
 import type { Ask, FontTheme } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * What opening this project will put in force, and the question about it.
@@ -296,7 +297,9 @@ function FontFiles({ fonts }: { fonts: [string, string][] }) {
                   <span className="value">
                     {" "}
                     {size(file.bytes)}, sha-256{" "}
-                    <span title={file.digest}>{file.digest.slice(0, 12)}</span>
+                    <Tooltip tip={file.digest}>
+                      <span>{file.digest.slice(0, 12)}</span>
+                    </Tooltip>
                   </span>
                 </li>
               ))}

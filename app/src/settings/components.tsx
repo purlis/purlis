@@ -16,12 +16,13 @@ import * as Checkbox from "@radix-ui/react-checkbox";
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import * as Switch from "@radix-ui/react-switch";
-import * as Tooltip from "../overlays/tooltip";
 import { Check, Info, ListFilter } from "lucide-react";
 import { Select } from "../primitives/Select";
 import { useTabStop } from "../roving";
 import { Button } from "../ui/button/Button";
 import { TextArea, TextField } from "../ui/field/Field";
+import { Tooltip } from "../ui/tooltip/Tooltip";
+import { useReadOnlyReasonId } from "../readOnlyReason";
 
 /**
  * **The house settings set** (SE-16, #1166; DS-3 #626; V89f, V89j): the six pieces every
@@ -346,8 +347,15 @@ export function SettingRow({
   const refused = useId();
   const failed = error !== undefined && error.length > 0;
   const quiet = useContext(QuietHints);
+  // Off on a read-only project: why, with the rest of what describes it (#2908).
+  const readOnly = useReadOnlyReasonId();
   const describedBy =
-    [help ? described : undefined, origin ? from : undefined, failed ? refused : undefined]
+    [
+      help ? described : undefined,
+      origin ? from : undefined,
+      failed ? refused : undefined,
+      readOnly,
+    ]
       .filter(Boolean)
       .join(" ") || undefined;
   return (
@@ -433,58 +441,26 @@ export function SettingRow({
  */
 function HintMark({ label, help }: { label: string; help: ReactNode }) {
   return (
-    <Tooltip.Provider delayDuration={300}>
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
-          <span className="ui-setting-hint" role="img" tabIndex={0} aria-label={`About ${label}`}>
-            <Info className="node-icon" aria-hidden />
-          </span>
-        </Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content
-            className="ui-tooltip ui-setting-tip"
-            side="top"
-            align="start"
-            sideOffset={4}
-          >
-            {help}
-            <Tooltip.Arrow className="ui-overlay-arrow" />
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
+    <Tooltip tip={help}>
+      <span className="ui-setting-hint" role="img" aria-label={`About ${label}`}>
+        <Info className="node-icon" aria-hidden />
+      </span>
+    </Tooltip>
   );
 }
 
 /**
  * **A row's badge** (DS-8, #1840): the level its value comes from, in a word or two, and the
- * whole sentence in a tooltip (a Radix tooltip, D2). The badge is a word in the Tab order, so the
+ * whole sentence in a tooltip (the shared one, #2908). The badge is a word in the Tab order, so the
  * keyboard can reach it and read the tooltip; it presses nothing. Escape closes the tooltip.
  */
 function OriginBadge({ badge }: { badge: Badge }) {
   return (
-    <Tooltip.Provider delayDuration={300}>
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
-          {/* A word, not a control: it presses nothing, so it is no button. It takes the
-              keyboard only so the tooltip can be read without a pointer. */}
-          <span className="ui-setting-badge" tabIndex={0}>
-            {badge.label}
-          </span>
-        </Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content
-            className="ui-tooltip ui-setting-tip"
-            side="top"
-            align="start"
-            sideOffset={4}
-          >
-            {badge.says}
-            <Tooltip.Arrow className="ui-overlay-arrow" />
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
+    // A word, not a control: it presses nothing, so it is no button. It takes the keyboard only
+    // so the tooltip can be read without a pointer.
+    <Tooltip tip={badge.says}>
+      <span className="ui-setting-badge">{badge.label}</span>
+    </Tooltip>
   );
 }
 
@@ -605,7 +581,7 @@ export function Field(props: FieldProps) {
       validate={props.validate}
       aria-label={ids.label}
       aria-labelledby={ids.label === undefined ? ids.labelledBy : undefined}
-      title={ids.title}
+      tooltip={ids.title}
       aria-describedby={ids.describedBy}
       onChange={props.onChange}
       onBlur={onCommit}
@@ -675,7 +651,7 @@ function ListField(props: Extract<FieldProps, { kind: "list" }>) {
 /** One option of a choice: its value, what it is called, and a line on what it does. The line
  *  is words, or a few marked-up facts (a harness's kind, command and source) that describe the
  *  option as one line. A radio's or a box's option can be out of reach on its own (`disabled`),
- *  with why on its `title` — the primitive's own words (DS-3e); a select's, as the prompt a pick
+ *  with why on its `title`, drawn as its tooltip (#2908) — the primitive's own words (DS-3e); a select's, as the prompt a pick
  *  starts on and cannot be picked back to. */
 export type Option = {
   value: string;
@@ -817,18 +793,20 @@ function Chips({ ids, options, checked, onCheckedChange }: Tied & Ticks) {
           const on = checked.has(one.value);
           return (
             // By place, not by value, as every option list of the set is keyed.
-            <label key={at} className={CHIP} data-on={on || undefined} title={one.title}>
-              <RovingFocusGroup.Item asChild tabStopId={chipId(at)}>
-                <input
-                  type="checkbox"
-                  className="m-0"
-                  checked={on}
-                  disabled={one.disabled}
-                  onChange={(event) => onCheckedChange(one.value, event.currentTarget.checked)}
-                />
-              </RovingFocusGroup.Item>
-              {one.label}
-            </label>
+            <Tooltip key={at} tip={one.title}>
+              <label className={CHIP} data-on={on || undefined}>
+                <RovingFocusGroup.Item asChild tabStopId={chipId(at)}>
+                  <input
+                    type="checkbox"
+                    className="m-0"
+                    checked={on}
+                    disabled={one.disabled}
+                    onChange={(event) => onCheckedChange(one.value, event.currentTarget.checked)}
+                  />
+                </RovingFocusGroup.Item>
+                {one.label}
+              </label>
+            </Tooltip>
           );
         })}
       </div>
@@ -842,22 +820,23 @@ export function Choice(props: ChoiceProps) {
   if (props.kind === "chips") return <Chips {...props} />;
   if (props.kind === "switch")
     return (
-      <Switch.Root
-        id={ids.id}
-        className="ui-switch"
-        // #186: Radix's switch is a `<button>`, and WebKit leaves one out of the Tab order
-        // without `tabIndex`.
-        tabIndex={0}
-        checked={props.checked}
-        disabled={props.disabled}
-        aria-label={ids.label}
-        aria-labelledby={ids.labelledBy}
-        aria-describedby={ids.describedBy}
-        title={ids.title}
-        onCheckedChange={props.onCheckedChange}
-      >
-        <Switch.Thumb className="ui-switch-thumb" />
-      </Switch.Root>
+      <Tooltip tip={ids.title}>
+        <Switch.Root
+          id={ids.id}
+          className="ui-switch"
+          // #186: Radix's switch is a `<button>`, and WebKit leaves one out of the Tab order
+          // without `tabIndex`.
+          tabIndex={0}
+          checked={props.checked}
+          disabled={props.disabled}
+          aria-label={ids.label}
+          aria-labelledby={ids.labelledBy}
+          aria-describedby={ids.describedBy}
+          onCheckedChange={props.onCheckedChange}
+        >
+          <Switch.Thumb className="ui-switch-thumb" />
+        </Switch.Root>
+      </Tooltip>
     );
   if (props.kind === "toggle")
     return (
@@ -890,21 +869,22 @@ export function Choice(props: ChoiceProps) {
         {props.options.map((one, at) => (
           // By place, not by value: two options can share one (two owners' `api`, D-DS3e-10).
           <div className="ui-choice-option" key={at}>
-            <Checkbox.Root
-              id={`${ids.id}-${at}`}
-              className="ui-checkbox"
-              // #186: WebKit leaves a `<button>` out of the Tab order without `tabIndex`.
-              tabIndex={0}
-              checked={props.checked.has(one.value)}
-              disabled={one.disabled}
-              title={one.title}
-              aria-describedby={one.says ? `${ids.id}-${at}-says` : undefined}
-              onCheckedChange={(to) => props.onCheckedChange(one.value, to === true)}
-            >
-              <Checkbox.Indicator>
-                <Check />
-              </Checkbox.Indicator>
-            </Checkbox.Root>
+            <Tooltip tip={one.title}>
+              <Checkbox.Root
+                id={`${ids.id}-${at}`}
+                className="ui-checkbox"
+                // #186: WebKit leaves a `<button>` out of the Tab order without `tabIndex`.
+                tabIndex={0}
+                checked={props.checked.has(one.value)}
+                disabled={one.disabled}
+                aria-describedby={one.says ? `${ids.id}-${at}-says` : undefined}
+                onCheckedChange={(to) => props.onCheckedChange(one.value, to === true)}
+              >
+                <Checkbox.Indicator>
+                  <Check />
+                </Checkbox.Indicator>
+              </Checkbox.Root>
+            </Tooltip>
             <label htmlFor={`${ids.id}-${at}`}>{one.label}</label>
             {one.says && (
               <div className="ui-choice-says" id={`${ids.id}-${at}-says`}>
@@ -917,21 +897,22 @@ export function Choice(props: ChoiceProps) {
     );
   if (props.kind === "select")
     return (
-      <Select
-        id={ids.id}
-        className={rowless(ids)}
-        value={props.value ?? ""}
-        // An option out of reach is the prompt a pick starts on and cannot go back to.
-        options={[
-          ...(props.unset !== undefined ? [{ value: "", label: props.unset }] : []),
-          ...props.options,
-        ]}
-        disabled={props.disabled}
-        aria-label={ids.label}
-        title={ids.title}
-        aria-describedby={ids.describedBy}
-        onValueChange={props.onValueChange}
-      />
+      <Tooltip tip={ids.title}>
+        <Select
+          id={ids.id}
+          className={rowless(ids)}
+          value={props.value ?? ""}
+          // An option out of reach is the prompt a pick starts on and cannot go back to.
+          options={[
+            ...(props.unset !== undefined ? [{ value: "", label: props.unset }] : []),
+            ...props.options,
+          ]}
+          disabled={props.disabled}
+          aria-label={ids.label}
+          aria-describedby={ids.describedBy}
+          onValueChange={props.onValueChange}
+        />
+      </Tooltip>
     );
   return (
     <RadioGroup.Root
@@ -948,20 +929,26 @@ export function Choice(props: ChoiceProps) {
       {props.options.map((one, at) => (
         // By place, not by value: two options can share one (two owners' `api`, D-DS3e-10).
         <div className="ui-choice-option" key={at}>
-          <RadioGroup.Item
-            className="ui-radio"
-            value={one.value}
-            id={`${ids.id}-${at}`}
-            disabled={one.disabled}
-            title={one.title}
-            aria-describedby={one.says ? `${ids.id}-${at}-says` : undefined}
-            onFocus={() => {
-              if (arrowing.current && !props.disabled && !one.disabled && one.value !== props.value)
-                props.onValueChange(one.value);
-            }}
-          >
-            <RadioGroup.Indicator className="ui-radio-mark" />
-          </RadioGroup.Item>
+          <Tooltip tip={one.title}>
+            <RadioGroup.Item
+              className="ui-radio"
+              value={one.value}
+              id={`${ids.id}-${at}`}
+              disabled={one.disabled}
+              aria-describedby={one.says ? `${ids.id}-${at}-says` : undefined}
+              onFocus={() => {
+                if (
+                  arrowing.current &&
+                  !props.disabled &&
+                  !one.disabled &&
+                  one.value !== props.value
+                )
+                  props.onValueChange(one.value);
+              }}
+            >
+              <RadioGroup.Indicator className="ui-radio-mark" />
+            </RadioGroup.Item>
+          </Tooltip>
           <label htmlFor={`${ids.id}-${at}`}>
             {one.mark}
             {one.label}

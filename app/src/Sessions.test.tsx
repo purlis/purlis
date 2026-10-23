@@ -18,6 +18,7 @@ import App from "./App";
 import type { SessionRecordRow } from "./bindings";
 import { heardFrom, lostOnResume, type Resuming } from "./sessions";
 import { stripNamed, showThePanel } from "./test-strips";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The Sessions panel and Resume** (SI-8d, ADR 0064) against the whole window: the operator's
@@ -211,10 +212,10 @@ describe("the Sessions panel", () => {
     // One line a record (#1674): its title, and when, as whom and whether it resumes on hover.
     const rows = within(panel)
       .getAllByRole("button")
-      .filter((row) => row.hasAttribute("title") && /^\d{4}-/.test(row.title));
+      .filter((row) => /^\d{4}-/.test(tipOf(row) ?? ""));
     expect(rows.map((row) => row.textContent)).toEqual(["Ship the widget", "Plan it"]);
-    expect(rows[0].title).toContain("↻ resumable");
-    expect(rows[1].title).not.toContain("resumable");
+    expect(tipOf(rows[0])).toContain("↻ resumable");
+    expect(tipOf(rows[1])).not.toContain("resumable");
   });
 
   it("opens a record as a read-only view tab of rendered Markdown", async () => {

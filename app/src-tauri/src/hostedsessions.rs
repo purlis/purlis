@@ -1524,6 +1524,12 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 }
             }
             Told::Pushed(Pushed::LinkBack {}) => reconnect(&shared, Reconnect::Over),
+            // A browser engine's first download, as it goes (1.37, #2207).
+            Told::Pushed(Pushed::EngineDownload {
+                program,
+                done,
+                total,
+            }) => crate::enginedownload::here().heard(&program, done, total),
             // The hold goes over the link and waits for its answer: off the runtime.
             Told::Pushed(Pushed::NotHeld { project, why }) => {
                 let hold = lock(&shared.not_held).get(&project).cloned();

@@ -455,7 +455,7 @@ export function SkillStudioTab({
                       {" "}
                       <Button
                         onPress={() => share(skill)}
-                        title="Give it to the team: it is committed with the project"
+                        tooltip="Give it to the team: it is committed with the project"
                       >
                         Share
                       </Button>
