@@ -20,7 +20,15 @@ function version(commit: string, subject: string, runs: number) {
     at: "2026-10-20T10:00:00+00:00",
     author: "Ana",
     subject,
-    runs: { runs, ended: runs, tool_calls: runs * 2, tool_errors: 0, refusals: 0, asks: 0, ms: 100 },
+    runs: {
+      runs,
+      ended: runs,
+      tool_calls: runs * 2,
+      tool_errors: 0,
+      refusals: 0,
+      asks: 0,
+      ms: 100,
+    },
     grade: null,
   };
 }
@@ -54,7 +62,13 @@ describe("a skill's history, state and uses", () => {
       asked.push({ cmd, args });
       if (cmd === "skill_page") return page({ state: "active" }, null);
       if (cmd === "skill_diff")
-        return { text: "--- a\n+++ b\n-Step one.\n+Step two.\n", cut: false, unseen: ["line 3 holds a character that draws as nothing (U+202E), shown by its code point"] };
+        return {
+          text: "--- a\n+++ b\n-Step one.\n+Step two.\n",
+          cut: false,
+          unseen: [
+            "line 3 holds a character that draws as nothing (U+202E), shown by its code point",
+          ],
+        };
       if (cmd === "skill_revert") return { notes: [] };
       throw new Error(`unexpected ${cmd}`);
     });
@@ -102,7 +116,9 @@ describe("a skill's history, state and uses", () => {
     render(<SkillLife plane="p" name="deploy" changed={0} />);
 
     expect((await screen.findByTestId("skill-unused")).textContent).toContain("61 days");
-    fireEvent.change(screen.getByLabelText("The skill to use instead"), { target: { value: "ship" } });
+    fireEvent.change(screen.getByLabelText("The skill to use instead"), {
+      target: { value: "ship" },
+    });
     fireEvent.click(screen.getByText("Deprecate"));
     await waitFor(() => expect(asked.some((one) => one.cmd === "skill_lifecycle")).toBe(true));
     const set = asked.find((one) => one.cmd === "skill_lifecycle")?.args as { lifecycle: unknown };
@@ -124,7 +140,9 @@ describe("a skill's history, state and uses", () => {
 
 describe("lifecycleSaid", () => {
   it("names the replacement of a deprecated skill", () => {
-    expect(lifecycleSaid("deploy", { state: "deprecated", replacement: "ship" })).toContain("ship instead");
+    expect(lifecycleSaid("deploy", { state: "deprecated", replacement: "ship" })).toContain(
+      "ship instead",
+    );
     expect(lifecycleSaid("deploy", { state: "active" })).toBe("In use.");
   });
 });

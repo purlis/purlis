@@ -8408,10 +8408,9 @@ button.show-more:focus-visible {
   gap: var(--space-2);
 }
 
-.skill-state-acts label,
 .skill-copy-pick {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: var(--space-1);
 }
 
@@ -8425,18 +8424,14 @@ button.show-more:focus-visible {
   white-space: pre;
 }
 
+/* Marked by weight and a line through, never a colour of their own: the diff reads in every
+   theme, and in a theme with no colour at all. */
 .skill-diff [data-line="added"] {
-  background: var(--diff-inserted);
-  color: var(--diff-inserted-text);
+  font-weight: 600;
 }
 
 .skill-diff [data-line="removed"] {
-  background: var(--diff-deleted);
-  color: var(--diff-deleted-text);
-}
-
-.skill-uses [data-broken] {
-  color: var(--danger-text);
+  text-decoration: line-through;
 }
 
 /* The Skill studio's changes (SK-7, #2770): the panel a change opens under the toolbar, the

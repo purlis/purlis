@@ -15,6 +15,7 @@ import { counted, saidAt } from "./dispatches";
 import { Notice } from "./Notice";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { TextField } from "./ui/field/Field";
 
 /** A copy's state, as its tab says it in one line. */
 export function lifecycleSaid(name: string, lifecycle: SkillLifecycle): string {
@@ -42,7 +43,7 @@ export function versionRunsSaid(version: SkillVersion): string {
 }
 
 /** The words a change that failed is said with, and what it said beyond being done. */
-type Said = { tone: "news" | "error"; label: string; text: string };
+type Said = { tone: "news" | "trouble"; label: string; text: string };
 
 /**
  * **A skill's history, lifecycle, owners and uses** (SK-19, #2782): what its tab shows beside
@@ -96,16 +97,21 @@ export function SkillLife({
     );
 
   const copy: SkillCopy | undefined = page.copies[Math.min(picked, page.copies.length - 1)];
-  const change = (label: string, act: () => Promise<{ status: string; data?: unknown; error?: unknown }>) => {
+  const change = (
+    label: string,
+    act: () => Promise<{ status: string; data?: unknown; error?: unknown }>,
+  ) => {
     setBusy(true);
     void act().then((answer) => {
       setBusy(false);
       if (answer.status === "ok") {
         const notes = (answer.data as { notes: string[] }).notes;
         setSaid(
-          notes.length > 0 ? { tone: "news", label: "Skill changed", text: notes.join(" ") } : undefined,
+          notes.length > 0
+            ? { tone: "news", label: "Skill changed", text: notes.join(" ") }
+            : undefined,
         );
-      } else setSaid({ tone: "error", label, text: String(answer.error) });
+      } else setSaid({ tone: "trouble", label, text: String(answer.error) });
       setDone((n) => n + 1);
     });
   };
@@ -113,28 +119,38 @@ export function SkillLife({
   return (
     <div className="skill-life" data-testid="skill-life">
       {said !== undefined && (
-        <Notice cause="skill-change" tone={said.tone} label={said.label} onDismiss={() => setSaid(undefined)}>
+        <Notice
+          cause="skill-change"
+          tone={said.tone}
+          label={said.label}
+          onDismiss={() => setSaid(undefined)}
+        >
           {said.text}
         </Notice>
       )}
       {page.copies.length > 1 && (
-        <label className="skill-copy-pick">
-          Copy
-          <select
-            value={picked}
-            onChange={(event) => setPicked(Number(event.target.value))}
-            data-testid="skill-copy-pick"
-          >
-            {page.copies.map((one, at) => (
-              <option key={one.label} value={at}>
-                {one.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div
+          className="skill-copy-pick"
+          role="group"
+          aria-label="Copy"
+          data-testid="skill-copy-pick"
+        >
+          {page.copies.map((one, at) => (
+            <Button
+              key={one.label}
+              size="sm"
+              variant={at === picked ? "soft-accent" : "ghost"}
+              aria-pressed={at === picked}
+              onPress={() => setPicked(at)}
+            >
+              {one.label}
+            </Button>
+          ))}
+        </div>
       )}
       {copy !== undefined && (
         <CopyState
+          key={`${copy.label}\u0000${copy.owners.join(",")}`}
           name={name}
           copy={copy}
           busy={busy}
@@ -157,7 +173,9 @@ export function SkillLife({
           copy={copy}
           busy={busy}
           onRevert={(commit) =>
-            change("The skill was not reverted", () => commands.skillRevert(plane, copy.level, name, commit))
+            change("The skill was not reverted", () =>
+              commands.skillRevert(plane, copy.level, name, commit),
+            )
           }
         />
       )}
@@ -182,36 +200,46 @@ function CopyState({
 }) {
   const [replacement, setReplacement] = useState("");
   const [owners, setOwners] = useState(copy.owners.join(", "));
-  useEffect(() => setOwners(copy.owners.join(", ")), [copy.owners]);
   const deprecate = () =>
-    onLifecycle({ state: "deprecated", replacement: replacement.trim() === "" ? null : replacement.trim() });
+    onLifecycle({
+      state: "deprecated",
+      replacement: replacement.trim() === "" ? null : replacement.trim(),
+    });
   const state = copy.lifecycle.state;
   return (
     <section aria-labelledby="skill-state-heading" data-testid="skill-state">
       <h3 id="skill-state-heading">State</h3>
       <p data-testid="skill-lifecycle">{lifecycleSaid(name, copy.lifecycle)}</p>
-      {copy.unread !== null && <p className="honest">Its state could not be read, so it is taken as in use: {copy.unread}</p>}
+      {copy.unread !== null && (
+        <p className="honest">
+          Its state could not be read, so it is taken as in use: {copy.unread}
+        </p>
+      )}
       {copy.unused_days !== null && state === "active" && (
         <p className="honest" data-testid="skill-unused">
-          No chat has run {name} for {counted(copy.unused_days, "day", "days")}. Deprecate it, so chats are
-          pointed to something else?
+          No chat has run {name} for {counted(copy.unused_days, "day", "days")}. Deprecate it, so
+          chats are pointed to something else?
         </p>
       )}
       {state === "active" ? (
         <div className="skill-state-acts">
-          <label>
-            Use instead (optional)
-            <input
-              value={replacement}
-              onChange={(event) => setReplacement(event.target.value)}
-              placeholder="another skill's name"
-              aria-label="The skill to use instead"
-            />
-          </label>
+          <TextField
+            size="sm"
+            label="Use instead (optional)"
+            aria-label="The skill to use instead"
+            placeholder="another skill's name"
+            value={replacement}
+            onChange={setReplacement}
+          />
           <Button size="sm" isDisabled={busy} onPress={deprecate}>
             Deprecate
           </Button>
-          <Button size="sm" variant="danger" isDisabled={busy} onPress={() => onLifecycle({ state: "archived" })}>
+          <Button
+            size="sm"
+            variant="danger"
+            isDisabled={busy}
+            onPress={() => onLifecycle({ state: "archived" })}
+          >
             Archive
           </Button>
         </div>
@@ -223,12 +251,12 @@ function CopyState({
       <h4>Owners</h4>
       <p className="honest">Who looks after this skill, for people to know.</p>
       <div className="skill-state-acts">
-        <input
-          value={owners}
-          onChange={(event) => setOwners(event.target.value)}
-          placeholder="logins or emails, separated by commas"
+        <TextField
+          size="sm"
           aria-label="Owners"
-          data-testid="skill-owners"
+          placeholder="logins or emails, separated by commas"
+          value={owners}
+          onChange={setOwners}
         />
         <Button
           size="sm"
@@ -387,7 +415,9 @@ function VersionRow({
                     </span>
                   ))}
                 </pre>
-                {diff.cut && <p className="honest">The changes are too long to show whole, and are cut.</p>}
+                {diff.cut && (
+                  <p className="honest">The changes are too long to show whole, and are cut.</p>
+                )}
               </>
             )}
           </td>
@@ -426,7 +456,11 @@ function Uses({ name, page }: { name: string; page: SkillPage }) {
           ))}
         </ul>
       )}
-      {page.uses_cut && <p className="honest">This project holds more skills than purlis reads for this, so some are not counted.</p>}
+      {page.uses_cut && (
+        <p className="honest">
+          This project holds more skills than purlis reads for this, so some are not counted.
+        </p>
+      )}
     </section>
   );
 }

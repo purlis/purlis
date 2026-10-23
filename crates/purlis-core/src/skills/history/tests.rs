@@ -20,14 +20,13 @@ const V2: &str =
 /// are apart in time.
 fn git_at(root: &Path, at: u64, args: &[&str]) {
     let argv = crate::testgit::unsigned(args);
-    let done = std::process::Command::new("git")
-        .args(&argv)
+    let mut git = std::process::Command::new("git");
+    git.args(&argv)
         .current_dir(root)
         .env("GIT_COMMITTER_DATE", format!("@{at} +0000"))
         .env("GIT_AUTHOR_DATE", format!("@{at} +0000"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
+        .env("GIT_CONFIG_NOSYSTEM", "1");
+    let done = crate::forklock::output(&mut git).unwrap();
     assert!(
         done.status.success(),
         "{}",
