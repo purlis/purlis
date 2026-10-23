@@ -833,9 +833,7 @@ function NewSkill({
         value={template}
         options={templates.map((one) => ({ value: one.id, label: one.label, title: one.about }))}
         // One of the offered ids, or the blank template where the list does not name it.
-        onValueChange={(to) =>
-          setTemplate(templates.some((one) => one.id === to) ? to : "blank")
-        }
+        onValueChange={(to) => setTemplate(templates.some((one) => one.id === to) ? to : "blank")}
       />
       <p className="honest" data-testid="skill-new-level">
         It lands in the {labelOf(levels, level)} skills.{" "}

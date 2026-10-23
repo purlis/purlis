@@ -23,7 +23,7 @@ import { useSessionOffers } from "./sessionOffers";
 import { PanelList } from "./PanelList";
 import { HeadingOffer, PanelSection } from "./PanelSection";
 import { Vaults, type VaultsSaid } from "./Vaults";
-import { Chart, Facts } from "./Views";
+import { Chart, Facts, Table } from "./Views";
 import { commands, type PanelView } from "./bindings";
 import {
   DISPATCHES_SHOW,
@@ -373,6 +373,8 @@ function Contributed({
           <Chart key={at} chart={block} />
         ) : block.kind === "facts" ? (
           <Facts key={at} facts={block} />
+        ) : block.kind === "table" ? (
+          <Table key={at} table={block} />
         ) : block.kind === "note" ? (
           <p
             /* By position, which is the one place in this file that is right: a block has no
