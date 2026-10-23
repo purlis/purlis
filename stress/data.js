@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792709354233,
+  "lastUpdate": 1792719029982,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5818,6 +5818,42 @@ window.BENCHMARK_DATA = {
             "value": 389.2,
             "unit": "MB",
             "extra": "median of 6 samples: 423.5, 455.7, 395, 383.1, 383.3, 268 MB; window 201.4 MB, session host 187.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3f6d4cf0bc22cfee5d7d4206f716f92e4c3dcb85",
+          "message": "Tooltip family replaces native tooltips (#3028)\n\n* Tooltip family replaces native tooltips (#2908)\n\nOne themed tooltip for every hint: reachable by the keyboard, dismissed by Esc, one\nplacement and one delay, hoverable and persistent (WCAG 1.4.13). Native `title` is\nrefused by the lint at error. Parts in the manifest, stories, axe and screenshots.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Tooltip family: manifest version 5 after the window's own families; status items take the shared tooltip\n\n`StatusItem` and `StatusCell` take `tooltip`, never `title`; a disabled status item with a hint\nkeeps the focus and does nothing, as a button does, through the press both families share\n(`ui/pressable.tsx`). The tooltip family is manifest version 5.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Tooltip family: the CLI theme test, formatted\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Tooltip family: the status bar story walks to a cell with a hint before Notices\n\nA status cell with a tooltip is a Tab stop, so its hint is the keyboard's too. The story's\nkeyboard walk meets the PRs badge, its tooltip open, and then Notices.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T04:41:43+04:00",
+          "tree_id": "20cdaf1069e9f20aac47745119d00fcdb3984f48",
+          "url": "https://github.com/purlis/purlis/commit/3f6d4cf0bc22cfee5d7d4206f716f92e4c3dcb85"
+        },
+        "date": 1792719028119,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1110,
+            "unit": "MB",
+            "extra": "median of 3 samples: 809, 1110, 1207 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 369,
+            "unit": "MB",
+            "extra": "median of 6 samples: 320.8, 378.3, 366.5, 371.5, 372.4, 285.2 MB; window 201.8 MB, session host 166 MB"
           }
         ]
       }
