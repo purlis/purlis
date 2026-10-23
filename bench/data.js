@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792780929441,
+  "lastUpdate": 1792787756048,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22806,6 +22806,48 @@ window.BENCHMARK_DATA = {
             "value": 101.34905499999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.055, 101.170, 101.349, 101.370, 101.994 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "94ecf09dde8525ff9ef196d9f3c9d167d786707f",
+          "message": "Menu story waits for focus to land, and says where it went; regions read settled widths (#3082)\n\nThe menu stories wait up to 3 s for the keyboard to land on each row they name, and a miss\nnames the step and what has the focus. The layout-width scenario reads the regions once two\nreads a frame apart agree.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T00:34:15+04:00",
+          "tree_id": "62acf70972e5feaff0159a50b5f47366431464bd",
+          "url": "https://github.com/purlis/purlis/commit/94ecf09dde8525ff9ef196d9f3c9d167d786707f"
+        },
+        "date": 1792787753823,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5331385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.523, 0.525, 0.533, 0.537, 0.545 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.10858,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.291, 16.895, 17.109, 17.150, 17.196 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.39574,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.684, 104.341, 104.396, 104.502, 104.529 ms"
           }
         ]
       }
