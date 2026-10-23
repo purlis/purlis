@@ -225,7 +225,12 @@ fn logged(
 #[test]
 fn a_runs_start_says_its_harness_and_its_workspace_null_at_the_plane_root() {
     let dir = a_plane();
-    logged(dir.path(), "01JB0000000000000000000001", (Some("codex"), None, None), None);
+    logged(
+        dir.path(),
+        "01JB0000000000000000000001",
+        (Some("codex"), None, None),
+        None,
+    );
     logged(
         dir.path(),
         "01JB0000000000000000000002",
@@ -285,7 +290,12 @@ fn runs_are_totalled_by_harness_persona_and_workspace_with_their_signals_and_cos
     );
     let claude = by_harness[0].totals;
     assert_eq!(
-        (claude.tool_calls, claude.tokens, claude.tokens_said, claude.ms),
+        (
+            claude.tool_calls,
+            claude.tokens,
+            claude.tokens_said,
+            claude.ms
+        ),
         (4, 1_000, 1, 4_000)
     );
 

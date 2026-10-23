@@ -278,7 +278,12 @@ fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_actio
     tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION));
     tracker.report("4", &prompt(CURATION), 0, || None);
     let opened = tracker
-        .call("4", &started("purlis:compact", StartedBy::SkillTool), 1, || None)
+        .call(
+            "4",
+            &started("purlis:compact", StartedBy::SkillTool),
+            1,
+            || None,
+        )
         .expect("the harness's pick opens the run");
     assert_eq!(opened.started_by, StartedBy::Curation);
     // A skill started inside it is the harness's own pick.
@@ -291,7 +296,12 @@ fn a_skill_the_turn_of_a_curation_prompt_starts_is_started_by_the_curation_actio
     tracker.report("4", &report(Event::Stop), 3, || None);
     tracker.report("4", &prompt("now compact the workspace too"), 4, || None);
     let next = tracker
-        .call("4", &started("purlis:compact", StartedBy::SkillTool), 5, || None)
+        .call(
+            "4",
+            &started("purlis:compact", StartedBy::SkillTool),
+            5,
+            || None,
+        )
         .expect("a run opens");
     assert_eq!(next.started_by, StartedBy::SkillTool);
 }
@@ -302,7 +312,12 @@ fn a_curation_prompt_the_person_replaced_before_sending_starts_nothing_of_its_ow
     tracker.prompted("4", Prompted::of(StartedBy::Curation, CURATION));
     tracker.report("4", &prompt("something else entirely"), 0, || None);
     let opened = tracker
-        .call("4", &started("purlis:compact", StartedBy::McpLoad), 1, || None)
+        .call(
+            "4",
+            &started("purlis:compact", StartedBy::McpLoad),
+            1,
+            || None,
+        )
         .expect("a run opens");
     assert_eq!(opened.started_by, StartedBy::McpLoad);
 }
@@ -314,7 +329,12 @@ fn a_curation_prompt_is_held_until_it_is_sent_and_goes_with_the_session() {
     // Read for long before it is sent: still the curation action's.
     tracker.report("4", &prompt(CURATION), HELD_FOR_MS * 3, || None);
     let opened = tracker
-        .call("4", &started("purlis:compact", StartedBy::SkillTool), 1, || None)
+        .call(
+            "4",
+            &started("purlis:compact", StartedBy::SkillTool),
+            1,
+            || None,
+        )
         .expect("a run opens");
     assert_eq!(opened.started_by, StartedBy::Curation);
 
@@ -333,7 +353,12 @@ fn only_a_curation_action_or_a_trigger_is_held_for_a_prompt() {
     tracker.prompted("4", Prompted::of(StartedBy::Read, CURATION));
     tracker.report("4", &prompt(CURATION), 0, || None);
     let opened = tracker
-        .call("4", &started("purlis:compact", StartedBy::SkillTool), 1, || None)
+        .call(
+            "4",
+            &started("purlis:compact", StartedBy::SkillTool),
+            1,
+            || None,
+        )
         .expect("a run opens");
     assert_eq!(opened.started_by, StartedBy::SkillTool);
 }
@@ -352,6 +377,9 @@ fn every_start_has_a_word_of_its_own_read_back_as_itself() {
     assert_eq!(words.len(), all.len());
     for by in all {
         assert_eq!(StartedBy::parse(by.word()), Some(by));
-        assert_eq!(serde_json::to_value(by).unwrap(), serde_json::json!(by.word()));
+        assert_eq!(
+            serde_json::to_value(by).unwrap(),
+            serde_json::json!(by.word())
+        );
     }
 }

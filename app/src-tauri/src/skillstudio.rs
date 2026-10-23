@@ -585,8 +585,10 @@ pub struct StudioRun {
 /// What a harness is called, by the word a run's start records it by: its declaration's title
 /// for one purlis ships, and the word itself for one a project declares.
 fn ran_on(word: &str) -> String {
-    purlis_core::harness::Harness::of_kind(word)
-        .map_or_else(|| word.to_owned(), |harness| harness.declared().title.clone())
+    purlis_core::harness::Harness::of_kind(word).map_or_else(
+        || word.to_owned(),
+        |harness| harness.declared().title.clone(),
+    )
 }
 
 /// Every run of `skill` the project at `root` has recorded, newest first, at most `limit`.
@@ -664,9 +666,7 @@ pub(crate) fn stats(root: &std::path::Path, skill: &str) -> SkillStats {
                 let totals = row.totals;
                 StatsRow {
                     group: match row.group {
-                        Group::Named(name) if by == By::Harness => {
-                            StatsGroup::Named(ran_on(&name))
-                        }
+                        Group::Named(name) if by == By::Harness => StatsGroup::Named(ran_on(&name)),
                         Group::Named(name) => StatsGroup::Named(name),
                         Group::None => StatsGroup::None,
                         Group::NotRecorded => StatsGroup::NotRecorded,

@@ -898,6 +898,12 @@ export const commands = {
 	 *  flag is off. On a blocking thread, as it reads the project's skill log.
 	 */
 	skillRuns: (plane: PlaneId, skill: string) => typedError<StudioRun[], string>(__TAURI_INVOKE("skill_runs", { plane, skill })),
+	/**
+	 *  The totals of skill `skill`'s runs in the project, by what they ran on, by persona and by
+	 *  workspace: none while the flag is off. On a blocking thread, as it reads the project's skill
+	 *  log.
+	 */
+	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	setSkillStudioOn: __WINDOW_ONLY_RESULT,
@@ -8119,6 +8125,10 @@ export type RunStart =
 "mcp-load" | 
 /**  The person picked it in Use skill… and sent the prompt it was typed into. */
 "use-skill" | 
+/**  A curation action typed the prompt the person sent. */
+"curation" | 
+/**  A trigger sent the prompt. */
+"trigger" | 
 /**  A start a newer purlis wrote. */
 "unknown";
 
@@ -9043,6 +9053,13 @@ export type SkillLintLevel =
 /**  Worth knowing, and Save does not wait on it. */
 "warns";
 
+/**  A skill's totals, by what it ran on, by persona and by workspace (SK-20). */
+export type SkillStats = {
+	by_harness: StatsRow[],
+	by_persona: StatsRow[],
+	by_workspace: StatsRow[],
+};
+
 /**  How a harness can leave one of its own skills out of a chat. */
 export type SkillSwitch = 
 /**  On its own: the studio draws a switch. */
@@ -9256,6 +9273,30 @@ export type StartedHere = {
 	copied: string | null,
 };
 
+/**  The group a skill's totals row is of (SK-20). */
+export type StatsGroup = 
+/**  A harness, as a person calls it; a persona or a workspace, by name. */
+{ kind: "named"; name: string } | 
+/**  No persona, or the project's root. */
+{ kind: "none" } | 
+/**  Runs whose start does not say. */
+{ kind: "not-recorded" };
+
+/**  One row of a skill's totals: a group's runs, their signals and their cost (SK-20). */
+export type StatsRow = {
+	group: StatsGroup,
+	runs: number,
+	/**  Runs whose end is recorded: the ones the signals are counted from. */
+	ended: number,
+	tool_calls: number,
+	tool_errors: number,
+	refusals: number,
+	asks: number,
+	/**  Tokens spent inside them, or null where no run said its tokens. */
+	tokens: number | null,
+	ms: number,
+};
+
 /**  Where a chat's stop stands. */
 export type StopPhase = 
 /**  It is being stopped: waiting for the chats below it, or writing its last turn. */
@@ -9360,6 +9401,11 @@ export type StudioRun = {
 	asks: number | null,
 	/**  Tokens spent inside it, where the harness reported them. */
 	tokens: number | null,
+	/**
+	 *  What it ran on, as a person calls it (`Claude Code`), or null where its start does not
+	 *  say.
+	 */
+	ran_on: string | null,
 };
 
 /**  One skill the studio lists: [`purlis_core::skills::StudioRow`], for the window. */

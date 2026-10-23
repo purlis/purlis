@@ -284,28 +284,26 @@ pub fn runs(root: &Path) -> Vec<Run> {
             };
             match (row.skill.filter(|s| !s.is_empty()), row.run, row.ended) {
                 (Some(skill), id, _) => {
-                    let workspace = row
-                        .workspace
-                        .map(|ws| ws.filter(|ws| !ws.is_empty()));
+                    let workspace = row.workspace.map(|ws| ws.filter(|ws| !ws.is_empty()));
                     runs.push(Run {
-                    id,
-                    skill,
-                    persona: row.persona.filter(|p| !p.is_empty()),
-                    started_by: row.started_by,
-                    started: row.ts.unwrap_or_default(),
-                    device: device.clone(),
-                    copy: row
-                        .level
-                        .as_deref()
-                        .and_then(Level::parse)
-                        .map(|level| RunCopy {
-                            workspace: workspace.clone().flatten(),
-                            level,
-                        }),
-                    harness: row.harness.filter(|h| !h.is_empty()),
-                    workspace,
-                    end: None,
-                });
+                        id,
+                        skill,
+                        persona: row.persona.filter(|p| !p.is_empty()),
+                        started_by: row.started_by,
+                        started: row.ts.unwrap_or_default(),
+                        device: device.clone(),
+                        copy: row
+                            .level
+                            .as_deref()
+                            .and_then(Level::parse)
+                            .map(|level| RunCopy {
+                                workspace: workspace.clone().flatten(),
+                                level,
+                            }),
+                        harness: row.harness.filter(|h| !h.is_empty()),
+                        workspace,
+                        end: None,
+                    });
                 }
                 (None, Some(id), Some(ended)) => {
                     ends.insert(
@@ -369,10 +367,7 @@ impl Group {
         let named = |name: &Option<String>| name.clone().map_or(Group::None, Group::Named);
         match by {
             By::Persona => named(&run.persona),
-            By::Harness => run
-                .harness
-                .clone()
-                .map_or(Group::NotRecorded, Group::Named),
+            By::Harness => run.harness.clone().map_or(Group::NotRecorded, Group::Named),
             By::Workspace => run.workspace.as_ref().map_or(Group::NotRecorded, named),
         }
     }
