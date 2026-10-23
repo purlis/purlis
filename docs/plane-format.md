@@ -206,6 +206,7 @@ prose under another heading, which is why every store gets a heading or a row.
 - [Workspaces](#workspaces)
   - [`workspaces/`](#workspaces-1)
   - [`workspaces/.default`](#workspacesdefault)
+  - [`workspaces/.throwaway/purlis-try-<id>/`](#workspacesthrowawaypurlis-try-id)
   - [`workspaces/<ws>/`](#workspacesws)
   - [`workspaces/<ws>/workspace.md` — the living charter](#workspaceswsworkspacemd--the-living-charter)
   - [`workspaces/<ws>/workspace.json` — the committed manifest](#workspaceswsworkspacejson--the-committed-manifest)
@@ -336,6 +337,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
   - [`skill-drafts/<id>/`](#skill-draftsid)
   - [`skill-tries/<id>/`](#skill-triesid)
+  - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
   - [`ws-edit-nudge/<sid>-<workspace>`](#ws-edit-nudgesid-workspace)
   - [`ws-autosave/<workspace>`](#ws-autosaveworkspace)
   - [`workspace-tab-order`](#workspace-tab-order)
@@ -1508,6 +1510,25 @@ Two rules hold for the whole area and are not repeated per file:
   `workspace.chosen` (`charter/workspace.py:646`) and of `workspace.source`
   (`charter/workspace.py:676`).
 - **Git:** committed.
+
+### `workspaces/.throwaway/purlis-try-<id>/`
+
+- **Format:** a folder, made new and `0700`, holding whatever a Try it's scratch chat wrote
+  (SK-9, #2772): the **throwaway piece** that chat starts in. `<id>` is its try's, in
+  [`skill-tries/<id>/`](#skill-triesid). Inside the project because a sandboxed chat starts
+  only in a folder of the project; a sandboxed scratch chat writes this folder alone. A dot-name
+  below `workspaces/` is no workspace (`workspaces::Plane::workspaces` skips it).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** `purlis_core::skills::verbs::drafts::try_out` makes it; the scratch chat writes
+  in it.
+- **Removed by:** the app once the chat closes (`drafts::end_try_at`), and each time it writes its
+  record of open chats for one no chat on it stands in, two minutes after it was laid out
+  (`drafts::sweep_tries`), so a launch removes every one a quit or a crash left. Only folders
+  named `purlis-try-<16 hex>` are removed, through the handle of `workspaces/.throwaway/`, and no
+  link is followed.
+- **Git:** ignored by `/workspaces/*/*`, and never staged by a save whatever the `.gitignore`
+  says (`planegit::NEVER_STAGED`).
 - **Encoding details:** exactly `name + "\n"` (`charter/workspace.py:512`). On read the
   value is `.strip()`ed and re-checked with `valid_name`; a `contain.file_refusal` (symlink,
   FIFO, oversized) makes it read as absent (`charter/workspace.py:488`).
@@ -6874,13 +6895,27 @@ rewritten.
   A chat started in that folder is armed with the built-in skills and this one skill alone, as if
   `skill-tries/<id>/` were a project of its own (`drafts::tried`).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
-- **Tier:** Clone state — this machine's, and it lasts only as long as its chat.
+- **Tier:** Clone state, transient — it lasts as long as its chat.
 - **Written by:** `drafts::try_out`, from the studio's Try it.
-- **Removed by:** the app when the chat closes (`drafts::end_try_at`), with its throwaway piece;
-  and by the next Try it, for one no open chat stands in (a quit or a crash left it). Only the
-  names this module made are removed, through the handle of the folder that holds them, and no
-  link is followed. What is left is the skill run the chat recorded, under the skill's name.
+- **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
+  at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** gitignored, under the state directory; the piece is ignored and never staged.
+
+### `skill-levels/<chat id>.json`
+- **Format:** JSON, one file per sandboxed chat that is running (SK-9, #2772): `name`, the chat's
+  number as its tab says it, and `levels`, the workspace and persona folders there when it
+  started, relative to the plane (`workspaces/ops`, `personas/steward`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2772).
+- **Tier:** Clone state, transient — it lasts as long as its chat.
+- **Written by:** the session host as it starts a sandboxed chat (`skills::levels::note`); a
+  restart keeps the record it has. `workspace create` and `persona define` add the folder they
+  make to every record (`skills::levels::vouch`). No chat writes the state folder.
+- **Read by:** every skill set while its chat is on the app's record of open chats
+  ([`app/reopen.json`](#appreopenjson)): a workspace's or persona's skills whose folder is not in
+  a record reach no chat, "made while chat N was running", until that chat closes.
+- **Removed by:** the app, each time it writes its record of open chats, for a chat not on it,
+  two minutes after it was written (`skills::levels::sweep`).
+- **Git:** gitignored, under the state directory.
 
 ### `save-journal.jsonl`
 - **Format:** JSON Lines, one object per save attempt, appended. Capped at the newest 500

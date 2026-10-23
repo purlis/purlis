@@ -139,7 +139,7 @@ fn below_skills_at(parts: &[&str], index: usize) -> bool {
 }
 
 /// Names never proposed below `.claude/skills` (PC-1): what a program runs as its own.
-const SKILL_NEVER: [&str; 2] = ["package.json", "hooks"];
+pub(crate) const SKILL_NEVER: [&str; 2] = ["package.json", "hooks"];
 
 /// Why `path` is not a file a chat may propose a change to: the way that works instead.
 pub fn not_proposable(path: &Path) -> String {

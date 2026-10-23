@@ -1133,6 +1133,19 @@ fn a_claude_code_write_of_a_skills_file_is_handed_over_as_a_draft_and_the_tool_r
             Answer::Nothing
         );
     }
+    // Policy's `sandbox.proposed-changes = "off"` holds no draft either (PC-14).
+    let plane = sandboxed_claude(Plane::new());
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"proposed-changes": "off"}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    assert_eq!(
+        plane.ask(write(&plane), |hook| {
+            pretooluse_edit_proposing(hook, &|_| panic!("nothing is handed over"))
+        }),
+        Answer::Nothing
+    );
+    crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
 }
 
 // ---- posttooluse: a theme draft (#2332) ---------------------------------------------------

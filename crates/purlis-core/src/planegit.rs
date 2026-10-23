@@ -1362,6 +1362,17 @@ pub(crate) fn changed_paths(root: &Path) -> Vec<String> {
 
 /// [`changed_paths`], and whether any of them is a file git tracks (any entry but `??`).
 fn status_of(root: &Path) -> (Vec<String>, bool) {
+    // What a save stages ([`SAVE_STAGES`]): never what is [`NEVER_STAGED`].
+    let mut args = vec![
+        "--no-optional-locks",
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--",
+        ".",
+    ];
+    args.extend(NEVER_STAGED);
     let Ok(run) = git::run(
         root,
         // `--no-optional-locks`, as `profiles.rs` and `guest.rs` ask: a plain `status`
@@ -1369,20 +1380,7 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
         // seconds — a save's `git add -A` landing inside that window failed on the lock.
         // No `-c core.untrackedCache`: a read-only status uses a cache the index holds without
         // it, and git never consults one under `--untracked-files=all` (FD-11, measured).
-        &[
-            "--no-optional-locks",
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            // What a save stages ([`SAVE_STAGES`]): never a level's local skills, nor a throwaway
-            // piece.
-            "--",
-            ".",
-            SAVE_STAGES[4],
-            SAVE_STAGES[5],
-            SAVE_STAGES[6],
-        ],
+        &args,
         git::READ,
     ) else {
         return (Vec::new(), false);
@@ -2086,18 +2084,25 @@ const WHOLE_TREE_PATHSPECS: [&str; 4] = [".", "./", ":/", ":/:"];
 /// operator's mid-edit `charter.toml`.
 const WHOLE_TREE_FLAGS: [&str; 5] = ["-A", "--all", "--no-ignore-removal", "-u", "--update"];
 
-/// **What a plane save stages**: the whole tree, but never a level's local skills (ADR 0099 §1,
-/// #2767), whatever the plane's `.gitignore` says. `skills.local/` is this machine's own, and
-/// a plane whose `.gitignore` lost its line would otherwise commit it to the team. Nor a Try
-/// it's throwaway piece (#2772), which lasts as long as its chat.
+/// **What a save never stages** ([`SAVE_STAGES`]): a level's local skills (ADR 0099 §1, #2767),
+/// whatever the plane's `.gitignore` says, since `skills.local/` is this machine's own and a
+/// plane whose `.gitignore` lost its line would otherwise commit it to the team; and a Try it's
+/// throwaway pieces (#2772), which last as long as their chats.
+pub const NEVER_STAGED: [&str; 3] = [
+    ":(exclude,glob)skills.local/**",
+    ":(exclude,glob)workspaces/*/skills.local/**",
+    ":(exclude,glob)workspaces/.throwaway/**",
+];
+
+/// **What a plane save stages**: the whole tree, but what is [`NEVER_STAGED`].
 pub const SAVE_STAGES: [&str; 7] = [
     "add",
     "-A",
     "--",
     ".",
-    ":(exclude,glob)skills.local/**",
-    ":(exclude,glob)workspaces/*/skills.local/**",
-    ":(exclude,glob)workspaces/.throwaway/**",
+    NEVER_STAGED[0],
+    NEVER_STAGED[1],
+    NEVER_STAGED[2],
 ];
 
 /// Would `add_cmd` stage EVERYTHING under the root it is run in?
@@ -2635,13 +2640,12 @@ pub fn save_paths(request: &Request, trigger: Trigger, paths: &[String], say: Si
     // the excludes keep out is never named ([`kept_out`]), and the excludes are passed only where
     // a named folder could hold it.
     if named.iter().any(|path| could_hold_kept_out(root, path)) {
-        add.extend(&SAVE_STAGES[4..]);
+        add.extend(&NEVER_STAGED);
     }
     save_staging(request, trigger, &claim, &add, say)
 }
 
-/// Whether `path` (plane-relative) is inside what a save never stages ([`SAVE_STAGES`]'
-/// excludes): a level's `skills.local/`, or a throwaway piece.
+/// Whether `path` (plane-relative) is inside what a save never stages ([`NEVER_STAGED`]): a level's `skills.local/`, or a throwaway piece.
 fn kept_out(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     matches!(

@@ -356,6 +356,19 @@ pub fn compose_ready(
     if let Some(change) = &trust {
         recorded(change, start, ready.harness, persona.as_deref(), beside)?;
     }
+    // A sandboxed chat could make a workspace or persona folder while it runs: the ones there
+    // now are noted as not its own (SK-9), before it is armed.
+    if sandbox.is_some()
+        && crate::skills::studio_on_here()
+        && let Some(id) = start.program.as_deref()
+    {
+        let name = start
+            .number
+            .map_or_else(|| id.to_owned(), |number| number.to_string());
+        if let Err(why) = crate::skills::levels::note(root, id, &name) {
+            tracing::warn!("purlis: a sandboxed chat's start was not noted for its skills ({why})");
+        }
+    }
     let armed = armed(
         root,
         kit,
@@ -681,12 +694,21 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     let on = studio;
     // A Try it's scratch chat (SK-9, #2772): its project skills are the one skill its try laid
     // out, at a root of its own, so it gets the built-in skills and the draft alone.
-    let tried = cwd
-        .filter(|_| on)
-        .and_then(|cwd| crate::skills::verbs::drafts::tried(root, cwd));
-    let (skills_root, workspace, skills_persona) = match tried.as_deref() {
-        Some(tried) => (tried, None, None),
-        None => (root, workspace, persona),
+    let scope = crate::skills::verbs::drafts::scope_of(root, cwd.filter(|_| on));
+    let skills_root = scope.root.as_path();
+    let (workspace, skills_persona) = if scope.tried {
+        (None, None)
+    } else {
+        (workspace, persona)
+    };
+    // And every harness skill and plugin off, so the draft is tried alone.
+    let alone;
+    let plugins = if scope.tried {
+        alone =
+            crate::skills::verbs::drafts::alone_on(harness, &crate::harness_plugin::Env::of(&[]));
+        &alone
+    } else {
+        plugins
     };
     // And the repo skills of the clone it works in, read here too, so a narrower repo copy of a
     // plane skill is the one its harness gets where purlis builds what it is handed (SK-6).

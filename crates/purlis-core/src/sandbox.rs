@@ -996,11 +996,17 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
 
 /// **The skills of the project at `root` a chat is denied writing** (SK-9, #2772; ADR 0099 as
 /// amended 2026-10-22): every plane level's folder of skills, shared and local, at the project's
-/// root, in each workspace and in each persona's folder, whether or not it is there yet. A skill
-/// runs its `!` commands when it is used and reaches other chats, as `.claude/skills` does
-/// ([`PLANTED`]), so a chat's write of one becomes a draft skill the person tries and accepts
-/// ([`crate::skills::verbs::drafts`]). A workspace or persona made after the chat started is not
-/// in its list.
+/// root, in each workspace and in each persona's folder, whether or not it is there yet, and in
+/// any workspace or persona folder made later. A skill runs its `!` commands when it is used and
+/// reaches other chats, as `.claude/skills` does ([`PLANTED`]), so a chat's write of one becomes
+/// a draft skill the person tries and accepts ([`crate::skills::verbs::drafts`]).
+///
+/// The folders there now are held by their paths. The ones of levels made later are held by a
+/// pattern, a path with a [`ANY_NAME`] part, which Claude Code reads as a glob and purlis's own
+/// wrap as a regular expression ([`seatbelt::denial_rules`]). Where a backend cannot hold a
+/// pattern, the levels a chat could have made reach no chat while it runs
+/// ([`crate::skills::levels`]). A clone is never named `skills` or `skills.local`
+/// (`repocmd::clone::destination`), so no pattern holds a clone's root.
 pub fn skills_held(root: &Path) -> Vec<Denial> {
     let levels = [purlis_skills::PROJECT_DIR, purlis_skills::LOCAL_DIR];
     let mut owners: Vec<PathBuf> = vec![root.to_path_buf()];
@@ -1019,6 +1025,9 @@ pub fn skills_held(root: &Path) -> Vec<Denial> {
         found.sort();
         owners.extend(found);
     }
+    // Any level made later, by its pattern.
+    owners.push(root.join("workspaces").join(ANY_NAME));
+    owners.push(root.join("personas").join(ANY_NAME));
     owners
         .iter()
         .flat_map(|owner| levels.iter().map(move |level| owner.join(level)))
@@ -1032,6 +1041,10 @@ pub fn skills_held(root: &Path) -> Vec<Denial> {
         })
         .collect()
 }
+
+/// **A part of a denied path that stands for any one name** (SK-9): `workspaces/*/skills` holds
+/// the skills of every workspace, made now or later. Only [`skills_held`] writes one.
+pub const ANY_NAME: &str = "*";
 
 /// Whether this process runs in a chat the app started under a sandbox
 /// ([`crate::hookwire::SANDBOXED_ENV`] is `1`): a tool hook of that chat inherits it.

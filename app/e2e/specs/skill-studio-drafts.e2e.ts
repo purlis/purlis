@@ -51,7 +51,12 @@ function drafted(state: string, id: string, name: string, chat: number): void {
   writeFileSync(join(at, "files", "SKILL.md"), skillText(name));
   writeFileSync(
     join(at, "draft.json"),
-    JSON.stringify({ level: "skills", folder: name, chat, bases: { "SKILL.md": null } }),
+    JSON.stringify({
+      level: { at: "Project", local: false },
+      folder: name,
+      chat,
+      bases: { "SKILL.md": null },
+    }),
   );
 }
 

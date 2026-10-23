@@ -432,3 +432,124 @@ fn ending_a_try_never_follows_a_link_put_in_its_piece() {
     assert!(!tried_out.piece.exists());
     assert!(elsewhere.path().join("keep.txt").is_file());
 }
+
+#[test]
+fn a_try_left_behind_is_swept_once_old_and_one_a_chat_stands_in_is_kept() {
+    let tmp = plane();
+    let root = tmp.path();
+    let id = drafted(
+        root,
+        "skills/triage/SKILL.md",
+        &whole(&skill_text("triage", "Sorts issues.")),
+    );
+    let kept = try_out(root, &id).unwrap();
+    let left = try_out(root, &id).unwrap();
+    let state = crate::plane::state_dir(root);
+    // Just laid out: its chat may not be on the app's record yet.
+    sweep_tries(root, &[]);
+    assert!(left.piece.is_dir());
+    let old = std::time::SystemTime::now() - SWEEP_GRACE * 2;
+    for one in [&kept, &left] {
+        std::fs::File::open(state.join(TRIES_DIR).join(&one.id))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+    }
+    // A throwaway folder whose try is gone, as a crash between the two removals leaves it.
+    let orphan = root.join("workspaces/.throwaway/purlis-try-fedcba9876543210");
+    std::fs::create_dir_all(orphan.join("inside")).unwrap();
+    sweep_tries(root, std::slice::from_ref(&kept.piece));
+    assert!(kept.piece.is_dir(), "a chat stands in it");
+    assert!(!left.piece.exists());
+    assert!(!state.join(TRIES_DIR).join(&left.id).exists());
+    assert!(!orphan.exists());
+    let ids: Vec<String> = tries(root).into_iter().map(|one| one.id).collect();
+    assert_eq!(ids, std::slice::from_ref(&kept.id));
+}
+
+#[test]
+fn only_a_throwaway_folder_is_a_piece_and_only_its_chat_takes_the_tries_skills() {
+    let tmp = plane();
+    let root = tmp.path();
+    let id = drafted(
+        root,
+        "skills/triage/SKILL.md",
+        &whole(&skill_text("triage", "Sorts issues.")),
+    );
+    let tried_out = try_out(root, &id).unwrap();
+    assert!(a_piece(&tried_out.piece));
+    for not in [
+        root.join("workspaces/ops"),
+        root.join("workspaces/.throwaway/purlis-try-x"),
+        root.join("elsewhere/.throwaway/purlis-try-0123456789abcdef"),
+    ] {
+        assert!(!a_piece(&not), "{}", not.display());
+    }
+    let scope = scope_of(root, Some(&tried_out.piece));
+    assert!(scope.tried);
+    assert_eq!(scope.root, tried(root, &tried_out.piece).unwrap());
+    let elsewhere = scope_of(root, Some(&root.join("workspaces/ops")));
+    assert_eq!(
+        elsewhere,
+        Scope {
+            root: root.to_path_buf(),
+            tried: false
+        }
+    );
+}
+
+/// Decision 50: a Try it's scratch chat has the built-in skills and the draft alone, on every
+/// harness: each one's installed plugins and the person's own skills for it are turned off, and
+/// each adapter is handed the names.
+#[test]
+fn a_try_turns_off_every_harness_skill_and_plugin_on_every_harness() {
+    use crate::harness::Harness;
+    let home = tempfile::tempdir().unwrap();
+    let at = |rel: &str| home.path().join(rel);
+    std::fs::create_dir_all(at("claude/plugins")).unwrap();
+    std::fs::write(
+        at("claude/plugins/installed_plugins.json"),
+        r#"{"version": 2, "plugins": {"figma@market": [{"scope": "user", "installPath": "/x", "version": "1"}]}}"#,
+    )
+    .unwrap();
+    skill_at(home.path(), "claude/skills/mine", "mine", "Mine.");
+    skill_at(home.path(), "codex/skills/codexmine", "codexmine", "Mine.");
+    skill_at(home.path(), ".claude/skills/ocmine", "ocmine", "Mine.");
+    let vars: Vec<(String, String)> = [("CLAUDE_CONFIG_DIR", "claude"), ("CODEX_HOME", "codex")]
+        .iter()
+        .map(|(name, rel)| ((*name).to_owned(), at(rel).display().to_string()))
+        .collect();
+    let env = crate::harness_plugin::Env {
+        chat: &vars,
+        home: Some(home.path().to_path_buf()),
+        process: false,
+    };
+    let kit = crate::harness::Kit {
+        binary: Path::new("/opt/purlis/purlis"),
+        plugin: None,
+        persona: None,
+        skills: None,
+    };
+    for (harness, own) in [
+        (Harness::ClaudeCode, "mine"),
+        (Harness::Codex, "codexmine"),
+        (Harness::Opencode, "ocmine"),
+    ] {
+        let chosen = alone_on(harness, &env);
+        assert!(chosen.skills_off.contains(own), "{harness:?}: {chosen:?}");
+        assert!(
+            chosen.plugins.values().all(|on| !on),
+            "{harness:?}: {chosen:?}"
+        );
+        assert!(
+            crate::skills::skills_off_for(kit, harness, &chosen).contains(&own.to_owned()),
+            "{harness:?} is handed {own} as turned off"
+        );
+    }
+    assert_eq!(
+        alone_on(Harness::ClaudeCode, &env)
+            .plugins
+            .get("figma@market"),
+        Some(&false)
+    );
+}

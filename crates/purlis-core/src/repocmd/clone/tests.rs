@@ -231,6 +231,19 @@ fn a_name_that_is_a_path_or_an_option_or_hidden_gets_no_destination() {
     );
 }
 
+/// SK-9 (#2772): a workspace keeps its skills in `skills/` and `skills.local/`, which a chat is
+/// denied writing, so no clone takes either name, in any case.
+#[test]
+fn a_clone_is_never_named_as_a_workspaces_skills_folder() {
+    let (_dir, root) = plane();
+    let ws = root.join("workspaces/alpha");
+    for taken in ["skills", "skills.local", "Skills"] {
+        let refused = destination(&root, "alpha", &ws, taken).unwrap_err();
+        assert!(refused.contains("keeps its skills"), "{taken}: {refused}");
+    }
+    assert!(destination(&root, "alpha", &ws, "skills-repo").is_ok());
+}
+
 #[test]
 fn a_repo_name_the_next_machine_reads_as_something_else_gets_no_destination() {
     // charter-app#96. `repo_name_ok`'s alphabet admits `nul` and `alpha.`, and this name

@@ -317,6 +317,17 @@ pub fn destination(root: &Path, ws: &str, ws_dir: &Path, name: &str) -> Result<P
             crate::shown::escaped(name)
         ));
     }
+    // A workspace's skills live in its `skills/` and `skills.local/` (ADR 0099), which a chat
+    // is denied writing (SK-9): a clone of that name would be a repo no chat could work in.
+    if [purlis_skills::PROJECT_DIR, purlis_skills::LOCAL_DIR]
+        .iter()
+        .any(|taken| taken.eq_ignore_ascii_case(name))
+    {
+        return Err(format!(
+            "purlis will not clone '{}' under that name: a workspace keeps its skills in a              folder of that name. Clone it under another name",
+            crate::shown::escaped(name)
+        ));
+    }
     // A clone's directory is named in `workspace.json` and that manifest is committed, so the
     // name travels (charter-app#96). The alphabet above admits `nul` and `alpha.`, and a
     // forge may honestly hold a repo called either.

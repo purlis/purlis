@@ -31,11 +31,6 @@ use crate::curation::{ChatTyped, Curating};
 use crate::planes::{Held, PlaneId, Planes};
 use crate::skillchange::{SkillChanged, SkillLevel};
 
-/// What the chat's `purlis propose`, or its refused tool, is answered with where its write became
-/// a draft.
-pub const KEPT_SAID: &str = "kept as a draft skill: the person tries it and accepts or rejects \
-                             it in the Skill studio.";
-
 /// **Keeps chat `ask.chat`'s change as a draft skill** where it is to a plane skill's file and
 /// the Skill studio's flag is on: the answer, or `None` for a proposal that is not one, which is
 /// then a proposed change as before. Nothing in the project is written.
@@ -45,6 +40,10 @@ pub fn drafted(held: &Held, ask: &ProposeAsk) -> Option<Answer> {
     }
     let root = held.root();
     let file = drafts::draftable(root, &root.join(&ask.path))?;
+    // Policy's `sandbox.proposed-changes = "off"` holds no draft either (PC-14).
+    if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
+        return Some(Answer::No { why });
+    }
     if ask.change.carried() > purlis_core::proposed::MOST_BYTES {
         return Some(Answer::No {
             why: purlis_core::proposed::UNPREPARED.to_owned(),
@@ -55,7 +54,9 @@ pub fn drafted(held: &Held, ask: &ProposeAsk) -> Option<Answer> {
             // The studio and the chat's tab read the drafts again when the asks move.
             held.chats().asks_may_have_moved();
             Answer::Said {
-                lines: vec![purlis_core::repocmd::Say::Done(KEPT_SAID.to_owned())],
+                lines: vec![purlis_core::repocmd::Say::Done(
+                    drafts::DRAFTED_SAID.to_owned(),
+                )],
                 code: 0,
             }
         }
@@ -70,8 +71,6 @@ pub struct SkillDraft {
     pub id: String,
     pub name: String,
     pub level: SkillLevel,
-    /// Its level as a person reads it: `project`, `local workspace ops`.
-    pub label: String,
     /// The chat that wrote it last, by its number.
     pub chat: Option<u32>,
     /// A new skill, rather than a change to one.
@@ -97,7 +96,6 @@ impl From<drafts::Draft> for SkillDraft {
     fn from(draft: drafts::Draft) -> SkillDraft {
         SkillDraft {
             stale: draft.stale(),
-            label: draft.level.to_string(),
             level: (&draft.level).into(),
             id: draft.id,
             name: draft.name,
@@ -247,15 +245,22 @@ pub(crate) async fn skill_draft_try(
             .filter_map(|open| open.cwd)
             .filter_map(|cwd| std::fs::canonicalize(cwd).ok())
             .collect();
-        for (left, piece) in drafts::tries(&root) {
-            if !standing.contains(&piece)
-                && let Err(why) = drafts::end_try(&root, &left)
-            {
-                tracing::warn!("purlis: a Try it left behind was not ended ({why})");
-            }
-        }
+        drafts::sweep_tries(&root, &standing);
         let draft = drafts::one(&root, &id)?;
-        let profile = match profile {
+        // The harness and profile of the draft's own level (decision 50): the chat that drafted
+        // it where it still runs there, else another chat of that workspace (or of the
+        // project's root), else the project's default.
+        let chats_open = held.chats().open_now();
+        let at_level = |one: &&crate::chats::Open| {
+            one.workspace.as_deref() == draft.level.workspace_name() && one.profile.is_some()
+        };
+        let of_level = chats_open
+            .iter()
+            .filter(at_level)
+            .find(|one| Some(one.session) == draft.chat)
+            .or_else(|| chats_open.iter().find(at_level))
+            .and_then(|one| one.profile.clone());
+        let profile = match profile.or(of_level) {
             Some(profile) => profile,
             None => crate::curation::default_profile(&root, "Try it did not start")?.0,
         };
@@ -290,23 +295,10 @@ fn open(
 ) -> Result<Curating, String> {
     let root = held.root().to_path_buf();
     let (label, cwd) = (chat.label.clone(), chat.cwd.clone());
-    let typed = crate::curation::start_typed(
-        held,
-        chat,
-        size,
-        |profile, declared, card| {
-            declared
-                .and_then(purlis_core::harness_declaration::Declaration::ready_to_type)
-                .ok_or_else(|| match crate::curation::cannot_be_typed_into(card) {
-                    Some(lacks) => format!("'{profile}' cannot open this chat: {lacks}"),
-                    None => format!(
-                        "'{profile}' starts a program purlis has not measured, so it cannot tell \
-                         when to type into it, and no chat was opened."
-                    ),
-                })
-        },
-        |why| format!("{why}, so nothing was typed and no chat was opened."),
-    )?;
+    let typed =
+        crate::curation::start_typed(held, chat, size, crate::curation::when_typed, |why| {
+            format!("{why}, so nothing was typed and no chat was opened.")
+        })?;
     Ok(Curating {
         session: typed.session,
         name: typed.name,
@@ -321,11 +313,7 @@ fn open(
 /// program has had time to end, where no other open chat stands in it (a restart starts before
 /// the chat it replaces ends). Nothing for any other folder.
 pub(crate) fn closed_in(root: &std::path::Path, cwd: &std::path::Path) {
-    let is_a_piece = cwd
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.starts_with(drafts::PIECE_PREFIX));
-    if !is_a_piece {
+    if !drafts::a_piece(cwd) {
         return;
     }
     let (root, cwd) = (root.to_path_buf(), cwd.to_path_buf());
@@ -335,4 +323,23 @@ pub(crate) fn closed_in(root: &std::path::Path, cwd: &std::path::Path) {
             tracing::warn!("purlis: a Try it's throwaway folder was not removed ({why})");
         }
     });
+}
+
+/// **A closed chat's Skill studio leftovers go** (SK-9, #2772), each time the app writes its
+/// record of the open chats in the project at `root`: the record of the levels a sandboxed chat
+/// that is no longer on it could have made, and every Try it no chat on it stands in. At a launch
+/// that is every one a quit or a crash left.
+pub(crate) fn sweep(root: &std::path::Path, record: &purlis_core::reopen::Record) {
+    let ids: Vec<String> = record
+        .chats
+        .iter()
+        .filter_map(|chat| chat.identity.id.clone())
+        .collect();
+    let cwds: Vec<std::path::PathBuf> = record
+        .chats
+        .iter()
+        .filter_map(|chat| chat.cwd.clone())
+        .collect();
+    purlis_core::skills::levels::sweep(root, &ids);
+    drafts::sweep_tries(root, &cwds);
 }

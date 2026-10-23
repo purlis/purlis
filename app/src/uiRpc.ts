@@ -8929,8 +8929,6 @@ export type SkillDraft = {
 	id: string,
 	name: string,
 	level: SkillLevel,
-	/**  Its level as a person reads it: `project`, `local workspace ops`. */
-	label: string,
 	/**  The chat that wrote it last, by its number. */
 	chat: number | null,
 	/**  A new skill, rather than a change to one. */

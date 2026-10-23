@@ -172,6 +172,11 @@ pub struct Chat<'a> {
 /// this crate only asks purlis-core.
 pub type KeptLocal<'a> = dyn Fn(&Path) -> Result<(), String> + Sync + 'a;
 
+/// **Why the skills of a workspace or persona folder reach no chat now** (SK-9), as the end of
+/// a sentence, or `None` where they do. purlis-core asks its records of the running sandboxed
+/// chats; this crate only asks purlis-core.
+pub type MadeSince<'a> = dyn Fn(&Path) -> Option<String> + Sync + 'a;
+
 /// What this machine holds that a chat's skills can come from.
 #[derive(Clone, Copy, Default)]
 pub struct Machine<'a> {
@@ -185,6 +190,9 @@ pub struct Machine<'a> {
     /// declaration reads. `None` where nobody looked: then a harness skill the persona names is
     /// taken as there, and never said to be missing.
     pub harness: Option<&'a [OnMachine]>,
+    /// How to ask whether a workspace's or persona's folder was made while a chat that could
+    /// have made it ran, by the folder. `None` asks nothing: every level is read.
+    pub made_since: Option<&'a MadeSince<'a>>,
 }
 
 impl std::fmt::Debug for Machine<'_> {
@@ -193,6 +201,7 @@ impl std::fmt::Debug for Machine<'_> {
             .field("built_in", &self.built_in)
             .field("kept_local", &self.kept_local.is_some())
             .field("harness", &self.harness)
+            .field("made_since", &self.made_since.is_some())
             .finish()
     }
 }
@@ -254,6 +263,9 @@ pub enum Reason {
     /// A harness or repo skill named as one of purlis's built-in skills, which never loses to
     /// any other copy (SK-6): the chat is handed purlis's.
     HiddenByBuiltIn,
+    /// A workspace or persona skill whose level's folder was made while a chat that could have
+    /// made it was running (SK-9): the sentence that says which, and when it reaches chats.
+    MadeWhileAChatRan(String),
 }
 
 /// What a folder lacks to be a whole skill.
@@ -314,6 +326,7 @@ impl std::fmt::Display for Reason {
             }
             Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
             Self::HiddenByBuiltIn => f.write_str("hidden by purlis's built-in skill of this name"),
+            Self::MadeWhileAChatRan(why) => f.write_str(why),
         }
     }
 }
@@ -639,7 +652,11 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
         if let Some(persona) = chat.persona {
             for local in [true, false] {
                 if let Some(dir) = persona_dir(plane, persona, local) {
+                    let made = made_since(machine, &plane.join("personas").join(persona));
                     level(&mut set, &dir, (Origin::Persona, local), route, |skill| {
+                        if let Some(why) = &made {
+                            return Some(Reason::MadeWhileAChatRan(why.clone()));
+                        }
                         if local {
                             kept_here(machine, folder_of_skill(skill))
                         } else {
@@ -653,7 +670,11 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
         if let Some(ws) = workspace {
             for local in [true, false] {
                 if let Some(dir) = level_dir(plane, Some(ws), local) {
+                    let made = made_since(machine, &plane.join(WORKSPACES_DIR).join(ws));
                     level(&mut set, &dir, (Origin::Workspace, local), route, |skill| {
+                        if let Some(why) = &made {
+                            return Some(Reason::MadeWhileAChatRan(why.clone()));
+                        }
                         if local {
                             kept_here(machine, folder_of_skill(skill))
                         } else {
@@ -687,6 +708,12 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
         .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
     widest_first(&mut set.left_out);
     set
+}
+
+/// Why the levels of the workspace or persona folder `owner` reach no chat, where `machine`
+/// asks (SK-9).
+fn made_since(machine: &Machine<'_>, owner: &Path) -> Option<String> {
+    machine.made_since.and_then(|asked| asked(owner))
 }
 
 /// Why a project skill in `folder`, named `name`, does not reach a chat in `workspace`, which

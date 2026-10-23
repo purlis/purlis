@@ -2,18 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { lazy, Suspense, useEffect, useState } from "react";
-import { commands, type ProfileRow, type SkillDraft } from "./bindings";
+import { commands, type ProfileRow, type SkillDraft, type StudioLevel } from "./bindings";
 import { counted } from "./dispatches";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Select } from "./primitives/Select";
 import { askSkillChat } from "./skillDraftAsks";
+import { labelOf } from "./skillChanges";
 
 /** The merge view, from the editor's own chunk (ADR 0086 row M2), loaded when a diff opens. */
 const MergeViewer = lazy(() =>
   import("./editor/LightEditor").then((module) => ({ default: module.MergeViewer })),
 );
 
-/** The project's default profile, in the Try it picker. */
+/** The harness profile of the draft's own level, in the Try it picker: the one its chats run on,
+ *  else the project's default. */
 const DEFAULT = "";
 
 /**
@@ -23,8 +25,8 @@ const DEFAULT = "";
  * - **Changes**: every file the draft writes, against what the project holds, in the light
  *   editor's merge view;
  * - **Try it**: a scratch chat with the built-in skills and this draft alone, in a throwaway
- *   folder, on the project's default harness profile or the one picked; closing it leaves only
- *   the skill runs it recorded;
+ *   folder, on the harness profile the draft's level runs on or the one picked; closing it leaves
+ *   only the skill runs it recorded;
  * - **Accept**: one commit of exactly the draft's files (a local skill's is kept on this machine
  *   only), refused where the project changed one of them since;
  * - **Reject**: deletes the draft.
@@ -32,12 +34,15 @@ const DEFAULT = "";
 export function SkillDrafts({
   plane,
   drafts,
+  levels,
   busy,
   onAccept,
   onReject,
 }: {
   plane: string;
   drafts: readonly SkillDraft[];
+  /** The project's levels, with their words. */
+  levels: readonly StudioLevel[];
   busy: boolean;
   onAccept: (draft: SkillDraft) => void;
   onReject: (draft: SkillDraft) => void;
@@ -61,7 +66,7 @@ export function SkillDrafts({
   }, [plane, some]);
   if (!some) return null;
   const options = [
-    { value: DEFAULT, label: "The project's default" },
+    { value: DEFAULT, label: "Where it was drafted" },
     ...profiles.map((one) => ({ value: one.name, label: one.name })),
   ];
   return (
@@ -76,7 +81,7 @@ export function SkillDrafts({
           return (
             <li key={draft.id} data-testid={`draft-${draft.name}`}>
               <p>
-                <code>{draft.name}</code> · {draft.label} ·{" "}
+                <code>{draft.name}</code> · {labelOf(levels, draft.level)} ·{" "}
                 {draft.new ? "a new skill" : "a change to it"} ·{" "}
                 {counted(draft.files.length, "file", "files")}
                 {draft.chat !== null && ` · from chat ${draft.chat}`}

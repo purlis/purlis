@@ -31,6 +31,8 @@ use std::path::{Component, Path, PathBuf};
 
 use super::{Ctx, Level, find, level_is_there, rel};
 use crate::proposed::{self, Change, NotMade};
+#[cfg(unix)]
+use crate::skills::at;
 
 /// The folder of this machine's state the drafts are kept in, one folder each.
 pub const DRAFTS_DIR: &str = "skill-drafts";
@@ -56,12 +58,8 @@ pub const MOST_FILES: usize = 32;
 /// How many folders deep a draft's file, or a skill's file Try it lays out, may be.
 const DEEPEST: usize = 8;
 
-/// Names never drafted below a skill's folder: what a program runs as its own (PC-1's rule for
-/// `.claude/skills`, [`crate::proposed`]).
-const NEVER: [&str; 2] = ["package.json", "hooks"];
-
-/// **What a chat whose write became a draft is told** (decision 38): the person has it in the
-/// Skill studio, and nothing was written.
+/// **What a chat whose write became a draft is told** (decision 38), by its refused tool and by
+/// `purlis propose`: the person has it in the Skill studio, and nothing was written.
 pub const DRAFTED_SAID: &str = "purlis kept this as a draft skill in the Skill studio, where the \
      person tries it and accepts or rejects it: nothing was written to the project. Say that the \
      draft is ready in the Skill studio. Do not write the file another way.";
@@ -109,9 +107,9 @@ pub fn draftable(root: &Path, path: &Path) -> Option<SkillFile> {
     let level = Level::of_rel(&parts[..at].join("/"))?;
     let (folder, inner) = (parts[at], &parts[at + 1..]);
     if folder.starts_with('.')
-        || inner
-            .iter()
-            .any(|part| part.is_empty() || part.starts_with('.') || NEVER.contains(part))
+        || inner.iter().any(|part| {
+            part.is_empty() || part.starts_with('.') || proposed::SKILL_NEVER.contains(part)
+        })
     {
         return None;
     }
@@ -158,10 +156,9 @@ fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
 }
 
 /// A draft's record, as its folder keeps it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct Record {
-    /// The level's folder, relative to the plane ([`Level::rel`]).
-    level: String,
+    level: Level,
     folder: String,
     /// The chat that wrote it last, by its number.
     chat: Option<u32>,
@@ -219,10 +216,12 @@ fn id_of(level: &Level, folder: &str) -> String {
     hash.update(level.rel().unwrap_or_default().as_bytes());
     hash.update([0]);
     hash.update(folder.as_bytes());
-    hash.finalize()[..8]
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex(&hash.finalize()[..8])
+}
+
+/// `bytes` as lowercase hex: the one spelling of every id this module makes.
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Whether `id` is a name this module makes: sixteen lowercase hex characters.
@@ -234,11 +233,14 @@ fn an_id(id: &str) -> bool {
 }
 
 /// The text of the file at `rel` under `at`, read pinned; `None` where nothing is there.
+/// Said without the file's path, which the window never shows.
 fn read_at(at: &Path, rel: &str) -> Result<Option<String>, String> {
     let bytes = proposed::read_pinned(at, Path::new(rel))
-        .map_err(|_| format!("{rel} is not a plain file, so purlis does not read it"))?;
+        .map_err(|_| "a file of the skill is not a plain file, so purlis does not read it")?;
     bytes
-        .map(|bytes| String::from_utf8(bytes).map_err(|_| format!("{rel} is not text")))
+        .map(|bytes| {
+            String::from_utf8(bytes).map_err(|_| "a file of the skill is not text".to_owned())
+        })
         .transpose()
 }
 
@@ -280,8 +282,7 @@ fn record_of(state: &Path, id: &str) -> Result<Option<Record>, String> {
 /// the draft. Refused where the change does not apply, or the draft would hold more than
 /// [`MOST_FILES`] files. Nothing in the project is written.
 pub fn take(root: &Path, chat: u32, file: &SkillFile, change: &Change) -> Result<String, String> {
-    let level_rel = file
-        .level
+    file.level
         .rel()
         .ok_or_else(|| format!("{} is no level of this project", file.level))?;
     let id = id_of(&file.level, &file.folder);
@@ -289,9 +290,10 @@ pub fn take(root: &Path, chat: u32, file: &SkillFile, change: &Change) -> Result
     super::store::made(&state, &[DRAFTS_DIR, &id], true).map_err(|why| why.to_string())?;
     let was_record = record_of(&state, &id)?;
     let mut record = was_record.clone().unwrap_or_else(|| Record {
-        level: level_rel,
+        level: file.level.clone(),
         folder: file.folder.clone(),
-        ..Record::default()
+        chat: None,
+        bases: BTreeMap::new(),
     });
     if !record.bases.contains_key(&file.inner) && record.bases.len() >= MOST_FILES {
         return Err(format!(
@@ -352,7 +354,7 @@ pub const NO_SUCH: &str = "that draft is not waiting any more: it was accepted o
 
 fn one_in(root: &Path, state: &Path, id: &str) -> Result<Draft, String> {
     let record = record_of(state, id)?.ok_or(NO_SUCH)?;
-    let level = Level::of_rel(&record.level).ok_or(NO_SUCH)?;
+    let level = record.level.clone();
     let level_rel = level.rel().ok_or(NO_SUCH)?;
     let mut files = Vec::new();
     for (path, base) in &record.bases {
@@ -385,10 +387,10 @@ fn one_in(root: &Path, state: &Path, id: &str) -> Result<Draft, String> {
 fn ids_in(state: &Path, dir: &str) -> Vec<String> {
     #[cfg(unix)]
     {
-        let Ok(at) = super::super::at::folder(&state.join(dir)) else {
+        let Ok(at) = at::folder(&state.join(dir)) else {
             return Vec::new();
         };
-        super::super::at::entries(&at)
+        at::entries(&at)
             .unwrap_or_default()
             .into_iter()
             .filter(|entry| entry.kind == rustix::fs::FileType::Directory && an_id(&entry.name))
@@ -410,8 +412,8 @@ fn remove_in(state: &Path, dir: &str, id: &str) -> Result<(), String> {
     }
     #[cfg(unix)]
     {
-        let at = super::super::at::folder(&state.join(dir)).map_err(|why| why.to_string())?;
-        super::super::at::remove_tree_in(&at, id).map_err(|why| why.to_string())
+        let at = at::folder(&state.join(dir)).map_err(|why| why.to_string())?;
+        at::remove_tree_in(&at, id).map_err(|why| why.to_string())
     }
     #[cfg(not(unix))]
     {
@@ -570,7 +572,7 @@ pub fn try_out(root: &Path, id: &str) -> Result<Try, String> {
 fn random_id() -> Result<String, String> {
     let mut random = [0u8; 8];
     getrandom::fill(&mut random).map_err(|why| why.to_string())?;
-    Ok(random.iter().map(|byte| format!("{byte:02x}")).collect())
+    Ok(hex(&random))
 }
 
 /// The folder of the project the throwaway pieces are made in, relative to its root: inside the
@@ -624,10 +626,10 @@ fn remove_piece(root: &Path, id: &str) -> Result<(), String> {
             return Ok(());
         };
         let name = format!("{PIECE_PREFIX}{id}");
-        match super::super::at::entry_in(&at, &name).map_err(|why| why.to_string())? {
+        match at::entry_in(&at, &name).map_err(|why| why.to_string())? {
             None => Ok(()),
             Some(entry) if entry.kind == rustix::fs::FileType::Directory => {
-                super::super::at::remove_tree_in(&at, &name).map_err(|why| why.to_string())
+                at::remove_tree_in(&at, &name).map_err(|why| why.to_string())
             }
             Some(_) => Err("the throwaway folder is not a folder, so it was left".to_owned()),
         }
@@ -664,7 +666,7 @@ fn files_below(plane: &Path, folder: &Path) -> Vec<(String, String)> {
         ) else {
             continue;
         };
-        for entry in super::super::at::entries(&dir).unwrap_or_default() {
+        for entry in at::entries(&dir).unwrap_or_default() {
             if entry.name.starts_with('.') || out.len() >= MOST_FILES {
                 continue;
             }
@@ -730,7 +732,7 @@ pub fn end_try_at(root: &Path, cwd: &Path) -> Result<bool, String> {
 /// **Every Try it laid out in the project at `root`**: its id and its throwaway piece's folder.
 /// What a new Try it sweeps: one whose piece no open chat stands in was left by a chat that never
 /// closed (a quit, a crash), and is ended.
-pub fn tries(root: &Path) -> Vec<(String, PathBuf)> {
+pub fn tries(root: &Path) -> Vec<Try> {
     let state = crate::plane::state_dir(root);
     ids_in(&state, TRIES_DIR)
         .into_iter()
@@ -740,9 +742,125 @@ pub fn tries(root: &Path) -> Vec<(String, PathBuf)> {
                 .flatten()
                 .map(|text| PathBuf::from(text.trim_end()))
                 .unwrap_or_default();
-            (id, piece)
+            Try { id, piece }
         })
         .collect()
+}
+
+/// How long a try is kept before a sweep may take it for one no chat stands in: the time between
+/// laying it out and its chat being on the app's record, with room to spare.
+pub const SWEEP_GRACE: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// **Ends every try of the project at `root` whose throwaway piece no chat in `open` stands in**
+/// (each chat's folder), once it is older than [`SWEEP_GRACE`]: what a quit, a crash or a lost
+/// close left. The app's, each time its record of open chats is written. Each throwaway folder
+/// left with no try is removed too, by the names this module makes.
+pub fn sweep_tries(root: &Path, open: &[PathBuf]) {
+    let open: Vec<PathBuf> = open
+        .iter()
+        .filter_map(|cwd| std::fs::canonicalize(cwd).ok())
+        .collect();
+    let state = crate::plane::state_dir(root);
+    let young = |path: &Path| {
+        std::fs::symlink_metadata(path)
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_some_and(|age| age < SWEEP_GRACE)
+    };
+    let mut kept: Vec<String> = Vec::new();
+    for one in tries(root) {
+        if open.contains(&one.piece) || young(&state.join(TRIES_DIR).join(&one.id)) {
+            kept.push(one.id);
+            continue;
+        }
+        if let Err(why) = end_try(root, &one.id) {
+            tracing::warn!(target: "purlis::skills", "a Try it left behind was not ended ({why})");
+        }
+    }
+    // A throwaway folder whose try is gone: made by this module, named so, never followed.
+    #[cfg(unix)]
+    if let Ok(at) = pieces_at(root, false) {
+        for entry in at::entries(&at).unwrap_or_default() {
+            let Some(id) = entry.name.strip_prefix(PIECE_PREFIX) else {
+                continue;
+            };
+            if an_id(id) && !kept.iter().any(|one| one == id) {
+                let _ = remove_piece(root, id);
+            }
+        }
+    }
+}
+
+/// **Whether `path` is a throwaway piece's folder**: named so, in the project's [`PIECES`]. The
+/// one place that says it; [`tried`] is the one that says which try's.
+pub fn a_piece(path: &Path) -> bool {
+    let named = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix(PIECE_PREFIX))
+        .is_some_and(an_id);
+    let mut above = path.parent().into_iter().flat_map(Path::components).rev();
+    named
+        && above.next().map(|part| part.as_os_str()) == Some(std::ffi::OsStr::new(PIECES[1]))
+        && above.next().map(|part| part.as_os_str()) == Some(std::ffi::OsStr::new(PIECES[0]))
+}
+
+/// **Where a chat started in `cwd` of the project at `root` takes the plane's skills from**: the
+/// project, or, for a Try it's scratch chat ([`tried`]), its try's folder, as a project of its own
+/// with no workspace and no persona. The one answer arming, the briefing and a skill run's read
+/// each ask.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scope {
+    pub root: PathBuf,
+    /// A Try it's scratch chat: no workspace's, persona's or harness's skills beside the draft.
+    pub tried: bool,
+}
+
+/// [`Scope`] of a chat in `cwd` of the project at `root`.
+pub fn scope_of(root: &Path, cwd: Option<&Path>) -> Scope {
+    match cwd
+        .filter(|cwd| a_piece(cwd))
+        .and_then(|cwd| tried(root, cwd))
+    {
+        Some(tried) => Scope {
+            root: tried,
+            tried: true,
+        },
+        None => Scope {
+            root: root.to_path_buf(),
+            tried: false,
+        },
+    }
+}
+
+/// **What a Try it's scratch chat on `harness` turns off** (decision 50): every plugin the
+/// harness has installed and every skill of the person's own folders for it, so the chat has the
+/// built-in skills and the draft alone. Each adapter hands it over by its harness's switch (SK-6):
+/// Claude Code's `enabledPlugins` and `skillOverrides`, Codex's `skills.config`, opencode's
+/// `permission.skill`. A built-in skill's name is never turned off (`skills::skills_off_for`).
+pub fn alone_on(
+    harness: crate::harness::Harness,
+    env: &crate::harness_plugin::Env<'_>,
+) -> crate::harness_plugin::Chosen {
+    let adapter = harness.adapter().plugins();
+    let plugins = adapter
+        .installed(env)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|plugin| (plugin.id, false))
+        .collect();
+    let skills_off = crate::skills::on_machine(harness, env)
+        .into_iter()
+        .filter_map(|found| match found {
+            crate::skills::OnMachine::Skill { plugin: None, name } => Some(name),
+            _ => None,
+        })
+        .collect();
+    crate::harness_plugin::Chosen {
+        plugins,
+        skills_off,
+    }
 }
 
 /// **The prompt "Ask a chat to draft a skill" types** (decision 13), unsent, into a chat that

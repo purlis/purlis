@@ -404,26 +404,11 @@ pub fn pretooluse_edit_proposing(
 /// edit is then [`proposing`]'s and [`pretooluse_edit`]'s, as before.
 fn drafting(hook: &Hook, hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool) -> Option<Answer> {
     use crate::skills::verbs::drafts;
-    if !hook.in_plane {
-        return None;
-    }
+    let (chat, cwd) = handed_over_from(hook)?;
     let tool = hook.payload["tool_name"].as_str()?;
     if !matches!(tool, "Write" | "Edit" | "MultiEdit") {
         return None;
     }
-    let harness = (hook.env)(crate::hookwire::HARNESS_ENV);
-    if harness
-        .as_deref()
-        .and_then(crate::sandbox::harness_of_registry)
-        != Some(crate::harness::Harness::ClaudeCode)
-    {
-        return None;
-    }
-    let chat: u32 = (hook.env)(crate::hookwire::CHAT_ENV)?.parse().ok()?;
-    let cwd = match hook.text("cwd") {
-        "" => hook.cwd.to_path_buf(),
-        given => PathBuf::from(given),
-    };
     let named = hook.payload["tool_input"]["file_path"].as_str()?;
     let file = drafts::draftable(hook.root, &cwd.join(named))?;
     let change = match crate::proposed::Change::of_tool(tool, &hook.payload["tool_input"]) {
@@ -439,9 +424,12 @@ fn drafting(hook: &Hook, hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool) -> 
     .then(|| deny(drafts::DRAFTED_SAID.to_owned()))
 }
 
-/// The answer to a proposable edit, or none where the edit is not one.
-fn proposing(hook: &Hook, hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool) -> Option<Answer> {
-    if !hook.in_plane || !crate::sandbox::chat_is_sandboxed_in(hook.env) {
+/// **Whether an edit of this hook's chat may be handed to the app** on the proposed change's
+/// road, and the chat and folder it is read from: a Claude Code chat in the plane that the app
+/// numbers, where policy does not turn proposed changes off (PC-14). What [`drafting`] and
+/// [`proposing`] both ask first.
+fn handed_over_from(hook: &Hook) -> Option<(u32, PathBuf)> {
+    if !hook.in_plane {
         return None;
     }
     let harness = (hook.env)(crate::hookwire::HARNESS_ENV);
@@ -463,6 +451,15 @@ fn proposing(hook: &Hook, hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool) ->
         "" => hook.cwd.to_path_buf(),
         given => PathBuf::from(given),
     };
+    Some((chat, cwd))
+}
+
+/// The answer to a proposable edit, or none where the edit is not one: a sandboxed chat's alone.
+fn proposing(hook: &Hook, hand: &dyn Fn(crate::hookwire::ProposeAsk) -> bool) -> Option<Answer> {
+    if !crate::sandbox::chat_is_sandboxed_in(hook.env) {
+        return None;
+    }
+    let (chat, cwd) = handed_over_from(hook)?;
     match crate::proposed::from_edit(hook.root, hook.payload, &cwd)? {
         Err(why) => Some(deny(why)),
         Ok(proposed) => hand(crate::hookwire::ProposeAsk {

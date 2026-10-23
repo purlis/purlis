@@ -317,6 +317,7 @@ export function SkillStudioTab({
     <SkillDrafts
       plane={plane}
       drafts={drafts}
+      levels={studio.levels}
       busy={busy}
       onAccept={(draft) =>
         change("The draft was not accepted", () => commands.skillDraftAccept(plane, draft.id))

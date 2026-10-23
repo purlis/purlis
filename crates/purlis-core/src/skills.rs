@@ -28,6 +28,7 @@ pub mod verbs;
 
 use crate::harness::{Harness, Kit};
 
+pub mod levels;
 mod on_machine;
 pub mod persona;
 
@@ -641,15 +642,13 @@ pub fn briefed(
         crate::envvar::lookup(crate::active::PERSONA_ENV, env).filter(|p| !p.is_empty());
     let plane = env(PLANE_LISTED_ENV).is_some_and(|on| on == "1");
     // A Try it's scratch chat (SK-9): briefed on the one skill its try laid out, as it is armed.
-    let tried = cwd
-        .filter(|_| plane)
-        .and_then(|cwd| verbs::drafts::tried(root, cwd));
-    let (root, workspace) = match tried.as_deref() {
-        Some(tried) => {
-            persona = None;
-            (tried, None)
-        }
-        None => (root, workspace),
+    let scope = verbs::drafts::scope_of(root, cwd.filter(|_| plane));
+    let root = scope.root.as_path();
+    let workspace = if scope.tried {
+        persona = None;
+        None
+    } else {
+        workspace
     };
     // The repo skills of the clone the chat works in, as each briefed harness reads them: the
     // briefing lists one copy of a name, the narrower (SK-6, decision 51).
@@ -698,13 +697,8 @@ pub fn readable_by_a_briefed_chat(
     };
     let mut skills = read(Path::new(&dir));
     if env(PLANE_LISTED_ENV).is_some_and(|on| on == "1") {
-        let tried = verbs::drafts::tried(root, cwd);
-        skills.extend(read(
-            &tried
-                .as_deref()
-                .unwrap_or(root)
-                .join(purlis_skills::PROJECT_DIR),
-        ));
+        let scope = verbs::drafts::scope_of(root, Some(cwd));
+        skills.extend(read(&scope.root.join(purlis_skills::PROJECT_DIR)));
     }
     skills
 }
@@ -900,12 +894,17 @@ fn ask(
         .zip(persona)
         .map(|(at, persona)| names_of(at.plane, persona))
         .unwrap_or_default();
+    // A workspace or persona folder a running sandboxed chat could have made (SK-9).
+    let made = plane.map(|at| levels::made_since(at.plane));
     let set = purlis_skills::skill_set(
         plane.map(|at| at.plane),
         &Machine {
             built_in,
             kept_local: Some(&kept),
             harness,
+            made_since: made
+                .as_deref()
+                .map(|made| made as &purlis_skills::MadeSince<'_>),
         },
         &Chat {
             workspace: plane.and_then(|at| at.workspace),
