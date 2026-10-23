@@ -357,10 +357,10 @@ export async function typeInto(selector: string, text: string): Promise<void> {
 }
 
 /**
- * Picks `value` in the select `selector`: the window's one select, Radix's (`primitives/Select.tsx`,
- * #1860), whose trigger is a `[role="combobox"]` button. Its list is opened and the option that
- * writes `value` pressed, each as a script's press, which Radix answers as a touch's: no pointer
- * this driver synthesises is needed, and none is left down.
+ * Picks `value` in the select `selector`: the select family's (`ui/select/Select.tsx`, #2906),
+ * a button (`[data-scope="select"][data-part="root"]`) that opens a listbox. Its list is opened
+ * and the option that writes `value` pressed, each as a script's press, which React Aria answers
+ * as a virtual press: no pointer this driver synthesises is needed, and none is left down.
  */
 export async function choose(selector: string, value: string): Promise<void> {
   await $(selector).waitForExist({ timeout: 20_000 });

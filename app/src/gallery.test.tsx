@@ -20,6 +20,7 @@ import {
 import { drawnWith } from "./cascade.testkit";
 import { complaints } from "./theme/complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme/theme";
+import { selectNamed } from "./ui/select/select.testkit";
 
 /**
  * **The component set, drawn as one gallery** (DS-3 #626, line 2).
@@ -251,7 +252,7 @@ describe("the gallery", () => {
     expect(screen.getByRole("textbox", { name: "Hosts" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Size" })).toBeInTheDocument();
     expect(screen.getByRole("radiogroup", { name: "Letter" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Shell" })).toBeInTheDocument();
+    expect(selectNamed("Shell")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Push after saving" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Play a sound" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Repos" })).toBeInTheDocument();
@@ -343,8 +344,8 @@ describe("the gallery by keyboard", () => {
       "input Size",
       // A radio group is one stop, on its pick; Gamma is out of reach.
       "radio Alpha",
-      // The select is Radix's: a combobox that opens its list (#1860).
-      "combobox Shell",
+      // The select is the select family's: a button that opens its list (#2906).
+      "button Shell",
       "checkbox Push after saving",
       "switch Play a sound",
       "checkbox Alpha",
@@ -400,7 +401,8 @@ describe("the gallery by keyboard", () => {
     // A select opens on Enter, and an arrow and Enter pick past the option out of reach.
     expect(
       await doing(async () => {
-        await press("combobox", "Shell", "{Enter}");
+        selectNamed("Shell").focus();
+        await user.keyboard("{Enter}");
         await screen.findByRole("listbox");
         await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
       }),

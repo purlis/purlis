@@ -32,7 +32,7 @@ import { ask, openFromTheStrip } from "../switching.js";
 
 const LINE = '[role="note"][aria-label="Only on this machine"]';
 const DIALOG = '[role="dialog"]';
-const OWNER = '[data-setting="create-project-owner"] [role="combobox"]';
+const OWNER = '[data-setting="create-project-owner"] [data-scope="select"][data-part="root"]';
 const NAME_BOX = '[data-setting="publish-project-name"] input';
 
 /** This spec's own project: the fixture, renamed, and no repository. */
