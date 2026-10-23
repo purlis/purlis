@@ -21,12 +21,9 @@
  * its menu closes, the keyboard is back on the item it was opened from, or, where that item was
  * just hidden, on the bar's first item the keyboard reaches.
  */
-import { Check } from "lucide-react";
-import { Fragment, useRef, type KeyboardEvent, type ReactNode } from "react";
-// TODO(#3025): the bar's menu moves to the menu family on React Aria (`ContextMenu`, `Menu` and a
-// `MenuSection` with `selectionMode="multiple"`) when #3025 rebases onto this, which deletes this
-// module and its keyboard opener; until then it is the window's Radix context menu.
-import * as ContextMenu from "../../overlays/context-menu";
+import { Fragment, useRef, type ReactNode } from "react";
+import { ContextMenu } from "../menu/ContextMenu";
+import { Menu, MenuItem, MenuSection } from "../menu/Menu";
 import { StatusCell, StatusItem } from "./StatusItem";
 
 /** What every item of the bar says about itself. */
@@ -108,22 +105,6 @@ function drawn(item: StatusContribution, onCommand?: (command: string) => void):
   );
 }
 
-/** The menu key, or Shift F10, on an item opens the bar's menu there, as a right click does. */
-function openFromTheKeyboard(event: KeyboardEvent<HTMLElement>) {
-  if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
-  event.preventDefault();
-  const target = event.target as HTMLElement;
-  const at = target.getBoundingClientRect();
-  target.dispatchEvent(
-    new MouseEvent("contextmenu", {
-      bubbles: true,
-      cancelable: true,
-      clientX: at.left,
-      clientY: at.top,
-    }),
-  );
-}
-
 /**
  * **The status bar**: its items on two ends, and its menu, where each item the person may hide
  * is a check to hide it or show it again.
@@ -174,7 +155,6 @@ export function StatusBar({
       aria-label={named}
       data-testid={testid}
       className={className}
-      onKeyDown={onHide === undefined ? undefined : openFromTheKeyboard}
     >
       <div data-scope="status-bar" data-part="start">
         {end("left")}
@@ -186,46 +166,48 @@ export function StatusBar({
   );
   if (onHide === undefined) return bar;
   const listed = [...placedAll(items)].filter((item) => item.hideable !== false);
+  const shown = listed.filter((item) => !hidden.includes(item.id)).map((item) => item.id);
   return (
-    <ContextMenu.Root modal={false}>
-      <ContextMenu.Trigger asChild>{bar}</ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content
-          className="ui-menu"
-          collisionPadding={8}
-          aria-label={`${named}: the items shown`}
-          onCloseAutoFocus={(event) => {
-            // Back on the item the menu was opened from; one just hidden is gone, so the bar's
-            // first item the keyboard reaches takes it.
-            event.preventDefault();
-            const back = opener.current?.isConnected
-              ? opener.current
-              : footer.current?.querySelector<HTMLElement>(
-                  'button:not([disabled]), [tabindex]:not([tabindex="-1"])',
-                );
-            back?.focus();
-          }}
-        >
-          <ContextMenu.Label className="ui-menu-label ui-text-label">
-            Show on the bar
-          </ContextMenu.Label>
-          {listed.map((item) => (
-            <ContextMenu.CheckboxItem
-              key={item.id}
-              className="ui-menu-item"
-              checked={!hidden.includes(item.id)}
-              onCheckedChange={(shown) => onHide(item.id, !shown)}
-              data-testid={`status-show-${item.id}`}
-            >
-              <span className="ui-menu-words">{item.name}</span>
-              <ContextMenu.ItemIndicator className="ui-menu-mark">
-                <Check className="node-icon" aria-hidden />
-              </ContextMenu.ItemIndicator>
-            </ContextMenu.CheckboxItem>
-          ))}
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
+    // The menu family's context menu (#2909): a right click on the bar, or the menu key or
+    // Shift F10 on any item in it, opens it at that item.
+    <ContextMenu
+      opensFromWithin
+      onClosed={() => {
+        // Back on the item the menu was opened from; one just hidden is gone, so the bar's
+        // first item the keyboard reaches takes it.
+        const back = opener.current?.isConnected
+          ? opener.current
+          : footer.current?.querySelector<HTMLElement>(
+              'button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            );
+        back?.focus();
+      }}
+      menu={() => (
+        <Menu aria-label={`${named}: the items shown`}>
+          <MenuSection
+            title="Show on the bar"
+            selectionMode="multiple"
+            selectedKeys={shown}
+            // A row's press is a check turned, and closes the menu as a row's does.
+            shouldCloseOnSelect
+          >
+            {listed.map((item) => (
+              <MenuItem
+                key={item.id}
+                id={item.id}
+                textValue={item.name}
+                onAction={() => onHide(item.id, !hidden.includes(item.id))}
+                data-testid={`status-show-${item.id}`}
+              >
+                {item.name}
+              </MenuItem>
+            ))}
+          </MenuSection>
+        </Menu>
+      )}
+    >
+      {bar}
+    </ContextMenu>
   );
 }
 

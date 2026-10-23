@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { BUILT_IN, DEFAULT_THEME, SYSTEM, THEME_ALIASES } from "../theme/theme";
+import { CLASSIC, DEFAULT_THEME, OLD_PICKS, PURLIS, SYSTEM, THEME_ALIASES } from "../theme/theme";
 import { isWorkspaceColour, WORKSPACE_COLOURS } from "../theme/theme";
 import type { Option } from "./components";
 import type {
@@ -438,8 +438,15 @@ export function harnessPluginGroups(harnesses: readonly HarnessPlugins[], scope:
   });
 }
 
-/** charter's own picks, for when the core could not be asked what else there is. */
-const BUILT_IN_PICKS = [...Object.keys(BUILT_IN), SYSTEM];
+/** charter's own picks, for when the core could not be asked what else there is: the two
+ *  built-in themes and following the system (#3034). */
+const BUILT_IN_PICKS = [PURLIS, CLASSIC, SYSTEM];
+
+/** How Settings labels a pick a file may still hold that it no longer offers (#3034): Purlis's
+ *  dark or light by `purlis-dark` or `purlis-light`, or an id either had. */
+function oldPickLabel(pick: string): string {
+  return `Purlis ${pick.endsWith("light") ? "light" : "dark"} (old id)`;
+}
 
 /**
  * **Theme, in either section** (charter-app#273, ADR 0048): `[theme] use`. Local's pick wins over
@@ -454,9 +461,10 @@ export function themeGroup(unset: string, here: "project" | "workspace" = "proje
     controls: (_file, _extensions, theme) => {
       const options = theme?.options ?? BUILT_IN_PICKS.map((value) => ({ value, label: value }));
       const labels = Object.fromEntries(options.map((one) => [one.value, one.label]));
-      // A file that still holds a built-in's old id is shown under the theme it draws (#1838).
-      for (const [old, now] of Object.entries(THEME_ALIASES))
-        if (labels[now] !== undefined) labels[old] ??= labels[now];
+      // A file that still holds an id Settings no longer offers is shown under what it draws
+      // (#1838, #3034).
+      for (const old of [...OLD_PICKS, ...Object.keys(THEME_ALIASES)])
+        labels[old] ??= oldPickLabel(old);
       // What the theme levels draw here, and which level chose it (#2323), when the core said.
       const levels = theme?.drawn == null ? undefined : `${theme.drawn}, from ${theme.from ?? ""}`;
       const drawn =

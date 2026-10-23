@@ -243,8 +243,8 @@ describe("a right-click on a terminal", () => {
           .slice(0, 3)
           .map((item) => [
             item.getAttribute("aria-label"),
-            item.querySelector(".ui-menu-title")?.textContent,
-            item.querySelector(".ui-menu-keys")?.textContent,
+            item.querySelector('[data-part="label"]')?.textContent,
+            item.querySelector('[data-part="shortcut"]')?.textContent,
           ]),
       ).toEqual([
         ["Copy", "Copy", "⌘C"],
@@ -252,8 +252,10 @@ describe("a right-click on a terminal", () => {
         ["Select all", "Select all", "⌘A"],
       ]);
       // Why Copy cannot run is the one line under its words, as in every menu.
-      expect(row(menu, "Copy").querySelector(".ui-menu-note")?.textContent).toBe(NOTHING_SELECTED);
-      expect(row(menu, "Paste").querySelector(".ui-menu-note")).toBeNull();
+      expect(row(menu, "Copy").querySelector('[data-part="description"]')?.textContent).toBe(
+        NOTHING_SELECTED,
+      );
+      expect(row(menu, "Paste").querySelector('[data-part="description"]')).toBeNull();
     } finally {
       // Back to the platform jsdom reports, which is its prototype's.
       Reflect.deleteProperty(navigator, "platform");
@@ -525,7 +527,7 @@ describe("a terminal's menu inside the panes' menu", () => {
 
   it("is held back while its project is not in front, like every overlay", async () => {
     // A pane of a project behind another stays drawn, and what it had put over the window
-    // does not: the menu is Radix's context menu through `overlays/context-menu`.
+    // does not: the menu is the family's context menu, whose surface asks whether its project is in front.
     const pane = (shown: boolean) => (
       <ProjectShownProvider value={shown}>
         <SessionPane plane="/planes/one" session={1} focused={false} onFocus={() => {}} />

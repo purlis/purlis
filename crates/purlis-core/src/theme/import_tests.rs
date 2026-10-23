@@ -78,7 +78,7 @@ fn a_vs_code_theme_with_comments_and_trailing_commas_imports_through_its_table()
     assert_eq!(dark.value("syntax.string"), "#a8c97f");
     assert_eq!(dark.value("markdown.heading"), "#f0b35c");
     // A token the source does not fill is Purlis Classic's.
-    let classic = built_in("purlis-dark").expect("Classic dark");
+    let classic = super::classic().first();
     assert_eq!(dark.value("danger.base"), classic.value("danger.base"));
 }
 

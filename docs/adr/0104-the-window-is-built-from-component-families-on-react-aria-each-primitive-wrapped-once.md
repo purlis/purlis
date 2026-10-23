@@ -90,6 +90,8 @@ error from the ticket that moves its last call site:
   `.ui-button*` classes are an error anywhere outside `app/src/ui`;
 - `purlis/tooltip-family`, an error since #2908: a native `title=` on any element (a frame's,
   which is its name, aside), a primitive's part or a member of the button family;
+- `purlis/menu-family`, an error since #2909: no element outside `src/ui` says a menu's role or
+  wears the old menu and popover classes, and nothing imports Radix's menus or popover;
 - `purlis/dialog-family` (`role="dialog"`) is a warning. The field family moved and its rule is
   an error, with the select and choice inputs split into rules of their own
   ([amended 2026-10-22](0104/2026-10-22-the-field-family.md)).
@@ -122,6 +124,8 @@ after look (`docs/component-stories.md`).
   its wrapper (ADR 0103).
 - `docs/ui-primitives.md` lists the moved families and their props; the settings set and the
   Notice (ADR 0037's amendments) are drawn from the families as they move.
+
+## Amendments
 
 The amendments to this decision are files of their own in [`0104/`](0104/), one per
 amendment, named `<yyyy-mm-dd>-<slug>.md`.

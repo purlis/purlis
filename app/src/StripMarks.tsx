@@ -1,9 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import * as Menu from "./overlays/dropdown-menu";
+import { AnchoredMenu, Menu, MenuItem, opensOnTheArrows } from "./ui/menu/Menu";
 import {
   ArrowLeftRight,
   ChevronDown,
@@ -198,8 +198,8 @@ export const MARKS: Record<string, typeof Plus> = {
  * to open, and a menu that pops up under the cursor with `End chat` in it is charter-app#130's
  * defect with a mouse attached.
  *
- * Radix's menu (ADR 0037, `docs/ui-primitives.md`), so the keyboard is the primitive's and not
- * a fifth hand-written `ArrowDown`.
+ * The menu family's (`ui/menu/Menu.tsx`, `docs/ui-primitives.md`), so the keyboard is React
+ * Aria's and not a fifth hand-written `ArrowDown`.
  */
 export function ShowMore({
   noun,
@@ -223,15 +223,15 @@ export function ShowMore({
   /**
    * Whether the menu is up.
    *
-   * **Held here rather than left to Radix, and the reason is measured.** Radix opens a menu
-   * on `pointerdown`, which is right for a mouse and is not what every way of pressing a
-   * button produces: the WebView the scenario tests drive answers a click with no pointer
-   * event at all, so the menu never opened and the run reported "0 menus opened" on both
-   * platforms. A control an automated press cannot open is one some input method cannot
-   * open. So the trigger's `pointerdown` is refused — `composeEventHandlers` skips Radix's
-   * own handler once the event is prevented — and the click is what toggles it.
+   * **Held here, and opened by the click, and the reason is measured.** A menu opened on
+   * `pointerdown` is right for a mouse and is not what every way of pressing a button
+   * produces: the WebView the scenario tests drive answers a click with no pointer event at
+   * all, so the menu never opened and the run reported "0 menus opened" on both platforms. A
+   * control an automated press cannot open is one some input method cannot open. So the click
+   * is what toggles it (`AnchoredMenu`), and a press by Enter or Space lands on its first row.
    */
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<boolean | "first" | "last">(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   // The strip has just started hiding tabs, as opposed to having been hiding them when this
   // strip was drawn: only the first is a change worth drawing (`useArrived`, and the motion
   // section of `App.css`).
@@ -246,44 +246,52 @@ export function ShowMore({
   // What needs you first, and the caller's order inside each half: `sort` is stable.
   const listed = [...hidden].sort((one, other) => Number(other.needs > 0) - Number(one.needs > 0));
   return (
-    // **Not modal.** A modal Radix surface marks the rest of the window `aria-hidden` (which
-    // `docs/ui-primitives.md` records the dialogs doing), and this is a menu on a strip, not
-    // a question that has to be answered before the window can be used again. A click outside
-    // closes it, which is what every menu on every platform does — the dialogs' opposite rule
-    // is about a surface that would lose an answer, and there is no answer to lose here.
-    <Menu.Root modal={false} open={open} onOpenChange={setOpen}>
-      <Menu.Trigger asChild>
-        <button
-          className={arrived ? "show-more arrived" : "show-more"}
-          aria-label={`Show ${many} the strip is not showing${needsSaid}`}
-          tabIndex={0}
-          onPointerDown={(event) => event.preventDefault()}
-          onClick={() => setOpen((up) => !up)}
-        >
-          {hidden.length} more
-          {needs > 0 && <span className="show-more-needs">{needs}</span>}
-          <ChevronDown />
-        </button>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Content className="ui-menu more-menu" align="end" sideOffset={4} collisionPadding={8}>
+    // **Not modal**, as every menu of the family is: a modal surface marks the rest of the
+    // window `aria-hidden` (which `docs/ui-primitives.md` records the dialogs doing), and this
+    // is a menu on a strip, not a question that has to be answered before the window can be
+    // used again. A click outside closes it, which is what every menu on every platform does.
+    <>
+      <button
+        ref={trigger}
+        className={arrived ? "show-more arrived" : "show-more"}
+        aria-label={`Show ${many} the strip is not showing${needsSaid}`}
+        aria-haspopup="menu"
+        aria-expanded={open !== false}
+        tabIndex={0}
+        onPointerDown={(event) => event.preventDefault()}
+        // A press by Enter or Space (no pointer) lands on the menu's first row.
+        onClick={(event) => setOpen((up) => (up ? false : event.detail === 0 ? "first" : true))}
+        onKeyDown={opensOnTheArrows(open !== false, setOpen)}
+      >
+        {hidden.length} more
+        {needs > 0 && <span className="show-more-needs">{needs}</span>}
+        <ChevronDown />
+      </button>
+      <AnchoredMenu
+        triggerRef={trigger}
+        isOpen={open !== false}
+        autoFocus={open === false ? true : open}
+        onOpenChange={setOpen}
+      >
+        <Menu className="more-menu" align="end" aria-label={`${many} the strip is not showing`}>
           {listed.map(({ key, offer, children }) => {
             if (!offer) return null;
             return (
-              <Tooltip key={key} tip={offer.reason || undefined}>
-                <Menu.Item
-                  className="ui-menu-item"
-                  disabled={!offer.available}
-                  onSelect={() => onPress(offer)}
-                >
-                  {children}
-                </Menu.Item>
-              </Tooltip>
+              <MenuItem
+                key={key}
+                id={key}
+                textValue={offer.title}
+                isDisabled={!offer.available}
+                tooltip={offer.reason || undefined}
+                onAction={() => onPress(offer)}
+              >
+                {children}
+              </MenuItem>
             );
           })}
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
+        </Menu>
+      </AnchoredMenu>
+    </>
   );
 }
 

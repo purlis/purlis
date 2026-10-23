@@ -304,6 +304,8 @@ mod hosted {
             || crate::enginesandbox::is_no_sandbox(&refused.why)
         {
             NotStarted::NoSandbox
+        } else if refused.why.contains(purlis_host::ENGINE_DOWNLOAD_CANCELLED) {
+            NotStarted::Cancelled
         } else {
             NotStarted::Failed(refused.why)
         }
@@ -661,6 +663,9 @@ mod hosted {
                         crate::enginesandbox::refused();
                         crate::enginesandbox::NOT_STARTED_FOR_THE_PERSON.to_owned()
                     }
+                    NotStarted::Cancelled => {
+                        crate::enginedownload::CANCELLED_FOR_THE_PERSON.to_owned()
+                    }
                     NotStarted::Failed(why) => why,
                 })
         }
@@ -694,17 +699,23 @@ mod hosted {
             if running >= budget {
                 return Err(NotStarted::Full { most: budget });
             }
+            // Named here, so the engine download this window is told of is known to be this
+            // start's, and waited for as long as the download may take (#2207).
+            let named = purlis_core::browsers::a_browsers_id();
+            // Waited on before it is asked for, so no word of its download comes too early.
+            crate::enginedownload::here().started(&named);
             let start = Command::StartProgram(Box::new(StartProgram {
+                program: Some(named.clone()),
                 reach,
                 kept,
                 ..StartProgram::of(project, ProgramKind::Browser)
             }));
             // The host's first start downloads the engine inside it: waited for as long as that
             // may take, not the 30 seconds any other answer gets.
-            match link
-                .call_refused_within(start, purlis_core::browsers::A_START_TAKES_AT_MOST)
-                .map_err(|refused| not_started(refused, budget))?
-            {
+            let answered =
+                link.call_refused_within(start, purlis_core::browsers::A_START_TAKES_AT_MOST);
+            crate::enginedownload::here().finished(&named);
+            match answered.map_err(|refused| not_started(refused, budget))? {
                 Answer::ProgramStarted { program, .. } => {
                     let ended = Arc::clone(&self.ended);
                     let logged = Arc::clone(&self.logged);
@@ -785,6 +796,16 @@ mod hosted {
                 height: attached.rows,
                 person_drives,
             })
+        }
+
+        /// **The person cancels the engine's download for `program`'s start** (#2207): nothing
+        /// of it is kept, and the start is refused in words that say so.
+        pub(crate) fn cancel_download(&self, program: &str) -> Result<(), String> {
+            self.link()?
+                .call(Command::CancelEngineDownload {
+                    program: program.to_owned(),
+                })
+                .map(|_| ())
         }
 
         /// The person takes `program` over (#2014): the chat's acts are refused until they
@@ -1100,7 +1121,7 @@ mod hosted {
 
 /// The window's browsers, from the app's state.
 #[cfg(unix)]
-fn browsers(app: &tauri::AppHandle) -> Result<std::sync::Arc<WindowBrowsers>, String> {
+pub(crate) fn browsers(app: &tauri::AppHandle) -> Result<std::sync::Arc<WindowBrowsers>, String> {
     use tauri::Manager;
     app.try_state::<std::sync::Arc<WindowBrowsers>>()
         .map(|state| std::sync::Arc::clone(&state))

@@ -45,6 +45,7 @@ import type { ForgeAsk } from "./ForgeQuestion";
 type RepoTried = { refused?: string; asksForge?: string };
 import { UnsavedMark } from "./SavingView";
 import { SessionBusNotice } from "./SessionBusNotice";
+import { EngineDownloadNotice } from "./EngineDownloadNotice";
 import { EngineSandboxNotice } from "./EngineSandboxNotice";
 import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
@@ -90,7 +91,7 @@ import { enterSettings } from "./settings/entering";
 import { machineChanged, whenRecentSettled } from "./settings/thisMachine";
 import { useExtensionsOn } from "./extensionsOn";
 import { useProjectTheme } from "./projectTheme";
-import { drawTint } from "./theme/theme";
+import { drawTint, facesAfterTheFirstFrame } from "./theme/theme";
 import { useContributedPanels } from "./Panels";
 import { useTabStop } from "./roving";
 import { closeOnDelete } from "./tabKeys";
@@ -1329,13 +1330,15 @@ function App() {
     let gone = false;
     const frame = requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        if (!gone)
-          void commands
-            .firstFrame()
-            .then((why) => {
-              if (!gone && why) setSlowStart(why);
-            })
-            .catch(() => undefined);
+        if (gone) return;
+        void commands
+          .firstFrame()
+          .then((why) => {
+            if (!gone && why) setSlowStart(why);
+          })
+          .catch(() => undefined);
+        // The first frame is on screen: the theme's faces are asked for now (#3034).
+        facesAfterTheFirstFrame();
       }),
     );
     return () => {
@@ -2097,7 +2100,7 @@ function App() {
                               {/* Right-click is the third reader of the same catalogue
                                   (`Menus.tsx`). `asChild`, and on the tab and not the cell: the
                                   context-menu key opens a menu only on the trigger that has the
-                                  keyboard (`openFromTheKeyboard`), and that is the tab. */}
+                                  keyboard (`ContextMenu`'s keys, `ui/menu/ContextMenu.tsx`), and that is the tab. */}
                               <Menued
                                 on={{ on: "project", plane: project.plane }}
                                 offers={stripFound}
@@ -2282,6 +2285,7 @@ function App() {
         {/* A launch without the session bus, and what that run has not got (charter#746). */}
         <SessionBusNotice chats={ending} />
         {/* Browsers that cannot start for the engine's sandbox, and the ways out (#2835). */}
+        <EngineDownloadNotice />
         <EngineSandboxNotice />
 
         {/* The session host stopped unexpectedly three times in five minutes, and the window's

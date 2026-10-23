@@ -75,7 +75,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 
 /// **The manifest's version**: it grows when a family, a part, a variant or a property is added,
 /// and never takes one away.
-pub const VERSION: u32 = 5;
+pub const VERSION: u32 = 6;
 
 /// The least height a control keeps, in px at the default text size: WCAG 2.2's target size.
 pub const LEAST_TARGET: f64 = 24.0;
@@ -767,7 +767,14 @@ pub const MANIFEST: &[Family] = &[
         focused: "[data-focus-visible]",
         words: &[("detail", "text.secondary")],
     },
+    overlay::POPOVER,
+    overlay::MENU,
 ];
+
+/// The popover and menu families (#2909): the surface a popover and a menu stand on, and a
+/// menu's row.
+#[path = "parts_overlay.rs"]
+mod overlay;
 
 /// The window's own families (#2913): the region panel, its sections, an empty state and a
 /// status item.
@@ -1056,6 +1063,15 @@ pub(super) fn look_json(family_name: &str, variant: &str) -> Value {
     let rest = (family.defaults)(variant, &[]);
     let hover = (family.defaults)(variant, &[State::Hover]);
     json!({ "fill": rest.fill, "text": rest.text, "border": rest.border, "hover": hover.fill })
+}
+
+/// A family's colours with `states` holding, as the engine holds them, fill, words and border, for
+/// the tests that hold them to the family's stylesheet.
+#[cfg(test)]
+pub(super) fn look_of(family_name: &str, variant: &str, states: &[State]) -> [&'static str; 3] {
+    let family = family(family_name).expect("a family of the manifest");
+    let look = (family.defaults)(variant, states);
+    [look.fill, look.text, look.border]
 }
 
 /// The family `name` names.

@@ -328,10 +328,6 @@ function Hits({
   /** What the last hand to a chat answered, said in the status line. */
   const [handed, setHanded] = useState<{ words: string; refused: boolean }>();
   const picker = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (picking !== undefined)
-      picker.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
-  }, [picking]);
 
   // The line stepped to stays in view.
   useEffect(() => {
@@ -420,19 +416,12 @@ function Hits({
     );
   };
 
+  /** Escape closes the picker; its arrows, its Enter and its letters are the menu's own. */
   const pickerKeys = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      picked();
-      return;
-    }
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    if (e.key !== "Escape") return;
     e.preventDefault();
-    const items = [...(picker.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
-    const now = items.indexOf(document.activeElement as HTMLElement);
-    const step = e.key === "ArrowDown" ? 1 : -1;
-    items[(now + step + items.length) % items.length]?.focus();
+    e.stopPropagation();
+    picked();
   };
 
   const keys = (e: React.KeyboardEvent) => {
@@ -490,6 +479,7 @@ function Hits({
           <ChatsToPick
             chats={lent.chats}
             label={`Add ${referenceSaid(picking)} to a chat's context`}
+            autoFocus
             onPick={(chat) => handTo(picking, chat)}
           />
         </div>

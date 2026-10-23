@@ -25,8 +25,8 @@
 //! `import` reads back to the same folder. A staged import
 //! is read only to check (#2587): none of its fonts is left registered once it moves or goes.
 //!
-//! **Where a theme comes from, and its level** (#2518): built in (Purlis Classic, `purlis-classic`,
-//! and Purlis, `purlis`, which the table names as a preview); the person's own `theme.json` (its id
+//! **Where a theme comes from, and its level** (#2518): built in (Purlis, `purlis`, the default,
+//! and Purlis Classic, `purlis-classic`, #3034); the person's own `theme.json` (its id
 //! is [`MINE`]) and the theme folders in the person's `themes/`, at the machine level; the
 //! project's `themes/` at the plane root; each workspace's `themes/`; or an approved extension that
 //! is on (its id is `<extension>/<theme>`, as a project's pick names it). A theme folder's id names
@@ -120,7 +120,7 @@ pub enum ThemeCommand {
     },
     /// This chat's theme draft of a theme folder (#2332), which the app that started the chat
     /// writes in purlis's local folder, never committed: a copy of the workspace's or the
-    /// project's folder of that name, or a new theme that extends Purlis Classic. It also makes a
+    /// project's folder of that name, or a new theme that extends Purlis, the default. It also makes a
     /// working copy for you to edit; `--save` hands that to the app. The draft is drawn only in
     /// this chat's workspace, and the person keeps or reverts it in the window. Run it in a chat
     /// purlis started. Exits 0 when the draft is drawn, 1 when it is not or nothing was written.
@@ -396,7 +396,7 @@ impl Found {
         Self::built_in(theme::CLASSIC, theme::classic())
     }
 
-    /// Purlis (#2336), a preview until it becomes the default.
+    /// Purlis (#2336), the default (#3034).
     fn purlis() -> Self {
         Self::built_in(theme::PURLIS, theme::purlis())
     }
@@ -788,7 +788,7 @@ fn export(
     wrapping: theme::Wrapping,
     force: bool,
 ) -> ExitCode {
-    let packed = if asked == theme::PURLIS {
+    let packed = if asked != theme::CLASSIC && theme::built_in(asked).is_some() {
         let files = theme::purlis_files();
         wrapping
             .pack(PURLIS_COPY, &files)
@@ -798,7 +798,7 @@ fn export(
                 files: files.len(),
                 left_out: Vec::new(),
             })
-    } else if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
+    } else if asked == theme::CLASSIC {
         let files = theme::Files::from([(
             theme::THEME_JSON.to_owned(),
             theme::CLASSIC_THEME_JSON.as_bytes().to_vec(),
@@ -952,7 +952,7 @@ fn plane() -> Option<std::path::PathBuf> {
 /// (the person's own, then their theme folders); the project's; each workspace's, by name; then
 /// each approved extension's in the order the survey found them.
 fn available(here: Here<'_>) -> Vec<Found> {
-    let mut found = vec![Found::classic(), Found::purlis()];
+    let mut found = vec![Found::purlis(), Found::classic()];
     if let Some(config) = here.config {
         found.extend(mine(config));
     }
@@ -1097,8 +1097,8 @@ fn id_of(
 ) -> Option<String> {
     use extension::project::theme::Pick;
     Some(match Pick::parse(&choice.theme)? {
-        Pick::BuiltIn(id) if id == theme::PURLIS => theme::PURLIS.to_owned(),
-        Pick::BuiltIn(_) => theme::CLASSIC.to_owned(),
+        Pick::BuiltIn(id) if id == theme::CLASSIC => theme::CLASSIC.to_owned(),
+        Pick::BuiltIn(_) => theme::PURLIS.to_owned(),
         Pick::Extension { id, name } => format!("{id}/{name}"),
         Pick::System => {
             let theirs = theme::read_theirs(here.config).theme;
@@ -1106,7 +1106,7 @@ fn id_of(
                 one.of(theme::Appearance::Dark).is_some()
                     && one.of(theme::Appearance::Light).is_some()
             });
-            if both { MINE } else { theme::CLASSIC }.to_owned()
+            if both { MINE } else { theme::PURLIS }.to_owned()
         }
         Pick::Folder(name) => {
             let from = choice.from.filter(|level| *level >= reach)?;
@@ -1286,16 +1286,16 @@ fn extensions(config: &Path) -> Vec<Found> {
     found
 }
 
-/// The theme `asked` names: Purlis by its id, Purlis Classic by its id or any id its appearances
-/// have had, the person's own, a level's theme folder by `<level>:<folder>`, an extension's by
+/// The theme `asked` names: Purlis by its id or by `purlis-dark`, `purlis-light` or an id either
+/// had (#3034), Purlis Classic by its id, the person's own, a level's theme folder by `<level>:<folder>`, an extension's by
 /// `<extension>/<theme>`, or else a theme file or a theme folder by its path. `Err` when there
 /// is none, with what reading a level had to say.
 fn find(here: Here<'_>, asked: &str) -> Result<Found, Vec<Complaint>> {
-    if asked == theme::PURLIS {
-        return Ok(Found::purlis());
-    }
-    if asked == theme::CLASSIC || theme::built_in(asked).is_some() {
+    if asked == theme::CLASSIC {
         return Ok(Found::classic());
+    }
+    if theme::built_in(asked).is_some() {
+        return Ok(Found::purlis());
     }
     // A level's id is never an extension's (it holds no `/`) nor a folder name: it is asked
     // before a path of the same spelling, which `./` names.
@@ -1578,10 +1578,10 @@ fn this_chats_draft(here: Here<'_>, folder: &str) -> Result<Found, Vec<Complaint
     ))
 }
 
-/// The engine's refusal of a theme for `why`, Purlis in its place.
+/// The engine's refusal of a theme for `why`, the default, Purlis, in its place.
 fn refusal(why: String) -> Resolved {
     Resolved {
-        theme: theme::classic().clone(),
+        theme: theme::purlis().clone(),
         complaints: vec![Complaint {
             said: why,
             token: None,

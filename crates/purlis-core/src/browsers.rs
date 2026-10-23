@@ -69,7 +69,8 @@ use purlis_browser_engine::sigstore::Sigstore;
 use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
 use purlis_host::protocol::session::Exit;
 use purlis_host::{
-    BrowserNotStarted, Browsers, FrameSink, LoginEnded, NotActed, NotTaken, Screen, ScreenEnded,
+    BrowserNotStarted, Browsers, Download, FrameSink, LoginEnded, NotActed, NotTaken, Screen,
+    ScreenEnded,
 };
 
 use crate::sandbox::browser_reach::{Bound, Lane, NewSites, ReachProxy, Site};
@@ -221,7 +222,7 @@ pub fn manifest_reads() -> Https {
 /// **The longest a browser's start may take** on a host: its first start reads the engines'
 /// manifest and downloads the engine inside it, each within its own limit, and a minute more to
 /// start the engine. A window waits this long for a browser's start, never the shorter wait it
-/// gives any other answer.
+/// gives any other answer; the person sees the download as it goes and may cancel it (#2207).
 pub const A_START_TAKES_AT_MOST: Duration =
     Duration::from_secs(MANIFEST_READ.as_secs() + Https::ARCHIVE.as_secs() + 60);
 
@@ -357,6 +358,7 @@ impl Browsers for EngineBrowsers {
         data: &Path,
         reach: Option<&BrowserReach>,
         kept: Option<&wire::KeptLogin>,
+        download: &Download,
     ) -> Result<Arc<dyn Screen>, BrowserNotStarted> {
         let (home, program) = self.places()?;
         // Its folder's own, made before anything of a browser is written into it.
@@ -382,7 +384,8 @@ impl Browsers for EngineBrowsers {
             ..EngineSettings::default()
         };
         let engines = engines_here(&home, platform);
-        let ready = prepared(&engines, &settings).map_err(|why| why.to_string())?;
+        let ready = prepared(&engines, &settings, download)
+            .map_err(|refused| download_failed_said(&refused))?;
         // A chat's browser is judged (#2018); the person's own, given no reach, refuses every
         // site new to the project at its proxy.
         let sites = reach.map(judge::SiteJudge::of).transpose()?.map(Arc::new);
@@ -447,8 +450,14 @@ impl Browsers for EngineBrowsers {
 /// The engine a browser starts on: the trusted one, after reading the published manifest first
 /// when that engine is behind past its warning or refused for its age, so a machine whose
 /// background check has not run yet is not refused for an engine already superseded.
-fn prepared(engines: &Engines, settings: &EngineSettings) -> Result<Ready, Refused> {
-    let archives = archive_reads();
+fn prepared(
+    engines: &Engines,
+    settings: &EngineSettings,
+    download: &Download,
+) -> Result<Ready, Refused> {
+    let https = archive_reads();
+    // Its first download is told as it goes, and stops where the person cancels it (#2207).
+    let archives = Progressing::new(&https, download, DOWNLOAD_TOLD_EVERY);
     let now = chrono::Utc::now();
     let first = engines.prepare(settings, &archives, now);
     let behind = match &first {
@@ -461,6 +470,129 @@ fn prepared(engines: &Engines, settings: &EngineSettings) -> Result<Ready, Refus
     let checked = update(engines, settings, &manifest_reads(), &archives, now);
     report(&checked);
     checked.or(first)
+}
+
+/// A fresh id for a browser a window starts (#2207): the window names it, so it knows which
+/// start an engine download it is told of is for.
+pub fn a_browsers_id() -> String {
+    ulid::Ulid::generate().to_string()
+}
+
+/// How often at most an engine's download is told how far it has come (#2207): a few times a
+/// second, and once more as it ends.
+pub const DOWNLOAD_TOLD_EVERY: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// **An engine's download, told as it goes and cancelled by the person** (#2207): each read of
+/// the archive counts toward `download`, which is told no more often than `every`, and once
+/// more as the archive ends; a read after the person cancelled fails in
+/// [`purlis_host::ENGINE_DOWNLOAD_CANCELLED`]'s words, so the install keeps nothing of it.
+pub struct Progressing<'a> {
+    inner: &'a dyn Fetch,
+    download: &'a Download,
+    every: std::time::Duration,
+}
+
+impl<'a> Progressing<'a> {
+    /// Reads through `inner`, told to `download` at most every `every`.
+    pub fn new(inner: &'a dyn Fetch, download: &'a Download, every: std::time::Duration) -> Self {
+        Progressing {
+            inner,
+            download,
+            every,
+        }
+    }
+}
+
+impl Fetch for Progressing<'_> {
+    fn still_wanted(&self) -> std::io::Result<()> {
+        if self.download.is_cancelled() {
+            return Err(std::io::Error::other(
+                purlis_host::ENGINE_DOWNLOAD_CANCELLED,
+            ));
+        }
+        self.inner.still_wanted()
+    }
+
+    fn fetch(&self, url: &str) -> std::io::Result<Box<dyn std::io::Read + '_>> {
+        let (body, total) = self.inner.fetch_sized(url)?;
+        Ok(Box::new(Counted {
+            body,
+            total,
+            done: 0,
+            told_at: None,
+            ended: false,
+            download: self.download,
+            every: self.every,
+        }))
+    }
+}
+
+/// An archive's body, counted as it is read ([`Progressing`]).
+struct Counted<'a> {
+    body: Box<dyn std::io::Read + 'a>,
+    total: Option<u64>,
+    done: u64,
+    told_at: Option<std::time::Instant>,
+    ended: bool,
+    download: &'a Download,
+    every: std::time::Duration,
+}
+
+impl std::io::Read for Counted<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.download.is_cancelled() {
+            return Err(std::io::Error::other(
+                purlis_host::ENGINE_DOWNLOAD_CANCELLED,
+            ));
+        }
+        let read = self.body.read(buf)?;
+        if read == 0 {
+            if !self.ended && !buf.is_empty() {
+                self.ended = true;
+                self.download.tell(self.done, self.total);
+            }
+            return Ok(0);
+        }
+        self.done = self
+            .done
+            .saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
+        let now = std::time::Instant::now();
+        if self
+            .told_at
+            .is_none_or(|at| now.duration_since(at) >= self.every)
+        {
+            self.told_at = Some(now);
+            self.download.tell(self.done, self.total);
+        }
+        Ok(read)
+    }
+}
+
+/// **Why the engine is not ready, in words that say what to do** (#2207): a download the person
+/// cancelled, one that failed, and one that did not match the pin, each said apart.
+pub fn download_failed_said(refused: &Refused) -> String {
+    match refused {
+        Refused::Download(why) if why.to_string() == purlis_host::ENGINE_DOWNLOAD_CANCELLED => {
+            download_cancelled_said()
+        }
+        Refused::Download(why) => format!(
+            "the browser engine could not be downloaded ({why}): check this machine's \
+             connection, then open the browser again"
+        ),
+        Refused::Digest { .. } => "the browser engine that was downloaded is not the one \
+             purlis pins, so it was not kept: open the browser again to download it again"
+            .to_owned(),
+        other => other.to_string(),
+    }
+}
+
+/// What a browser's start is refused with where the person cancelled its engine's download
+/// (#2207): [`purlis_host::ENGINE_DOWNLOAD_CANCELLED`]'s words, which a window tells apart.
+pub fn download_cancelled_said() -> String {
+    format!(
+        "{}: open the browser again to download it",
+        purlis_host::ENGINE_DOWNLOAD_CANCELLED
+    )
 }
 
 /// **What decides which engine a browser starts on** (#2835).

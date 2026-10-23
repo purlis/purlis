@@ -8,12 +8,11 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import * as Menu from "./overlays/dropdown-menu";
-import { MenuTip, useRested } from "./primitives/MenuRow";
+import { AnchoredMenu, Menu, MenuItem, MenuSeparator, Submenu } from "./ui/menu/Menu";
+import { MenuTip, useRested } from "./ui/menu/MenuTip";
 import {
   Check,
   ChevronDown,
@@ -308,7 +307,6 @@ function Chip({
   const cameFrom = useRef<Element | null>(null);
   const pressedFrom = useRef<Element | null | undefined>(undefined);
   const picked = useRef(false);
-  const outside = useRef(false);
   const content = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
 
@@ -334,21 +332,14 @@ function Chip({
     setHow(opened);
     cameFrom.current = from;
     picked.current = false;
-    outside.current = false;
     isOpen.current = true;
     setOpen(true);
   }, []);
-  /** Whether "End a task" has its rows open (`Menu.Sub`). Held here, so a menu the rest
-   *  opened, which takes no keyboard, can open it by the pointer too. */
-  const [endsOpen, setEndsOpen] = useState(false);
-  const endsSoon = useRef(0);
   const hide = useCallback(() => {
     notResting();
     notLeaving();
     isOpen.current = false;
     setOpen(false);
-    window.clearTimeout(endsSoon.current);
-    setEndsOpen(false);
     setUnfolded(false);
     setReports(NO_REPORTS);
   }, [notLeaving, notResting]);
@@ -407,6 +398,20 @@ function Chip({
     leaving.current = window.setTimeout(hide, GRACE_MS);
   };
 
+  // **The keyboard's own open lands on the chat the tab shows**, or its first line: the menu
+  // takes the keyboard on itself as it opens, and then on that line.
+  useEffect(() => {
+    if (!open || how !== "keys") return;
+    const frame = window.requestAnimationFrame(() => {
+      const list = content.current;
+      const on =
+        list?.querySelector<HTMLElement>("[data-current]") ??
+        list?.querySelector<HTMLElement>('[role^="menuitem"]');
+      on?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, how]);
+
   const { lines, finished } = menuOf(rows, kinds, ended, current);
   const figures = useUsed(used, open, [...lines, ...finished], kinds);
   // The fold is open where the chat on screen is in it, so its line is never hidden.
@@ -457,7 +462,6 @@ function Chip({
       key={one.key}
       line={one}
       clock={clock}
-      quiet={quiet}
       tokens={tokensSaid(tokensOfLine(figures, one))}
       reportOpen={reports.has(one.key)}
       onPick={pick}
@@ -511,133 +515,110 @@ function Chip({
         </button>
       )}
       {tasksIn(counts) > 0 && (
-        <Menu.Root
-          modal={false}
-          open={open}
-          onOpenChange={(next) => {
-            // Radix's own asks: a key on the chip opens it, and Escape, a press outside and a
-            // pick close it. The pointer's ways in are below.
-            if (next) show("keys", document.activeElement);
-            else hide();
-          }}
-        >
-          <Menu.Trigger asChild>
-            <button
-              type="button"
-              id={id}
-              ref={trigger}
-              className="tab-tasks-counts"
-              // Not a Tab stop, as a tab's `×` is not: the strip is one stop. The keyboard
-              // opens this menu with its key, with Down on the tab, or from the palette.
-              // No `title`: a tooltip would come up over the menu the same rest opened.
-              tabIndex={-1}
-              aria-label={said}
-              // The click toggles it, not the pointer going down: not every way of pressing a
-              // button sends a pointer event (`ShowMore` has the measurement).
-              onPointerDown={(event) => {
-                event.preventDefault();
-                notResting();
-                pressedFrom.current = document.activeElement;
-              }}
-              // A press that did not end in a click (a right press, one let go elsewhere) is
-              // over: where the keyboard was then says nothing of the next press.
-              onPointerUp={() => {
-                window.setTimeout(() => (pressedFrom.current = undefined));
-              }}
-              onPointerCancel={() => {
-                pressedFrom.current = undefined;
-              }}
-              onClick={() => {
-                const from = pressedFrom.current ?? document.activeElement;
-                pressedFrom.current = undefined;
-                notResting();
-                notLeaving();
-                if (dragging()) return;
-                if (open && by.current === "rest") {
-                  // A press on a menu the rest opened keeps it, and gives it the keyboard.
-                  by.current = "press";
-                  setHow("press");
-                  content.current?.focus({ preventScroll: true });
-                } else if (open) hide();
-                else show("press", from === trigger.current ? null : from);
-              }}
-              // Coming on arms nothing (see `TabTasks`): it is only where the pointer is.
-              onPointerEnter={(event) => {
-                notLeaving();
-                seenAt.current = { x: event.clientX, y: event.clientY };
-              }}
-              onPointerMove={moved}
-              onPointerLeave={leaveSoon}
-            >
-              {TASK_BUCKETS.filter((bucket) => counts[bucket] > 0).map((bucket) => {
-                const Mark = MARKS[bucket];
-                return (
-                  <span key={bucket} className="count" data-count={bucket} aria-hidden="true">
-                    <Mark style={{ color: `var(${property(TASK_BUCKET_DRAWN[bucket].token)})` }} />
-                    {counts[bucket]}
-                  </span>
-                );
-              })}
-            </button>
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Content
-              ref={content}
-              // Named by the chip that opened it: "Tasks of steward 4: …". Said here because
-              // the chip's id is the window's (the tab is described by it), not Radix's own.
+        <>
+          <button
+            type="button"
+            id={id}
+            ref={trigger}
+            className="tab-tasks-counts"
+            // Not a Tab stop, as a tab's `×` is not: the strip is one stop. The keyboard opens
+            // this menu with its key, with Down on the tab, or from the palette. No `title`: a
+            // tooltip would come up over the menu the same rest opened.
+            tabIndex={-1}
+            aria-label={said}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            // The click toggles it, not the pointer going down: not every way of pressing a
+            // button sends a pointer event (`ShowMore` has the measurement).
+            onPointerDown={(event) => {
+              event.preventDefault();
+              notResting();
+              pressedFrom.current = document.activeElement;
+            }}
+            // A press that did not end in a click (a right press, one let go elsewhere) is
+            // over: where the keyboard was then says nothing of the next press.
+            onPointerUp={() => {
+              window.setTimeout(() => (pressedFrom.current = undefined));
+            }}
+            onPointerCancel={() => {
+              pressedFrom.current = undefined;
+            }}
+            onClick={() => {
+              const from = pressedFrom.current ?? document.activeElement;
+              pressedFrom.current = undefined;
+              notResting();
+              notLeaving();
+              if (dragging()) return;
+              if (open && by.current === "rest") {
+                // A press on a menu the rest opened keeps it, and gives it the keyboard.
+                by.current = "press";
+                setHow("press");
+                content.current?.focus({ preventScroll: true });
+              } else if (open) hide();
+              else show("press", from === trigger.current ? null : from);
+            }}
+            // Coming on arms nothing (see `TabTasks`): it is only where the pointer is.
+            onPointerEnter={(event) => {
+              notLeaving();
+              seenAt.current = { x: event.clientX, y: event.clientY };
+            }}
+            onPointerMove={moved}
+            onPointerLeave={leaveSoon}
+          >
+            {TASK_BUCKETS.filter((bucket) => counts[bucket] > 0).map((bucket) => {
+              const Mark = MARKS[bucket];
+              return (
+                <span key={bucket} className="count" data-count={bucket} aria-hidden="true">
+                  <Mark style={{ color: `var(${property(TASK_BUCKET_DRAWN[bucket].token)})` }} />
+                  {counts[bucket]}
+                </span>
+              );
+            })}
+          </button>
+          <AnchoredMenu
+            triggerRef={trigger}
+            isOpen={open}
+            // Escape, a press outside and a pick close it; the pointer's ways in are above.
+            onOpenChange={(next) => {
+              if (!next) hide();
+            }}
+            // A rest takes no keyboard; a press puts it on the menu, and the keyboard's own
+            // open on the chat the tab shows (below), or the first line.
+            autoFocus={how !== "rest"}
+            onClosed={() => {
+              // A pick puts the keyboard in the chat picked (`onShow`). Otherwise it goes back
+              // to where it was before the menu, which for a rest is where it never left.
+              const back = cameFrom.current;
+              if (picked.current || !(back instanceof HTMLElement) || !back.isConnected) return;
+              const at = document.activeElement;
+              if (at === null || at === document.body || !at.isConnected) back.focus();
+            }}
+          >
+            <Menu
+              listRef={content}
+              // Named by the chip that opened it: "Tasks of steward 4: …". Said here because the
+              // chip's id is the window's (the tab is described by it).
               aria-labelledby={id}
-              className="ui-menu tasks-menu"
-              align="start"
-              sideOffset={4}
-              collisionPadding={8}
+              className="tasks-menu"
+              takesNoKeyboard={quiet}
               onPointerEnter={notLeaving}
               onPointerLeave={leaveSoon}
-              // In a menu that took no keyboard, Radix closes the ways to end a task when the
-              // keyboard leaves them, which it never came to: a move onto another of this
-              // menu's rows closes them instead. Moves in the ways' own rows, which are this
-              // menu's in the tree, and on the line that opens them, keep them.
-              onPointerMove={(event) => {
-                if (!quiet || !endsOpen) return;
-                const on = event.target;
-                if (on instanceof Element && on.closest(".tasks-menu-end, .tasks-menu-ends"))
-                  return;
-                setEndsOpen(false);
-              }}
-              onInteractOutside={(event) => {
-                // The chip is outside the menu and is not "outside": its own press says
-                // what a press on it does, and a dismissal here would undo it.
-                const on = event.target;
-                if (on instanceof Node && trigger.current?.contains(on)) event.preventDefault();
-                else outside.current = true;
-              }}
-              // A menu the rest opened took no keyboard, so its Escape is not the terminal's
-              // too: it closes the menu and goes no further.
-              onEscapeKeyDown={(event) => {
-                if (by.current === "rest") event.stopPropagation();
-              }}
-              onCloseAutoFocus={(event) => {
-                // A pick puts the keyboard in the chat picked (`onShow`), and a press outside
-                // put it where it landed. Otherwise it goes back to where it was before the
-                // menu, which for a rest is where it never left.
-                const back = cameFrom.current;
-                const gone = picked.current || outside.current;
-                if (gone || back instanceof HTMLElement) event.preventDefault();
-                if (gone || !(back instanceof HTMLElement) || !back.isConnected) return;
-                const at = document.activeElement;
-                if (at === null || at === document.body || !at.isConnected) back.focus();
-              }}
-              {...openFocus((event) => {
-                // Radix puts the keyboard on the menu as it opens. A rest takes none; the
-                // keyboard's own open lands on the chat the tab shows.
-                if (how === "rest") event.preventDefault();
-                else if (how === "keys" && event.target instanceof HTMLElement) {
-                  const now = event.target.querySelector<HTMLElement>("[data-current]");
-                  if (now) {
-                    event.preventDefault();
-                    now.focus({ preventScroll: true });
-                  }
-                }
-              })}
+              footer={
+                (limits != null || figures?.total != null) && (
+                  <div className="tasks-menu-foot">
+                    {limits != null && <div className="tasks-menu-limits">{limits}</div>}
+                    {/* What the tab's chats used (#1500, V100-43): one line, added up and
+                        spelled by the core, with what it adds up as its hint. No money. */}
+                    {figures?.total != null && (
+                      <Tooltip tip={figures.total.explained}>
+                        <div className="tasks-menu-totals" data-testid="tasks-used">
+                          {figures.total.said}
+                        </div>
+                      </Tooltip>
+                    )}
+                  </div>
+                )
+              }
             >
               {lines.map(line)}
               {(endable.some((task) => task.offers.length > 0) || allOffer !== undefined) && (
@@ -646,96 +627,62 @@ function Chip({
                    and the palette say one thing. One line of this menu, which opens to them:
                    a way to end a task is never one stray press from a way to go to it. A
                    press ends nothing: the window asks its second step. */
-                <Menu.Sub
-                  open={endsOpen}
-                  onOpenChange={(next) => {
-                    window.clearTimeout(endsSoon.current);
-                    setEndsOpen(next);
-                  }}
-                >
-                  <Menu.SubTrigger
-                    className="ui-menu-item tasks-menu-row tasks-menu-end"
-                    textValue="End a task"
-                    // **In a menu the rest opened, the pointer opens these rows too.** The
-                    // move is kept from Radix there (it would give the row the keyboard), and
-                    // that kept Radix's own opening as well: this is it, after the same
-                    // moment Radix waits.
-                    onPointerMove={
-                      quiet
-                        ? (event) => {
-                            keepsNoKeyboard(event);
-                            if (endsOpen || endsSoon.current !== 0) return;
-                            endsSoon.current = window.setTimeout(() => {
-                              endsSoon.current = 0;
-                              setEndsOpen(true);
-                            }, ENDS_OPEN_AFTER);
-                          }
-                        : undefined
-                    }
-                    onPointerLeave={
-                      quiet
-                        ? (event) => {
-                            keepsNoKeyboard(event);
-                            window.clearTimeout(endsSoon.current);
-                            endsSoon.current = 0;
-                          }
-                        : undefined
-                    }
-                  >
-                    <span className="name">End a task</span>
-                    <ChevronRight aria-hidden="true" />
-                  </Menu.SubTrigger>
-                  <Menu.Portal>
-                    <Menu.SubContent
-                      // Named by the line that opened it, which is Radix's own doing.
-                      className="ui-menu tasks-menu tasks-menu-ends"
-                      collisionPadding={8}
+                <Submenu
+                  className="tasks-menu tasks-menu-ends"
+                  aria-label="End a task"
+                  row={
+                    <MenuItem
+                      id="end-a-task"
+                      className="tasks-menu-row tasks-menu-end"
+                      textValue="End a task"
                     >
-                      {endable.flatMap((task) =>
-                        task.offers.map((offer) => (
-                          <Menu.Item
-                            key={offer.id}
-                            className="ui-menu-item tasks-menu-row"
-                            textValue={offer.title}
-                            // A row that cannot run stays in the arrows' way and says why.
-                            aria-disabled={offer.available ? undefined : true}
-                            onSelect={(event) => {
-                              if (!offer.available) {
-                                event.preventDefault();
-                                return;
-                              }
-                              // The keyboard goes to the question the press opens, not
-                              // back to where it was before the menu.
-                              picked.current = true;
-                              onPress?.(offer);
-                            }}
-                          >
-                            <span className="name">{offer.title}</span>
-                            {!offer.available && <span className="where"> {offer.reason}</span>}
-                          </Menu.Item>
-                        )),
-                      )}
-                      {allOffer !== undefined && (
-                        /* **Stop all tasks** (#1498, V100-53): its own row, last, under a line,
-                           since it ends every task above it. The session keeps running. A
-                           press stops nothing: the window asks once, naming how many. */
-                        <>
-                          <Menu.Separator className="ui-menu-line" />
-                          <Menu.Item
-                            className="ui-menu-item tasks-menu-row tasks-menu-stop-all"
-                            textValue="Stop all tasks"
-                            onSelect={() => {
-                              picked.current = true;
-                              onPress?.(allOffer);
-                            }}
-                          >
-                            <span className="name">Stop all tasks</span>
-                          </Menu.Item>
-                        </>
-                      )}
-                    </Menu.SubContent>
-                  </Menu.Portal>
-                </Menu.Sub>
+                      <span className="name">End a task</span>
+                    </MenuItem>
+                  }
+                >
+                  {endable.flatMap((task) =>
+                    task.offers.map((offer) => (
+                      <MenuItem
+                        key={offer.id}
+                        id={offer.id}
+                        className="tasks-menu-row"
+                        textValue={offer.title}
+                        // A row that cannot run stays in the arrows' way and says why.
+                        aria-disabled={offer.available ? undefined : true}
+                        shouldCloseOnSelect={offer.available}
+                        onAction={() => {
+                          if (!offer.available) return;
+                          // The keyboard goes to the question the press opens, not back to
+                          // where it was before the menu.
+                          picked.current = true;
+                          onPress?.(offer);
+                        }}
+                      >
+                        <span className="name">{offer.title}</span>
+                        {!offer.available && <span className="where"> {offer.reason}</span>}
+                      </MenuItem>
+                    )),
+                  )}
+                  {allOffer !== undefined && (
+                    /* **Stop all tasks** (#1498, V100-53): its own row, last, under a line,
+                       since it ends every task above it. The session keeps running. A press
+                       stops nothing: the window asks once, naming how many. */
+                    <>
+                      <MenuSeparator />
+                      <MenuItem
+                        id="stop-all-tasks"
+                        className="tasks-menu-row tasks-menu-stop-all"
+                        textValue="Stop all tasks"
+                        onAction={() => {
+                          picked.current = true;
+                          onPress?.(allOffer);
+                        }}
+                      >
+                        <span className="name">Stop all tasks</span>
+                      </MenuItem>
+                    </>
+                  )}
+                </Submenu>
               )}
               {own !== undefined && onActivity !== undefined && (
                 /* **The session's Activity** (#1495, V100-44): what its chat and its tasks
@@ -750,24 +697,21 @@ function Chip({
                 />
               )}
               {finished.length > 0 && (
-                <Menu.Item
-                  className="ui-menu-item tasks-menu-row tasks-menu-fold"
+                <MenuItem
+                  id="finished"
+                  className="tasks-menu-row tasks-menu-fold"
                   aria-expanded={!folded}
                   textValue="Finished"
-                  onPointerMove={quiet ? keepsNoKeyboard : undefined}
-                  onPointerLeave={quiet ? keepsNoKeyboard : undefined}
+                  // Unfolds in place: the menu stays.
+                  shouldCloseOnSelect={false}
                   // Right opens it and Left closes it, as on a row of a tree.
-                  onKeyDown={(event: ReactKeyboardEvent) => {
+                  onKeyDown={(event) => {
                     if (event.key === "ArrowRight" && folded) setUnfolded(true);
                     else if (event.key === "ArrowLeft" && !folded) setUnfolded(false);
                     else return;
                     event.preventDefault();
                   }}
-                  onSelect={(event) => {
-                    // Unfolds in place: the menu stays.
-                    event.preventDefault();
-                    setUnfolded(folded);
-                  }}
+                  onAction={() => setUnfolded(folded)}
                 >
                   {folded ? (
                     <ChevronRight aria-hidden="true" />
@@ -775,46 +719,15 @@ function Chip({
                     <ChevronDown aria-hidden="true" />
                   )}
                   <span className="name">Finished ({finished.length})</span>
-                </Menu.Item>
+                </MenuItem>
               )}
               {!folded && finished.map(line)}
-              {(limits != null || figures?.total != null) && (
-                <div className="tasks-menu-foot">
-                  {limits != null && <div className="tasks-menu-limits">{limits}</div>}
-                  {/* What the tab's chats used (#1500, V100-43): one line, added up and
-                      spelled by the core, with what it adds up on its title. No money. */}
-                  {figures?.total != null && (
-                    <Tooltip tip={figures.total.explained}>
-                      <div className="tasks-menu-totals" data-testid="tasks-used">
-                        {figures.total.said}
-                      </div>
-                    </Tooltip>
-                  )}
-                </div>
-              )}
-            </Menu.Content>
-          </Menu.Portal>
-        </Menu.Root>
+            </Menu>
+          </AnchoredMenu>
+        </>
       )}
     </span>
   );
-}
-
-/**
- * The menu's say in where the keyboard goes as it opens. Radix's menu takes this handler and
- * runs it before its own (`react-menu`, `onMountAutoFocus`); its dropdown's types leave it
- * out, so it is handed over under its name. `TabChip.window.test.tsx` holds it: a rest that
- * took the keyboard fails there.
- */
-function openFocus(handler: (event: Event) => void): object {
-  return { onOpenAutoFocus: handler };
-}
-
-/** A row under the pointer of a menu that took no keyboard is not given it either: Radix
- *  focuses the row the pointer comes onto and the menu as it leaves one, and here the
- *  stylesheet's hover says which row that is. */
-function keepsNoKeyboard(event: ReactPointerEvent) {
-  event.preventDefault();
 }
 
 /** What the menu's Activity row opens: its tooltip and its description. */
@@ -832,31 +745,24 @@ function ActivityRow({
 }: {
   /** The id of the row's description. */
   id: string;
-  /** Whether the menu took no keyboard: the pointer's moves are then kept from Radix. */
+  /** Whether the menu took no keyboard: the pointer's coming and going say whether it rests. */
   quiet: boolean;
   onPick: () => void;
 }) {
   const { rested, rest, wake, hold } = useRested(true);
   return (
-    <Menu.Item
-      className="ui-menu-item tasks-menu-row tasks-menu-activity"
+    <MenuItem
+      id="activity"
+      className="tasks-menu-row tasks-menu-activity"
       textValue="Activity"
       aria-label="Activity"
       aria-describedby={id}
       {...rest}
       // In a menu that took no keyboard the row is never focused, so the pointer's own coming
       // and going say whether it rests here.
-      onPointerEnter={quiet ? rest.onFocus : undefined}
-      onPointerMove={quiet ? keepsNoKeyboard : undefined}
-      onPointerLeave={
-        quiet
-          ? (event: ReactPointerEvent) => {
-              keepsNoKeyboard(event);
-              wake();
-            }
-          : undefined
-      }
-      onSelect={() => {
+      onHoverStart={quiet ? rest.onFocus : undefined}
+      onHoverEnd={quiet ? wake : undefined}
+      onAction={() => {
         wake();
         onPick();
       }}
@@ -870,12 +776,9 @@ function ActivityRow({
           {ACTIVITY_SAYS}
         </MenuTip>
       )}
-    </Menu.Item>
+    </MenuItem>
   );
 }
-
-/** How long the pointer rests on "End a task" before its rows open: Radix's own wait. */
-const ENDS_OPEN_AFTER = 100;
 
 /** The deepest step in a line is drawn at. A task of a task of a task of a task is rare, and
  *  one further in would leave its name no room. */
@@ -895,7 +798,6 @@ const DEEPEST = 6;
 function TaskLine({
   line,
   clock,
-  quiet,
   tokens,
   reportOpen,
   onPick,
@@ -905,8 +807,6 @@ function TaskLine({
 }: {
   line: Line;
   clock: StateClock;
-  /** Whether the menu took no keyboard (a rest opened it). */
-  quiet: boolean;
   /** What the line's chat used, as its hover says it (#1500); nothing before it is read. */
   tokens: string | undefined;
   reportOpen: boolean;
@@ -942,150 +842,168 @@ function TaskLine({
       : undefined;
   return (
     <>
-      // The line's one hint: its whole name, cut short where the menu is narrow, then what it //
-      used.
-      <Tooltip tip={tokens === undefined ? line.name : `${line.name}\n${tokens}`}>
-        <Menu.Item
-          className="ui-menu-item tasks-menu-row"
-          // How far in its line stands: one step per chat between it and the session.
-          data-level={Math.min(line.level, DEEPEST)}
-          // What the menu's own open lands on and the stylesheet weighs. Said in words below:
-          // `aria-current` in a menu is read unevenly, and both would say it twice.
-          data-current={line.current ? "" : undefined}
-          aria-expanded={line.report === undefined ? undefined : reportOpen}
-          textValue={line.name}
-          // What its task is doing is its description on demand (#1551), as the Chats list's row
-          // has it: the line below is out of the tree where it stands, and named here. An id
-          // that names no element, while nothing is said, describes it with nothing.
-          aria-describedby={row === undefined ? undefined : menuDoingId(row.session)}
-          onPointerMove={quiet ? keepsNoKeyboard : undefined}
-          onPointerLeave={quiet ? keepsNoKeyboard : undefined}
-          // **The keyboard's way to move a task from its line** (#1489): Enter goes to it, and
-          // Enter with a modifier opens it elsewhere, as a link is opened in a new tab. ⌘ or
-          // Ctrl is a tab of its own; Alt is beside its session. Before Radix's own Enter.
-          aria-keyshortcuts={moves === undefined ? undefined : "Control+Enter Meta+Enter Alt+Enter"}
-          onKeyDown={(event: ReactKeyboardEvent) => {
-            if (moves === undefined || onPlace === undefined || event.key !== "Enter") return;
-            const where: Place | undefined =
-              event.metaKey || event.ctrlKey ? "own" : event.altKey ? "beside" : undefined;
-            if (where === undefined) return;
-            event.preventDefault();
-            if (!event.repeat) onPlace(moves.session, where);
-          }}
-          onSelect={(event) => {
-            // Not a pick of a chat: the menu stays, with the keyboard on this line.
-            if (!onPick(line)) event.preventDefault();
-          }}
-        >
-          <span className="now" aria-hidden="true">
-            {line.current && <ChevronRight />}
-          </span>
-          {line.persona === null ? (
-            <SquareTerminal className="node-icon" aria-hidden="true" />
-          ) : (
-            <PersonaMark persona={line.persona} />
-          )}
-          {/* The spaces are for whoever reads the row as text: a screen reader says the name,
+      <MenuItem
+        id={line.key}
+        className="tasks-menu-row"
+        // How far in its line stands: one step per chat between it and the session.
+        data-level={Math.min(line.level, DEEPEST)}
+        // What the menu's own open lands on and the stylesheet weighs. Said in words below:
+        // `aria-current` in a menu is read unevenly, and both would say it twice.
+        data-current={line.current ? "" : undefined}
+        aria-expanded={line.report === undefined ? undefined : reportOpen}
+        textValue={line.name}
+        // The line's one hint: its whole name, cut short where the menu is narrow, then what it
+        // used.
+        tooltip={tokens === undefined ? line.name : `${line.name}\n${tokens}`}
+        // What its task is doing is its description on demand (#1551), as the Chats list's row
+        // has it, and its report while that is open. An id that names no element, while
+        // nothing is said, describes it with nothing.
+        aria-describedby={
+          [
+            row === undefined ? undefined : menuDoingId(row.session),
+            reportOpen && line.report !== undefined ? reportId(line.key) : undefined,
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        // **The keyboard's way to move a task from its line** (#1489): Enter goes to it, and
+        // Enter with a modifier opens it elsewhere, as a link is opened in a new tab. ⌘ or
+        // Ctrl is a tab of its own; Alt is beside its session. Before the menu's own Enter.
+        aria-keyshortcuts={moves === undefined ? undefined : "Control+Enter Meta+Enter Alt+Enter"}
+        onKeyDown={(event) => {
+          const where: Place | undefined =
+            event.metaKey || event.ctrlKey ? "own" : event.altKey ? "beside" : undefined;
+          if (
+            moves === undefined ||
+            onPlace === undefined ||
+            event.key !== "Enter" ||
+            where === undefined
+          )
+            return;
+          event.preventDefault();
+          if (!event.repeat) onPlace(moves.session, where);
+        }}
+        // A line with a chat goes to it and the menu is done; one with none opens its report in
+        // place, and the menu stays with the keyboard on this line.
+        shouldCloseOnSelect={line.row !== undefined}
+        onAction={() => {
+          onPick(line);
+        }}
+      >
+        <span className="now" aria-hidden="true">
+          {line.current && <ChevronRight />}
+        </span>
+        {line.persona === null ? (
+          <SquareTerminal className="node-icon" aria-hidden="true" />
+        ) : (
+          <PersonaMark persona={line.persona} />
+        )}
+        {/* The spaces are for whoever reads the row as text: a screen reader says the name,
             then the state, and not the two run together. The row lays them out itself. */}
-          <span className="name">{line.name}</span>
-          {line.current && <span className="hidden-words">, shown now</span>}
-          {/* Who asked for it, where the indent is all that draws it: said, since an indent is
+        <span className="name">{line.name}</span>
+        {line.current && <span className="hidden-words">, shown now</span>}
+        {/* Who asked for it, where the indent is all that draws it: said, since an indent is
             not read; and drawn too in the fold, where every line stands at one step. */}
-          {line.askedBy !== null && (
-            <span className={line.level > 2 ? "hidden-words" : "asked"}>
-              , asked by {line.askedBy}
-            </span>
-          )}
-          {line.elsewhere !== null && <span className="where"> in {line.elsewhere}</span>}
-          {/* A task with a pane of its own is still this tab's (V100-38), and says where it is:
+        {line.askedBy !== null && (
+          <span className={line.level > 2 ? "hidden-words" : "asked"}>
+            , asked by {line.askedBy}
+          </span>
+        )}
+        {line.elsewhere !== null && <span className="where"> in {line.elsewhere}</span>}
+        {/* A task with a pane of its own is still this tab's (V100-38), and says where it is:
             picking it brings that forward. */}
-          {line.placed !== undefined && (
-            <span className="where placed" data-placed={line.placed}>
-              {line.placed === "tab" ? ", in its own tab" : ", beside it"}
-            </span>
-          )}{" "}
-          {row !== undefined ? (
-            <ChatShownState
-              session={row.session}
-              shell={row.shell}
-              report={row.report}
-              outcome={row.outcome}
-              asking={row.asking}
-              harness={row.harness}
-            />
-          ) : (
-            line.ended !== undefined && <StateShown shown={line.ended} />
-          )}
-          {line.qualifier !== undefined && <span className="where"> {line.qualifier}</span>}
-          {row !== undefined && <Since clock={clock} session={row.session} />}
-          {/* What it is doing (#1493): one dim line, cut short; nothing while it is not
+        {line.placed !== undefined && (
+          <span className="where placed" data-placed={line.placed}>
+            {line.placed === "tab" ? ", in its own tab" : ", beside it"}
+          </span>
+        )}{" "}
+        {row !== undefined ? (
+          <ChatShownState
+            session={row.session}
+            shell={row.shell}
+            report={row.report}
+            outcome={row.outcome}
+            asking={row.asking}
+            harness={row.harness}
+          />
+        ) : (
+          line.ended !== undefined && <StateShown shown={line.ended} />
+        )}
+        {line.qualifier !== undefined && <span className="where"> {line.qualifier}</span>}
+        {row !== undefined && <Since clock={clock} session={row.session} />}
+        {/* What it is doing (#1493): one dim line, cut short; nothing while it is not
             working. It reads its own chat, so this line is not drawn again for it. */}
-          {row !== undefined && (
-            <span className="doing">
-              <ChatDoingLine session={row.session} id={menuDoingId(row.session)} />
-            </span>
-          )}
-          {(brief !== undefined || answer !== undefined) && moves === undefined && (
-            <span className="tasks-menu-places" aria-hidden="true">
-              {brief !== undefined && <BriefPlace ask={brief} onBrief={onBrief} />}
-              {answer !== undefined && <AnswerPlace ask={answer} onAnswer={onAnswer} />}
-            </span>
-          )}
-          {moves !== undefined && onPlace !== undefined && (
-            /* **The pointer's way to move a task from its line** (#1489), drawn at the line's
+        {row !== undefined && (
+          <span className="doing">
+            <ChatDoingLine session={row.session} id={menuDoingId(row.session)} />
+          </span>
+        )}
+        {(brief !== undefined || answer !== undefined) && moves === undefined && (
+          <span className="tasks-menu-places" aria-hidden="true">
+            {brief !== undefined && <BriefPlace ask={brief} onBrief={onBrief} />}
+            {answer !== undefined && <AnswerPlace ask={answer} onAnswer={onAnswer} />}
+          </span>
+        )}
+        {moves !== undefined && onPlace !== undefined && (
+          /* **The pointer's way to move a task from its line** (#1489), drawn at the line's
              end while the pointer is on it: to a tab of its own and beside its session, or
              back for one that has a pane of its own. **Not in the accessibility tree**, as a
              list row's fold is not: a button inside a menu's item is reached by no arrow, so
              the keyboard's way is the line's own keys above, and the task's menu in the Chats
              list. */
-            <span className="tasks-menu-places" aria-hidden="true">
-              {line.placed !== "tab" && (
-                <PlaceButton
-                  says={`Move ${line.name} to its own tab`}
-                  keys={onAMac() ? "⌘Enter" : "Ctrl+Enter"}
-                  onPress={() => onPlace(moves.session, "own")}
-                >
-                  <SquareArrowOutUpRight />
-                </PlaceButton>
-              )}
-              {line.placed !== "beside" && (
-                <PlaceButton
-                  says={`Open ${line.name} beside its session`}
-                  keys={onAMac() ? "⌥Enter" : "Alt+Enter"}
-                  onPress={() => onPlace(moves.session, "beside")}
-                >
-                  <PanelRight />
-                </PlaceButton>
-              )}
-              {line.placed !== undefined && (
-                <PlaceButton
-                  says={`Send ${line.name} back into this tab`}
-                  onPress={() => onPlace(moves.session, "back")}
-                >
-                  <Minus />
-                </PlaceButton>
-              )}
-              {/* Last: it reads, where the others move the task (#1494). */}
-              {brief !== undefined && <BriefPlace ask={brief} onBrief={onBrief} />}
-              {/* Last, at the line's very end: what the task waits on (#1551). */}
-              {answer !== undefined && <AnswerPlace ask={answer} onAnswer={onAnswer} />}
-            </span>
-          )}
-        </Menu.Item>
-      </Tooltip>
-      {reportOpen && line.report !== undefined && (
-        <div
-          className="tasks-menu-report"
-          role="region"
-          aria-label={`Report of ${line.name}`}
-          data-level={Math.min(line.level, DEEPEST)}
-        >
-          {/* Text nodes, every one: a report is a chat's words, and is never markup here. */}
-          <p className="report-text">{line.report}</p>
-        </div>
-      )}
+          <span className="tasks-menu-places" aria-hidden="true">
+            {line.placed !== "tab" && (
+              <PlaceButton
+                says={`Move ${line.name} to its own tab`}
+                keys={onAMac() ? "⌘Enter" : "Ctrl+Enter"}
+                onPress={() => onPlace(moves.session, "own")}
+              >
+                <SquareArrowOutUpRight />
+              </PlaceButton>
+            )}
+            {line.placed !== "beside" && (
+              <PlaceButton
+                says={`Open ${line.name} beside its session`}
+                keys={onAMac() ? "⌥Enter" : "Alt+Enter"}
+                onPress={() => onPlace(moves.session, "beside")}
+              >
+                <PanelRight />
+              </PlaceButton>
+            )}
+            {line.placed !== undefined && (
+              <PlaceButton
+                says={`Send ${line.name} back into this tab`}
+                onPress={() => onPlace(moves.session, "back")}
+              >
+                <Minus />
+              </PlaceButton>
+            )}
+            {/* Last: it reads, where the others move the task (#1494). */}
+            {brief !== undefined && <BriefPlace ask={brief} onBrief={onBrief} />}
+            {/* Last, at the line's very end: what the task waits on (#1551). */}
+            {answer !== undefined && <AnswerPlace ask={answer} onAnswer={onAnswer} />}
+          </span>
+        )}
+        {reportOpen && line.report !== undefined && (
+          /* **Its report, opened under its words**: text, as its finished row in the Chats
+             list draws it, and the line's description while it is open. */
+          <span
+            className="tasks-menu-report"
+            id={reportId(line.key)}
+            data-level={Math.min(line.level, DEEPEST)}
+          >
+            {/* Text nodes, every one: a report is a chat's words, and is never markup here. */}
+            <span className="report-text">{line.report}</span>
+          </span>
+        )}
+      </MenuItem>
     </>
   );
+}
+
+/** The id of an ended task's report, open under its line. */
+function reportId(key: string): string {
+  return `tasks-menu-report-${key.replace(/[^\w-]/g, "-")}`;
 }
 
 /** The id of what a menu line's task is doing, which the line is described by (#1551): its
@@ -1134,7 +1052,7 @@ function AnswerPlace({ ask, onAnswer }: { ask: AnswerAsk; onAnswer?: (ask: Answe
 
 /**
  * One of the buttons at the end of a task's line. Its press is its own: it never reaches the
- * line, which would go to the task (Radix's item presses itself on a click and on a pointer
+ * line, which would go to the task (a menu's row presses itself on a click and on a pointer
  * coming up over it).
  */
 function PlaceButton({

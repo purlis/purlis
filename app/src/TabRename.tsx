@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import * as Popover from "./overlays/popover";
+import { AnchoredPopover } from "./ui/popover/Popover";
 import { RENAMES_ON_F2 } from "./actions";
 import { TextField } from "./ui/field/Field";
 
@@ -28,13 +28,13 @@ import { TextField } from "./ui/field/Field";
  * the operator has gone somewhere else, and a box left open behind them, holding the tab's
  * place with nothing to focus, would be a tab they cannot reach. A blur the core refuses leaves
  * the name as it was and closes, as Escape does. It hangs under the box
- * in a Radix popover, because the strip clips what it holds to its own height; the keyboard
- * stays in the box.
+ * in the popover family's `AnchoredPopover`, because the strip clips what it holds to its own
+ * height; the keyboard stays in the box.
  *
  * **It takes the keyboard twice, and the second time is the one that holds.** A rename asked
  * for from the palette or from the tab's menu opens this while that surface is still closing,
- * and a closing Radix surface hands the keyboard back on a timer of its own (its focus scope
- * does it in a `setTimeout` as it unmounts). So the box takes the keyboard as it mounts, and
+ * and a closing surface hands the keyboard back on a timer of its own (its focus scope does it
+ * a moment after it unmounts). So the box takes the keyboard as it mounts, and
  * again on a timer set after that one; a blur before then is the surface leaving, not the
  * operator, and saves nothing.
  */
@@ -107,45 +107,39 @@ export function TabRename({
   };
 
   return (
-    <Popover.Root open={refused !== undefined}>
-      <Popover.Anchor asChild>
-        {/* The field family's small box, in the tab's place. */}
-        <TextField
-          className="tab-rename"
-          size="sm"
-          inputRef={box}
-          value={typed}
-          aria-label={`Rename chat ${name}`}
-          isInvalid={refused !== undefined}
-          aria-describedby={refused === undefined ? undefined : whyId}
-          onChange={(to) => {
-            setTyped(to);
-            setRefused(undefined);
-          }}
-          onKeyDown={key}
-          onBlur={() => {
-            if (!armed.current) return;
-            if (refused === undefined) void save(false);
-            else finish(false);
-          }}
-          {...{ [RENAMES_ON_F2]: "" }}
-        />
-      </Popover.Anchor>
-      <Popover.Portal>
-        <Popover.Content
-          className="ui-popover row-card tab-rename-refused"
-          id={whyId}
-          role="alert"
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          // The keyboard stays in the box, where the name is being fixed.
-          onOpenAutoFocus={(event) => event.preventDefault()}
-          onCloseAutoFocus={(event) => event.preventDefault()}
-        >
+    <>
+      {/* The field family's small box, in the tab's place. */}
+      <TextField
+        className="tab-rename"
+        size="sm"
+        inputRef={box}
+        value={typed}
+        aria-label={`Rename chat ${name}`}
+        isInvalid={refused !== undefined}
+        aria-describedby={refused === undefined ? undefined : whyId}
+        onChange={(to) => {
+          setTyped(to);
+          setRefused(undefined);
+        }}
+        onKeyDown={key}
+        onBlur={() => {
+          if (!armed.current) return;
+          if (refused === undefined) void save(false);
+          else finish(false);
+        }}
+        {...{ [RENAMES_ON_F2]: "" }}
+      />
+      {/* Under the box, lined up with its start; the keyboard stays in the box, where the name
+          is being fixed. */}
+      <AnchoredPopover
+        triggerRef={box}
+        isOpen={refused !== undefined}
+        className="row-card tab-rename-refused"
+      >
+        <div id={whyId} role="alert">
           {refused}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+        </div>
+      </AnchoredPopover>
+    </>
   );
 }

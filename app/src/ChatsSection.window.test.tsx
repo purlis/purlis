@@ -1031,7 +1031,7 @@ describe("stopping a chat (#1448)", () => {
 
     expect(below.getAttribute("aria-disabled")).toBe("true");
     // Why it cannot run is the one line under its words.
-    expect(below.querySelector(".ui-menu-note")).toHaveTextContent(
+    expect(below.querySelector('[data-part="description"]')).toHaveTextContent(
       "steward 4 started no chat that is still running.",
     );
   });
