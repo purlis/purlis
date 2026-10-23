@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792736611945,
+  "lastUpdate": 1792738305014,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22428,6 +22428,48 @@ window.BENCHMARK_DATA = {
             "value": 101.570945,
             "unit": "ms",
             "extra": "median of 5 runs: 101.360, 101.480, 101.571, 102.211, 102.362 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "46c3be3278aca25b6342bee5a74f48dc18b1710e",
+          "message": "Bump the web group across 1 directory with 15 updates (#3064)\n\nBumps the web group with 15 updates in the /app directory:\n\n| Package | From | To |\n| --- | --- | --- |\n| [@codemirror/merge](https://github.com/codemirror/merge) | `6.12.2` | `6.12.3` |\n| [@codemirror/view](https://github.com/codemirror/view) | `6.43.14` | `6.43.15` |\n| [lucide-react](https://github.com/lucide-icons/lucide/tree/HEAD/packages/lucide-react) | `1.56.0` | `1.59.0` |\n| [react](https://github.com/react/react/tree/HEAD/packages/react) | `19.3.0` | `19.3.1` |\n| [react-aria](https://github.com/adobe/react-spectrum) | `3.52.1` | `3.53.1` |\n| [react-aria-components](https://github.com/adobe/react-spectrum) | `1.21.1` | `1.22.1` |\n| [react-dom](https://github.com/react/react/tree/HEAD/packages/react-dom) | `19.3.0` | `19.3.1` |\n| [react-resizable-panels](https://github.com/bvaughn/react-resizable-panels) | `4.14.5` | `4.14.7` |\n| [react-stately](https://github.com/adobe/react-spectrum) | `3.50.0` | `3.51.0` |\n| [@vitest/browser](https://github.com/vitest-dev/vitest/tree/HEAD/packages/browser) | `5.0.4` | `5.0.5` |\n| [@vitest/browser-playwright](https://github.com/vitest-dev/vitest/tree/HEAD/packages/browser-playwright) | `5.0.4` | `5.0.5` |\n| [eslint](https://github.com/eslint/eslint) | `10.12.0` | `10.13.0` |\n| [jsdom](https://github.com/jsdom/jsdom) | `30.1.2` | `30.1.3` |\n| [typescript-eslint](https://github.com/typescript-eslint/typescript-eslint/tree/HEAD/packages/typescript-eslint) | `8.71.2` | `8.72.0` |\n| [vitest](https://github.com/vitest-dev/vitest/tree/HEAD/packages/vitest) | `5.0.4` | `5.0.5` |\n\n\n\nUpdates `@codemirror/merge` from 6.12.2 to 6.12.3\n- [Changelog](https://github.com/codemirror/merge/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/codemirror/merge/commits)\n\nUpdates `@codemirror/view` from 6.43.14 to 6.43.15\n- [Changelog](https://github.com/codemirror/view/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/codemirror/view/commits)\n\nUpdates `lucide-react` from 1.56.0 to 1.59.0\n- [Release notes](https://github.com/lucide-icons/lucide/releases)\n- [Commits](https://github.com/lucide-icons/lucide/commits/1.59.0/packages/lucide-react)\n\nUpdates `react` from 19.3.0 to 19.3.1\n- [Release notes](https://github.com/react/react/releases)\n- [Changelog](https://github.com/react/react/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/react/react/commits/v19.3.1/packages/react)\n\nUpdates `react-aria` from 3.52.1 to 3.53.1\n- [Release notes](https://github.com/adobe/react-spectrum/releases)\n- [Commits](https://github.com/adobe/react-spectrum/compare/react-aria@3.52.1...react-aria@3.53.1)\n\nUpdates `react-aria-components` from 1.21.1 to 1.22.1\n- [Release notes](https://github.com/adobe/react-spectrum/releases)\n- [Commits](https://github.com/adobe/react-spectrum/compare/react-aria-components@1.21.1...react-aria-components@1.22.1)\n\nUpdates `react-dom` from 19.3.0 to 19.3.1\n- [Release notes](https://github.com/react/react/releases)\n- [Changelog](https://github.com/react/react/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/react/react/commits/v19.3.1/packages/react-dom)\n\nUpdates `react-resizable-panels` from 4.14.5 to 4.14.7\n- [Release notes](https://github.com/bvaughn/react-resizable-panels/releases)\n- [Changelog](https://github.com/bvaughn/react-resizable-panels/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/bvaughn/react-resizable-panels/compare/4.14.5...4.14.7)\n\nUpdates `react-stately` from 3.50.0 to 3.51.0\n- [Release notes](https://github.com/adobe/react-spectrum/releases)\n- [Commits](https://github.com/adobe/react-spectrum/compare/react-stately@3.50.0...react-stately@3.51.0)\n\nUpdates `@vitest/browser` from 5.0.4 to 5.0.5\n- [Release notes](https://github.com/vitest-dev/vitest/releases)\n- [Changelog](https://github.com/vitest-dev/vitest/blob/main/docs/releases.md)\n- [Commits](https://github.com/vitest-dev/vitest/commits/v5.0.5/packages/browser)\n\nUpdates `@vitest/browser-playwright` from 5.0.4 to 5.0.5\n- [Release notes](https://github.com/vitest-dev/vitest/releases)\n- [Changelog](https://github.com/vitest-dev/vitest/blob/main/docs/releases.md)\n- [Commits](https://github.com/vitest-dev/vitest/commits/v5.0.5/packages/browser-playwright)\n\nUpdates `eslint` from 10.12.0 to 10.13.0\n- [Release notes](https://github.com/eslint/eslint/releases)\n- [Commits](https://github.com/eslint/eslint/compare/v10.12.0...v10.13.0)\n\nUpdates `jsdom` from 30.1.2 to 30.1.3\n- [Release notes](https://github.com/jsdom/jsdom/releases)\n- [Commits](https://github.com/jsdom/jsdom/compare/v30.1.2...v30.1.3)\n\nUpdates `typescript-eslint` from 8.71.2 to 8.72.0\n- [Release notes](https://github.com/typescript-eslint/typescript-eslint/releases)\n- [Changelog](https://github.com/typescript-eslint/typescript-eslint/blob/main/packages/typescript-eslint/CHANGELOG.md)\n- [Commits](https://github.com/typescript-eslint/typescript-eslint/commits/v8.72.0/packages/typescript-eslint)\n\nUpdates `vitest` from 5.0.4 to 5.0.5\n- [Release notes](https://github.com/vitest-dev/vitest/releases)\n- [Changelog](https://github.com/vitest-dev/vitest/blob/main/docs/releases.md)\n- [Commits](https://github.com/vitest-dev/vitest/commits/v5.0.5/packages/vitest)\n\n---\nupdated-dependencies:\n- dependency-name: \"@codemirror/merge\"\n  dependency-version: 6.12.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: \"@codemirror/view\"\n  dependency-version: 6.43.15\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: lucide-react\n  dependency-version: 1.59.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: react\n  dependency-version: 19.3.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: react-aria\n  dependency-version: 3.53.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: react-aria-components\n  dependency-version: 1.22.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: react-dom\n  dependency-version: 19.3.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: react-resizable-panels\n  dependency-version: 4.14.7\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: react-stately\n  dependency-version: 3.51.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@vitest/browser\"\n  dependency-version: 5.0.5\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: \"@vitest/browser-playwright\"\n  dependency-version: 5.0.5\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: eslint\n  dependency-version: 10.13.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: jsdom\n  dependency-version: 30.1.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: typescript-eslint\n  dependency-version: 8.72.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: vitest\n  dependency-version: 5.0.5\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: web\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-23T10:48:58+04:00",
+          "tree_id": "2697bde143f5c1e164129b007ac4844ee52ca53d",
+          "url": "https://github.com/purlis/purlis/commit/46c3be3278aca25b6342bee5a74f48dc18b1710e"
+        },
+        "date": 1792738302118,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4624695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.457, 0.462, 0.462, 0.463, 0.479 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5280595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.258, 16.340, 16.528, 16.754, 16.901 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.3522605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.385, 100.988, 101.352, 101.785, 102.356 ms"
           }
         ]
       }
