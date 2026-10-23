@@ -339,10 +339,11 @@ export const ASubmenuPressedAtOnce: Story = {
   render: () => <WithASubmenu />,
   play: async ({ canvas, userEvent }) => {
     canvas.getByRole("button", { name: "Chat steward 4" }).click();
-    // At once, before the frame the menu's own hand-on of the keyboard waits for.
-    const menu = screen.getByRole("menu", { name: "Chat steward 4" });
+    // As soon as each is drawn: before the frame the menu's own hand-on of the keyboard waits
+    // for, as a waitFor's check runs as the page changes.
+    const menu = await waitFor(() => screen.getByRole("menu", { name: "Chat steward 4" }));
     within(menu).getByRole("menuitem", { name: /Ask/ }).click();
-    const sub = screen.getByRole("menu", { name: "Ask" });
+    const sub = await waitFor(() => screen.getByRole("menu", { name: "Ask" }));
     await untilFocused(
       () => within(sub).getByRole("menuitem", { name: /devops/ }),
       "A submenu pressed at once: the keyboard is on its first row",
