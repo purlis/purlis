@@ -317,6 +317,17 @@ function check(
   if (!holds) throw new Error(`${what}: ${String(value)} is not ${is} ${String(other)}`);
 }
 
+/** Whether the theme in force shares the chat strip equally between its tabs (`tabs.layout.sizing:
+ *  equal`, Purlis Classic) rather than sizing each to its words (Purlis, #2914). */
+async function equalShare(): Promise<boolean> {
+  return browser.execute(() => {
+    const layout = document.querySelector('[data-scope="tabs"][data-part="layout"]');
+    return (
+      layout !== null && getComputedStyle(layout).getPropertyValue("--tabs-grow").trim() === "1"
+    );
+  });
+}
+
 describe("the chip a session's tab wears for its tasks", () => {
   /** The tabs that were already there, so only this file's own are ended again. */
   let wereAlreadyOpen: string[] = [];
@@ -473,9 +484,14 @@ describe("the chip a session's tab wears for its tasks", () => {
     await untilChip(mine[0], true);
     const after = await cells();
 
+    // Shared equally (Purlis Classic), no tab changes width or moves for a chip. Sized to their
+    // words (Purlis, #2914), the tab that wears it grows by it, and a strip at its room shares
+    // the difference out among its tabs, which shrink as their words allow: none is lost.
+    const equal = await equalShare();
     for (const [name, { box }] of Object.entries(before)) {
       const now = after[name];
       check(`${name} is gone from the strip`, now !== undefined, "is", true);
+      if (!equal) continue;
       check(`${name} changed width`, Math.abs(now.box.width - box.width), "atMost", 0.5);
       check(`${name} moved`, Math.abs(now.box.left - box.left), "atMost", 0.5);
     }
@@ -758,8 +774,9 @@ describe("the chip a session's tab wears for its tasks", () => {
       // A red run says the cell it measured.
       console.log(`tab-chip.e2e: ${at} the tab with a chip was ${JSON.stringify(seen)}`);
 
-      // Its share of the strip is the share of every other tab drawn.
-      for (const [name, other] of Object.entries(await cells()))
+      // Its share of the strip is the share of every other tab drawn, where the theme shares
+      // the strip equally (Purlis Classic); sized to their words (Purlis), each is its own.
+      for (const [name, other] of (await equalShare()) ? Object.entries(await cells()) : [])
         check(
           `${at}: ${name} is not as wide as the tab with a chip`,
           Math.abs(other.box.width - cell.width),

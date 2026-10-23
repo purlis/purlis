@@ -271,6 +271,16 @@ pub const STEPS: &[Step] = &[
         -2.0,
         -2.0,
     ),
+    // The line around a pane (#2914, the operator's ruling of 2026-10-22): Classic's hairline,
+    // which the focused pane draws in the accent; none in Purlis, whose panes are the panel.
+    step(
+        "pane.border-width",
+        "--pane-border-width",
+        Px,
+        (0.0, 2.0),
+        1.0,
+        1.0,
+    ),
     // The two lifts: how far a surface's shadow falls, and how soft it is.
     step(
         "elevation.raised-y",

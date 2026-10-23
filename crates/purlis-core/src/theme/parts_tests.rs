@@ -23,11 +23,27 @@ fn said(resolved: &Resolved) -> Vec<String> {
         .collect()
 }
 
-/// The stylesheet of a theme's first appearance, which must be drawn.
+/// The stylesheet of a theme's first appearance, which must be drawn, less the rules of Purlis
+/// Classic's own parts: what the theme's parts add over its parent's.
 fn sheet_of(parts: Value) -> String {
     let loaded = load(&with_parts(parts));
     assert!(!loaded.refused, "{:?}", said(&loaded));
-    parts::stylesheet(loaded.theme.first())
+    over_classic(&parts::stylesheet(loaded.theme.first()))
+}
+
+/// A stylesheet less the rules Purlis Classic's parts write, which are its tabs' strip look
+/// (#2914): the family defaults draw Purlis's docked tabs, and Classic keeps its strip through
+/// parts. Empty when nothing else is written.
+fn over_classic(sheet: &str) -> String {
+    let classic = parts::stylesheet(classic().first());
+    let own: Vec<&str> = sheet
+        .lines()
+        .filter(|line| !(line.contains("[data-scope=\"tabs\"]") && classic.contains(line)))
+        .collect();
+    if own.len() <= 2 {
+        return String::new();
+    }
+    own.join("\n") + "\n"
 }
 
 /// The sentences a refused theme says.
@@ -57,16 +73,35 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
 
 #[test]
 fn a_theme_that_names_no_parts_draws_exactly_as_today() {
+    // Purlis Classic names only its tabs' strip look (#2914); nothing it draws falls back.
     for theme in built_ins() {
-        assert!(theme.parts.is_empty(), "{} names parts", theme.name);
-        assert_eq!(parts::stylesheet(theme), "");
+        assert!(
+            theme.parts.keys().all(|key| key.family == "tabs"),
+            "{} names parts beyond its tabs",
+            theme.name
+        );
         assert!(parts::fallen(theme).is_empty());
     }
+    // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914), and
+    // no more: its tabs are the family default and cost nothing to measure.
+    let purlis = built_in("purlis").expect("Purlis");
+    assert!(
+        purlis
+            .parts
+            .keys()
+            .all(|key| key.family == "panel" || key.family == "tooltip"),
+        "{:?}",
+        purlis.parts.keys().collect::<Vec<_>>()
+    );
+    assert!(parts::fallen(purlis).is_empty());
     let loaded = load(&json!({ "name": "Plain", "extends": "purlis-classic" }));
-    assert_eq!(parts::stylesheet(loaded.theme.first()), "");
+    assert_eq!(
+        parts::stylesheet(loaded.theme.first()),
+        parts::stylesheet(classic().first())
+    );
     let empty = load(&with_parts(json!({})));
     assert!(!empty.refused);
-    assert_eq!(parts::stylesheet(empty.theme.first()), "");
+    assert_eq!(over_classic(&parts::stylesheet(empty.theme.first())), "");
 }
 
 // ---------------------------------------------------------------------------------------
@@ -152,7 +187,16 @@ fn a_key_naming_nothing_purlis_has_is_said_and_left_out() {
             "{key}: {notes:?}"
         );
     }
-    assert_eq!(loaded.theme.first().parts.len(), 1);
+    assert_eq!(
+        loaded
+            .theme
+            .first()
+            .parts
+            .keys()
+            .filter(|key| key.family == "button")
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -351,7 +395,8 @@ fn a_control_stays_a_target_and_its_words_fit_in_both_densities() {
 
 #[test]
 fn a_size_inside_a_state_is_refused_with_a_sentence_that_says_why() {
-    for property in parts::PROPERTIES.iter().filter(|one| !one.in_state()) {
+    let root = parts::family("button").unwrap().parts[0].properties;
+    for property in root.iter().filter(|one| !one.in_state()) {
         for state in STATES {
             let key = format!("button.root.{}.{}", state.name(), property.name());
             let value = match property {
@@ -378,7 +423,8 @@ fn a_size_inside_a_state_is_refused_with_a_sentence_that_says_why() {
         [
             "parts.button.root.primary.selected.font-weight is refused: a state never changes a \
           part's size, so nothing moves when the pointer, a press, the keyboard or a choice \
-          reaches it; inside a state only fill, text, border-colour and shadow may be set. Give \
+          reaches it; inside a state only fill, text, border-colour and shadow may be set, and \
+          a tab's flare and hover inset, which are drawn out of its flow and size nothing. Give \
           font-weight to button.root.primary at rest"
         ]
     );
@@ -922,11 +968,25 @@ fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
 #[test]
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
-    assert_eq!(manifest["version"], 7);
-    for list in ["states", "properties"] {
-        for one in manifest[list].as_array().unwrap() {
-            assert_eq!(one["since"], 1, "{one}");
-        }
+    assert_eq!(manifest["version"], 8);
+    for one in manifest["states"].as_array().unwrap() {
+        assert_eq!(one["since"], 1, "{one}");
+    }
+    // The tab family's layout options came in version 8 (#2914).
+    for one in manifest["properties"].as_array().unwrap() {
+        let since = if one["name"] == "max-width"
+            || one["name"] == "flare"
+            || one["name"] == "inset"
+            || one["name"] == "attach"
+            || one["name"] == "sizing"
+            || one["name"] == "dividers"
+            || one["name"] == "position"
+        {
+            8
+        } else {
+            1
+        };
+        assert_eq!(one["since"], since, "{one}");
     }
     assert_eq!(
         manifest["grammar"],
@@ -969,6 +1029,13 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             ("font-size", false),
             ("font-weight", false),
             ("height", false),
+            ("max-width", false),
+            ("flare", true),
+            ("inset", true),
+            ("attach", false),
+            ("sizing", false),
+            ("dividers", false),
+            ("position", false),
         ]
     );
     let height = &manifest["properties"][10]["bounds"];
@@ -1191,6 +1258,10 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     (
         7,
         "67bde082299e45b7255ba4c5b05c0463e95c0262fa4430653b47b13d3b930d06",
+    ),
+    (
+        8,
+        "3a5db3c2ce7fc328da8f0c6a22a4af730aec9e51b45d02141051884af667ecc0",
     ),
 ];
 
@@ -1554,7 +1625,7 @@ fn a_fields_help_that_breaks_its_floor_is_drawn_in_its_own_default() {
     assert_eq!(fallen.len(), 1, "{fallen:?}");
     assert_eq!(fallen[0].part, "field.root");
     assert!(fallen[0].floor.contains("the help's words"), "{fallen:?}");
-    let sheet = parts::stylesheet(theme);
+    let sheet = over_classic(&parts::stylesheet(theme));
     // Its help goes back to the quiet tier and its error to the danger colour, and the field's
     // root, which draws no colour of its own, is given none.
     assert!(sheet.contains("color: var(--text-quiet);"), "{sheet}");
@@ -1661,7 +1732,16 @@ fn a_state_a_fields_wrapper_never_marks_is_no_part() {
             said(&loaded)
         );
     }
-    assert_eq!(loaded.theme.first().parts.len(), 1);
+    assert_eq!(
+        loaded
+            .theme
+            .first()
+            .parts
+            .keys()
+            .filter(|key| key.family != "tabs")
+            .count(),
+        1
+    );
     let keys = schema()["properties"]["parts"]["properties"]
         .as_object()
         .cloned()

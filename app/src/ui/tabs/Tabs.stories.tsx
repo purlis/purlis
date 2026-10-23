@@ -1,0 +1,341 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * **The session tabs, docked on the content panel** (#2914): the strip as the operator's
+ * switcher prototype draws it, each state that draws differently, held to axe, walked by the
+ * keyboard and compared with its baseline in Chromium and WebKit (`docs/component-stories.md`).
+ *
+ * The strip here is laid out by the window's own strip rules (`.bar`, `.tabs` in `App.css`) and
+ * owns its tabs as the chat strip does (`StripTablist`), so what is drawn is what the window
+ * draws. Its behaviour beyond choosing a tab (the drag, the collapse into show-more, the menus)
+ * is the chat strip's, held by its own tests.
+ */
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { Fragment, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { expect, waitFor } from "storybook/test";
+import { Plus, X } from "lucide-react";
+import { expectFocusInSight } from "../../stories.testkit";
+import { StripTablist, useTabIds } from "../../StripTablist";
+import { ChatMark } from "../../NeedsYou";
+import type { State } from "../../chatState";
+import { IconButton } from "../button/Button";
+import { editorToolbar, TabCell, tabPart, tabsPart, ToolbarFile, type TabVariant } from "./Tabs";
+import { panelRoot } from "../panel/Panel";
+
+/** One tab as a story draws it: its name, what it holds, and its chat's state, if any. */
+type Shown = { name: string; variant?: TabVariant; state?: State };
+
+const CHATS: Shown[] = [
+  { name: "steward 1", state: "running" },
+  { name: "talk", state: "waiting" },
+  { name: "review the tab strip prototype" },
+  { name: "purlis.toml", variant: "file" },
+];
+
+/**
+ * **A docked strip and the panel under it.** The arrows choose the tab beside the one with the
+ * keyboard, Home and End the first and the last, as the chat strip's roving focus does.
+ */
+function DockedStrip({
+  tabs = CHATS,
+  chosen = 1,
+  width = 640,
+  split = false,
+}: {
+  tabs?: Shown[];
+  chosen?: number;
+  width?: number;
+  /** The chosen tab split in two, the second pane with the keyboard. */
+  split?: boolean;
+}) {
+  const [inFront, setInFront] = useState(chosen);
+  const [open, setOpen] = useState(tabs);
+  const idOf = useTabIds();
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const choose = (at: number) => {
+    setInFront(at);
+    buttons.current[at]?.focus();
+  };
+  const keys = (event: KeyboardEvent, at: number) => {
+    const last = open.length - 1;
+    const to =
+      event.key === "ArrowRight"
+        ? Math.min(last, at + 1)
+        : event.key === "ArrowLeft"
+          ? Math.max(0, at - 1)
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? last
+              : undefined;
+    if (to === undefined) return;
+    event.preventDefault();
+    choose(to);
+  };
+  const front = open[inFront];
+  return (
+    <div className="editor" {...tabsPart("layout")} style={{ inlineSize: width, blockSize: 220 }}>
+      <header className="bar" {...tabsPart("strip")}>
+        <div
+          className="tabs"
+          data-strip="Chats"
+          // The strip's floor, as the chat strip is handed it (`fits.ts`).
+          style={{ "--least": "88px" } as CSSProperties}
+        >
+          <StripTablist name="Chats" ids={open.map((_, at) => idOf(at))} />
+          {open.map((one, at) => (
+            <TabCell
+              key={one.name}
+              className="tab"
+              variant={one.variant ?? "chat"}
+              selected={at === inFront}
+              first={at === 0}
+            >
+              <button
+                type="button"
+                role="tab"
+                id={idOf(at)}
+                ref={(button) => {
+                  buttons.current[at] = button;
+                }}
+                aria-selected={at === inFront}
+                tabIndex={at === inFront ? 0 : -1}
+                onClick={() => setInFront(at)}
+                onKeyDown={(event) => keys(event, at)}
+              >
+                {one.state && <ChatMark state={one.state} />}
+                <span className="tab-name" {...tabPart("label")}>
+                  {one.name}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="closer"
+                {...tabPart("closer")}
+                tabIndex={-1}
+                aria-label={`Close ${one.name}`}
+                onClick={() => {
+                  setOpen(open.filter((_, there) => there !== at));
+                  setInFront(Math.max(0, Math.min(inFront, open.length - 2)));
+                }}
+              >
+                <X aria-hidden="true" />
+              </button>
+            </TabCell>
+          ))}
+          <span className="strip-doing">
+            <IconButton variant="ghost" size="sm" icon={<Plus />} aria-label="New tab" />
+          </span>
+        </div>
+      </header>
+      <div
+        className="panes"
+        {...panelRoot("content")}
+        role="tabpanel"
+        aria-labelledby={idOf(inFront)}
+      >
+        {split ? (
+          <div data-group="" style={{ display: "flex", blockSize: "100%" }}>
+            {["talk", "review"].map((name, at) => (
+              <Fragment key={name}>
+                {at > 0 && <div data-separator="" aria-hidden="true" />}
+                <div
+                  className="pane-frame"
+                  data-testid={`pane ${name}`}
+                  data-focused={at === 1 || undefined}
+                >
+                  <div className="pane-body">
+                    <div className="pane-corner at-start">
+                      <div className="pane-chips">
+                        <span className="pane-from">{name}</span>
+                      </div>
+                    </div>
+                    <div className={at === 1 ? "pane focused" : "pane"}>
+                      <p style={{ margin: 0, padding: "var(--space-7) var(--space-5)" }}>{name}</p>
+                    </div>
+                  </div>
+                </div>
+              </Fragment>
+            ))}
+          </div>
+        ) : (
+          /* The focused pane, as the window draws it (`.pane.focused`): what the chosen tab
+            joins, with no line between them. */
+          <div className="pane focused">
+            {front?.variant === "file" ? (
+              <div className="piece-file">
+                <header className="piece-files-head" {...editorToolbar}>
+                  <ToolbarFile path={`~/IdeaProjects/purlis/${front.name}`} />
+                </header>
+              </div>
+            ) : (
+              <p style={{ margin: 0, padding: "var(--space-5)" }}>{front?.name}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const meta = {
+  component: DockedStrip,
+} satisfies Meta<typeof DockedStrip>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+/** Whether the tabs are docked on the panel in the cell's theme (Purlis), not on a strip of
+ *  their own (Purlis Classic's parts): only then does nothing run between a tab and its pane. */
+function docked(canvas: HTMLElement): boolean {
+  const layout = canvas.querySelector('[data-scope="tabs"][data-part="layout"]');
+  return (
+    layout !== null && getComputedStyle(layout).getPropertyValue("--tabs-joined").trim() === "1"
+  );
+}
+
+/** Where each tab is drawn, by its name. */
+function placesOf(canvas: HTMLElement): Map<string, { x: number; width: number }> {
+  return new Map(
+    [...canvas.querySelectorAll<HTMLElement>('[data-scope="tabs"][data-part="tab"]')].map(
+      (cell) => {
+        const box = cell.getBoundingClientRect();
+        return [cell.textContent ?? "", { x: box.x, width: box.width }];
+      },
+    ),
+  );
+}
+
+/**
+ * **The chosen tab on the panel, its flares joining it.** Tab lands on the chosen tab with its
+ * ring in sight; the arrows, Home and End choose another; and **no tab moves when the choice
+ * changes**: each is measured before and after every choice, and none has moved or changed its
+ * width by a pixel.
+ */
+export const Docked: Story = {
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const chosen = canvas.getByRole("tab", { name: /talk/ });
+    await userEvent.tab();
+    await expect(chosen).toHaveFocus();
+    expectFocusInSight();
+    const before = placesOf(canvasElement);
+    for (const key of ["{ArrowRight}", "{ArrowRight}", "{Home}", "{End}", "{ArrowLeft}"]) {
+      await userEvent.keyboard(key);
+      await waitFor(() => expect(document.activeElement).toHaveAttribute("aria-selected", "true"));
+      expect(placesOf(canvasElement)).toEqual(before);
+    }
+    expectFocusInSight();
+    // Back on the second, which is what the baseline shows.
+    await userEvent.keyboard("{Home}{ArrowRight}");
+    await expect(chosen).toHaveAttribute("aria-selected", "true");
+    // The chosen tab joins the pane under it: the focused pane draws no line along its top,
+    // where the tab and its flares meet it, and keeps its focus on its other edges.
+    const pane = canvasElement.querySelector<HTMLElement>(".pane.focused");
+    expect(pane).not.toBeNull();
+    const drawn = getComputedStyle(pane as HTMLElement);
+    expect(drawn.borderTopWidth).toBe(docked(canvasElement) ? "0px" : "1px");
+    // Purlis draws no line around a pane at all (the operator's ruling); Classic its hairline.
+    expect(drawn.borderLeftWidth).toBe(docked(canvasElement) ? "0px" : "1px");
+    const tab = chosen.closest<HTMLElement>('[data-part="tab"]');
+    expect(tab?.getBoundingClientRect().bottom).toBeCloseTo(
+      (pane as HTMLElement).getBoundingClientRect().top,
+      0,
+    );
+  },
+};
+
+/** **The first tab chosen**: on the panel's edge, the panel's top-left corner square under it,
+ *  and a flare on its right only. */
+export const FirstChosen: Story = {
+  args: { chosen: 0 },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByRole("tab", { name: /steward 1/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  },
+};
+
+/** **Under the pointer**: an unchosen tab's pill, inset from its cell so it never touches the
+ *  panel, and its words in the primary tier. Nothing moves. */
+export const Hovered: Story = {
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const before = placesOf(canvasElement);
+    const tab = canvas.getByRole("tab", { name: /review the tab strip/ });
+    await userEvent.hover(tab);
+    await waitFor(() =>
+      expect(tab.closest('[data-part="tab"]')).toHaveAttribute("data-hovered", "true"),
+    );
+    expect(placesOf(canvasElement)).toEqual(before);
+  },
+};
+
+/** **A file's tab, chosen**: it joins the editor's toolbar under it, which names the file. */
+export const FileChosen: Story = {
+  args: { chosen: 3 },
+  play: async ({ canvas, canvasElement }) => {
+    await expect(canvas.getByRole("tab", { name: "purlis.toml" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(canvas.getByText("~/IdeaProjects/purlis/purlis.toml")).toBeVisible();
+    // The tab, the toolbar and the code under it are one surface, with no line between.
+    const tab = canvas.getByRole("tab", { name: "purlis.toml" }).closest('[data-part="tab"]');
+    const toolbar = canvasElement.querySelector('[data-scope="editor"][data-part="toolbar"]');
+    expect(tab && getComputedStyle(tab).backgroundColor).toBe(
+      toolbar && getComputedStyle(toolbar).backgroundColor,
+    );
+    expect(
+      getComputedStyle(canvasElement.querySelector(".pane.focused") as Element).borderTopWidth,
+    ).toBe(docked(canvasElement) ? "0px" : "1px");
+  },
+};
+
+/** **A narrow strip**: the tabs shrink, each name cut short with an ellipsis, before anything
+ *  else gives way; the `+` still ends the strip. */
+export const Narrow: Story = {
+  args: {
+    width: 660,
+    tabs: [
+      ...CHATS,
+      { name: "dispatch the docked tabs lane" },
+      { name: "steward 2", state: "running" },
+    ],
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const label = canvas.getByText("review the tab strip prototype");
+    await waitFor(() => expect(label.scrollWidth).toBeGreaterThan(label.clientWidth));
+    const strip = canvasElement.querySelector<HTMLElement>('[data-strip="Chats"]');
+    const add = canvas.getByRole("button", { name: "New tab" });
+    expect(add.getBoundingClientRect().right).toBeLessThanOrEqual(
+      strip?.getBoundingClientRect().right ?? 0,
+    );
+  },
+};
+
+/**
+ * **A split, the second pane with the keyboard**: no line around either pane in Purlis, so the
+ * words in the corner of the pane with the keyboard are primary, and the split's separator parts
+ * the two.
+ */
+export const Split: Story = {
+  args: { split: true },
+  play: async ({ canvas }) => {
+    const words = (name: string) =>
+      canvas.getByTestId(`pane ${name}`).querySelector(".pane-from") as Element;
+    // The pane with the keyboard says so in primary words; the other keeps its muted tier.
+    await waitFor(() =>
+      expect(getComputedStyle(words("review")).color).not.toBe(
+        getComputedStyle(words("talk")).color,
+      ),
+    );
+    const separator = canvas.getByTestId("pane review").previousElementSibling as Element;
+    expect(separator.getBoundingClientRect().width).toBeGreaterThan(0);
+    // Drawn, in a colour of its own: not the panel's under it.
+    const panel = canvas.getByTestId("pane review").parentElement?.parentElement as Element;
+    expect(getComputedStyle(separator).backgroundColor).not.toBe(
+      getComputedStyle(panel).backgroundColor,
+    );
+  },
+};

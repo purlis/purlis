@@ -1,6 +1,22 @@
 {
   "$schema": "https://raw.githubusercontent.com/purlis/purlis/v0.4.2/docs/schema/theme.v2.schema.json",
   "name": "Purlis Classic",
+  "parts": {
+    "tabs.layout.attach": "strip",
+    "tabs.layout.sizing": "equal",
+    "tabs.layout.dividers": "on",
+    "tabs.layout.gap": 0,
+    "tabs.tab.height": 24,
+    "tabs.tab.padding": [0, 8],
+    "tabs.tab.corner-radius": 0,
+    "tabs.tab.max-width": 240,
+    "tabs.tab.text": "text.muted",
+    "tabs.tab.hover.fill": "surface.hover",
+    "tabs.tab.hover.inset": 0,
+    "tabs.tab.selected.fill": "layer.selected",
+    "tabs.tab.selected.flare": 0,
+    "tabs.closer.corner-radius": 0
+  },
   "appearances": [
     {
       "id": "dark",

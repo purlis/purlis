@@ -16,6 +16,7 @@ import { needsSaid } from "./tabTasks";
 import { tasksAtWorkOf } from "./sessionTasks";
 import { useTasksBelow } from "./TasksBelow";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { tabPart } from "./ui/tabs/Tabs";
 
 /*
  * **The rows that draw a chat** (SC-3): split out of `PlaneView`, whose rendering they no longer
@@ -179,7 +180,7 @@ export function TabMarks({
         <ViewMark view={lead.view} />
         {/* The preview tab is in italics, as VS Code draws its own: the tab the next single
             click on a memory reuses (SI-9b). */}
-        <span className={lead.preview ? "tab-name is-preview" : "tab-name"}>
+        <span className={lead.preview ? "tab-name is-preview" : "tab-name"} {...tabPart("label")}>
           {tabs.byId[id].name}
         </span>
         {pin}
@@ -199,7 +200,9 @@ export function TabMarks({
       ) : (
         persona != null && <PersonaMark persona={persona} className="tab-mark" />
       )}
-      <span className="tab-name">{tabs.byId[id].name}</span>
+      <span className="tab-name" {...tabPart("label")}>
+        {tabs.byId[id].name}
+      </span>
       <SandboxMark level={sandbox?.level} why={sandbox?.why} sites={sandbox?.sites} />
       {pin}
       <PlaneUpdatedMark files={chat === undefined ? undefined : updates?.[chat]} />
