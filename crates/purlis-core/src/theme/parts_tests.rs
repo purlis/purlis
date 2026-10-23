@@ -1265,7 +1265,7 @@ const MANIFEST_DIGESTS: &[(u32, &str)] = &[
     ),
     (
         9,
-        "6d673ba94b44bd6e17f96f0f8fc130d301402d619ba3d89a1e73297971977fb2",
+        "f9ce10aed0e38be894b68e8d340ec365a805608c9914086c62cc7958926db105",
     ),
 ];
 

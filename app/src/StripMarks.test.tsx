@@ -311,13 +311,14 @@ describe("each strip says which layer it is, by shade rather than by indent or l
   };
 
   // The projects are the rail since #2915, a column on the window's frame and not a row.
-  it.each([
-    [".workspaces", "--layer-workspace"],
-  ])("%s is drawn on its own shade, with no line under it", (selector, token) => {
-    const rule = block(selector);
-    expect(rule).toContain(`background: var(${token})`);
-    expect(rule, `${selector} draws a border`).not.toMatch(/border/);
-  });
+  it.each([[".workspaces", "--layer-workspace"]])(
+    "%s is drawn on its own shade, with no line under it",
+    (selector, token) => {
+      const rule = block(selector);
+      expect(rule).toContain(`background: var(${token})`);
+      expect(rule, `${selector} draws a border`).not.toMatch(/border/);
+    },
+  );
 
   it("draws the chat strip as its theme says: on the panel with no shade, or on its own", () => {
     // The chat strip is the tabs family's strip (#2914): docked on the content panel (Purlis)

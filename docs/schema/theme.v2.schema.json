@@ -393,7 +393,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 8): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 9): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -4719,6 +4719,339 @@
         },
         "dialog.summary.alert.open.text": {
           "$ref": "#/$defs/part-text"
+        },
+        "rail.button.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "rail.button.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "rail.button.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "rail.button.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "rail.button.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "rail.button.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "rail.button.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "rail.button.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.project.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.project.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.project.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.project.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.project.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "rail.button.project.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "rail.button.project.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "rail.button.project.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "rail.button.project.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "rail.button.project.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "rail.button.project.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "rail.button.project.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.project.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.project.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.project.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.project.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.project.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.project.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.project.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.project.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.project.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.project.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.project.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.action.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.action.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.action.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.action.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.action.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "rail.button.action.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "rail.button.action.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "rail.button.action.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "rail.button.action.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "rail.button.action.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "rail.button.action.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "rail.button.action.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.action.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.action.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.action.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.action.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.action.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.action.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.action.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.button.action.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.button.action.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.button.action.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "rail.button.action.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "rail.monogram.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "rail.monogram.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "rail.monogram.project.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "rail.monogram.project.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "rail.monogram.action.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "rail.monogram.action.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "rail.badge.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.project.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.project.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.project.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.project.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.project.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.project.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.project.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.project.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.action.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.action.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.action.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.action.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.action.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.action.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.badge.action.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.badge.action.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "rail.unsaved.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.project.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.project.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.project.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.project.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.action.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.action.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.action.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "rail.unsaved.action.focused.fill": {
+          "$ref": "#/$defs/part-fill"
         }
       }
     }
@@ -5565,6 +5898,24 @@
           "maximum": 10000
         },
         "duration.breathe": {
+          "description": "Milliseconds; 0 turns it off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "duration.slide": {
+          "description": "Milliseconds; 0 turns it off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "duration.reveal": {
+          "description": "Milliseconds; 0 turns it off.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "duration.leave": {
           "description": "Milliseconds; 0 turns it off.",
           "type": "integer",
           "minimum": 0,

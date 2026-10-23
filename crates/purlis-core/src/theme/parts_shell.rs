@@ -402,6 +402,7 @@ pub(super) const RAIL: Family = Family {
     focused: "[data-focus-visible]",
     words: &[("badge", "state.waiting")],
     corner_most: None,
+    around: &[],
 };
 
 /// **A rail button's colours as `app/src/ui/rail/rail.css` draws them.** A project's are its own
