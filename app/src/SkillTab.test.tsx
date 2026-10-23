@@ -101,7 +101,7 @@ describe("what started a run", () => {
 });
 
 describe("a skill's totals", () => {
-  it("adds up its runs by what they ran on, persona and workspace, with their signals and cost", async () => {
+  it("adds up its runs by what they ran on, persona and workspace, with their signals and tokens", async () => {
     const row = (
       group: SkillStats["by_harness"][number]["group"],
       runs: number,

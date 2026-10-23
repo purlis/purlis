@@ -64,14 +64,23 @@ pub fn started(
         "started_by": run.started_by,
         "ts": crate::dispatch::stamp(when),
     });
+    if let Some(harness) = run.harness {
+        row["harness"] = harness.into();
+    }
+    // A live workspace is this machine's alone: its name is never written into the committed
+    // log, nor the copy of it, which would say a workspace by its level (SK-20). Such a run says
+    // neither where it ran nor which copy it is of.
+    let local = run
+        .workspace
+        .is_some_and(|ws| crate::wscmd::live_workspaces(root).contains(ws));
+    if local {
+        return crate::dispatch::append(&path_for(root, when, device), root, &row);
+    }
     // Which copy it is of, where the start knew it (SK-13): its level, and the workspace the
     // chat worked in, null at the plane root. The workspace is said wherever the start knew the
     // chat's harness too (SK-20), so a total by workspace counts every run that says where.
     if let Some(level) = run.level {
         row["level"] = level.word().into();
-    }
-    if let Some(harness) = run.harness {
-        row["harness"] = harness.into();
     }
     if run.level.is_some() || run.harness.is_some() {
         row["workspace"] = run.workspace.into();
@@ -95,28 +104,31 @@ pub struct Starting<'a> {
     pub harness: Option<&'a str>,
 }
 
-impl<'a> From<&'a Open> for Starting<'a> {
-    fn from(open: &'a Open) -> Self {
+impl<'a> Starting<'a> {
+    /// The start of run `open`, the event log's writer opened, in a chat on `harness`.
+    pub fn of_open(open: &'a Open, harness: Option<&'a str>) -> Self {
         Starting {
             id: &open.id,
             skill: &open.skill,
             started_by: open.started_by,
             workspace: open.whose.workspace.as_deref(),
             level: open.whose.level,
-            harness: None,
+            harness,
         }
     }
-}
 
-impl<'a> From<&'a crate::hookwire::SkillStarted> for Starting<'a> {
-    fn from(started: &'a crate::hookwire::SkillStarted) -> Self {
+    /// The start `started` a hook or purlis's MCP server records itself, in a chat on `harness`.
+    pub fn of_started(
+        started: &'a crate::hookwire::SkillStarted,
+        harness: Option<&'a str>,
+    ) -> Self {
         Starting {
             id: &started.run,
             skill: &started.skill,
             started_by: started.started_by,
             workspace: started.workspace.as_deref(),
             level: started.level,
-            harness: None,
+            harness,
         }
     }
 }
@@ -186,7 +198,22 @@ pub struct Run {
     pub end: Option<End>,
 }
 
+/// **What a harness is called**, by the word a run's start records it by (`claude`): its
+/// declaration's title (`Claude Code`) for one purlis ships, and the word itself for one a project
+/// declares.
+pub fn harness_title(word: &str) -> String {
+    crate::harness::Harness::of_kind(word).map_or_else(
+        || word.to_owned(),
+        |harness| harness.declared().title.clone(),
+    )
+}
+
 impl Run {
+    /// What it ran on, as a person calls it ([`harness_title`]), where its start says.
+    pub fn ran_on(&self) -> Option<String> {
+        self.harness.as_deref().map(harness_title)
+    }
+
     /// Whether this is a run of skill `name`: by its whole name, or by its name without the
     /// plugin's namespace a harness started it by (`purlis:secrets` is a run of `secrets`).
     pub fn is_of(&self, name: &str) -> bool {
@@ -336,8 +363,7 @@ pub fn runs(root: &Path) -> Vec<Run> {
 
 /// **What a skill's runs are totalled by** (SK-20): the harness its chat ran on, the persona,
 /// or the workspace. One reading, [`stats`], for every grouping a surface shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum By {
     Harness,
@@ -345,15 +371,9 @@ pub enum By {
     Workspace,
 }
 
-impl By {
-    /// Every grouping, in the order a skill's tab shows them.
-    pub const ALL: [By; 3] = [By::Harness, By::Persona, By::Workspace];
-}
-
 /// **The group a run is totalled in**: a name, none (no persona; the plane root), or a run whose
 /// row does not say (one written before its start said where).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
-#[serde(tag = "kind", content = "name", rename_all = "kebab-case")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Group {
     Named(String),
     /// No persona, or the plane root: a fact, not a gap.
@@ -363,6 +383,15 @@ pub enum Group {
 }
 
 impl Group {
+    /// This group as a person calls it where it is a harness: its declaration's title
+    /// ([`harness_title`]).
+    pub fn harness_titled(self) -> Group {
+        match self {
+            Group::Named(word) => Group::Named(harness_title(&word)),
+            other => other,
+        }
+    }
+
     fn of(run: &Run, by: By) -> Group {
         let named = |name: &Option<String>| name.clone().map_or(Group::None, Group::Named);
         match by {
@@ -373,8 +402,8 @@ impl Group {
     }
 }
 
-/// **What a group's runs add up to**: signals and cost, never a pass or a fail (decision 24).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+/// **What a group's runs add up to**: signals and tokens, never a pass or a fail (decision 24).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Totals {
     /// Runs started.
     pub runs: u64,
@@ -384,7 +413,7 @@ pub struct Totals {
     pub tool_errors: u64,
     pub refusals: u64,
     pub asks: u64,
-    /// Tokens spent inside them: their cost, as the harness said it.
+    /// Tokens spent inside them, as the harness said them.
     pub tokens: u64,
     /// Runs whose harness said their tokens, of [`Totals::ended`].
     pub tokens_said: u64,
@@ -412,7 +441,7 @@ impl Totals {
 }
 
 /// One group's totals ([`stats`]).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stats {
     pub group: Group,
     pub totals: Totals,

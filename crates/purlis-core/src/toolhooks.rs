@@ -974,10 +974,8 @@ pub fn started_unheard(hook: &Hook, started: &crate::hookwire::SkillStarted) {
     let persona = hook.persona();
     let kind = crate::envvar::lookup(crate::hookwire::HARNESS_ENV, hook.env);
     let harness = crate::harness::Harness::of_chat(kind.as_deref());
-    let starting = crate::skilluse::Starting {
-        harness: harness.map(crate::harness::Harness::name),
-        ..started.into()
-    };
+    let starting =
+        crate::skilluse::Starting::of_started(started, harness.map(crate::harness::Harness::name));
     let _ = crate::skilluse::started(
         hook.root,
         &starting,

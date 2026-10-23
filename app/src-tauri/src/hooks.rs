@@ -2455,15 +2455,18 @@ impl Hooks {
         }
     }
 
-    /// **A curation action put `prompt` in chat `number`**, unsent (SK-20): the skill runs the
-    /// turn it is sent in opens are the action's, in the event log and on the chat's tab alike.
+    /// **A curation action put `prompt` in chat `number`**, unsent (SK-20), `by` saying so: the
+    /// skill runs the turn it is sent in opens are the action's, in the event log and on the chat's tab alike.
     /// Best effort, as [`Self::skill_typed`] is: a run is only ever a record of what the chat
     /// did.
-    pub fn skill_prompted(&self, root: &Path, number: u32, prompt: &str) {
-        let prompted = purlis_core::skillspan::Prompted::of(
-            purlis_core::skills::runs::StartedBy::Curation,
-            prompt,
-        );
+    pub fn skill_prompted(
+        &self,
+        root: &Path,
+        number: u32,
+        by: purlis_core::skills::runs::StartedBy,
+        prompt: &str,
+    ) {
+        let prompted = purlis_core::skillspan::Prompted::of(by, prompt);
         self.skill_runs.prompted(number, prompted);
         let events = self
             .events

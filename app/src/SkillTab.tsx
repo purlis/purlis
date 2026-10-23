@@ -62,13 +62,14 @@ export function timeSaid(ms: number | null): string {
 }
 
 /** Which group a totals row is of, as it says it: what it ran on, or a persona or a workspace
- *  by name, with `none` said in the grouping's own words. */
-export function groupSaid(group: StatsGroup, none: string): string {
+ *  by name, with `none` said in the grouping's own words. What a run ran on is never none: a
+ *  run says it, or its start does not. */
+export function groupSaid(group: StatsGroup, none?: string): string {
   switch (group.kind) {
     case "named":
       return group.name;
     case "none":
-      return none;
+      return none ?? "Not recorded";
     default:
       return "Not recorded";
   }
@@ -79,15 +80,15 @@ const GROUPINGS: readonly {
   key: keyof SkillStats;
   heading: string;
   column: string;
-  none: string;
+  none?: string;
 }[] = [
-  { key: "by_harness", heading: "By what it ran on", column: "Ran on", none: "Not known" },
+  { key: "by_harness", heading: "By what it ran on", column: "Ran on" },
   { key: "by_persona", heading: "By persona", column: "Persona", none: "No persona" },
   { key: "by_workspace", heading: "By workspace", column: "Workspace", none: "Project root" },
 ];
 
 /**
- * **A skill's totals** (SK-20, #2783): its runs, their signals and their cost, by what they ran
+ * **A skill's totals** (SK-20, #2783): its runs, their signals and their tokens, by what they ran
  * on, by persona and by workspace. Signals only, never a pass or a fail.
  */
 function SkillTotals({ plane, name, changed }: { plane: string; name: string; changed: number }) {

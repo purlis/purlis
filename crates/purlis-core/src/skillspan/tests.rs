@@ -383,3 +383,11 @@ fn every_start_has_a_word_of_its_own_read_back_as_itself() {
         );
     }
 }
+
+#[test]
+fn a_debug_dump_of_a_prompt_held_says_what_put_it_there_and_nothing_of_the_prompt() {
+    let prompted = Prompted::of(StartedBy::Curation, CURATION);
+    let dumped = format!("{prompted:?}");
+    assert!(dumped.contains("Curation"), "{dumped}");
+    assert!(!dumped.contains(&prompted.lead.to_string()), "{dumped}");
+}

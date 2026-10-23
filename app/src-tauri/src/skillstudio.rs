@@ -582,18 +582,13 @@ pub struct StudioRun {
     pub ran_on: Option<String>,
 }
 
-/// What a harness is called, by the word a run's start records it by: its declaration's title
-/// for one purlis ships, and the word itself for one a project declares.
-fn ran_on(word: &str) -> String {
-    purlis_core::harness::Harness::of_kind(word).map_or_else(
-        || word.to_owned(),
-        |harness| harness.declared().title.clone(),
-    )
+/// A count as the window's bindings carry it: at most `u32::MAX`.
+fn small(n: u64) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
 }
 
 /// Every run of `skill` the project at `root` has recorded, newest first, at most `limit`.
 pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<StudioRun> {
-    let small = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
     purlis_core::skills::studio_runs(root, Some(skill), limit)
         .into_iter()
         .map(|run| {
@@ -611,7 +606,7 @@ pub(crate) fn runs(root: &std::path::Path, skill: &str, limit: usize) -> Vec<Stu
                 refusals: end.map(|end| small(end.refusals)),
                 asks: end.map(|end| small(end.asks)),
                 tokens: end.and_then(|end| end.tokens).map(small),
-                ran_on: run.harness.as_deref().map(ran_on),
+                ran_on: run.ran_on(),
             }
         })
         .collect()
@@ -629,7 +624,7 @@ pub enum StatsGroup {
     NotRecorded,
 }
 
-/// One row of a skill's totals: a group's runs, their signals and their cost (SK-20).
+/// One row of a skill's totals: a group's runs, their signals and their tokens (SK-20).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct StatsRow {
     pub group: StatsGroup,
@@ -646,7 +641,7 @@ pub struct StatsRow {
 }
 
 /// A skill's totals, by what it ran on, by persona and by workspace (SK-20).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
 pub struct SkillStats {
     pub by_harness: Vec<StatsRow>,
     pub by_persona: Vec<StatsRow>,
@@ -657,16 +652,18 @@ pub struct SkillStats {
 /// (`purlis_core::skilluse::stats`).
 pub(crate) fn stats(root: &std::path::Path, skill: &str) -> SkillStats {
     use purlis_core::skilluse::{By, Group};
-    let small = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
     let runs = purlis_core::skills::studio_runs(root, Some(skill), usize::MAX);
     let rows = |by: By| -> Vec<StatsRow> {
         purlis_core::skilluse::stats(&runs, by)
             .into_iter()
             .map(|row| {
                 let totals = row.totals;
+                let group = match by {
+                    By::Harness => row.group.harness_titled(),
+                    _ => row.group,
+                };
                 StatsRow {
-                    group: match row.group {
-                        Group::Named(name) if by == By::Harness => StatsGroup::Named(ran_on(&name)),
+                    group: match group {
                         Group::Named(name) => StatsGroup::Named(name),
                         Group::None => StatsGroup::None,
                         Group::NotRecorded => StatsGroup::NotRecorded,
@@ -703,11 +700,7 @@ pub(crate) async fn skill_stats(
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the skill's runs", move || {
         if !purlis_core::skills::studio_on_here() {
-            return Ok(SkillStats {
-                by_harness: Vec::new(),
-                by_persona: Vec::new(),
-                by_workspace: Vec::new(),
-            });
+            return Ok(SkillStats::default());
         }
         Ok(stats(held.root(), &skill))
     })

@@ -11299,7 +11299,7 @@ export type StatsGroup =
 /**  Runs whose start does not say. */
 { kind: "not-recorded" };
 
-/**  One row of a skill's totals: a group's runs, their signals and their cost (SK-20). */
+/**  One row of a skill's totals: a group's runs, their signals and their tokens (SK-20). */
 export type StatsRow = {
 	group: StatsGroup,
 	runs: number,

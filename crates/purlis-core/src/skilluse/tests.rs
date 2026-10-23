@@ -43,7 +43,7 @@ fn a_skill_runs_start_is_logged_with_the_persona_or_null() {
     let mut spans = Spans::default();
     let p = started(
         dir.path(),
-        &Starting::from(&opened(&mut spans, "charter:persona")),
+        &Starting::of_open(&opened(&mut spans, "charter:persona"), None),
         Some("ops"),
         when,
         "box",
@@ -51,7 +51,7 @@ fn a_skill_runs_start_is_logged_with_the_persona_or_null() {
     .unwrap();
     started(
         dir.path(),
-        &Starting::from(&opened(&mut Spans::default(), "x")),
+        &Starting::of_open(&opened(&mut Spans::default(), "x"), None),
         None,
         when,
         "box",
@@ -60,7 +60,7 @@ fn a_skill_runs_start_is_logged_with_the_persona_or_null() {
     assert_eq!(
         started(
             dir.path(),
-            &Starting::from(&opened(&mut Spans::default(), " ")),
+            &Starting::of_open(&opened(&mut Spans::default(), " "), None),
             None,
             when,
             "box"
@@ -89,7 +89,7 @@ fn no_skill_run_is_logged_in_a_project_this_purlis_may_not_write() {
     assert_eq!(
         started(
             dir.path(),
-            &Starting::from(&open),
+            &Starting::of_open(&open, None),
             Some("ops"),
             chrono::Utc::now(),
             "box"
@@ -105,7 +105,14 @@ fn a_runs_start_and_end_read_back_as_one_run_with_its_signals_and_never_a_verdic
     let when = may();
     let mut spans = Spans::default();
     let open = opened(&mut spans, "deploy");
-    started(dir.path(), &Starting::from(&open), Some("ops"), when, "box").unwrap();
+    started(
+        dir.path(),
+        &Starting::of_open(&open, None),
+        Some("ops"),
+        when,
+        "box",
+    )
+    .unwrap();
     spans.heard(
         "chat-run",
         Heard {
@@ -201,10 +208,7 @@ fn logged(
         )
         .cloned()
         .unwrap();
-    let starting = Starting {
-        harness,
-        ..Starting::from(&open)
-    };
+    let starting = Starting::of_open(&open, harness);
     started(plane, &starting, persona, may(), "box").unwrap();
     if let Some((calls, tokens)) = end {
         for n in 0..calls {
@@ -323,13 +327,38 @@ fn runs_are_totalled_by_harness_persona_and_workspace_with_their_signals_and_cos
 }
 
 #[test]
-fn a_group_is_said_by_its_kind_and_name() {
+fn a_live_workspaces_name_is_never_written_into_the_committed_log() {
+    let dir = a_plane();
+    std::fs::write(
+        dir.path().join(".gitignore"),
+        crate::wscmd::live_block(dir.path(), ["scratch"]),
+    )
+    .unwrap();
+    assert!(crate::wscmd::live_workspaces(dir.path()).contains("scratch"));
+    logged(
+        dir.path(),
+        "01JB0000000000000000000001",
+        (Some("claude"), Some("scratch"), None),
+        None,
+    );
+    let text = std::fs::read_to_string(path_for(dir.path(), may(), "box")).unwrap();
+    assert!(!text.contains("scratch"), "{text}");
+    let runs = runs(dir.path());
+    assert_eq!(runs[0].workspace, None, "it does not say where");
+    assert_eq!(runs[0].harness.as_deref(), Some("claude"));
+    assert_eq!(runs[0].copy, None);
+}
+
+#[test]
+fn a_harness_group_and_a_run_say_what_they_ran_on_as_a_person_calls_it() {
     assert_eq!(
-        serde_json::to_value(Group::Named("ops".to_owned())).unwrap(),
-        serde_json::json!({"kind": "named", "name": "ops"})
+        Group::Named("claude".to_owned()).harness_titled(),
+        Group::Named("Claude Code".to_owned())
     );
     assert_eq!(
-        serde_json::to_value(Group::NotRecorded).unwrap(),
-        serde_json::json!({"kind": "not-recorded"})
+        Group::Named("ours".to_owned()).harness_titled(),
+        Group::Named("ours".to_owned()),
+        "a project's own harness by its word"
     );
+    assert_eq!(Group::NotRecorded.harness_titled(), Group::NotRecorded);
 }

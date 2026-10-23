@@ -3668,13 +3668,25 @@ fn a_skill_typed_into_claude_code_opens_its_run_on_the_expansion_that_names_it_a
 }
 
 #[test]
-fn a_skill_the_turn_of_a_curation_prompt_starts_is_the_actions_and_its_start_says_where_it_ran() {
+fn a_curation_prompt_held_before_its_chat_begins_makes_the_skill_its_turn_starts_the_actions() {
     use crate::state::Event::Stop;
     use std::time::Instant;
     const CURATION: &str = "Use purlis's compact skill to compact and improve the persona ops.";
     let dir = tempfile::tempdir().unwrap();
     let plane = a_plane();
     let mut host = recorder(dir.path());
+    let written = host
+        .apply(super::Entry::SkillPrompted {
+            plane: plane.path().to_path_buf(),
+            number: 3,
+            prompted: crate::skillspan::Prompted::of(
+                purlis_skills::runs::StartedBy::Curation,
+                CURATION,
+            ),
+        })
+        .unwrap();
+    assert!(written.is_empty(), "nothing is written while it is unsent");
+    // As the window opens a curation chat: the prompt is held before its run begins.
     host.begin(
         plane.path(),
         3,
@@ -3690,17 +3702,6 @@ fn a_skill_the_turn_of_a_curation_prompt_starts_is_the_actions_and_its_start_say
         },
     )
     .unwrap();
-    let written = host
-        .apply(super::Entry::SkillPrompted {
-            plane: plane.path().to_path_buf(),
-            number: 3,
-            prompted: crate::skillspan::Prompted::of(
-                purlis_skills::runs::StartedBy::Curation,
-                CURATION,
-            ),
-        })
-        .unwrap();
-    assert!(written.is_empty(), "nothing is written while it is unsent");
     host.report(plane.path(), &sent(CURATION), Followed::No)
         .unwrap();
     host.tool(

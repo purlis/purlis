@@ -1568,7 +1568,15 @@ pub struct Recorder {
     kill_switch_skipped: Option<(u64, std::time::SystemTime)>,
     /// Every skill run open, by the chat run it is a span of (SK-3, [`crate::skillspan`]).
     skills: crate::skillspan::Tracker,
+    /// The prompt a curation action or a trigger put in each chat, by project and number, until
+    /// the chat's next report hands it to its run ([`Recorder::skill_prompted`]): held from
+    /// before the chat starts, so it is there however soon the chat's first prompt comes.
+    prompted: HashMap<(PathBuf, u32), crate::skillspan::Prompted>,
 }
+
+/// How many chats' prompts [`Recorder::skill_prompted`] holds at most: a start that never
+/// reported is let go when there are more.
+const PROMPTED_HELD: usize = 256;
 
 /// One end of a tool call, heard and waiting for the other.
 #[derive(Debug, Clone, Copy)]
@@ -1647,6 +1655,7 @@ impl Recorder {
             kill_switch: None,
             kill_switch_skipped: None,
             skills: crate::skillspan::Tracker::default(),
+            prompted: HashMap::new(),
         }
     }
 
@@ -2346,10 +2355,7 @@ impl Recorder {
             body["skill_level"] = level.word().into();
         }
         self.append(under, "skill.started", body)?;
-        let starting = crate::skilluse::Starting {
-            harness: who.harness.as_deref(),
-            ..opened.into()
-        };
+        let starting = crate::skilluse::Starting::of_open(opened, who.harness.as_deref());
         crate::skilluse::started(
             plane,
             &starting,
@@ -2375,6 +2381,9 @@ impl Recorder {
         if under.parent.is_some() {
             return Ok(());
         }
+        if let Some(prompted) = self.prompted.remove(&(plane.to_path_buf(), report.chat)) {
+            self.skills.prompted(&under.run, prompted);
+        }
         let chat = under.chat.clone();
         let reported = self
             .skills
@@ -2399,19 +2408,20 @@ impl Recorder {
 
     /// **A curation action or a trigger put prompt `prompted` in chat `number` of `plane`**,
     /// unsent (SK-20): the runs the turn it is sent in opens are theirs
-    /// ([`crate::skillspan::Tracker::prompted`]). Nothing is written now; a chat this writer
-    /// knows no run of holds nothing.
+    /// ([`crate::skillspan::Tracker::prompted`]). Nothing is written now. It is held by the
+    /// chat's number, as it may come before the chat's run begins, and handed to its run at the
+    /// chat's next report.
     pub fn skill_prompted(
         &mut self,
         plane: &Path,
         number: u32,
         prompted: crate::skillspan::Prompted,
     ) {
-        let Some(who) = self.chats.get(&(plane.to_path_buf(), number)) else {
-            return;
-        };
-        let key = who.run.clone();
-        self.skills.prompted(&key, prompted);
+        if self.prompted.len() >= PROMPTED_HELD {
+            self.prompted.clear();
+        }
+        self.prompted
+            .insert((plane.to_path_buf(), number), prompted);
     }
 
     /// Closes every skill run open in `under`'s chat run as `ended`.

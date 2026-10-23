@@ -24,8 +24,9 @@ runs many skills, one inside another. The spec asked for the skill as a resource
   `skill.ended`, and it is the child of the chat run's span (`charter.run.id`) or of its parent
   skill run. Its signals (`tool_calls`, `tool_errors`, `refusals`, `asks`, `tokens`, `ms`) are
   the `skill.ended` body's. They are signals, never a pass or a fail (decision 24).
-- **The names follow §6 and freeze with it** when OB-18's dashboard pack ships. Until then a
-  rename is a change to this record.
+- **The names take §6's prefix, `charter.*`,** as §6 still spells it: no amendment has renamed
+  §6's attributes to `purlis.*`. Should one, these move with it. They freeze with §6 when OB-18's
+  dashboard pack ships. Until then a rename is a change to this record.
 
 ## Decided in implementation (SK-20)
 

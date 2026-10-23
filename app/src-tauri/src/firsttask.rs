@@ -124,6 +124,7 @@ pub fn start(
                     label: label.clone(),
                     prompt: firsttask::prompt(),
                     then_a_space: false,
+                    starts_runs: None,
                 },
                 size,
                 cannot_type,
