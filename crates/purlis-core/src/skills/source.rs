@@ -49,6 +49,9 @@ const TOKEN_VAR: &str = "PURLIS_SKILL_SOURCE_TOKEN";
 /// The variable the user name for it is handed in.
 const USER_VAR: &str = "PURLIS_SKILL_SOURCE_USER";
 
+/// The variable the source's host is handed in: the only host the credential is answered for.
+const HOST_VAR: &str = "PURLIS_SKILL_SOURCE_HOST";
+
 /// The ref a fetch lands at in the scratch repository.
 const FETCHED: &str = "refs/purlis/fetched";
 
@@ -255,18 +258,38 @@ fn listed_in(text: &str) -> Vec<Source> {
 }
 
 /// **The sources the project at `plane` browses**: the shared ones, then this machine's.
+///
+/// **A sign-in is read from this machine's file alone.** A shared source's vault entry is
+/// dropped, and this machine's entry for the same URL and branch gives it its sign-in: a
+/// committed file could otherwise name the person's vault beside a URL of its own choosing,
+/// and the token would be handed to that host. Each person signs in with their own entry.
 pub fn sources(plane: &Path) -> Vec<Listed> {
     use crate::settings::{Which, layer_text};
-    let mut out = Vec::new();
-    for (which, local) in [(Which::Shared, false), (Which::Local, true)] {
-        if let Some(text) = layer_text(plane, which).text() {
-            out.extend(
-                listed_in(text)
-                    .into_iter()
-                    .map(|source| Listed { source, local }),
-            );
+    let read = |which| {
+        layer_text(plane, which)
+            .text()
+            .map(listed_in)
+            .unwrap_or_default()
+    };
+    let mut locals = read(Which::Local);
+    let mut out: Vec<Listed> = Vec::new();
+    for mut source in read(Which::Shared) {
+        source.sign_in = None;
+        if let Some(at) = locals
+            .iter()
+            .position(|one| one.url == source.url && one.branch == source.branch)
+        {
+            source.sign_in = locals.remove(at).sign_in;
         }
+        out.push(Listed {
+            source,
+            local: false,
+        });
     }
+    out.extend(locals.into_iter().map(|source| Listed {
+        source,
+        local: true,
+    }));
     out
 }
 
@@ -287,19 +310,35 @@ pub fn add(cx: &mut Ctx<'_>, source: &Source, local: bool) -> Result<bool, Strin
     if listed_as(plane, &source.url, source.branch.as_deref()).is_some() {
         return Ok(false);
     }
-    let which = if local {
-        crate::settings::Which::Local
-    } else {
-        crate::settings::Which::Shared
+    use crate::settings::Which;
+    let which = if local { Which::Local } else { Which::Shared };
+    let sign_in = |written: &mut Written| {
+        written.vault = source.sign_in.as_ref().map(|s| s.vault.clone());
+        written.key = source.sign_in.as_ref().map(|s| s.key.clone());
+        written.user = source.sign_in.as_ref().and_then(|s| s.user.clone());
     };
-    let written = Written {
+    let mut written = Written {
         url: source.url.clone(),
         branch: source.branch.clone(),
         folder: source.folder.clone(),
-        vault: source.sign_in.as_ref().map(|s| s.vault.clone()),
-        key: source.sign_in.as_ref().map(|s| s.key.clone()),
-        user: source.sign_in.as_ref().and_then(|s| s.user.clone()),
+        ..Written::default()
     };
+    // The sign-in goes in this machine's file alone ([`sources`]); a shared source's own line
+    // names none.
+    if local {
+        sign_in(&mut written);
+    } else if source.sign_in.is_some() {
+        let mut mine = Written {
+            url: source.url.clone(),
+            branch: source.branch.clone(),
+            ..Written::default()
+        };
+        sign_in(&mut mine);
+        crate::settings::skill_sources::edit(plane, Which::Local, |list| {
+            list.push(table_of(&mine));
+            true
+        })?;
+    }
     crate::settings::skill_sources::edit(plane, which, |list| {
         list.push(table_of(&written));
         true
@@ -327,7 +366,7 @@ pub fn remove(cx: &mut Ctx<'_>, url: &str, branch: Option<&str>) -> Result<bool,
     } else {
         crate::settings::Which::Shared
     };
-    crate::settings::skill_sources::edit(plane, which, |list| {
+    let take_out = |list: &mut toml_edit::ArrayOfTables| {
         let before = list.len();
         list.retain(|table| {
             let named = table.get("url").and_then(|v| v.as_str()) == Some(url)
@@ -335,7 +374,11 @@ pub fn remove(cx: &mut Ctx<'_>, url: &str, branch: Option<&str>) -> Result<bool,
             !named
         });
         list.len() != before
-    })?;
+    };
+    crate::settings::skill_sources::edit(plane, which, take_out)?;
+    if !listed.local && listed.source.sign_in.is_some() {
+        crate::settings::skill_sources::edit(plane, crate::settings::Which::Local, take_out)?;
+    }
     cx.done(format!(
         "{} is no longer a skill source here",
         listed.source
@@ -378,13 +421,25 @@ struct Handing {
 }
 
 /// The one credential helper a private source's fetch runs: it answers `get` with the user name
-/// and the token from [`USER_VAR`] and [`TOKEN_VAR`], and nothing else, so the token is in git's
-/// environment and the helper's output, and never on a command line.
+/// and the token from [`USER_VAR`] and [`TOKEN_VAR`], only where git asks for the source's own
+/// host ([`HOST_VAR`]) over https, and nothing else, so the token is in git's environment and the
+/// helper's output, never on a command line, and never handed to a host a redirect names.
 fn helper() -> String {
     format!(
-        "credential.helper=!f() {{ test \"$1\" = get || exit 0; printf 'username=%s\\npassword=%s\\n' \
+        "credential.helper=!f() {{ test \"$1\" = get || exit 0; p=; h=; \
+         while IFS= read -r l && test -n \"$l\"; do case \"$l\" in protocol=*) p=\"${{l#protocol=}}\";; \
+         host=*) h=\"${{l#host=}}\";; esac; done; test \"$p\" = https && test -n \"$h\" && \
+         test \"$h\" = \"${HOST_VAR}\" || exit 0; printf 'username=%s\\npassword=%s\\n' \
          \"${USER_VAR}\" \"${TOKEN_VAR}\"; }}; f"
     )
+}
+
+/// The host, and port where it names one, of an `https://` URL, lowercased: what git's
+/// credential request names as `host`. `None` for any other URL.
+fn https_host(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("https://")?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    (!authority.is_empty()).then(|| authority.to_ascii_lowercase())
 }
 
 /// **Resolves the sign-in of `source`** through `secret exec`'s own steps: the vault is found as
@@ -430,6 +485,10 @@ fn handing(plane: &Path, source: &Source) -> Result<Handing, String> {
         .filter(|(name, _)| name == TOKEN_VAR)
         .map(|(name, value)| (name.to_string_lossy().into_owned(), value.clone()))
         .collect();
+    pass.push((
+        HOST_VAR.to_owned(),
+        https_host(&source.url).unwrap_or_default().into(),
+    ));
     pass.push((
         USER_VAR.to_owned(),
         sign_in
@@ -602,7 +661,8 @@ pub fn fetch(plane: &Path, source: &Source, at: Option<&str>) -> Result<Fetched,
     if listing.code != Some(0) {
         return Err(format!("{source}'s files could not be listed"));
     }
-    let (entries, left) = tree::read_listing(&listing.out);
+    let (entries, left) =
+        tree::read_listing(&listing.out).map_err(|why| format!("{source}: {why}"))?;
     Ok(Fetched {
         scratch,
         source: source.clone(),
@@ -789,20 +849,26 @@ impl Fetched {
         let texts = self.blobs(&instructions).unwrap_or_default();
         for (dir, bytes) in dirs.iter().zip(texts) {
             let shown = dir.join("/");
-            let parsed = String::from_utf8(bytes)
-                .map_err(|_| purlis_skills::Missing::File)
-                .and_then(|text| purlis_skills::parsed(&text, PathBuf::from(&shown)));
-            match parsed {
-                Ok(skill) => match purlis_skills::change::name_problem(&skill.name) {
+            // Read as the YAML it is, failing closed (ADR 0100 §3): a source's skill is offered
+            // only where every reader reads the same name and description.
+            let Ok(text) = String::from_utf8(bytes) else {
+                not.push((
+                    shown,
+                    super::Reason::NotASkill(purlis_skills::Missing::File).to_string(),
+                ));
+                continue;
+            };
+            match purlis_skills::tree::plain_identity(&text) {
+                Ok((name, description)) => match purlis_skills::change::name_problem(&name) {
                     None => found.push(Found {
-                        name: skill.name,
-                        description: skill.description,
+                        name,
+                        description,
                         folder: shown,
                         dir: dir.clone(),
                     }),
                     Some(why) => not.push((shown, format!("its name cannot be a skill's: {why}"))),
                 },
-                Err(missing) => not.push((shown, super::Reason::NotASkill(missing).to_string())),
+                Err(why) => not.push((shown, why)),
             }
         }
         found.sort_by(|a, b| a.name.cmp(&b.name));
@@ -1396,7 +1462,7 @@ fn files_at(fetched: &Fetched, at: &str, folder: &str) -> Result<Vec<SourceFile>
     if listing.code != Some(0) {
         return Err("the pinned commit's files could not be listed".to_owned());
     }
-    let (entries, _) = tree::read_listing(&listing.out);
+    let (entries, _) = tree::read_listing(&listing.out)?;
     let dir = tree::folder_parts(folder).ok_or_else(|| format!("{folder:?} is no folder"))?;
     let listed = tree::files_of(&entries, &dir);
     let oids: Vec<&str> = listed.iter().map(|(_, e)| e.oid.as_str()).collect();

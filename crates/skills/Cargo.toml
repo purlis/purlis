@@ -17,6 +17,9 @@ toml = { version = "1.1", features = ["preserve_order"] }
 # ... and written keeping every other key and comment in it.
 toml_edit = "0.25"
 serde.workspace = true
+# A `SKILL.md`'s frontmatter, parsed as the YAML it is before purlis hands a harness only the keys
+# it knows to be safe (SK-8, #2771). Pure Rust; no encodings beyond UTF-8.
+yaml-rust2 = { version = "0.13", default-features = false }
 # A grant is written beside the file and renamed over it, never half-written.
 tempfile.workspace = true
 

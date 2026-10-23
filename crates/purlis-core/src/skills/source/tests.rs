@@ -684,9 +684,12 @@ fn sources_are_a_setting_shared_or_local() {
             local: false
         }]
     );
+    // The shared file names the source; the sign-in is this machine's alone.
     let text = std::fs::read_to_string(root.join("charter.toml")).unwrap();
     assert!(text.contains("[[skill_sources]]"), "{text}");
-    assert!(text.contains("vault = \"team\""), "{text}");
+    assert!(!text.contains("vault"), "{text}");
+    let mine = std::fs::read_to_string(root.join("charter.local.toml")).unwrap();
+    assert!(mine.contains("vault = \"team\""), "{mine}");
     assert!(
         on(root, |cx| remove(cx, &source.url, Some("main")))
             .0
@@ -739,21 +742,37 @@ fn a_private_source_hands_git_the_token_by_one_variable_and_never_writes_it() {
     // The helper git runs prints the token for `get`, and nothing for anything else.
     let body = helper();
     let body = body.strip_prefix("credential.helper=!").unwrap();
-    let ran = |verb: &str| {
-        crate::forklock::output(
+    let asked = |verb: &str, request: &str| {
+        let out = crate::forklock::output(
             std::process::Command::new("/bin/sh")
                 .arg("-c")
-                .arg(format!("{body} {verb}"))
+                .arg(format!("printf '{request}\\n' | {{ {body} {verb}; }}"))
                 .env(TOKEN_VAR, TOKEN)
+                .env(HOST_VAR, "forge.example.com")
                 .env(USER_VAR, "x-access-token"),
         )
-        .unwrap()
+        .unwrap();
+        String::from_utf8(out.stdout).unwrap()
     };
+    let mine = "protocol=https\\nhost=forge.example.com\\n";
     assert_eq!(
-        String::from_utf8(ran("get").stdout).unwrap(),
+        asked("get", mine),
         format!("username=x-access-token\npassword={TOKEN}\n")
     );
-    assert!(ran("store").stdout.is_empty());
+    assert_eq!(asked("store", mine), "");
+    // A redirect to another host, or plain http, is answered nothing.
+    assert_eq!(
+        asked("get", "protocol=https\\nhost=evil.example.net\\n"),
+        ""
+    );
+    assert_eq!(
+        asked("get", "protocol=http\\nhost=forge.example.com\\n"),
+        ""
+    );
+    assert_eq!(
+        https_host("https://Forge.example.com:8443/o/r"),
+        Some("forge.example.com:8443".into())
+    );
 
     // An install through it lands, and the token is in no file it wrote.
     on(root, |cx| add(cx, &source, false)).0.unwrap();
@@ -842,4 +861,44 @@ fn an_install_into_a_git_plane_is_one_commit_of_the_copies_and_the_lockfile() {
     );
     let status = run(root, &["status", "--porcelain", "--", "notes.md"]).out;
     assert_eq!(status.trim(), "?? notes.md");
+}
+
+#[test]
+fn a_committed_source_never_hands_this_machines_vault_to_its_host() {
+    let tmp = plane_with_a_vault();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("charter.toml"),
+        "schema = 1\n\n[[skill_sources]]\nurl = \"https://evil.example.net/x\"\nvault = \"team\"\nkey = \"TOKEN\"\n",
+    )
+    .unwrap();
+    let listed = sources(root);
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].source.sign_in, None);
+    assert!(
+        listed_as(root, "https://evil.example.net/x", None).is_some_and(|s| s.sign_in.is_none())
+    );
+}
+
+#[test]
+fn a_skill_whose_frontmatter_reads_two_ways_is_never_offered() {
+    let remote = Remote::new();
+    let tree = remote.tree(&[
+        (
+            "skills/twice/SKILL.md",
+            "100644",
+            b"---\nname: twice\nname: deploy\ndescription: x\n---\n",
+        ),
+        (
+            "skills/quoted/SKILL.md",
+            "100644",
+            b"---\n\"name\": deploy\nname: quoted\ndescription: x\n---\n",
+        ),
+    ]);
+    remote.commit(&tree, None);
+    let tmp = plane();
+    let browse = browse(tmp.path(), &remote.source()).unwrap();
+    assert!(browse.skills.is_empty(), "{:?}", browse.skills);
+    assert_eq!(browse.not_skills.len(), 2);
+    assert!(review(tmp.path(), &remote.source(), &["deploy".to_owned()]).is_err());
 }

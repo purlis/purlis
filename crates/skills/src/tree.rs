@@ -100,8 +100,11 @@ pub fn plain_name(name: &str) -> bool {
 
 /// **The tree `listing` names** — `git ls-tree -r -z -l <commit>`'s answer — as the files purlis
 /// would write and those it leaves out. A path whose case-folded form another path already took
-/// is left out, so of two such paths the first git lists is the one written.
-pub fn read_listing(listing: &[u8]) -> (Vec<Entry>, Vec<LeftOut>) {
+/// is left out, so of two such paths the first git lists is the one written. A record that is
+/// not one git writes refuses the whole listing: nothing is read from a tree purlis cannot read
+/// whole.
+pub fn read_listing(listing: &[u8]) -> Result<(Vec<Entry>, Vec<LeftOut>), String> {
+    let unread = || Err("the source's tree could not be read".to_owned());
     let mut entries = Vec::new();
     let mut left = Vec::new();
     let mut folded: Vec<(String, String)> = Vec::new();
@@ -110,17 +113,24 @@ pub fn read_listing(listing: &[u8]) -> (Vec<Entry>, Vec<LeftOut>) {
             continue;
         }
         let Some(tab) = record.iter().position(|b| *b == b'\t') else {
-            continue;
+            return unread();
         };
         let (head, path) = (&record[..tab], &record[tab + 1..]);
         let path_shown = String::from_utf8_lossy(path).into_owned();
         let head = String::from_utf8_lossy(head);
         let mut fields = head.split_whitespace();
-        let (Some(mode), Some(kind), Some(oid), size) =
-            (fields.next(), fields.next(), fields.next(), fields.next())
-        else {
-            continue;
+        let (Some(mode), Some(kind), Some(oid), Some(size), None) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        ) else {
+            return unread();
         };
+        if !matches!(oid.len(), 40 | 64) || !oid.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return unread();
+        }
         let out = |why| LeftOut {
             path: path_shown.clone(),
             why,
@@ -150,7 +160,9 @@ pub fn read_listing(listing: &[u8]) -> (Vec<Entry>, Vec<LeftOut>) {
             left.push(out(Why::Name));
             continue;
         }
-        let size: u64 = size.and_then(|s| s.parse().ok()).unwrap_or(u64::MAX);
+        let Ok(size) = size.parse::<u64>() else {
+            return unread();
+        };
         if size > MOST_FILE_BYTES {
             left.push(out(Why::TooLarge));
             continue;
@@ -183,7 +195,7 @@ pub fn read_listing(listing: &[u8]) -> (Vec<Entry>, Vec<LeftOut>) {
             size,
         });
     }
-    (entries, left)
+    Ok((entries, left))
 }
 
 /// The parts of `folder`, a folder inside a source as a person writes it (`skills`,
@@ -244,6 +256,109 @@ pub fn left_in(left: &[LeftOut], dir: &[String]) -> Vec<LeftOut> {
             })
         })
         .collect()
+}
+
+/// **The name and description of a fetched `SKILL.md`**, where every reader reads the same ones:
+/// its frontmatter fenced by lines that are `---` alone, parsed as the YAML it is into one mapping
+/// of plain keys, none twice, with no anchor, alias or tag anywhere, and its `name` and
+/// `description` single scalars that purlis's own line reader ([`crate::parsed`]) reads alike.
+/// Anything else is refused, in a sentence: a source's skill is installed only where the name a
+/// harness loads is the name the review showed.
+pub fn plain_identity(text: &str) -> Result<(String, String), String> {
+    use yaml_rust2::parser::{Event, Parser};
+    let refused = |why: &str| Err(format!("its frontmatter {why}"));
+    let mut lines = text.split_inclusive('\n');
+    if lines.next().map(|l| l.trim_end_matches(['\n', '\r'])) != Some("---") {
+        return refused("does not start with a line that is `---` alone");
+    }
+    let start = text.find('\n').map_or(text.len(), |at| at + 1);
+    let mut at = start;
+    let mut end = None;
+    for line in lines {
+        if line.trim_end_matches(['\n', '\r']) == "---" {
+            end = Some(at);
+            break;
+        }
+        at += line.len();
+    }
+    let Some(end) = end else {
+        return refused("has no closing line that is `---` alone");
+    };
+    // purlis's line reader ends the block at the first `---` anywhere: the same place, or the
+    // two would read different keys.
+    if crate::read::frontmatter_block(text) != Some((3, end)) {
+        return refused("holds `---` inside a value");
+    }
+    let yaml = &text[start..end];
+    let mut parser = Parser::new_from_str(yaml);
+    let mut next = || parser.next_token().map(|(event, _)| event);
+    let bad = |_| "is not YAML purlis reads".to_owned();
+    if !matches!(next().map_err(bad)?, Event::StreamStart)
+        || !matches!(next().map_err(bad)?, Event::DocumentStart)
+    {
+        return refused("is not one YAML document");
+    }
+    match next().map_err(bad)? {
+        Event::MappingStart(0, None) => {}
+        _ => return refused("is not one plain mapping"),
+    }
+    let mut keys: Vec<String> = Vec::new();
+    let (mut name, mut description) = (None, None);
+    loop {
+        let key = match next().map_err(bad)? {
+            Event::MappingEnd => break,
+            Event::Scalar(key, yaml_rust2::scanner::TScalarStyle::Plain, 0, None) => key,
+            _ => return refused("has a key that is not a plain word"),
+        };
+        if keys.contains(&key) {
+            return refused(&format!("names {key} twice"));
+        }
+        keys.push(key.clone());
+        // The value: one scalar for the two keys purlis reads, anything plain for the rest.
+        let mut depth = 0usize;
+        loop {
+            match next().map_err(bad)? {
+                Event::Alias(_) => return refused("holds an alias"),
+                Event::Scalar(value, _, 0, None) => {
+                    if depth == 0 {
+                        match key.as_str() {
+                            "name" => name = Some(value),
+                            "description" => description = Some(value),
+                            _ => {}
+                        }
+                        break;
+                    }
+                }
+                Event::SequenceStart(0, None) | Event::MappingStart(0, None) => {
+                    if matches!(key.as_str(), "name" | "description") {
+                        return refused(&format!("gives {key} more than one line of words"));
+                    }
+                    depth += 1;
+                }
+                Event::SequenceEnd | Event::MappingEnd if depth > 0 => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => return refused("holds an anchor, a tag or something purlis does not read"),
+            }
+        }
+    }
+    if !matches!(next().map_err(bad)?, Event::DocumentEnd)
+        || !matches!(next().map_err(bad)?, Event::StreamEnd)
+    {
+        return refused("is more than one YAML document");
+    }
+    let (Some(name), Some(description)) = (name, description) else {
+        return refused("names no name or no description");
+    };
+    let read = crate::parsed(text, std::path::PathBuf::new())
+        .map_err(|_| "its frontmatter is not one purlis reads".to_owned())?;
+    if read.name != name || read.description != description {
+        return refused("reads one way as YAML and another line by line");
+    }
+    Ok((name, description))
 }
 
 #[cfg(test)]

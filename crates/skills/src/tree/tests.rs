@@ -57,7 +57,8 @@ fn links_submodules_and_bad_names_are_left_out_with_why() {
         record("100644", "blob", "3", "skills/a/.git/hooks/post-checkout"),
         record("100644", "blob", "3", "skills/a/.gitattributes"),
         record("100644", "blob", "2000000", "skills/a/big.bin"),
-    ]));
+    ]))
+    .unwrap();
     let written: Vec<String> = entries.iter().map(Entry::shown).collect();
     assert_eq!(written, vec!["skills/a/SKILL.md", "skills/a/run.sh"]);
     assert!(entries[1].executable);
@@ -82,7 +83,8 @@ fn of_two_names_one_disk_would_fold_together_the_first_is_kept() {
         record("100644", "blob", "1", "a/scripts/y.sh"),
         record("100644", "blob", "1", "a/SKILL.md"),
         record("100644", "blob", "1", "a/skill.md"),
-    ]));
+    ]))
+    .unwrap();
     let written: Vec<String> = entries.iter().map(Entry::shown).collect();
     assert_eq!(written, vec!["a/Scripts/x.sh", "a/SKILL.md"]);
     assert!(left.iter().all(|l| l.why == Why::Case));
@@ -97,7 +99,8 @@ fn skill_folders_are_found_under_the_folder_and_a_nested_one_belongs_to_its_oute
         record("100644", "blob", "1", "skills/deploy/inner/SKILL.md"),
         record("100644", "blob", "1", "skills/review/SKILL.md"),
         record("100644", "blob", "1", "other/x/SKILL.md"),
-    ]));
+    ]))
+    .unwrap();
     let folder = folder_parts("skills/").unwrap();
     let found = skill_folders(&entries, &folder);
     assert_eq!(
@@ -125,7 +128,8 @@ fn a_source_that_is_one_skill_is_its_own_folder() {
     let (entries, left) = read_listing(&listing(&[
         record("100644", "blob", "1", "SKILL.md"),
         record("120000", "blob", "1", "link"),
-    ]));
+    ]))
+    .unwrap();
     assert_eq!(skill_folders(&entries, &[]), vec![Vec::<String>::new()]);
     assert_eq!(left_in(&left, &[]).len(), 1);
 }
@@ -136,4 +140,39 @@ fn a_folder_with_a_way_out_names_nothing() {
     assert_eq!(folder_parts("a/b"), Some(vec!["a".into(), "b".into()]));
     assert_eq!(folder_parts("../x"), None);
     assert_eq!(folder_parts(".git"), None);
+}
+
+#[test]
+fn a_plain_frontmatter_names_its_skill_and_anything_ambiguous_is_refused() {
+    assert_eq!(
+        plain_identity(
+            "---\nname: deploy\ndescription: Ships it.\nallowed-tools: [Read]\n---\nbody\n"
+        ),
+        Ok(("deploy".into(), "Ships it.".into()))
+    );
+    for bad in [
+        // No fence, or no closing one.
+        "name: deploy\n",
+        "---\nname: deploy\ndescription: x\n",
+        // A second name: YAML and the line reader would each pick one.
+        "---\nname: deploy\nname: evil\ndescription: x\n---\n",
+        // Quoted keys, anchors, aliases and flow maps.
+        "---\n\"name\": evil\nname: deploy\ndescription: x\n---\n",
+        "---\nname: &a deploy\ndescription: *a\n---\n",
+        "---\n{name: evil, description: x}\n---\n",
+        // A `---` inside a value ends the line reader's block early.
+        "---\nname: deploy\ndescription: a---b\n---\n",
+        // A value YAML reads otherwise than a line does.
+        "---\nname: deploy\ndescription: |\n  evil\n---\n",
+        "---\nname: deploy # evil\ndescription: x\n---\n",
+    ] {
+        assert!(plain_identity(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn a_listing_git_would_not_write_is_refused_whole() {
+    assert!(read_listing(b"100644 blob abc 10\tx\0").is_err());
+    assert!(read_listing(b"100644 blob\tx\0").is_err());
+    assert!(read_listing(&record("100644", "blob", "ten", "x")).is_err());
 }

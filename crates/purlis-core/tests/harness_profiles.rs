@@ -294,7 +294,7 @@ fn a_section_other_than_harness_in_the_local_file_is_refused_by_name() {
         why(&set, "frame"),
         "[frame] in charter.local.toml is not read — that file carries [harness], \
          [extensions], [theme], [harness_plugins], [plane], [repos], [chat_env], [sandbox] \
-         hosts and [dispatch] limits, and nothing else, because an ignored file must not change plane policy with no trace in git. \
+         hosts, [dispatch] limits and [[skill_sources]], and nothing else, because an ignored file must not change plane policy with no trace in git. \
          Put [frame] in charter.toml."
     );
 }

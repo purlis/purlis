@@ -543,6 +543,11 @@ pub fn derive_with(
         // `[harnesses]` declares a harness for this machine alone, or replaces a built-in's
         // facts and never its arming (ADR 0073 §5, #968), read by `harness_declaration::read`.
         //
+        // `[[skill_sources]]` holds this machine's own skill sources and each person's sign-in
+        // to a private one (#2773, ADR 0100 §5): the vault entry this machine reads, which a
+        // committed file must never name, as a teammate's push would hand this machine's token
+        // to a host of its choosing (`skills::source::sources`).
+        //
         // `[chat_env]` is which more of this machine's own environment a chat is started with
         // (`chatenv`). It can only be this machine's: a committed list would let a teammate's
         // push decide which of this machine's variables every chat is handed.
@@ -569,13 +574,14 @@ pub fn derive_with(
             && key != crate::sandbox::TABLE
             && key != crate::dispatchlimits::TABLE
             && key != crate::harness_declaration::LOCAL_TABLE
+            && key != crate::skills::source::TABLE
         {
             let name = shown::short(key);
             set.refused.push(Refused {
                 reason: format!(
                     "[{name}] in charter.local.toml is not read — that file carries \
                      [harness], [extensions], [theme], [harness_plugins], [plane], [repos], \
-                     [chat_env], [sandbox] hosts and [dispatch] limits, and nothing else, because an ignored file must not change plane policy \
+                     [chat_env], [sandbox] hosts, [dispatch] limits and [[skill_sources]], and nothing else, because an ignored file must not change plane policy \
                      with no trace in git. Put [{name}] in charter.toml."
                 ),
                 name,

@@ -138,6 +138,21 @@ pub fn read(plane: &Path, name: &str) -> Result<Read, String> {
             crate::shown::short(&why.to_string())
         )
     })?;
+    // A name is a folder purlis opens and writes in: one that is not a skill's name (a `..`, a
+    // separator) is refused, as is a recorded file whose path is not plain, whoever wrote it.
+    for one in &lock.skills {
+        if purlis_skills::change::name_problem(&one.name).is_some()
+            || one.files.iter().any(|file| {
+                purlis_skills::tree::folder_parts(&file.path).is_none_or(|p| p.is_empty())
+            })
+        {
+            return Err(format!(
+                "{name} names an installed skill {:?} purlis will not write, so no installed \
+                 skill was changed",
+                one.name
+            ));
+        }
+    }
     if lock.version > VERSION {
         return Err(format!(
             "{name} was written by a newer purlis (version {}), so this one changes nothing in it",

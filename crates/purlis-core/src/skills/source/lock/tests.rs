@@ -75,3 +75,21 @@ fn a_lockfile_that_is_a_link_is_never_read_or_written_through() {
         "{\"version\":1}"
     );
 }
+
+#[test]
+fn a_lockfile_naming_a_way_out_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    for (name, path) in [("../../evil", "SKILL.md"), ("deploy", "../../.zshrc")] {
+        let mut one = entry(Level::project());
+        one.name = name.into();
+        one.files[0].path = path.into();
+        let text = serde_json::to_string(&Lockfile {
+            version: VERSION,
+            skills: vec![one],
+        })
+        .unwrap();
+        std::fs::write(root.join(FILE), text).unwrap();
+        assert!(read(root, FILE).is_err(), "{name} {path}");
+    }
+}
