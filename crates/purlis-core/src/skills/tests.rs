@@ -508,14 +508,30 @@ fn a_lay_out_that_never_finished_is_tidied_and_one_found_again_is_kept() {
     let tmp = tempfile::tempdir().unwrap();
     let (plane, kit) = a_host_on(tmp.path());
     let sets = kit.skill_sets.clone().unwrap();
-    let folder = crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit).unwrap();
+    let folder = crate::hoststart::plane_skills_laid_out(
+        true,
+        &plane,
+        None,
+        None,
+        &kit,
+        Harness::ClaudeCode,
+    )
+    .unwrap();
     let leftover = sets.join(format!(".{A}.x1Y2z3"));
     std::fs::create_dir_all(&leftover).unwrap();
     last_laid_out_long_ago(&leftover);
     last_laid_out_long_ago(&folder);
 
     // Found again by the next chat's start: used now, so kept.
-    let again = crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit).unwrap();
+    let again = crate::hoststart::plane_skills_laid_out(
+        true,
+        &plane,
+        None,
+        None,
+        &kit,
+        Harness::ClaudeCode,
+    )
+    .unwrap();
     assert_eq!(again, folder);
     let tidied = tidy(&sets).unwrap();
 
@@ -740,7 +756,17 @@ fn a_lay_out_into_sets_that_are_a_link_is_refused() {
     std::os::unix::fs::symlink(&outside, &sets).unwrap();
     kit.skill_sets = Some(sets);
 
-    assert!(crate::hoststart::plane_skills_laid_out(true, &plane, None, None, &kit).is_none());
+    assert!(
+        crate::hoststart::plane_skills_laid_out(
+            true,
+            &plane,
+            None,
+            None,
+            &kit,
+            Harness::ClaudeCode
+        )
+        .is_none()
+    );
     assert_eq!(
         std::fs::read_dir(&outside).unwrap().count(),
         0,
@@ -799,7 +825,7 @@ fn offered_names(skills: &ChatSkills) -> Vec<&str> {
 }
 
 #[test]
-fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_only_on_claude_code() {
+fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_on_every_harness() {
     let (tmp, bundle) = use_skill_plane();
     let root = tmp.path();
 
@@ -825,13 +851,15 @@ fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_only_on_
     );
     assert_eq!(at_the_root.spent.warns(), None);
 
-    // opencode lists it still (#2771): it is counted there.
-    let on_opencode = for_use_skill(&Running {
-        harness: Harness::Opencode,
-        ..running(root, &bundle, None)
-    });
-    assert_eq!(on_opencode.spent.skills, 4);
-    assert_eq!(on_opencode.spent.manual, 1);
+    // opencode and Codex are handed the translation (SK-8, #2771): it is free there too.
+    for harness in [Harness::Opencode, Harness::Codex] {
+        let elsewhere = for_use_skill(&Running {
+            harness,
+            ..running(root, &bundle, None)
+        });
+        assert_eq!(elsewhere.spent.skills, 3, "{harness:?} leaves release out");
+        assert_eq!(elsewhere.spent.manual, 1);
+    }
 
     // In the workspace: its own skill and the granted one, never one it was not granted.
     let in_smart_ide = for_use_skill(&running(root, &bundle, Some("smart-ide")));
@@ -1028,9 +1056,20 @@ fn a_briefed_chat_in_a_clone_is_told_the_repos_copy_of_a_name_and_not_the_projec
     let built_in = tmp.path().join("bundle/skills");
     std::fs::create_dir_all(&built_in).unwrap();
     let dir = built_in.display().to_string();
+    // The set's folder the host laid out, as a Codex chat is handed it (SK-8).
+    let handed = tmp.path().join("sets/handed");
+    for name in ["deploy", "review"] {
+        std::fs::create_dir_all(handed.join("skills").join(name)).unwrap();
+        std::fs::write(
+            handed.join("skills").join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n"),
+        )
+        .unwrap();
+    }
+    let handed = handed.display().to_string();
     let env = move |name: &str| match name {
         LISTED_ENV => Some(dir.clone()),
-        PLANE_LISTED_ENV => Some("1".to_owned()),
+        PLANE_LISTED_ENV => Some(handed.clone()),
         _ => None,
     };
 
@@ -1095,4 +1134,50 @@ fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_or_opencode()
             "{route:?}"
         );
     }
+}
+
+#[test]
+fn a_harness_skill_a_persona_names_is_badged_and_marked_where_it_widens_the_chat() {
+    let tmp = tempfile::tempdir().unwrap();
+    let folder = tmp.path().join("harness-skills/wide");
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("SKILL.md");
+    std::fs::write(
+        &path,
+        "---\nname: wide\ndescription: Widens a chat on purpose.\nallowed-tools: Bash\n---\n",
+    )
+    .unwrap();
+    let outside = [OutsideSkill {
+        skill: Skill {
+            name: "wide".to_owned(),
+            description: "Widens a chat on purpose.".to_owned(),
+            path,
+        },
+        origin: Origin::Harness,
+        id: "wide".to_owned(),
+        owner: Owner::You,
+        switch: Switch::Alone,
+        off: false,
+    }];
+    let set = SkillSet {
+        from_the_harness: vec![FromHarness {
+            reference: Reference::Named("wide".to_owned()),
+            checked: true,
+        }],
+        ..SkillSet::default()
+    };
+    let names = [Reference::Named("wide".to_owned())];
+    let mut rows = studio_rows(&set, tmp.path(), &names);
+    badge_named(&mut rows, &[(Harness::ClaudeCode, &outside)], tmp.path());
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].compat.len(), 1);
+    assert!(rows[0].compat[0].compat.widens(), "{:?}", rows[0].compat);
+    assert!(
+        rows[0]
+            .lint
+            .iter()
+            .any(|line| line.starts_with("Widens the chat")),
+        "{:?}",
+        rows[0].lint
+    );
 }

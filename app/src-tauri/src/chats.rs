@@ -425,15 +425,34 @@ impl Running {
     }
 }
 
-/// The skills a chat's persona names that it started without (SK-5, #2768), each as the
-/// persona's `skills:` list writes it: what its tab's Notice says.
+/// The skills a chat started without (SK-5, #2768; SK-8, #2771, decision 41): the ones its
+/// persona names, each as the persona's `skills:` list writes it, and the ones that could not be
+/// loaded. What its tab's Notice says.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct SkillsMissing {
-    pub persona: String,
+    /// The persona the chat runs as, or `None` for a chat on no persona.
+    pub persona: Option<String>,
     /// Installed skills this machine does not have for the chat's harness.
     pub missing: Vec<String>,
     /// Built-in skills purlis has none of: a typo, or a name from another version of purlis.
     pub no_built_in: Vec<String>,
+    /// Skills the chat would have loaded that could not be loaded, each with why.
+    pub broken: Vec<SkillBroken>,
+}
+
+/// A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
+/// the window. purlis-core keeps no UI typing crate, so its level is the studio's `Level`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SkillBroken {
+    /// Its name, or its folder's where it names none.
+    pub name: String,
+    /// Its level, and whether it is a local skill.
+    pub level: crate::skillstudio::Level,
+    pub local: bool,
+    /// Its level as a person reads it: `project`, `local workspace` (the core's `level_shown`).
+    pub label: String,
+    /// Why, in one line: the core's sentence.
+    pub why: String,
 }
 
 /// [`Running::started_with`].
@@ -3226,8 +3245,9 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
-        // A skill its persona names that this machine does not have (SK-5, #2768): the chat
-        // starts without it, and its tab's Notice says which, never a silent drop.
+        // A skill its persona names that this machine does not have (SK-5, #2768), or one it
+        // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
+        // tab's Notice says which, never a silent drop.
         let skills_missing = if reattaching || on_the_runner {
             None
         } else {
@@ -3240,11 +3260,21 @@ impl Chats {
                 runs_as.as_deref(),
                 &env,
             )
-            .zip(runs_as.clone())
-            .map(|(not, persona)| SkillsMissing {
-                persona,
+            .map(|not| SkillsMissing {
+                persona: runs_as.clone(),
                 missing: not.missing,
                 no_built_in: not.no_built_in,
+                broken: not
+                    .broken
+                    .into_iter()
+                    .map(|one| SkillBroken {
+                        name: one.name,
+                        level: one.origin.into(),
+                        local: one.local,
+                        label: purlis_core::skills::level_shown(one.origin, one.local),
+                        why: one.why.to_string(),
+                    })
+                    .collect(),
             })
         };
         // A sandboxed Claude Code chat whose project's own settings it does not load says which

@@ -152,10 +152,23 @@ impl HarnessAdapter for Opencode {
 
     /// opencode 1.18.33 puts every skill in its system prompt with no limit at all, so purlis's
     /// budget is the only one its chats have (ADR 0102 §1), and no description is cut. A
-    /// manual-only skill is listed too: 1.18.33 reads no field that keeps it out, until the
-    /// translation (#2771).
+    /// manual-only skill is handed without its description, which keeps it out of the listing
+    /// ([`Self::skill_frontmatter`]).
     fn skill_budget(&self) -> crate::skills::Budget {
         super::SKILL_BUDGET
+    }
+
+    /// **opencode 1.18.33** (`skill/index.ts`, research of 2026-10-20): it reads `name` and
+    /// `description` and nothing else. It has no manual-only key, but it lists only a skill that
+    /// has a description (`fmt` filters `description !== undefined`, S:322, measured) and still
+    /// runs one by `/name` or by the `skill` tool, so purlis hands a manual-only skill without
+    /// its description ([`crate::skills::handed_text`]).
+    fn skill_frontmatter(&self) -> crate::skills::Honours {
+        crate::skills::Honours {
+            reads: &[],
+            manual: crate::skills::ManualOnly::WithoutDescription,
+            agents: &[],
+        }
     }
 
     /// `permission.bash` of the project's `opencode.json`, which holds command globs: a

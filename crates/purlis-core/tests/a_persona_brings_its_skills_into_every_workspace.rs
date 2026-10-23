@@ -31,6 +31,8 @@ fn skill(dir: &Path, name: &str) {
         format!("---\nname: {name}\ndescription: Does {name}.\n---\n\nbody\n"),
     )
     .unwrap();
+    // A file beside it, which a set's folder links to where it hands the skill.
+    fs::write(dir.join(name).join("notes.md"), "notes\n").unwrap();
 }
 
 /// A bundle with the built-in skill `secrets` and the opencode shim; a plane with the project
@@ -81,6 +83,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
         Some(WORKSPACE),
         Some(PERSONA),
         &host,
+        Harness::ClaudeCode,
     );
     let kit = Kit {
         binary: Path::new("/bin/purlis"),
@@ -114,20 +117,29 @@ fn var<'e>(env: &'e [(String, String)], name: &str) -> Option<&'e str> {
         .map(|(_, value)| value.as_str())
 }
 
-/// The names of the links in a set's folder, by name.
-fn linked(folder: &Path) -> Vec<(String, PathBuf)> {
-    let mut links: Vec<(String, PathBuf)> = fs::read_dir(folder.join("skills"))
+/// Each skill a set's `skills/` folder hands, by name, and the plane folder its files link to: a
+/// folder of its own holding the `SKILL.md` purlis wrote, and a link to each of its files
+/// (SK-8).
+fn linked(skills: &Path) -> Vec<(String, PathBuf)> {
+    let mut handed: Vec<(String, PathBuf)> = fs::read_dir(skills)
         .unwrap()
         .map(|entry| {
             let entry = entry.unwrap();
+            let own = entry.path();
+            assert!(
+                fs::symlink_metadata(&own).unwrap().is_dir(),
+                "{}",
+                own.display()
+            );
+            let file = fs::read_link(own.join("notes.md")).unwrap();
             (
                 entry.file_name().to_string_lossy().into_owned(),
-                fs::read_link(entry.path()).unwrap(),
+                file.parent().unwrap().to_path_buf(),
             )
         })
         .collect();
-    links.sort();
-    links
+    handed.sort();
+    handed
 }
 
 fn wanted(here: &Here) -> Vec<(String, PathBuf)> {
@@ -154,7 +166,7 @@ fn a_claude_code_chat_as_the_persona_loads_its_skills_in_a_workspace_granted_non
     assert_eq!(dirs.len(), 2, "{args:?}");
     assert_eq!(dirs[0], here.plugin);
     assert_eq!(
-        linked(&dirs[1]),
+        linked(&dirs[1].join("skills")),
         wanted(&here),
         "its own skill and the project skill it names; never `review`"
     );
@@ -174,18 +186,7 @@ fn an_opencode_chat_as_the_persona_is_handed_its_skills_folder() {
     assert_eq!(skills.len(), 2, "{skills:?}");
     let folder = PathBuf::from(skills[1].as_str().unwrap());
     assert!(folder.starts_with(&here.sets), "{}", folder.display());
-    let mut links: Vec<(String, PathBuf)> = fs::read_dir(&folder)
-        .unwrap()
-        .map(|entry| {
-            let entry = entry.unwrap();
-            (
-                entry.file_name().to_string_lossy().into_owned(),
-                fs::read_link(entry.path()).unwrap(),
-            )
-        })
-        .collect();
-    links.sort();
-    assert_eq!(links, wanted(&here));
+    assert_eq!(linked(&folder), wanted(&here));
 }
 
 #[test]
@@ -193,7 +194,8 @@ fn a_codex_chat_as_the_persona_is_briefed_on_its_skills() {
     purlis_core::unsteered!();
     let here = here();
     let (_, env) = host_armed(Harness::Codex, &here);
-    assert_eq!(var(&env, PLANE_LISTED_ENV), Some("1"));
+    let handed = PathBuf::from(var(&env, PLANE_LISTED_ENV).expect("the set's folder"));
+    assert!(handed.starts_with(&here.sets), "{}", handed.display());
 
     // The chat runs as the persona: its environment names it, as every chat as a persona's does.
     let lookup = |name: &str| {
@@ -227,6 +229,7 @@ fn a_chat_on_no_persona_in_that_workspace_gets_none_of_them() {
         Some(WORKSPACE),
         None,
         &host,
+        Harness::ClaudeCode,
     );
 
     assert_eq!(linked, None);
@@ -247,7 +250,7 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
         purlis_core::skills::not_here(
             &here.plane,
             Some(WORKSPACE),
-            PERSONA,
+            Some(PERSONA),
             Some(&here.plugin.join("skills")),
             harness,
             &env,
@@ -259,6 +262,7 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
         Some(purlis_core::skills::NotHere {
             missing: vec!["superpowers:test-driven-development".to_owned()],
             no_built_in: Vec::new(),
+            broken: Vec::new(),
         })
     );
 
@@ -304,7 +308,7 @@ fn on_codex_a_plugin_skill_is_found_in_its_cache_and_one_it_cannot_list_raises_n
         purlis_core::skills::not_here(
             &here.plane,
             Some(WORKSPACE),
-            PERSONA,
+            Some(PERSONA),
             Some(&here.plugin.join("skills")),
             Harness::Codex,
             &env,

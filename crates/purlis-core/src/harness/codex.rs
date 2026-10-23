@@ -15,7 +15,8 @@ pub struct Codex;
 pub static ADAPTER: Codex = Codex;
 
 /// What a Codex chat is started with for its `SessionStart` briefing to list its skills: the
-/// built-in skills' directory, and the plane's mark where its set holds any of the plane's.
+/// built-in skills' directory, and the set's folder the host laid the plane's out in, where its
+/// set holds any (SK-8: the briefing names each by the `SKILL.md` purlis wrote for it there).
 fn listed(kit: Kit<'_>) -> Vec<(String, String)> {
     let set = crate::skills::for_chat(kit, Harness::Codex);
     let Some(dir) = set.built_in_dir() else {
@@ -25,8 +26,11 @@ fn listed(kit: Kit<'_>) -> Vec<(String, String)> {
         crate::skills::LISTED_ENV.to_owned(),
         dir.display().to_string(),
     )];
-    if set.from_the_plane().next().is_some() {
-        env.push((crate::skills::PLANE_LISTED_ENV.to_owned(), "1".to_owned()));
+    if let Some(handed) = crate::skills::linked(&set, kit) {
+        env.push((
+            crate::skills::PLANE_LISTED_ENV.to_owned(),
+            handed.display().to_string(),
+        ));
     }
     env
 }
@@ -135,8 +139,8 @@ impl HarnessAdapter for Codex {
     /// directory of the skills its set holds ([`crate::skills::for_chat`]) in
     /// [`crate::skills::LISTED_ENV`], which a Codex hook inherits, and the briefing lists
     /// what its set holds ([`crate::skills::briefed`]). Where the set holds the plane's skills,
-    /// [`crate::skills::PLANE_LISTED_ENV`] says so, and the briefing lists them too, each from
-    /// its folder in the plane.
+    /// [`crate::skills::PLANE_LISTED_ENV`] names the set's folder the host laid them out in, and
+    /// the briefing lists them too, each by the `SKILL.md` purlis wrote for it there.
     ///
     /// Its sandbox, where the plane turned it on, is not here: charter's wrap runs the whole
     /// line ([`crate::sandbox::Applied::line`], and [`crate::sandbox::codex`] has the
@@ -233,14 +237,28 @@ impl HarnessAdapter for Codex {
     /// Codex lists skills within 2% of the context window, 8,000 characters where it does not
     /// know the window, cutting each description at 1,024 characters, and past that drops
     /// trailing skills without saying so (0.163.0, `ext/skills/src/render.rs`). A Codex chat is
-    /// briefed on its skills, each line with its `SKILL.md`'s path, which counts; and every
-    /// skill is on it, a manual-only one too, until the briefing is handed the translation
-    /// (#2771).
+    /// briefed on its skills, each line with its `SKILL.md`'s path, which counts; a manual-only
+    /// skill's description stays out of the briefing ([`Self::skill_frontmatter`]).
     fn skill_budget(&self) -> crate::skills::Budget {
         crate::skills::Budget {
             per_description: Some(1_024),
             lists_paths: true,
             ..super::SKILL_BUDGET
+        }
+    }
+
+    /// **Codex 0.163.0** (`skills/src/parser.rs:6-20`, research of 2026-10-20): its own parser
+    /// reads `name`, `description` and `metadata.short-description`, and nothing else. A Codex
+    /// chat is briefed on purlis's skills, though, and the model reads each `SKILL.md` as text,
+    /// so no key applies there but the ones purlis reads itself. Manual-only is translated: the
+    /// briefing names a manual-only skill and its file alone, to read only when the person
+    /// names it ([`crate::skills::listing`]), as Codex's own `agents/openai.yaml`
+    /// `policy.allow_implicit_invocation: false` keeps one of its skills out of its catalogue.
+    fn skill_frontmatter(&self) -> crate::skills::Honours {
+        crate::skills::Honours {
+            reads: &[],
+            manual: crate::skills::ManualOnly::Listing,
+            agents: &[],
         }
     }
 

@@ -53,6 +53,22 @@ pub(crate) fn new_file_in(dir: impl AsFd, name: &str) -> std::io::Result<std::fs
     Ok(std::fs::File::from(fd))
 }
 
+/// The folder `rel` under `dir`, each of its parts opened as a folder itself in the one before.
+pub(crate) fn folder_under(dir: impl AsFd, rel: &Path) -> std::io::Result<OwnedFd> {
+    let mut parts = rel.components().filter_map(|part| match part {
+        std::path::Component::Normal(name) => name.to_str(),
+        _ => None,
+    });
+    let first = parts
+        .next()
+        .ok_or_else(|| std::io::Error::other("no folder named"))?;
+    let mut at = folder_in(&dir, first)?;
+    for part in parts {
+        at = folder_in(&at, part)?;
+    }
+    Ok(at)
+}
+
 /// The folder `name` made in `dir`: refused where anything of that name is there.
 pub(crate) fn make_folder_in(dir: impl AsFd, name: &str) -> std::io::Result<()> {
     Ok(rustix::fs::mkdirat(dir, name, Mode::from_raw_mode(0o755))?)
