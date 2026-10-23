@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792735336630,
+  "lastUpdate": 1792735351895,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -12176,6 +12176,42 @@ window.BENCHMARK_DATA = {
             "value": 700.4,
             "unit": "MB",
             "extra": "median of 6 samples: 651.6, 683.3, 696.9, 703.9, 704.6, 812.2 MB; window 419 MB, session host 281.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1e05aa4d2a882bcf7b7ccdc12995e7ffe5daa577",
+          "message": "Menu, context menu and popover families (#3025)\n\n* Menu, context menu and popover families on React Aria (#2909)\n\nEvery menu, context menu and popover is one family in src/ui: a click outside and Escape\nclose it, the popover has its filter, rule, list and key-hint footer, a menu opens under its\ntrigger at least 8 px from the window's edge, and a row has a shortcut slot. The families\njoin the parts manifest; the menu-family lint keeps the old menus out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A row's note waits for a person's rest, not the focus a pointer-opened menu gives its first row\n\nReact Aria puts the keyboard on a menu's first row when it opens. Opened by the pointer, that\nfocus is no rest: the note it raised took the Escape meant for the menu.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Scenario specs close menus with as many Escapes as a row's note and a submenu take\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* A row's rest starts at a key or under the pointer, never at the focus a menu gives as it opens\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Menu stories wait for the keyboard to land and the menu to go\n\nReact Aria may move the keyboard on the next frame, which WebKit draws late in a busy run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T09:19:24+04:00",
+          "tree_id": "5d1063fa0ffe6bea820d4f2aecc2fe130d87b02e",
+          "url": "https://github.com/purlis/purlis/commit/1e05aa4d2a882bcf7b7ccdc12995e7ffe5daa577"
+        },
+        "date": 1792735350141,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1577.9,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1485.2, 1577.9, 1695.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 696.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 660.4, 683.7, 692.7, 699.9, 700.6, 788.1 MB; window 415 MB, session host 281.3 MB"
           }
         ]
       }
