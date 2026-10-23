@@ -144,7 +144,8 @@ fn a_manual_only_skill_is_listed_by_its_name_and_file_alone_to_run_only_when_nam
 fn no_built_in_skill_asks_for_what_would_widen_a_chat_and_each_is_handed_whole() {
     for skill in read(&bundled()) {
         let text = std::fs::read_to_string(&skill.path).unwrap();
-        let read = crate::handed::read(&text).unwrap_or_else(|why| panic!("{}: {why}", skill.name));
+        let read =
+            crate::handed::parse(&text).unwrap_or_else(|why| panic!("{}: {why}", skill.name));
         assert!(
             !read.fields().iter().any(|field| field.widens()),
             "{} widens a chat",

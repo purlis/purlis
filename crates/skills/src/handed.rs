@@ -97,17 +97,17 @@ enum Node {
     Map(Vec<(Node, Node)>),
 }
 
-/// **A frontmatter, read**: every top-level key in the order written, the field purlis knows it
-/// as where it knows it, and where the body starts.
+/// **A frontmatter, read** ([`parse`]): every top-level key in the order written, the field
+/// purlis knows it as where it knows it, and where the body starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Read {
+pub struct Frontmatter {
     entries: Vec<(String, Node)>,
     body: usize,
 }
 
-impl Read {
+impl Frontmatter {
     /// The fields it sets, in the order written.
-    pub(crate) fn fields(&self) -> Vec<Field> {
+    pub fn fields(&self) -> Vec<Field> {
         self.entries
             .iter()
             .filter_map(|(key, _)| Field::of(key))
@@ -115,7 +115,7 @@ impl Read {
     }
 
     /// The keys it sets that purlis knows of no harness to read, as written.
-    pub(crate) fn unknown(&self) -> Vec<String> {
+    pub fn unknown(&self) -> Vec<String> {
         self.entries
             .iter()
             .filter(|(key, _)| Field::of(key).is_none())
@@ -125,7 +125,7 @@ impl Read {
 
     /// Whether it makes the skill manual-only: `disable-model-invocation` true (`yes`, `on` and
     /// `1` too).
-    pub(crate) fn manual(&self) -> bool {
+    pub fn manual(&self) -> bool {
         self.entries.iter().any(|(key, node)| {
             Field::of(key) == Some(Field::ManualOnly)
                 && matches!(node, Node::Scalar { text, .. } if truthy(text))
@@ -133,10 +133,10 @@ impl Read {
     }
 }
 
-impl Read {
+impl Frontmatter {
     /// The tools its `disallowed-tools` takes away, as written: one comma-separated line, or a
     /// list.
-    pub(crate) fn tools_taken(&self) -> Vec<String> {
+    pub fn tools_taken(&self) -> Vec<String> {
         let mut out = Vec::new();
         for (key, node) in &self.entries {
             if Field::of(key) != Some(Field::DisallowedTools) {
@@ -165,7 +165,7 @@ impl Read {
     }
 
     /// Whether its `context` is `fork`.
-    pub(crate) fn fork(&self) -> bool {
+    pub fn fork(&self) -> bool {
         self.entries.iter().any(|(key, node)| {
             Field::of(key) == Some(Field::Context)
                 && matches!(node, Node::Scalar { text, .. } if text.trim().eq_ignore_ascii_case("fork"))
@@ -255,8 +255,11 @@ fn folded(key: &str) -> String {
         .collect()
 }
 
-/// **Reads `text`'s frontmatter as YAML**, failing closed ([`Refusal`]).
-pub(crate) fn read(text: &str) -> Result<Read, Refusal> {
+/// **Reads `text`'s frontmatter as YAML**, failing closed ([`Refusal`]): the one reader of a
+/// skill's frontmatter for what purlis hands, badges, lints and installs. The frontmatter is
+/// between a first line that is `---` (after a byte-order mark, if any) and the next line that
+/// is `---`.
+pub fn parse(text: &str) -> Result<Frontmatter, Refusal> {
     let (yaml, body) = fenced(text).ok_or(Refusal::NoFrontmatter)?;
     let mut parser = Parser::new_from_str(yaml);
     let mut next = || -> Result<Event, Refusal> {
@@ -304,7 +307,7 @@ pub(crate) fn read(text: &str) -> Result<Read, Refusal> {
         }
         entries.push((key, value));
     }
-    Ok(Read { entries, body })
+    Ok(Frontmatter { entries, body })
 }
 
 /// The node `event` starts, reading the rest of it with `next`: refused for an alias, an anchor
@@ -464,29 +467,45 @@ fn quoted(text: &str) -> String {
     out
 }
 
-/// **The `SKILL.md` purlis hands a harness that keeps a manual-only skill out by its description
-/// alone (`without_description`), for a skill whose own is `text`**: a frontmatter purlis writes,
-/// of every kept field as written (never a key that widens the chat, nor one it does not know),
-/// then the skill's body as it is. A manual-only skill there is handed without its description.
-/// Refused, handing nothing, where the frontmatter is refused ([`read`]).
-pub(crate) fn handed(text: &str, without_description: bool) -> Result<String, Refusal> {
-    let read = read(text)?;
-    let drop_description = without_description && read.manual();
-    let mut out = String::from("---\n");
-    for (key, node) in &read.entries {
-        let Some(field) = Field::of(key) else {
-            continue;
-        };
-        let Some(shape) = field.kept() else {
-            continue;
-        };
-        if drop_description && field == Field::Description {
-            continue;
-        }
-        let value = written(node, &shape).ok_or(Refusal::BadValue(field))?;
-        out.push_str(&format!("{}: {value}\n", field.key()));
+impl Frontmatter {
+    /// Where the skill's body starts in the text it was read from: just after the closing `---`
+    /// line.
+    pub fn body_at(&self) -> usize {
+        self.body
     }
-    out.push_str("---\n");
+
+    /// **The frontmatter purlis writes from it**, fences included: every kept field as written,
+    /// each value written out again (never a key that widens the chat, nor one purlis knows no
+    /// harness to read), and, where `without_description`, a manual-only skill's description
+    /// left out. Refused where a kept field has a value it cannot take.
+    pub fn emit(&self, without_description: bool) -> Result<String, Refusal> {
+        let drop_description = without_description && self.manual();
+        let mut out = String::from("---\n");
+        for (key, node) in &self.entries {
+            let Some(field) = Field::of(key) else {
+                continue;
+            };
+            let Some(shape) = field.kept() else {
+                continue;
+            };
+            if drop_description && field == Field::Description {
+                continue;
+            }
+            let value = written(node, &shape).ok_or(Refusal::BadValue(field))?;
+            out.push_str(&format!("{}: {value}\n", field.key()));
+        }
+        out.push_str("---\n");
+        Ok(out)
+    }
+}
+
+/// **The `SKILL.md` purlis hands a harness that keeps a manual-only skill out by its description
+/// alone (`without_description`), for a skill whose own is `text`**: the frontmatter purlis
+/// writes ([`Frontmatter::emit`]), then the skill's body as it is. Refused, handing nothing,
+/// where the frontmatter is refused ([`parse`]).
+pub(crate) fn handed(text: &str, without_description: bool) -> Result<String, Refusal> {
+    let read = parse(text)?;
+    let mut out = read.emit(without_description)?;
     out.push_str(&text[read.body..]);
     Ok(out)
 }

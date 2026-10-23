@@ -75,7 +75,7 @@ fn joined(words: &[String]) -> String {
 /// ([`crate::handed`]): the tools `disallowed-tools` takes away, and `context: fork`. Nothing
 /// for a frontmatter purlis cannot read, which it hands to no chat.
 pub(crate) fn narrowing(text: &str) -> Narrowing {
-    crate::handed::read(text)
+    crate::handed::parse(text)
         .map(|read| Narrowing {
             tools_taken: read.tools_taken(),
             fork: read.fork(),

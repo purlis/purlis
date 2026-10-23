@@ -237,7 +237,7 @@ fn short_description(text: &str) -> Option<Finding> {
 /// skill purlis hands), each key nothing reads, and what would widen the chat.
 fn keys(skill: &SkillFiles<'_>) -> Vec<Finding> {
     let handed = skill.origin.handed();
-    let read = match crate::handed::read(skill.text) {
+    let read = match crate::handed::parse(skill.text) {
         Ok(read) => read,
         Err(why) => {
             return vec![Finding {

@@ -16,7 +16,7 @@ fn handed_as_is(text: &str) -> Result<String, Refusal> {
 fn narrowed(text: &str) -> String {
     let out = handed_as_is(text).unwrap_or_else(|why| panic!("refused: {why}\n{text}"));
     let (yaml, _) = fenced(&out).expect("a frontmatter purlis wrote");
-    let read = read(&out).expect("purlis reads what it wrote");
+    let read = parse(&out).expect("purlis reads what it wrote");
     assert!(!read.fields().iter().any(|field| field.widens()), "{out}");
     assert!(yaml.contains("name: deploy\n"), "{out}");
     out
@@ -175,4 +175,16 @@ fn a_manual_only_skill_loses_its_description_only_where_asked() {
     );
     let not_manual = "---\nname: deploy\ndescription: Ships.\n---\n";
     assert!(handed(not_manual, true).unwrap().contains("description:"));
+}
+
+#[test]
+fn a_byte_order_mark_before_the_fence_is_read_past_and_the_body_found() {
+    let text = "\u{feff}---\nname: deploy\ndescription: Ships.\n---\nbody\n";
+    let read = parse(text).unwrap();
+    assert_eq!(read.fields(), [Field::Name, Field::Description]);
+    assert_eq!(&text[read.body_at()..], "body\n");
+    assert_eq!(
+        read.emit(false).unwrap(),
+        "---\nname: deploy\ndescription: Ships.\n---\n"
+    );
 }

@@ -333,7 +333,7 @@ pub fn compat(text: &str, origin: Origin, honours: &Honours) -> Compat {
         unknown: 0,
         refused: None,
     };
-    let read = match crate::handed::read(text) {
+    let read = match crate::handed::parse(text) {
         Ok(read) => read,
         Err(why) => return Compat::refused(why, origin),
     };
