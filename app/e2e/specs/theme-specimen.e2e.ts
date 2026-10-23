@@ -3,6 +3,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { readPng, type Pixels } from "../png.js";
+import { builtInAppearance } from "../builtInThemes.js";
 
 /**
  * **The theme specimen, against the real app** (#2330, `src-tauri/src/specimen.rs`).
@@ -39,18 +40,9 @@ async function specimen(appearance: "dark" | "light"): Promise<{ picture: Pictur
 
 const pixels = (picture: Picture): Pixels => readPng(Buffer.from(picture.png, "base64"));
 
-/** The theme's own `surface.base`, as the window holds it, in `[r, g, b]`. */
-async function surfaceOf(pick: string): Promise<number[]> {
-  // The window is handed each built-in by the pick that names it (#3034).
-  const hex = await browser.execute((theme: string) => {
-    const given = (
-      window as unknown as Record<
-        string,
-        { built_in: Record<string, { values: Record<string, string> }> }
-      >
-    ).__CHARTER_AT_CREATION__;
-    return given.built_in[theme]?.values["surface.base"] ?? "";
-  }, pick);
+/** Purlis's own `surface.base` in `appearance`, as the core resolves it, in `[r, g, b]`. */
+function surfaceOf(appearance: string): number[] {
+  const hex = builtInAppearance("purlis", appearance).values["surface.base"];
   return [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
 }
 
@@ -74,10 +66,7 @@ describe("the theme specimen", () => {
       pixels(dark.picture).at(2, 2),
       pixels(light.picture).at(2, 2),
     ];
-    const [darkSurface, lightSurface] = [
-      await surfaceOf("purlis-dark"),
-      await surfaceOf("purlis-light"),
-    ];
+    const [darkSurface, lightSurface] = [surfaceOf("dark"), surfaceOf("light")];
     expect({ ground: darkGround, near: near(darkGround, darkSurface) }).toEqual({
       ground: darkGround,
       near: true,

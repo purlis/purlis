@@ -355,6 +355,24 @@ async function measured(pane: number) {
   }, pane);
 }
 
+/** What the line held, in a few numbers: so a red run says what took the state's room. */
+function roomOf(seen: Awaited<ReturnType<typeof measured>>): string {
+  const w = (box: Box | null | undefined) => (box ? Math.round(box.width * 10) / 10 : null);
+  const span = (box: Box | null | undefined) =>
+    box ? `${Math.round(box.left)}-${Math.round(box.right)}` : null;
+  return JSON.stringify({
+    frame: span(seen.frame as Box | null),
+    line: span(seen.line as Box | null),
+    crumbs: span(seen.crumbs as Box | null),
+    state: span(seen.state as Box | null),
+    where: w(seen.where as Box | null),
+    names: seen.names.map((one) => w(one.box)),
+    reserved: seen.reserved,
+    rem: seen.rem,
+    others: seen.others.map((one) => [one.what, w(one.box)]),
+  });
+}
+
 /** One measured claim, failing with what was measured (as `pane-notices.e2e.ts` has it). */
 function check(
   what: string,
@@ -518,7 +536,7 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
       );
       // What the line held, so a red run says what took the state's room.
       check(
-        `the state in the breadcrumb runs past its right edge (measured ${JSON.stringify(seen)})`,
+        `the state in the breadcrumb runs past its right edge (${roomOf(seen)})`,
         seen.state === null || seen.crumbs === null || seen.state.right <= seen.crumbs.right + 1,
         "is",
         true,
@@ -744,7 +762,7 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
     );
     inside(seen.word, seen.state, "the word in its state");
     check(
-      `the state in the breadcrumb runs past its right edge (measured ${JSON.stringify(seen)})`,
+      `the state in the breadcrumb runs past its right edge (${roomOf(seen)})`,
       seen.state === null || seen.crumbs === null || seen.state.right <= seen.crumbs.right + 1,
       "is",
       true,

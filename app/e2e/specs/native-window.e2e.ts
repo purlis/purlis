@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $$, browser, expect } from "@wdio/globals";
+import { builtInAppearance } from "../builtInThemes.js";
 
 /**
  * **The native window follows the theme the page draws** (#2328, `src-tauri/src/nativewindow.rs`,
@@ -36,20 +37,22 @@ async function ask<T>(command: string, args?: Record<string, unknown>): Promise<
   return answer.value as T;
 }
 
-/** What the page draws now: its appearance and, from the default theme's dark and light it was
- *  handed (`purlis-dark`, `purlis-light`, #3034), the `window.background` of each. */
+/** What the page draws now: its appearance and, for the default theme, Purlis, the
+ *  `window.background` of its dark (as the window was handed it) and its light (as the core
+ *  resolves it: a pick of it asks the core, #3034). */
 async function drawn(): Promise<{ appearance: string; backgrounds: Record<string, string> }> {
-  return browser.execute(() => {
+  const page = await browser.execute(() => {
     const handed = (window as unknown as Record<string, unknown>).__CHARTER_AT_CREATION__ as {
       built_in?: Record<string, { appearance: string; values: Record<string, string> }>;
     };
     const backgrounds: Record<string, string> = {};
-    for (const pick of ["purlis-dark", "purlis-light"]) {
-      const theme = handed?.built_in?.[pick];
-      if (theme !== undefined) backgrounds[theme.appearance] = theme.values["window.background"];
-    }
+    // The default's dark, as the window was handed it.
+    const dark = handed?.built_in?.["purlis-dark"];
+    if (dark !== undefined) backgrounds[dark.appearance] = dark.values["window.background"];
     return { appearance: document.documentElement.style.colorScheme, backgrounds };
   });
+  page.backgrounds.light ??= builtInAppearance("purlis", "light").values["window.background"];
+  return page;
 }
 
 async function untilTheStripIsRead(): Promise<void> {
