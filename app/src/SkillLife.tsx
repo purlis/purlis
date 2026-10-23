@@ -402,6 +402,11 @@ function VersionRow({
                   {diff.text.split("\n").map((line, at) => (
                     <span
                       key={at}
+                      className={
+                        line.startsWith("+") && !line.startsWith("+++")
+                          ? "ui-text-strong"
+                          : undefined
+                      }
                       data-line={
                         line.startsWith("+") && !line.startsWith("+++")
                           ? "added"

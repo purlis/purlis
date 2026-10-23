@@ -8424,12 +8424,8 @@ button.show-more:focus-visible {
   white-space: pre;
 }
 
-/* Marked by weight and a line through, never a colour of their own: the diff reads in every
-   theme, and in a theme with no colour at all. */
-.skill-diff [data-line="added"] {
-  font-weight: 600;
-}
-
+/* Marked by weight (`ui-text-strong`) and a line through, never a colour of their own: the
+   diff reads in every theme, and in a theme with no colour at all. */
 .skill-diff [data-line="removed"] {
   text-decoration: line-through;
 }
