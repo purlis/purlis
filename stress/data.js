@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792783725139,
+  "lastUpdate": 1792791624337,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -12928,6 +12928,42 @@ window.BENCHMARK_DATA = {
             "value": 708.2,
             "unit": "MB",
             "extra": "median of 6 samples: 665.1, 694.2, 704.7, 711.6, 712.2, 805.9 MB; window 423.9 MB, session host 284.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "94ecf09dde8525ff9ef196d9f3c9d167d786707f",
+          "message": "Menu story waits for focus to land, and says where it went; regions read settled widths (#3082)\n\nThe menu stories wait up to 3 s for the keyboard to land on each row they name, and a miss\nnames the step and what has the focus. The layout-width scenario reads the regions once two\nreads a frame apart agree.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T00:34:15+04:00",
+          "tree_id": "62acf70972e5feaff0159a50b5f47366431464bd",
+          "url": "https://github.com/purlis/purlis/commit/94ecf09dde8525ff9ef196d9f3c9d167d786707f"
+        },
+        "date": 1792791621972,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1543.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1469.1, 1543.1, 1723.9 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 704.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 656.5, 687.1, 698.6, 710.1, 710.6, 799.4 MB; window 421.4 MB, session host 283 MB"
           }
         ]
       }
