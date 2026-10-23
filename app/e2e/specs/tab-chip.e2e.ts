@@ -484,14 +484,14 @@ describe("the chip a session's tab wears for its tasks", () => {
     await untilChip(mine[0], true);
     const after = await cells();
 
-    // Shared equally (Purlis Classic), no tab changes width for a chip; sized to their words
-    // (Purlis, #2914), the tab that wears it grows by it, and only what comes after it moves.
+    // Shared equally (Purlis Classic), no tab changes width or moves for a chip. Sized to their
+    // words (Purlis, #2914), the tab that wears it grows by it, and a strip at its room shares
+    // the difference out among its tabs, which shrink as their words allow: none is lost.
     const equal = await equalShare();
-    const holder = before[mine[0]].box.left;
     for (const [name, { box }] of Object.entries(before)) {
       const now = after[name];
       check(`${name} is gone from the strip`, now !== undefined, "is", true);
-      if (!equal && box.left >= holder) continue;
+      if (!equal) continue;
       check(`${name} changed width`, Math.abs(now.box.width - box.width), "atMost", 0.5);
       check(`${name} moved`, Math.abs(now.box.left - box.left), "atMost", 0.5);
     }
