@@ -206,11 +206,13 @@ fn nothing_is_handed_through_a_link_and_only_the_top_skill_md_is_the_skills() {
     .unwrap();
     std::os::unix::fs::symlink(outside.join("away"), skills.join("away")).unwrap();
     fs::create_dir_all(skills.join("pointed")).unwrap();
-    std::os::unix::fs::symlink(
-        outside.join("away/SKILL.md"),
-        skills.join("pointed/SKILL.md"),
+    fs::write(
+        outside.join("pointed.md"),
+        "---\nname: pointed\ndescription: Points elsewhere.\n---\n",
     )
     .unwrap();
+    std::os::unix::fs::symlink(outside.join("pointed.md"), skills.join("pointed/SKILL.md"))
+        .unwrap();
 
     let (args, _) = host_armed(Harness::ClaudeCode, &here);
     let handed = claude_folder(&args).join("skills");

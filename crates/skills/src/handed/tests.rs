@@ -35,7 +35,7 @@ fn a_plain_frontmatter_is_written_again_key_by_key_and_the_body_kept() {
 fn a_fence_inside_a_value_does_not_end_the_frontmatter() {
     let text = "---\nname: deploy\ndescription: \"one --- two\"\nallowed-tools: Bash\n---\nbody\n";
     let out = narrowed(text);
-    assert!(out.contains("description: \"one --- two\""), "{out}");
+    assert!(out.contains("description: one --- two\n"), "{out}");
     assert!(out.ends_with("---\nbody\n"), "{out}");
     // A `---` that is not alone on its line is no fence: the frontmatter never ends.
     assert_eq!(
