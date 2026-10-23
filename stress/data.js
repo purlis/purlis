@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792744204697,
+  "lastUpdate": 1792745209924,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6034,6 +6034,40 @@ window.BENCHMARK_DATA = {
             "value": 379,
             "unit": "MB",
             "extra": "median of 6 samples: 381, 393.3, 384, 376, 377.1, 266.5 MB; window 174 MB, session host 204.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide",
+            "email": "aaron.yor@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "19ef01ff9ae19348bd81a15661b07e2a2b1fcf74",
+          "message": "Cargo.lock: move clipboard-win off a yanked release (#3065)\n\nclipboard-win 5.4.1 is yanked, and cargo-deny denies yanked crates.\n5.4.3 is the patch release after it.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T07:41:38Z",
+          "url": "https://github.com/purlis/purlis/commit/19ef01ff9ae19348bd81a15661b07e2a2b1fcf74"
+        },
+        "date": 1792745207334,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1017,
+            "unit": "MB",
+            "extra": "median of 3 samples: 946, 1017, 1036 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 373.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 341.5, 360.9, 389.5, 386.7, 387.7, 201.1 MB; window 202.9 MB, session host 170.2 MB"
           }
         ]
       }
