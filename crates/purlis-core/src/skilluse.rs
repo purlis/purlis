@@ -431,7 +431,7 @@ pub fn stats(runs: &[Run], by: By) -> Vec<Stats> {
         .map(|(group, totals)| Stats { group, totals })
         .collect();
     // Stable, so groups with as many runs keep the map's order.
-    rows.sort_by(|a, b| b.totals.runs.cmp(&a.totals.runs));
+    rows.sort_by_key(|row| std::cmp::Reverse(row.totals.runs));
     rows
 }
 
