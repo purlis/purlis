@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792745209924,
+  "lastUpdate": 1792745230848,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -12426,6 +12426,40 @@ window.BENCHMARK_DATA = {
             "value": 721.4,
             "unit": "MB",
             "extra": "median of 6 samples: 669.3, 713.2, 718.3, 724.5, 725.3, 802.1 MB; window 415.6 MB, session host 306.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide",
+            "email": "aaron.yor@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "19ef01ff9ae19348bd81a15661b07e2a2b1fcf74",
+          "message": "Cargo.lock: move clipboard-win off a yanked release (#3065)\n\nclipboard-win 5.4.1 is yanked, and cargo-deny denies yanked crates.\n5.4.3 is the patch release after it.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T07:41:38Z",
+          "url": "https://github.com/purlis/purlis/commit/19ef01ff9ae19348bd81a15661b07e2a2b1fcf74"
+        },
+        "date": 1792745228941,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1622.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1509.8, 1622.7, 1748.3 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 689.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 665.7, 685, 689.2, 689.3, 690.1, 783.8 MB; window 408.7 MB, session host 280.1 MB"
           }
         ]
       }
