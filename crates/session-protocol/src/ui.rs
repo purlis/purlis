@@ -610,6 +610,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_restore",
     "skill_grant",
     "skill_turn",
+    // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
+    // and naming its owners. Each is one commit to the project, the person's own press in their
+    // window.
+    "skill_revert",
+    "skill_lifecycle",
+    "skill_owners",
     // Skill sources (#2773): each reaches a git repository the person named, a private one with
     // a credential read from a vault, and an install or an update is one commit to the project.
     // The person's own press in their window, never a link's.
@@ -1007,8 +1013,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_record",
     "set_dismissed",
     "show_window_holding",
+    "skill_diff",
     "skill_lint",
     "skill_move_needs_grant",
+    "skill_page",
     "skill_runs",
     "skill_studio",
     "skill_studio_on",
