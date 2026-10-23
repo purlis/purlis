@@ -3,7 +3,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { useFocusVisible } from "react-aria";
 import { AnchoredTooltip, onTooltipEscape, TOOLTIP_CLOSE_DELAY } from "../tooltip/Tooltip";
 
 /**
@@ -19,6 +18,15 @@ import { AnchoredTooltip, onTooltipEscape, TOOLTIP_CLOSE_DELAY } from "../toolti
  * replaced.
  */
 export const TIP_AFTER_MS = 600;
+
+/** Every key the window has heard, counted on its capture phase once a menu row is drawn. */
+let keysHeard = 0;
+let listening = false;
+function listenForKeys() {
+  if (listening) return;
+  listening = true;
+  window.addEventListener("keydown", () => (keysHeard += 1), { capture: true });
+}
 
 /**
  * Whether the keyboard or the pointer has **rested** on a menu's row, and the two handlers that
@@ -39,12 +47,12 @@ export function useRested(has: boolean): {
   const soon = useRef(0);
   const later = useRef(0);
   const held = useRef(false);
-  // Whether the last input was a key (or none yet) rather than the pointer.
-  const { isFocusVisible } = useFocusVisible();
-  const byKeys = useRef(isFocusVisible);
+  // How many keys the window had heard when the row was drawn.
+  const keysAtFirst = useRef(-1);
   useEffect(() => {
-    byKeys.current = isFocusVisible;
-  }, [isFocusVisible]);
+    listenForKeys();
+    keysAtFirst.current = keysHeard;
+  }, []);
   const wake = useCallback(() => {
     window.clearTimeout(soon.current);
     window.clearTimeout(later.current);
@@ -55,11 +63,12 @@ export function useRested(has: boolean): {
   const onFocus = useCallback(
     (event?: unknown) => {
       if (!has) return;
-      // **Only a person's rest.** A menu the pointer opened puts the keyboard on its first row by
-      // itself; that is no rest, and a tooltip it raised would take the Escape meant for the menu.
-      // A row the pointer is on, or one the keys reached, is.
+      // **Only a person's rest.** A menu puts the keyboard on its first row by itself as it
+      // opens; that is no rest, and a tooltip it raised would take the Escape meant for the
+      // menu. A row the pointer is on, or one a key moved to after the menu came, is.
       const row = (event as { currentTarget?: unknown } | undefined)?.currentTarget;
-      if (!byKeys.current && row instanceof Element && !row.matches(":hover")) return;
+      const hovered = row instanceof Element && row.matches(":hover");
+      if (!hovered && keysHeard === keysAtFirst.current) return;
       window.clearTimeout(soon.current);
       window.clearTimeout(later.current);
       soon.current = window.setTimeout(() => setRested(true), TIP_AFTER_MS);

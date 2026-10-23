@@ -401,17 +401,13 @@ describe("a menu on screen", () => {
     expect(below).toHaveAccessibleDescription(`${NAME} started no chat that is still running.`);
   });
 
-  it("raises no row's note for the focus a pointer-opened menu puts on a row by itself", async () => {
+  it("raises no row's note for the focus a menu puts on a row as it opens", async () => {
     aMenu();
     const menu = await open();
     const pinned = within(menu).getByRole("menuitemcheckbox", { name: "Pinned" });
     vi.useFakeTimers();
     try {
-      // The last input was the pointer, and the pointer is not on the row.
-      act(() => {
-        fireEvent.pointerDown(menu, { pointerType: "mouse" });
-        fireEvent.pointerUp(menu, { pointerType: "mouse" });
-      });
+      // No key since the menu came, and the pointer is not on the row: the menu's own focus.
       act(() => pinned.focus());
       act(() => {
         vi.advanceTimersByTime(TIP_AFTER_MS * 2);
@@ -419,9 +415,6 @@ describe("a menu on screen", () => {
       expect(pinned).toBeInTheDocument();
       expect(document.querySelector('[data-part="tip"]')).toBeNull();
     } finally {
-      // The last input is a key again, as the tests after this one start from.
-      fireEvent.keyDown(document.body, { key: "Tab" });
-      fireEvent.keyUp(document.body, { key: "Tab" });
       vi.useRealTimers();
     }
   });
@@ -432,6 +425,8 @@ describe("a menu on screen", () => {
     const pinned = within(menu).getByRole("menuitemcheckbox", { name: "Pinned" });
     vi.useFakeTimers();
     try {
+      // A key moved the keyboard here, as a person's does.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       act(() => pinned.focus());
       act(() => {
         vi.advanceTimersByTime(TIP_AFTER_MS - 1);
@@ -451,6 +446,8 @@ describe("a menu on screen", () => {
 
       // It goes a moment after the keyboard leaves the row: time for the pointer to cross onto
       // it, which keeps it (WCAG 1.4.13, hoverable).
+      // A key moved the keyboard here, as a person's does.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       act(() => within(menu).getByRole("menuitem", { name: "Rename…" }).focus());
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY);
@@ -466,6 +463,8 @@ describe("a menu on screen", () => {
     const menu = await open();
     vi.useFakeTimers();
     try {
+      // A key moved the keyboard here, as a person's does.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       act(() => within(menu).getByRole("menuitemcheckbox", { name: "Pinned" }).focus());
       act(() => {
         vi.advanceTimersByTime(TIP_AFTER_MS);
@@ -474,6 +473,8 @@ describe("a menu on screen", () => {
       expect(tip).not.toBeNull();
       // The pointer leaves the row for the note: the row loses the keyboard, the note stays.
       fireEvent.pointerEnter(tip as Element);
+      // A key moved the keyboard here, as a person's does.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       act(() => within(menu).getByRole("menuitem", { name: "Rename…" }).focus());
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY * 10);
@@ -494,6 +495,8 @@ describe("a menu on screen", () => {
     const menu = await open();
     vi.useFakeTimers();
     try {
+      // A key moved the keyboard here, as a person's does.
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       act(() => within(menu).getByRole("menuitemcheckbox", { name: "Pinned" }).focus());
       act(() => {
         vi.advanceTimersByTime(TIP_AFTER_MS);
