@@ -69,7 +69,8 @@ use purlis_browser_engine::sigstore::Sigstore;
 use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
 use purlis_host::protocol::session::Exit;
 use purlis_host::{
-    BrowserNotStarted, Browsers, Download, FrameSink, LoginEnded, NotActed, NotTaken, Screen, ScreenEnded,
+    BrowserNotStarted, Browsers, Download, FrameSink, LoginEnded, NotActed, NotTaken, Screen,
+    ScreenEnded,
 };
 
 use crate::sandbox::browser_reach::{Bound, Lane, NewSites, ReachProxy, Site};

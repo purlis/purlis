@@ -1884,10 +1884,11 @@ impl Hosting {
                 .data_folders()
                 .map_err(crate::browsers::NotStarted::Failed)?
                 .join(&named);
-            let started = hosting
-                .inner
-                .browsers
-                .start(&data, reach.as_ref(), kept.as_ref(), &download);
+            let started =
+                hosting
+                    .inner
+                    .browsers
+                    .start(&data, reach.as_ref(), kept.as_ref(), &download);
             hosting.state().downloads.remove(&named);
             match started {
                 Ok(screen) => Ok((screen, data)),
