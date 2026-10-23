@@ -1457,6 +1457,7 @@ are no geometry token: they are the window's own family and its one monospace fa
 | `--focus-ring-width`    | 2px                                                          |
 | `--focus-ring-offset`   | 2px                                                          |
 | `--focus-ring-inset`    | -2px                                                         |
+| `--pane-border-width`   | 1px; the line around a pane, none in Purlis (#2914)          |
 | `--elevation-raised`    | 0 2px 8px                                                    |
 | `--elevation-overlay`   | 0 8px 24px                                                   |
 
@@ -1502,6 +1503,7 @@ engine's (`purlis_core::theme::geometry::STEPS`), which the published schema car
 | `focus-ring.width` | `--focus-ring-width` | 1 to 4 px | 2 | 2 |
 | `focus-ring.offset` | `--focus-ring-offset` | 0 to 4 px | 2 | 2 |
 | `focus-ring.inset` | `--focus-ring-inset` | -4 to 0 px | -2 | -2 |
+| `pane.border-width` | `--pane-border-width` | 0 to 2 px | 1 | 1 |
 | `elevation.raised-y` | `--elevation-raised` | 0 to 8 px at 14px | 2 | 2 |
 | `elevation.raised-blur` | `--elevation-raised` | 0 to 24 px at 14px | 8 | 8 |
 | `elevation.overlay-y` | `--elevation-overlay` | 0 to 16 px at 14px | 8 | 8 |

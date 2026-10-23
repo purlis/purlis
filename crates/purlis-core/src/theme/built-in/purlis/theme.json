@@ -226,6 +226,7 @@
         "window.gutter": 8,
         "panel.corner-radius": 12,
         "panel.border-width": 0,
+        "pane.border-width": 0,
         "line-height.body": 1.55,
         "elevation.raised-y": 0,
         "elevation.raised-blur": 0
@@ -410,6 +411,7 @@
         "window.gutter": 8,
         "panel.corner-radius": 12,
         "panel.border-width": 0,
+        "pane.border-width": 0,
         "line-height.body": 1.55,
         "elevation.raised-y": 0,
         "elevation.raised-blur": 0
@@ -595,6 +597,7 @@
         "window.gutter": 8,
         "panel.corner-radius": 12,
         "panel.border-width": 0,
+        "pane.border-width": 0,
         "line-height.body": 1.55,
         "elevation.raised-y": 0,
         "elevation.raised-blur": 0

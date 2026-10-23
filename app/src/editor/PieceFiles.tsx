@@ -72,6 +72,7 @@ import {
 } from "./imagePreview";
 import { motionReduced } from "../theme/motion";
 import { Button, ToggleButton } from "../ui/button/Button";
+import { editorToolbar, ToolbarFile } from "../ui/tabs/Tabs";
 
 export { ToYourEditor };
 
@@ -543,8 +544,8 @@ export function PieceFileTab({
   const ofABranch = !isPlaneRoot(cut);
   return (
     <div className="piece-file">
-      <header className="piece-files-head">
-        <code>{path}</code>
+      <header className="piece-files-head" {...editorToolbar}>
+        <ToolbarFile path={path} />
         <span className="piece-files-actions">
           <SourceToggle path={path} read={read} source={source} onSource={setSource} />
           {ofABranch && <ToYourEditor plane={plane} cut={cut} path={path} line={at.line} />}
@@ -707,8 +708,8 @@ export function PieceFilesTab({
             />
           ) : (
             <>
-              <header className="piece-files-head">
-                <code>{picked}</code>
+              <header className="piece-files-head" {...editorToolbar}>
+                <ToolbarFile path={picked} />
                 <span className="piece-files-actions">
                   <SourceToggle
                     path={picked}

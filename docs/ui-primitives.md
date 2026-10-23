@@ -765,6 +765,20 @@ the old classes until the select family moves (#2906).
 - **Stories hold it** (`Dialog.stories.tsx`): a form, Esc, a question, a dialog longer than the
   window with every field walked and never under the footer, and a list beside its details
   whose choice moves nothing, in Chromium and WebKit, with axe.
+## The session tabs are drawn by the tabs family's parts (#2914)
+
+The chat strip's tabs are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cell (its
+`data-variant`, `data-selected`, `data-hovered` for a mouse and `data-first`), `tabsPart` marks the
+column (`layout`), the strip and the panel under it (`body`), `tabPart` the label, the `×` and a
+count, and `editorToolbar` the bar over a file. `tabs.css` draws Purlis's docked tabs from those
+attributes; a theme's `tabs.*` parts reach the same ones (`crates/purlis-core/docs/themes.md`,
+Session tabs). The strip keeps its behaviour where it was: the roving focus, the drag, the
+tablist that owns the tabs (`StripTablist`) and the collapse into show-more (`fits.ts`, which
+now counts the theme's gap between tabs). Choosing a tab changes its colour and fill only
+(`tabs.guard.test.ts`; the Docked story measures every tab before and after each choice). The
+other tab strips (projects, workspaces, the activity tabs) move to the family with their own
+shell tickets.
+
 
 ## The control classes
 

@@ -22,6 +22,7 @@ import { TabBrowsers, type BrowserShown } from "./ChatBrowsersShown";
 import { REGION_CHROME } from "./RegionFrame";
 import {
   chatOf,
+  contentsOf,
   panesOf,
   shownIn,
   taskShownIn,
@@ -33,6 +34,8 @@ import { TabTasks, type Place as TaskPlace } from "./TabChip";
 import { SkillRunChip } from "./SkillRunChip";
 import { type Ended, type Needing } from "./tabTasks";
 import { StripTablist } from "./StripTablist";
+import { TabCell, tabsPart, type TabVariant } from "./ui/tabs/Tabs";
+import { isFileView } from "./pieceViews";
 import { chipSays, WRAPPING_UP, WrappingUp } from "./NeedsYou";
 import { NONE_RESTORING, RESTORING } from "./restoringChats";
 import { useTabStop } from "./roving";
@@ -59,6 +62,16 @@ export const NO_ENDED: readonly Ended[] = [];
  */
 function chatShownBy(tabs: Tabs, id: number): number | undefined {
   return taskShownIn(tabs, id) ?? chatOf(tabs, id);
+}
+
+/**
+ * **What a tab holds, as the tabs family draws it** (#2914): a chat, a view, or one file in an
+ * editor, whose tab joins the editor's toolbar under it.
+ */
+function variantOf(tabs: Tabs, id: number): TabVariant {
+  const lead = contentsOf(tabs, id)[0]?.content;
+  if (lead?.kind !== "view") return "chat";
+  return isFileView(lead.view) ? "file" : "view";
 }
 
 /** A chat tab's tooltip: where a handed-off chat came from, and the work item it works on. */
@@ -142,6 +155,9 @@ export function ChatStrip({
   return (
     <header
       className="bar"
+      // The strip the tabs sit in (`ui/tabs`): docked on the content panel under it, or a strip
+      // of its own, as the theme says.
+      {...tabsPart("strip")}
       {...{ [REGION_CHROME]: "" }}
       data-colour={colourOf(ofWorkspace) ?? undefined}
       style={tintOf(ofWorkspace)}
@@ -210,10 +226,13 @@ export function ChatStrip({
                          at the strip's left edge, and fixed: it is not dragged, and nothing is
                          dropped on it. Pressed, it brings the chat forward to watch it work;
                          it stays a chip while it wraps up. Its menu still has Cancel smart close. */
-                        <span
+                        <TabCell
                           className="tab chip"
                           ref={sortable.setNodeRef}
                           style={style}
+                          variant="background"
+                          selected={id === tabs.inFront}
+                          first={place === 0}
                           data-chip=""
                           data-wrapping-up=""
                         >
@@ -245,12 +264,17 @@ export function ChatStrip({
                               </button>
                             </Tooltip>
                           </RovingFocusGroup.Item>
-                        </span>
+                        </TabCell>
                       ) : (
-                        <span
+                        <TabCell
                           className="tab"
                           ref={sortable.setNodeRef}
                           style={style}
+                          variant={variantOf(tabs, id)}
+                          // Chosen changes its colour and fill, never its size: no tab moves.
+                          selected={id === tabs.inFront}
+                          // The first tab starts at the panel's edge, and flares on its right only.
+                          first={place === 0}
                           data-dragging={sortable.isDragging || undefined}
                           // A task's own tab (#1489): what its look is hung on.
                           data-task-tab={taskTabOf(id) === undefined ? undefined : ""}
@@ -452,7 +476,7 @@ export function ChatStrip({
                             onPress={press}
                           />
                           <Closer offer={by(`tab.close:${id}`)} onPress={press} />
-                        </span>
+                        </TabCell>
                       )}
                     </Menued>
                   )}

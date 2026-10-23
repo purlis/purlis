@@ -62,6 +62,7 @@ import { askOf, tokensOfLine, tokensSaid, type UsedAsk, type UsedReader } from "
 import { property } from "./theme/theme";
 import { fitCountsOn } from "./wholeWays";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { tabPart } from "./ui/tabs/Tabs";
 
 /** Each count's mark: its shape as it is drawn (`StateShown` draws the same four for a row). */
 const MARKS: Readonly<Record<TaskBucket, LucideIcon>> = {
@@ -568,7 +569,14 @@ function Chip({
             {TASK_BUCKETS.filter((bucket) => counts[bucket] > 0).map((bucket) => {
               const Mark = MARKS[bucket];
               return (
-                <span key={bucket} className="count" data-count={bucket} aria-hidden="true">
+                <span
+                  key={bucket}
+                  className="count"
+                  data-count={bucket}
+                  aria-hidden="true"
+                  // A count on a tab, which a theme's `tabs.count.*` reaches (`ui/tabs`).
+                  {...tabPart("count")}
+                >
                   <Mark style={{ color: `var(${property(TASK_BUCKET_DRAWN[bucket].token)})` }} />
                   {counts[bucket]}
                 </span>
