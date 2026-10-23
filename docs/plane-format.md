@@ -1385,6 +1385,24 @@ outside the project and removes it when the flow ends, so it adds none of them (
 - **Encoding details:** a skill's identity is its frontmatter `name`; the folder's name is where
   it lives. Files directly in `skills/` other than `<name>.toml` are not read.
 
+**The keys of a skill's `SKILL.md` frontmatter** (SK-8, #2771, ADR 0063 as amended
+2026-10-22). purlis adds no key of its own. It reads the frontmatter as YAML and hands a harness
+a `SKILL.md` it writes again from the keys below, never the skill's own text. A frontmatter that
+is not one mapping of plain names, that uses an anchor, an alias, a merge key or a tag, that sets
+a name twice, or that spells a widening key another way (`allowed_tools`, `allowedTools`) is
+handed to no chat, and the chat's tab says why. Every key not in the table is read by nothing and
+left out of what is handed.
+
+| Key | Neutral? | What purlis does with it |
+|---|---|---|
+| `name`, `description`, `arguments`, `argument-hint` | neutral | read by purlis on every harness (the listing, Use skill…), and handed on |
+| `disable-model-invocation` | neutral | manual-only: handed on to Claude Code; Codex's briefing names the skill and its file alone; opencode is handed the skill without its `description` |
+| `disallowed-tools`, `context` | narrows | handed on; applied where the harness applies them, and the badge says "narrowing not applied" elsewhere |
+| `agent` | narrows only as the harness's own | handed on only with `context: fork` and an agent the harness ships (Claude Code's `general-purpose`, `Explore`, `Plan`); left out otherwise, as a repo's or person's agent may carry its own permissions and hooks |
+| `when_to_use`, `user-invocable`, `model`, `effort`, `paths`, `shell`, `background` | neutral | handed on; the badge says where a harness ignores them |
+| `license`, `compatibility`, `metadata` | neutral | for a reader; handed on, never counted |
+| `allowed-tools`, `hooks` | **widens** | never handed on: left out of the `SKILL.md` purlis writes, and the badge says so. A harness or repo skill that sets either is marked as widening the chat |
+
 | Key of `skills/<name>.toml` | Type | Required / default | Meaning | Status | Source |
 |---|---|---|---|---|---|
 | `grant` | `"root"`, `"all"`, or a list of workspace names | optional, default `"root"` (also what a missing file says) | Where the project skill may be used: chats at the project's root only (`"root"`), every workspace's chats too (`"all"`), or the named workspaces' chats too. A workspace may turn a granted skill off, never on one it was not granted. Written by `purlis skill grant`; writing `"root"` removes the key, and the file when nothing else is left in it. Every other key in the file is kept as it is by a write. Any other value, or a file that is not TOML, is read as `"root"`, and the left-out line of a workspace's chat says why. A local project skill's is `skills.local/<name>.toml`, which Share moves with its folder. | experimental | ADR 0099 §2; `purlis_skills::grant_of`, `set_grant` |

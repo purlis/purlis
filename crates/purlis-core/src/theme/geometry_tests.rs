@@ -47,7 +47,7 @@ fn dark(tokens: Value, more: Value) -> Value {
 }
 
 fn classic_dark() -> &'static ResolvedTheme {
-    built_in("purlis-dark").expect("Classic's dark appearance")
+    classic().first()
 }
 
 // ---------------------------------------------------------------------------------------
@@ -165,7 +165,7 @@ fn a_geometry_value_outside_its_bound_refuses_the_theme_and_names_the_bound() {
              from 1 to 4 px",
         ]
     );
-    assert_eq!(loaded.theme.name, "Purlis Classic");
+    assert_eq!(loaded.theme.name, "Purlis");
 }
 
 #[test]

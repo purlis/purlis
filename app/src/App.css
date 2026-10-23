@@ -831,7 +831,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The menu itself is the one menu style (`.ui-menu`, `primitives/controls.css`). Past about
+/* The menu itself is the menu family (`ui/menu/Menu.tsx`). Past about
    twenty hidden tabs it would run off the window; it scrolls instead (the one menu style caps
    it at the room the window has), and the palette remains the surface for finding one by name.
 
@@ -840,7 +840,7 @@ body {
    has a part that gives way to an ellipsis, so the one style's most width would wrap or clip
    them. */
 .more-menu {
-  --ui-menu-max: none;
+  --menu-max: none;
 }
 
 /* **The `×` is inline with the title, on one line** (charter-app#130). It was drawn below it,
@@ -1597,6 +1597,11 @@ button.show-more:focus-visible {
    frame before they have said theirs. Kept whether the controls are drawn or not, so the line
    does not move when the pointer comes over. */
 .pane-chips:has(.pane-crumbs) {
+  /* **A step closer on a breadcrumb's line** (#3034): the line is the narrowest thing a pane
+     draws, and in a theme that keeps a window gutter (Purlis's 8px) two panes in the narrowest
+     window leave it a few pixels short of the longest state word beside the items already cut
+     to their padding. The space between those items is what gives way, never the state. */
+  gap: var(--space-1);
   max-width: calc(100% - var(--pane-controls, calc(var(--size-control) * 2.75)) - var(--space-3));
   margin-right: calc(var(--pane-controls, calc(var(--size-control) * 2.75)) + var(--space-3));
   overflow: hidden;
@@ -2185,38 +2190,38 @@ button.show-more:focus-visible {
    (`.shown-state` does not shrink). */
 .tasks-menu {
   /* Wider than the one menu style's own: a row is a chat's name, its state and how long. */
-  --ui-menu-min: calc(var(--space-8) * 7);
-  --ui-menu-max: min(30rem, 90vw);
+  --menu-min: calc(var(--space-8) * 7);
+  --menu-max: min(30rem, 90vw);
   /* Never sideways (#1545): a line gives way with its own ellipsis and the footer wraps, so
      nothing is meant to be past the menu's edge; WebKit counted a few pixels at a row's end
      as overflow and drew a sideways scroll for them. */
   overflow-x: hidden;
 }
 
-/* A row is the menu's row (`.ui-menu-item`), on one line. */
+/* A row is the menu family's row, on one line. */
 .tasks-menu-row {
   white-space: nowrap;
 }
 
 /* A task stands one step in from the chat that asked for it (V100-41). */
 .tasks-menu-row[data-level="2"] {
-  --ui-menu-indent: var(--space-5);
+  --menu-indent: var(--space-5);
 }
 
 .tasks-menu-row[data-level="3"] {
-  --ui-menu-indent: calc(var(--space-5) * 2);
+  --menu-indent: calc(var(--space-5) * 2);
 }
 
 .tasks-menu-row[data-level="4"] {
-  --ui-menu-indent: calc(var(--space-5) * 3);
+  --menu-indent: calc(var(--space-5) * 3);
 }
 
 .tasks-menu-row[data-level="5"] {
-  --ui-menu-indent: calc(var(--space-5) * 4);
+  --menu-indent: calc(var(--space-5) * 4);
 }
 
 .tasks-menu-row[data-level="6"] {
-  --ui-menu-indent: calc(var(--space-5) * 5);
+  --menu-indent: calc(var(--space-5) * 5);
 }
 
 /* The mark of the chat the tab shows now, and the same width left empty on every other row,
@@ -2257,7 +2262,14 @@ button.show-more:focus-visible {
 
 /* **An ended task's report, opened under its line**: text, as its finished row in the Chats
    list draws it, wrapped and no taller than a few lines before it scrolls. */
+.tasks-menu-row:has(> .tasks-menu-report) {
+  flex-wrap: wrap;
+}
+
 .tasks-menu-report {
+  display: block;
+  flex: 1 0 100%;
+  box-sizing: border-box;
   max-height: 10rem;
   margin: 0 var(--space-3) var(--space-1) var(--space-6);
   padding: var(--space-2) var(--space-3);
@@ -2270,6 +2282,7 @@ button.show-more:focus-visible {
 }
 
 .tasks-menu-report .report-text {
+  display: block;
   margin: 0;
 }
 
@@ -2350,7 +2363,7 @@ button.show-more:focus-visible {
 /* And while the keyboard is on the line (#1551), so a keyboard user learns they are there: still
    out of the tab order, and the line's own keys and the Chats list's row menu are its ways. */
 .tasks-menu-row:hover .tasks-menu-places,
-.tasks-menu-row[data-highlighted] .tasks-menu-places,
+.tasks-menu-row[data-focused] .tasks-menu-places,
 .tasks-menu-row:focus-within .tasks-menu-places {
   display: inline-flex;
 }
@@ -5597,7 +5610,7 @@ button.show-more:focus-visible {
    The context menus (`Menus.tsx`)
    ---------------------------------------------------------------------------------------
 
-   Drawn in the one menu style (`.ui-menu`, `primitives/controls.css`), the show-more menu's and a tab's
+   Drawn by the menu family (`ui/menu/Menu.tsx`), the show-more menu's and a tab's
    chip's too, because they are one kind of thing and an operator who has learned one has
    learned the other. Its width is that style's as well: a row is a short verb, and a name too
    long for it gives way to an ellipsis. Nothing is written here. */
@@ -5930,8 +5943,8 @@ button.show-more:focus-visible {
   font-size: var(--font-size-xs);
 }
 
-/* What a row opens: a popover, drawn by the overlay surface (`.ui-popover`,
-   `primitives/overlays.css`, #1845). `.row-card` only caps its size. */
+/* What a row opens: a popover, drawn by the popover family (`ui/popover/popover.css`, the overlay
+   surface of #1845). `.row-card` only caps its size. */
 .row-card {
   max-width: 24rem;
   max-height: 28rem;
@@ -5945,7 +5958,7 @@ button.show-more:focus-visible {
 }
 
 /* **A chat row's card** (#1675): its name and state, then its facts, a word and a value a
-   line. The overlay surface (`.ui-popover`), at a width a fact's line fits in.
+   line. The popover family's surface, at a width a fact's line fits in.
 
    **Its words wear text roles** (#1920): the card is secondary lines (`ui-text-secondary` on
    it: who, where, what it runs on), under its name, the one strong body line, and each
@@ -8025,7 +8038,7 @@ button.show-more:focus-visible {
 
 /* "Move to…"'s menu: as wide as the longest file name it offers. */
 .ui-setting-move {
-  --ui-menu-min: calc(var(--space-8) * 7);
+  --menu-min: calc(var(--space-8) * 7);
 }
 
 .ui-setting-control {
@@ -8410,6 +8423,37 @@ button.show-more:focus-visible {
   border: 1px dashed var(--border-subtle);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
+}
+
+.skill-compat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+
+.skill-compat-widens {
+  color: var(--danger-text);
+}
+
+.skill-compat-badge > summary {
+  cursor: pointer;
+}
+
+.skill-compat-badge[data-fit="widens"] > summary {
+  color: var(--danger-text);
+}
+
+.skill-compat-badge ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-5);
+}
+
+.skill-lint li[data-level="warns"] {
+  color: var(--text-muted);
 }
 
 .skill-lint,

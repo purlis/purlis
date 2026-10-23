@@ -18,8 +18,8 @@ import { projectThemeChanged } from "../projectTheme";
 import { useTabStop } from "../roving";
 import { ask, putBack, putBackSoon, showWhileOn } from "../theme/hoverPreview";
 import {
-  BUILT_IN,
-  CLASSIC,
+  OLD_PICKS,
+  PURLIS,
   SYSTEM,
   moreContrastAsked,
   personAsked,
@@ -216,9 +216,9 @@ function answered(read: Read): read is ThemeGallery {
 }
 
 /** The card a choice names: a card by its id, of the level the choice names (the nearest of
- *  the name when it names none, as the cards are nearest first); Purlis Classic by any id one of
- *  its appearances has had, and by the old `system` id while no theme of the person's own is
- *  drawn (#2615). */
+ *  the name when it names none, as the cards are nearest first); Purlis by `purlis-dark`,
+ *  `purlis-light` or an id either had, and by the old `system` id while no theme of the person's
+ *  own is drawn (#2615, #3034). */
 function cardNamed(
   gallery: ThemeGallery,
   id: string | undefined | null,
@@ -229,9 +229,9 @@ function cardNamed(
     (one) => one.id === id && (from === null || one.level === null || one.level === from),
   );
   if (found !== undefined) return found;
-  const known = Object.prototype.hasOwnProperty.call(THEME_ALIASES, id) || id in BUILT_IN;
+  const known = Object.prototype.hasOwnProperty.call(THEME_ALIASES, id) || OLD_PICKS.includes(id);
   return known || (id === SYSTEM && gallery.theirs === null)
-    ? gallery.cards.find((one) => one.id === CLASSIC)
+    ? gallery.cards.find((one) => one.id === PURLIS)
     : undefined;
 }
 

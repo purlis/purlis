@@ -612,7 +612,6 @@ const DIALOGS: Opened[] = [
               manual: 1,
               most_skills: 30,
               most_chars: 6000,
-              manual_free: false,
               warns: "both",
             },
           }}
@@ -1352,16 +1351,17 @@ async function fromTheMenuOf(key: string, item: string) {
   await userEvent.click(await screen.findByRole("menuitem", { name: item }));
 }
 
-/** The dialogs open on the page: a dialog, an alert dialog, or a popover's content, which its
- *  popper wraps whatever role it has (a refused tab name's is an alert). */
+/** The dialogs open on the page: a dialog, an alert dialog, or a popover's surface, whatever
+ *  role what it holds has (a refused tab name's is an alert). */
 const openDialogs = () =>
   document.querySelectorAll(
-    '[role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper]',
+    '[role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper], ' +
+      '[data-scope="popover"][data-part="root"]',
   );
 
 /**
- * Every source file that draws a dialog: one that uses Radix's dialog, alert dialog or popover,
- * or writes the role itself. Read from the files, so a dialog added tomorrow is held here.
+ * Every source file that draws a dialog: one that uses Radix's dialog or alert dialog, the
+ * popover family's popovers (#2909), or writes the role itself. Read from the files, so a dialog added tomorrow is held here.
  */
 const FILES_WITH_DIALOGS = Object.keys(
   // Not `overlays/`, which draws none: it is Radix's packages under the window's own name.
@@ -1370,7 +1370,7 @@ const FILES_WITH_DIALOGS = Object.keys(
   .map((path) => path.slice("../".length))
   .filter((path) =>
     new RegExp(
-      String.raw`from "${RADIX_FROM}(?:alert-dialog|dialog|popover)"|role="(?:alert)?dialog"`,
+      String.raw`from "${RADIX_FROM}(?:alert-dialog|dialog|popover)"|from "(?:\.\.?\/)+ui\/popover\/Popover"|role="(?:alert)?dialog"`,
     ).test(readFileSync(join(process.cwd(), "src", path), "utf8")),
   )
   .sort();

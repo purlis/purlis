@@ -72,9 +72,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "YourRepos.tsx": [
     "<button className=\"welcome-link repo-card\">",
   ],
-  "references.tsx": [
-    "<button>",
-  ],
   "settings/RawToml.tsx": [
     "<button className=\"ui-settings-raw-file\">",
   ],

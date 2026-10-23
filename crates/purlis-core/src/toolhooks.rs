@@ -960,12 +960,12 @@ pub fn skill_started(hook: &Hook) -> Option<Box<crate::hookwire::SkillStarted>> 
     let (skill, started_by) = match start {
         SkillStart::Named(skill) => (skill, StartedBy::SkillTool),
         SkillStart::Reading(read) => {
+            let skills = crate::skills::readable_by_a_briefed_chat(hook.env);
             let cwd = hook
                 .payload
                 .get("cwd")
                 .and_then(Value::as_str)
                 .map_or(hook.cwd, Path::new);
-            let skills = crate::skills::readable_by_a_briefed_chat(hook.root, cwd, hook.env);
             let skill = purlis_skills::runs::started_by_a_read(&read, cwd, &skills)?;
             (skill.name.clone(), StartedBy::Read)
         }

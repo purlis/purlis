@@ -16,7 +16,7 @@ import {
   type YourTheme,
 } from "../bindings";
 import { putBack, showing } from "../theme/hoverPreview";
-import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, property } from "../theme/theme";
+import { DEFAULT_THEME, drawIn, inForce, property } from "../theme/theme";
 import type { LiveSetting } from "./groups";
 import { ReadOnlySaid } from "../ReadOnlyLine";
 import { THEME_CHAT, type ThemeChatAsk } from "./links";
@@ -29,6 +29,7 @@ import {
   MOST_KEPT,
 } from "./themeSpecimens";
 import { tipOf } from "../ui/tooltip/tooltip.testkit";
+import { PURLIS_LIGHT } from "../theme/handed.testkit";
 
 /**
  * **Settings › Theme's gallery** (#2331): a card per theme the core lists, the theme drawn live
@@ -40,7 +41,7 @@ import { tipOf } from "../ui/tooltip/tooltip.testkit";
 
 const PLANE = "/home/dev/plane";
 
-const LIGHT = BUILT_IN["purlis-light"];
+const LIGHT = PURLIS_LIGHT;
 
 function card(over: Partial<GalleryCard> & Pick<GalleryCard, "id" | "name">): GalleryCard {
   const from = over.from ?? "machine";

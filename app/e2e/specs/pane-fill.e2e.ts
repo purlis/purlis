@@ -6,6 +6,7 @@ import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { bringSideBack, putSideAway, sideIsAway } from "../sides.js";
+import { gutter } from "../gutter.js";
 
 /**
  * **A terminal fills the centre region, top to bottom** — with one pane, with a split, and
@@ -196,7 +197,8 @@ describe("the terminal in the centre region", () => {
       const under = height > 0 ? panel : document.querySelector('[data-testid="status-line"]');
       return under?.getBoundingClientRect().top ?? Number.NaN;
     });
-    expect(Math.abs(below - filled.centre.bottom)).toBeLessThanOrEqual(2);
+    // Flush in Purlis Classic, the theme's gutter apart in Purlis (#3034).
+    expect(Math.abs(below - filled.centre.bottom)).toBeLessThanOrEqual((await gutter()) + 2);
   });
 
   /**

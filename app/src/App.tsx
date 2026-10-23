@@ -91,7 +91,7 @@ import { enterSettings } from "./settings/entering";
 import { machineChanged, whenRecentSettled } from "./settings/thisMachine";
 import { useExtensionsOn } from "./extensionsOn";
 import { useProjectTheme } from "./projectTheme";
-import { drawTint } from "./theme/theme";
+import { drawTint, facesAfterTheFirstFrame } from "./theme/theme";
 import { useContributedPanels } from "./Panels";
 import { useTabStop } from "./roving";
 import { closeOnDelete } from "./tabKeys";
@@ -1330,13 +1330,15 @@ function App() {
     let gone = false;
     const frame = requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        if (!gone)
-          void commands
-            .firstFrame()
-            .then((why) => {
-              if (!gone && why) setSlowStart(why);
-            })
-            .catch(() => undefined);
+        if (gone) return;
+        void commands
+          .firstFrame()
+          .then((why) => {
+            if (!gone && why) setSlowStart(why);
+          })
+          .catch(() => undefined);
+        // The first frame is on screen: the theme's faces are asked for now (#3034).
+        facesAfterTheFirstFrame();
       }),
     );
     return () => {
@@ -2098,7 +2100,7 @@ function App() {
                               {/* Right-click is the third reader of the same catalogue
                                   (`Menus.tsx`). `asChild`, and on the tab and not the cell: the
                                   context-menu key opens a menu only on the trigger that has the
-                                  keyboard (`openFromTheKeyboard`), and that is the tab. */}
+                                  keyboard (`ContextMenu`'s keys, `ui/menu/ContextMenu.tsx`), and that is the tab. */}
                               <Menued
                                 on={{ on: "project", plane: project.plane }}
                                 offers={stripFound}

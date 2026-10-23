@@ -3,6 +3,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { readPng, type Pixels } from "../png.js";
+import { builtInAppearance } from "../builtInThemes.js";
 
 /**
  * **The theme specimen, against the real app** (#2330, `src-tauri/src/specimen.rs`).
@@ -27,7 +28,7 @@ async function specimen(appearance: "dark" | "light"): Promise<{ picture: Pictur
   const answer = await browser.executeAsync(
     (shown: string, done: (out: { ok?: unknown; trouble?: string }) => void) => {
       void window.__TAURI__.core
-        .invoke("theme_specimen", { theme: "purlis-classic", appearance: shown })
+        .invoke("theme_specimen", { theme: "purlis", appearance: shown })
         .then((ok) => done({ ok }))
         .catch((e: unknown) => done({ trouble: String(e) }));
     },
@@ -39,17 +40,9 @@ async function specimen(appearance: "dark" | "light"): Promise<{ picture: Pictur
 
 const pixels = (picture: Picture): Pixels => readPng(Buffer.from(picture.png, "base64"));
 
-/** The theme's own `surface.base`, as the window holds it, in `[r, g, b]`. */
-async function surfaceOf(name: string): Promise<number[]> {
-  const hex = await browser.execute((theme: string) => {
-    const given = (
-      window as unknown as Record<
-        string,
-        { built_in: { name: string; values: Record<string, string> }[] }
-      >
-    ).__CHARTER_AT_CREATION__;
-    return given.built_in.find((one) => one.name === theme)?.values["surface.base"] ?? "";
-  }, name);
+/** Purlis's own `surface.base` in `appearance`, as the core resolves it, in `[r, g, b]`. */
+function surfaceOf(appearance: string): number[] {
+  const hex = builtInAppearance("purlis", appearance).values["surface.base"];
   return [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
 }
 
@@ -73,10 +66,7 @@ describe("the theme specimen", () => {
       pixels(dark.picture).at(2, 2),
       pixels(light.picture).at(2, 2),
     ];
-    const [darkSurface, lightSurface] = [
-      await surfaceOf("purlis-dark"),
-      await surfaceOf("purlis-light"),
-    ];
+    const [darkSurface, lightSurface] = [surfaceOf("dark"), surfaceOf("light")];
     expect({ ground: darkGround, near: near(darkGround, darkSurface) }).toEqual({
       ground: darkGround,
       near: true,

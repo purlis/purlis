@@ -141,35 +141,28 @@ pub fn skill_sets_in(data: &Path) -> PathBuf {
 
 /// **The folder of links a chat in `root` is handed the plane's skills by**, laid out by the host
 /// before the chat is armed, where the Skill studio's flag is `on` and `kit` says where folders
-/// go ([`crate::skills::lay_out_for_chat`]). `None` otherwise, and for a set with no plane skill.
+/// go ([`crate::skills::lay_out_for_chat`]), each skill as `harness` reads it. `None` otherwise,
+/// and for a set with no plane skill.
 pub fn plane_skills_laid_out(
     on: bool,
     root: &Path,
     workspace: Option<&str>,
     persona: Option<&str>,
     kit: &Kit,
+    harness: Harness,
 ) -> Option<PathBuf> {
-    laid_out_on(
-        on,
-        root,
-        workspace,
-        persona,
-        kit,
-        crate::skills::Route::Plugin,
-        &[],
-    )
+    laid_out_on(on, root, workspace, persona, kit, harness, &[])
 }
 
-/// [`plane_skills_laid_out`] for a chat whose harness takes its skills by `route`, with `repo`
-/// the repo skills of the clone it works in (SK-6): a plane skill a narrower repo copy hides is
-/// not laid out.
+/// [`plane_skills_laid_out`] for a chat on `harness`, with `repo` the repo skills of the clone
+/// it works in (SK-6): a plane skill a narrower repo copy hides is not laid out.
 fn laid_out_on(
     on: bool,
     root: &Path,
     workspace: Option<&str>,
     persona: Option<&str>,
     kit: &Kit,
-    route: crate::skills::Route,
+    harness: Harness,
     repo: &[crate::skills::OutsideSkill],
 ) -> Option<PathBuf> {
     if !on {
@@ -183,14 +176,14 @@ fn laid_out_on(
         persona,
         built_in.as_deref(),
         sets,
-        route,
+        harness,
         repo,
     )
 }
 
-/// **The skills a chat's persona names that it starts without** (SK-5, #2768), where the Skill
-/// studio's flag is `on`: the chat in `root` started in `cwd` on `harness` as `persona`, whose
-/// environment is `env` ([`crate::skills::not_here`]). What its tab's Notice says. `None`
+/// **The skills a chat starts without** (SK-5, #2768; SK-8, #2771), where the Skill studio's
+/// flag is `on`: the chat in `root` started in `cwd` on `harness` as `persona` (or on none),
+/// whose environment is `env` ([`crate::skills::not_here`]). What its tab's Notice says. `None`
 /// otherwise, and where it has every one.
 pub fn skills_not_here(
     on: bool,
@@ -204,7 +197,7 @@ pub fn skills_not_here(
     if !on {
         return None;
     }
-    let (harness, persona) = (harness?, persona?);
+    let harness = harness?;
     let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
     let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
     crate::skills::not_here(
@@ -708,7 +701,7 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         workspace.as_deref(),
         skills_persona,
         kit,
-        harness.skills(),
+        harness,
         &repo,
     );
     let skills = on.then_some(crate::skills::PlaneSkills {

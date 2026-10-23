@@ -401,9 +401,11 @@ fn hue_of_any(hex: &str) -> Option<f64> {
 ///
 /// **Every tint holds [`APART`]**: the accent and the accent-hued tokens beside danger apart
 /// from the danger colour, and Allow's edge from Keep blocked's. At a hue that would bring them
-/// closer, the tint keeps the hue and gives less colour ([`apart_chroma`]), so a red workspace
-/// stays red and stays apart from danger. A theme with no such amount is drawn untinted in that
-/// colour.
+/// closer, the tint keeps the hue and gives those tokens less colour ([`apart_chroma`]), so they
+/// stay apart from danger; where no amount holds them apart, they are drawn untinted. **Only the
+/// tokens a rule of [`APART`] names are held** ([`chroma_for`], #3034): the strip's shades and
+/// every other token the recipe turns keep the hue's full colour, so a red workspace keeps a red
+/// strip in every theme.
 pub fn tinted(theme: &ResolvedTheme, colour: &str) -> ResolvedTheme {
     match theme.tint.hue(colour) {
         Some(hue) => tinted_at(theme, hue),
@@ -418,16 +420,36 @@ pub(super) fn tinted_at(theme: &ResolvedTheme, hue: f64) -> ResolvedTheme {
     if tokens.is_empty() {
         return theme.clone();
     }
-    let Some(most) = apart_chroma(theme, hue) else {
-        return theme.clone();
-    };
+    let most = apart_chroma(theme, hue);
     let mut tint = theme.clone();
     for token in tokens {
+        let Some(chroma) = chroma_for(token, most) else {
+            continue;
+        };
         if let Some(value) = tint.values.get_mut(token) {
-            *value = tint_hex_within(value, hue, most);
+            *value = tint_hex_within(value, hue, chroma);
         }
     }
     tint
+}
+
+/// **Whether `token` is a side of a rule of [`APART`]**: the tokens a tint gives less colour to
+/// hold the rules.
+pub fn held_apart(token: &str) -> bool {
+    APART
+        .iter()
+        .any(|rule| rule.token == token || rule.from == token)
+}
+
+/// **The most chroma a tint gives `token`** when [`apart_chroma`] answers `most` (#3034): `most`
+/// for a side of a rule of [`APART`] (`None`, untinted, where no amount holds them), and no limit
+/// for every other token, which no rule measures. `tint.ts`' `chromaFor` is the same.
+pub fn chroma_for(token: &str, most: Option<f64>) -> Option<f64> {
+    if held_apart(token) {
+        most
+    } else {
+        Some(f64::INFINITY)
+    }
 }
 
 /// `theme` with those of `only` its recipe turns drawn at `hue` and at most `most` chroma, as
@@ -439,17 +461,17 @@ pub(super) fn turned_at(
     only: &[&'static str],
 ) -> ResolvedTheme {
     let mut tint = theme.clone();
-    let Some(most) = most else {
-        return tint;
-    };
     for token in theme
         .tint
         .tabs()
         .iter()
         .filter(|token| only.contains(token))
     {
+        let Some(chroma) = chroma_for(token, most) else {
+            continue;
+        };
         if let Some(value) = tint.values.get_mut(token) {
-            *value = tint_hex_within(value, hue, most);
+            *value = tint_hex_within(value, hue, chroma);
         }
     }
     tint

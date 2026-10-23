@@ -116,6 +116,8 @@
 @import "./ui/status/status.css" layer(components);
 @import "./primitives/overlays.css" layer(components);
 @import "./ui/tooltip/tooltip.css" layer(components);
+@import "./ui/popover/popover.css" layer(components);
+@import "./ui/menu/menu.css" layer(components);
 @import "./primitives/text.css" layer(components);
 @import "./theme/forced-colors.css" layer(forced);
 

@@ -25,10 +25,6 @@ pub const POINTER: &str = "⬢ **This chat's skills** are reached through purlis
 /// The most skills one `skill_find` answers with.
 pub(crate) const MOST_FOUND: usize = 10;
 
-/// The most bytes of a `SKILL.md` a load hands back. A skill is instructions to read, and one
-/// past this is no skill a chat should be handed whole.
-const MOST_BYTES: u64 = 256 * 1024;
-
 /// The most other files of a skill's folder a load names.
 const MOST_FILES: usize = 200;
 
@@ -75,29 +71,16 @@ fn joined(words: &[String]) -> String {
     }
 }
 
-/// **What the `SKILL.md` text `text` narrows**, from its frontmatter ([`crate::frontmatter`]):
-/// `disallowed-tools`, a comma-separated list, and `context: fork`.
+/// **What the `SKILL.md` text `text` narrows**, from its frontmatter read as YAML
+/// ([`crate::handed`]): the tools `disallowed-tools` takes away, and `context: fork`. Nothing
+/// for a frontmatter purlis cannot read, which it hands to no chat.
 pub(crate) fn narrowing(text: &str) -> Narrowing {
-    let pairs = crate::frontmatter(text);
-    let value = |key: &str| {
-        pairs
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.as_str())
-    };
-    Narrowing {
-        tools_taken: value("disallowed-tools")
-            .map(|tools| {
-                tools
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|tool| !tool.is_empty())
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default(),
-        fork: value("context").is_some_and(|context| context.eq_ignore_ascii_case("fork")),
-    }
+    crate::handed::parse(text)
+        .map(|read| Narrowing {
+            tools_taken: read.tools_taken(),
+            fork: read.fork(),
+        })
+        .unwrap_or_default()
 }
 
 /// **The skill of `set` named `name`**: by its whole name, or by the name after a harness's
@@ -159,36 +142,36 @@ pub struct Loaded {
     pub narrowing: Narrowing,
 }
 
-/// **Loads `effective`, a skill of a chat's set**: its `SKILL.md` and the other files of its
-/// folder. Nothing is followed through a link: a `SKILL.md` that is a link is refused, and a link
-/// inside the folder is not named, so a load never hands over a file outside the skill. Refused,
-/// with why, for a `SKILL.md` that cannot be read or is past [`MOST_BYTES`].
-pub fn load(effective: &Effective) -> Result<Loaded, String> {
+/// **Loads `effective`, a skill of a chat's set, as a harness that reads `honours` is handed
+/// it**: the `SKILL.md` purlis writes for it ([`crate::handed_text`]), so a load shows what
+/// every other route hands, and the other files of its folder. Nothing is followed through a
+/// link ([`crate::handed::read_skill_md`]): a `SKILL.md` or a folder that is a link is refused,
+/// and a link inside the folder is not named, so a load never hands over a file outside the
+/// skill. Refused, with why, for a `SKILL.md` purlis cannot read or hands to no chat.
+pub fn load(effective: &Effective, honours: &crate::Honours) -> Result<Loaded, String> {
     let path = &effective.skill.path;
     let name = &effective.skill.name;
-    let unreadable = |why: String| format!("the skill {name} could not be loaded: {why}");
-    let meta = std::fs::symlink_metadata(path).map_err(|e| unreadable(e.to_string()))?;
-    if !meta.is_file() {
-        return Err(unreadable("its SKILL.md is not a plain file".to_owned()));
-    }
-    if meta.len() > MOST_BYTES {
-        return Err(unreadable(format!(
-            "its SKILL.md is larger than {} KiB",
-            MOST_BYTES / 1024
-        )));
-    }
-    let text = std::fs::read_to_string(path).map_err(|e| unreadable(e.to_string()))?;
-    let mut files = Vec::new();
-    if let Some(folder) = path.parent() {
-        others(folder, path, 0, &mut files);
-    }
-    files.sort();
-    files.truncate(MOST_FILES);
+    let refused = |why: crate::Refusal| format!("the skill {name} could not be loaded: {why}");
+    let own = crate::handed::read_skill_md(path).map_err(refused)?;
+    let text = crate::handed_text(&own, honours).map_err(refused)?;
     Ok(Loaded {
         narrowing: narrowing(&text),
         text,
-        files,
+        files: other_files(path),
     })
+}
+
+/// **Every other file of the folder of the skill whose `SKILL.md` is at `skill_md`**, by its
+/// whole path, in order: plain files only, never one reached through a link, to [`MOST_DEPTH`]
+/// and at most [`MOST_FILES`]. What a load names, and what the lint reads (SK-8).
+pub fn other_files(skill_md: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if let Some(folder) = skill_md.parent() {
+        others(folder, skill_md, 0, &mut files);
+    }
+    files.sort();
+    files.truncate(MOST_FILES);
+    files
 }
 
 /// Every plain file under `dir` but `skill_md`, into `files`, to [`MOST_DEPTH`] and at most
@@ -206,7 +189,9 @@ fn others(dir: &Path, skill_md: &Path, depth: usize, files: &mut Vec<PathBuf>) {
         let Ok(meta) = std::fs::symlink_metadata(&path) else {
             continue;
         };
-        if meta.is_file() && path != skill_md {
+        // Only the top `SKILL.md` is the skill's: a nested one is no file of it a harness is
+        // handed, so it never reads as a skill of its own.
+        if meta.is_file() && path != skill_md && path.file_name() != Some(crate::FILE.as_ref()) {
             files.push(path);
         } else if meta.is_dir() && depth + 1 < MOST_DEPTH {
             others(&path, skill_md, depth + 1, files);

@@ -8,9 +8,11 @@ repository's `docs/design-system.md`, and its schema is `docs/schema/theme.v2.sc
 
 ## Where a theme comes from
 
-- **Built in**: Purlis Classic, `purlis-classic`, with a dark and a light appearance. The ids
-  its appearances have had (`purlis-dark`, `purlis-light`, `charter-dark`, `charter-light`)
-  still name it.
+- **Built in**: Purlis, `purlis`, the default, with a dark, a light and a high-contrast dark
+  appearance; and Purlis Classic, `purlis-classic`, the alternative, with a dark and a light
+  appearance. Where nothing chose a theme, Purlis is drawn. `purlis-dark` and `purlis-light`
+  (and `charter-dark`, `charter-light`) name Purlis's dark and light, as `system` follows the
+  system with Purlis; only `purlis-classic` names Classic.
 - **Your own**, at the machine level: `theme.json` in purlis's config folder
   (`$PURLIS_CONFIG_HOME`, else `$XDG_CONFIG_HOME`, else `~/.config`, then `purlis/`), whose id
   is `mine`, and each theme folder in that folder's `themes/`, whose id is `machine:<folder>`.
@@ -245,15 +247,19 @@ size alike, so what fits at the default text size fits at every one.
 ## Component parts
 
 A token reaches every control that draws from it. A **component part** reaches one named part of
-one component family: the button's root, its label, its icon. A theme sets parts in a top-level
-`parts` object of `theme.json`, for every appearance, beside its tokens:
+one component family: the button's root, its label, its icon; a menu's row and its words, its key
+and its tick; the surface a popover and a menu stand on, the rule between a menu's groups, a
+popover's filter row, list and footer. A theme sets parts in a top-level `parts` object of
+`theme.json`, for every appearance, beside its tokens:
 
 ```json
 "parts": {
   "button.root.corner-radius": "full",
   "button.root.border-width": 0,
   "button.root.primary.hover.fill": "accent.base",
-  "button.label.font-weight": 500
+  "button.label.font-weight": 500,
+  "menu.root.hover.fill": "list.selected",
+  "popover.root.menu.corner-radius": 10
 }
 ```
 
@@ -275,6 +281,8 @@ an unknown token is.
 | `field` (since version 3) | `root` (`gap`: the room between what it stacks), `label` (`text`, `font-size`, `font-weight`), `help` (`text`, `font-size`), `error` (`text`, `font-size`) | none |
 | `text-input` (since version 3) | `root` (every property but `font-weight`: the box for one line, and the words typed in it), `icon` (`text`: a filter's or a search's glass) | none |
 | `textarea` (since version 3) | `root` (every property but `gap`, `font-weight` and `height`: a textarea is as tall as its lines) | none |
+| `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`: the surface a popover and a menu stand on), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` |
+| `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -548,7 +556,7 @@ Nothing there is committed, and **no chat writes it**: the app that started a ch
 chat's drafts, in its folder, when the chat asks. In a chat purlis started:
 
 - `purlis theme draft <folder>` starts the draft (a copy of the workspace's or the project's
-  theme folder of that name, or a new theme that extends Purlis Classic) and makes a working copy
+  theme folder of that name, or a new theme that extends Purlis, the default) and makes a working copy
   for the chat to edit, in its temporary folder under the chat's id (`--from <dir>` names
   another), made again from the draft whenever the draft is made anew;
 - `purlis theme draft <folder> --save` hands the working copy's `theme.json` and icon sets to the

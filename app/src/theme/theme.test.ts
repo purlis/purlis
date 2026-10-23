@@ -5,9 +5,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { classicAppearances } from "./handed.testkit";
 import {
   BUILT_IN,
   CLASSIC as CLASSIC_ID,
+  CLASSIC_THEME,
   DEFAULT_THEME,
   PARTS_STYLE,
   TOKENS,
@@ -50,6 +52,10 @@ const [dark, light] = (
   }
 ).appearances;
 
+/** Purlis Classic's appearances, as the core resolves them (`handed.testkit.ts`): what the
+ *  tests of how a theme is drawn are written against. */
+const [CLASSIC_DARK, CLASSIC_LIGHT] = classicAppearances().map((one) => one.theme as Theme);
+
 describe("the themes the core hands the window", () => {
   it("name Purlis Classic by the engine's own id, which draws its first appearance", () => {
     const engine = readFileSync(
@@ -57,21 +63,24 @@ describe("the themes the core hands the window", () => {
       "utf8",
     );
     expect(engine).toContain(`pub const CLASSIC: &str = "${CLASSIC_ID}";`);
-    expect(DEFAULT_THEME).toBe(BUILT_IN["purlis-dark"]);
+    expect(CLASSIC_THEME).toBe(BUILT_IN[CLASSIC_ID]);
+    expect(CLASSIC_THEME).toEqual(CLASSIC_DARK);
   });
 
   it("are the core's built-ins, complete, the window coming up in the dark one", () => {
-    expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-dark", "purlis-light"]);
-    expect(DEFAULT_THEME).toBe(BUILT_IN["purlis-dark"]);
+    expect(Object.keys(BUILT_IN).sort()).toEqual(["purlis-classic", "purlis-dark"]);
+    // The window comes up in the default, Purlis's dark, as the core hands it (#3034).
+    expect([DEFAULT_THEME.name, DEFAULT_THEME.appearance]).toEqual(["Purlis", "dark"]);
+    for (const token of TOKENS) expect(DEFAULT_THEME.values[token], token).toBeTruthy();
     for (const name of Object.keys(BUILT_IN))
       for (const token of TOKENS) expect(BUILT_IN[name].values[token], token).toBeTruthy();
-    expect(BUILT_IN["purlis-light"].values["surface.base"]).toBe(light.tokens["surface.base"]);
+    expect(CLASSIC_LIGHT.values["surface.base"]).toBe(light.tokens["surface.base"]);
   });
 
   it("are told apart by value, not by identity, so an answer again draws nothing again", () => {
     const again: Theme = { ...DEFAULT_THEME, values: { ...DEFAULT_THEME.values } };
     expect(sameTheme(again, DEFAULT_THEME)).toBe(true);
-    expect(sameTheme(BUILT_IN["purlis-light"], DEFAULT_THEME)).toBe(false);
+    expect(sameTheme(CLASSIC_LIGHT, DEFAULT_THEME)).toBe(false);
     again.values["surface.base"] = light.tokens["surface.base"];
     expect(sameTheme(again, DEFAULT_THEME)).toBe(false);
   });
@@ -79,7 +88,7 @@ describe("the themes the core hands the window", () => {
 
 describe("one theme, two consumers", () => {
   it("writes every token as a custom property", () => {
-    const written = cssVariables(BUILT_IN["purlis-dark"]);
+    const written = cssVariables(CLASSIC_DARK);
     expect(Object.keys(written)).toHaveLength(TOKENS.length);
     expect(written["--surface-base"]).toBe(dark.tokens["surface.base"]);
     expect(written["--terminal-ansi-bright-white"]).toBe(dark.tokens["terminal.ansi.bright-white"]);
@@ -91,7 +100,7 @@ describe("one theme, two consumers", () => {
   });
 
   it("builds xterm's object with xterm's own key names", () => {
-    const object = xtermTheme(BUILT_IN["purlis-dark"]);
+    const object = xtermTheme(CLASSIC_DARK);
     expect(object.background).toBe(dark.tokens["terminal.background"]);
     expect(object.foreground).toBe(dark.tokens["terminal.foreground"]);
     expect(object.cursorAccent).toBe(dark.tokens["terminal.cursor-accent"]);
@@ -116,7 +125,7 @@ describe("one theme, two consumers", () => {
   });
 
   it("hands xterm Purlis Classic's cursor, line height and bold as xterm's own defaults (#2327)", () => {
-    for (const theme of [BUILT_IN["purlis-dark"], BUILT_IN["purlis-light"]])
+    for (const theme of [CLASSIC_DARK, CLASSIC_LIGHT])
       expect(xtermLook(theme)).toEqual({
         cursorStyle: "block",
         cursorBlink: false,
@@ -145,7 +154,7 @@ describe("one theme, two consumers", () => {
   });
 
   it("colours the find bar's matches in the pane from the theme (SI-4)", () => {
-    const drawn = searchDecorations(BUILT_IN["purlis-dark"]);
+    const drawn = searchDecorations(CLASSIC_DARK);
     expect(drawn.matchBackground).toBe(dark.tokens["terminal.find-match"]);
     expect(drawn.matchOverviewRuler).toBe(dark.tokens["terminal.find-match"]);
     expect(drawn.activeMatchBackground).toBe(dark.tokens["terminal.find-match-active"]);
@@ -171,7 +180,7 @@ describe("one theme, two consumers", () => {
   it("gives the terminal and the window the same theme, which is the whole point", () => {
     // The defect this layer removes: `SessionPane` used to say `#181818`, `App.css` used to
     // say `--paper: #181818`, and nothing on earth made the two agree.
-    const theme = BUILT_IN["purlis-light"];
+    const theme = CLASSIC_LIGHT;
     expect(xtermTheme(theme).background).toBe(cssVariables(theme)["--terminal-background"]);
     expect(xtermTheme(theme).foreground).toBe(cssVariables(theme)["--terminal-foreground"]);
   });
@@ -179,7 +188,7 @@ describe("one theme, two consumers", () => {
 
 describe("the tokens that are not the chrome (#2327)", () => {
   it("draw each syntax role italic and bold as the theme says", () => {
-    const faces = syntaxFaces(BUILT_IN["purlis-dark"]);
+    const faces = syntaxFaces(CLASSIC_DARK);
     // The editor drew comments italic, and tags and headings bold, before a theme could say.
     expect(faces["--syntax-comment-font-style"]).toBe("italic");
     expect(faces["--syntax-comment-font-weight"]).toBe("normal");
@@ -190,11 +199,12 @@ describe("the tokens that are not the chrome (#2327)", () => {
   });
 
   it("leave Purlis Classic's selection, caret, placeholder and scrollbars to the platform", () => {
-    expect(themeDraws(BUILT_IN["purlis-dark"])).toBe("");
-    expect(themeDraws(BUILT_IN["purlis-light"])).toBe("");
+    expect(themeDraws(CLASSIC_DARK)).toBe("");
+    expect(themeDraws(CLASSIC_LIGHT)).toBe("");
+    const classic = CLASSIC_DARK;
     const theme: Theme = {
-      ...DEFAULT_THEME,
-      values: { ...DEFAULT_THEME.values, caret: "#ff0000", "scrollbar.thumb": "#80808080" },
+      ...classic,
+      values: { ...classic.values, caret: "#ff0000", "scrollbar.thumb": "#80808080" },
     };
     expect(themeDraws(theme)).toBe("caret scrollbar.thumb");
   });
@@ -203,13 +213,13 @@ describe("the tokens that are not the chrome (#2327)", () => {
 describe("putting a theme on the document", () => {
   it("sets every custom property, the colour scheme and the name", () => {
     const element = document.createElement("div");
-    apply(BUILT_IN["purlis-light"], element);
+    apply(CLASSIC_LIGHT, element);
     expect(element.style.getPropertyValue("--surface-base")).toBe(light.tokens["surface.base"]);
     expect(element.style.getPropertyValue("--state-failed")).toBe(light.tokens["state.failed"]);
     // `color-scheme` is what makes the platform's own scrollbars and form controls match, and
     // no custom property can do it.
     expect(element.style.colorScheme).toBe("light");
-    expect(element.dataset.theme).toBe("purlis-light");
+    expect(element.dataset.theme).toBe("Purlis Classic");
     // The syntax roles' faces, and what the window draws instead of the platform (#2327).
     expect(element.style.getPropertyValue("--syntax-comment-font-style")).toBe("italic");
     expect(element.dataset.themeDraws).toBe("");
@@ -221,7 +231,7 @@ describe("putting a theme on the document", () => {
     const pill =
       '@layer parts {\n  :where([data-scope="button"][data-part="root"][data-size="sm"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }\n' +
       '  :where([data-scope="button"][data-part="root"]) { border-radius: 9999px; }\n}\n';
-    const shaped: Theme = { ...BUILT_IN["purlis-dark"], parts: pill };
+    const shaped: Theme = { ...CLASSIC_DARK, parts: pill };
     const element = document.createElement("div");
     try {
       apply(shaped, element);
@@ -234,18 +244,18 @@ describe("putting a theme on the document", () => {
       expect(document.querySelectorAll(`#${PARTS_STYLE}`)).toHaveLength(1);
     } finally {
       // A theme that names no parts draws every control as its family default.
-      apply(BUILT_IN["purlis-dark"], element);
+      apply(CLASSIC_DARK, element);
     }
     expect(document.getElementById(PARTS_STYLE)).toBeNull();
   });
 
   it("leaves nothing of the theme before it behind", () => {
     const element = document.createElement("div");
-    apply(BUILT_IN["purlis-light"], element);
-    apply(BUILT_IN["purlis-dark"], element);
+    apply(CLASSIC_LIGHT, element);
+    apply(CLASSIC_DARK, element);
     for (const token of TOKENS) {
       expect(element.style.getPropertyValue(property(token)), token).toBe(
-        BUILT_IN["purlis-dark"].values[token],
+        CLASSIC_DARK.values[token],
       );
     }
     expect(element.style.colorScheme).toBe("dark");
@@ -256,8 +266,8 @@ describe("putting a theme on the document", () => {
     // between the document's colours and the grid's.
     const element = document.createElement("div");
     try {
-      drawIn(BUILT_IN["purlis-light"], element);
-      expect(inForce()).toBe(BUILT_IN["purlis-light"]);
+      drawIn(CLASSIC_LIGHT, element);
+      expect(inForce()).toBe(CLASSIC_LIGHT);
       expect(xtermTheme(inForce()).background).toBe(light.tokens["terminal.background"]);
     } finally {
       drawIn(DEFAULT_THEME, element);

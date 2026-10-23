@@ -182,7 +182,7 @@ export function useKeyboardBack() {
     // **Only a menu that is open now**: what an earlier context menu was opened on says
     // nothing about a menu of another kind.
     const opener = at?.closest('[role="menu"]')
-      ? menuOpenedOn?.closest<HTMLElement>('[data-state="open"]')
+      ? menuOpenedOn?.closest<HTMLElement>("[data-open]")
       : null;
     return { to: opener ?? null, stays: false };
   });

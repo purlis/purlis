@@ -15,11 +15,13 @@ use std::path::{Path, PathBuf};
 
 pub use purlis_skills::change::{Problem, Template, check};
 pub use purlis_skills::{
-    Argument, At, BUILT_IN_PREFIXES, Budget, Chat, Clash, DIR_IN_BUNDLE, Declared, Effective,
-    FromHarness, Given, Grant, HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing, Narrowing,
-    OnMachine, Origin, Outcome, OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference,
-    Reload, Route, Skill, SkillSet, Spent, Stamp, Switch, beside, declared, grant_file, grant_of,
-    in_bundle, level_dir, level_shown, listing, named, persona_dir, read, scan, set_grant, share,
+    Argument, At, BUILT_IN_PREFIXES, Budget, Chat, Clash, Compat, DIR_IN_BUNDLE, Declared,
+    Effective, Field, Finding, Fit, FromHarness, Given, Grant, HarnessSkills, Honours, LOCAL_DIR,
+    LeftOut, Lint, Machine, ManualOnly, Missing, Narrowing, OnMachine, Origin, Outcome,
+    OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference, Refusal, Reload, Route,
+    Severity, Skill, SkillSet, Spent, Stamp, Switch, beside, compat, declared, grant_file,
+    grant_of, handed_text, in_bundle, level_dir, level_shown, listing, named, persona_dir, read,
+    scan, set_grant, share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -42,9 +44,11 @@ pub(crate) use on_machine::{folders, skill_dirs};
 pub const LISTED_ENV: &str = "PURLIS_SKILLS_DIR";
 
 /// The variable a briefed chat is started with when its set holds the plane's skills (ADR 0099):
-/// `1`, and its `SessionStart` briefing then lists them with the built-in ones. Set only where the
-/// `skill-studio` flag let the plane's skills into the chat's set, so a briefing never reads the
-/// plane where arming did not.
+/// the set's folder purlis laid out for it ([`lay_out`]), and its `SessionStart` briefing then
+/// lists them with the built-in ones, each by the `SKILL.md` purlis wrote for it there (SK-8), so
+/// a briefed chat reads what every other route hands. Set only where the `skill-studio` flag let
+/// the plane's skills into the chat's set and their folder was laid out, so a briefing never reads
+/// the plane where arming did not.
 pub const PLANE_LISTED_ENV: &str = "PURLIS_SKILLS_PLANE";
 
 /// The plane a chat's skills come from beside the built-in ones (ADR 0099), as a chat is armed.
@@ -127,16 +131,17 @@ pub fn linked<'a>(set: &SkillSet, kit: Kit<'a>) -> Option<&'a Path> {
 /// plane's skills of the set of a chat in `plane`, at its root or in `workspace`, running as
 /// `persona`, with the built-in skills in `built_in`, laid out under `sets`. `None` where the set
 /// holds no plane skill, or the folder could not be laid out (said in the log: the chat then has
-/// the built-in skills alone). The set is the one [`for_chat`] works out for that chat on its
-/// harness's `route`, with `repo` the repo skills of the clone it works in: a plane skill a
-/// narrower repo copy hides is not laid out (SK-6).
+/// the built-in skills alone). The set is the one [`for_chat`] works out for that chat on
+/// `harness`, with `repo` the repo skills of the clone it works in: a plane skill a narrower
+/// repo copy hides is not laid out (SK-6). Each skill is handed as `harness` reads it
+/// ([`crate::harness::Harness::skill_frontmatter`], SK-8).
 pub fn lay_out_for_chat(
     plane: &Path,
     workspace: Option<&str>,
     persona: Option<&str>,
     built_in: Option<&Path>,
     sets: &Path,
-    route: Route,
+    harness: Harness,
     repo: &[OutsideSkill],
 ) -> Option<PathBuf> {
     let at = PlaneSkills {
@@ -145,8 +150,8 @@ pub fn lay_out_for_chat(
         linked: None,
         repo,
     };
-    let set = ask(built_in, Some(at), persona, route, None);
-    match lay_out(&set, sets) {
+    let set = ask(built_in, Some(at), persona, harness.skills(), None);
+    match lay_out(&set, sets, &harness.skill_frontmatter()) {
         Ok(folder) => folder,
         Err(why) => {
             tracing::warn!(
@@ -162,34 +167,37 @@ pub fn lay_out_for_chat(
 /// The name of the plugin a set's folder is, in Claude Code: its skills are `skills:<name>`.
 pub const LINKED_PLUGIN: &str = "skills";
 
-/// **The folder of links for the plane's skills of `set`**, under `sets`, laid out if it is not
-/// there yet, or `None` for a set with no plane skill (ADR 0063 as amended 2026-10-20).
+/// **The folder of the plane's skills of `set`**, under `sets`, laid out if it is not there
+/// yet, for a harness that reads `honours`, or `None` for a set with no plane skill purlis hands
+/// (ADR 0063 as amended 2026-10-20 and 2026-10-22).
 ///
 /// `<sets>/<digest>/` holds `.claude-plugin/plugin.json`, naming the plugin [`LINKED_PLUGIN`],
-/// and `skills/<name>`, a link to each skill's folder in the plane, so Claude Code loads it as a
-/// plugin and opencode scans its `skills/`. `<digest>` is a SHA-256 over every name and the
-/// folder it links to, so the folder of one set is never another's, and it is complete before
-/// it takes that name: a running chat's folder never changes. One found complete is used as it
-/// is; one that is not is made again.
-pub fn lay_out(set: &SkillSet, sets: &Path) -> std::io::Result<Option<PathBuf>> {
-    let links: Vec<(&str, &Path)> = set
+/// and `skills/<name>`, a folder of each skill's own ([`handout`]): the `SKILL.md` purlis writes
+/// for it, never with what would widen the chat, and a link to each plain file of the skill's
+/// folder. So Claude Code loads it as a plugin, opencode scans its `skills/`, and a Codex
+/// briefing names its files. A skill purlis refuses is left out, and its chat's tab says why
+/// ([`not_here`]). `<digest>` is a SHA-256 over every name, folder, text and entry, so the folder
+/// of one set is never another's, and it is complete before it takes that name: a running
+/// chat's folder never changes. One found complete is used as it is; one that is not is made
+/// again.
+pub fn lay_out(
+    set: &SkillSet,
+    sets: &Path,
+    honours: &purlis_skills::Honours,
+) -> std::io::Result<Option<PathBuf>> {
+    let handed: Vec<handout::Handed> = set
         .from_the_plane()
-        .filter_map(|effective| {
-            let folder = effective.skill.path.parent()?;
-            plain_name(&effective.skill.name).then_some((effective.skill.name.as_str(), folder))
-        })
+        .filter(|effective| plain_name(&effective.skill.name))
+        .filter_map(|effective| handout::of(&effective.skill, honours).ok())
         .collect();
-    if links.is_empty() {
+    if handed.is_empty() {
         return Ok(None);
     }
     let digest = {
         use sha2::Digest;
         let mut hash = sha2::Sha256::new();
-        for (name, folder) in &links {
-            hash.update(name.as_bytes());
-            hash.update([0]);
-            hash.update(folder.as_os_str().as_encoded_bytes());
-            hash.update([0]);
+        for one in &handed {
+            handout::digested(one, &mut hash);
         }
         hash.finalize()
             .iter()
@@ -214,20 +222,13 @@ pub fn lay_out(set: &SkillSet, sets: &Path) -> std::io::Result<Option<PathBuf>> 
     let _laying_out = lock_shared_in(&sets_dir)?;
     #[cfg(not(unix))]
     let _laying_out = lock_shared(sets)?;
-    if laid_out(&folder, &links) && touched(&folder) {
+    if laid_out(&folder, &handed) && touched(&folder) {
         return Ok(Some(folder));
     }
     let building = tempfile::Builder::new()
         .prefix(&format!(".{digest}."))
         .tempdir_in(sets)?;
-    let manifest = building.path().join(".claude-plugin");
-    std::fs::create_dir(&manifest)?;
-    std::fs::write(manifest.join("plugin.json"), manifest_text())?;
-    let skills = building.path().join(DIR_IN_BUNDLE);
-    std::fs::create_dir(&skills)?;
-    for (name, target) in &links {
-        link(target, &skills.join(name))?;
-    }
+    build(building.path(), &handed)?;
     if std::fs::symlink_metadata(&folder).is_ok() {
         // Not complete, so not a set's folder any chat was started with: made again.
         #[cfg(unix)]
@@ -239,7 +240,7 @@ pub fn lay_out(set: &SkillSet, sets: &Path) -> std::io::Result<Option<PathBuf>> 
     match std::fs::rename(&built, &folder) {
         Ok(()) => Ok(Some(folder)),
         // Another chat's start laid the same set out first.
-        Err(_) if laid_out(&folder, &links) => {
+        Err(_) if laid_out(&folder, &handed) => {
             let _ = std::fs::remove_dir_all(&built);
             Ok(Some(folder))
         }
@@ -248,6 +249,38 @@ pub fn lay_out(set: &SkillSet, sets: &Path) -> std::io::Result<Option<PathBuf>> 
             Err(why)
         }
     }
+}
+
+/// Builds a set's folder of `handed` in `building`, a folder of purlis's own that nothing else
+/// knows of yet: through the handles of the folders made in it, where there are handles.
+#[cfg(unix)]
+fn build(building: &Path, handed: &[handout::Handed]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mode = rustix::fs::Mode::from_raw_mode(0o755);
+    let root = at::folder(building)?;
+    rustix::fs::mkdirat(&root, ".claude-plugin", mode)?;
+    let manifest = at::folder_in(&root, ".claude-plugin")?;
+    at::new_file_in(&manifest, "plugin.json")?.write_all(manifest_text().as_bytes())?;
+    rustix::fs::mkdirat(&root, DIR_IN_BUNDLE, mode)?;
+    let skills = at::folder_in(&root, DIR_IN_BUNDLE)?;
+    for one in handed {
+        handout::make_in(&skills, one)?;
+    }
+    Ok(())
+}
+
+/// [`build`] where there are no handles to open a folder by.
+#[cfg(not(unix))]
+fn build(building: &Path, handed: &[handout::Handed]) -> std::io::Result<()> {
+    let manifest = building.join(".claude-plugin");
+    std::fs::create_dir(&manifest)?;
+    std::fs::write(manifest.join("plugin.json"), manifest_text())?;
+    let skills = building.join(DIR_IN_BUNDLE);
+    std::fs::create_dir(&skills)?;
+    for one in handed {
+        handout::make_at(&skills, one)?;
+    }
+    Ok(())
 }
 
 /// Marks `folder` as used now, by its modification time, which [`tidy`] keeps a folder for.
@@ -468,6 +501,7 @@ fn still_held(notes: &std::os::fd::OwnedFd) -> Notes {
 
 #[cfg(unix)]
 pub(crate) mod at;
+mod handout;
 
 #[cfg(unix)]
 fn started_at(pid: u32) -> Option<std::time::SystemTime> {
@@ -590,19 +624,12 @@ fn manifest_text() -> String {
     .to_string()
 }
 
-/// Whether `folder` is the complete folder of `links`: its manifest, and exactly one link per
-/// skill, to its folder.
-fn laid_out(folder: &Path, links: &[(&str, &Path)]) -> bool {
+/// Whether `folder` is the complete folder of `handed`: its manifest, and exactly the folder
+/// of each skill as handed ([`handout::holds`]).
+fn laid_out(folder: &Path, handed: &[handout::Handed]) -> bool {
     let manifest = std::fs::read_to_string(folder.join(".claude-plugin/plugin.json"));
-    if manifest.ok().as_deref() != Some(manifest_text().as_str()) {
-        return false;
-    }
-    let skills = folder.join(DIR_IN_BUNDLE);
-    let count = std::fs::read_dir(&skills).map(Iterator::count).unwrap_or(0);
-    count == links.len()
-        && links.iter().all(|(name, target)| {
-            std::fs::read_link(skills.join(name)).ok().as_deref() == Some(*target)
-        })
+    manifest.ok().as_deref() == Some(manifest_text().as_str())
+        && handout::holds(&folder.join(DIR_IN_BUNDLE), handed)
 }
 
 /// Whether `name` can name a link in a set's folder: one plain path component.
@@ -612,16 +639,6 @@ fn plain_name(name: &str) -> bool {
         (parts.next(), parts.next()),
         (Some(std::path::Component::Normal(_)), None)
     ) && !name.contains(['/', '\\'])
-}
-
-#[cfg(unix)]
-fn link(target: &Path, at: &Path) -> std::io::Result<()> {
-    std::os::unix::fs::symlink(target, at)
-}
-
-#[cfg(windows)]
-fn link(target: &Path, at: &Path) -> std::io::Result<()> {
-    std::os::windows::fs::symlink_dir(target, at)
 }
 
 /// The briefing section that lists the skills of a chat started with [`LISTED_ENV`], or none
@@ -638,18 +655,9 @@ pub fn briefed(
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
     let dir = env(LISTED_ENV).filter(|dir| !dir.is_empty())?;
-    let mut persona =
-        crate::envvar::lookup(crate::active::PERSONA_ENV, env).filter(|p| !p.is_empty());
-    let plane = env(PLANE_LISTED_ENV).is_some_and(|on| on == "1");
-    // A Try it's scratch chat (SK-9): briefed on the one skill its try laid out, as it is armed.
-    let scope = verbs::drafts::scope_of(root, cwd.filter(|_| plane));
-    let root = scope.root.as_path();
-    let workspace = if scope.tried {
-        persona = None;
-        None
-    } else {
-        workspace
-    };
+    let persona = crate::envvar::lookup(crate::active::PERSONA_ENV, env).filter(|p| !p.is_empty());
+    let handed = handed_folder(env);
+    let plane = handed.is_some();
     // The repo skills of the clone the chat works in, as each briefed harness reads them: the
     // briefing lists one copy of a name, the narrower (SK-6, decision 51).
     let repo: Vec<OutsideSkill> = match (plane, workspace, cwd) {
@@ -672,33 +680,59 @@ pub fn briefed(
         Route::Briefing,
         None,
     );
-    // Only what purlis hands: the harness lists its own and the repo's itself.
+    // Only what purlis hands: the harness lists its own and the repo's itself. A plane skill is
+    // named by the `SKILL.md` purlis wrote for it, and one it refused is not named at all.
     let skills: Vec<Skill> = set
         .effective
         .into_iter()
         .filter(|e| e.route != Route::Own)
-        .map(|e| e.skill)
+        .filter_map(|e| {
+            if !e.origin.of_the_plane() {
+                return Some(e.skill);
+            }
+            let path = handed
+                .as_ref()?
+                .join(DIR_IN_BUNDLE)
+                .join(&e.skill.name)
+                .join(purlis_skills::FILE);
+            purlis_skills::read_skill_md(&path).ok()?;
+            Some(Skill { path, ..e.skill })
+        })
         .collect();
     listing(&skills)
 }
 
+/// The set's folder a briefed chat was handed its plane skills in ([`PLANE_LISTED_ENV`]), where
+/// it names a folder.
+fn handed_folder(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    env(PLANE_LISTED_ENV)
+        .filter(|folder| !folder.is_empty())
+        .map(PathBuf::from)
+        .filter(|folder| folder.is_absolute())
+}
+
 /// **The skills a briefed chat may start by reading their `SKILL.md`** (SK-3): every skill in
-/// the directory it was started with in [`LISTED_ENV`], and the plane's at `root` where
-/// [`PLANE_LISTED_ENV`] says its set holds them; for a Try it's scratch chat in `cwd`, the one
-/// skill its try laid out (SK-9). Empty for a chat that was not briefed: a harness that loads its
-/// skills itself starts them by its own tool.
-pub fn readable_by_a_briefed_chat(
-    root: &Path,
-    cwd: &Path,
-    env: &dyn Fn(&str) -> Option<String>,
-) -> Vec<Skill> {
+/// the directory it was started with in [`LISTED_ENV`], and the plane's in the set's folder
+/// [`PLANE_LISTED_ENV`] names, each by the name of its folder there, as the briefing names it.
+/// Empty for a chat that was not briefed: a harness that loads its skills itself starts them by
+/// its own tool.
+pub fn readable_by_a_briefed_chat(env: &dyn Fn(&str) -> Option<String>) -> Vec<Skill> {
     let Some(dir) = env(LISTED_ENV).filter(|dir| !dir.is_empty()) else {
         return Vec::new();
     };
     let mut skills = read(Path::new(&dir));
-    if env(PLANE_LISTED_ENV).is_some_and(|on| on == "1") {
-        let scope = verbs::drafts::scope_of(root, Some(cwd));
-        skills.extend(read(&scope.root.join(purlis_skills::PROJECT_DIR)));
+    if let Some(handed) = handed_folder(env) {
+        skills.extend(read(&handed.join(DIR_IN_BUNDLE)).into_iter().map(|skill| {
+            Skill {
+                name: skill
+                    .path
+                    .parent()
+                    .and_then(Path::file_name)
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or(skill.name.clone()),
+                ..skill
+            }
+        }));
     }
     skills
 }
@@ -929,23 +963,58 @@ pub fn names_of(plane: &Path, persona: &str) -> Vec<Reference> {
         .collect()
 }
 
-/// **The skills a chat's persona names that it starts without** (SK-5, #2768), as its tab's
-/// Notice says them, each as the persona's `skills:` list writes it.
+/// **The skills a chat starts without, as its tab's Notice says them** (SK-5, #2768; SK-8,
+/// #2771, decision 41: never a silent drop): the ones its persona names that are not here, each
+/// as the persona's `skills:` list writes it, and the ones that could not be loaded.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NotHere {
     /// A harness skill the chat's harness does not have on this machine.
     pub missing: Vec<String>,
     /// A built-in skill purlis has none of: a typo, or a name from another version of purlis.
     pub no_built_in: Vec<String>,
+    /// A plane skill the chat would have loaded that could not be: not a whole skill, or one
+    /// of two folders at its level that name it.
+    pub broken: Vec<Broken>,
 }
 
-/// **The skills a chat as `persona` starts without** (SK-5, #2768), in the plane at `plane`, at
-/// its root or in `workspace`, on `harness` with the chat's environment `env` and the built-in
-/// skills in `built_in`. `None` where it has every one it names, or purlis could not tell.
+/// A skill a chat would have loaded that could not be loaded, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Broken {
+    /// Its name, or its folder's where it names none.
+    pub name: String,
+    /// Its level, and whether it is a local skill.
+    pub origin: Origin,
+    pub local: bool,
+    pub why: BrokenWhy,
+}
+
+/// Why a skill a chat would have loaded could not be loaded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BrokenWhy {
+    /// The set leaves it out: not a whole skill, or a twin at its level.
+    LeftOut(Reason),
+    /// purlis hands it to no chat ([`purlis_skills::Refusal`]).
+    Refused(purlis_skills::Refusal),
+}
+
+impl std::fmt::Display for BrokenWhy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LeftOut(reason) => write!(f, "{reason}"),
+            Self::Refused(why) => write!(f, "purlis hands it to no chat: {why}"),
+        }
+    }
+}
+
+/// **The skills a chat as `persona` (or on none) starts without** (SK-5, #2768; SK-8), in the
+/// plane at `plane`, at its root or in `workspace`, on `harness` with the chat's environment
+/// `env` and the built-in skills in `built_in`. A broken plane skill is one only where the chat
+/// would have loaded it: a project skill whose grant does not reach the chat's workspace is no
+/// loss. `None` where it has every one, or purlis could not tell.
 pub fn not_here(
     plane: &Path,
     workspace: Option<&str>,
-    persona: &str,
+    persona: Option<&str>,
     built_in: Option<&Path>,
     harness: crate::harness::Harness,
     env: &crate::harness_plugin::Env<'_>,
@@ -957,18 +1026,35 @@ pub fn not_here(
         linked: None,
         repo: &[],
     };
-    let set = ask(
-        built_in,
-        Some(at),
-        Some(persona),
-        harness.skills(),
-        Some(&here),
-    );
+    let set = ask(built_in, Some(at), persona, harness.skills(), Some(&here));
+    let reaches = |left: &LeftOut| {
+        left.origin != Origin::Project
+            || workspace.is_none_or(|ws| grant_of(&left.folder).is_ok_and(|g| g.reaches(ws)))
+    };
     let mut not = NotHere::default();
+    let honours = harness.skill_frontmatter();
+    for effective in set.from_the_plane() {
+        if let Err(why) = handout::of(&effective.skill, &honours) {
+            not.broken.push(Broken {
+                name: effective.skill.name.clone(),
+                origin: effective.origin,
+                local: effective.local,
+                why: BrokenWhy::Refused(why),
+            });
+        }
+    }
     for left in set.left_out {
         match left.reason {
             Reason::NotOnThisMachine => not.missing.push(left.name),
             Reason::NoSuchBuiltIn => not.no_built_in.push(left.name),
+            Reason::NotASkill(_) | Reason::Twin { .. } if reaches(&left) => {
+                not.broken.push(Broken {
+                    name: left.name,
+                    origin: left.origin,
+                    local: left.local,
+                    why: BrokenWhy::LeftOut(left.reason),
+                });
+            }
             _ => {}
         }
     }
@@ -1406,6 +1492,15 @@ pub struct StudioRow {
     /// For a skill left out because a chat could have made its level's folder (SK-9): that
     /// folder, relative to the plane, which the person may accept ([`levels::accept`]).
     pub accept: Option<String>,
+    /// Its compatibility badge on each harness that would load it (SK-8, #2771): every harness
+    /// for a skill a chat gets from purlis, its own harness for one from outside the plane, and
+    /// none for a skill left out.
+    pub compat: Vec<HarnessCompat>,
+    /// What the built-in lints say of a skill from outside the plane, as anywhere but the editor
+    /// says it (SK-8): that it widens the chat, a skill it names there is none of, a program it
+    /// calls that this machine lacks. Empty for the plane's and the built-in skills, which their
+    /// editor lints.
+    pub lint: Vec<String>,
 }
 
 /// What a studio row says of a skill from outside the plane.
@@ -1430,6 +1525,14 @@ pub fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow
                 .iter()
                 .find(|l| l.name == found.id && l.origin == found.origin && l.folder == folder)
                 .map(|l| l.reason.to_string());
+            let (compat, lint) = if left_out.is_none() {
+                (
+                    badges(&found.skill.path, found.origin, &[harness.harness]),
+                    outside_lint(plane, found),
+                )
+            } else {
+                (Vec::new(), Vec::new())
+            };
             StudioRow {
                 name: found.id.clone(),
                 origin: found.origin,
@@ -1450,9 +1553,157 @@ pub fn outside_rows(harness: &HarnessInTheStudio, plane: &Path) -> Vec<StudioRow
                     switch: found.switch.clone(),
                 }),
                 accept: None,
+                compat,
+                lint,
             }
         })
         .collect()
+}
+
+/// The most bytes of one of a skill's other files the lint reads: a script past this is no
+/// script it reads for the programs it calls.
+const MOST_LINTED: u64 = 256 * 1024;
+
+/// **The live lint of the skill `name` at `level` of the plane at `plane`, as its `SKILL.md`
+/// would say `text`** (SK-8, #2771): every finding of the built-in lints
+/// ([`purlis_skills::BuiltInLints`]), checked against the plane's skills, the built-in ones and
+/// this machine's programs, with the skill's other files read where it is already there. The one
+/// lint the editor and the command line show; a save waits only on a finding that
+/// [`LintLevel::Blocks`].
+pub fn lint(plane: &Path, level: &verbs::Level, name: &str, text: &str) -> Vec<Finding> {
+    let path = verbs::text_of(plane, level, name)
+        .ok()
+        .map(|(path, _)| path);
+    linted(plane, path.as_deref(), name, text, level.origin())
+}
+
+/// **What the built-in lints say of a skill from outside the plane** (SK-8): a harness or repo
+/// skill, read where it lies by the one reader that follows no link, each finding as anywhere
+/// but the editor says it ([`Finding::shown`]). What its studio row shows.
+fn outside_lint(plane: &Path, skill: &OutsideSkill) -> Vec<String> {
+    let findings = match purlis_skills::read_skill_md(&skill.skill.path) {
+        Ok(text) => linted(
+            plane,
+            Some(&skill.skill.path),
+            &skill.skill.name,
+            &text,
+            skill.origin,
+        ),
+        Err(why) => vec![Finding {
+            severity: purlis_skills::Severity::Warns,
+            lint: purlis_skills::Lint::Refused(why),
+        }],
+    };
+    findings.iter().filter_map(Finding::shown).collect()
+}
+
+/// The built-in lints of the skill `name` from `origin`, whose `SKILL.md` says `text` and, where
+/// it is already there, lies at `skill_md`: checked against the plane's skills, the built-in
+/// ones and this machine's programs, with its other files read.
+fn linted(
+    plane: &Path,
+    skill_md: Option<&Path>,
+    name: &str,
+    text: &str,
+    origin: Origin,
+) -> Vec<Finding> {
+    use purlis_skills::SkillLint;
+    let mut known: Vec<String> = verbs::Level::every(plane)
+        .iter()
+        .filter_map(|level| level.dir(plane))
+        .chain(
+            crate::personaverbs::names(plane)
+                .iter()
+                .flat_map(|persona| [true, false].map(|local| persona_dir(plane, persona, local)))
+                .flatten(),
+        )
+        .flat_map(|dir| read(&dir))
+        .map(|skill| skill.name)
+        .collect();
+    known.push(name.to_owned());
+    let built_in = built_in_names_here();
+    let others: Vec<(String, String)> = skill_md
+        .map(|path| {
+            let folder = path.parent().map(Path::to_path_buf).unwrap_or_default();
+            purlis_skills::other_files(path)
+                .into_iter()
+                .filter(|file| {
+                    std::fs::symlink_metadata(file)
+                        .is_ok_and(|meta| meta.is_file() && meta.len() <= MOST_LINTED)
+                })
+                .filter_map(|file| {
+                    let text = std::fs::read_to_string(&file).ok()?;
+                    let shown = file.strip_prefix(&folder).unwrap_or(&file);
+                    Some((shown.to_string_lossy().into_owned(), text))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    purlis_skills::BuiltInLints {
+        namespace: LINKED_PLUGIN,
+        plane: &known,
+        built_in: &built_in,
+        has: &crate::programs::on_path,
+    }
+    .findings(&purlis_skills::SkillFiles {
+        name,
+        text,
+        others: &others,
+        origin,
+    })
+}
+
+/// **A skill's compatibility badge on one harness** (SK-8, #2771): what the studio draws for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HarnessCompat {
+    pub harness: Harness,
+    pub compat: Compat,
+}
+
+/// The badges of the skill from `origin` whose `SKILL.md` is at `path` on each of `harnesses`
+/// ([`purlis_skills::compat`]), read by the one reader that follows no link: one that cannot be
+/// read is refused, or, from outside the plane, may widen the chat.
+fn badges(path: &Path, origin: Origin, harnesses: &[Harness]) -> Vec<HarnessCompat> {
+    let text = purlis_skills::read_skill_md(path);
+    harnesses
+        .iter()
+        .map(|harness| HarnessCompat {
+            harness: *harness,
+            compat: match &text {
+                Ok(text) => compat(text, origin, &harness.skill_frontmatter()),
+                Err(why) => Compat::refused(why.clone(), origin),
+            },
+        })
+        .collect()
+}
+
+/// **Each studio row of a harness skill a persona names, with its badge and lint on every
+/// harness that finds it** (SK-8): the rows [`studio_rows`] draws from a persona's `skills:`
+/// list carry no file of their own, so the skill each harness found by that name gives them one.
+pub fn with_harness_badges(rows: &mut [StudioRow], harnesses: &[HarnessInTheStudio], plane: &Path) {
+    let found: Vec<(Harness, &[OutsideSkill])> = harnesses
+        .iter()
+        .map(|one| (one.harness, one.outside.as_slice()))
+        .collect();
+    badge_named(rows, &found, plane);
+}
+
+/// [`with_harness_badges`], with what each harness found.
+fn badge_named(rows: &mut [StudioRow], found: &[(Harness, &[OutsideSkill])], plane: &Path) {
+    for row in rows
+        .iter_mut()
+        .filter(|row| row.origin == Origin::Harness && row.outside.is_none())
+    {
+        for (harness, outside) in found {
+            if let Some(skill) = outside.iter().find(|skill| skill.id == row.name) {
+                row.compat
+                    .extend(badges(&skill.skill.path, skill.origin, &[*harness]));
+                if row.lint.is_empty() {
+                    row.lint = outside_lint(plane, skill);
+                }
+            }
+        }
+    }
 }
 
 /// What is said of a harness skill a persona names that purlis could not check this machine for
@@ -1500,6 +1751,8 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 unchecked: false,
                 outside: None,
                 accept: None,
+                compat: badges(&e.skill.path, e.origin, &Harness::ALL),
+                lint: Vec::new(),
             }
         })
         .chain(set.from_the_harness.iter().map(|h| {
@@ -1517,6 +1770,8 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 unchecked: !h.checked,
                 outside: None,
                 accept: None,
+                compat: Vec::new(),
+                lint: Vec::new(),
             }
         }))
         .chain(set.left_out.iter().map(|l| {
@@ -1542,6 +1797,8 @@ pub fn studio_rows(set: &SkillSet, plane: &Path, names: &[Reference]) -> Vec<Stu
                 accept: matches!(l.reason, Reason::MadeWhileAChatRan(_))
                     .then(|| levels::to_accept(plane, &l.folder))
                     .flatten(),
+                compat: Vec::new(),
+                lint: Vec::new(),
             }
         }))
         .collect();

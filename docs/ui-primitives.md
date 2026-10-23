@@ -621,9 +621,9 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
 | Where the hint is | How it is written |
 | --- | --- |
 | On words, a mark, a row, a tab, a field | `<Tooltip tip={…}>` around the one element, which hands its props and its ref to the DOM |
-| On a `Button`, a `ToggleButton`, a `StatusItem` or a `StatusCell` | its `tooltip` |
+| On a `Button`, a `ToggleButton`, a `StatusItem`, a `StatusCell` or a menu's `MenuItem` | its `tooltip` |
 | On an `IconButton` | its `aria-label`, which its tooltip always shows; its `tooltip` is a second line under it (the `detail` part) |
-| Beside a menu's row, opened by the row's rest | `AnchoredTooltip` (`primitives/MenuRow.tsx`'s `MenuTip`) |
+| Beside a menu's row, opened by the row's rest | `AnchoredTooltip` (`ui/menu/MenuTip.tsx`) |
 
 - **One placement and one delay, which no call site changes**: beside its target at the target's
   end, 10 px from it, flipped to its start where the window has no room (R166); open after the
@@ -669,6 +669,54 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
   a disabled button's reason, each walked by the keyboard (Tab opens, Esc dismisses, Tab leaves)
   and checked by axe in Chromium and WebKit.
 
+## The menu and popover families
+
+**Every menu, context menu and popover is the menu or the popover family**
+(`app/src/ui/menu/Menu.tsx`, `app/src/ui/menu/ContextMenu.tsx`, `app/src/ui/popover/Popover.tsx`,
+#2909, ADR 0104), on React Aria's `MenuTrigger`, `Menu`, `MenuItem`, `MenuSection`,
+`SubmenuTrigger`, `Popover`, `Dialog` and `DialogTrigger`. No screen says a menu's role or wears
+the old `.ui-menu*` and `.ui-popover` classes, and nothing imports Radix's menus or popover:
+`eslint.config.js` refuses all three (`purlis/menu-family`, an error). The select's list keeps
+the old classes until the select family moves (#2906).
+
+| Member | What it is |
+| --- | --- |
+| `MenuTrigger` | A menu opened by a press on its trigger: a button of the family, or any element (a row, a strip's mark) made pressable. Enter, Space or Down opens it on its first row, Up on its last |
+| `AnchoredMenu` | A menu its owner holds open under an element that keeps its own keys and presses (a roving row, a strip's mark a click toggles); the owner says `aria-haspopup` and `aria-expanded` |
+| `ContextMenu` | A menu opened on a thing by a right-click, at the pointer, or by Shift+F10 or the menu key on the thing itself. The innermost thing's opens; the ones around it stand back |
+| `Menu`, `Submenu`, `InlineMenu` | The menu itself, a row that opens one, and a short list of rows drawn in place (a chat picker in a dialog) |
+| `MenuItem`, `MenuWords`, `MenuSection`, `MenuSeparator`, `MenuTip` | A row; its words and the one line under them; a group, named by `title` (`named` for a name from data); the rule between groups; a row's tooltip |
+| `PopoverTrigger` with `PopoverDialog` | A popover that asks, opened by a press on its trigger: the keyboard in it, handed back as it closes |
+| `HeldPopover` | The same, held open by its owner beside a roving row |
+| `AnchoredPopover` | A popover that says something beside an element (a card beside a row, a refusal under a field): it takes no keyboard, and its owner says when it is up |
+| `PopoverFilter`, `PopoverRule`, `PopoverList`, `PopoverFooter` | A popover laid out as a list (R165, `layout="list"`): the filter row with its rule under it, the list that scrolls while they stay in view, and the footer that says its keys, "↑↓ move · ⏎ go · esc close", each key in a mono cap |
+
+- **Placed under its trigger, lined up with its start or its end** (`align`), and never nearer
+  the window's edge than 8 px; it turns to the other side where there is no room. A row's ⋯
+  menu, as a setting's row has it (R59), lines up with the end of its button.
+- **Closed by a click outside, by Escape and by choosing a row**, and the keyboard goes back to
+  where it was, or where the owner's `onClosed` puts it (a row that went into Settings sent it
+  there). A press outside still reaches what it was on: **a menu is not modal**, so the rest of
+  the window is not hidden from a screen reader and a menu on a strip is no question. A preview
+  the pointer's rest opened (a tab's task chip) takes no keyboard (`takesNoKeyboard`), and
+  Escape and a press outside close it from wherever the keyboard is.
+- **Drawn by its parts** (ADR 0103). The surface is `data-scope="popover" data-part="root"`, its
+  `data-variant` `popover` or `menu`; inside it the `filter`, `rule`, `list`, `header`,
+  `footer` and `key` parts. A menu's row is `data-scope="menu" data-part="root"`, its
+  `data-variant` `default` or `danger` (D-1719-3), with its `label`, `description`, `shortcut`
+  and `indicator` parts (a toggle's tick, a submenu's arrow). `ui/popover/popover.css` and
+  `ui/menu/menu.css` draw the family default; a theme's parts reach the same attributes. A
+  state changes a colour, a ground or a ring, never a size; the row the keyboard is on is
+  highlighted and ringed inside (`--focus-ring-inset`), since a list's rows sit edge to edge (the
+  operator's ruling of 2026-10-22, [ADR 0104's amendment](adr/0104/2026-10-22-a-row-draws-its-focus-ring-inset.md)). A
+  view places a menu with a class of its own and may hand it its least and most width
+  (`--menu-min`, `--menu-max`) and a row's indent (`--menu-indent`).
+- **A row says its shortcut** at its end: the key registry's for its act (`MenuShortcuts`,
+  #2921), else the key its caller knows. It is drawn, not run onto the row's description.
+- **Drawn only while its project is in front** (`projectShown.tsx`): every surface asks, and
+  `projectShown.guard.test.tsx` draws each member under a project behind.
+- **Stories hold it** (`Menu.stories.tsx`, `Popover.stories.tsx`, `docs/component-stories.md`).
+
 ## The control classes
 
 **Each kind of control is one CSS class, drawn only from the tokens** (ADR 0094 §4, #1834). The
@@ -685,7 +733,7 @@ the collections above and with the settings set. A box a person types in is not 
 | Radio             | `.ui-radio` with `.ui-radio-mark`                                                                                             |                                                                                         | Radix RadioGroup's `Item` and `Indicator`                                                                       |
 | Switch            | `.ui-switch` with `.ui-switch-thumb`                                                                                          |                                                                                         | Radix Switch's `Root` and `Thumb` (`@radix-ui/react-switch`)                                                    |
 | Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
-| Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` on what cannot be undone; `.ui-menu-line`, `.ui-menu-label`; in a row `.ui-menu-words` (`.ui-menu-title`, `.ui-menu-note`), `.ui-menu-keys`, `.ui-menu-mark`, `.ui-menu-tip` | a surface that needs another width hands `--ui-menu-min` or `--ui-menu-max`             | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item`, `CheckboxItem`, `RadioItem` and `SubTrigger`, `Separator`, `Label`; a row's parts are `primitives/MenuRow.tsx` ([Menus](#menus)) |
+| A select's list   | `.ui-menu` of `.ui-menu-item`s, its tick `.ui-menu-mark`                                                                              |                                                                                         | Radix Select's `Content` and `Item`s, through `primitives/Select.tsx`, until the select family moves (#2906). Every menu is the menu family ([The menu and popover families](#the-menu-and-popover-families)) |
 
 **A button is the button family**, not a class: [The button family](#the-button-family). An
 answer that trusts text from outside is plain too (#2591): the repository-instructions tab's Add
@@ -696,46 +744,30 @@ What every class holds to:
 
 - **One height.** A select and a segmented control are `--size-control` tall (28px at
   the default text size); a small segmented control is `--size-chrome` (21px), for strips and
-  pane headers. A button's and a field's sizes are their families'. A menu's row is at least a
-  control tall.
-- **A menu's row is one line, a control tall, and the menu scrolls.** Its words give way to an
-  ellipsis and never wrap. A row with something under its words (`.ui-menu-note`,
-  [Menus](#menus)) is as tall as the two say, and its height is never fixed.
-  No row, line or label gives way when the menu is short of room (`flex-shrink: 0`): the menu is
-  capped at the room the window has where it opened, which Radix measures
-  (`--radix-context-menu-content-available-height`, `--radix-dropdown-menu-content-available-height`),
-  and scrolls inside. A menu is between six and ten of the largest space step wide
-  (`--space-8`: 192px to 320px at the default text size), so two short verbs do not make a
-  sliver and a long name does not widen it across the window.
+  pane headers. A button's, a field's and a menu's row's sizes are their families'.
   A checkbox's and a radio's mark, and a switch's track, are shares of the control height, so
   they scale with it.
 - **One focus ring.** A control's ring is `--focus-ring-width` in the theme's `focus.ring`,
   **outside** it at `--focus-ring-offset`. A segment's is **inside** it (`--focus-ring-inset`),
-  because its group clips what is outside. A menu's row draws none: the row the keyboard is on is
-  the highlighted one, as in every native menu, and the row under the pointer is too.
+  because its group clips what is outside. An option of a select's list draws none: the option
+  the keyboard is on is the highlighted one.
 - **A toggle button is `ToggleButton`** (DS-12): pressed, it says `aria-pressed` and stands on
   `accent.surface` behind an `accent.base` edge, as a chosen segment does, and stays so under the
   pointer (*Changed only*, *Show ignored files*, Search's switches, a file's *Source*).
 - **The keyboard is Radix's.** Nothing in a class changes behaviour: Tab reaches each control,
   Enter and Space press a button, Space ticks a checkbox and turns a switch, the arrows move along
-  a radio group or a segmented control and Space picks, Enter or an arrow opens a select and a
-  menu, the arrows move in it, a row that cannot run is skipped, and Enter picks.
+  a radio group or a segmented control and Space picks, Enter or an arrow opens a select, the
+  arrows move in its list, an option that cannot be chosen is skipped, and Enter picks.
 - **Every colour is one token per declaration**, so `contrast.test.ts` reads each pair a class
   draws. No colour hides behind an alias of the class's own.
 - **The classes are in the `components` layer, above `App.css`** (`styles.css`). A view rule
   that reaches a classed control cannot redraw it, and the window's zero-specificity focus floor
   cannot pull its ring inside. A view still places a control (margin, width, flex, order), which
-  no class sets. The sizes a view may hand a class are a menu's: a row's indent,
-  `--ui-menu-indent` (a tab's task chip indents a task under the chat that asked for it), and
-  the menu's least and most width, `--ui-menu-min` and `--ui-menu-max` (the task chip's menu is
-  wider, and a select's list is as wide as its longest option).
+  no class sets. The sizes a view may hand a class are a leading icon's (`--ui-input-lead-*`).
 
 `app/src/primitives/controls.test.tsx` holds each control: its height and ring through the window's
 cascade (`cascade.testkit.ts`, which reads `primitives/controls.css` as the layer above `App.css`), its
-keyboard behaviour on the real Radix primitive, and its announced name. It also holds that every
-Radix menu in the window wears `.ui-menu` and every row `.ui-menu-item`, and that `App.css` draws no
-menu shell of its own: of the three copied shells (`.more-menu`, `.tasks-menu`, `.item-menu`)
-only `.tasks-menu` still has a rule, which hands the one style its width and writes none.
+keyboard behaviour on the real Radix primitive, and its announced name.
 
 **Moving a surface onto a class** is its own ticket, one surface at a time: put the class on the
 control, delete the view's rule that drew it, and keep the view's placement. Until then a control
@@ -751,8 +783,8 @@ had before the classes. Moving a control onto its class deletes its line there; 
 alike. They are what VS Code's, JetBrains' and the platform's own menus do, and the next menu
 follows them without deciding anything. For a context menu they are applied in one place,
 `app/src/menuModel.ts`, which says how each row `actions.menuRows` lists is drawn; a row's
-words are written once, in `app/src/menuWords.ts`; and what is inside a row is
-`app/src/primitives/MenuRow.tsx`, for a dropdown too.
+words are written once, in `app/src/menuWords.ts`; and every menu is drawn by the menu family
+([The menu and popover families](#the-menu-and-popover-families)), a dropdown too.
 
 1. **A row is a short verb, and does not say the name of the thing the menu is about.** A menu
    is opened ON a thing, which is in front of the person: *Rename…*, *Pinned*, *End*, never
@@ -790,8 +822,10 @@ words are written once, in `app/src/menuWords.ts`; and what is inside a row is
    would do is left out**: there is no greyed *Switch to* on the tab in front; on any other tab
    it is the first row.
 6. **A shortcut is said at the row's end**, in the meta role, where the same act has a key on
-   the thing itself: *Rename… F2*, *End ⌫*, *New shell ⌘⇧T*. **A toggle is one row with a
-   tick**, not two rows that take turns: *Pinned*, a `CheckboxItem`.
+   the thing itself: *Rename… F2*, *End ⌫*, *New shell ⌘⇧T*. A row says the key the window's key
+   registry holds for its act (`MenuShortcuts`, #2921) or, until the registry has one, the key
+   its caller knows (`keys`). **A toggle is one row with a tick**, not two rows that take turns:
+   *Pinned*, a `menuitemcheckbox` of a group that chooses many.
 7. **Type and geometry are the tokens'.** A row's words are the body role, the line under them
    and a tooltip the secondary, a shortcut the meta, a group's name the label
    ([Text roles](#text-roles)); a row is `--size-control` tall; a menu's width is the one menu
@@ -804,25 +838,25 @@ listed, over every kind of menu at once, and that none says its thing's name, wi
 that name another thing listed. A row the model has no words for is drawn by its catalogue
 title, where the catalogue put it.
 
-**The keyboard is Radix's**: the arrows move, Right opens a submenu, Left and Escape close it,
-and typing finds a row by its words (`textValue`), never by its note. A tooltip is taken down on
-the window's capture phase when Escape is pressed, so one Escape closes the menu and the row's
-tooltip with it.
+**The keyboard is React Aria's**: the arrows move and stop at the ends, Right opens a submenu,
+Left and Escape close it, and typing finds a row by its words (`textValue`), never by its note. A
+row's tooltip takes the first Escape (WCAG 1.4.13) and leaves the menu open on its row; the next
+Escape closes the menu.
 
-**Not a filter field in a long submenu.** A text field inside a Radix menu fights its type-ahead
-and its roving focus, and typing already finds a row. A submenu with more rows than the window
-has room for scrolls.
+**Not a filter field in a long submenu.** A text field inside a menu fights its type-ahead and
+its roving focus, and typing already finds a row. A submenu with more rows than the window has
+room for scrolls. A list that needs a filter is a popover laid out as one (R165, below).
 
 **A menu whose rows are not the catalogue's declares them the same way.** A context menu on
 something `actions.menuRows` does not know (a terminal's own menu) builds its `GroupDrawn[]`
 itself: each row a `RowDrawn` around an `Offer` made for that row, as `actions.fileRows` makes
 a file's, with its `said`, `danger`, `warns`, `checked` and `keys`. It draws them with
-`Menus.tsx`'s exported `Groups`, inside its own `ContextMenu.Content` wearing `ui-menu` and
-named by `aria-label`, so its rows, tooltips, submenus and keyboard are every other menu's. A
-dropdown, which is not a context menu, puts `MenuWords`, `MenuKeys` and `MenuTip`
-(`primitives/MenuRow.tsx`) inside its own `ui-menu-item`s, as a secret's menu and a setting's
-*Move to…* do. **The show-more and the away menus are the exception to the width**: their rows
-are tabs and sentences with no part that gives way, so `.more-menu` hands `--ui-menu-max: none`.
+`Menus.tsx`'s exported `Groups`, inside its own `Menu` named by `aria-label`, so its rows,
+tooltips, submenus and keyboard are every other menu's. A dropdown, which is not a context
+menu, puts `MenuWords` and `MenuTip` inside its own `MenuItem`s, as a secret's menu and a
+setting's *Move to…* do. **The show-more and the away menus are the exception to the width**:
+their rows are tabs and sentences with no part that gives way, so `.more-menu` hands
+`--menu-max: none`.
 
 ## The overlay surface
 
@@ -830,16 +864,16 @@ are tabs and sentences with no part that gives way, so `.more-menu` hands `--ui-
 tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-lg`) and one lift
 (`--elevation-overlay`), so they read as related; a dialog and a popover share one padding
 (`--space-6`). The classes are in `app/src/primitives/overlays.css`, after the control classes in
-the same `components` layer, and the menu's surface is this one (`.ui-menu` keeps only its inset
+the same `components` layer, and the popover and menu families' surface is this one (`.ui-menu`, a select's list, keeps only its inset
 and its rows).
 
 | Overlay | Class                                         | On                                                         |
 | ------- | --------------------------------------------- | ---------------------------------------------------------- |
 | Scrim   | `.ui-scrim`                                   | Radix Dialog's or AlertDialog's `Overlay`                  |
 | Dialog  | `.ui-dialog`                                  | Radix Dialog's or AlertDialog's `Content`                  |
-| Popover | `.ui-popover`; its arrow `.ui-overlay-arrow`  | Radix Popover's `Content` and `Arrow`                      |
+| Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
 | Tooltip | the tooltip family's `root` part ([the tooltip family](#the-tooltip-family)) | React Aria's `Tooltip`, wrapped in `app/src/ui/tooltip` |
-| Menu    | `.ui-menu` ([the control classes](#the-control-classes)) | Radix DropdownMenu's or ContextMenu's `Content`  |
+| Menu    | the popover family's surface, its `menu` variant | `Menu`, a context menu's too                      |
 
 - **The look is the class's, the place is the view's.** A view places and sizes its overlay with a
   class of its own: `.warning` centres a dialog and caps its size (`.warning.update`,
