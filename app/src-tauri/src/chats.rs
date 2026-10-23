@@ -3540,6 +3540,13 @@ impl Chats {
                 Vec::new(),
             ),
         };
+        // Settings too long for one word of a command line go through a file of their own (SK-9).
+        let all = match identity.id.as_deref() {
+            Some(id) if !reattaching => {
+                purlis_core::hoststart::settings_in_a_file(&self.project, id, all)?
+            }
+            _ => all,
+        };
         let mut env = env;
         env.extend(armed);
         // What the wrap sets wins over a profile's or the arming's value of the same name: its

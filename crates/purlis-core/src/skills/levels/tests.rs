@@ -222,9 +222,8 @@ fn a_create_vouches_only_for_a_folder_it_made() {
     let root = tmp.path();
     note(root, CHAT, "7").unwrap();
     skill(root, "workspaces/foo/skills/planted", "planted");
-    let was_there = there(root, "workspaces/foo");
-    assert!(was_there);
-    let said = vouch_if_made(root, "workspaces/foo", was_there).expect("said");
+    assert!(there(root, "workspaces/foo"));
+    let said = vouch_if_made(root, "workspaces/foo", true).expect("said");
     assert!(said.contains("Skill studio"), "{said}");
     assert!(!set_in(root, "foo").0.contains(&"planted".to_owned()));
 
@@ -232,4 +231,6 @@ fn a_create_vouches_only_for_a_folder_it_made() {
     assert_eq!(vouch_if_made(root, "workspaces/fresh", false), None);
     skill(root, "workspaces/fresh/skills/mine", "mine");
     assert!(set_in(root, "fresh").0.contains(&"mine".to_owned()));
+    // A workspace that was there when the chat started: nothing waits, and nothing is said.
+    assert_eq!(vouch_if_made(root, "workspaces/ops", true), None);
 }

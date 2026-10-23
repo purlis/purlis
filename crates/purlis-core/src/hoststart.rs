@@ -662,6 +662,21 @@ pub fn settings_in_a_file(
     Ok(args)
 }
 
+/// **The settings in `path`, where it is a chat's settings file purlis wrote**
+/// ([`settings_in_a_file`]): `<state>/chat-settings/<chat id>.json`, read without following a
+/// link. `None` for any other path.
+pub fn settings_from_its_file(path: &Path) -> Option<serde_json::Value> {
+    let name = path.file_name()?.to_str()?;
+    crate::reopen::a_ulid(name.strip_suffix(".json")?)?;
+    let dir = path.parent()?;
+    if dir.file_name()? != SETTINGS_DIR {
+        return None;
+    }
+    let bytes =
+        crate::proposed::read_pinned(dir.parent()?, &Path::new(SETTINGS_DIR).join(name)).ok()??;
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// **Removes every chat's settings file whose chat is not among `open`**, older than a couple of
 /// minutes (the time between a start writing it and the chat being on the app's record): the
 /// app's, each time it writes that record. Only names this module makes, through the folder's

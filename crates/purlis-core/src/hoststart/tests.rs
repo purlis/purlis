@@ -62,3 +62,20 @@ fn settings_longer_than_one_word_go_through_a_file_and_shorter_ones_stay() {
     sweep_settings(root, &[]);
     assert!(!file.exists());
 }
+
+/// A start whose settings went through a file is still read as Claude Code in its own sandbox.
+#[test]
+fn settings_in_a_file_are_read_back_for_the_sandbox_and_no_other_file_is() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let long = format!(
+        r#"{{"sandbox":{{"enabled":true}},"deny":["{}"]}}"#,
+        "x".repeat(SETTINGS_IN_A_WORD * 2)
+    );
+    let args = settings_in_a_file(root, CHAT, words(&long)).unwrap();
+    let read = settings_from_its_file(std::path::Path::new(&args[3])).expect("read back");
+    assert_eq!(read.pointer("/sandbox/enabled"), Some(&true.into()));
+    let elsewhere = root.join("other.json");
+    std::fs::write(&elsewhere, r#"{"sandbox":{"enabled":true}}"#).unwrap();
+    assert_eq!(settings_from_its_file(&elsewhere), None);
+}
