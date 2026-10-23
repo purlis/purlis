@@ -949,12 +949,9 @@ export const commands = {
 	skillPage: (plane: PlaneId, name: string) => typedError<SkillPage, string>(__TAURI_INVOKE("skill_page", { plane, name })),
 	/**  What one version of a skill changed. */
 	skillDiff: (plane: PlaneId, level: SkillLevel, name: string, commit: string) => typedError<SkillDiff, string>(__TAURI_INVOKE("skill_diff", { plane, level, name, commit })),
-	/**  **Puts a skill back as one of its versions has it**, as one commit. */
-	skillRevert: (plane: PlaneId, level: SkillLevel, name: string, commit: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_revert", { plane, level, name, commit })),
-	/**  **Deprecates, archives or restores a skill**, as one commit. */
-	skillLifecycle: (plane: PlaneId, level: SkillLevel, name: string, lifecycle: SkillLifecycle) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_lifecycle", { plane, level, name, lifecycle })),
-	/**  **Sets who looks after a skill**, as one commit. */
-	skillOwners: (plane: PlaneId, level: SkillLevel, name: string, owners: string[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_owners", { plane, level, name, owners })),
+	skillRevert: __WINDOW_ONLY_RESULT,
+	skillLifecycle: __WINDOW_ONLY_RESULT,
+	skillOwners: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,
 	skillSourceRemove: __WINDOW_ONLY_RESULT,
