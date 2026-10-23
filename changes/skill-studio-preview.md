@@ -39,3 +39,15 @@
   when to use the skill, a skill it names that does not exist, and a program the skill runs that
   this machine does not have. A chat that starts without a skill it would have loaded, because
   the skill is broken, says which and why on its tab, with a way to the Skill studio.
+- **Move your project's skills into the Skill studio in one step** (Skill studio preview,
+  #2784). `purlis doctor --fix project-skills` moves every skill in the project's
+  `.claude/skills` into its `skills/`, shared with every workspace as before. It rewrites the old
+  `charter:<skill>` names to `purlis:<skill>`, but never inside quoted code or an image name. It
+  all goes in one commit that `git revert` undoes. It checks first that every chat keeps its
+  skills, and changes nothing if one would lose one. From then on every chat in the project gets
+  those skills, the Skill studio switched on or off, and Codex chats get them too. Clones stop
+  getting a copy of `.claude/skills`. Your clones lose their copies at once and a teammate's the
+  next time a chat starts there, while a copy someone edited is kept and named. It says what it
+  changed, and which skills a persona names that no chat can get. It needs the Skill studio
+  switched on to run, and refuses while the project has changes that are not committed or its git
+  is in the middle of something.

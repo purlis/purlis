@@ -236,7 +236,8 @@ fn a_fix_id_is_spelled_one_way_and_read_back_the_same() {
             "rename-plane",
             "persona-agents",
             "workspace-reinit",
-            "handoff-rule"
+            "handoff-rule",
+            "project-skills"
         ]
     );
     for id in FixId::ALL {
@@ -277,6 +278,8 @@ fn every_fix_but_discover_is_applied_by_bare_fix() {
     // handoff-rule takes a rule out of committed files every teammate pulls, while a purlis
     // older than #1444 still relies on that rule to ask.
     assert!(FixId::HandoffRule.by_name_only());
+    // project-skills moves committed skills in a commit every teammate pulls (#2784).
+    assert!(FixId::ProjectSkills.by_name_only());
 }
 
 // ---- local-ignore -------------------------------------------------------------------------
