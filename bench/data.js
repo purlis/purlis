@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792792121868,
+  "lastUpdate": 1792795517304,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22932,6 +22932,48 @@ window.BENCHMARK_DATA = {
             "value": 101.97357,
             "unit": "ms",
             "extra": "median of 5 runs: 101.550, 101.736, 101.974, 102.388, 102.802 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "90a76c7e8fb180fe2c4a650905f3949d1ed5cd64",
+          "message": "Session tabs docked on the content panel (#3037)\n\n* Session tabs docked on the content panel (#2914)\n\nThe session tabs are the tabs family: docked on the content panel by\ndefault (Purlis), the chosen tab joining what is under it with\ninverse-corner flares, an unchosen tab's hover an inset pill, selection\nchanging colour and fill only, tabs shrinking with an ellipsis before\nthey collapse into \"N more\". Classic keeps its strip through parts. A\nfile tab, the editor toolbar and the code are one surface. The docked\nbody is the content panel (#3024). Purlis draws no line around a pane\n(the operator's ruling, `pane.border-width`); a split's focused pane says\nso in its corner's primary words. The parts manifest gains the tabs and\neditor families with layout words, flare and inset.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Session tabs: the chat strip is as tall as a docked tab (#2914)\n\nPurlis is the default now, so the chat strip draws its docked tabs, a\ncontrol and 3px tall; the scenario holds it to that.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Session tabs: the chip scenarios read how the theme sizes tabs (#2914)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Session tabs: tabs sized to their words share a chip's room (#2914)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T02:43:53+04:00",
+          "tree_id": "a4305ac07ec222eeae2a109cf1e6a68134e6f6d1",
+          "url": "https://github.com/purlis/purlis/commit/90a76c7e8fb180fe2c4a650905f3949d1ed5cd64"
+        },
+        "date": 1792795514692,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4728165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.461, 0.467, 0.473, 0.478, 0.510 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.332562000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.187, 16.253, 16.333, 16.829, 16.926 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5327285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.720, 101.241, 101.533, 101.593, 102.786 ms"
           }
         ]
       }
