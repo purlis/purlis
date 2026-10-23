@@ -6,6 +6,40 @@
  * Each asserts what a person sees, from the page, never a component's internals.
  */
 
+import { waitFor } from "storybook/test";
+
+/** How long the keyboard may take to land: an engine may move it a frame or more late. */
+const LANDS_WITHIN_MS = 3_000;
+
+/**
+ * **The keyboard lands on `target`** (`step` names where in the story). Waits for it, as an
+ * engine moves the focus a frame or more after the key that asked for it; throws naming the step
+ * and what has the focus instead, so a failure says where the keyboard went.
+ */
+export async function untilFocused(target: () => Element | null, step: string): Promise<void> {
+  try {
+    await waitFor(
+      () => {
+        const wanted = target();
+        if (wanted === null || document.activeElement !== wanted) throw new Error("not yet");
+      },
+      { timeout: LANDS_WITHIN_MS },
+    );
+  } catch {
+    let wanted: Element | null = null;
+    try {
+      wanted = target();
+    } catch {
+      // Not drawn: said below.
+    }
+    const at = document.activeElement;
+    throw new Error(
+      `${step}: the keyboard is on ${at === null || at === document.body ? "nothing" : describe(at)}` +
+        `, not on ${wanted === null ? "an element that is not drawn" : describe(wanted)}`,
+    );
+  }
+}
+
 /** The points of a box a person looks at: its centre and a point just inside each corner. */
 function pointsOf(box: DOMRect): [number, number][] {
   const inset = Math.min(2, box.width / 4, box.height / 4);
