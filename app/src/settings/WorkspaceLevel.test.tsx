@@ -209,6 +209,8 @@ function core(
   let file = settings;
   /** The pool alpha's chats run on, as this machine's store says it (#2046). */
   let runsOn: string | null = null;
+  /** What alpha's sends to a runner also leave out (#2046). */
+  let leaveOut: string[] = ["secrets/"];
   /** What `alpha` names and this machine has not cloned (#1228). */
   const absent = ["web"];
   const cloned = ["api"];
@@ -229,6 +231,11 @@ function core(
           defaults: { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 },
         };
       if (cmd === "chats_run_on") return { pool: runsOn, pools };
+      if (cmd === "send_leaves_out") return leaveOut;
+      if (cmd === "set_send_leaves_out") {
+        leaveOut = given.entries as string[];
+        return leaveOut;
+      }
       if (cmd === "set_chats_run_on") {
         runsOn = (given.pool as string | null) ?? null;
         return { pool: runsOn, pools };
@@ -441,6 +448,27 @@ describe("the Workspace level", () => {
     expect(asked("set_chats_run_on")).toEqual([
       { plane: PLANE, workspace: "alpha", pool: "builds" },
     ]);
+  });
+
+  it("lets the person name more to leave out of what a runner gets, once a pool is kept (#2046)", async () => {
+    const { asked } = core(ALPHA, undefined, NO_THEME, null, { pools: ["builds"] });
+    await at();
+    await waitFor(() => expect(groups()).toContain("Sent to runners"));
+    expect(groups().indexOf("Sent to runners")).toBe(groups().indexOf("Runs on") + 1);
+    await open("Sent to runners");
+    const sends = screen.getByRole("region", { name: "Sent to runners" });
+    expect(sends).toHaveTextContent("Kept in the project's settings file, which your team sees.");
+    const box = await within(sends).findByRole("textbox", { name: /Also leave out/ });
+    await waitFor(() => expect(box).toHaveValue("secrets/"));
+
+    await userEvent.type(box, "\nconfig/local.yml\n");
+    await userEvent.tab();
+
+    await waitFor(() =>
+      expect(asked("set_send_leaves_out")).toEqual([
+        { plane: PLANE, workspace: "alpha", entries: ["secrets/", "config/local.yml"] },
+      ]),
+    );
   });
 
   it("hides a group with nothing in it, but Extensions, which links to where one is installed", async () => {

@@ -235,6 +235,7 @@ pub const GITIGNORE_BASELINE: &str = "\
 # never committed. Move one into skills/ (Share) to give it to the team.
 /skills.local/
 /workspaces/*/skills.local/
+/skills.local.lock
 
 # Python
 __pycache__/
@@ -281,7 +282,11 @@ pub const PLANE_SESSIONS_IGNORE: &str = "/sessions/";
 /// machine: a level's `skills.local/` is read only while git ignores it, and these lines are
 /// what make a fresh plane's ignored. A workspace's is already under `/workspaces/*/*`; its
 /// line keeps it ignored once the workspace is LIVE and its own `skills/` is un-ignored.
-pub const SKILLS_LOCAL_IGNORES: [&str; 2] = ["/skills.local/", "/workspaces/*/skills.local/"];
+pub const SKILLS_LOCAL_IGNORES: [&str; 3] = [
+    "/skills.local/",
+    "/workspaces/*/skills.local/",
+    "/skills.local.lock",
+];
 
 /// A path that resolves somewhere charter will not write: `(the path as named, where it lands)`.
 type Escape = (String, String);

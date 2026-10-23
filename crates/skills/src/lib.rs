@@ -48,9 +48,11 @@ pub mod lint;
 mod load;
 mod read;
 mod reference;
+pub mod review;
 pub mod runs;
 mod share;
 mod stamp;
+pub mod tree;
 pub mod uses;
 
 pub use budget::{Budget, Over, Spent};

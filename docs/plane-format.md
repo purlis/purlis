@@ -201,6 +201,10 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`themes/` — the project's theme folders](#themes--the-projects-theme-folders)
   - [`skills/` — the project's skills](#skills--the-projects-skills)
   - [`skills.local/` — the project's local skills](#skillslocal--the-projects-local-skills)
+  - [`skills.lock` — the project's installed skills](#skillslock--the-projects-installed-skills)
+  - [`[[skill_sources]]` — the sources a project browses](#skill_sources--the-sources-a-project-browses)
+  - [`skills.local.lock` — the installs at local levels](#skillslocallock--the-installs-at-local-levels)
+  - [`$TMPDIR/purlis-skill-source-<random>/` — a fetched skill source](#tmpdirpurlis-skill-source-random--a-fetched-skill-source)
   - [`workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills](#workspaceswsskills-and-personasnameskills--workspace-and-persona-skills)
   - [Plane-root files that exist but are **not** this area](#plane-root-files-that-exist-but-are-not-this-area)
 - [Workspaces](#workspaces)
@@ -695,7 +699,11 @@ Paths derived from the root (all in `derive`, `charter/config.py:661`) that land
   by the same reader (`Choices::skill`) for the Skill studio and, while the Skill studio's flag
   is on, for every chat `start::ready` launches (SK-6, #2769). Its `[sandbox]` table is read
   by `crates/purlis-core/src/sandbox.rs` (`Said::read`) for every chat `start::ready` launches
-  and for the Settings tab's save (ADR 0067).
+  and for the Settings tab's save (ADR 0067). Its `[[skill_sources]]` tables (`url`, and optionally `branch`, `folder`, and `vault` and
+  `key` naming the vault entry a private source signs in with, never a token) are read and
+  written by `crates/purlis-core/src/skills/source.rs` (`sources`, `add`, `remove`) for the
+  Skill studio and `purlis skill install` (SK-10, #2773; ADR 0100 §1); `charter.local.toml` may
+  hold this machine's own, under the same table.
 - **Git:** committed (nothing ignores it; `_GITIGNORE_BASELINE` ignores its *local* sibling
   only, `charter/commands.py:1104`).
 - **Encoding details for a byte-identical writer:**
@@ -1426,6 +1434,102 @@ it; a write keeps every other key and comment, and removes the file when nothing
   `.gitignore` says: its stage and the standing's status both exclude `skills.local/**` and
   `workspaces/*/skills.local/**` (`planegit::SAVE_STAGES`).
 
+### `skills.lock` — the project's installed skills
+
+- **Format:** JSON, pretty-printed, one trailing newline: `{"version": 1, "skills": [...]}`, the
+  entries sorted by level then name. Each entry says what one installed skill was copied from
+  (fields below).
+- **Status:** **purlis only** ([ADR 0100](adr/0100-a-skill-is-installed-from-a-git-source-as-a-pinned-copy-and-never-updates-by-itself.md)),
+  **experimental** while the `skill-studio` flag is on (#2786).
+- **Tier:** Plane — committed, so every clone knows where each installed skill came from and at
+  which commit.
+- **Written by:** an accepted install or update only (`purlis_core::skills::source::install`,
+  `update`; the Skill studio and `purlis skill install | update`, #2773), written whole beside
+  itself and renamed over, only while it is still what was read (`proposed::write_pinned`), and
+  committed in the same commit as the copies it records (`planegit::save_paths`). Asking a source
+  for a newer commit (`purlis skill update`, the studio's Updates) reads its refs and writes
+  nothing here: nothing a source does moves a pin.
+- **Read by:** `purlis_core::skills::source` (`lock::read`), for the studio's Browse (which skills
+  are installed from a source), Updates and each update's review. A file that is not a plain file
+  is not read; one of a newer `version` is refused and changes nothing.
+- **Git:** committed (nothing ignores it).
+
+| Key of an entry | Type | Required / default | Meaning | Status | Source |
+|---|---|---|---|---|---|
+| `name` | string | required | The skill's name, and its folder's at its level. | experimental | ADR 0100 §2 |
+| `level` | string | required | The level's folder in the plane: `skills`, `workspaces/<ws>/skills` (`.local` in the local lockfile). | experimental | `skills::verbs::Level` |
+| `source.url` | string | required | The source's URL: `https://` with a plain host and no credential in it, or a folder on the machine that installed it. A machine contacts one only once it is confirmed there (`[[skill_sources]]` in its `charter.local.toml`, which an install writes), and never a folder another machine named. | experimental | ADR 0100 §1 |
+| `source.branch` | string | optional, default the source's `HEAD` | The branch its newest commit is read from. | experimental | ADR 0100 §1 |
+| `folder` | string | required | The skill's folder in the source; empty for a source that is one skill. | experimental | ADR 0100 §2 |
+| `commit` | string | required | The commit the copy was made from: the pin. | experimental | ADR 0100 §2 |
+| `digest` | string | required | `sha256:` over each file's path, mode and digest, in path order. | experimental | `source::digest_of` |
+| `files` | list of `{path, executable?, sha256}` | required | Each file the install wrote, so an edit here is seen and an update removes only what the install wrote. | experimental | ADR 0100 §4 |
+| `brought_by` | string | optional | The skill whose install brought this one along, as one it refers to. | experimental | ADR 0100 §2 |
+
+Every entry is checked as it is read: a name that is a skill's, plain file paths and folder,
+a level that belongs in this lockfile, and a source purlis reads. One that is not refuses the
+whole file in one sentence, and nothing installed changes.
+
+### `[[skill_sources]]` — the sources a project browses
+
+- **Format:** TOML array of tables, in `charter.toml` (the project's) and in
+  `charter.local.toml` (this machine's), keys below and no other.
+- **Status:** **purlis only** (SK-10, ADR 0100 §1), **experimental** while the `skill-studio`
+  flag is on.
+- **Tier:** Plane — in `charter.toml`, committed; this machine's, in `charter.local.toml`, are Clone state.
+- **Written by:** Add source and Remove in the Skill studio, `purlis skill install` (a folder
+  here is added to this machine's file), Confirm and `purlis skill update --confirm`
+  (`purlis_core::skills::source::listed`), each by its tables under the settings writer's lock
+  (`settings::skill_sources::edit`), every other line kept. An add to `charter.toml` is one
+  commit.
+- **Read by:** `purlis_core::skills::source::sources`, with a real TOML parser and these keys
+  alone, failing closed: a file whose sources cannot all be read lists none, and says so in one
+  sentence. **A sign-in is read from `charter.local.toml` alone**: a shared table's `vault` and
+  `key` are not used, and this machine's table for the same `url` and `branch` gives the shared
+  source its sign-in. A shared table names an `https://` URL; a folder on one machine is
+  `charter.local.toml`'s alone. A `charter.local.toml` table for a source is also this machine's
+  **confirmation** of it: a source only the committed `skills.lock` names is contacted from
+  here once one exists.
+- **Git:** as each file is.
+
+| Key | Type | Required / default | Meaning | Status | Source |
+|---|---|---|---|---|---|
+| `url` | string | required | The repository: `https://` with a plain host and no credential in it; in `charter.local.toml` also `file:///…` or a folder's full path. | experimental | ADR 0100 §1 |
+| `branch` | string | optional, default the repository's `HEAD` | The branch read. | experimental | ADR 0100 §1 |
+| `folder` | string | optional, default the top | The folder inside the repository its skills are in. | experimental | ADR 0100 §1 |
+| `vault` | string | optional, with `key` | The vault a private source signs in with. Read from `charter.local.toml` only. | experimental | ADR 0100 §5 |
+| `key` | string | optional, with `vault` | The entry in that vault holding the token. Never the token. | experimental | ADR 0100 §5 |
+| `user` | string | optional, default `x-access-token` | The user name sent beside the token, for a forge that wants one. | experimental | ADR 0100 §5 |
+
+### `skills.local.lock` — the installs at local levels
+
+- **Format:** as [`skills.lock`](#skillslock--the-projects-installed-skills), for skills
+  installed into a level's `skills.local/`.
+- **Status:** **purlis only** (ADR 0100 §2), **experimental** while the `skill-studio` flag is on.
+- **Tier:** Clone state — never committed, under the same live/local rule as `charter.local.toml`
+  (ADR 0048).
+- **Written by:** an accepted install or update at a local level, as `skills.lock` is, and never
+  committed.
+- **Read by:** as `skills.lock`.
+- **Git:** must be ignored: `purlis init` writes `/skills.local.lock` into the plane's
+  `.gitignore` and `purlis reinit` adds it (`scaffold::SKILLS_LOCAL_IGNORES`). **A save never
+  stages it** whatever the `.gitignore` says (`planegit::SAVE_STAGES`).
+
+### `$TMPDIR/purlis-skill-source-<random>/` — a fetched skill source
+
+- **Format:** a bare git repository, `source.git`, holding one fetched commit of a skill source
+  at `refs/purlis/fetched` (and the pinned one at `refs/purlis/pinned` for an update's diff).
+  Never checked out: its tree is read with `ls-tree` and `cat-file`.
+- **Status:** **purlis only** (#2773).
+- **Tier:** Machine, device-bound, transient — made for one browse, review, install or update and removed
+  when it ends.
+- **Written by:** `purlis_core::skills::source::fetch`, through purlis's hardened git: no hook,
+  no submodule, `transfer.fsckObjects` on, one commit deep, every blob over 1 MiB left on the
+  server (`--filter=blob:limit`, the repository a partial clone on that command line alone, so
+  nothing it lacks is fetched later), at most 256 MiB landed, and a private source's credential
+  handed to its one credential helper by variable, never on a command line.
+- **Read by:** the same call, alone.
+
 ### `workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills
 
 - **Format:** as [`skills/`](#skills--the-projects-skills), one folder per skill, with a
@@ -1730,7 +1834,9 @@ next layer down answers.
 | any other key in `settings.theme`, or `settings.theme` that is not an object | — | Refused by the Workspace level's save, and ignored by the reader: a workspace's theme holds `use`, `appearance`, `icons` and `colour`. | `crates/purlis-core/src/extension/project/theme.rs` `refusals_in_workspace` |
 | `settings.skills.off` | list of str | **ADR 0099 §2, #2767; experimental** behind the `skill-studio` flag. The names of project skills this workspace's chats do not get, though their grant reaches it: each is left out "turned off in this workspace". It only narrows: a skill not granted here stays "not granted to this workspace", and a workspace skill, a built-in skill or a name of no skill is not affected. Written by `purlis skill grant <name> -w <ws> --off` and `--on`; `--on` for a skill not granted here is refused, saying the grant that would reach it. A workspace's setting only: `charter.toml` and `charter.local.toml` hold no `[skills]`. | `purlis_core::skills::turned_off`, through the Workspace settings layer, and handed to `purlis_skills::skill_set` as the chat's `turned_off`; written through `purlis_core::settings::workspace::save` |
 | any other key in `settings.skills`, or `settings.skills.off` that is not a list of strings | — | Refused by the Workspace level's save, and ignored by the reader, which then turns nothing off. | `crates/purlis-core/src/settings/workspace.rs` `skills_refused` |
-| any other key in `settings`, or `settings` that is not an object | — | Refused by the save, and ignored by the reader: a workspace's settings hold `extensions`, `harness_plugins`, `harness_skills`, `theme` and `skills` and nothing else. | `crates/purlis-core/src/settings/workspace.rs` `refusals` |
+| `settings.runners.leave_out` | list of str | **#2046, the operator's ruling of 2026-10-25.** Files and folders, each relative to the top of a clone, whose uncommitted changes a send of this workspace's clones to a pool's runner leaves out, on top of everything a save to the forge refuses (ADR 0078 as amended 2026-10-20, item 6): each goes to the runner as it is committed, or not at all. At most 64, each at most 256 bytes, none absolute, none with an empty, `.` or `..` part, none with a control character. Set from the workspace's *Sent to runners* settings, shown once this machine keeps a pool; left out while it names none. | `purlis_core::settings::workspace::send_leaves_out`, read by the window's send (`runnercode::send`); written by `set_send_leaves_out` through `purlis_core::settings::workspace::save` |
+| any other key in `settings.runners`, or `settings.runners.leave_out` that is not such a list | — | Refused by the Workspace level's save, and ignored by the reader, which then leaves out nothing more. | `crates/purlis-core/src/settings/workspace.rs` `runners_refused` |
+| any other key in `settings`, or `settings` that is not an object | — | Refused by the save, and ignored by the reader: a workspace's settings hold `extensions`, `harness_plugins`, `harness_skills`, `theme`, `skills` and `runners` and nothing else. | `crates/purlis-core/src/settings/workspace.rs` `refusals` |
 
 **Written by** Settings at the Workspace level (`settings::workspace::save`, SE-20), which changes only
 `settings`: every other key keeps its place and value, a key removed takes every object it
@@ -7258,6 +7364,7 @@ refuses a `<data>` under a project or inside any git work tree.
 | `CLAUDE_PID` | Adopting a harness pid into `frame/<chat>/harness.pid` | `charter/hooks.py:6084` |
 | `CHARTER_CONFIG_HOME` / `XDG_CONFIG_HOME` | Move `reporting-consent` | `charter/report.py:462` |
 | `CHARTER_DATA_HOME` / `XDG_DATA_HOME` | Move `<data>`, purlis's data home: the event log in it today (FD-9), and the audit once it is written (ADR 0075). A value under a plane or inside a git work tree is refused | ADR 0075, `crates/purlis-core/src/datahome.rs` |
+| `PURLIS_SKILL_SOURCE_TOKEN`, `PURLIS_SKILL_SOURCE_USER`, `PURLIS_SKILL_SOURCE_HOST` | **purlis only** (SK-10, ADR 0100 §5 as amended 2026-10-23). Set on the one git process that fetches from or asks a private skill source, never on purlis's own environment and never on a command line: the token read from the vault entry the source names, the user name sent beside it (`x-access-token` unless the source says), and the source's host. That git's one credential helper prints the first two for `get` only, and only where git asks for that host over https. Nothing stores them | `crates/purlis-core/src/skills/source/fetch.rs` (`TOKEN_VAR`, `USER_VAR`, `HOST_VAR`, `helper`) |
 | `PURLIS_SKILL_SET` | **purlis only** (SK-24). The set's folder of links a chat is handed, set by the host as it arms the chat and taken out of its environment again where its terminal is composed (`chatspec::spec`), so the program never sees it: it keys the chat's note `skill-sets/.held/<digest>/<pid>` | `crates/purlis-core/src/skills.rs` (`SET_ENV`, `take_hold`) |
 | `EDM_HOME` / `EDM_WORKSPACE` / `EDM_PERSONA` | Legacy names, warned about only | `charter/legacyenv.py:39` |
 

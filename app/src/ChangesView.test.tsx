@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { ChangesView, uncommitted } from "./ChangesView";
+import { ChangesView, leftOutSaid, uncommitted } from "./ChangesView";
 import { catalogue, catalogued, type Catalogued } from "./actions";
 import { noTabs } from "./tabs";
 import type { FactColumn, Panels as PanelsModel, Piece, RepoState } from "./bindings";
@@ -171,6 +171,42 @@ describe("the Changes view", () => {
     const there = screen.getByTestId("runner-svc-builds-fix\u202egol");
     expect(there).toHaveTextContent("fix\\u202egol");
     expect(there.textContent).not.toContain("\u202e");
+  });
+
+  it("names what the last send to the runner left out, inertly (#2046)", () => {
+    render(
+      <ChangesView
+        offers={NO_MENUS}
+        onPress={() => {}}
+        workspace="alpha"
+        state={state({
+          repos: {
+            workspace: "alpha",
+            cache_refused: null,
+            repos: [
+              repo("svc", {
+                on_a_runner: [{ pool: "builds", branch: "fix-login", ahead: 0 }],
+                left_out_of_send: [".env", "notes\u202e.txt"],
+              }),
+              repo("tool"),
+            ],
+          },
+        })}
+      />,
+    );
+    const left = screen.getByTestId("left-out-svc");
+    expect(left).toHaveTextContent("Not sent to the runner");
+    expect(left).toHaveTextContent(".env, notes\\u202e.txt");
+    expect(left).toHaveAttribute("role", "treeitem");
+    expect(screen.queryByTestId("left-out-tool")).toBeNull();
+  });
+
+  it("says one left-out file as one, and names at most five (#2046)", () => {
+    expect(leftOutSaid([".env"])).toBe("Not sent to the runner, as a save would refuse it: .env");
+    const seven = ["a", "b", "c", "d", "e", "f", "g"].map((one) => `${one}.key`);
+    expect(leftOutSaid(seven)).toBe(
+      "Not sent to the runner, as a save would refuse them: a.key, b.key, c.key, d.key, e.key, and 2 more",
+    );
   });
 
   it("never draws a tree purlis could not read as clean", () => {

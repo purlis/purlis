@@ -8504,3 +8504,35 @@ button.show-more:focus-visible {
   margin: 0;
   padding-left: var(--space-5);
 }
+
+/* Skill sources (SK-10): the install review leads with its summary, risky items marked. */
+.skill-sources,
+.skill-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 60rem;
+}
+
+.skill-summary,
+.skill-review-files,
+.skill-updates,
+.skill-source-list {
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--font-size-sm);
+}
+
+.skill-summary li[data-risky="true"],
+.skill-review-files li[data-risky="true"] {
+  color: var(--danger-text);
+}
+
+.skill-review-file,
+.skill-update-file pre {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-sm);
+}

@@ -94,12 +94,12 @@ impl Level {
 
     /// Its folder relative to the plane, `/` between the parts, by the one rule
     /// ([`purlis_skills::level_rel`]): `skills`, `workspaces/ops/skills.local`.
-    pub(super) fn rel(&self) -> Option<String> {
+    pub(in crate::skills) fn rel(&self) -> Option<String> {
         purlis_skills::level_rel(self.workspace_name(), self.local)
     }
 
     /// The level whose folder `rel` is, read by the same rule.
-    fn of_rel(rel: &str) -> Option<Level> {
+    pub(in crate::skills) fn of_rel(rel: &str) -> Option<Level> {
         let (workspace, local) = purlis_skills::level_of_rel(rel)?;
         Some(
             match workspace {
@@ -111,7 +111,7 @@ impl Level {
     }
 
     /// How many folders its [`Self::rel`] has: the first one a new skill may make is the last.
-    fn depth(&self) -> usize {
+    pub(in crate::skills) fn depth(&self) -> usize {
         self.rel().map_or(usize::MAX, |rel| rel.split('/').count())
     }
 
@@ -164,7 +164,7 @@ fn workspaces(plane: &Path) -> Vec<String> {
 }
 
 /// `path` relative to `plane`, `/` between its parts.
-pub(super) fn rel(plane: &Path, path: &Path) -> String {
+pub(in crate::skills) fn rel(plane: &Path, path: &Path) -> String {
     path.strip_prefix(plane)
         .unwrap_or(path)
         .components()
@@ -185,7 +185,7 @@ impl Ctx<'_> {
     /// **Commits exactly `paths`** as one change, `message` its subject, through the plane's
     /// save. A project that cannot take it now (no save mode yet, saving off, something else
     /// staged) keeps it for the next save, and that is said.
-    pub(super) fn commit(&mut self, paths: &[String], message: &str) {
+    pub(in crate::skills) fn commit(&mut self, paths: &[String], message: &str) {
         let mut unique: Vec<String> = Vec::new();
         for path in paths {
             if !path.is_empty() && !unique.contains(path) {
@@ -231,7 +231,7 @@ impl Ctx<'_> {
 
     /// Refused where a built-in skill has `name`: a built-in skill's name is never taken (ADR
     /// 0099 §3), so a skill of that name would never reach a chat.
-    fn not_built_in(&self, name: &str) -> Result<(), String> {
+    pub(in crate::skills) fn not_built_in(&self, name: &str) -> Result<(), String> {
         let taken = self
             .built_in
             .is_some_and(|dir| super::read(dir).iter().any(|skill| skill.name == name));
@@ -245,18 +245,18 @@ impl Ctx<'_> {
     }
 
     /// Says `line` as a warning.
-    pub(super) fn warn(&mut self, line: String) {
+    pub(in crate::skills) fn warn(&mut self, line: String) {
         (self.say)(Say::Warn(line));
     }
 
     /// Says `line` as done.
-    pub(super) fn done(&mut self, line: String) {
+    pub(in crate::skills) fn done(&mut self, line: String) {
         (self.say)(Say::Done(line));
     }
 }
 
 /// Refused where `level` is a workspace's and the plane has no such workspace.
-fn level_is_there(plane: &Path, level: &Level) -> Result<PathBuf, String> {
+pub(in crate::skills) fn level_is_there(plane: &Path, level: &Level) -> Result<PathBuf, String> {
     if let Some(ws) = level.workspace_name() {
         let held = crate::workspaces::Plane::open(plane);
         if !held.workspace(ws).is_ok_and(|one| one.dir().is_dir()) {
@@ -279,7 +279,12 @@ pub(super) fn find(plane: &Path, level: &Level, name: &str) -> Result<PathBuf, S
 }
 
 /// Refused where `level` already holds a skill named `name` or a folder named `folder`.
-fn free_at(plane: &Path, level: &Level, name: &str, folder: &str) -> Result<PathBuf, String> {
+pub(in crate::skills) fn free_at(
+    plane: &Path,
+    level: &Level,
+    name: &str,
+    folder: &str,
+) -> Result<PathBuf, String> {
     let dir = level_is_there(plane, level)?;
     if named(&dir, name).is_some() {
         return Err(format!(
@@ -1239,21 +1244,21 @@ fn move_between(_: &Path, _: &Path, _: &Path, _: &Path, _: usize) -> Result<(), 
 /// at a time with `O_NOFOLLOW`, every file made new with `O_EXCL | O_NOFOLLOW`, read only where it
 /// is one plain file, and nothing removed but the names a kept delete is made of.
 #[cfg(unix)]
-mod store {
+pub(in crate::skills) mod store {
     use std::io::{Read as _, Write as _};
     use std::path::Path;
 
     use rustix::fd::OwnedFd;
     use rustix::fs::{AtFlags, CWD, FileType, Mode, OFlags, fstat, mkdirat, openat, unlinkat};
 
-    const FOLDER: OFlags = OFlags::RDONLY
+    pub(in crate::skills) const FOLDER: OFlags = OFlags::RDONLY
         .union(OFlags::DIRECTORY)
         .union(OFlags::CLOEXEC)
         .union(OFlags::NOFOLLOW);
 
     /// The folder `names` names under `root`, opened one component at a time following no
     /// link, making those from the `make_from`th on (counting from 1) that are not there.
-    pub(super) fn open_dir(
+    pub(in crate::skills) fn open_dir(
         root: &Path,
         names: &[String],
         make_from: usize,
