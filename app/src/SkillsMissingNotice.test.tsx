@@ -16,6 +16,7 @@ const MISSING = {
   persona: "ops",
   missing: ["superpowers:tdd", "langfuse"],
   no_built_in: ["purlis:gone"],
+  broken: [],
 };
 
 describe("a chat's missing skills", () => {
@@ -62,5 +63,52 @@ describe("a chat's missing skills", () => {
     expect(missingSays("This chat", { ...MISSING, missing: [] })).toBe(
       "ops names 1 built-in skill purlis does not have: purlis:gone.",
     );
+  });
+
+  it("says a skill that could not be loaded, with its level and why (SK-8)", () => {
+    expect(
+      missingSays("This chat", {
+        persona: null,
+        missing: [],
+        no_built_in: [],
+        broken: [
+          {
+            name: "half",
+            level: "project",
+            local: false,
+            label: "project",
+            why: "not a skill: its SKILL.md names no `description`",
+          },
+        ],
+      }),
+    ).toBe(
+      "This chat started without 1 skill that could not be loaded: half (project), not a skill: its SKILL.md names no `description`.",
+    );
+  });
+
+  it("opens the Skill studio on a chat at the project's root for a chat on no persona", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "chat_skills_missing")
+        return {
+          persona: null,
+          missing: [],
+          no_built_in: [],
+          broken: [
+            { name: "half", level: "project", local: false, label: "project", why: "not a skill" },
+          ],
+        };
+      return null;
+    });
+    const ran: SettingsActionAsk[] = [];
+    const hear = (event: Event) => ran.push((event as CustomEvent<SettingsActionAsk>).detail);
+    window.addEventListener(SETTINGS_ACTION, hear);
+    try {
+      render(<SkillsMissingNotice plane="p" session={7} />);
+      expect(await screen.findByText(/could not be loaded: half/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Open in Skill studio" }));
+      expect(ran).toEqual([{ plane: "p", action: "skills.studio" }]);
+    } finally {
+      window.removeEventListener(SETTINGS_ACTION, hear);
+    }
   });
 });
