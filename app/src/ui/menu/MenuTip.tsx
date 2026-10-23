@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
+import { useFocusVisible } from "react-aria";
 import { AnchoredTooltip, onTooltipEscape, TOOLTIP_CLOSE_DELAY } from "../tooltip/Tooltip";
 
 /**
@@ -30,7 +31,7 @@ export const TIP_AFTER_MS = 600;
  */
 export function useRested(has: boolean): {
   rested: boolean;
-  rest: { onFocus: () => void; onBlur: () => void };
+  rest: { onFocus: (event?: unknown) => void; onBlur: () => void };
   wake: () => void;
   hold: { onPointerEnter: () => void; onPointerLeave: () => void };
 } {
@@ -38,6 +39,12 @@ export function useRested(has: boolean): {
   const soon = useRef(0);
   const later = useRef(0);
   const held = useRef(false);
+  // Whether the last input was a key (or none yet) rather than the pointer.
+  const { isFocusVisible } = useFocusVisible();
+  const byKeys = useRef(isFocusVisible);
+  useEffect(() => {
+    byKeys.current = isFocusVisible;
+  }, [isFocusVisible]);
   const wake = useCallback(() => {
     window.clearTimeout(soon.current);
     window.clearTimeout(later.current);
@@ -45,12 +52,20 @@ export function useRested(has: boolean): {
     held.current = false;
     setRested(false);
   }, []);
-  const onFocus = useCallback(() => {
-    if (!has) return;
-    window.clearTimeout(soon.current);
-    window.clearTimeout(later.current);
-    soon.current = window.setTimeout(() => setRested(true), TIP_AFTER_MS);
-  }, [has]);
+  const onFocus = useCallback(
+    (event?: unknown) => {
+      if (!has) return;
+      // **Only a person's rest.** A menu the pointer opened puts the keyboard on its first row by
+      // itself; that is no rest, and a tooltip it raised would take the Escape meant for the menu.
+      // A row the pointer is on, or one the keys reached, is.
+      const row = (event as { currentTarget?: unknown } | undefined)?.currentTarget;
+      if (!byKeys.current && row instanceof Element && !row.matches(":hover")) return;
+      window.clearTimeout(soon.current);
+      window.clearTimeout(later.current);
+      soon.current = window.setTimeout(() => setRested(true), TIP_AFTER_MS);
+    },
+    [has],
+  );
   // Gone from the row, the tooltip stays for the pointer to cross onto it, and goes unless it did.
   const onBlur = useCallback(() => {
     window.clearTimeout(soon.current);

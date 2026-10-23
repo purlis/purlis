@@ -401,6 +401,31 @@ describe("a menu on screen", () => {
     expect(below).toHaveAccessibleDescription(`${NAME} started no chat that is still running.`);
   });
 
+  it("raises no row's note for the focus a pointer-opened menu puts on a row by itself", async () => {
+    aMenu();
+    const menu = await open();
+    const pinned = within(menu).getByRole("menuitemcheckbox", { name: "Pinned" });
+    vi.useFakeTimers();
+    try {
+      // The last input was the pointer, and the pointer is not on the row.
+      act(() => {
+        fireEvent.pointerDown(menu, { pointerType: "mouse" });
+        fireEvent.pointerUp(menu, { pointerType: "mouse" });
+      });
+      act(() => pinned.focus());
+      act(() => {
+        vi.advanceTimersByTime(TIP_AFTER_MS * 2);
+      });
+      expect(pinned).toBeInTheDocument();
+      expect(document.querySelector('[data-part="tip"]')).toBeNull();
+    } finally {
+      // The last input is a key again, as the tests after this one start from.
+      fireEvent.keyDown(document.body, { key: "Tab" });
+      fireEvent.keyUp(document.body, { key: "Tab" });
+      vi.useRealTimers();
+    }
+  });
+
   it("shows a row's note as its tooltip once the keyboard has rested on it, and not before", async () => {
     aMenu();
     const menu = await open();
