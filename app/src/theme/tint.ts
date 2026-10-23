@@ -78,6 +78,27 @@ const CHROMA_STEP = 0.005;
  * theme tints.
  */
 export function apartChroma(rules: readonly Rule[], hue: number): number | undefined {
+  // The same rules at the same hue give the same answer: a strip of tabs, a list of personas and
+  // every theme the core answers again ask it over and over, and where a rule is not held at
+  // full colour (Purlis's red, orange and pink, #3034) the answer is a search.
+  const key = `${hue} ${rules
+    .map((one) => `${one.token}${one.tokenTinted} ${one.from}${one.fromTinted} ${one.distance}`)
+    .join(" ")}`;
+  if (answered.has(key)) return answered.get(key);
+  const answer = searchedChroma(rules, hue);
+  if (answered.size >= MOST_ANSWERED) answered.delete(answered.keys().next().value as string);
+  answered.set(key, answer);
+  return answer;
+}
+
+/** Each answer {@link apartChroma} gave, by its rules and hue, the oldest out first. */
+const answered = new Map<string, number | undefined>();
+
+/** How many answers {@link answered} keeps. */
+const MOST_ANSWERED = 1024;
+
+/** {@link apartChroma}, worked out. */
+function searchedChroma(rules: readonly Rule[], hue: number): number | undefined {
   const side = (value: string, tinted: boolean, most: number) =>
     tinted ? tintHex(value, hue, most) : value;
   const far = (most: number) =>
