@@ -611,10 +611,11 @@ fn recorded(
     }
 }
 
-/// The longest `--settings` JSON a chat's command line carries as it is (SK-9, #2772): well under
-/// the one word Linux starts a program with (`MAX_ARG_STRLEN`, 128 KiB). A longer one, such as a
-/// Claude Code chat's with every skill level it is denied writing, goes through a file.
-pub const SETTINGS_IN_A_WORD: usize = 32 * 1024;
+/// The longest `--settings` JSON a chat's command line carries as it is (SK-9, #2772): under the
+/// one word Linux starts a program with (`MAX_ARG_STRLEN`, 128 KiB), with room for the rest. A
+/// longer one, such as a Claude Code chat's in a project with many workspaces and personas, each
+/// level of which it is denied writing, goes through a file.
+pub const SETTINGS_IN_A_WORD: usize = 96 * 1024;
 
 /// The folder of this machine's state a chat's settings file is kept in, by the chat's id.
 pub const SETTINGS_DIR: &str = "chat-settings";

@@ -7028,8 +7028,8 @@ rewritten.
 
 ### `chat-settings/<chat id>.json`
 - **Format:** a Claude Code chat's `--settings` JSON, as purlis armed it (SK-9, #2772), where it is
-  longer than one word of a command line carries (`hoststart::SETTINGS_IN_A_WORD`, 32 KiB, well
-  under Linux's 128 KiB): the chat is started with `--settings <this file>` instead. `0600` in a
+  longer than one word of a command line carries (`hoststart::SETTINGS_IN_A_WORD`, 96 KiB, under
+  Linux's 128 KiB): the chat is started with `--settings <this file>` instead. `0600` in a
   private folder.
 - **Status:** **internal**.
 - **Tier:** Clone state, transient — it lasts as long as its chat.
