@@ -3666,3 +3666,64 @@ fn a_skill_typed_into_claude_code_opens_its_run_on_the_expansion_that_names_it_a
         "an expansion is no tool call"
     );
 }
+
+#[test]
+fn a_skill_the_turn_of_a_curation_prompt_starts_is_the_actions_and_its_start_says_where_it_ran() {
+    use crate::state::Event::Stop;
+    use std::time::Instant;
+    const CURATION: &str = "Use purlis's compact skill to compact and improve the persona ops.";
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    host.begin(
+        plane.path(),
+        3,
+        RunOf {
+            chat: CHAT,
+            run: "01K6E8ZK6V4Q9T0N3M2B1C5D70",
+        },
+        Began::Start,
+        &Attributes {
+            persona: Some("steward".to_owned()),
+            harness: Some("codex".to_owned()),
+            ..Attributes::default()
+        },
+    )
+    .unwrap();
+    let written = host
+        .apply(super::Entry::SkillPrompted {
+            plane: plane.path().to_path_buf(),
+            number: 3,
+            prompted: crate::skillspan::Prompted::of(
+                purlis_skills::runs::StartedBy::Curation,
+                CURATION,
+            ),
+        })
+        .unwrap();
+    assert!(written.is_empty(), "nothing is written while it is unsent");
+    host.report(plane.path(), &sent(CURATION), Followed::No)
+        .unwrap();
+    host.tool(
+        plane.path(),
+        &starting(3, "posttooluse-skill", "toolu_a", "compact"),
+        Instant::now(),
+    )
+    .unwrap();
+    host.report(plane.path(), &report(3, Stop), Followed::No)
+        .unwrap();
+
+    let events = read(dir.path()).unwrap();
+    let started = events
+        .iter()
+        .find(|event| event.kind == "skill.started")
+        .expect("a run started");
+    assert_eq!(started.body["started_by"], "curation", "{started:#?}");
+    let runs = crate::skilluse::runs(plane.path());
+    assert_eq!(runs.len(), 1, "{runs:#?}");
+    assert_eq!(
+        runs[0].started_by,
+        Some(purlis_skills::runs::StartedBy::Curation)
+    );
+    assert_eq!(runs[0].harness.as_deref(), Some("codex"));
+    assert_eq!(runs[0].persona.as_deref(), Some("steward"));
+}

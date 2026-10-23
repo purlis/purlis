@@ -25,6 +25,14 @@
 //!
 //! One held longer than [`HELD_FOR_MS`] is dropped unopened, and so is every one held for a chat
 //! whose session ends.
+//!
+//! **A prompt a curation action typed, or a trigger sent** (SK-20, #2783; decision 60), is held
+//! the same way for its chat ([`Tracker::prompted`]), by its lead ([`PromptMarks::lead`]). The
+//! next prompt decides: where it holds that lead, the skill runs its turn opens at the top, by
+//! whatever route the harness took, are started by the action ([`StartedBy::Curation`]) or the
+//! trigger ([`StartedBy::Trigger`]), as that prompt is what asked for them; a run opened inside
+//! one is the harness's own pick. It is held until a prompt is sent, however long the person
+//! reads it first, and dropped with the session.
 
 use std::collections::HashMap;
 
@@ -53,6 +61,31 @@ pub struct Tracker {
     spans: Spans,
     /// The skills Use skill… typed into each chat, by the same key, in the order typed.
     typed: HashMap<String, Vec<Held>>,
+    /// The prompt a curation action or a trigger put in each chat, unsent, by the same key.
+    prompted: HashMap<String, Prompted>,
+    /// What started the turn under way in each chat, by the same key, where it was a curation
+    /// action or a trigger: the start of every run it opens at the top.
+    turn_by: HashMap<String, StartedBy>,
+}
+
+/// **A prompt a curation action typed into a chat, or a trigger sent it** (SK-20): the runs the
+/// turn it is sent in opens are theirs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Prompted {
+    /// [`StartedBy::Curation`] or [`StartedBy::Trigger`]; any other start is held for nothing.
+    pub by: StartedBy,
+    /// The prompt's lead, as [`PromptMarks::lead`] digests it. Never the text itself.
+    pub lead: u64,
+}
+
+impl Prompted {
+    /// The prompt `prompt`, put in a chat by `by`.
+    pub fn of(by: StartedBy, prompt: &str) -> Self {
+        Self {
+            by,
+            lead: PromptMarks::lead(prompt),
+        }
+    }
 }
 
 /// A skill Use skill… typed into a chat, unsent: the run its prompt opens.
@@ -137,6 +170,14 @@ impl PromptMarks {
             }
         }
         marks
+    }
+
+    /// The digest of `prompt`'s lead: the first [`Self::SPAN`] words of its first line, the
+    /// first stretch [`Self::of`] marks of a prompt that begins with it, however long the rest.
+    pub fn lead(prompt: &str) -> u64 {
+        let first = prompt.lines().next().unwrap_or_default();
+        let lead: Vec<&str> = first.split_whitespace().take(Self::SPAN).collect();
+        Self::digest(&lead.join(" "))
     }
 
     /// Whether nothing is marked: no prompt, or one of no words.
@@ -233,6 +274,15 @@ impl Tracker {
         });
     }
 
+    /// **A curation action or a trigger put prompt `prompted` in the chat keyed `key`**, unsent:
+    /// the next prompt that holds its lead is theirs, and so are the runs its turn opens at the
+    /// top. The one put there last stands. Any other start is held for nothing.
+    pub fn prompted(&mut self, key: &str, prompted: Prompted) {
+        if matches!(prompted.by, StartedBy::Curation | StartedBy::Trigger) {
+            self.prompted.insert(key.to_owned(), prompted);
+        }
+    }
+
     /// **State hook `report` was heard** in the chat keyed `key`, at `at_ms`: the turn's end, a
     /// new prompt and the session's end close every run open there, innermost first, and are
     /// answered; a question the chat put to the person is counted. A new prompt then opens the
@@ -258,11 +308,14 @@ impl Tracker {
                 if let Some(held) = self.typed.get_mut(key) {
                     held.retain(|one| !one.sent);
                 }
+                self.turn_by.remove(key);
                 Ended::Turn
             }
             Event::UserPromptSubmit => Ended::Interrupted,
             Event::SessionEnd => {
                 self.typed.remove(key);
+                self.prompted.remove(key);
+                self.turn_by.remove(key);
                 Ended::Session
             }
             _ => {
@@ -286,6 +339,13 @@ impl Tracker {
             };
         }
         let marks = report.detail.prompt_marks;
+        // The prompt put there decides at the next prompt, sent as it was or not.
+        self.turn_by.remove(key);
+        if let Some(prompted) = self.prompted.remove(key)
+            && marks.holds(prompted.lead)
+        {
+            self.turn_by.insert(key.to_owned(), prompted.by);
+        }
         let mut starting = Vec::new();
         if let Some(held) = self.typed.get_mut(key) {
             held.retain_mut(|one| match one.typed.confirmed {
@@ -318,6 +378,8 @@ impl Tracker {
     /// window went away under them, and the skills typed into it with them.
     pub fn close(&mut self, key: &str, ended: Ended, at_ms: u64) -> Vec<Closed> {
         self.typed.remove(key);
+        self.prompted.remove(key);
+        self.turn_by.remove(key);
         self.spans.close(key, ended, at_ms)
     }
 
@@ -415,13 +477,18 @@ impl Tracker {
                 level: started.level,
             },
         };
+        // At the top of a turn a curation action or a trigger began, the run is theirs.
+        let started_by = match self.turn_by.get(key) {
+            Some(by) if self.spans.inside(key).is_none() => *by,
+            _ => started.started_by,
+        };
         self.spans
             .open(
                 key,
                 Start {
                     skill: &skill,
                     id: &started.run,
-                    started_by: started.started_by,
+                    started_by,
                     whose: &whose,
                     at_ms,
                     tokens: tokens(),

@@ -278,6 +278,7 @@ fn ran(plane: &Path, id: &str, skill: &str, workspace: Option<&str>, level: Opti
             started_by: StartedBy::McpLoad,
             workspace,
             level,
+            harness: None,
         },
         None,
         chrono::Utc::now(),

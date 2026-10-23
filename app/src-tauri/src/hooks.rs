@@ -2455,6 +2455,35 @@ impl Hooks {
         }
     }
 
+    /// **A curation action put `prompt` in chat `number`**, unsent (SK-20): the skill runs the
+    /// turn it is sent in opens are the action's, in the event log and on the chat's tab alike.
+    /// Best effort, as [`Self::skill_typed`] is: a run is only ever a record of what the chat
+    /// did.
+    pub fn skill_prompted(&self, root: &Path, number: u32, prompt: &str) {
+        let prompted = purlis_core::skillspan::Prompted::of(
+            purlis_core::skills::runs::StartedBy::Curation,
+            prompt,
+        );
+        self.skill_runs.prompted(number, prompted);
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(events) = events
+            && let Err(why) = events.record(Entry::SkillPrompted {
+                plane: root.to_path_buf(),
+                number,
+                prompted,
+            })
+        {
+            tracing::warn!(
+                "purlis: the curation prompt typed into chat {number} was not held for its runs: \
+                 {why}"
+            );
+        }
+    }
+
     /// **Audits a sandbox grant or revoke** (#1342) in the host's event log, under chat
     /// `number` where it came from one, and made durable before it answers. Refused where this
     /// machine has no event log open: a grant nobody recorded is never made.

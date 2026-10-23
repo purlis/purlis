@@ -22,7 +22,11 @@ use std::path::Path;
 
 use crate::{Origin, Skill};
 
-/// What started a skill run (decision 60).
+/// **What started a skill run** (decision 60): the harness's own pick, by the route its adapter
+/// reads ([`StartedBy::SkillTool`], [`StartedBy::Read`]) or purlis's MCP server says
+/// ([`StartedBy::McpLoad`]); the person, with Use skill…; a curation action; or a trigger. A run
+/// a curation action's or a trigger's prompt opened is said to be theirs whichever route the
+/// harness took, as that prompt is what asked for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[non_exhaustive]
@@ -38,19 +42,27 @@ pub enum StartedBy {
     /// The person picked it in Use skill…, which typed it into the chat, and sent that prompt
     /// (SK-12): the run opens as the prompt does.
     UseSkill,
+    /// A curation action typed the prompt that started it, and the person sent it (SK-20): the
+    /// harness started the skill in that prompt's turn, by whichever route it takes.
+    Curation,
+    /// A trigger sent the prompt that started it (AC-9), by the route the harness took.
+    Trigger,
     /// A start a newer purlis wrote, which this one does not know. It never opens a run.
     #[serde(other)]
     Unknown,
 }
 
 impl StartedBy {
-    /// The word a run records: `skill-tool`, `read`, `mcp-load`, `use-skill` or `unknown`.
+    /// The word a run records: `skill-tool`, `read`, `mcp-load`, `use-skill`, `curation`,
+    /// `trigger` or `unknown`.
     pub fn word(self) -> &'static str {
         match self {
             Self::SkillTool => "skill-tool",
             Self::Read => "read",
             Self::McpLoad => "mcp-load",
             Self::UseSkill => "use-skill",
+            Self::Curation => "curation",
+            Self::Trigger => "trigger",
             Self::Unknown => "unknown",
         }
     }
@@ -62,6 +74,8 @@ impl StartedBy {
             "read" => Self::Read,
             "mcp-load" => Self::McpLoad,
             "use-skill" => Self::UseSkill,
+            "curation" => Self::Curation,
+            "trigger" => Self::Trigger,
             _ => return None,
         })
     }

@@ -129,6 +129,8 @@ fn a_runs_start_and_end_read_back_as_one_run_with_its_signals_and_never_a_verdic
             started: "2026-05-04T11:32:17+00:00".to_owned(),
             device: "box".to_owned(),
             copy: None,
+            harness: None,
+            workspace: None,
             end: Some(End {
                 ended: Ended::Turn,
                 at: "2026-05-04T11:32:17+00:00".to_owned(),
@@ -171,4 +173,153 @@ fn a_row_written_before_runs_were_recorded_reads_as_a_run_of_its_own_with_no_sta
             "recorded before runs were: {run:#?}"
         );
     }
+}
+
+/// Logs a run of `skill` on `harness` in `workspace` (`None` at the plane root) by `persona`,
+/// ended with `tool_calls` and `tokens` where `ended`.
+fn logged(
+    plane: &Path,
+    id: &str,
+    (harness, workspace, persona): (Option<&str>, Option<&str>, Option<&str>),
+    end: Option<(u32, Option<u64>)>,
+) {
+    let mut spans = Spans::default();
+    let open = spans
+        .open(
+            "chat-run",
+            Start {
+                skill: "deploy",
+                id,
+                started_by: StartedBy::SkillTool,
+                whose: &purlis_skills::runs::Whose {
+                    workspace: workspace.map(str::to_owned),
+                    level: None,
+                },
+                at_ms: 0,
+                tokens: None,
+            },
+        )
+        .cloned()
+        .unwrap();
+    let starting = Starting {
+        harness,
+        ..Starting::from(&open)
+    };
+    started(plane, &starting, persona, may(), "box").unwrap();
+    if let Some((calls, tokens)) = end {
+        for n in 0..calls {
+            let id = format!("toolu_{n}");
+            spans.heard(
+                "chat-run",
+                Heard {
+                    call: Some(Call::Id(&id)),
+                    ..Heard::default()
+                },
+            );
+        }
+        let closed = spans.close("chat-run", Ended::Turn, 2_000);
+        ended(plane, &closed[0], tokens, may(), "box").unwrap();
+    }
+}
+
+#[test]
+fn a_runs_start_says_its_harness_and_its_workspace_null_at_the_plane_root() {
+    let dir = a_plane();
+    logged(dir.path(), "01JB0000000000000000000001", (Some("codex"), None, None), None);
+    logged(
+        dir.path(),
+        "01JB0000000000000000000002",
+        (Some("claude"), Some("ops"), Some("steward")),
+        None,
+    );
+    let mut runs = runs(dir.path());
+    runs.sort_by(|a, b| a.id.cmp(&b.id));
+    assert_eq!(runs[0].harness.as_deref(), Some("codex"));
+    assert_eq!(runs[0].workspace, Some(None), "said: the plane root");
+    assert_eq!(runs[1].harness.as_deref(), Some("claude"));
+    assert_eq!(runs[1].workspace, Some(Some("ops".to_owned())));
+}
+
+#[test]
+fn runs_are_totalled_by_harness_persona_and_workspace_with_their_signals_and_cost() {
+    let dir = a_plane();
+    logged(
+        dir.path(),
+        "01JB0000000000000000000001",
+        (Some("claude"), Some("ops"), Some("steward")),
+        Some((3, Some(1_000))),
+    );
+    logged(
+        dir.path(),
+        "01JB0000000000000000000002",
+        (Some("claude"), None, None),
+        Some((1, None)),
+    );
+    logged(
+        dir.path(),
+        "01JB0000000000000000000003",
+        (Some("codex"), Some("ops"), Some("steward")),
+        None,
+    );
+    // A row from before SK-20 says neither its harness nor its workspace.
+    let log = path_for(dir.path(), may(), "box");
+    let mut text = std::fs::read_to_string(&log).unwrap();
+    text.push_str(
+        "{\"persona\": \"steward\", \"skill\": \"deploy\", \"ts\": \"2026-03-02T09:00:00+00:00\"}\n",
+    );
+    std::fs::write(&log, text).unwrap();
+    let runs = runs(dir.path());
+
+    let by_harness = stats(&runs, By::Harness);
+    let groups: Vec<(&Group, u64, u64)> = by_harness
+        .iter()
+        .map(|row| (&row.group, row.totals.runs, row.totals.ended))
+        .collect();
+    assert_eq!(
+        groups,
+        [
+            (&Group::Named("claude".to_owned()), 2, 2),
+            (&Group::Named("codex".to_owned()), 1, 0),
+            (&Group::NotRecorded, 1, 0),
+        ]
+    );
+    let claude = by_harness[0].totals;
+    assert_eq!(
+        (claude.tool_calls, claude.tokens, claude.tokens_said, claude.ms),
+        (4, 1_000, 1, 4_000)
+    );
+
+    let by_persona: Vec<(Group, u64)> = stats(&runs, By::Persona)
+        .into_iter()
+        .map(|row| (row.group, row.totals.runs))
+        .collect();
+    assert_eq!(
+        by_persona,
+        [(Group::Named("steward".to_owned()), 3), (Group::None, 1)]
+    );
+
+    let by_workspace: Vec<(Group, u64)> = stats(&runs, By::Workspace)
+        .into_iter()
+        .map(|row| (row.group, row.totals.runs))
+        .collect();
+    assert_eq!(
+        by_workspace,
+        [
+            (Group::Named("ops".to_owned()), 2),
+            (Group::None, 1),
+            (Group::NotRecorded, 1),
+        ]
+    );
+}
+
+#[test]
+fn a_group_is_said_by_its_kind_and_name() {
+    assert_eq!(
+        serde_json::to_value(Group::Named("ops".to_owned())).unwrap(),
+        serde_json::json!({"kind": "named", "name": "ops"})
+    );
+    assert_eq!(
+        serde_json::to_value(Group::NotRecorded).unwrap(),
+        serde_json::json!({"kind": "not-recorded"})
+    );
 }

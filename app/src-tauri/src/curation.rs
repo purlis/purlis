@@ -348,6 +348,7 @@ pub(crate) fn open_chosen(
     let root = held.root().to_path_buf();
     let profile = launch_profile(&root)?;
     let label = tab_label(&chosen.label, shown);
+    let prompt = chosen.prompt.clone();
     let typed = start_typed(
         held,
         ChatTyped {
@@ -368,6 +369,10 @@ pub(crate) fn open_chosen(
             )
         },
     )?;
+    // The skill runs the turn it is sent in opens are the action's (SK-20).
+    if typed.typed {
+        held.hooks().skill_prompted(&root, typed.session, &prompt);
+    }
     let (session, name, ready) = (typed.session, typed.name, typed.ready);
     Ok(Curating {
         session,

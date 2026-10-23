@@ -104,6 +104,12 @@ impl SkillRuns {
         self.runs().typed(&chat.to_string(), typed, now_ms());
     }
 
+    /// **A curation action put prompt `prompted` in chat `chat`**, unsent (SK-20): the runs the
+    /// turn it is sent in opens are the action's.
+    pub fn prompted(&self, chat: u32, prompted: purlis_core::skillspan::Prompted) {
+        self.runs().prompted(&chat.to_string(), prompted);
+    }
+
     /// Chat `chat` is closed: a run open in it goes with it, and the window is told.
     pub fn closed(&self, chat: u32) {
         let closed = self
