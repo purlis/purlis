@@ -10,6 +10,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { AFTER_A_MOVE_MS, ChatGauge, Trend, useChatUsage, WHILE_RUNNING_MS } from "./ChatGauge";
 import type { ChatUsage } from "./bindings";
 import { forgetShown, windowShown } from "./test-shown";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A chat's gauge**: what it draws from the core's answer, and when it asks again.
@@ -43,7 +44,7 @@ describe("the gauge", () => {
     expect(gauge.textContent?.replace(/\s+/g, " ")).toBe("ctx 83%cache 98%↻2 696k");
     expect(screen.getByText("83%")).toHaveClass("gauge-bad");
     expect(screen.getByText("98%")).toHaveClass("gauge-ok");
-    expect(gauge.getAttribute("title")).toContain("context window 83% full");
+    expect(tipOf(gauge)).toContain("context window 83% full");
   });
 
   it("draws nothing at all when charter knows nothing, never a zero", () => {
@@ -90,7 +91,11 @@ describe("the trend", () => {
       "gauge-bad",
       "gauge-warn",
     ]);
-    expect(bars[1].textContent).toBe("turn 2, cache 10%, ctx 20%, wrote 1k");
+    // Each turn is a line of the trend's one tooltip (#2908), never a native title of its bar.
+    expect(bars[1].querySelector("title")).toBeNull();
+    expect(tipOf(screen.getByTestId("gauge-trend"))?.split("\n")[1]).toBe(
+      "turn 2, cache 10%, ctx 20%, wrote 1k",
+    );
   });
 
   it("draws a turn whose share is unknown as a muted stub, not as a zero", () => {
@@ -98,7 +103,7 @@ describe("the trend", () => {
 
     const bars = [...screen.getByTestId("gauge-trend").querySelectorAll("rect")];
     expect(bars[1].getAttribute("class")).toBe("gauge-unknown");
-    expect(bars[1].textContent).toBe("turn 2, cache unknown");
+    expect(tipOf(screen.getByTestId("gauge-trend"))?.split("\n")[1]).toBe("turn 2, cache unknown");
   });
 
   it("is drawn beside the gauge only once there are two turns to compare", () => {

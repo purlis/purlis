@@ -98,7 +98,7 @@ export function AboutCharter() {
           variant="pill"
           data-testid="title-about"
           aria-label="About purlis — what this version brought"
-          title="About purlis — what this version brought"
+          tooltip="About purlis — what this version brought"
           icon={<Info aria-hidden="true" />}
         >
           About

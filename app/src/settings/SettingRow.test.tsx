@@ -149,6 +149,8 @@ describe("the badge", () => {
     const user = userEvent.setup();
     render(<Page />);
 
+    // The pointer comes onto the badge from the page.
+    await user.hover(document.body);
     await user.hover(
       within(rowOf("Mode")).getByText("This machine", { selector: ".ui-setting-badge" }),
     );

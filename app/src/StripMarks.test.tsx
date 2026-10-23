@@ -252,9 +252,9 @@ describe("the show-more button", () => {
       expect(bare, `button.bare no longer says ${declaration}`).toContain(declaration);
       expect(drawn, `button.show-more does not say ${declaration}`).toContain(declaration);
     }
-    expect(rule("button\\.show-more:hover:not\\(:disabled\\)")).toContain(
-      "background: var(--surface-hover)",
-    );
+    expect(
+      rule('button\\.show-more:hover:not\\(:disabled, \\[aria-disabled="true"\\]\\)'),
+    ).toContain("background: var(--surface-hover)");
   });
 });
 

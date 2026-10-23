@@ -1,9 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import * as Tooltip from "../overlays/tooltip";
+import { AnchoredTooltip, onTooltipEscape, TOOLTIP_CLOSE_DELAY } from "../ui/tooltip/Tooltip";
 
 /**
  * **What is inside a menu's row** (`docs/ui-primitives.md`, "Menus"): its words, the one line
@@ -21,90 +21,108 @@ import * as Tooltip from "../overlays/tooltip";
 export const TIP_AFTER_MS = 600;
 
 /**
- * Whether the keyboard or the pointer has **rested** on a menu's row, and the two handlers that
+ * Whether the keyboard or the pointer has **rested** on a menu's row, and the handlers that
  * tell it. Radix gives a row the keyboard when the pointer comes onto it, so its focus is where
  * the pointer is as well as where the arrows are, and one pair of handlers reads both.
  *
- * `rested` goes false when the row loses the keyboard, and `wake` makes it false at once: a
- * press, or Escape.
+ * `rested` goes false a moment after the row loses the keyboard, unless the pointer has gone
+ * onto the row's tooltip to read it (`hold`, WCAG 1.4.13 hoverable), and `wake` makes it false
+ * at once: a press, or Escape.
  */
 export function useRested(has: boolean): {
   rested: boolean;
   rest: { onFocus: () => void; onBlur: () => void };
   wake: () => void;
+  hold: { onPointerEnter: () => void; onPointerLeave: () => void };
 } {
   const [rested, setRested] = useState(false);
   const soon = useRef(0);
+  const later = useRef(0);
+  const held = useRef(false);
   const wake = useCallback(() => {
     window.clearTimeout(soon.current);
+    window.clearTimeout(later.current);
     soon.current = 0;
+    held.current = false;
     setRested(false);
   }, []);
   const onFocus = useCallback(() => {
     if (!has) return;
     window.clearTimeout(soon.current);
+    window.clearTimeout(later.current);
     soon.current = window.setTimeout(() => setRested(true), TIP_AFTER_MS);
   }, [has]);
-  useEffect(() => () => window.clearTimeout(soon.current), []);
-  return { rested: has && rested, rest: { onFocus, onBlur: wake }, wake };
+  // Gone from the row, the tooltip stays for the pointer to cross onto it, and goes unless it did.
+  const onBlur = useCallback(() => {
+    window.clearTimeout(soon.current);
+    window.clearTimeout(later.current);
+    later.current = window.setTimeout(() => {
+      if (!held.current) setRested(false);
+    }, TOOLTIP_CLOSE_DELAY);
+  }, []);
+  const hold = useMemo(
+    () => ({
+      onPointerEnter: () => {
+        held.current = true;
+        window.clearTimeout(later.current);
+      },
+      onPointerLeave: () => {
+        held.current = false;
+        later.current = window.setTimeout(() => setRested(false), TOOLTIP_CLOSE_DELAY);
+      },
+    }),
+    [],
+  );
+  useEffect(
+    () => () => {
+      window.clearTimeout(soon.current);
+      window.clearTimeout(later.current);
+    },
+    [],
+  );
+  return { rested: has && rested, rest: { onFocus, onBlur }, wake, hold };
 }
 
 /**
  * A row's tooltip: what the row does that its words do not say, beside the menu, while the
- * keyboard or the pointer rests on it ({@link useRested}). Drawn inside the row, and anchored
- * to the whole of it by a part that draws nothing.
+ * keyboard or the pointer rests on it ({@link useRested}), or on the tooltip itself. Drawn
+ * inside the row, and anchored to the whole of it by a part that draws nothing.
  *
- * The window's tooltip (Radix Tooltip, `.ui-tooltip`), opened by the row's rest and not by
- * Radix's own hover: the pointer coming onto a row gives it the keyboard, and Radix shows a
- * tooltip at once for a focus.
+ * The window's shared tooltip (`ui/tooltip`, #2908), opened by the row's rest and not by a
+ * pointer on it: the pointer coming onto a row gives it the keyboard, and a tooltip shown at
+ * once for each row a pointer crossed would be noise.
  *
- * **Escape closes the menu, not only the tooltip.** A Radix tooltip is the top layer while it
- * is up and would take the first Escape for itself. It is taken down on the window's capture
- * phase, before Radix's own listener on the document, so the same key reaches the menu.
+ * **Escape closes the tooltip, and only the tooltip** (WCAG 1.4.13): it is heard on the window's
+ * capture phase, before the menu's own listener on the document, and goes no further, so the
+ * menu stays open with the keyboard on its row. The next Escape is the menu's.
  */
 export function MenuTip({
   side,
   onClose,
+  hold,
   children,
 }: {
   /** Which side of the row it stands on: away from a submenu the row opens. */
   side: "left" | "right";
   onClose: () => void;
+  /** The pointer on the tooltip keeps it ({@link useRested}). */
+  hold?: { onPointerEnter: () => void; onPointerLeave: () => void };
   children: ReactNode;
 }) {
-  useEffect(() => {
-    const down = (event: KeyboardEvent) => {
-      if (event.key === "Escape") flushSync(onClose);
-    };
-    window.addEventListener("keydown", down, true);
-    return () => window.removeEventListener("keydown", down, true);
-  }, [onClose]);
+  const anchor = useRef<HTMLSpanElement>(null);
+  useEffect(() => onTooltipEscape(() => flushSync(onClose)), [onClose]);
   return (
-    <Tooltip.Provider>
-      <Tooltip.Root
-        open
-        onOpenChange={(next) => {
-          if (!next) onClose();
-        }}
+    <>
+      <span ref={anchor} className="ui-menu-tip-anchor" aria-hidden="true" />
+      <AnchoredTooltip
+        anchor={anchor}
+        side={side === "right" ? "end" : "start"}
+        onPointerEnter={hold?.onPointerEnter}
+        onPointerLeave={hold?.onPointerLeave}
       >
-        <Tooltip.Trigger asChild>
-          <span className="ui-menu-tip-anchor" aria-hidden="true" />
-        </Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content
-            className="ui-tooltip ui-menu-tip ui-text-secondary"
-            side={side}
-            align="start"
-            sideOffset={8}
-            collisionPadding={8}
-            // The row is described by its own hidden line, which is there before the rest.
-            aria-hidden="true"
-          >
-            {children}
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
+        <span className="ui-menu-tip ui-text-secondary">{children}</span>
+      </AnchoredTooltip>
+    </>
   );
 }
 

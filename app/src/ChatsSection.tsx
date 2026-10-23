@@ -87,6 +87,7 @@ import { DISPATCH } from "./settings/dispatch";
 import { Button } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
 type ShownFacts = {
@@ -867,7 +868,7 @@ export function ChatsSection({
                   size="sm"
                   data-leads-to={goesTo.session}
                   aria-label={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
-                  title={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
+                  tooltip={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
                   onPress={() => onOpen(goesTo.session)}
                   icon={<Hand aria-hidden="true" />}
                   className="chats-hidden-go"
@@ -875,16 +876,19 @@ export function ChatsSection({
                   Go
                 </Button>
               )}
-              <p
-                className={said === undefined ? "chats-hidden" : "chats-hidden away"}
-                role="status"
-                title={hides || undefined}
-              >
-                {hides}
-              </p>
-              <p className="chats-said" role="status" title={said}>
-                {said ?? ""}
-              </p>
+              <Tooltip tip={hides || undefined}>
+                <p
+                  className={said === undefined ? "chats-hidden" : "chats-hidden away"}
+                  role="status"
+                >
+                  {hides}
+                </p>
+              </Tooltip>
+              <Tooltip tip={said}>
+                <p className="chats-said" role="status">
+                  {said ?? ""}
+                </p>
+              </Tooltip>
             </div>
           )}
           {here !== undefined && every.length > 0 && (
@@ -1428,18 +1432,21 @@ const Row = memo(function Row({
                      control saying the same would be read twice and reached by nothing. Inside
                      the row, which is a button, so it is no button itself: its press folds the
                      row and goes no further, where the row's own press would open the chat. */
-                  <span
-                    className="ui-tree-twist"
-                    aria-hidden="true"
-                    data-fold={open ? "open" : "folded"}
-                    title={open ? `Fold the chats under ${name}` : `Show the chats under ${name}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onFold(session, open);
-                    }}
+                  <Tooltip
+                    tip={open ? `Fold the chats under ${name}` : `Show the chats under ${name}`}
                   >
-                    <ChevronRight aria-hidden="true" />
-                  </span>
+                    <span
+                      className="ui-tree-twist"
+                      aria-hidden="true"
+                      data-fold={open ? "open" : "folded"}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onFold(session, open);
+                      }}
+                    >
+                      <ChevronRight aria-hidden="true" />
+                    </span>
+                  </Tooltip>
                 )}
                 {/* Cut short where the row is narrow; whole in the card, and to a screen
                     reader, which is told the text. */}
@@ -1509,13 +1516,12 @@ const Row = memo(function Row({
       {atLimit !== null && (
         /* **At its task limit** (#1498, V100-54): said where the limit binds, on a refusal,
            until a slot frees; with the number and the way to where it is changed. */
-        <span
-          className="at-limit ui-text-secondary"
-          data-testid={`at-limit-${session}`}
-          title={atLimit.said}
-        >
-          {/* Which limit binds, with its number: only its own is "its task limit". */}
-          <span>{atLimit.row}</span>
+        <span className="at-limit ui-text-secondary" data-testid={`at-limit-${session}`}>
+          {/* Which limit binds, with its number: only its own is "its task limit". Its words
+              carry the whole sentence, and the link beside them is its own Tab stop. */}
+          <Tooltip tip={atLimit.said}>
+            <span>{atLimit.row}</span>
+          </Tooltip>
           <Button variant="link" onPress={onLimits} className="at-limit-settings">
             Dispatch settings
           </Button>
@@ -1524,13 +1530,11 @@ const Row = memo(function Row({
       {waitingOnMemory !== null && waitingOnMemory > 0 && (
         /* **Its dispatches waiting on memory** (#1617): said on the asking chat's row, in the
            at-limit line's place and style, as the Dispatches tab's Not started list names them. */
-        <span
-          className="at-limit ui-text-secondary"
-          data-testid={`on-memory-${session}`}
-          title={ON_MEMORY_SAID}
-        >
-          {onMemoryWords(waitingOnMemory)}
-        </span>
+        <Tooltip tip={ON_MEMORY_SAID}>
+          <span className="at-limit ui-text-secondary" data-testid={`on-memory-${session}`}>
+            {onMemoryWords(waitingOnMemory)}
+          </span>
+        </Tooltip>
       )}
       {restartSaid !== null && (
         /* **A restart asked for from this row, refused or waiting** (#1462): said here, in
@@ -1562,18 +1566,19 @@ const Row = memo(function Row({
         /* **A chat below this one needs you**: the hand, and a press goes to that chat. Its
            own button beside the row, since the row goes to this row's chat. Out of the arrows'
            way; the keyboard's way to that chat is the title bar's list. */
-        <button
-          type="button"
-          className="needs-you-mark rolled-up"
-          data-mark="needs-you"
-          data-leads-to={needs}
-          tabIndex={-1}
-          aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
-          title={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
-          onClick={() => onOpen(needs)}
-        >
-          <Hand aria-hidden="true" />
-        </button>
+        <Tooltip tip={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}>
+          <button
+            type="button"
+            className="needs-you-mark rolled-up"
+            data-mark="needs-you"
+            data-leads-to={needs}
+            tabIndex={-1}
+            aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
+            onClick={() => onOpen(needs)}
+          >
+            <Hand aria-hidden="true" />
+          </button>
+        </Tooltip>
       )}
     </li>
   );

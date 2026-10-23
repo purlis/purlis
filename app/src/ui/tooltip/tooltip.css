@@ -1,0 +1,64 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The tooltip family's default** (#2908, ADR 0103, ADR 0104): how every hint is drawn when a
+   theme names none of its parts. Every rule is keyed on the wrapper's attributes (`data-scope`,
+   `data-part`, `data-variant`) and React Aria's, never on a class, so a theme's parts reach
+   exactly what this file draws.
+
+   **On the overlay surface** (`primitives/overlays.css`, ADR 0094 §4): the ground, edge, corner
+   and lift a dialog, a popover and a menu share, so a tooltip reads as one of them. Its words are
+   small and it is one short thing, a sentence or two at most, never the window's width.
+
+   **It takes the pointer when the pointer opened it** (WCAG 1.4.13, hoverable): the pointer can
+   move onto it to read it, and it stays while the pointer is on it. One the keyboard opened
+   (`data-pointer` absent) takes none, so it never stands between the pointer and what is under
+   it: the title bar's drag gap, a strip's next tab.
+
+   **In the `components` layer** (`styles.css`). Only tokens. */
+
+[data-scope="tooltip"][data-part="root"] {
+  box-sizing: border-box;
+  pointer-events: none;
+  max-inline-size: min(calc(var(--space-8) * 10), calc(100vw - 2 * var(--space-4)));
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+  box-shadow: var(--elevation-overlay);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+  /* A hint's own line breaks stay, and a path with no spaces still wraps. */
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+[data-scope="tooltip"][data-part="root"][data-pointer] {
+  pointer-events: auto;
+}
+
+/* A path or a command in a hint, in the code face, as it is written. */
+[data-scope="tooltip"][data-part="root"] code {
+  font-family: var(--font-mono);
+}
+
+/* An icon button's second line, under its name: what it does beyond its name, or why it cannot
+   be pressed now. Secondary words, on the same surface. */
+[data-scope="tooltip"][data-part="detail"] {
+  display: block;
+  color: var(--text-secondary);
+}
+
+/* **It appears and goes at once**, with no fade: React Aria holds a tooltip that is leaving until
+   any animation on it has ended, and in WebKit a tooltip dismissed as its fade ran was held over
+   the page. A hint is a small thing near the pointer, and its coming and going is the cue. */
+
+/* **Words with a hint take the keyboard** (`Tooltip.tsx`), and say so with the window's focus
+   ring, outside them. Only words: a control draws its own ring. At no specificity, so a view's
+   own focus rule for its words keeps it. */
+:where([data-tooltip-target]:not(button, a, input, select, textarea, [role])):focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}

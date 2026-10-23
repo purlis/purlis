@@ -22,6 +22,7 @@ import {
 import { type Offer } from "./actions";
 import { useArrived } from "./lib/arrived";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **The strips' own controls** (#1035, split out of `PlaneView.tsx`): a catalogue row drawn as a
@@ -99,7 +100,7 @@ export function Doer({
       <Button
         variant="primary"
         isDisabled={!offer.available}
-        title={offer.reason || offer.note || undefined}
+        tooltip={offer.reason || offer.note || undefined}
         onPress={() => onPress(offer)}
       >
         {Mark && <Mark />}
@@ -107,22 +108,23 @@ export function Doer({
       </Button>
     );
   return (
-    <button
-      className={clsx(
-        offer.id === "pane.close" && !closesOnly(offer.does) && "ends-a-chat",
-        bare && "bare",
-      )}
-      // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written down
-      // (`docs/ui-primitives.md`, charter-app#189).
-      tabIndex={0}
-      disabled={!offer.available}
-      aria-label={bare ? (words ?? offer.title) : undefined}
-      title={offer.reason || offer.note || (bare ? offer.title : undefined)}
-      onClick={() => onPress(offer)}
-    >
-      {Mark && <Mark />}
-      {!bare && (words ?? offer.title)}
-    </button>
+    <Tooltip tip={offer.reason || offer.note || (bare ? offer.title : undefined)}>
+      <button
+        className={clsx(
+          offer.id === "pane.close" && !closesOnly(offer.does) && "ends-a-chat",
+          bare && "bare",
+        )}
+        // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written down
+        // (`docs/ui-primitives.md`, charter-app#189).
+        tabIndex={0}
+        disabled={!offer.available}
+        aria-label={bare ? (words ?? offer.title) : undefined}
+        onClick={() => onPress(offer)}
+      >
+        {Mark && <Mark />}
+        {!bare && (words ?? offer.title)}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -268,15 +270,15 @@ export function ShowMore({
           {listed.map(({ key, offer, children }) => {
             if (!offer) return null;
             return (
-              <Menu.Item
-                key={key}
-                className="ui-menu-item"
-                disabled={!offer.available}
-                title={offer.reason || undefined}
-                onSelect={() => onPress(offer)}
-              >
-                {children}
-              </Menu.Item>
+              <Tooltip key={key} tip={offer.reason || undefined}>
+                <Menu.Item
+                  className="ui-menu-item"
+                  disabled={!offer.available}
+                  onSelect={() => onPress(offer)}
+                >
+                  {children}
+                </Menu.Item>
+              </Tooltip>
             );
           })}
         </Menu.Content>
@@ -331,14 +333,11 @@ export type Hidden = {
 export function Pin({ held, what }: { held: boolean; what: string }) {
   if (!held) return null;
   return (
-    <span
-      className="pinned"
-      role="img"
-      aria-label={`pinned ${what}`}
-      title={`Pinned. Unpin it from the palette — yours, on this machine only.`}
-    >
-      <PinMark />
-    </span>
+    <Tooltip tip={`Pinned. Unpin it from the palette — yours, on this machine only.`}>
+      <span className="pinned" role="img" aria-label={`pinned ${what}`}>
+        <PinMark />
+      </span>
+    </Tooltip>
   );
 }
 
@@ -355,23 +354,24 @@ export function Closer({ offer, onPress }: { offer?: Offer; onPress: (offer: Off
   // named for what it does, "Send talk back into steward 4's tab". It ends nothing.
   const minimise = offer.does.verb === "sendBack";
   return (
-    <button
-      // A tab showing only a view closes and ends nothing, so its `×` does not wear the danger
-      // hover a chat's does — the look may not say more than the act does, either way.
-      className={clsx("closer", closesOnly(offer.does) && "keeps", minimise && "minimise")}
-      data-minimise={minimise ? "" : undefined}
-      // **Not a Tab stop, and deliberately** (charter-app#189). The strip it sits on is ONE
-      // stop, the WAI-ARIA "Tabs" pattern; a `×` per tab in the sequence would be fifty stops
-      // again. A keyboard ends a chat from the palette's row for it, or from the tab's own menu
-      // (the context-menu key), both of which read the same catalogue row this does — and
-      // Delete on the focused tab (charter-app#239, `closeOnDelete`), which a Mac needs.
-      tabIndex={-1}
-      aria-label={offer.title}
-      title={offer.note ? `${offer.title} — ${offer.note}` : offer.title}
-      onClick={() => onPress(offer)}
-    >
-      {minimise ? <Minus /> : <X />}
-    </button>
+    <Tooltip tip={offer.note ? `${offer.title} — ${offer.note}` : offer.title}>
+      <button
+        // A tab showing only a view closes and ends nothing, so its `×` does not wear the danger
+        // hover a chat's does — the look may not say more than the act does, either way.
+        className={clsx("closer", closesOnly(offer.does) && "keeps", minimise && "minimise")}
+        data-minimise={minimise ? "" : undefined}
+        // **Not a Tab stop, and deliberately** (charter-app#189). The strip it sits on is ONE
+        // stop, the WAI-ARIA "Tabs" pattern; a `×` per tab in the sequence would be fifty stops
+        // again. A keyboard ends a chat from the palette's row for it, or from the tab's own menu
+        // (the context-menu key), both of which read the same catalogue row this does — and
+        // Delete on the focused tab (charter-app#239, `closeOnDelete`), which a Mac needs.
+        tabIndex={-1}
+        aria-label={offer.title}
+        onClick={() => onPress(offer)}
+      >
+        {minimise ? <Minus /> : <X />}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -391,18 +391,19 @@ export function Closer({ offer, onPress }: { offer?: Offer; onPress: (offer: Off
 export function Gear({ offer, onPress }: { offer?: Offer; onPress: (offer: Offer) => void }) {
   if (!offer) return null;
   return (
-    <button
-      className="gear"
-      // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written down
-      // (`docs/ui-primitives.md`, charter-app#189).
-      tabIndex={0}
-      disabled={!offer.available}
-      aria-label={offer.title}
-      title={offer.reason || offer.title}
-      onClick={() => onPress(offer)}
-    >
-      <SettingsMark />
-    </button>
+    <Tooltip tip={offer.reason || offer.title}>
+      <button
+        className="gear"
+        // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written down
+        // (`docs/ui-primitives.md`, charter-app#189).
+        tabIndex={0}
+        disabled={!offer.available}
+        aria-label={offer.title}
+        onClick={() => onPress(offer)}
+      >
+        <SettingsMark />
+      </button>
+    </Tooltip>
   );
 }
 

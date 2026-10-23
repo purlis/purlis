@@ -18,6 +18,7 @@ import {
   SHIFT_F10,
   terminalRows,
 } from "./terminalRows";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A right-click on a terminal offers the terminal's own rows** (the operator, 2026-10-13: "in
@@ -222,9 +223,9 @@ describe("a right-click on a terminal", () => {
 
     const menu = await screen.findByRole("menu");
     expect(row(menu, "Copy").getAttribute("aria-disabled")).toBe("true");
-    expect(row(menu, "Copy").getAttribute("title")).toBe(NOTHING_SELECTED);
+    expect(row(menu, "Copy")).toHaveAccessibleDescription(NOTHING_SELECTED);
     expect(row(menu, "Paste").getAttribute("aria-disabled")).toBeNull();
-    expect(row(menu, "Paste").getAttribute("title")).toBeNull();
+    expect(tipOf(row(menu, "Paste"))).toBeNull();
     expect(row(menu, "Select all").getAttribute("aria-disabled")).toBeNull();
   });
 

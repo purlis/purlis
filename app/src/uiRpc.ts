@@ -1308,6 +1308,8 @@ export const commands = {
 	browserLimits: __WINDOW_ONLY_RESULT,
 	setBrowserLimit: __WINDOW_ONLY_RESULT,
 	engineSandbox: __WINDOW_ONLY_RESULT,
+	engineDownloads: __WINDOW_ONLY_RESULT,
+	cancelEngineDownload: __WINDOW_ONLY_RESULT,
 	useThisMachinesChrome: __WINDOW_ONLY_RESULT,
 	dockerPools: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
@@ -1316,6 +1318,9 @@ export const commands = {
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	projectsNotHeld: __WINDOW_ONLY_RESULT,
 	chatsRunOn: __WINDOW_ONLY_RESULT,
+	applyRunnerWrite: __WINDOW_ONLY_RESULT,
+	runnerWrite: __WINDOW_ONLY_RESULT,
+	dismissRunnerWrite: __WINDOW_ONLY_RESULT,
 	setChatsRunOn: __WINDOW_ONLY_RESULT,
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
@@ -1958,6 +1963,8 @@ export const commands = {
 /* Constants */
 export const CLOSE_HANDED = "theme-drafts-close-handed" as const;
 
+export const ENGINE_DOWNLOAD = "engine-download" as const;
+
 export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
 export const PERSONA_SCOPE_KEY = "persona/" as const;
@@ -2262,6 +2269,11 @@ export type AnswerPath =
  */
 { via: "proposed-change"; id: number; path: string } | 
 /**
+ *  `apply_runner_write` for Apply and `dismiss_runner_write` for Dismiss, on held runner
+ *  write `id` (#2046); Open opens its own tab, which shows it whole, and sends nothing.
+ */
+{ via: "runner-write"; id: number } | 
+/**
  *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
  *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
@@ -2413,6 +2425,11 @@ export type AskSource =
  *  (#1975).
  */
 "proposed-change" | 
+/**
+ *  A change to the project a chat on a pool's runner asked for, which only the person
+ *  applies (#2046).
+ */
+"runner-write" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
@@ -4081,6 +4098,14 @@ export type Doing = {
 	 *  cargo"), until the next tool heard.
 	 */
 	over: boolean,
+};
+
+/**  One download, as its Notice shows it. */
+export type EngineDownloadShown = {
+	/**  The browser whose start it is for: what Cancel names. */
+	program: string,
+	/**  The sentence. */
+	says: string,
 };
 
 /**  What the Notice says and offers. */
@@ -8108,6 +8133,26 @@ export type RunnerBranch = {
 	 *  checkout is on where there is none.
 	 */
 	ahead: number,
+};
+
+/**
+ *  **A held write whole, as its own tab draws it**: what it would do with every text whole, and
+ *  whether Apply is offered there, or why not.
+ */
+export type RunnerWriteWhole = {
+	/**  The chat that asked for it. */
+	session: number,
+	/**  The pool it runs on. */
+	pool: string,
+	/**
+	 *  What it would do, every text whole: as it would be written where it [`Self::applies`],
+	 *  and drawn safely, its escapes written out, where it does not.
+	 */
+	said: string,
+	/**  Whether Apply is offered: every text it carries is drawn as it is. */
+	applies: boolean,
+	/**  Why Apply is not offered, in a sentence. */
+	why: string | null,
 };
 
 /**  What the picker says about the sandbox for one profile, before anything starts. */

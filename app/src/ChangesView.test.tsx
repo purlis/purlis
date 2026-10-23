@@ -9,6 +9,7 @@ import { catalogue, catalogued, type Catalogued } from "./actions";
 import { noTabs } from "./tabs";
 import type { FactColumn, Panels as PanelsModel, Piece, RepoState } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 afterEach(cleanup);
 
@@ -1051,8 +1052,7 @@ describe("an extension's repo columns (charter-app#340)", () => {
 
     expect(screen.getByTestId("fact-prs-open-svc")).toHaveTextContent("PRs 2");
     expect(screen.getByTestId("fact-prs-open-svc")).toHaveAttribute("role", "treeitem");
-    expect(within(screen.getByTestId("fact-prs-open-svc")).getByText("PRs")).toHaveAttribute(
-      "title",
+    expect(tipOf(within(screen.getByTestId("fact-prs-open-svc")).getByText("PRs"))).toEqual(
       "From the extension prs",
     );
     // A repo the file did not name has no row, never a borrowed value.

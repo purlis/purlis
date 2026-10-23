@@ -19,6 +19,7 @@ import { askId, catalogue, catalogued, menuRows, OUTSIDE, type Now } from "./act
 import { Menued, useNoBrowserMenu } from "./Menus";
 import { TIP_AFTER_MS } from "./primitives/MenuRow";
 import { noTabs, openTab, selectTab } from "./tabs";
+import { TOOLTIP_CLOSE_DELAY } from "./ui/tooltip/Tooltip";
 
 /**
  * The context menus, and the browser menu they replace.
@@ -396,9 +397,8 @@ describe("a menu on screen", () => {
 
     const sub = await openSub("Stop");
     const below = within(sub).getByRole("menuitem", { name: "Stop and everything below it" });
-    expect(below).toHaveAccessibleDescription(`${NAME} started no chat that is still running.`);
     // The whole reason, where the line under the row had no room for it.
-    expect(below).toHaveAttribute("title", `${NAME} started no chat that is still running.`);
+    expect(below).toHaveAccessibleDescription(`${NAME} started no chat that is still running.`);
   });
 
   it("shows a row's note as its tooltip once the keyboard has rested on it, and not before", async () => {
@@ -420,17 +420,51 @@ describe("a menu on screen", () => {
       });
       const tip = document.querySelector(".ui-menu-tip");
       expect(tip).toHaveTextContent("Draws it first on its strip. Yours, on this machine only.");
-      expect(tip).toHaveClass("ui-tooltip", "ui-text-secondary");
+      expect(tip).toHaveClass("ui-text-secondary");
+      // The window's one tooltip (#2908).
+      expect(tip?.closest('[role="tooltip"]')).toHaveAttribute("data-scope", "tooltip");
 
-      // It goes when the keyboard leaves the row.
+      // It goes a moment after the keyboard leaves the row: time for the pointer to cross onto
+      // it, which keeps it (WCAG 1.4.13, hoverable).
       act(() => within(menu).getByRole("menuitem", { name: "Rename…" }).focus());
+      act(() => {
+        vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY);
+      });
       expect(document.querySelector(".ui-menu-tip")).toBeNull();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("closes the menu on one Escape while a tooltip is up", async () => {
+  it("keeps a row's note while the pointer is on it, and lets it go once the pointer leaves", async () => {
+    aMenu();
+    const menu = await open();
+    vi.useFakeTimers();
+    try {
+      act(() => within(menu).getByRole("menuitemcheckbox", { name: "Pinned" }).focus());
+      act(() => {
+        vi.advanceTimersByTime(TIP_AFTER_MS);
+      });
+      const tip = document.querySelector(".ui-menu-tip")?.closest('[role="tooltip"]');
+      expect(tip).not.toBeNull();
+      // The pointer leaves the row for the note: the row loses the keyboard, the note stays.
+      fireEvent.pointerEnter(tip as Element);
+      act(() => within(menu).getByRole("menuitem", { name: "Rename…" }).focus());
+      act(() => {
+        vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY * 10);
+      });
+      expect(document.querySelector(".ui-menu-tip")).not.toBeNull();
+      fireEvent.pointerLeave(tip as Element);
+      act(() => {
+        vi.advanceTimersByTime(TOOLTIP_CLOSE_DELAY);
+      });
+      expect(document.querySelector(".ui-menu-tip")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes the first Escape for the row's note, and the next one closes the menu", async () => {
     aMenu();
     const menu = await open();
     vi.useFakeTimers();
@@ -445,10 +479,16 @@ describe("a menu on screen", () => {
       act(() => {
         vi.runOnlyPendingTimers();
       });
+      // The note went, and the menu stays with the keyboard on its row (WCAG 1.4.13).
+      expect(document.querySelector(".ui-menu-tip")).toBeNull();
+      expect(screen.queryByRole("menu")).not.toBeNull();
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
     } finally {
       vi.useRealTimers();
     }
-    expect(document.querySelector(".ui-menu-tip")).toBeNull();
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
@@ -653,7 +693,7 @@ describe("the Curate ▸ submenu (ADR 0061)", () => {
       name: "personas/ops/curation/bad.md is left out",
     });
     expect(left.getAttribute("aria-disabled")).toBe("true");
-    expect(left.getAttribute("title")).toBe(
+    expect(left).toHaveAccessibleDescription(
       "personas/ops/curation/bad.md is not offered: no label.",
     );
   });
@@ -691,7 +731,7 @@ describe("the Curate ▸ submenu (ADR 0061)", () => {
 
     const safe = within(sub).getByRole("menuitem", { name: "Safe remove" });
     expect(safe.getAttribute("aria-disabled")).toBe("true");
-    expect(safe.getAttribute("title")).toContain("first prompt");
+    expect(safe).toHaveAccessibleDescription(expect.stringContaining("first prompt"));
   });
 
   /** opencode's card, as the core reads it: what it lacks, and its label. */
@@ -714,7 +754,7 @@ describe("the Curate ▸ submenu (ADR 0061)", () => {
     const sub = await openCurate();
 
     // The off rows keep their reason; the card is one row under them, once, and it can run.
-    expect(within(sub).getByRole("menuitem", { name: "Safe remove" }).getAttribute("title")).toBe(
+    expect(within(sub).getByRole("menuitem", { name: "Safe remove" })).toHaveAccessibleDescription(
       OFF_ON_OPENCODE,
     );
     const card = within(sub).getAllByRole("menuitem", { name: "What opencode can do here" });

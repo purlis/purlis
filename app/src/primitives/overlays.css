@@ -22,12 +22,12 @@
 
 /* ---------------------------------------------------------------------------------------------
    The surface: `.ui-dialog` on a Radix Dialog's or AlertDialog's content, `.ui-popover` on a
-   Popover's, `.ui-tooltip` on a Tooltip's, and `.ui-menu` (`controls.css`) on a menu's.
+   Popover's, and `.ui-menu` (`controls.css`) on a menu's. A tooltip is its family's own surface
+   (`ui/tooltip/tooltip.css`, #2908), drawn alike.
    --------------------------------------------------------------------------------------------- */
 
 .ui-dialog,
 .ui-popover,
-.ui-tooltip,
 .ui-menu {
   box-sizing: border-box;
   border: 1px solid var(--border-subtle);
@@ -38,7 +38,7 @@
 }
 
 /* A dialog and a popover hold words and controls, and are padded alike. A menu is a list whose
-   rows pad themselves, and a tooltip one line: each is inset by its own. */
+   rows pad themselves: it is inset by its own. */
 .ui-dialog,
 .ui-popover {
   padding: var(--space-6);
@@ -52,15 +52,7 @@
   font-size: var(--font-size-md);
 }
 
-/* A tooltip says one short thing, under the pointer or the keyboard, and takes nothing. */
-.ui-tooltip {
-  padding-block: var(--space-1);
-  padding-inline: var(--space-3);
-  font-size: var(--font-size-sm);
-  pointer-events: none;
-}
-
-/* The point a popover or a tooltip takes from what opened it, in the surface's own ground. */
+/* The point a popover takes from what opened it, in the surface's own ground. */
 .ui-overlay-arrow {
   fill: var(--surface-overlay);
 }

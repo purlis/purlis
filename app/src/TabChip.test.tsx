@@ -12,6 +12,7 @@ import { stateClock } from "./stateClock";
 import { REST_MS, type Ended, type Needing } from "./tabTasks";
 import type { TasksUsed } from "./bindings";
 import type { UsedAsk, UsedReader } from "./tasksUsed";
+import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A tab's chip, drawn alone** (#1487): what it does that the window has no way to bring
@@ -130,7 +131,7 @@ describe("a tab's chip", () => {
     expect(counts().getAttribute("aria-label")).toBe("Tasks of steward 1: 1 working");
     expect(counts().id).toBe("the-counts");
     // No tooltip of its own: it would come up over the menu the same rest opened.
-    expect(counts().getAttribute("title")).toBeNull();
+    expect(tipOf(counts())).toBeNull();
     // The drawn count is decoration to a screen reader: the name has said it.
     expect(counts().querySelector("[data-count]")?.getAttribute("aria-hidden")).toBe("true");
   });
@@ -357,9 +358,11 @@ describe("a tab's chip", () => {
         "2 tasks · at least 70k tokens · 6m",
       ),
     );
-    expect(foot.querySelector(".tasks-menu-totals")?.getAttribute("title")).toBe(
-      USED.total?.explained,
-    );
+    expect(
+      foot.querySelector(".tasks-menu-totals")
+        ? tipOf(foot.querySelector(".tasks-menu-totals"))
+        : undefined,
+    ).toBe(USED.total?.explained);
     // After every row, and not a row: nothing in it is picked.
     expect((menu() as HTMLElement).lastElementChild).toBe(foot);
     expect(within(foot).queryByRole("menuitem")).toBeNull();
@@ -404,10 +407,10 @@ describe("what a session's tasks used (#1500)", () => {
     fireEvent.click(counts());
 
     const talk = await screen.findByRole("menuitem", { name: /^talk/ });
-    await waitFor(() => expect(talk.getAttribute("title")).toBe("Tokens: 60k in, 10k out"));
+    await eventually(() => expect(tipOf(talk)).toBe("talk\nTokens: 60k in, 10k out"));
     const report = screen.getByRole("menuitem", { name: /^report/ });
-    expect(report.getAttribute("title")).toBe("Tokens: — (nothing reported)");
-    expect(report.getAttribute("title")).not.toContain("0");
+    expect(tipOf(report)).toBe("report\nTokens: — (nothing reported)");
+    expect(tipOf(report)).not.toContain("0");
   });
 
   it("says nothing of tokens where the window hands it no reader", () => {
@@ -415,6 +418,8 @@ describe("what a session's tasks used (#1500)", () => {
     fireEvent.click(counts());
 
     expect((menu() as HTMLElement).querySelector(".tasks-menu-totals")).toBeNull();
-    expect(screen.getByRole("menuitem", { name: /^talk/ }).getAttribute("title")).toBeNull();
+    // No tokens line: its tooltip only repeats its name, for a pointer where the name is cut
+    // short, and the keyboard's focus opens none.
+    expect(tipOf(screen.getByRole("menuitem", { name: /^talk/ }))).toBeNull();
   });
 });

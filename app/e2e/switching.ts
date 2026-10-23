@@ -62,8 +62,11 @@ export async function jobInTheWindow<T>(plan: Plan): Promise<T> {
 
 /** The project in front, by its path, as the strip says, read in one pass (`reading.ts`). */
 export async function inFront(): Promise<string | null> {
-  const tabs = await attributesOfEach(`${PROJECTS} [role="tab"]`, ["title", "aria-selected"]);
-  return tabs.find((tab) => tab["aria-selected"] === "true")?.title ?? null;
+  const tabs = await attributesOfEach(`${PROJECTS} [role="tab"]`, [
+    "data-directory",
+    "aria-selected",
+  ]);
+  return tabs.find((tab) => tab["aria-selected"] === "true")?.["data-directory"] ?? null;
 }
 
 /**

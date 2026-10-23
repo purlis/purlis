@@ -43,7 +43,10 @@ async function drawn() {
         return {
           name: row.getAttribute("aria-label") ?? "",
           off: row.getAttribute("aria-disabled") === "true",
-          why: row.getAttribute("title"),
+          // Why it cannot run: its description, which its words also say under them.
+          why:
+            document.getElementById(row.getAttribute("aria-describedby") ?? "")?.textContent ??
+            null,
           right: at.right,
           titleRight: title?.right ?? null,
           keyLeft: key?.left ?? null,

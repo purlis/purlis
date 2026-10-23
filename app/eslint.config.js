@@ -96,7 +96,7 @@ export default tseslint.config(
       "purlis/select-family": "warn",
       "purlis/choice-family": "warn",
       "purlis/dialog-family": "warn",
-      "purlis/tooltip-family": "warn",
+      "purlis/tooltip-family": ["error", { handsOn: ["Select"] }],
       "purlis/panel-family": "error",
       "purlis/panel-section-family": "error",
       "purlis/empty-state-family": "error",

@@ -220,7 +220,7 @@ export function useNotClonedHere(
                       variant="danger"
                       aria-label={dropMembershipTitle(repo)}
                       isDisabled={busy}
-                      title={busy ? `${repo} is being cloned.` : undefined}
+                      tooltip={busy ? `${repo} is being cloned.` : undefined}
                       onPress={() => setAsking(repo)}
                     >
                       Remove from workspace…

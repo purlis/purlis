@@ -164,7 +164,7 @@ function keyOf(group: GroupDrawn): string {
  */
 function Sub({ sub, onPress }: { sub: SubDrawn; onPress: (offer: Offer) => void }) {
   const noted = useId();
-  const { rested, rest, wake } = useRested(sub.tip !== undefined);
+  const { rested, rest, wake, hold } = useRested(sub.tip !== undefined);
   return (
     <ContextMenu.Sub>
       <ContextMenu.SubTrigger
@@ -184,7 +184,7 @@ function Sub({ sub, onPress }: { sub: SubDrawn; onPress: (offer: Offer) => void 
           </span>
         )}
         {rested && (
-          <MenuTip side="left" onClose={wake}>
+          <MenuTip side="left" onClose={wake} hold={hold}>
             {sub.tip}
           </MenuTip>
         )}
@@ -251,10 +251,10 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
   // Under its words: why it cannot run, or what it costs where that cannot be undone.
   const under = offer.available ? row.warns : offer.reason;
   // Its tooltip: the catalogue's note, for a row that can run and is not one of a submenu that
-  // says it once. A row that cannot run takes no keyboard, so its reason is the platform's.
+  // says it once. A row that cannot run says why under its words, and as its description.
   const tip = offer.available && !row.untipped ? note : undefined;
   const described = offer.available ? (note ?? row.warns) : offer.reason;
-  const { rested, rest, wake } = useRested(tip !== undefined);
+  const { rested, rest, wake, hold } = useRested(tip !== undefined);
   const inside = (
     <>
       <MenuWords said={said} under={under} danger={row.danger} />
@@ -265,7 +265,7 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
         </span>
       )}
       {rested && (
-        <MenuTip side="right" onClose={wake}>
+        <MenuTip side="right" onClose={wake} hold={hold}>
           {tip}
         </MenuTip>
       )}
@@ -273,9 +273,6 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
   );
   const shared = {
     disabled: !offer.available,
-    // Why it cannot run is under its words, whole. It is the row's platform tooltip as well,
-    // which the surfaces that read a row's reason by its `title` still find.
-    title: offer.available ? undefined : offer.reason || undefined,
     // **The row's NAME is its words and nothing else**, and its note is its description. Left
     // to the content, an accessible name would be the words with the consequence run onto the
     // end of them, so every row would announce as a paragraph and no surface could ask for one

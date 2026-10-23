@@ -7,6 +7,7 @@ import { ScrollText } from "lucide-react";
 import { commands, type BriefOf, type PlaneId, type TaskBrief } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **The brief a task was sent, read back** (#1494, V100-45).
@@ -84,18 +85,19 @@ export function BriefButton({ of }: { of: BriefAsk }) {
   const open = useOpenBrief();
   if (open === undefined) return null;
   return (
-    <button
-      type="button"
-      className="pane-brief"
-      // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-      tabIndex={0}
-      aria-label={briefTitle(of.name)}
-      aria-haspopup="dialog"
-      title="Brief: what this task was sent"
-      onClick={() => open(of)}
-    >
-      <ScrollText aria-hidden="true" />
-    </button>
+    <Tooltip tip="Brief: what this task was sent">
+      <button
+        type="button"
+        className="pane-brief"
+        // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+        tabIndex={0}
+        aria-label={briefTitle(of.name)}
+        aria-haspopup="dialog"
+        onClick={() => open(of)}
+      >
+        <ScrollText aria-hidden="true" />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -366,13 +368,13 @@ export function BriefPanel({
                 // stands next to Close, so it is the first one Tab reaches from it.
                 <>
                   <Button
-                    title="The text as it is shown here: nothing hidden, nothing that turns text around."
+                    tooltip="The text as it is shown here: nothing hidden, nothing that turns text around."
                     onPress={() => copy(said.inert ?? said.brief, "shown")}
                   >
                     Copy as shown
                   </Button>
                   <Button
-                    title="The brief exactly as it was sent, with the characters this panel wrote out as codes."
+                    tooltip="The brief exactly as it was sent, with the characters this panel wrote out as codes."
                     onPress={() => copy(said.brief, "sent")}
                   >
                     Copy as sent

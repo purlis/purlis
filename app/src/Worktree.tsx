@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { ChatWorktree } from "./bindings";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What a chat's row says about the worktree it is working in.
  *
@@ -33,20 +34,14 @@ export function WorktreeMark({
         <code className="branch ui-text-code">{worktree.branch}</code>
       )}
       {worktree.stale && (
-        <span
-          className="label stale"
-          title="git still has this branch's folder registered, but the folder is gone"
-        >
-          stale
-        </span>
+        <Tooltip tip="git still has this branch's folder registered, but the folder is gone">
+          <span className="label stale">stale</span>
+        </Tooltip>
       )}
       {!worktree.wired && !worktree.stale && (
-        <span
-          className="label unwired"
-          title="No purlis layer in this branch's folder: no persona agents, no ask/deny rules, no $PURLIS_HARNESS. A harness started here by hand runs without them. Starting a chat from purlis writes the layer, or says why it could not."
-        >
-          unwired
-        </span>
+        <Tooltip tip="No purlis layer in this branch's folder: no persona agents, no ask/deny rules, no $PURLIS_HARNESS. A harness started here by hand runs without them. Starting a chat from purlis writes the layer, or says why it could not.">
+          <span className="label unwired">unwired</span>
+        </Tooltip>
       )}
     </span>
   );

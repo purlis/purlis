@@ -16,9 +16,10 @@
  */
 import * as Radix from "../overlays/select";
 import { Check } from "lucide-react";
+import { Tooltip } from "../ui/tooltip/Tooltip";
 
 /** An option: what a pick writes, the words it shows, and whether it can be picked. An option
- *  out of reach says why on its `title`. */
+ *  out of reach says why on its `title`, drawn as its tooltip (#2908). */
 export type SelectOption = {
   value: string;
   label: string;
@@ -67,17 +68,18 @@ export function Select({
       onValueChange={(to) => onValueChange(outOf(to))}
       disabled={disabled}
     >
-      <Radix.Trigger
-        id={id}
-        className={className === undefined ? "ui-select" : `ui-select ${className}`}
-        // #190: WebKit leaves a control out of the Tab order without `tabIndex`.
-        tabIndex={0}
-        title={title}
-        data-value={held ? value : ""}
-        {...aria}
-      >
-        <Radix.Value placeholder={placeholder} />
-      </Radix.Trigger>
+      <Tooltip tip={title}>
+        <Radix.Trigger
+          id={id}
+          className={className === undefined ? "ui-select" : `ui-select ${className}`}
+          // #190: WebKit leaves a control out of the Tab order without `tabIndex`.
+          tabIndex={0}
+          data-value={held ? value : ""}
+          {...aria}
+        >
+          <Radix.Value placeholder={placeholder} />
+        </Radix.Trigger>
+      </Tooltip>
       <Radix.Portal>
         <Radix.Content
           className="ui-menu ui-select-list"
@@ -93,19 +95,19 @@ export function Select({
           <Radix.Viewport>
             {options.map((one, at) => (
               // By place, not by value, as every option list of the set is keyed.
-              <Radix.Item
-                key={at}
-                className="ui-menu-item"
-                value={into(one.value)}
-                disabled={one.disabled}
-                title={one.title}
-                data-value={one.value}
-              >
-                <Radix.ItemText>{one.label}</Radix.ItemText>
-                <Radix.ItemIndicator className="ui-menu-mark">
-                  <Check className="node-icon" aria-hidden />
-                </Radix.ItemIndicator>
-              </Radix.Item>
+              <Tooltip key={at} tip={one.title}>
+                <Radix.Item
+                  className="ui-menu-item"
+                  value={into(one.value)}
+                  disabled={one.disabled}
+                  data-value={one.value}
+                >
+                  <Radix.ItemText>{one.label}</Radix.ItemText>
+                  <Radix.ItemIndicator className="ui-menu-mark">
+                    <Check className="node-icon" aria-hidden />
+                  </Radix.ItemIndicator>
+                </Radix.Item>
+              </Tooltip>
             ))}
           </Radix.Viewport>
         </Radix.Content>

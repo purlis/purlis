@@ -850,3 +850,48 @@ fn of_two_updates_at_once_the_later_issued_is_kept_whichever_finishes_last() {
         later
     );
 }
+
+/// Serves what `served` does, and stops being wanted once its archive is read whole: a download
+/// cancelled while it unpacks (#2207).
+struct UnwantedOnceRead {
+    served: Served,
+}
+
+impl Fetch for UnwantedOnceRead {
+    fn fetch(&self, url: &str) -> std::io::Result<Box<dyn Read + '_>> {
+        self.served.fetch(url)
+    }
+
+    fn still_wanted(&self) -> std::io::Result<()> {
+        Err(std::io::Error::other("the person cancelled it"))
+    }
+}
+
+#[test]
+fn an_install_no_longer_wanted_after_its_download_puts_nothing_in_place() {
+    let root = tempfile::tempdir().unwrap();
+    let bytes = archive("pinned");
+    let unwanted = UnwantedOnceRead {
+        served: Served::with(url(VERSION), bytes.clone()),
+    };
+    let engines = engines(root.path(), &sha256(&bytes), Box::new(NoSigner));
+
+    let refused = engines
+        .prepare(&EngineSettings::default(), &unwanted, at(NOW))
+        .unwrap_err();
+
+    match refused {
+        Refused::Download(why) => assert_eq!(why.to_string(), "the person cancelled it"),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        *unwanted.served.asked.borrow(),
+        vec![url(VERSION)],
+        "it was downloaded"
+    );
+    assert!(
+        leftovers(root.path()).is_empty(),
+        "{:?}",
+        leftovers(root.path())
+    );
+}

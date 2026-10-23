@@ -102,7 +102,8 @@ What keeps it from becoming the library this file forbids:
 - **A control with no row** (#626) is still the set's `Field` or `Choice`: a box in a table's
   cell, a pick inside a sentence, the chips over a list. Its caller hands it `RowIds` with no
   `labelledBy`, and with `label`, said as its `aria-label`, since no row's `<label>` names it;
-  and `title`, as its tooltip, where a row's help line would have said something. A box or a
+  and `title`, drawn as its shared tooltip ([the tooltip family](#the-tooltip-family)), where a
+  row's help line would have said something. A box or a
   select with no row is never wider than its cell or line (`min-w-0 max-w-full`), and a box in a
   table's cell takes its own `size` and `inputMode`.
 - **SettingActions is a row, and the buttons are the caller's.** Native `<button>`s with their
@@ -341,11 +342,10 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
   is cut with an ellipsis. In an auto table its column grows to fit, so a long heading should be
   shortened. **A heading that is shortened, or that can be cut, carries its full words in a
   tooltip.** In Settings that is `ColumnHeading` (`settings/ColumnHeading.tsx`, DS-9 #1841): the
-  short words sit in a focusable `.ui-table-tip` behind the Radix tooltip (`.ui-tooltip`) DS-8
-  gave Settings, which shows the whole words and what the column holds; the whole words are the
-  heading's `aria-label`, so a screen reader announces them with each cell. A view without that
-  tooltip still uses `title`. Both `th[title]` and `.ui-table-tip` get a dotted underline, so the
-  tooltip can be found. Headings are `--font-size-sm` in `text.secondary` above a
+  short words sit in a `.ui-table-tip` behind the shared tooltip (#2908), which makes them a Tab
+  stop and shows the whole words and what the column holds; the whole words are the heading's
+  `aria-label`, so a screen reader announces them with each cell. `.ui-table-tip` gets a dotted
+  underline, so the tooltip can be found. Headings are `--font-size-sm` in `text.secondary` above a
   `border.strong` hairline. A `caption` sits above the table, at the start, in `text.secondary`.
 - **Cells are aligned.** Every cell and heading starts at `--ui-cell-pad-inline` and sits on the
   middle of its row, so text lines up with the 28px control in the next cell, not with that
@@ -480,6 +480,7 @@ own `min-width: max-content` beside the class.
 | `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
 | `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
 | `onPress`, `isDisabled`, `isSelected` | React Aria's own words; `onClick` still reaches a Radix trigger the button is the `asChild` of |
+| `tooltip` | its hint, the shared tooltip ([the tooltip family](#the-tooltip-family)), never a `title`; on an `IconButton`, a second line under its name |
 | `className` | the button's place in its view (margin, width, flex, order), never a look |
 
 - **A row of buttons takes one size** (`ButtonRow`): every button in it is the row's size,
@@ -610,6 +611,63 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 - **Stories hold them** (`Panel.stories.tsx`, `EmptyState.stories.tsx`, `StatusItem.stories.tsx`):
   panels flush and floating, a section with its action, each empty state, the pills and the bar
   with its menu, each walked by the keyboard and checked by axe in Chromium and WebKit.
+## The tooltip family
+
+**Every hint in the window is the shared tooltip** (`app/src/ui/tooltip/Tooltip.tsx`, #2908,
+ADR 0104), on React Aria's `TooltipTrigger` and `Tooltip`. No element carries a native `title`
+for one: `eslint.config.js` refuses it on every element and every member of the button and status
+item families (`purlis/tooltip-family`, an error). A frame's `title` is its name and stays.
+
+| Where the hint is | How it is written |
+| --- | --- |
+| On words, a mark, a row, a tab, a field | `<Tooltip tip={…}>` around the one element, which hands its props and its ref to the DOM |
+| On a `Button`, a `ToggleButton`, a `StatusItem` or a `StatusCell` | its `tooltip` |
+| On an `IconButton` | its `aria-label`, which its tooltip always shows; its `tooltip` is a second line under it (the `detail` part) |
+| Beside a menu's row, opened by the row's rest | `AnchoredTooltip` (`primitives/MenuRow.tsx`'s `MenuTip`) |
+
+- **One placement and one delay, which no call site changes**: beside its target at the target's
+  end, 10 px from it, flipped to its start where the window has no room (R166); open after the
+  pointer rests 500 ms, at once on the keyboard's focus, and at once for the next target while
+  one was just open.
+- **WCAG 1.4.13**: Esc takes it down and leaves the focus where it was (dismissible). **The first
+  Esc is the tooltip's alone**: heard first on the window's capture phase while it is up, it reaches no
+  dialog, menu, palette or terminal, and the next Esc is theirs. The pointer can move onto a tooltip it
+  opened and it stays (hoverable), a menu row's note included; it stays until the pointer or the
+  focus leaves, or Esc (persistent). `Tooltip.test.tsx` and the stories hold all three.
+- **A tooltip the keyboard opened takes no pointer** (`data-pointer` is the pointer's), so it never
+  stands between the pointer and what is under it. One the pointer opened takes it, in the title
+  bar too, where it is a drag region of its own: a press on it moves the window as the bar does.
+- **Reachable by the keyboard.** A control takes the keyboard already. Words with a hint become a
+  Tab stop and draw the focus ring, as a settings row's badge always was; a mark inside a control
+  (a row's change mark, a tab's persona), one hidden from a screen reader, a label, and a mark
+  whose hint is its own name take none, because the control or the name says what it means. A
+  hint that only repeats an element's words (a name cut short) is the pointer's: no focus opens
+  it. While it is shown, a hint is its target's description.
+- **An icon button's tooltip and its name agree by construction**: the tooltip shows the
+  `aria-label`, its hint a second line under it, and is not heard a second time. A raw icon-only
+  `<button>` around which `<Tooltip>` stands is drawn the same way.
+- **A disabled button or status item with a hint keeps the focus**, says it is unavailable (`aria-disabled`) and
+  does nothing (`app/src/ui/unavailable.ts`, an allowlist: only the focus's and the pointer's
+  handlers stay, whatever its parents hand it; it is a plain `type="button"`, and a click, Enter
+  and Space stop at it). Its reason is its description for good, so a screen reader hears why
+  whether or not the tooltip is up. A disabled text field or area leaves the Tab order, as a
+  native one does, and is described by its hint for good the same way.
+- **A read-only project's group of controls** (`ReadOnlyFieldset`) keeps its fields natively
+  disabled. Its legend, "Read-only", is the group's name and a Tab stop whose tooltip is the
+  project's sentence; the group and each settings row's control in it are described by it.
+- **Only while its project is in front** (`projectShown.tsx`): a project kept behind another
+  opens no tooltip over the window.
+- **Drawn by its parts** (ADR 0103): the surface is `data-scope="tooltip"`, `data-part="root"`,
+  an icon button's second line `data-part="detail"`; it has one look, so a key names the part
+  alone (`tooltip.root.corner-radius`).
+  `app/src/ui/tooltip/tooltip.css` draws the family default on [the overlay
+  surface](#the-overlay-surface), and a theme's parts reach its fill, words, edge, corners and
+  shadow; its size is its words'. Purlis draws it with corners of 8 and no edge (R166).
+- **Tests read a hint as the keyboard does**: `tipOf(element)` (`ui/tooltip/tooltip.testkit.ts`)
+  focuses the element as the keyboard would and reads the tooltip it opens.
+- **Stories hold it** (`Tooltip.stories.tsx`): words, an icon button's name, its second line and
+  a disabled button's reason, each walked by the keyboard (Tab opens, Esc dismisses, Tab leaves)
+  and checked by axe in Chromium and WebKit.
 
 ## The control classes
 
@@ -704,7 +762,7 @@ words are written once, in `app/src/menuWords.ts`; and what is inside a row is
    The catalogue's title still names the thing, for the palette, where a row stands among every
    other row of the window (`docs/ui-copy.md`, "Buttons and menu items").
 2. **A row's note is its tooltip and its description, not a line under it.** The tooltip is the
-   window's (Radix Tooltip, `.ui-tooltip`), shown beside the menu once the keyboard or the
+   window's shared one (`AnchoredTooltip`, #2908), shown beside the menu once the keyboard or the
    pointer has rested on the row for `TIP_AFTER_MS`; the description is the row's
    `aria-describedby`. **Two things stay under a row's words**: what a row that cannot be
    undone costs (*Ends the program it runs. There is no undo.*), and why a row cannot run. Each
@@ -748,8 +806,8 @@ title, where the catalogue put it.
 
 **The keyboard is Radix's**: the arrows move, Right opens a submenu, Left and Escape close it,
 and typing finds a row by its words (`textValue`), never by its note. A tooltip is taken down on
-the window's capture phase when Escape is pressed, so one Escape closes the menu: a Radix
-tooltip is the top layer while it is up and would otherwise take the first one.
+the window's capture phase when Escape is pressed, so one Escape closes the menu and the row's
+tooltip with it.
 
 **Not a filter field in a long submenu.** A text field inside a Radix menu fights its type-ahead
 and its roving focus, and typing already finds a row. A submenu with more rows than the window
@@ -780,7 +838,7 @@ and its rows).
 | Scrim   | `.ui-scrim`                                   | Radix Dialog's or AlertDialog's `Overlay`                  |
 | Dialog  | `.ui-dialog`                                  | Radix Dialog's or AlertDialog's `Content`                  |
 | Popover | `.ui-popover`; its arrow `.ui-overlay-arrow`  | Radix Popover's `Content` and `Arrow`                      |
-| Tooltip | `.ui-tooltip`; its arrow `.ui-overlay-arrow`  | Radix Tooltip's `Content` and `Arrow`                      |
+| Tooltip | the tooltip family's `root` part ([the tooltip family](#the-tooltip-family)) | React Aria's `Tooltip`, wrapped in `app/src/ui/tooltip` |
 | Menu    | `.ui-menu` ([the control classes](#the-control-classes)) | Radix DropdownMenu's or ContextMenu's `Content`  |
 
 - **The look is the class's, the place is the view's.** A view places and sizes its overlay with a
@@ -1650,8 +1708,8 @@ component library gets added on.
     `state.waiting` and reads _"2 blockers"_, _"10 warnings"_; a clean doctor draws no count.
     The Notices count is a number in the neutral count pill beside a bell in `state.waiting`.
     Each item's accessible name says its count (_"Notices: 6"_, _"Doctor: 10 warnings"_).
-  - **The project is its name, and its directory is the window's tooltip** (`.ui-tooltip`,
-    Radix Tooltip): words that press nothing, so a focusable span and no button, as a table's
+  - **The project is its name, and its directory is the window's tooltip** (the shared one,
+    #2908): words that press nothing, so a focusable span and no button, as a table's
     shortened heading is. The tooltip opens under the pointer and on keyboard focus. A long
     name is cut with an ellipsis. The item carries the directory as `data-directory`, which is
     how a scenario learns which project is open.
@@ -1666,7 +1724,7 @@ component library gets added on.
     view's badge is inside its own tab, and the tab is described by it.
   - **`aria-selected` is right here, as it is not in the explorer**: the bar is a tab list,
     and its tabs select what the side shows. The explorer keeps `aria-current`.
-  - **Icon-only, with the words on `aria-label` and the press in the `title`**: the tab is named for the view (`Chats`, `Explorer`) and its tooltip says what
+  - **Icon-only, with the words on `aria-label` and the press in its tooltip**: the tab is named for the view (`Chats`, `Explorer`) and its tooltip says what
     pressing does, with the key (_"Show the Explorer view (⌘⇧E)"_, or _"Put the Navigation
     region away"_ on the open one). Its mark is what the view is, never which edge it is on.
   - **A press of the open view puts the side away**; any other opens. The bar is outside the

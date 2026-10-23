@@ -2174,7 +2174,7 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     let json = ran.json();
     assert_eq!(json["schema"], 1);
-    assert_eq!(json["version"], 4);
+    assert_eq!(json["version"], 5);
     assert_eq!(
         json["theme_schema"]
             .as_str()
@@ -2186,14 +2186,20 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
         "<family>.<part>[.<variant>][.<state>].<property>"
     );
     assert_eq!(json["families"][0]["name"], "button");
-    // The window's own families (#2913).
+    // The window's own families (#2913), and the tooltip (#2908).
     let names: Vec<&str> = json["families"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|one| one["name"].as_str())
         .collect();
-    for family in ["panel", "panel-section", "empty-state", "status-item"] {
+    for family in [
+        "panel",
+        "panel-section",
+        "empty-state",
+        "status-item",
+        "tooltip",
+    ] {
         assert!(names.contains(&family), "{family}: {names:?}");
     }
     let corner = json["properties"]

@@ -449,6 +449,19 @@ pub fn sandboxed() -> bool {
     purlis_core::sandbox::chat_is_sandboxed()
 }
 
+/// **What a command that rewrites a workspace's `workspace.json` says in a chat the app
+/// started under a sandbox** (#2046): nothing, outside one. A chat's sandbox writes no
+/// workspace's manifest; the app writes the ones a chat's asks need (a clone's record, a new
+/// workspace), and the rest are the person's, from a terminal or the window.
+pub fn manifest_refused(command: &str) -> Option<String> {
+    sandboxed().then(|| {
+        format!(
+            "`purlis {command}` rewrites a workspace's workspace.json, which a sandboxed chat \
+             does not write, so nothing was changed. Ask the person to run it in a terminal"
+        )
+    })
+}
+
 /// How a workspace verb that writes takes the `-w` it was given, in a chat (#1408).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Named {

@@ -5,6 +5,7 @@ import { Fragment, type ComponentProps, type ReactNode } from "react";
 import { ChatShownState } from "./ChatRows";
 import { ASKED_BY_YOU } from "./chatsTree";
 import type { Crumbs } from "./tabChats";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **A pane's breadcrumb, while its tab shows a task** (#1486, V100-34): `steward 4 › talk ·
@@ -58,62 +59,60 @@ export function PaneCrumbs({
   const path = crumbs.path.map((chat) => chat.name).join(" › ");
   const said = shown.byYou === true ? `${path}, ${ASKED_BY_YOU}` : path;
   return (
-    <nav
-      {...rest}
-      className="pane-crumbs"
-      aria-label="Chat path"
-      // The whole path, for a pane too narrow to draw it.
-      title={crumbs.elsewhere === null ? said : `${said} in ${crumbs.elsewhere}`}
-    >
-      <span className="crumb-path">
-        {crumbs.path.map((chat, at) => (
-          <Fragment key={chat.session}>
-            {at === last ? (
-              <span className="crumb shown" aria-current="page">
-                {chat.name}
-              </span>
-            ) : gone?.(chat.session) ? (
-              <span className={at === 0 ? "crumb own" : "crumb between"}>{chat.name}</span>
-            ) : (
-              <button
-                type="button"
-                className={at === 0 ? "crumb own" : "crumb between"}
-                // In the tab sequence, said out loud (`docs/ui-primitives.md`).
-                tabIndex={0}
-                onClick={() => onShow(chat.session)}
-              >
-                {chat.name}
-              </button>
-            )}
-            {at < last && (
-              <span className="crumb-sep" aria-hidden="true">
-                {" › "}
-              </span>
-            )}
-          </Fragment>
-        ))}
-      </span>
-      {crumbs.elsewhere !== null && <span className="crumb-where"> in {crumbs.elsewhere}</span>}
-      <span className="crumb-sep" aria-hidden="true">
-        {" · "}
-      </span>
-      {state ?? (
-        <ChatShownState
-          session={shown.session}
-          shell={shown.shell}
-          report={shown.report}
-          outcome={shown.outcome}
-          asking={shown.asking}
-          harness={shown.harness}
-        />
-      )}
-      {shown.byYou === true && (
-        /* One box with its separator, so both give way together, before the state does. */
-        <span className="crumb-by" title="You asked for this task from this tab">
-          <span aria-hidden="true">{" · "}</span>
-          {ASKED_BY_YOU}
+    <Tooltip tip={crumbs.elsewhere === null ? said : `${said} in ${crumbs.elsewhere}`}>
+      <nav {...rest} className="pane-crumbs" aria-label="Chat path">
+        <span className="crumb-path">
+          {crumbs.path.map((chat, at) => (
+            <Fragment key={chat.session}>
+              {at === last ? (
+                <span className="crumb shown" aria-current="page">
+                  {chat.name}
+                </span>
+              ) : gone?.(chat.session) ? (
+                <span className={at === 0 ? "crumb own" : "crumb between"}>{chat.name}</span>
+              ) : (
+                <button
+                  type="button"
+                  className={at === 0 ? "crumb own" : "crumb between"}
+                  // In the tab sequence, said out loud (`docs/ui-primitives.md`).
+                  tabIndex={0}
+                  onClick={() => onShow(chat.session)}
+                >
+                  {chat.name}
+                </button>
+              )}
+              {at < last && (
+                <span className="crumb-sep" aria-hidden="true">
+                  {" › "}
+                </span>
+              )}
+            </Fragment>
+          ))}
         </span>
-      )}
-    </nav>
+        {crumbs.elsewhere !== null && <span className="crumb-where"> in {crumbs.elsewhere}</span>}
+        <span className="crumb-sep" aria-hidden="true">
+          {" · "}
+        </span>
+        {state ?? (
+          <ChatShownState
+            session={shown.session}
+            shell={shown.shell}
+            report={shown.report}
+            outcome={shown.outcome}
+            asking={shown.asking}
+            harness={shown.harness}
+          />
+        )}
+        {shown.byYou === true && (
+          /* One box with its separator, so both give way together, before the state does. */
+          <Tooltip tip="You asked for this task from this tab">
+            <span className="crumb-by">
+              <span aria-hidden="true">{" · "}</span>
+              {ASKED_BY_YOU}
+            </span>
+          </Tooltip>
+        )}
+      </nav>
+    </Tooltip>
   );
 }

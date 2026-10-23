@@ -1397,6 +1397,20 @@ const STATES: State[] = [
     drawn: /proposes this change to/,
   },
   {
+    name: "a runner chat's change to the project, whole (#2046)",
+    view: { from: null, view: "runner-write", key: "3" },
+    answers: {
+      runner_write: {
+        session: 6,
+        pool: "builds",
+        said: "Remember in this workspace's memory: the runner keeps its own branch",
+        applies: true,
+        why: null,
+      },
+    },
+    drawn: /asks to change this project/,
+  },
+  {
     name: "an extension's view, its action refused",
     view: EXTENSION,
     answers: {

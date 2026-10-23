@@ -109,7 +109,7 @@ export async function stripSeen(): Promise<StripSeen> {
     return {
       names: tabs.map((one) => one.innerText.trim()),
       held: tabs.map((one) => (one.textContent ?? "").trim()),
-      project: selected("Projects")?.getAttribute("title") ?? null,
+      project: selected("Projects")?.getAttribute("data-directory") ?? null,
       tab: selected("Tabs")?.innerText.trim() ?? null,
       size: `${window.innerWidth}×${window.innerHeight}`,
     };

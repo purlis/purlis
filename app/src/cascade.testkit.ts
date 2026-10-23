@@ -18,8 +18,8 @@
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
  * - `primitives/controls.css`, `ui/button/button.css`, `ui/field/field.css`, the window's own
- *   families (`ui/panel`, `ui/empty-state`, `ui/status`) and then `primitives/overlays.css` are in
- *   the `components` layer,
+ *   families (`ui/panel`, `ui/empty-state`, `ui/status`), `primitives/overlays.css` and then
+ *   `ui/tooltip/tooltip.css` are in the `components` layer,
  *   above `App.css`'s `charter` (`styles.css`), so a primitive's rule beats any of `App.css`'s that
  *   sets the same property, at any specificity;
  * - inside one layer, the winner is the highest specificity, then the last in the file.
@@ -130,6 +130,16 @@ const OVERLAYS = rulesOf(
   1,
   COLLECTIONS.length + CONTROLS.length + BUTTONS.length + FIELDS.length + SHELL.length,
 );
+const TOOLTIPS = rulesOf(
+  sheet("ui/tooltip/tooltip.css"),
+  1,
+  COLLECTIONS.length +
+    CONTROLS.length +
+    BUTTONS.length +
+    FIELDS.length +
+    SHELL.length +
+    OVERLAYS.length,
+);
 const RULES = [
   ...rulesOf(sheet("App.css"), 0),
   ...COLLECTIONS,
@@ -138,6 +148,7 @@ const RULES = [
   ...FIELDS,
   ...SHELL,
   ...OVERLAYS,
+  ...TOOLTIPS,
   ...rulesOf(
     sheet("primitives/text.css"),
     1,
@@ -146,7 +157,8 @@ const RULES = [
       BUTTONS.length +
       FIELDS.length +
       SHELL.length +
-      OVERLAYS.length,
+      OVERLAYS.length +
+      TOOLTIPS.length,
   ),
 ];
 

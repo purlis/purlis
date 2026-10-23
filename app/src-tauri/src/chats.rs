@@ -2353,6 +2353,11 @@ impl Chats {
         *lock(&self.asks_moved) = Some(moved);
     }
 
+    /// The pool chat `session` runs on, where it runs on a pool's runner (#2046).
+    pub fn pool_of(&self, session: u32) -> Option<String> {
+        self.sessions.pool_of(session)
+    }
+
     /// This project's asks may have moved for a reason no event of its own says (qw356: a
     /// chat asked the person to remove a workspace, or that question was answered): the window
     /// is told its asks, so it reads the registry again.

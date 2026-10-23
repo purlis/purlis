@@ -7,6 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { WindowOption } from "../bindings";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "../theme/theme";
 import { OptionsList, useOptionsInForce } from "./themeOptions";
+import { tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /** The core's answer for a theme drawn with `options`. */
 function answering(options: () => WindowOption[]) {
@@ -64,7 +65,7 @@ describe("Settings › Theme › Options (#2325, #2331)", () => {
     render(<Row />);
     const borders = await screen.findByText(/^Borders: On/);
     expect(borders.textContent).toContain("Theme default");
-    expect(borders.getAttribute("title")).toBe("A rule between panes.");
+    expect(tipOf(borders)).toBe("A rule between panes.");
     const accent = screen.getByText(/^Accent: Teal/);
     expect(accent.textContent).toContain("Chosen");
   });
@@ -74,9 +75,11 @@ describe("Settings › Theme › Options (#2325, #2331)", () => {
     render(<Row />);
     const accent = await screen.findByText(/^Accent: Teal/);
     expect(accent.textContent).toContain("Workspace");
-    expect(accent.querySelector(".ui-setting-badge")?.getAttribute("title")).toBe(
-      "Accent is drawn as your choice for this workspace on this machine has it.",
-    );
+    expect(
+      accent.querySelector(".ui-setting-badge")
+        ? tipOf(accent.querySelector(".ui-setting-badge"))
+        : undefined,
+    ).toBe("Accent is drawn as your choice for this workspace on this machine has it.");
   });
 
   it("names a committed default's value as the team's (#2707)", async () => {
@@ -84,9 +87,11 @@ describe("Settings › Theme › Options (#2325, #2331)", () => {
     render(<Row />);
     const accent = await screen.findByText(/^Accent: Teal/);
     expect(accent.textContent).toContain("Team");
-    expect(accent.querySelector(".ui-setting-badge")?.getAttribute("title")).toBe(
-      "Accent is drawn as this project's committed default has it.",
-    );
+    expect(
+      accent.querySelector(".ui-setting-badge")
+        ? tipOf(accent.querySelector(".ui-setting-badge"))
+        : undefined,
+    ).toBe("Accent is drawn as this project's committed default has it.");
   });
 
   it("says when the theme drawn has no options", async () => {

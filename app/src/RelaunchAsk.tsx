@@ -6,6 +6,7 @@ import * as Alert from "./overlays/alert-dialog";
 import type { RelaunchChoice, RelaunchQuestion } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * What a launch asks before it puts anything back (charter-app#250): reopen every session, or
@@ -29,7 +30,7 @@ import { Button } from "./ui/button/Button";
  * and the launch it restarts into says why it is being asked. "Reopen all" is in front either
  * way.
  *
- * Each project row carries its whole path as its title, for `calledOn`'s reason: two projects
+ * Each project row carries its whole path as its tooltip, for `calledOn`'s reason: two projects
  * can share a folder name.
  */
 export function RelaunchAsk({
@@ -69,10 +70,16 @@ export function RelaunchAsk({
           </Alert.Description>
           <ul className="ending">
             {question.projects.map((project) => (
-              <li key={project.plane} title={project.plane}>
-                <span>{nameOf(project.plane)}</span>
-                <span className="what">{counts(project.chats, project.views, ", ")}</span>
-              </li>
+              // Its whole directory, where its name shows less of it.
+              <Tooltip
+                key={project.plane}
+                tip={nameOf(project.plane) === project.plane ? undefined : project.plane}
+              >
+                <li>
+                  <span>{nameOf(project.plane)}</span>
+                  <span className="what">{counts(project.chats, project.views, ", ")}</span>
+                </li>
+              </Tooltip>
             ))}
           </ul>
           <AnswerBar>

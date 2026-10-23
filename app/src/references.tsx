@@ -24,6 +24,7 @@ import { MessageSquarePlus } from "lucide-react";
 import { commands, type Handed, type PlaneId } from "./bindings";
 import type { Ran } from "./actions";
 import { Button, IconButton } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** The drag's own type: only charter's rows carry it, so a file dragged in from the desktop or
  *  text from another app is never taken for a reference. */
@@ -255,15 +256,16 @@ export function ChatsToPick({
  */
 export function DragHandle({ referenced }: { referenced: Referenced }) {
   return (
-    <span
-      className="reference-handle"
-      draggable
-      role="note"
-      title="Drag onto a chat to type a reference to this into it"
-      data-testid="reference-handle"
-      onDragStart={(event) => dragReference(event, referenced)}
-    >
-      {referenceSaid(referenced)}
-    </span>
+    <Tooltip tip="Drag onto a chat to type a reference to this into it">
+      <span
+        className="reference-handle"
+        draggable
+        role="note"
+        data-testid="reference-handle"
+        onDragStart={(event) => dragReference(event, referenced)}
+      >
+        {referenceSaid(referenced)}
+      </span>
+    </Tooltip>
   );
 }

@@ -168,7 +168,7 @@ describe("one surface", () => {
     cleanup();
 
     render(
-      <div className="ui-tooltip" role="tooltip">
+      <div data-scope="tooltip" data-part="root" role="tooltip">
         Kept in purlis.toml
       </div>,
     );

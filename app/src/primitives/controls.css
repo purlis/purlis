@@ -429,10 +429,10 @@
   pointer-events: none;
 }
 
-/* A row's tooltip: a sentence or two beside the menu, wrapped, over the menu it stands by. */
+/* A row's tooltip's words: a sentence or two beside the menu, wrapped. */
 .ui-menu-tip {
+  display: block;
   max-inline-size: calc(var(--space-8) * 9);
-  z-index: 20;
 }
 
 /* The mark at a row's end: a submenu's arrow, a select's tick. */

@@ -387,7 +387,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 4): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 5): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -2780,6 +2780,27 @@
           "$ref": "#/$defs/part-text"
         },
         "status-item.count.accent.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tooltip.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "tooltip.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tooltip.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "tooltip.root.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "tooltip.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "tooltip.root.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "tooltip.detail.text": {
           "$ref": "#/$defs/part-text"
         }
       }

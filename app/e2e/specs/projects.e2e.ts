@@ -93,11 +93,14 @@ async function ask<T>(command: string, args: Record<string, unknown> = {}): Prom
  * found and then read can be gone in between (charter#506, `reading.ts`).
  */
 async function strip(): Promise<{ path: string | null; front: boolean }[]> {
-  const tabs = await attributesOfEach(`${PROJECTS} [role="tab"]`, ["title", "aria-selected"]);
+  const tabs = await attributesOfEach(`${PROJECTS} [role="tab"]`, [
+    "data-directory",
+    "aria-selected",
+  ]);
   return tabs.map((tab) => ({
     // The path, not the name: the tab carries the whole path because two projects can share
     // a directory name, and that is exactly the case this spec sets up.
-    path: tab.title,
+    path: tab["data-directory"],
     front: tab["aria-selected"] === "true",
   }));
 }
