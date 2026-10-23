@@ -23,6 +23,7 @@ import { type Offer } from "./actions";
 import { useArrived } from "./lib/arrived";
 import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { tabPart } from "./ui/tabs/Tabs";
 
 /**
  * **The strips' own controls** (#1035, split out of `PlaneView.tsx`): a catalogue row drawn as a
@@ -368,6 +369,9 @@ export function Closer({ offer, onPress }: { offer?: Offer; onPress: (offer: Off
         // hover a chat's does — the look may not say more than the act does, either way.
         className={clsx("closer", closesOnly(offer.does) && "keeps", minimise && "minimise")}
         data-minimise={minimise ? "" : undefined}
+        // The tabs family's `×` (`ui/tabs`), which ends a chat unless it only closes a view.
+        {...tabPart("closer")}
+        data-keeps={closesOnly(offer.does) ? "" : undefined}
         // **Not a Tab stop, and deliberately** (charter-app#189). The strip it sits on is ONE
         // stop, the WAI-ARIA "Tabs" pattern; a `×` per tab in the sequence would be fifty stops
         // again. A keyboard ends a chat from the palette's row for it, or from the tab's own menu

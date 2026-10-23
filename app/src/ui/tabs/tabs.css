@@ -1,0 +1,339 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The session tabs' family default** (#2914, ADR 0103, ADR 0104): the tabs docked on the
+   content panel, as the operator's switcher prototype draws them. Every rule is keyed on the
+   wrapper's attributes (`ui/tabs/Tabs.tsx`), never on a class, so a theme's parts reach exactly
+   what this file draws (`purlis_core::theme::parts`, which holds a copy of the colours here).
+
+   **A theme's layout numbers are read here as custom properties**, which the engine writes from
+   their parsed values over the defaults declared below: `--tabs-joined` (1 while the tabs attach
+   to the panel, 0 on a strip of their own, `tabs.layout.attach`), which the flares and the
+   panel's corners follow; `--tabs-grow` and `--tabs-basis` (the sizing); `--tabs-divider`;
+   `--tabs-gap`; and `--tabs-flare`, `--tabs-hover-inset` and `--tabs-hover-corner`, the chosen
+   tab's inverse corners and the hover pill. Every colour is a token here, and a theme's fill for
+   a tab reaches its pill and its flares as the engine writes it (`purlis_core::theme::parts`).
+
+   **Nothing here changes a tab's size with its state**: choosing a tab changes its colour and
+   its fill, the hover pill and the flares are drawn out of its flow, and no weight, padding or
+   border is set inside a state (`tabs.guard.test.ts` holds it, and a story measures it).
+
+   In the `components` layer (`styles.css`), above `App.css`, whose strip rules place the tabs
+   (the row, its floor and its collapse into the show-more menu, ADR 0039) and draw what a chat's
+   tab says (its marks, its chip, its name being typed). */
+
+/* ---------------------------------------------------------------------------------------------
+   The column: the strip, then the panel the tabs attach to.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="tabs"][data-part="layout"] {
+  --tabs-joined: 1;
+  --tabs-grow: 0;
+  --tabs-basis: auto;
+  --tabs-divider: 0px;
+  --tabs-gap: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+/* **The strip**: no ground of its own while the tabs attach to the panel, so the window shows
+   behind it and the chosen tab reads as the top of the panel (on a strip of their own, the chat
+   strip's shade). A line under it is the theme's (`tabs.strip.border-*`). */
+[data-scope="tabs"][data-part="strip"] {
+  /* The shade a strip of their own is drawn in, read here so a workspace's colour tints it. */
+  --tabs-strip-shade: var(--layer-chat);
+  flex: none;
+  background-color: transparent;
+  border-block-end: 0 solid var(--border-subtle);
+}
+
+/* **The panel under the strip is the content panel** (`ui/panel`, #2913): its fill, its corners
+   (`panel.corner-radius`) and its border (`panel.border-width`, none in Purlis) are the panel
+   family's. Its top-left corner is square while the first tab is chosen and joined to it, so
+   that tab and the panel are one edge. */
+[data-scope="tabs"][data-part="layout"]:has(
+    > [data-scope="tabs"][data-part="strip"] [data-part="tab"][data-first][data-selected]
+  )
+  > [data-scope="panel"][data-variant="content"] {
+  border-start-start-radius: calc(var(--panel-corner-radius) * (1 - var(--tabs-joined)));
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A tab.
+   --------------------------------------------------------------------------------------------- */
+
+/* **31px tall at the default density** (a control's height and 3px), **at most 240 wide**,
+   padded 0 10 0 12, rounded on top, and as wide as its words: it shrinks, its name cut short,
+   down to the strip's floor (`--least`, `fits.ts`) before anything collapses. */
+[data-scope="tabs"][data-part="tab"] {
+  /* The fill a chosen tab takes on a strip of its own: a step lighter, tinted where it is. */
+  --tabs-chosen-shade: var(--layer-selected);
+  /* 8px in Purlis, whose `radius.md` is 7 (the hover pill's): the prototype's numbers. */
+  --tabs-flare: calc(var(--radius-md) + 1px);
+  --tabs-hover-inset: calc(var(--space-1) + 1px) 0 calc(var(--space-2) + 1px);
+  --tabs-hover-corner: var(--radius-md);
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: var(--tabs-grow) 1 var(--tabs-basis);
+  min-inline-size: var(--least, 0);
+  max-inline-size: calc(240rem / 14);
+  block-size: calc(var(--size-control) + calc(3rem / 14));
+  box-sizing: border-box;
+  padding-block: 0;
+  padding-inline: var(--space-5) calc(var(--space-4) + var(--space-1));
+  border-radius: calc(var(--radius-md) + 1px) calc(var(--radius-md) + 1px) 0 0;
+  background-color: transparent;
+  color: var(--text-quiet);
+  font-size: var(--font-size-md);
+  white-space: nowrap;
+}
+
+/* The line between two tabs, where the theme draws one (`tabs.layout.dividers`): drawn inside
+   the tab, so it takes no room. */
+[data-scope="tabs"][data-part="tab"] + [data-scope="tabs"][data-part="tab"] {
+  box-shadow: inset var(--tabs-divider) 0 0 var(--layer-divider);
+}
+
+/* **A chat ending**, wrapping up or being stopped: the amber underline the strip says "ending"
+   with, beside the line that parts it from the tab before. */
+[data-scope="tabs"][data-part="tab"]:is([data-wrapping-up], [data-stopping]) {
+  box-shadow: inset 0 -2px 0 var(--state-waiting);
+}
+
+[data-scope="tabs"][data-part="tab"]
+  + [data-scope="tabs"][data-part="tab"]:is([data-wrapping-up], [data-stopping]) {
+  box-shadow:
+    inset 0 -2px 0 var(--state-waiting),
+    inset var(--tabs-divider) 0 0 var(--layer-divider);
+}
+
+/* **A chat in the background** (SI-8f): a chip exactly `--chip` wide, the width `fits.ts` counts
+   it at (`LEAST_CHIP`), its icon and breathing mark centred. */
+[data-scope="tabs"][data-part="tab"][data-variant="background"] {
+  flex: none;
+  inline-size: var(--chip);
+  min-inline-size: var(--chip);
+  max-inline-size: var(--chip);
+  padding-inline: 0;
+  justify-content: center;
+}
+
+/* The tab's own button fills its cell, beside its marks and its `×`: the cell is the shape. */
+[data-scope="tabs"][data-part="tab"] > [role="tab"] {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  align-self: stretch;
+  justify-content: center;
+  /* The marks a chat's tab says beside its name (its persona, its sandbox, its state, its pin)
+     sit close, so the name keeps the room; the cell parts the button from its chip and `×`. */
+  gap: var(--space-2);
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* **A tab with a task chip** (#1487): its name gives way a thousand times sooner than the chip
+   and stops at its floor, clear of a pin's corner (`App.css`, the chip's own rules). */
+[data-scope="tabs"][data-part="tab"]:has(> .tab-tasks) > [role="tab"] {
+  flex-shrink: 1000;
+  min-inline-size: var(--size-control);
+  padding-inline-end: var(--space-2);
+}
+
+[data-scope="tabs"][data-part="tab"]:has(> .tab-tasks) > [role="tab"]:has(> .pinned) {
+  padding-inline-end: var(--space-5);
+}
+
+/* The keyboard's ring, inside the cell: a strip clips what is outside it (a deliberate inset,
+   where the family's rule draws it 2px outside). */
+[data-scope="tabs"][data-part="tab"] > [role="tab"]:focus-visible {
+  outline: none;
+}
+
+[data-scope="tabs"][data-part="tab"]:has(> [role="tab"]:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* **Under the pointer**: its words turn primary, and an unchosen tab draws a pill inset from its
+   cell, 3px from the top and 5px from the bottom, so it never touches the panel; only the chosen
+   tab joins it. */
+[data-scope="tabs"][data-part="tab"][data-hovered]:not([data-disabled]) {
+  color: var(--text-primary);
+}
+
+[data-scope="tabs"][data-part="tab"][data-hovered]:not([data-selected])::before {
+  content: "";
+  position: absolute;
+  inset: var(--tabs-hover-inset);
+  z-index: -1;
+  border-radius: var(--tabs-hover-corner);
+  background-color: var(--surface-overlay);
+  pointer-events: none;
+}
+
+/* **Chosen**: the fill of what it joins, and primary words, nothing else. A view's tab joins
+   the panel; a chat's joins its terminal and a file's its toolbar and code, each one surface
+   (`terminal.background`, which the light editor draws its code on too). */
+[data-scope="tabs"][data-part="tab"][data-selected] {
+  background-color: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+[data-scope="tabs"][data-part="tab"][data-variant="chat"][data-selected],
+[data-scope="tabs"][data-part="tab"][data-variant="file"][data-selected] {
+  background-color: var(--terminal-background);
+}
+
+/* **Its flares**: inverse corners in the chosen tab's fill, one each side at the strip's floor,
+   so the tab flows into the panel: a square of the fill, masked to the corner's outside. None
+   while the tabs are on a strip of their own, and none on the left of the first tab, which
+   starts at the panel's edge. */
+[data-scope="tabs"][data-part="tab"][data-selected]::before,
+[data-scope="tabs"][data-part="tab"][data-selected]::after {
+  /* Never wider than the room beside the tab, so it covers no neighbour. */
+  --tabs-flare-size: calc(min(var(--tabs-flare), var(--tabs-gap)) * var(--tabs-joined));
+  content: "";
+  position: absolute;
+  inset-block-end: 0;
+  inline-size: var(--tabs-flare-size);
+  block-size: var(--tabs-flare-size);
+  background-color: var(--surface-raised);
+  pointer-events: none;
+}
+
+[data-scope="tabs"][data-part="tab"][data-variant="chat"][data-selected]::before,
+[data-scope="tabs"][data-part="tab"][data-variant="chat"][data-selected]::after,
+[data-scope="tabs"][data-part="tab"][data-variant="file"][data-selected]::before,
+[data-scope="tabs"][data-part="tab"][data-variant="file"][data-selected]::after {
+  background-color: var(--terminal-background);
+}
+
+[data-scope="tabs"][data-part="tab"][data-selected]::before {
+  inset-inline-start: calc(var(--tabs-flare-size) * -1);
+  mask-image: radial-gradient(
+    circle at 0 0,
+    transparent var(--tabs-flare-size),
+    currentcolor calc(var(--tabs-flare-size) + 0.5px)
+  );
+}
+
+[data-scope="tabs"][data-part="tab"][data-selected]::after {
+  inset-inline-end: calc(var(--tabs-flare-size) * -1);
+  mask-image: radial-gradient(
+    circle at 100% 0,
+    transparent var(--tabs-flare-size),
+    currentcolor calc(var(--tabs-flare-size) + 0.5px)
+  );
+}
+
+[data-scope="tabs"][data-part="tab"][data-selected][data-first]::before {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Inside a tab.
+   --------------------------------------------------------------------------------------------- */
+
+/* **The name**, cut short rather than widening its tab. */
+[data-scope="tabs"][data-part="label"] {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* **The `×`**: 16px, in the faint tier (a mark), taking the hover fill under the pointer. One
+   that ends a chat takes the danger surface instead, since the look may not say less than the
+   act does (charter-app#130). Reached by a 24px target around it, inside the cell. */
+[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"] {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: calc(16rem / 14);
+  block-size: calc(16rem / 14);
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-md) - var(--space-1));
+  background: transparent;
+  color: var(--text-faint);
+  line-height: 1;
+  cursor: pointer;
+}
+
+[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]::after {
+  content: "";
+  position: absolute;
+  inset: calc(var(--space-2) * -1);
+}
+
+[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"] > svg {
+  inline-size: calc(12rem / 14);
+  block-size: calc(12rem / 14);
+}
+
+[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]:hover {
+  background-color: var(--danger-surface);
+  color: var(--danger-text);
+}
+
+[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"][data-keeps]:hover {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* **The indicator**: none until a theme gives it a height, then a mark on the chosen tab's
+   bottom edge, or its top (`tabs.indicator.position`). */
+[data-part="indicator"][data-scope="tabs"] {
+  position: absolute;
+  inset-inline: 0;
+  inset-block: auto 0;
+  block-size: 0;
+  background-color: var(--accent-base);
+  pointer-events: none;
+}
+
+[data-scope="tabs"][data-part="tab"]:not([data-selected])
+  > [data-part="indicator"][data-scope="tabs"] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The editor's toolbar, which a chosen file tab joins.
+   --------------------------------------------------------------------------------------------- */
+
+/* The file's name in the primary tier and its path in quiet mono after it, on the code's own
+   surface, which its chosen tab takes too: tab, toolbar and code are one piece. */
+[data-scope="editor"][data-part="toolbar"] {
+  gap: calc(var(--space-4) + var(--space-1));
+  padding-block: calc(var(--space-4) + var(--space-1));
+  padding-inline: calc(var(--space-5) + var(--space-1));
+  background-color: var(--terminal-background);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="editor"][data-part="toolbar"] > b {
+  color: var(--text-primary);
+}
+
+[data-scope="editor"][data-part="toolbar"] > code {
+  color: var(--text-quiet);
+}
