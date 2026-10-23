@@ -1671,16 +1671,25 @@ fn badges(path: &Path, origin: Origin, harnesses: &[Harness]) -> Vec<HarnessComp
 /// harness that finds it** (SK-8): the rows [`studio_rows`] draws from a persona's `skills:`
 /// list carry no file of their own, so the skill each harness found by that name gives them one.
 pub fn with_harness_badges(rows: &mut [StudioRow], harnesses: &[HarnessInTheStudio], plane: &Path) {
+    let found: Vec<(Harness, &[OutsideSkill])> = harnesses
+        .iter()
+        .map(|one| (one.harness, one.outside.as_slice()))
+        .collect();
+    badge_named(rows, &found, plane);
+}
+
+/// [`with_harness_badges`], with what each harness found.
+fn badge_named(rows: &mut [StudioRow], found: &[(Harness, &[OutsideSkill])], plane: &Path) {
     for row in rows
         .iter_mut()
-        .filter(|row| row.origin == Origin::Harness && row.compat.is_empty())
+        .filter(|row| row.origin == Origin::Harness && row.outside.is_none())
     {
-        for one in harnesses {
-            if let Some(found) = one.outside.iter().find(|found| found.id == row.name) {
+        for (harness, outside) in found {
+            if let Some(skill) = outside.iter().find(|skill| skill.id == row.name) {
                 row.compat
-                    .extend(badges(&found.skill.path, found.origin, &[one.harness]));
+                    .extend(badges(&skill.skill.path, skill.origin, &[*harness]));
                 if row.lint.is_empty() {
-                    row.lint = outside_lint(plane, found);
+                    row.lint = outside_lint(plane, skill);
                 }
             }
         }

@@ -149,6 +149,7 @@ impl Asking<'_> {
             crate::skills::Honours {
                 reads: &[],
                 manual: crate::skills::ManualOnly::Listing,
+                agents: &[],
             },
             Harness::skill_frontmatter,
         )

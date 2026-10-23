@@ -5,10 +5,25 @@
 //! a line-based reader misses either leaves the widening key out or refuses the skill (SK-8).
 
 use super::*;
+use crate::{Honours, ManualOnly};
+
+/// A harness that reads manual-only itself and ships one agent.
+const AS_IS: Honours = Honours {
+    reads: &[],
+    manual: ManualOnly::Read,
+    agents: &["general-purpose"],
+};
+
+/// A harness that keeps a manual-only skill out by its description alone.
+const BY_DESCRIPTION: Honours = Honours {
+    reads: &[],
+    manual: ManualOnly::WithoutDescription,
+    agents: &[],
+};
 
 /// What a harness that reads manual-only itself is handed.
 fn handed_as_is(text: &str) -> Result<String, Refusal> {
-    handed(text, false)
+    handed(text, &AS_IS)
 }
 
 /// Whether purlis hands `text` with nothing that widens a chat in its frontmatter, and keeps its
@@ -132,7 +147,7 @@ fn a_key_set_twice_a_tag_or_two_documents_refuse_the_skill() {
 fn a_flag_is_written_as_true_or_false_and_anything_else_refused() {
     let out = handed(
         "---\nname: deploy\ndescription: Ships.\ndisable-model-invocation: \"yes\"\n---\n",
-        false,
+        &AS_IS,
     )
     .unwrap();
     assert!(out.contains("disable-model-invocation: true\n"), "{out}");
@@ -167,14 +182,22 @@ fn a_value_is_written_so_nothing_in_it_reads_as_more_yaml() {
 #[test]
 fn a_manual_only_skill_loses_its_description_only_where_asked() {
     let text = "---\nname: deploy\ndescription: Ships.\ndisable-model-invocation: true\n---\n";
-    assert!(!handed(text, true).unwrap().contains("description:"));
     assert!(
-        handed(text, false)
+        !handed(text, &BY_DESCRIPTION)
+            .unwrap()
+            .contains("description:")
+    );
+    assert!(
+        handed(text, &AS_IS)
             .unwrap()
             .contains("description: Ships.\n")
     );
     let not_manual = "---\nname: deploy\ndescription: Ships.\n---\n";
-    assert!(handed(not_manual, true).unwrap().contains("description:"));
+    assert!(
+        handed(not_manual, &BY_DESCRIPTION)
+            .unwrap()
+            .contains("description:")
+    );
 }
 
 #[test]
@@ -184,7 +207,34 @@ fn a_byte_order_mark_before_the_fence_is_read_past_and_the_body_found() {
     assert_eq!(read.fields(), [Field::Name, Field::Description]);
     assert_eq!(&text[read.body_at()..], "body\n");
     assert_eq!(
-        read.emit(false).unwrap(),
+        read.emit(&AS_IS).unwrap(),
         "---\nname: deploy\ndescription: Ships.\n---\n"
     );
+}
+
+#[test]
+fn a_frontmatter_nested_past_what_purlis_reads_is_refused_and_never_overflows() {
+    let text = format!("---\nname: deploy\nk:\n  {}x\n---\n", "- ".repeat(20_000));
+    assert!(text.len() > 40_000);
+    assert!(matches!(handed_as_is(&text), Err(Refusal::NotYaml(_))));
+    let deep_flow = format!(
+        "---\nname: deploy\nk: {}x{}\n---\n",
+        "[".repeat(20_000),
+        "]".repeat(20_000)
+    );
+    assert!(handed_as_is(&deep_flow).is_err());
+}
+
+#[test]
+fn an_agent_is_handed_on_only_for_a_fork_as_one_of_the_harnesss_own() {
+    let kept =
+        handed_as_is("---\nname: deploy\ncontext: fork\nagent: general-purpose\n---\n").unwrap();
+    assert!(kept.contains("agent: general-purpose\n"), "{kept}");
+    for text in [
+        "---\nname: deploy\ncontext: fork\nagent: repo-reviewer\n---\n",
+        "---\nname: deploy\nagent: general-purpose\n---\n",
+    ] {
+        let out = handed_as_is(text).unwrap();
+        assert!(!out.contains("agent:"), "{out}");
+    }
 }

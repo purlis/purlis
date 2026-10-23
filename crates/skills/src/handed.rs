@@ -222,6 +222,10 @@ fn truthy(text: &str) -> bool {
         .any(|yes| text.trim().eq_ignore_ascii_case(yes))
 }
 
+/// How deep a frontmatter may nest lists and mappings: far past any skill's, and short of what
+/// would overflow the stack of the reader that walks it.
+const MOST_NESTED: usize = 64;
+
 /// The most bytes of a `SKILL.md` purlis reads.
 pub const MOST_BYTES: u64 = 256 * 1024;
 
@@ -274,7 +278,7 @@ pub fn parse(text: &str) -> Result<Frontmatter, Refusal> {
     if next()? != Event::DocumentStart {
         return Err(Refusal::NotAMapping);
     }
-    let root = node(next()?, &mut next)?;
+    let root = node(next()?, &mut next, 0)?;
     match next()? {
         Event::DocumentEnd => {}
         _ => return Err(Refusal::NotAMapping),
@@ -310,9 +314,18 @@ pub fn parse(text: &str) -> Result<Frontmatter, Refusal> {
     Ok(Frontmatter { entries, body })
 }
 
-/// The node `event` starts, reading the rest of it with `next`: refused for an alias, an anchor
-/// or a tag.
-fn node(event: Event, next: &mut dyn FnMut() -> Result<Event, Refusal>) -> Result<Node, Refusal> {
+/// The node `event` starts, `depth` lists and mappings in, reading the rest of it with `next`:
+/// refused for an alias, an anchor or a tag, and past [`MOST_NESTED`].
+fn node(
+    event: Event,
+    next: &mut dyn FnMut() -> Result<Event, Refusal>,
+    depth: usize,
+) -> Result<Node, Refusal> {
+    if depth > MOST_NESTED {
+        return Err(Refusal::NotYaml(format!(
+            "it nests more than {MOST_NESTED} lists and mappings deep"
+        )));
+    }
     match event {
         Event::Alias(_) => Err(Refusal::Reused),
         Event::Scalar(_, _, anchor, _)
@@ -334,7 +347,7 @@ fn node(event: Event, next: &mut dyn FnMut() -> Result<Event, Refusal>) -> Resul
             loop {
                 match next()? {
                     Event::SequenceEnd => return Ok(Node::Seq(items)),
-                    event => items.push(node(event, next)?),
+                    event => items.push(node(event, next, depth + 1)?),
                 }
             }
         }
@@ -344,8 +357,8 @@ fn node(event: Event, next: &mut dyn FnMut() -> Result<Event, Refusal>) -> Resul
                 match next()? {
                     Event::MappingEnd => return Ok(Node::Map(pairs)),
                     event => {
-                        let key = node(event, next)?;
-                        let value = node(next()?, next)?;
+                        let key = node(event, next, depth + 1)?;
+                        let value = node(next()?, next, depth + 1)?;
                         pairs.push((key, value));
                     }
                 }
@@ -478,8 +491,10 @@ impl Frontmatter {
     /// each value written out again (never a key that widens the chat, nor one purlis knows no
     /// harness to read), and, where `without_description`, a manual-only skill's description
     /// left out. Refused where a kept field has a value it cannot take.
-    pub fn emit(&self, without_description: bool) -> Result<String, Refusal> {
+    pub fn emit(&self, honours: &crate::Honours) -> Result<String, Refusal> {
+        let without_description = honours.manual == crate::ManualOnly::WithoutDescription;
         let drop_description = without_description && self.manual();
+        let keep_agent = self.agent_kept(honours);
         let mut out = String::from("---\n");
         for (key, node) in &self.entries {
             let Some(field) = Field::of(key) else {
@@ -488,7 +503,9 @@ impl Frontmatter {
             let Some(shape) = field.kept() else {
                 continue;
             };
-            if drop_description && field == Field::Description {
+            if (drop_description && field == Field::Description)
+                || (field == Field::Agent && !keep_agent)
+            {
                 continue;
             }
             let value = written(node, &shape).ok_or(Refusal::BadValue(field))?;
@@ -497,15 +514,25 @@ impl Frontmatter {
         out.push_str("---\n");
         Ok(out)
     }
+
+    /// **Whether its `agent` is handed on to a harness that reads `honours`**: only for a fork
+    /// (`context: fork`) as one of the harness's own agents. Any other agent, a repo's or the
+    /// person's, may carry its own permissions and hooks, and would widen the chat.
+    pub fn agent_kept(&self, honours: &crate::Honours) -> bool {
+        self.fork()
+            && self.entries.iter().any(|(key, node)| {
+                Field::of(key) == Some(Field::Agent)
+                    && matches!(node, Node::Scalar { text, .. } if honours.agents.contains(&text.trim()))
+            })
+    }
 }
 
-/// **The `SKILL.md` purlis hands a harness that keeps a manual-only skill out by its description
-/// alone (`without_description`), for a skill whose own is `text`**: the frontmatter purlis
-/// writes ([`Frontmatter::emit`]), then the skill's body as it is. Refused, handing nothing,
-/// where the frontmatter is refused ([`parse`]).
-pub(crate) fn handed(text: &str, without_description: bool) -> Result<String, Refusal> {
+/// **The `SKILL.md` purlis hands a harness that reads `honours`, for a skill whose own is
+/// `text`**: the frontmatter purlis writes ([`Frontmatter::emit`]), then the skill's body as it
+/// is. Refused, handing nothing, where the frontmatter is refused ([`parse`]).
+pub(crate) fn handed(text: &str, honours: &crate::Honours) -> Result<String, Refusal> {
     let read = parse(text)?;
-    let mut out = read.emit(without_description)?;
+    let mut out = read.emit(honours)?;
     out.push_str(&text[read.body..]);
     Ok(out)
 }

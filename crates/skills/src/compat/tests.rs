@@ -27,18 +27,21 @@ const READS_ALL: Honours = Honours {
         Field::Background,
     ],
     manual: ManualOnly::Read,
+    agents: &["general-purpose"],
 };
 
 /// A harness purlis lists the skills to.
 const BRIEFED: Honours = Honours {
     reads: &[],
     manual: ManualOnly::Listing,
+    agents: &["general-purpose"],
 };
 
 /// A harness that lists only a skill with a description.
 const BY_DESCRIPTION: Honours = Honours {
     reads: &[],
     manual: ManualOnly::WithoutDescription,
+    agents: &["general-purpose"],
 };
 
 fn skill(more: &str) -> String {
@@ -182,4 +185,18 @@ fn a_frontmatter_purlis_cannot_read_is_refused_when_handed_and_may_widen_when_no
     let outside = compat(text, OUTSIDE, &READS_ALL);
     assert_eq!(outside.fit, Fit::Widens);
     assert!(outside.lines()[0].starts_with("It may widen the chat"));
+}
+
+#[test]
+fn an_agent_that_is_not_the_harnesss_own_is_left_out_and_the_badge_says_so() {
+    let text = skill("context: fork\nagent: repo-reviewer\n");
+    let badge = compat(&text, HANDED, &READS_ALL);
+    assert_eq!(badge.dropped, [Field::Agent]);
+    assert_eq!(
+        badge.lines(),
+        ["Left out, because a skill may only narrow a chat: what its fork runs as."]
+    );
+    assert!(!handed_text(&text, &READS_ALL).unwrap().contains("agent:"));
+    let own = skill("context: fork\nagent: general-purpose\n");
+    assert_eq!(compat(&own, HANDED, &READS_ALL).fit, Fit::Full);
 }

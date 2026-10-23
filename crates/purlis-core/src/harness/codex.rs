@@ -258,6 +258,7 @@ impl HarnessAdapter for Codex {
         crate::skills::Honours {
             reads: &[],
             manual: crate::skills::ManualOnly::Listing,
+            agents: &[],
         }
     }
 

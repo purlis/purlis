@@ -1135,3 +1135,49 @@ fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_or_opencode()
         );
     }
 }
+
+#[test]
+fn a_harness_skill_a_persona_names_is_badged_and_marked_where_it_widens_the_chat() {
+    let tmp = tempfile::tempdir().unwrap();
+    let folder = tmp.path().join("harness-skills/wide");
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("SKILL.md");
+    std::fs::write(
+        &path,
+        "---\nname: wide\ndescription: Widens a chat on purpose.\nallowed-tools: Bash\n---\n",
+    )
+    .unwrap();
+    let outside = [OutsideSkill {
+        skill: Skill {
+            name: "wide".to_owned(),
+            description: "Widens a chat on purpose.".to_owned(),
+            path,
+        },
+        origin: Origin::Harness,
+        id: "wide".to_owned(),
+        owner: Owner::You,
+        switch: Switch::Alone,
+        off: false,
+    }];
+    let set = SkillSet {
+        from_the_harness: vec![FromHarness {
+            reference: Reference::Named("wide".to_owned()),
+            checked: true,
+        }],
+        ..SkillSet::default()
+    };
+    let names = [Reference::Named("wide".to_owned())];
+    let mut rows = studio_rows(&set, tmp.path(), &names);
+    badge_named(&mut rows, &[(Harness::ClaudeCode, &outside)], tmp.path());
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].compat.len(), 1);
+    assert!(rows[0].compat[0].compat.widens(), "{:?}", rows[0].compat);
+    assert!(
+        rows[0]
+            .lint
+            .iter()
+            .any(|line| line.starts_with("Widens the chat")),
+        "{:?}",
+        rows[0].lint
+    );
+}

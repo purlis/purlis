@@ -1387,7 +1387,8 @@ left out of what is handed.
 |---|---|---|
 | `name`, `description`, `arguments`, `argument-hint` | neutral | read by purlis on every harness (the listing, Use skill…), and handed on |
 | `disable-model-invocation` | neutral | manual-only: handed on to Claude Code; Codex's briefing names the skill and its file alone; opencode is handed the skill without its `description` |
-| `disallowed-tools`, `context`, `agent` | narrows | handed on; applied where the harness applies them, and the badge says "narrowing not applied" elsewhere |
+| `disallowed-tools`, `context` | narrows | handed on; applied where the harness applies them, and the badge says "narrowing not applied" elsewhere |
+| `agent` | narrows only as the harness's own | handed on only with `context: fork` and an agent the harness ships (Claude Code's `general-purpose`, `Explore`, `Plan`); left out otherwise, as a repo's or person's agent may carry its own permissions and hooks |
 | `when_to_use`, `user-invocable`, `model`, `effort`, `paths`, `shell`, `background` | neutral | handed on; the badge says where a harness ignores them |
 | `license`, `compatibility`, `metadata` | neutral | for a reader; handed on, never counted |
 | `allowed-tools`, `hooks` | **widens** | never handed on: left out of the `SKILL.md` purlis writes, and the badge says so. A harness or repo skill that sets either is marked as widening the chat |

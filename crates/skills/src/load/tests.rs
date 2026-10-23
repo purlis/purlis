@@ -10,6 +10,7 @@ use crate::{Honours, ManualOnly, Origin, Route, Skill};
 const PLAIN: Honours = Honours {
     reads: &[],
     manual: ManualOnly::Listing,
+    agents: &["general-purpose"],
 };
 
 fn skill(dir: &Path, name: &str, description: &str, more: &str) -> Effective {

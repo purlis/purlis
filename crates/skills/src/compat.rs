@@ -189,6 +189,11 @@ pub struct Honours {
     pub reads: &'static [Field],
     /// How it keeps a manual-only skill out of its model's choice.
     pub manual: ManualOnly,
+    /// The agents of its own a skill's fork may run as (`context: fork` with `agent`), which
+    /// carry no settings a skill could bring. A fork as any other agent, such as a repo's, which
+    /// may carry its own permissions and hooks, would widen the chat: purlis leaves its `agent`
+    /// out ([`crate::handed::Frontmatter::emit`]).
+    pub agents: &'static [&'static str],
 }
 
 impl Honours {
@@ -343,6 +348,11 @@ pub fn compat(text: &str, origin: Origin, honours: &Honours) -> Compat {
         if field.for_a_reader() {
             continue;
         }
+        // A fork as an agent the harness does not ship may carry its own settings (decision 58).
+        if handed && field == Field::Agent && !read.agent_kept(honours) {
+            out.dropped.push(field);
+            continue;
+        }
         let applies = honours.applies(field);
         if field.widens() {
             match (handed, applies) {
@@ -379,7 +389,7 @@ pub fn compat(text: &str, origin: Origin, honours: &Honours) -> Compat {
 /// harness keeps one out; then the body as it is. Refused, handing nothing, where the
 /// frontmatter is.
 pub fn handed_text(text: &str, honours: &Honours) -> Result<String, Refusal> {
-    crate::handed::handed(text, honours.manual == ManualOnly::WithoutDescription)
+    crate::handed::handed(text, honours)
 }
 
 #[cfg(test)]

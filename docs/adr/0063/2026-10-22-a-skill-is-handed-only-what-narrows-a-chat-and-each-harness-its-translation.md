@@ -40,6 +40,9 @@ What purlis leaves out of the `SKILL.md` it writes:
   tools while the skill runs, even in an untrusted `-p` run, and `hooks` runs commands on the
   chat's events. Both widen a chat, and a skill may only narrow one (decision 58).
 - **Every key purlis knows no harness to read.**
+- **`agent`, unless the skill forks (`context: fork`) as one of the harness's own agents**
+  (`Honours::agents`). A repo's or the person's subagent can carry its own `permissionMode` and
+  `hooks`, so forking as one would widen the chat.
 - **The description of a manual-only skill, where that is how the harness keeps one out.**
   opencode 1.18.33 has no manual-only key, but lists only a skill with a description and still
   runs one by `/name` (measured, research of 2026-10-20).
@@ -82,6 +85,18 @@ of four things:
 
 `license`, `compatibility` and `metadata` are for a reader and count for nothing. Only the editor
 names a key; the badge, the Notice and a row's lint never do.
+
+## What this does not close
+
+- **A linked file can be swapped after lay-out.** Each link handed resolves to a plain file of the
+  skill's own folder when the set's folder is made. Someone who can write the skill's folder
+  later can put a link to elsewhere in that file's place, and the harness follows it. The skill's
+  source is author-controlled: whoever can write it can already change what its `SKILL.md` and
+  scripts say. Copying the files instead would close the swap, at the cost of edits to a running
+  chat's scripts and of disk for large skills; that is left for when a skill source is not the
+  project's own (SK-10).
+- **An agent outside the harness's own list is left out**, so a skill that forks as a project's or
+  person's own agent runs in the chat instead; its badge says so.
 
 ## Not built yet
 

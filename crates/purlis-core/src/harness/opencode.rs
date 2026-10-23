@@ -167,6 +167,7 @@ impl HarnessAdapter for Opencode {
         crate::skills::Honours {
             reads: &[],
             manual: crate::skills::ManualOnly::WithoutDescription,
+            agents: &[],
         }
     }
 

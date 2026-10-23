@@ -240,6 +240,8 @@ impl HarnessAdapter for ClaudeCode {
                 Field::Background,
             ],
             manual: crate::skills::ManualOnly::Read,
+            // Its own agents (`sub-agents.md`, 2.1.304), which carry no settings of a project's.
+            agents: &["general-purpose", "Explore", "Plan"],
         }
     }
 
