@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792717991519,
+  "lastUpdate": 1792720152604,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22218,6 +22218,48 @@ window.BENCHMARK_DATA = {
             "value": 105.7690985,
             "unit": "ms",
             "extra": "median of 5 runs: 103.285, 105.385, 105.769, 105.831, 106.579 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "71ea91c4173e364483e0510fab89e9f677d599c0",
+          "message": "Sandbox: a workspace's manifest is never a chat's to write (#2046) (#3000)\n\n* Sandbox: a workspace's manifest is never a chat's to write (#2046)\n\n- A chat's sandbox holds every workspace's workspace.json: by path in the full sandbox\n  (workspace_manifests_held), and by pattern at the floor, in any case, for Seatbelt and\n  Claude Code.\n- A chat's clone is recorded by the app, as before; a test says so.\n- purlis workspace rename, fork and snapshot, and purlis skill grant --on/--off, are\n  refused in a sandboxed chat in words; a sandboxed command that adds a workspace's\n  structure leaves its manifest for the app to scaffold.\n- ADR 0067 amendment and a changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Move wslayer's tests beside their module\n\nMove only: the inline tests module becomes wslayer/tests.rs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Sandbox: no workspace folder is moved aside, and a chat's snapshot is the app's\n\n- Seatbelt, at the floor and in the full sandbox, holds the folder entries workspaces\n  and workspaces/<any>, in any case: no workspace's folder is made, moved or removed by a\n  chat, so no manifest is moved out of its path to be written.\n- purlis workspace snapshot in a sandboxed chat is made by the app for the chat's own\n  workspace (WorkspaceSnapshot); another workspace's is refused. The workspace flow's hint\n  says so.\n- A sandboxed scaffold leaves the manifest to the app, whose ensure makes it next\n  (wslayer::scaffold_as).\n- Tests: the folders at both levels and the mv-aside sequence, the brokered snapshot, and\n  the scaffold left to the app.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Give the brokered snapshot's test a clone to record, and record the flow hint's new words\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Sandbox: hold a plane's own workspace folders, never any folder called workspaces\n\n- The folder rule is a directory entry under a plane root alone:\n  (require-all (vnode-type DIRECTORY) (regex ^<root>/workspaces(/[^/]+)?$)), under both of\n  the root's kernel names and in any case.\n- The full sandbox holds the chat's own plane's; the floor also holds every plane this\n  machine remembers in machine.json (read inside a fenced build's fence only).\n- A repository's own workspaces folder and a test's plane in a temporary folder are\n  written as ever; tests say so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T05:47:59+04:00",
+          "tree_id": "6ee808c0cc156c64a966803864f02d192d43849f",
+          "url": "https://github.com/purlis/purlis/commit/71ea91c4173e364483e0510fab89e9f677d599c0"
+        },
+        "date": 1792720150637,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2956695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.266, 0.280, 0.296, 0.297, 0.299 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6242855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.555, 16.565, 16.624, 16.628, 16.688 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.362021,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.707, 101.221, 101.362, 101.441, 102.730 ms"
           }
         ]
       }
