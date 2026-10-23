@@ -410,6 +410,8 @@ macro_rules! app_commands {
                 runnerwrites::runner_write,
                 runnerwrites::dismiss_runner_write,
                 dockerpools::set_chats_run_on,
+                dockerpools::send_leaves_out,
+                dockerpools::set_send_leaves_out,
                 updates::check_for_update,
                 updates::install_update,
                 updates::restart_to_update,
