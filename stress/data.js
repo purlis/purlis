@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792791624337,
+  "lastUpdate": 1792794648223,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6284,6 +6284,42 @@ window.BENCHMARK_DATA = {
             "value": 358.8,
             "unit": "MB",
             "extra": "median of 6 samples: 354.2, 388, 358.9, 358.7, 359.9, 232.5 MB; window 200.6 MB, session host 158.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "347f64e4f2b116e12b9e9088a5bcf0b74003ac1b",
+          "message": "SK-10: skill sources — add a git repo, browse, install with a readable review, pin, update (#3046)\n\n* SK-10: skill sources — add a git repo, browse, install with a readable review, pin, update (#2773)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-10: referenced skills keep their mark on a second review; clippy and the plane format's tier\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-10: skill source commands are the window's alone; init and reinit rows blessed for the local lockfile's ignore line\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-10: the bindings for the source commands, and the review UI's tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-10: a sign-in is this machine's alone, the credential answers only the source's host, and a fetched skill is read as the YAML it is, failing closed\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-10: the CLI names no sign-in type, and a source refusal is a Notice\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-10: harness list's refusal row blessed for the local file's skill sources\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-10: review fixes — limits, a one-pass fold, nothing escapes the summary, invisible text marked, escaped output, case-only renames, confirmed sources, update parity, all-or-nothing installs, typed shapes\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-10: name the https test's request type\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-10: an unconfirmed source's refusal says when it is checked\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-10: the tree listing is read as it comes and stopped at the entry cap; an update checks the confirm rule; more invisible characters\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T00:49:29+04:00",
+          "tree_id": "9a38d9752f5c1d96589146c259c8b04ea94e29fa",
+          "url": "https://github.com/purlis/purlis/commit/347f64e4f2b116e12b9e9088a5bcf0b74003ac1b"
+        },
+        "date": 1792794646174,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1058,
+            "unit": "MB",
+            "extra": "median of 3 samples: 959, 1058, 1095 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 328.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 285.6, 349.1, 330.1, 328.3, 329.3, 224.5 MB; window 170.2 MB, session host 158.9 MB"
           }
         ]
       }
