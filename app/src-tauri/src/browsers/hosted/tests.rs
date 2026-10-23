@@ -99,6 +99,7 @@ fn a_browser_the_window_opens_is_drawn_a_whole_frame_at_a_time() {
             &program,
             BrowserViewRole::Focused,
             Box::new(move |_aim, image| drawing.lock().unwrap().push(image.to_vec())),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -286,6 +287,18 @@ fn a_start_refused_with_a_code_this_window_does_not_know_is_refused_in_the_hosts
 }
 
 #[test]
+fn a_start_the_host_refused_no_engine_sandbox_is_not_started_for_it_whatever_its_words() {
+    // 1.36 (#2899): the code says it, not the words.
+    use crate::chatbrowsers::NotStarted;
+    use purlis_session_protocol::session;
+    let refused = session::Refusal {
+        code: session::NO_ENGINE_SANDBOX.into(),
+        why: "worded in a way this window has never seen".into(),
+    };
+    assert_eq!(super::not_started(refused, 3), NotStarted::NoSandbox);
+}
+
+#[test]
 fn a_start_the_host_refused_for_the_engines_sandbox_is_not_started_for_it() {
     // #2835: the host's words for it, whatever its code, are told apart from any failure.
     use crate::chatbrowsers::NotStarted;
@@ -328,6 +341,7 @@ fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_
             &program,
             BrowserViewRole::Focused,
             Box::new(move |aim, _image| seen.lock().unwrap().push(aim.unwrap_or_default())),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -393,6 +407,7 @@ fn a_view_opened_again_says_the_person_still_drives_the_browser() {
             &program,
             BrowserViewRole::Focused,
             Box::new(|_, _| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -406,6 +421,7 @@ fn a_view_opened_again_says_the_person_still_drives_the_browser() {
             &program,
             BrowserViewRole::Focused,
             Box::new(|_, _| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -492,6 +508,7 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
             &program,
             BrowserViewRole::Focused,
             Box::new(|_, _| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -554,6 +571,7 @@ fn a_watched_browser(window: &Window) -> (Said, u32, String) {
                 let drawn = Arc::clone(&drawn);
                 move |_, _| *drawn.lock().unwrap() += 1
             }),
+            Box::new(|_| {}),
             Arc::new({
                 let said = Arc::clone(&said);
                 move |now| said.lock().unwrap().push(now)
@@ -894,6 +912,7 @@ fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
             &program,
             BrowserViewRole::Focused,
             Box::new(|_, _| {}),
+            Box::new(|_| {}),
             Arc::new(|_| {}),
         )
         .unwrap();
@@ -1050,5 +1069,42 @@ fn a_window_started_again_says_nothing_of_a_login_the_host_refuses_as_the_person
     assert!(
         said.lock().unwrap().is_empty(),
         "the person drives it: no driver of purlis's or the agent's is said"
+    );
+}
+
+#[test]
+fn a_browser_view_is_told_its_pages_origin_alone_as_the_page_moves() {
+    // #2300: what the view's chip names, its origin and nothing else of its address.
+    let window = window();
+    let program = window.browsers.open(&window.root).unwrap();
+    let screen = window.started.started()[0].clone();
+    let origins: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
+    let heard = Arc::clone(&origins);
+    let drawn: Arc<Mutex<usize>> = Arc::default();
+    let drawing = Arc::clone(&drawn);
+    window
+        .browsers
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(move |_, _| *drawing.lock().unwrap() += 1),
+            Box::new(move |origin| heard.lock().unwrap().push(origin)),
+            Arc::new(|_| {}),
+        )
+        .unwrap();
+
+    screen.shown().address = "http://localhost:5173/login?next=%2Fadmin".into();
+    screen.makes(b"\xff\xd8 one");
+    until("the first frame", || *drawn.lock().unwrap() == 1);
+    screen.shown().address = "https://docs.example.test/a?token=s3cret".into();
+    screen.makes(b"\xff\xd8 two");
+    until("the second frame", || *drawn.lock().unwrap() == 2);
+
+    assert_eq!(
+        *origins.lock().unwrap(),
+        [
+            Some("http://localhost:5173".to_owned()),
+            Some("https://docs.example.test".to_owned())
+        ]
     );
 }

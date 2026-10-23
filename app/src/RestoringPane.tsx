@@ -3,7 +3,7 @@
 
 import { History } from "lucide-react";
 
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 
 /**
  * A chat's pane before its program has started again: what is happening, in the place its

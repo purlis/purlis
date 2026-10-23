@@ -7,7 +7,7 @@ import * as Dialog from "./overlays/dialog";
 import * as Menu from "./overlays/dropdown-menu";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { Ellipsis, Eye, EyeOff, KeyRound, LoaderCircle, Plus, Search } from "lucide-react";
-import { EmptyState } from "./EmptyState";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import {
   commands,
   type PlaneId,

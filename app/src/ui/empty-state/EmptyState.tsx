@@ -1,11 +1,17 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ReactNode } from "react";
-import clsx from "clsx";
+import type { ComponentType, ReactNode } from "react";
+
+/** The family's variants, in the order the manifest names them. */
+export const EMPTY_STATE_VARIANTS = ["page", "panel"] as const;
+export type EmptyStateVariant = (typeof EMPTY_STATE_VARIANTS)[number];
 
 /**
- * What a surface says when there is nothing in it, and what to do about it.
+ * **The empty state family** (#2913, spec #2897, ADR 0104): what a surface says when there is
+ * nothing in it, and what to do about it. Drawn by its parts (`data-scope="empty-state"`: the
+ * `root`, its `icon`, its `headline` and its `body`) in `empty-state.css`, which a theme's parts
+ * reach; a screen imports this and never draws its own (`purlis/empty-state-family`).
  *
  * **One component with several users, which is the operator's own instruction** — *"make some
  * beautiful empty state component reusable"*. It is used by the centre when a window holds no
@@ -34,8 +40,8 @@ import clsx from "clsx";
  *
  * # It is centred, and that is the whole of the layout it asks for
  *
- * `size="page"` is the middle of whatever box it is in — the centre region's, which is what the
- * operator asked for: *"lets make open new tab button on empty page center"*. `size="panel"` is
+ * `variant="page"` is the middle of whatever box it is in — the centre region's, which is what the
+ * operator asked for: *"lets make open new tab button on empty page center"*. `variant="panel"` is
  * the same thing at a sidebar's width, with the type scaled down and the padding cut, because a
  * 260 px column cannot carry a page's empty state without the headline wrapping to three lines
  * — which is the defect one region over that this change exists to fix.
@@ -45,7 +51,7 @@ export function EmptyState({
   body,
   mark: Mark,
   action,
-  size = "page",
+  variant = "page",
   testid,
   role,
 }: {
@@ -56,21 +62,42 @@ export function EmptyState({
   body?: ReactNode;
   /** The glyph above it, where one helps. Lucide hides a nameless icon from assistive
    *  technology by itself, so it is decoration on top of the headline and never instead. */
-  mark?: React.ComponentType<{ className?: string }>;
+  mark?: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
   /** The way out, already drawn — see the docstring. */
   action?: ReactNode;
-  size?: "page" | "panel";
+  /** In the middle of the content, or at a side panel's width. */
+  variant?: EmptyStateVariant;
   testid?: string;
   /** `status` where the state is what a surface is doing or why it shows nothing, said to a
    *  screen reader as it changes: a read in progress, or a refusal. */
   role?: "status";
 }) {
   return (
-    <div className={clsx("empty-state", `empty-state-${size}`)} data-testid={testid} role={role}>
-      {Mark && <Mark className="empty-state-mark" />}
-      <p className="empty-state-headline">{headline}</p>
-      {body !== undefined && body !== "" && <p className="empty-state-body">{body}</p>}
-      {action !== undefined && <div className="empty-state-action">{action}</div>}
+    <div
+      data-scope="empty-state"
+      data-part="root"
+      data-variant={variant}
+      data-testid={testid}
+      role={role}
+    >
+      {Mark && (
+        <span data-scope="empty-state" data-part="icon" aria-hidden="true">
+          <Mark aria-hidden="true" />
+        </span>
+      )}
+      <p data-scope="empty-state" data-part="headline">
+        {headline}
+      </p>
+      {body !== undefined && body !== "" && (
+        <p data-scope="empty-state" data-part="body">
+          {body}
+        </p>
+      )}
+      {action !== undefined && (
+        <div data-scope="empty-state" data-part="action">
+          {action}
+        </div>
+      )}
     </div>
   );
 }

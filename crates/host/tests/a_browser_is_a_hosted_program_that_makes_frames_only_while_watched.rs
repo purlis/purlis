@@ -20,7 +20,7 @@ use purlis_session_protocol::link::{self, Acceptor};
 use purlis_session_protocol::session::{
     self, Client, Events, Exit, ProgramKind, Pushed, StartProgram, Told, ViewKind, ViewRole,
 };
-use purlis_session_protocol::view::frames::{AIMED_JPEG, Frames};
+use purlis_session_protocol::view::frames::{AIMED_JPEG, Frame, Frames, ORIGIN};
 use purlis_session_protocol::view::{Chunk, Reader, Viewer};
 use tokio::io::duplex;
 use tokio::time::timeout;
@@ -43,18 +43,18 @@ struct Linked {
 }
 
 async fn linked() -> Linked {
+    linked_speaking(session::speaks()).await
+}
+
+/// [`linked`], the window speaking `speaks`.
+async fn linked_speaking(speaks: purlis_session_protocol::version::Speaks) -> Linked {
     let store = tempfile::tempdir().unwrap();
     let browsers = StandInBrowsers::in_folder(store.path().join("browsers"));
     let hosting =
         Hosting::running_with(ComposesNothing, StandIns::default()).with_browsers(browsers.clone());
     let (a, b) = duplex(4 << 20);
     let (client, served) = tokio::join!(
-        link::connect(
-            a,
-            session::speaks(),
-            Scope::LocalUi,
-            HELD.of(Scope::LocalUi)
-        ),
+        link::connect(a, speaks, Scope::LocalUi, HELD.of(Scope::LocalUi)),
         link::serve_any(b, session::speaks(), &HELD)
     );
     tokio::spawn(session::serve(served.unwrap(), hosting.clone(), None));
@@ -102,22 +102,50 @@ impl Linked {
     }
 }
 
-/// The frames a view's stream carries until `until`, as their images, its snapshot's first.
-async fn frames_until(reader: &mut Reader, until: Instant) -> Vec<Vec<u8>> {
+/// Every frame a view's stream carries until `until`, its snapshot's first.
+async fn every_frame_until(reader: &mut Reader, until: Instant) -> Vec<Frame> {
     let mut frames = Frames::default();
-    let mut images = Vec::new();
+    let mut all = Vec::new();
     while let Ok(Some(Ok(chunk))) = tokio::time::timeout_at(until.into(), reader.next()).await {
         let bytes = match chunk {
             Chunk::Snapshot(bytes) | Chunk::Live(bytes) => bytes,
         };
         reader.ack(bytes.len()).await.unwrap();
-        for frame in frames.push(&bytes).unwrap() {
+        all.extend(frames.push(&bytes).unwrap());
+    }
+    all
+}
+
+/// The frames a view's stream carries until `until`, as their images, its snapshot's first:
+/// the page's origin between them is left out (1.35).
+async fn frames_until(reader: &mut Reader, until: Instant) -> Vec<Vec<u8>> {
+    every_frame_until(reader, until)
+        .await
+        .into_iter()
+        .filter(|frame| frame.format != ORIGIN)
+        .map(|frame| {
             // A 1.14 link's view is sent frames that name what they show (#2014).
             assert_eq!(frame.format, AIMED_JPEG);
-            images.push(frame.aimed().expect("an aimed frame").1.to_vec());
-        }
-    }
-    images
+            frame.aimed().expect("an aimed frame").1.to_vec()
+        })
+        .collect()
+}
+
+/// What a view's frames said, in order: `origin <it>` for an origin frame, the image's text
+/// for an image.
+fn said(frames: &[Frame]) -> Vec<String> {
+    frames
+        .iter()
+        .map(|frame| match frame.origin() {
+            Some(at) => format!("origin {}", at.unwrap_or_default()),
+            None => {
+                let image = frame
+                    .aimed()
+                    .map_or(frame.image.clone(), |(_, image)| image);
+                String::from_utf8_lossy(&image).into_owned()
+            }
+        })
+        .collect()
 }
 
 /// Makes a frame every `every` from another thread until `until`, numbered from 1.
@@ -275,8 +303,17 @@ async fn a_view_that_falls_behind_is_given_the_next_whole_frame() {
         }
     }
     let whole = frames.push(&snapshot).unwrap();
-    assert_eq!(whole.len(), 1, "the snapshot is one frame");
-    let (_, image) = whole[0].aimed().expect("an aimed frame");
+    assert_eq!(
+        whole.len(),
+        2,
+        "the snapshot is the page's origin and one frame"
+    );
+    assert_eq!(
+        whole[0].origin(),
+        Some(None),
+        "a stand-in's page has no origin"
+    );
+    let (_, image) = whole[1].aimed().expect("an aimed frame");
     assert_eq!(image.len(), 200 * 1024, "and it is whole");
     assert!(frames.is_between_frames());
     linked.hosting.end_all();
@@ -486,4 +523,71 @@ async fn an_act_for_a_program_the_host_does_not_hold_is_refused_as_no_such_chat(
         refused.refusal().map(|r| r.code.as_str()),
         Some(session::NO_SUCH_CHAT)
     );
+}
+
+#[tokio::test]
+async fn a_view_is_told_its_pages_origin_alone_where_it_changes_and_in_its_snapshot() {
+    // 1.35 (#2300): what the chip names, from the engine's record, cut to the origin here.
+    let mut linked = linked().await;
+    let (program, screen) = linked.browser().await;
+    let (_, mut reader) = linked.watch(&program, ViewRole::Focused).await;
+
+    screen.shown().address = "http://localhost:5173/login?next=%2Fadmin".into();
+    screen.makes(b"one");
+    let soon = || Instant::now() + Duration::from_millis(300);
+    assert_eq!(
+        said(&every_frame_until(&mut reader, soon()).await),
+        ["origin http://localhost:5173", "one"]
+    );
+    // A view is sent the newest frame alone: each is read before the next is made.
+    let mut seen = Vec::new();
+    for (address, image) in [
+        ("http://localhost:5173/account", "two"),
+        ("https://ada:pw@docs.example.test/a#b", "three"),
+        ("about:blank", "four"),
+    ] {
+        screen.shown().address = address.into();
+        screen.makes(image.as_bytes());
+        seen.extend(said(&every_frame_until(&mut reader, soon()).await));
+    }
+    assert_eq!(
+        seen,
+        [
+            "two",
+            "origin https://docs.example.test",
+            "three",
+            "origin ",
+            "four"
+        ],
+        "the same origin is not said again; no path, user or fragment ever is"
+    );
+
+    // A view attached again is told where its page is before its first image.
+    screen.shown().address = "http://localhost:5173/".into();
+    screen.makes(b"five");
+    let (_, mut again) = linked.watch(&program, ViewRole::Thumbnail).await;
+    assert_eq!(
+        said(&every_frame_until(&mut again, soon()).await),
+        ["origin http://localhost:5173", "five"]
+    );
+}
+
+#[tokio::test]
+async fn a_view_of_a_link_before_1_35_is_sent_images_alone() {
+    let before = purlis_session_protocol::version::Speaks::new([
+        purlis_session_protocol::version::Version {
+            major: 1,
+            minor: 34,
+        },
+    ]);
+    let mut linked = linked_speaking(before).await;
+    let (program, screen) = linked.browser().await;
+    let (_, mut reader) = linked.watch(&program, ViewRole::Focused).await;
+
+    screen.shown().address = "http://localhost:5173/".into();
+    screen.makes(b"one");
+
+    let frames = every_frame_until(&mut reader, Instant::now() + Duration::from_millis(300)).await;
+    assert_eq!(said(&frames), ["one"]);
+    assert!(frames.iter().all(|frame| frame.format == AIMED_JPEG));
 }

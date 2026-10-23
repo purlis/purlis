@@ -96,7 +96,15 @@ fn a_view_attached_while_the_last_one_detaches_is_still_shown_frames() {
     let screen = Arc::new(Slow::default());
     let browser = Browser::new(screen.clone(), "b-1", Arc::default());
     let source = browser
-        .view(ViewKind::Browser, Some(ViewRole::Focused), None, true)
+        .view(
+            ViewKind::Browser,
+            Some(ViewRole::Focused),
+            None,
+            super::Reads {
+                aims: true,
+                origins: true,
+            },
+        )
         .expect("a browser view");
     let first = source.attach();
     assert!(screen.showing.load(Ordering::SeqCst));

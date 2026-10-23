@@ -12,7 +12,11 @@ export const purlisUi: {
     | "select-family"
     | "choice-family"
     | "dialog-family"
-    | "tooltip-family",
+    | "tooltip-family"
+    | "panel-family"
+    | "panel-section-family"
+    | "empty-state-family"
+    | "status-item-family",
     Rule.RuleModule
   >;
 };

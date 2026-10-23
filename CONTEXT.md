@@ -988,6 +988,19 @@ control of a family by hand, and lint holds it (ADR 0104).
 _Avoid_: component library, design system (that is the tokens, the families and their rules
 together), widget, house component
 
+**Window gutter**:
+The gap between the window's regions, and around them inside its frame: a theme's
+`window.gutter`, with `panel.corner-radius` for the panels' corners and `panel.border-width` for
+the hairline between two flush regions. Purlis Classic's is 0, so its regions sit flush; Purlis
+floats them (#2805).
+_Avoid_: margin, padding, spacing (each a size inside one control)
+
+**Status item**:
+One item of the status bar, or a status pill at the title bar's right: an item purlis draws or
+one an extension gives as data, on the bar's left or right end by its priority, which the person
+may hide, and whose press runs a command (#2913).
+_Avoid_: status cell, footer item, badge (a badge is an extension's fact on it)
+
 **Primitive wrapper**:
 The one file in a component family that wraps a React Aria primitive, the only place the
 primitives library is imported. It is where the family's variants, sizes and parts are set, and

@@ -973,6 +973,20 @@ body {
   block-size: var(--space-5);
 }
 
+/* Who drives a browser where its agent does not (#2300): the bar's own mark, under the
+   thumbnail, for the person; the waiting colour for purlis signing in. */
+.browser-thumbnail[data-driver="person"] {
+  box-shadow: inset 0 -2px 0 var(--accent-base);
+}
+
+.browser-thumbnail[data-driver="purlis"] {
+  box-shadow: inset 0 -2px 0 var(--state-waiting);
+}
+
+.chat-browser-driver[data-driver="person"] {
+  color: var(--text-primary);
+}
+
 /* The bar's own controls — `+`, the two splits, `End this pane's chat`, the region toggles.
    Each carries an icon beside its words (`PlaneView`'s `Doer`), so this is a flex row: the
    words stay, because an icon-only bar is a bar an operator has to learn. */
@@ -2682,6 +2696,45 @@ button.show-more:focus-visible {
   flex: 1;
   min-width: 0;
   min-height: 0;
+  /* **The window's gutter** (#2805, #2913): the theme's `window.gutter` between the regions,
+     and around them inside the frame, below the bar. The frame's own surface shows through it,
+     as it does beside the activity bars. Purlis Classic's is 0, so the regions sit flush with
+     the hairline between them (`panel.border-width`, the slots' borders below) as they always
+     did; Purlis floats them, 8 apart, each with the panel family's corners (`ui/panel`). */
+  box-sizing: border-box;
+  padding: 0 var(--window-gutter) var(--window-gutter);
+  background: var(--surface-deep);
+}
+
+/* Each boundary between two regions is the gutter's width, and draws no line of its own: a
+   side's line is its slot's border. Its handle shows under the pointer as a line along its
+   middle, no wider than the gutter, so a flush window's handles draw nothing, as before. */
+.region-row > [data-separator] {
+  width: var(--window-gutter);
+  background-color: transparent;
+}
+
+.regions > [data-separator] {
+  height: var(--window-gutter);
+  background-color: transparent;
+}
+
+.region-row > [data-separator]:hover,
+.region-row > [data-separator][data-dragging] {
+  background-color: transparent;
+  background-image: linear-gradient(var(--accent-base), var(--accent-base));
+  background-position: center;
+  background-size: min(var(--window-gutter), var(--focus-ring-width)) 100%;
+  background-repeat: no-repeat;
+}
+
+.regions > [data-separator]:hover,
+.regions > [data-separator][data-dragging] {
+  background-color: transparent;
+  background-image: linear-gradient(var(--accent-base), var(--accent-base));
+  background-position: center;
+  background-size: 100% min(var(--window-gutter), var(--focus-ring-width));
+  background-repeat: no-repeat;
 }
 
 /* The row above the Panel fills its panel's inner box, as a slot's content does. */
@@ -2710,7 +2763,28 @@ button.show-more:focus-visible {
    none, so its handle is the line, and there is never a second one. */
 .panel-halves > [data-separator] {
   align-self: stretch;
-  width: 1px;
+  /* The line is the handle's content box, `panel.border-width` wide in the middle of the gap:
+     the whole handle where the halves sit flush, nothing where they float (`border-box`, so the
+     padding never moves a half). */
+  box-sizing: border-box;
+  width: max(var(--panel-border-width), var(--window-gutter));
+  padding-inline: calc(
+    (max(var(--panel-border-width), var(--window-gutter)) - var(--panel-border-width)) / 2
+  );
+  background-clip: content-box;
+}
+
+/* Under the pointer the line is the accent, as wide as the focus ring where there is a gutter to
+   draw it in. */
+.panel-halves > [data-separator]:hover,
+.panel-halves > [data-separator][data-dragging] {
+  padding-inline: calc(
+    (
+        max(var(--panel-border-width), var(--window-gutter)) -
+          max(var(--panel-border-width), min(var(--window-gutter), var(--focus-ring-width)))
+      ) /
+      2
+  );
 }
 
 /* And each half keeps what it holds the same step clear of that line. */
@@ -2792,11 +2866,11 @@ button.show-more:focus-visible {
 }
 
 .activity-column[data-side="left"] {
-  border-inline-end: 1px solid var(--border-subtle);
+  border-inline-end: var(--panel-border-width) solid var(--border-subtle);
 }
 
 .activity-column[data-side="right"] {
-  border-inline-start: 1px solid var(--border-subtle);
+  border-inline-start: var(--panel-border-width) solid var(--border-subtle);
 }
 
 /* The line between a side's own icons and its Lower icons, which it pushes to the bottom of
@@ -3011,7 +3085,7 @@ button.show-more:focus-visible {
   margin: 0;
 }
 /* A group's heading. A chat's chain is data, so it is drawn as written; a section of the Inbox
-   itself (Notices, Updates) wears the sidebar's own title beside it (`.sidebar-title`). */
+   itself (Notices, Updates) is a section title of the panel family's beside it. */
 .inbox-chain {
   margin: 0 0 var(--space-3);
   font-size: var(--font-size-xs);
@@ -3020,7 +3094,7 @@ button.show-more:focus-visible {
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
-.inbox-chain.sidebar-title {
+.inbox-chain[data-part="title"] {
   margin: 0 0 var(--space-3);
 }
 /* An ask is a card: its words, then its answers (the shared button), its reply (the shared field
@@ -3223,16 +3297,18 @@ button.show-more:focus-visible {
    `app/src/theme/theme.ts`. So a region moved to another side takes on that side's look, which
    is what it means for the arrangement to be data (`app/src/regions.ts`). */
 .slot-left {
-  border-right: 1px solid var(--border-subtle);
+  border-right: var(--panel-border-width) solid var(--border-subtle);
 }
 
 .slot-right {
-  border-left: 1px solid var(--border-subtle);
+  border-left: var(--panel-border-width) solid var(--border-subtle);
 }
 
-/* The Panel is under the row, so its line is above it. */
+/* The Panel is under the row, so its line is above it. Its halves are panels of their own
+   (`ui/panel`): the slot that holds them draws no ground, so the gutter between them is the
+   frame's. */
 .slot-panel {
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--panel-border-width) solid var(--border-subtle);
 }
 
 /* The left region: the repo and worktree explorer, which is the selector WITHIN a workspace
@@ -3591,24 +3667,11 @@ button.show-more:focus-visible {
   padding-inline-start: var(--space-4);
 }
 
-/* **A sidebar section's title, on either side of the window** — the Attention region's
-   panels and the Explorer's own sections. Smaller, heavier and brighter than a row, and never
-   dimmed, so it reads as where a section starts and not as the first thing in it. The mark
-   takes the title's colour for the same reason: a muted glyph is what a row carries. */
-.sidebar-title {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
+/* **A section's title, on either side of the window** — the side panels' sections and the
+   Explorer's own: the panel family's (`ui/panel/panel.css`) draws it. It sits with no margin of
+   its own, and a view that places one gives it its own (`.explorer h2`, `.inbox-chain`). */
+:where([data-scope="panel-section"][data-part="title"]) {
   margin: 0;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
-}
-/* `h2.`, so this outweighs each region's own `.panels .node-icon` wherever it sits in the file. */
-h2.sidebar-title .node-icon {
-  color: inherit;
 }
 
 .explorer h2 {
@@ -4653,52 +4716,6 @@ h2.sidebar-title .node-icon {
 .needs-you-anchor {
   display: contents;
 }
-.needs-you-button {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  padding: var(--space-0) var(--space-2);
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-primary);
-  font: inherit;
-  cursor: pointer;
-}
-.needs-you-button:hover {
-  background: var(--control-hover);
-}
-.needs-you-button:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
-/* The mark may be `needs-you.base`; the WORDS may not. `#bd5654` on `surface.base` measures
-   3.88:1 in purlis-dark, which is under AA for text and over the 3:1 an icon is held to —
-   the same distinction that split `needs-you` from `danger` in the first place. The number
-   is loud by being filled, on the one pair the contrast test already measures. */
-.needs-you-button svg {
-  width: 1em;
-  height: 1em;
-  color: var(--needs-you-base);
-}
-/* **The faint hand** (charter-app#52, the operator's ruling on #249): nothing has asked, but a
-   chat that cannot say so is open. No number, and none of the count's colour — the muted text
-   token, so it reads as "charter cannot vouch for this" and never as a request. */
-.needs-you-button.muted,
-.needs-you-button.muted svg {
-  color: var(--text-muted);
-}
-.needs-you-number {
-  min-width: 1.3rem;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--needs-you-base);
-  color: var(--needs-you-text);
-  font-weight: var(--font-weight-strong);
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
 .mid-turn {
   font-weight: var(--font-weight-strong);
 }
@@ -5300,173 +5317,10 @@ h2.sidebar-title .node-icon {
   display: none;
 }
 
-/* **charter's status line**: one line at the very bottom of the window, under every region
-   (`app/src/StatusLine.tsx`, which argues why it is not one of ADR 0038's regions).
-   `surface.deep` is defined by the theme as the topmost strip and the bottom of the window, so
-   this and the projects strip are the two ends of the same frame.
-
-   **One bar, as an editor's status bar is** (qw357): context on the left, health on the right,
-   every size from the core tokens. What can be pressed is the set's small ghost button
-   (a small ghost `Button`): no box, the chrome's height, the set's hover and ring.
-   The line's own padding is the ring's room (its width and its offset), so a focused item's
-   ring is never clipped by the window's bottom edge.
-
-   `flex: none` on the line: the window is a flex column and the regions take what is left. */
-.status-line {
-  display: flex;
-  flex: none;
-  gap: var(--space-5);
-  align-items: center;
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
-  overflow: hidden;
-  background: var(--surface-deep);
-  border-top: 1px solid var(--border-subtle);
-}
-
-/* **Context gives way, health never does.** The left end shrinks and cuts its last cells
-   first; everything in it is a count or a name that costs less off the end than the Notices
-   count would. `min-width: 0` is what lets a flex item shrink below its content at all. */
-.status-context {
-  display: flex;
-  flex: 0 1 auto;
-  gap: var(--space-5);
-  align-items: center;
-  min-width: 0;
-  /* As tall as a status item, so the line is one height with or without the health end. */
-  min-height: var(--size-chrome);
-  overflow: hidden;
-}
-
-.status-context > * {
-  flex: none;
-}
-
-/* The auto margin is what divides the line. */
-.status-health {
-  display: flex;
-  flex: none;
-  gap: var(--space-1);
-  align-items: center;
-  margin-inline-start: auto;
-}
-
-/* **The project, as its name** (qw357): its mark, then the directory's last segment, with a
-   hairline after it that parts the project from the workspace inside it. The one cell of the
-   context that shrinks inside itself: a long name is cut with an ellipsis and is whole in the
-   tooltip's path. The ring is inside, because the context clips what is outside it. */
-.status-line .status-project {
-  display: flex;
-  flex: 0 1 auto;
-  gap: var(--space-2);
-  align-items: center;
-  min-width: 0;
-  padding-inline-end: var(--space-5);
-  border-inline-end: 1px solid var(--border-subtle);
-}
-
-.status-project:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
-}
-
-.status-project-mark {
-  display: inline-flex;
-  flex: none;
-  color: var(--text-muted);
-}
-
-.status-project-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: var(--font-weight-strong);
-}
-
-/* Where I am: charter's own mark, and the workspace's name in the weight the footer gives it
-   (`crates/purlis-core/src/footer.rs`, zone 1). */
-.status-glyph {
-  color: var(--accent-base);
-}
-
-.status-workspace {
-  font-weight: var(--font-weight-strong);
-}
-
-/* A count's label. Quiet, because the number is the thing being read and the label only says
-   what it counts. */
-.status-label {
-  color: var(--text-quiet);
-}
-
-.status-cell {
-  font-variant-numeric: tabular-nums;
-}
-
 /* An extension's value older than it declared fresh (charter-app#340), here and in the repo
    table: dimmed whole, with its age beside it, so an old count never reads as a current one. */
-.status-badge.stale,
 .state-bar .fact.stale {
   color: var(--text-muted);
-}
-
-.status-unknown {
-  color: var(--text-muted);
-}
-
-/* The Notices count: the neutral count pill, at the count's size. */
-.status-count {
-  padding: var(--space-0) var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--control-count);
-  font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
-}
-
-/* **The update button** (`app/src/Updates.tsx`), on the title bar. A quiet updater is its icon
-   alone, in the muted colour: it is a way in to the channel, not a fact on the bar. An offer is
-   in the accent, the one thing there that is news, and a failure the operator asked about is
-   amber. */
-.status-update {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: var(--space-0) var(--space-3);
-  font: inherit;
-  cursor: pointer;
-}
-
-.status-update:hover {
-  border-color: var(--accent-base);
-}
-
-.status-update.update-quiet {
-  color: var(--text-muted);
-}
-
-.status-update.update-offered,
-.status-update.update-installed {
-  color: var(--accent-base);
-  border-color: var(--accent-base);
-}
-
-.status-update.update-failed {
-  color: var(--state-waiting);
-}
-
-/* **Severity is a colour and a word, never a colour alone** (qw357). The pin is drawn only
-   when it drifts, so its mark is always amber, beside words that say what is pinned. The
-   doctor's count takes its verdict's colour: a blocker in the colour a failed check has
-   everywhere else in the window, a warning in the amber of "not finished". A clean doctor is
-   the plain word, never green: about twenty checks did not run, and a green word over them is
-   a claim. One it could not run is quiet. */
-.status-pin svg {
-  color: var(--state-waiting);
 }
 
 .warning.update {
@@ -5480,18 +5334,6 @@ h2.sidebar-title .node-icon {
   padding: var(--space-3);
   background: var(--surface-sunken);
   border-radius: var(--radius-md);
-}
-
-.status-doctor.doctor-tone-fail .doctor-said {
-  color: var(--state-failed);
-}
-
-.status-doctor.doctor-tone-warn .doctor-said {
-  color: var(--state-waiting);
-}
-
-.status-doctor.doctor-tone-unknown svg {
-  color: var(--text-muted);
 }
 
 /* The dialog. Wider than a consent prompt, because a row's detail is a sentence and its hint is
@@ -5599,14 +5441,6 @@ h2.sidebar-title .node-icon {
   margin: var(--space-5) 0 0;
   font-size: var(--font-size-xs);
   overflow-wrap: anywhere;
-}
-
-/* There are Notices: the bell takes the colour purlis's footer gives a warning, so the one
-   button on the line that is asking for something looks it. The count's own badge stays the
-   neutral one, because it is words and `state.waiting` is held to 3:1 as a mark, not 4.5 as
-   text. */
-.status-alerts:not([data-count="0"]):not([data-count="unknown"]) .lucide {
-  color: var(--state-waiting);
 }
 
 /* **A Notice in the Inbox** (`NoticeList`, #1695): what stood under the strip and what the Alerts
@@ -5832,7 +5666,9 @@ h2.sidebar-title .node-icon {
   padding: 0 var(--space-4) 0 calc(var(--window-controls, 0px) + var(--space-4));
   font-size: var(--font-size-xs);
   background: var(--surface-deep);
-  border-bottom: 1px solid var(--border-subtle);
+  /* The hairline toward the regions, the theme's `panel.border-width` (#2913): none where the
+     regions float in the gutter. */
+  border-bottom: var(--panel-border-width) solid var(--border-subtle);
   overflow: hidden;
   /* Not selectable, like all chrome: see "Chrome is not selectable" near the top. */
 }
@@ -5875,49 +5711,6 @@ h2.sidebar-title .node-icon {
   color: var(--text-secondary);
 }
 
-/* About charter, in the same chrome as the update item beside it — one row, one shape. */
-.title-about {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  color: var(--text-secondary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: var(--space-0) var(--space-3);
-  font: inherit;
-  cursor: pointer;
-}
-
-.title-about:hover {
-  border-color: var(--accent-base);
-}
-
-/* The kill switch (OV-1), in the same chrome as About beside it, and in the danger colours
-   once it is thrown, so a stopped app is never mistaken for an idle one. */
-.title-kill-switch {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  color: var(--text-secondary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: var(--space-0) var(--space-3);
-  font: inherit;
-  cursor: pointer;
-}
-
-.title-kill-switch:hover {
-  border-color: var(--danger-base);
-}
-
-.title-kill-switch[data-stopped="yes"] {
-  color: var(--danger-text);
-  background: var(--danger-surface);
-  border-color: var(--danger-base);
-}
-
 /* A stop that did not go as asked, said on the bar itself: the next launch may not know about
    it. Capped like the save indicator's words, and read in full from its `title`. */
 .title-kill-switch-trouble {
@@ -5926,13 +5719,6 @@ h2.sidebar-title .node-icon {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--danger-text);
-}
-
-.title-kill-switch:focus-visible,
-.title-about:focus-visible,
-.title-bar .status-update:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-inset);
 }
 
 /* What the version brought. The body scrolls, bounded, and the title and Close around it stay
@@ -6171,73 +5957,6 @@ h2.sidebar-title .node-icon {
 
 .chat-card-facts dd {
   margin: 0;
-}
-
-/* **The empty state, centred, with the way out in it** (`EmptyState.tsx`). `page` is the
-   centre region's — the operator's *"open new tab button on empty page center"*. `panel` is
-   the same component at a sidebar's width, where a page's type would wrap the headline to
-   three lines, which is the defect one region over that this change exists to fix. */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: var(--space-3);
-  color: var(--text-muted);
-}
-
-.empty-state-page {
-  height: 100%;
-  padding: var(--space-8);
-}
-
-.empty-state-panel {
-  padding: var(--space-6) var(--space-4);
-}
-
-/* The mark: two controls tall on a page, a chrome's height in a panel. */
-.empty-state-mark {
-  width: var(--space-8);
-  height: var(--space-8);
-  opacity: 0.5;
-}
-
-.empty-state-panel .empty-state-mark {
-  width: var(--space-6);
-  height: var(--space-6);
-}
-
-.empty-state-headline {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-strong);
-}
-
-.empty-state-panel .empty-state-headline {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-regular);
-  color: var(--text-muted);
-}
-
-.empty-state-body {
-  margin: 0;
-  max-width: 28rem;
-  font-size: var(--font-size-sm);
-}
-
-.empty-state-panel .empty-state-body {
-  font-size: var(--font-size-xs);
-}
-
-/* The way out: the shared primary button (`Button variant="primary"`), one beside another where there are two. */
-.empty-state-action {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
 }
 
 /* =====================================================================================
@@ -6994,20 +6713,8 @@ h2.sidebar-title .node-icon {
 
 /* A panel's heading with a view's button beside it — the persona statistics button. The
    heading keeps its own look; the row is what carries the margin it used to. */
-.panels .panel-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  /* As tall as a heading with a view's button, so a heading without one lines up the same:
-     the chrome height, the small button's. */
-  min-height: var(--size-chrome);
+.panels [data-scope="panel-section"][data-part="head"] {
   margin: 0 0 var(--space-2);
-}
-
-.panels .panel-head h2 {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
 }
 
 .panel-view {
@@ -7294,12 +7001,6 @@ h2.sidebar-title .node-icon {
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
 }
 
-/* The title bar's needs-you button, appearing when the first chat asks while the window is
-   up — not at launch, where a restored queue was already there (`NeedsYouMenu`'s `arrived`). */
-.needs-you-button.arrived {
-  animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
-}
-
 /* A region brought back while the window is up — never at launch — fades in where it lands.
    Only its opacity: the slot is its full size from the first frame, so the terminal beside it
    is refitted once and not on every frame of a slide. */
@@ -7390,19 +7091,6 @@ h2.sidebar-title .node-icon {
   align-items: center;
   gap: var(--space-1);
 }
-.save-indicator svg {
-  width: 1em;
-  height: 1em;
-  color: var(--state-waiting);
-}
-.save-indicator[data-stage="saved"] svg {
-  color: var(--state-success);
-}
-.save-indicator[data-stage="blocked"] svg,
-.save-indicator[data-checks="failed"] svg {
-  color: var(--state-failed);
-}
-
 /* **The words are capped, because the bar's right-hand end never gives way** (ADR 0054) and
    what it spends the project tabs lose. A stage can be a whole sentence — a plane that is not a
    git repository says *"Blocked: this plane is not a git repository, so there is nothing to

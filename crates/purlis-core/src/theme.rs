@@ -185,6 +185,8 @@ mod native_tests;
 #[cfg(test)]
 mod options_tests;
 #[cfg(test)]
+mod parts_shell_tests;
+#[cfg(test)]
 mod parts_tests;
 #[cfg(test)]
 mod person_tests;

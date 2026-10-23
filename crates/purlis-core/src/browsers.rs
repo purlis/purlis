@@ -68,7 +68,9 @@ use purlis_browser_engine::process::{Engine, Keeper};
 use purlis_browser_engine::sigstore::Sigstore;
 use purlis_host::protocol::browsing::{self as wire, Act, Browsed, BrowserReach, PageSaid};
 use purlis_host::protocol::session::Exit;
-use purlis_host::{Browsers, FrameSink, LoginEnded, NotActed, NotTaken, Screen, ScreenEnded};
+use purlis_host::{
+    BrowserNotStarted, Browsers, FrameSink, LoginEnded, NotActed, NotTaken, Screen, ScreenEnded,
+};
 
 use crate::sandbox::browser_reach::{Bound, Lane, NewSites, ReachProxy, Site};
 use crate::sandbox::reach::{Reach, Written};
@@ -355,7 +357,7 @@ impl Browsers for EngineBrowsers {
         data: &Path,
         reach: Option<&BrowserReach>,
         kept: Option<&wire::KeptLogin>,
-    ) -> Result<Arc<dyn Screen>, String> {
+    ) -> Result<Arc<dyn Screen>, BrowserNotStarted> {
         let (home, program) = self.places()?;
         // Its folder's own, made before anything of a browser is written into it.
         made_private_and_unbacked(&browsers_in(&home))?;
@@ -373,7 +375,8 @@ impl Browsers for EngineBrowsers {
             .ok_or_else(|| "no browser engine is made for this platform".to_owned())?;
         // Which engine (#2835): this machine's own Chrome where the person chose it, else the
         // pinned one where it can make its sandbox, else none.
-        let choice = engine_for(&Chosen::here(&engines_in(&home)))?;
+        let choice = engine_for(&Chosen::here(&engines_in(&home)))
+            .map_err(BrowserNotStarted::NoEngineSandbox)?;
         let settings = EngineSettings {
             engine: choice,
             ..EngineSettings::default()
@@ -408,9 +411,9 @@ impl Browsers for EngineBrowsers {
         let no_sandbox_or = |why: String| {
             let said = std::fs::read_to_string(&log).unwrap_or_default();
             if sandboxing::said_no_usable_sandbox(&said) {
-                sandboxing::NO_ENGINE_SANDBOX.to_owned()
+                BrowserNotStarted::NoEngineSandbox(sandboxing::NO_ENGINE_SANDBOX.to_owned())
             } else {
-                why
+                BrowserNotStarted::Failed(why)
             }
         };
         let engine = Engine::start(&launch, &Self::keeper(program))
@@ -1117,7 +1120,11 @@ impl Screen for EngineScreen {
     fn show(&self, frames: FrameSink) {
         self.with(|browser| {
             browser.show(Arc::new(move |painted: drive::Painted| {
-                frames(aim_of(&painted.aim), Bytes::from(painted.jpeg));
+                frames(
+                    aim_of(&painted.aim),
+                    painted.address,
+                    Bytes::from(painted.jpeg),
+                );
             }));
         });
     }

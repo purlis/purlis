@@ -81,8 +81,9 @@ export function thisDevice(onAMac: boolean): string {
 /**
  * **What a browser's chip says** (#2024, spec #2008): the page's host and the device the browser
  * runs on, `localhost:5173 on this Mac`, drawn by purlis outside the page so a page cannot fake
- * it; `whole` is the full address, for its tooltip. Before a page, or on a blank one, the device
- * alone.
+ * it; `whole` is what it was given, for its tooltip. It is given the page's origin alone
+ * (#2300): a path, a query or a title may hold a secret. Before a page, or on a blank one, the
+ * device alone.
  */
 export function addressChip(
   address: string | null,
@@ -97,6 +98,19 @@ export function addressChip(
     host = "";
   }
   return { said: `${host === "" ? address : host} on ${device}`, whole: address };
+}
+
+/**
+ * **The origin of `address`** (#2300): `http://localhost:5173`, for an http or https address,
+ * and `null` for any other or one that does not read. What a chip names, and never more.
+ */
+export function originOfAddress(address: string): string | null {
+  try {
+    const url = new URL(address);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.origin : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The address each browser the window opened is to go to once its view is live, by program. */

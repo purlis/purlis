@@ -14,6 +14,12 @@
 //! the frame it was aimed at by them ([`crate::browsing::Aim`]), so input meant for a page that
 //! has since moved on is dropped rather than landing on another.
 //!
+//! **An origin frame** (1.35, #2300, [`ORIGIN`]) carries no image: the origin of the page the
+//! browser shows (`https://host[:port]`, as UTF-8), or nothing where it shows none or a page
+//! with no origin of its own. The host sends one where the origin changes and before the image
+//! in a view's snapshot, cut from the engine's own record of the page
+//! ([`crate::browsing::origin_of`]): never a path, a query, a fragment, a user or a title.
+//!
 //! A frame's image is opaque to the host and to this crate: the window decodes it on a canvas.
 //! A reader reads a frame of a format it does not know whole, and passes it on for its caller
 //! to skip, so a later minor may add a format.
@@ -27,6 +33,9 @@ pub const JPEG: u8 = 0x01;
 
 /// A JPEG image after what it shows (1.14): [`aimed`].
 pub const AIMED_JPEG: u8 = 0x02;
+
+/// The origin of the page a browser shows (1.35): [`origin`].
+pub const ORIGIN: u8 = 0x03;
 
 /// The longest frame a reader takes, format byte included: far more than a screen's JPEG.
 pub const MOST_FRAME_BYTES: usize = 16 << 20;
@@ -53,6 +62,11 @@ pub fn aimed(aim: &Aim, image: &[u8]) -> Bytes {
     frame(AIMED_JPEG, &body)
 }
 
+/// `origin`, the origin of the page a browser shows, or none, as one [`ORIGIN`] frame.
+pub fn origin(origin: Option<&str>) -> Bytes {
+    frame(ORIGIN, origin.unwrap_or_default().as_bytes())
+}
+
 /// One frame read back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
@@ -76,6 +90,16 @@ impl Frame {
             document: u64::from_be_bytes(document.try_into().ok()?),
         };
         Some((aim, body.slice(1 + length + 8..)))
+    }
+
+    /// What an [`ORIGIN`] frame says: the page's origin, or `Some(None)` for no page; `None` for
+    /// any other frame, or one that is not text.
+    pub fn origin(&self) -> Option<Option<String>> {
+        if self.format != ORIGIN {
+            return None;
+        }
+        let origin = std::str::from_utf8(&self.image).ok()?;
+        Some((!origin.is_empty()).then(|| origin.to_owned()))
     }
 }
 

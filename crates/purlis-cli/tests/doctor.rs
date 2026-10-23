@@ -699,6 +699,103 @@ fn bare_fix_never_renames_the_project() {
     assert!(!root.join("purlis.toml").exists(), "{said}");
 }
 
+// ---- project-skills (#2784) -----------------------------------------------------------------
+
+/// A committed plane whose skills are still in `.claude/skills`.
+fn plane_with_claude_skills() -> (tempfile::TempDir, PathBuf) {
+    let (d, root) = plane();
+    let skill = root.join(".claude/skills/deploy");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: deploy\ndescription: Ship it.\n---\nThen `charter:handoff`.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("home").join(".gitconfig"),
+        "[user]\n\tname = Fixture User\n\temail = fixture@example.invalid\n\
+         [commit]\n\tgpgsign = false\n",
+    )
+    .unwrap();
+    std::fs::write(root.join(".gitignore"), "/home/\n").unwrap();
+    git(&root, &["init", "-q"]);
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-qm", "before"]);
+    (d, root)
+}
+
+/// `project-skills` is applied by name with the Skill studio on, moves the skills in one commit,
+/// says every change, and a second run changes nothing.
+#[test]
+fn fix_project_skills_by_name_moves_the_skills_in_one_commit() {
+    let (_d, root) = plane_with_claude_skills();
+    let on = [("PURLIS_SKILL_STUDIO", "1")];
+    let out = doctor_with(&root, &root.join("home"), &["--fix", "project-skills"], &on);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("fix project-skills:"), "{said}");
+    assert!(
+        said.contains("✓ the skill deploy is a project skill now, shared with every workspace"),
+        "{said}"
+    );
+    assert!(
+        said.contains("the skill deploy names purlis's skills by purlis's name"),
+        "{said}"
+    );
+    assert!(
+        said.contains("needs a purlis that has project skills"),
+        "{said}"
+    );
+    assert!(said.contains("✓ committed"), "{said}");
+    assert!(said.contains("To undo it: `git revert "), "{said}");
+    assert!(root.join("skills/deploy/SKILL.md").is_file(), "{said}");
+    assert!(!root.join(".claude/skills/deploy").exists(), "{said}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("skills/deploy.toml")).unwrap(),
+        "grant = \"all\"\n"
+    );
+
+    let again = doctor_with(&root, &root.join("home"), &["--fix", "project-skills"], &on);
+    let said = String::from_utf8_lossy(&again.stderr);
+    assert!(said.contains("nothing to do"), "{said}");
+}
+
+/// The move is part of the Skill studio's preview: with it off, refused, and nothing moved.
+#[test]
+fn fix_project_skills_is_refused_while_the_skill_studio_is_off() {
+    let (_d, root) = plane_with_claude_skills();
+    let out = doctor_with(
+        &root,
+        &root.join("home"),
+        &["--fix", "project-skills"],
+        &[("PURLIS_SKILL_STUDIO", "0")],
+    );
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("Settings › You › Previews"), "{said}");
+    assert!(
+        root.join(".claude/skills/deploy/SKILL.md").is_file(),
+        "{said}"
+    );
+    assert!(!root.join("skills").exists(), "{said}");
+}
+
+/// Bare `--fix` never moves the skills: a commit every teammate pulls waits to be asked for.
+#[test]
+fn bare_fix_never_moves_the_projects_skills() {
+    let (_d, root) = plane_with_claude_skills();
+    let out = doctor_with(
+        &root,
+        &root.join("home"),
+        &["--fix"],
+        &[("PURLIS_SKILL_STUDIO", "1")],
+    );
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(!said.contains("project-skills"), "{said}");
+    assert!(
+        root.join(".claude/skills/deploy/SKILL.md").is_file(),
+        "{said}"
+    );
+}
+
 // ---- persona-agents (#1451) -----------------------------------------------------------------
 
 /// A sub-agent file as `persona sync-agents` wrote it before it was retired.
