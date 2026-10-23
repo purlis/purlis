@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792761976367,
+  "lastUpdate": 1792780929441,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22764,6 +22764,48 @@ window.BENCHMARK_DATA = {
             "value": 104.924235,
             "unit": "ms",
             "extra": "median of 5 runs: 103.091, 104.576, 104.924, 105.478, 106.173 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5458d24d0b9c42193dc52b9b848208f5edc60eb1",
+          "message": "Runners: a send names what it left out, and the person can leave out more (#2046, 5/5) (#2981)\n\n* Runners: a send names what it left out, and the person can leave out more (#2046, 5/5)\n\nThe operator's ruling of 2026-10-25: a send carries uncommitted work less everything a\nsave to the forge refuses, the window names what a send left out, and the person can add\ntheir own list.\n\n- codelink::send answers the files the snapshot left out; the window keeps them per clone\n  and Changes draws a row under the clone naming them, inertly.\n- settings.runners.leave_out in a workspace's workspace.json: files and folders, relative\n  to each clone's top, left out of its sends on top of the save's rule. Read and refused\n  by the Workspace level (send_leaves_out, set_send_leaves_out, runners_refused).\n- A workspace's settings gain Sent to runners, once this machine keeps a pool.\n- plane-format rows for the key; a changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Move panels' tests beside their module\n\nMove only: the inline tests module becomes panels/tests.rs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n* Runners: a list that cannot be read refuses the send, and what is left out is named everywhere\n\n- settings::workspace::send_leaves_out answers why where the list cannot be read (a bad or\n  over-long entry, a workspace.json that is not JSON or cannot be read), and the window\n  refuses that workspace's sends in those words: never read as naming nothing.\n- The exclude pathspec takes icase where the repository ignores case, and an entry is\n  dropped only where it is ignored and untracked, so a tracked ignored file is still left\n  out.\n- The plane root draws a Sent to runners panel naming what the project's own send left\n  out (panels::left_out_said), and the Changes row agrees in number and names at most five\n  with how many more.\n- counts::counted in the log line; the refused entry is quoted plainly.\n- Tests for each.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5853N5JVZQCP5AEZR3XDC61\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T22:40:50+04:00",
+          "tree_id": "5ebaa9c9c5bd987ca2547840b3ece72f248a2d74",
+          "url": "https://github.com/purlis/purlis/commit/5458d24d0b9c42193dc52b9b848208f5edc60eb1"
+        },
+        "date": 1792780926812,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2738925,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.265, 0.272, 0.274, 0.277, 0.285 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.487747499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.386, 16.458, 16.488, 16.488, 16.489 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.34905499999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.055, 101.170, 101.349, 101.370, 101.994 ms"
           }
         ]
       }
