@@ -17,8 +17,9 @@
 //!   elicitation among them, is refused and reported as [`Event::Refused`], the input to the
 //!   audit's `acp.call.refused`.
 //! - **The handshake is the fact for the run** (§4): [`Negotiated`] maps what the agent answered
-//!   onto harness capabilities. An agent on another protocol version does not start
-//!   ([`NotStarted::Version`]), and neither does one that needs a login
+//!   onto harness capabilities. An agent on another protocol version does not start: the ACP
+//!   crate refuses its `initialize` answer ([`NotStarted::Handshake`], naming both versions),
+//!   and [`NotStarted::Version`] stands behind it. Neither does one that needs a login
 //!   ([`NotStarted::Login`]): charter never calls `authenticate` with a value, and never supplies
 //!   a credential (V9).
 //! - **`session/new`** gets the chat's worktree as `cwd`, and charter's MCP server in `mcpServers`
@@ -1491,6 +1492,8 @@ async fn handshake(
         .block_task()
         .await
         .map_err(|err| NotStarted::Handshake(err.to_string()))?;
+    // The ACP crate refuses an answer on another version itself, as a handshake error that
+    // names both versions; this is the same rule, kept for an answer it lets through.
     if init.protocol_version != ProtocolVersion::V1 {
         return Err(NotStarted::Version {
             offered: init.protocol_version.as_u16(),

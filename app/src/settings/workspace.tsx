@@ -33,6 +33,7 @@ import { pluginsSummaryGroup, workspaceSkillsGroup } from "./skillsSummary";
 import { Button } from "../ui/button/Button";
 import { anyPoolKept, usePools } from "../pools";
 import { runsOnGroup } from "./runsOn";
+import { sendLeavesOutGroup } from "./sendLeavesOut";
 
 /**
  * **The Workspace level** (SE-20, #1170; V89b, V89e, V89h): one workspace's settings in the
@@ -178,9 +179,10 @@ export function workspaceGroups(
       settings: [reposSetting(read), absentSetting(read)],
     },
     // Where this workspace's chats run, once this machine keeps a pool (#2046).
-    ...[runsOnGroup(read.plane, read.workspace, read.poolsKept === true)].filter(
-      (group): group is SettingsGroup => group !== undefined,
-    ),
+    ...[
+      runsOnGroup(read.plane, read.workspace, read.poolsKept === true),
+      sendLeavesOutGroup(read.plane, read.workspace, read.poolsKept === true),
+    ].filter((group): group is SettingsGroup => group !== undefined),
     // This workspace's own dispatch limits (#1440), kept in the project's file.
     workspaceDispatchGroup(read.plane, read.workspace),
     {

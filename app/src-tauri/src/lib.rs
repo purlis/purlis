@@ -78,6 +78,7 @@ mod machineprofiles;
 mod personaskills;
 mod skillchange;
 mod skillrun;
+mod skillsources;
 mod skillstudio;
 mod useskill;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.

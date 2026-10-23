@@ -114,6 +114,15 @@ impl Frontmatter {
             .collect()
     }
 
+    /// The text `field` is set to, where it is set to one scalar: a source's skill is named by
+    /// it (SK-10, #2773).
+    pub fn scalar(&self, field: Field) -> Option<&str> {
+        self.entries.iter().find_map(|(key, node)| match node {
+            Node::Scalar { text, .. } if Field::of(key) == Some(field) => Some(text.as_str()),
+            _ => None,
+        })
+    }
+
     /// The keys it sets that purlis knows of no harness to read, as written.
     pub fn unknown(&self) -> Vec<String> {
         self.entries

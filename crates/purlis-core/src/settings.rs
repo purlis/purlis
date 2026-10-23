@@ -43,6 +43,7 @@ pub mod dispatch;
 pub mod forges;
 pub mod harness_profiles;
 pub mod hosts;
+pub mod skill_sources;
 pub mod workspace;
 
 /// Where an answer came from: which layer of the Shared/Workspace/Local overlay decided it

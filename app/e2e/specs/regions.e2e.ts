@@ -1014,11 +1014,24 @@ describe("the layout as data", () => {
 
     const width = async (id: string) =>
       (await (await $(`[data-panel][id="${id}"]`)).getSize("width")) as number;
-    const [left, centre, right] = await Promise.all([
-      width("region-left"),
-      width("region-centre"),
-      width("region-right"),
-    ]);
+    const widths = async () =>
+      Promise.all([width("region-left"), width("region-centre"), width("region-right")]);
+    // Read once the layout has settled: the same widths twice, a frame apart. A window that
+    // has just been laid out (by the spec before, or the strip being read) may still be moving.
+    let seen = await widths();
+    await browser.waitUntil(
+      async () => {
+        await browser.execute(
+          () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+        );
+        const now = await widths();
+        const still = now.every((one, i) => Math.abs(one - seen[i]) < 0.5);
+        seen = now;
+        return still;
+      },
+      { timeout: 10_000, interval: 100, timeoutMsg: "the regions never settled" },
+    );
+    const [left, centre, right] = seen;
 
     expect(centre).toBeGreaterThan(left + right);
     expect(left).toBeGreaterThan(0);

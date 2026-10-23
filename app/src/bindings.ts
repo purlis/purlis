@@ -1825,6 +1825,41 @@ export const commands = {
 	 *  grant that would reach the workspace.
 	 */
 	skillTurn: (plane: PlaneId, workspace: string, name: string, on: boolean) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_turn", { plane, workspace, name, on })),
+	/**  The project's skill sources. */
+	skillSources: (plane: PlaneId) => typedError<SkillSource[], string>(__TAURI_INVOKE("skill_sources", { plane })),
+	/**  **Adds a skill source**, shared with the project or kept on this machine. */
+	skillSourceAdd: (plane: PlaneId, source: SkillSource) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_add", { plane, source })),
+	/**  **Takes a skill source out** of the project's. Skills installed from it stay. */
+	skillSourceRemove: (plane: PlaneId, remote: SourceRemote) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_remove", { plane, remote })),
+	/**
+	 *  **Confirms a source the committed lockfile names** on this machine, so it is asked for
+	 *  updates.
+	 */
+	skillSourceConfirm: (plane: PlaneId, remote: SourceRemote) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_source_confirm", { plane, remote })),
+	/**  **Browses a skill source** at its newest commit. */
+	skillSourceBrowse: (plane: PlaneId, source: SkillSource) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_source_browse", { plane, source })),
+	/**  **The install review** of `names` from a source, and the skills they refer to. */
+	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names })),
+	/**  **Installs what was reviewed** at `level`, with `grant` where it is a project skill. */
+	skillInstall: (plane: PlaneId, source: SkillSource, level: SkillLevel, reviewed: Reviewed, grant: 
+/**  Chats at the project's root alone. */
+{ to: "root" } | 
+/**  Every workspace's chats too. */
+{ to: "all" } | 
+/**  The workspaces named. */
+{ to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_install", { plane, source, level, reviewed, grant })),
+	/**
+	 *  **The updates there are**: each source this machine may contact asked for its newest commit,
+	 *  nothing fetched.
+	 */
+	skillUpdates: (plane: PlaneId) => typedError<SkillUpdates, string>(__TAURI_INVOKE("skill_updates", { plane })),
+	/**
+	 *  **An update's review**: the installed skill `name` at `level` against its source's newest
+	 *  commit.
+	 */
+	skillUpdateReview: (plane: PlaneId, level: SkillLevel, name: string) => typedError<UpdateReview, string>(__TAURI_INVOKE("skill_update_review", { plane, level, name })),
+	/**  **Accepts an update** that was reviewed: the pin moves, as one commit. */
+	skillUpdate: (plane: PlaneId, level: SkillLevel, name: string, reviewed: Reviewed) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_update", { plane, level, name, reviewed })),
 	/**
 	 *  **Turns one of a harness's plugins or skills on or off** (SK-6, #2769) for the chats the
 	 *  studio shows: at the project's root on this machine alone (`charter.local.toml`), in a
@@ -2576,6 +2611,17 @@ export const commands = {
 	dismissRunnerWrite: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_runner_write", { plane, id })),
 	/**  **Sets where a workspace's chats run** (#2046): the person's choice in its settings. */
 	setChatsRunOn: (plane: PlaneId, workspace: string, pool: string | null) => typedError<ChatsRunOn, string>(__TAURI_INVOKE("set_chats_run_on", { plane, workspace, pool })),
+	/**
+	 *  **What a workspace's sends to a pool's runner leave out** besides what a save to the forge
+	 *  refuses (#2046, the operator's ruling of 2026-10-25): `settings.runners.leave_out` in its
+	 *  `workspace.json`, as its settings show it.
+	 */
+	sendLeavesOut: (plane: PlaneId, workspace: string) => typedError<string[], string>(__TAURI_INVOKE("send_leaves_out", { plane, workspace })),
+	/**
+	 *  **Sets what a workspace's sends to a pool's runner leave out** (#2046): the person's list in
+	 *  its settings, one file or folder in a clone per entry. Answers what it holds after.
+	 */
+	setSendLeavesOut: (plane: PlaneId, workspace: string, entries: string[]) => typedError<string[], string>(__TAURI_INVOKE("set_send_leaves_out", { plane, workspace, entries })),
 	/**  Look for a newer charter now. The answer arrives as [`CHECKED`] or [`FAILED`]. */
 	checkForUpdate: () => __TAURI_INVOKE<void>("check_for_update"),
 	/**
@@ -6187,6 +6233,9 @@ export type FileChange = {
 	uncommitted: boolean,
 };
 
+/**  How a file changes in an update. */
+export type FileChanged = "added" | "removed" | "changed";
+
 /**  One file's change, as the comparison tab draws it. */
 export type FileDiff = 
 /**  Text: each side (empty where the file is absent) and git's hunks between them. */
@@ -7128,6 +7177,13 @@ export type InboxUpdate = {
  */
 export type InputOutcome = { outcome: "taken" } | { outcome: "missed" } | { outcome: "refused"; why: string };
 
+/**  **An install review**, summary first, and what accepting it says. */
+export type InstallReview = {
+	commit: SourceCommit,
+	skills: ReviewSkill[],
+	accepted: Reviewed,
+};
+
 /**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every
  *  later decision about extensions is read off.
@@ -7171,6 +7227,12 @@ export type InstructionStanding =
 { kind: "in-memory" } | 
 /**  It cannot, and why. */
 { kind: "left-out"; why: string };
+
+/**  A kind of invisible character, and the core's words for it. */
+export type InvisibleMark = {
+	kind: ReviewInvisible,
+	said: string,
+};
 
 /**  How much of the brief the record holds. */
 export type Kept = 
@@ -7316,6 +7378,9 @@ export type LeftOut = {
 	/**  The core's whole sentence. */
 	why: string,
 };
+
+/**  Why an entry of a skill's folder is not installed. */
+export type LeftOutWhy = "link" | "submodule" | "name" | "case" | "too-large" | "other";
 
 /**  The level a skill comes from, as the studio draws it. */
 export type Level = "built-in" | "project" | "workspace" | "persona" | 
@@ -7746,6 +7811,12 @@ export type NewBranch = {
 	warnings: string[],
 };
 
+/**  A folder of a source that is not a skill purlis offers. */
+export type NotASkill = {
+	folder: string,
+	why: string,
+};
+
 /**
  *  A chat a launch could not start, as the window lists it (NO-3): by its id, which Retry now
  *  and Forget name it by, with its name and why.
@@ -7833,6 +7904,15 @@ export type Offered = {
 	 *  answers. Absent (rather than `false`) wherever nothing is marked.
 	 */
 	preselected?: boolean | null,
+};
+
+/**  One skill a source offers. */
+export type OfferedSkill = {
+	name: string,
+	description: string,
+	folder: string,
+	/**  The levels it is installed at from this source, as a person reads them. */
+	installed: string[],
 };
 
 /**
@@ -9701,6 +9781,12 @@ export type RepoState_Deserialize = {
 	 *  there is none.
 	 */
 	on_a_runner?: RunnerBranch[],
+	/**
+	 *  The changed or new files the last send of this clone to its pool's runner left out, as a
+	 *  save to the forge would refuse them (#2046, the operator's ruling of 2026-10-25), by their
+	 *  paths in the clone. Left out where none was.
+	 */
+	left_out_of_send?: string[],
 };
 
 /**  One clone's git state, and what the forge cache last recorded for its branch. */
@@ -9741,6 +9827,12 @@ export type RepoState_Serialize = {
 	 *  there is none.
 	 */
 	on_a_runner?: RunnerBranch[],
+	/**
+	 *  The changed or new files the last send of this clone to its pool's runner left out, as a
+	 *  save to the forge would refuse them (#2046, the operator's ruling of 2026-10-25), by their
+	 *  paths in the clone. Left out where none was.
+	 */
+	left_out_of_send?: string[],
 };
 
 /**  Every clone of one workspace, as the panels draw them. */
@@ -9830,6 +9922,104 @@ export type RestoringChat = {
 	 *  until it has started and the sidebar lists it (ADR 0036).
 	 */
 	workspace: string | null,
+};
+
+/**  One file the review shows, one click away. */
+export type ReviewFile = {
+	path: string,
+	size: number,
+	executable: boolean,
+	/**  Its text with every invisible character escaped; `None` for a file that is not text. */
+	text: string | null,
+	risky: boolean,
+};
+
+/**  A network host the summary lists. */
+export type ReviewHost = {
+	host: string,
+	files: string[],
+	risky: boolean,
+};
+
+/**  The kind of a character no reader sees. */
+export type ReviewInvisible = "tag" | "zero-width" | "bidi" | "format";
+
+/**  An entry of a skill's folder that is not installed, why, and the core's words for it. */
+export type ReviewLeftOut = {
+	path: string,
+	why: LeftOutWhy,
+	said: string,
+};
+
+/**  A `!` command, or a write outside the workspace: both always marked. */
+export type ReviewLine = {
+	path: string,
+	line: number,
+	/**  The command, or where it writes. */
+	text: string,
+};
+
+/**  Why an item of the summary is marked. */
+export type ReviewRisk = "network" | "runs-what-it-fetches" | "elevates" | "removes" | "hidden" | "not-text";
+
+/**  A script the summary lists. */
+export type ReviewScript = {
+	path: string,
+	runs: string,
+	/**  Why it is marked; empty for one that is not. */
+	risks: RiskMark[],
+};
+
+/**  One skill of a review. */
+export type ReviewSkill = {
+	name: string,
+	description: string,
+	folder: string,
+	brought_by: string | null,
+	summary: ReviewSummary,
+	files: ReviewFile[],
+	left_out: ReviewLeftOut[],
+	lint: string[],
+};
+
+/**  What a skill does beyond its instructions, with the core's own marks. */
+export type ReviewSummary = {
+	scripts: ReviewScript[],
+	hosts: ReviewHost[],
+	commands: ReviewLine[],
+	outside: ReviewLine[],
+	unseen: ReviewUnseen[],
+	/**  Each file that is not text, so not shown. */
+	not_text: string[],
+	/**  How many of its items are marked (`Summary::marked`). */
+	marked: number,
+	/**  Whether it lists nothing at all (`Summary::is_empty`). */
+	empty: boolean,
+};
+
+/**  A line holding characters no reader sees: always marked. */
+export type ReviewUnseen = {
+	path: string,
+	line: number,
+	kinds: InvisibleMark[],
+};
+
+/**  What the window hands back to install or update: what the review answered as accepted. */
+export type Reviewed = {
+	commit: string,
+	skills: ReviewedSkill[],
+};
+
+/**  One skill of [`Reviewed`]. */
+export type ReviewedSkill = {
+	name: string,
+	digest: string,
+};
+
+/**  A risk, and the core's words for it. */
+export type RiskMark = {
+	kind: ReviewRisk,
+	said: string,
 };
 
 /**  One action an extension's row offers, as the window draws its button (charter-app#341). */
@@ -10813,6 +11003,24 @@ export type SkillLintLevel =
 /**  Worth knowing, and Save does not wait on it. */
 "warns";
 
+/**  A skill source as the studio shows and adds one. */
+export type SkillSource = {
+	remote: SourceRemote,
+	folder: string | null,
+	/**  The vault and the entry in it a private source signs in with; never the token. */
+	vault: string | null,
+	key: string | null,
+	kept: SourceKept,
+	/**  As a person reads it. */
+	label: string,
+};
+
+/**  A source the committed lockfile names that this machine has not confirmed. */
+export type SkillSourceUnconfirmed = {
+	remote: SourceRemote,
+	skills: string[],
+};
+
 /**  A skill's totals, by what it ran on, by persona and by workspace (SK-20). */
 export type SkillStats = {
 	by_harness: StatsRow[],
@@ -10836,6 +11044,31 @@ export type SkillTemplate = {
 
 /**  A template a new skill can start from. */
 export type SkillTemplateId = "blank" | "steps";
+
+/**  One newer commit offered for an installed skill. */
+export type SkillUpdateOffer = {
+	name: string,
+	level: SkillLevel,
+	label: string,
+	remote: SourceRemote,
+	pinned: SourceCommit,
+	newer: SourceCommit,
+	edited: boolean,
+};
+
+/**  An installed skill whose source could not be asked. */
+export type SkillUpdateUnasked = {
+	name: string,
+	label: string,
+	why: string,
+};
+
+/**  The updates there are. */
+export type SkillUpdates = {
+	offers: SkillUpdateOffer[],
+	unasked: SkillUpdateUnasked[],
+	unconfirmed: SkillSourceUnconfirmed[],
+};
 
 /**  Who uses a skill, as Delete shows before it deletes. */
 export type SkillUsers = {
@@ -10898,6 +11131,30 @@ export type SmartClosing = {
 	 *  plane's records.
 	 */
 	record: SavedRecord | null,
+};
+
+/**  What a source offers. */
+export type SourceBrowse = {
+	commit: SourceCommit,
+	skills: OfferedSkill[],
+	not_skills: NotASkill[],
+};
+
+/**  A commit, and its short name as the core gives it. */
+export type SourceCommit = {
+	id: string,
+	short: string,
+};
+
+/**  Which settings a source is kept in: the project's, shared with the team, or this machine's. */
+export type SourceKept = "shared" | "local";
+
+/**  A repository and the branch read from it. */
+export type SourceRemote = {
+	url: string,
+	branch: string | null,
+	/**  As a person reads it. */
+	label: string,
 };
 
 /**  What [`theme_specimen`] answers. */
@@ -11705,6 +11962,14 @@ export type Unsaid =
  */
 "not_known";
 
+/**  One file's change in an update. */
+export type UpdateFile = {
+	path: string,
+	change: FileChanged,
+	/**  Its lines' diff, every line escaped by the core. */
+	diff: string,
+};
+
 /**  What kind of thing happened, as the window names it. */
 export type UpdateKind = 
 /**  A task finished: done, cancelled, or ended by the person. */
@@ -11742,6 +12007,25 @@ export type UpdateNoted = {
 	session: number | null,
 	chain: string[],
 	says: string,
+};
+
+/**
+ *  **An update's review**: the summary's changes, then each file's, the edits made here, and
+ *  the skills that come along.
+ */
+export type UpdateReview = {
+	name: string,
+	pinned: SourceCommit,
+	newer: SourceCommit,
+	from_pin: boolean,
+	added: ReviewSummary,
+	removed: ReviewSummary,
+	files: UpdateFile[],
+	edited: string[],
+	local_edits: UpdateFile[],
+	skill: ReviewSkill,
+	brought: ReviewSkill[],
+	accepted: Reviewed,
 };
 
 /**  What the person did with updates: Mark read, or Dismiss. */
