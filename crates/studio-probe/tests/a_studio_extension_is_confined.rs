@@ -89,20 +89,24 @@ impl Probe {
         self.dir.path().join("plane")
     }
 
-    /// What the probe saw trying `words` from inside its sandbox.
-    fn tried(&self, words: &[&str]) -> String {
+    /// What the probe saw trying `words` from inside its sandbox, or why purlis did not ask it.
+    fn asked(&self, words: &[&str]) -> Result<String, String> {
         let executor = Executor::default().with_deadline(PATIENT);
         let words: Vec<String> = words.iter().map(|it| (*it).to_owned()).collect();
-        let ran = executor
-            .command(
-                &self.config(),
-                &Choices::read(&self.plane()),
-                ID,
-                "try",
-                &words,
-            )
-            .unwrap_or_else(|why| panic!("purlis did not run the probe's try: {why}"));
-        String::from_utf8_lossy(&ran.stdout).trim().to_owned()
+        let ran = executor.command(
+            &self.config(),
+            &Choices::read(&self.plane()),
+            ID,
+            "try",
+            &words,
+        )?;
+        Ok(String::from_utf8_lossy(&ran.stdout).trim().to_owned())
+    }
+
+    /// What the probe saw trying `words` from inside its sandbox.
+    fn tried(&self, words: &[&str]) -> String {
+        self.asked(words)
+            .unwrap_or_else(|why| panic!("purlis did not run the probe's try: {why}"))
     }
 }
 
@@ -283,13 +287,25 @@ fn it_reads_its_own_folder_and_nothing_of_the_project() {
 fn it_cannot_read_the_project_through_a_link_it_makes_in_its_own_folder() {
     let probe = Probe::approved();
     let project_file = shown(&probe.plane().join("charter.toml"));
-    for (how, at) in [("link", "state/borrowed"), ("symlink", "state/pointed")] {
-        let at = shown(&probe.ext().join(at));
-        let made = probe.tried(&[how, &project_file, &at]);
-        let read = probe.tried(&["read", &at]);
+    // A hard link: the sandbox refuses making it, or reading through it.
+    let at = shown(&probe.ext().join("state/borrowed"));
+    let made = probe.tried(&["link", &project_file, &at]);
+    let read = probe.tried(&["read", &at]);
+    assert!(
+        made.starts_with("refused") || read.starts_with("refused"),
+        "a hard link in its state folder read the project's file: made {made:?}, read {read:?}"
+    );
+    // A symbolic link: reading through it is the project's file, which the sandbox refuses; and
+    // purlis starts nothing more of an extension whose state folder holds one.
+    let at = shown(&probe.ext().join("state/pointed"));
+    let made = probe.tried(&["symlink", &project_file, &at]);
+    if made == "ok" {
+        let refused = probe
+            .asked(&["read", &at])
+            .expect_err("an extension whose state folder holds a link is not started");
         assert!(
-            made.starts_with("refused") || read.starts_with("refused"),
-            "a {how} in its state folder read the project's file: made {made:?}, read {read:?}"
+            refused.contains("is a symlink inside the state directory"),
+            "{refused}"
         );
     }
 }

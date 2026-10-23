@@ -111,9 +111,8 @@ pub(super) fn declared_of(
     if !capabilities.iter().any(|it| it.is_studio()) {
         if doc.contains_key(HOSTS) {
             return Err(
-                "declares 'hosts' and no studio capability: purlis holds an extension to the \
-                 hosts it names only where it confines it, so the list would be a claim nothing \
-                 checks"
+                "declares 'hosts' and no studio capability: an extension is held to the hosts it \
+                 names only where it runs confined, so the list would be a claim nothing checks"
                     .into(),
             );
         }

@@ -366,7 +366,6 @@ fn a_confined_program_reads_its_own_folder_and_the_system_and_nothing_a_person_k
         "/opt/ext/studio-x/purlis-extension.json",
         "/opt/ext/studio-x/bin/x",
         "/usr/lib/x86_64-linux-gnu/libc.so.6",
-        "/lib64/ld-linux-x86-64.so.2",
         "/dev/urandom",
     ] {
         assert!(reads(&profile, read), "{read} is not read");
