@@ -525,11 +525,13 @@ impl Confined {
             Os::Linux => Some(own_program().map_err(|why| could_not(&why))?),
             _ => None,
         };
+        // By the name the kernel resolves it to: a path through a link (`/var` is `/private/var`
+        // on macOS) would be looked up through a folder the profile lets it resolve, never list.
         let (start, args) = crate::sandbox::wrapper::line(
             os,
             wrap.as_deref(),
             profile,
-            program.display().to_string(),
+            crate::sandbox::real(program).display().to_string(),
             Vec::new(),
         )
         .map_err(|why| could_not(&why))?;

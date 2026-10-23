@@ -839,6 +839,10 @@ pub fn confined_profile(
     // Of each folder above what it reads, the folder alone: what a path resolves through, never
     // what else a folder holds.
     let mut above = std::collections::BTreeSet::new();
+    // The system's own links to folders a path may be written through: each the link alone.
+    for link in ["/var", "/tmp", "/etc"] {
+        above.insert(PathBuf::from(link));
+    }
     for root in &read_roots {
         for name in super::kernel_names(root) {
             for ancestor in name.ancestors().skip(1) {
