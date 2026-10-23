@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792744481710,
+  "lastUpdate": 1792750821699,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22554,6 +22554,48 @@ window.BENCHMARK_DATA = {
             "value": 102.577293,
             "unit": "ms",
             "extra": "median of 5 runs: 101.920, 102.108, 102.577, 102.669, 102.778 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "51db9061a013003db05feecd6635b2c681ab3cc3",
+          "message": "Cargo.lock: move ctutils to 0.4.5 for RUSTSEC-2026-0385 (#3075)\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T14:18:29+04:00",
+          "tree_id": "772b593cc3f608a7dd11e74a8c65978b43808838",
+          "url": "https://github.com/purlis/purlis/commit/51db9061a013003db05feecd6635b2c681ab3cc3"
+        },
+        "date": 1792750819702,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.545138,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.543, 0.545, 0.555, 0.562 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.8848745,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.742, 16.852, 16.885, 17.008, 17.050 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.23038050000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.362, 104.654, 105.230, 105.550, 107.298 ms"
           }
         ]
       }
