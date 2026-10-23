@@ -28,7 +28,9 @@ import {
   type MenuDrawn,
 } from "./menuModel";
 import { memoryKey } from "./memories";
-import { SAID, WARNS } from "./menuWords";
+import { SAID, SUBMENU, WARNS } from "./menuWords";
+import { terminalGroup, terminalRows } from "./terminalRows";
+import { GRANT_WORDS } from "../eslint.ui-rules.js";
 import { noTabs, openTab, openView, selectTab } from "./tabs";
 
 /**
@@ -216,6 +218,33 @@ describe("a row's words", () => {
       "Stop and everything below it",
     );
     expect(row("Make live live…", "live")).toBe("Make live…");
+  });
+});
+
+describe("every menu's words, as a row says them at run time", () => {
+  it("never grant: a grant is a button with its lock, never a menu row (ADR 0097 §6)", () => {
+    const words = new Set<string>();
+    const walk = (entries: readonly EntryDrawn[]) => {
+      for (const entry of entries) {
+        words.add(entry.said);
+        if (entry.kind === "row") {
+          words.add(entry.offer.title);
+          if (entry.midTurn !== undefined) words.add(entry.midTurn);
+        } else for (const group of entry.groups) walk(group.entries);
+      }
+    };
+    for (const { on, offers } of everyMenu())
+      for (const group of menuOf(on, offers).groups) walk(group.entries);
+    for (const mac of [true, false])
+      for (const selected of [true, false])
+        walk(terminalGroup(terminalRows({ selected, mac })).entries);
+    const fixed = [SAID, SUBMENU].flatMap((table) =>
+      Object.values(table).filter((one): one is string => typeof one === "string"),
+    );
+    expect(words.size).toBeGreaterThan(50);
+    expect([...words, ...fixed].filter((one) => GRANT_WORDS.test(one))).toEqual([]);
+    // And the check is the lint's, which finds a grant anywhere in a label.
+    expect(GRANT_WORDS.test("Always allow")).toBe(true);
   });
 });
 

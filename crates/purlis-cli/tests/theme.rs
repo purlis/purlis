@@ -2174,7 +2174,7 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     let json = ran.json();
     assert_eq!(json["schema"], 1);
-    assert_eq!(json["version"], 5);
+    assert_eq!(json["version"], 6);
     assert_eq!(
         json["theme_schema"]
             .as_str()
@@ -2186,7 +2186,7 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
         "<family>.<part>[.<variant>][.<state>].<property>"
     );
     assert_eq!(json["families"][0]["name"], "button");
-    // The window's own families (#2913), and the tooltip (#2908).
+    // The window's own families (#2913), the tooltip (#2908), the popover and the menu (#2909).
     let names: Vec<&str> = json["families"]
         .as_array()
         .unwrap()
@@ -2199,6 +2199,8 @@ fn theme_parts_prints_every_family_part_state_and_property_as_json() {
         "empty-state",
         "status-item",
         "tooltip",
+        "popover",
+        "menu",
     ] {
         assert!(names.contains(&family), "{family}: {names:?}");
     }

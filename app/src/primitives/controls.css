@@ -20,13 +20,12 @@
    drifting again, and over the window's zero-specificity focus floor, which draws rings inside.
    A view still places a control (margin, width, flex, order): nothing here sets those. Where a
    view needs a control to differ in a size the class owns, the class reads a property the view
-   may set (`--ui-menu-indent`), and that is the whole list.
+   may set: none, now that a menu's row is its family's, and that is the whole list.
 
    Heights: every control is `--size-control` tall (28px at the default text size), a small
-   one `--size-chrome` (21px, for strips and pane headers); a button's and a field's sizes are their families'. A menu's row is at least a
-   control tall. Focus: a control's ring is outside it (`--focus-ring-offset`); a segment's is
-   inside, because its group clips what is outside it. A menu's row draws no ring: the row the
-   keyboard is on is the highlighted one, as in every native menu. */
+   one `--size-chrome` (21px, for strips and pane headers); a button's, a field's and a menu's
+   sizes are their families'. Focus: a control's ring is outside it (`--focus-ring-offset`); a
+   segment's is inside, because its group clips what is outside it. */
 
 /* The button is a component family now, drawn from its wrapper's attributes:
    `ui/button/button.css` (#2904, ADR 0104). */
@@ -275,71 +274,38 @@
 }
 
 /* ---------------------------------------------------------------------------------------------
-   Menu: `.ui-menu` on a Radix menu's content (dropdown, context, sub, a select's list), `.ui-menu-item`
-   on each row, `.ui-menu-item-danger` on a row that cannot be undone, `.ui-menu-line` between groups,
-   `.ui-menu-label` over one. Inside a row (`primitives/MenuRow.tsx`): `.ui-menu-words` holds its
-   `.ui-menu-title` and the one `.ui-menu-note` that may stand under it; `.ui-menu-keys` and
-   `.ui-menu-mark` are at its end; `.ui-menu-tip` is its tooltip. How wide a menu may be and how tall
-   before it scrolls are here; a surface that needs another width hands `--ui-menu-min` or
-   `--ui-menu-max`.
+   A select's list: `.ui-menu` on Radix Select's content, `.ui-menu-item` on each option and
+   `.ui-menu-mark` on its tick (`primitives/Select.tsx`). Every menu of the window is the menu
+   family now (`ui/menu/menu.css`, #2909); these classes are the select's alone until the select
+   family moves (#2906).
    --------------------------------------------------------------------------------------------- */
 
-/* Its ground, border, corner and lift are the overlay surface's (`overlays.css`), the same as a
-   dialog's, a popover's and a tooltip's.
-
-   **Never taller than the room the window has where it opened**, which Radix measures for a
-   context menu and for a dropdown (a submenu of either too), and scrolling inside past that. A
-   share of the window (`60vh`) is not that room: a menu opened low on a tall share ran off the
-   window's edge.
-
-   **Never narrower than a short menu reads well at, nor wider than a row's words need**: two
-   short verbs do not make a sliver, and a long name gives way to an ellipsis (its row's
-   tooltip has the whole of it) instead of widening the menu across the window. */
+/* Its ground, border, corner and lift are the overlay surface's (`overlays.css`). **Never taller
+   than the room the window has where it opened**, which Radix measures, and scrolling inside past
+   that; never narrower than a short list reads well at. */
 .ui-menu {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  min-inline-size: var(--ui-menu-min, calc(var(--space-8) * 6));
-  max-inline-size: var(--ui-menu-max, calc(var(--space-8) * 10));
-  max-block-size: var(
-    --radix-context-menu-content-available-height,
-    var(--radix-dropdown-menu-content-available-height, none)
-  );
+  min-inline-size: calc(var(--space-8) * 6);
   overflow-y: auto;
   padding: var(--space-2);
   z-index: 10;
 }
 
-/* **Nothing in a menu is squeezed.** The menu is a column with a cap on its height, and a row's
-   least height, written down, takes the place of the automatic one a column gives what is in
-   it: a menu taller than its cap squeezed every row to a control's height and drew each over the
-   note of the row above, and squeezed a line or a scrolling block to nothing. Each keeps its
-   size, and the menu scrolls. */
+/* **Nothing in the list is squeezed**: each option keeps its size, and the list scrolls. */
 .ui-menu > * {
   flex-shrink: 0;
 }
 
-/* A group of rows (Radix's `Group`) is a column of its own, spaced as the menu's rows are. */
-.ui-menu > [role="group"] {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-/* A select's list (`primitives/Select.tsx`): at least as wide as its select and as wide as its
-   longest option, and never taller than the room the window has under or over it, scrolling
-   past that. */
+/* At least as wide as its select and as wide as its longest option, and never taller than the
+   room the window has under or over it, scrolling past that. */
 .ui-select-list {
-  --ui-menu-max: none;
   min-inline-size: var(--radix-select-trigger-width);
   max-block-size: var(--radix-select-content-available-height);
 }
 
-/* A row is one line, a control tall: its words give way to an ellipsis and never wrap. A row
-   with something under its words (below) is as tall as the two say.
-
-   **Written as the body role** (`--font-size-md`, `primitives/text.css`): a menu is a list read
-   at a glance, and its rows are not headings. */
+/* An option is one line, a control tall, written as the body role. */
 .ui-menu-item {
   position: relative;
   display: flex;
@@ -348,121 +314,32 @@
   box-sizing: border-box;
   min-block-size: var(--size-control);
   padding-block: var(--space-1);
-  padding-inline: calc(var(--space-3) + var(--ui-menu-indent, 0px)) var(--space-3);
+  padding-inline: var(--space-3);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-regular);
   cursor: pointer;
-  /* Radix gives a menu's row its own roving focus; the highlight is the ring. */
+  /* Radix gives the list its own roving focus; the highlight is the ring. */
   outline: none;
 }
 
-/* The row the keyboard is on, the row under the pointer (a menu a rest opened took no keyboard,
-   so there the pointer's row is said by the hover alone), and a submenu's row while it is open. */
+/* The option the keyboard is on, and the one under the pointer. */
 .ui-menu-item[data-highlighted],
-.ui-menu-item:hover:not([data-disabled]),
-.ui-menu-item[data-state="open"] {
+.ui-menu-item:hover:not([data-disabled]) {
   background-color: var(--tab-active);
 }
 
-/* A row that cannot run is quieter, and the line under it that says why is not: it is the one
-   thing on the row to read. */
 .ui-menu-item[data-disabled] {
+  color: var(--text-faint);
   cursor: default;
 }
 
-.ui-menu-item[data-disabled]:not(:has(.ui-menu-note)),
-.ui-menu-item[data-disabled]:has(.ui-menu-note) :is(.ui-menu-title, .ui-menu-keys, .ui-menu-mark) {
-  opacity: 0.45;
-}
-
-/* What cannot be undone, in the colour the window keeps for it: the same accent a tab's `×`
-   takes under the pointer. */
-.ui-menu-item-danger {
-  color: var(--danger-base);
-}
-
-.ui-menu-item-danger[data-highlighted],
-.ui-menu-item-danger:hover:not([data-disabled]) {
-  background-color: var(--danger-surface);
-}
-
-/* A row's words, and the one line that may stand under them: a column that takes the row's
-   room and gives way before the key or the mark at the row's end does. */
-.ui-menu-words {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-inline-size: 0;
-}
-
-/* The words are one line, and give way to an ellipsis. They wear the body role
-   (`primitives/text.css`); a row in the danger colour keeps its words in that colour. */
-.ui-menu-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* What is under the words is **never cut**: what a row that cannot be undone costs, or why a row
-   cannot run. A warning without its last words, or a reason no keyboard can open, says less
-   than nothing, so it wraps inside the menu's width, in the secondary role. */
-.ui-menu-note {
-  overflow-wrap: anywhere;
-}
-
-/* The key that does the same, at the row's end, in the meta role: read last, and stood off
-   from the row's words. */
-.ui-menu-keys {
-  flex: none;
-  margin-inline-start: auto;
-  padding-inline-start: var(--space-5);
-  font-variant-numeric: tabular-nums;
-}
-
-/* A row's tooltip is anchored to the whole row by a part that draws nothing and takes no
-   pointer. */
-.ui-menu-tip-anchor {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-/* A row's tooltip's words: a sentence or two beside the menu, wrapped. */
-.ui-menu-tip {
-  display: block;
-  max-inline-size: calc(var(--space-8) * 9);
-}
-
-/* The mark at a row's end: a submenu's arrow, a select's tick. */
+/* The tick at the end of the chosen option. */
 .ui-menu-mark {
   display: inline-flex;
   flex: none;
   align-items: center;
   margin-inline-start: auto;
   color: var(--text-muted);
-}
-
-/* The line between groups, and above everything that loses something. */
-.ui-menu-line {
-  block-size: 1px;
-  margin-block: var(--space-2);
-  margin-inline: var(--space-1);
-  background-color: var(--border-subtle);
-}
-
-/* A group's name. Not a row: it cannot be chosen, and says so by wearing the label role
-   (`primitives/text.css`), which is its size, weight and colour. */
-.ui-menu-label {
-  padding-block: var(--space-1) 0;
-  padding-inline: var(--space-3);
-}
-
-/* A group named by data (a persona's name) is written as the name is, in the secondary role:
-   one line, and no capitals, which are for purlis's own words. */
-.ui-menu-label-named {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }

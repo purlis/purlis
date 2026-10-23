@@ -952,8 +952,8 @@ describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
       one.getAttribute("aria-label")?.startsWith("Send back into"),
     );
     expect(back).toBeGreaterThanOrEqual(0);
-    expect(items[back]).not.toHaveClass("ui-menu-item-danger");
-    const ends = items.findIndex((one) => one.classList.contains("ui-menu-item-danger"));
+    expect(items[back]).not.toHaveAttribute("data-variant", "danger");
+    const ends = items.findIndex((one) => one.getAttribute("data-variant") === "danger");
     expect(ends).toBeGreaterThan(back);
     const lastGroup = menu.querySelector('[role="group"]:last-of-type');
     expect(lastGroup?.contains(items[back])).toBe(false);

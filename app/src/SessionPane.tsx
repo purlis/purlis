@@ -224,7 +224,7 @@ export function SessionPane({
         return false;
       }
       // **The menu key and Shift+F10 open the terminal's menu, under its cursor**, with the
-      // event a right-click sends (`Menus.openFromTheKeyboard` has why the page sends it).
+      // event a right-click sends (`ContextMenu` in `ui/menu` opens on it as on a right-click).
       // Shift+F10 stays the program's while it has the mouse (`asksForTheMenu`).
       if (asksForTheMenu(event, programHasTheMouse(pane))) {
         // A key held down asks once: its repeats are swallowed with it.

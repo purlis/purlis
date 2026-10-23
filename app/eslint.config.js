@@ -15,15 +15,15 @@ const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
  * the list, tree and table rows, the menu rows, the segmented control, the activity items, the
  * title bar's workspace chips, the cards and the settings nav. Each by
  * the role its button says, or by its family's class. The status items and the title bar's status
- * pills have moved (#2913).
+ * pills have moved (#2913). A menu's rows are the menu family's since #2909, and no button says
+ * their role.
  */
 const OTHER_FAMILIES = {
-  roles: ["tab", "menuitem", "option", "switch", "radio", "checkbox", "treeitem", "row", "link"],
+  roles: ["tab", "option", "switch", "radio", "checkbox", "treeitem", "row", "link"],
   classes: [
-    // Rows of a list, a tree or a table, a menu's rows, a segment.
+    // Rows of a list, a tree or a table, a segment.
     "ui-row",
     "ui-tree-row",
-    "ui-menu-item",
     "ui-segmented-item",
     "vault-secret",
     // The tab strips and a pane's top line: a tab's marks and closer, the strip's offers.
@@ -95,6 +95,8 @@ export default tseslint.config(
       "purlis/field-family": "error",
       "purlis/select-family": "warn",
       "purlis/choice-family": "warn",
+      // The menu, context menu and popover families have moved (#2909).
+      "purlis/menu-family": "error",
       "purlis/dialog-family": "warn",
       "purlis/tooltip-family": ["error", { handsOn: ["Select"] }],
       "purlis/panel-family": "error",
@@ -102,5 +104,10 @@ export default tseslint.config(
       "purlis/empty-state-family": "error",
       "purlis/status-item-family": "error",
     },
+  },
+  // The select's list is drawn in the old menu classes until the select family moves (#2906).
+  {
+    files: ["src/primitives/Select.tsx"],
+    rules: { "purlis/menu-family": "off" },
   },
 );

@@ -1,0 +1,144 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The menu family's default** (#2909, ADR 0103, ADR 0104): how a menu's row is drawn when a
+   theme names none of its parts. The row is the family's root (`data-scope="menu"
+   data-part="root"`, its `data-variant`); inside it its `words` (`label`, and the one
+   `description` under them), its `shortcut` and its `indicator`. The surface it stands on, a group's
+   name and the rule between groups are the popover family's (`ui/popover/popover.css`).
+
+   **In the `components` layer** (`styles.css`), above `App.css`: a view places a row (its
+   indent, `--menu-indent`) and nothing it writes redraws one. **Only tokens**, one `var()` per
+   colour.
+
+   **A state never changes size** (#2800): the row the keyboard or the pointer is on, a row that
+   is open or cannot run, change a colour, a ground or a ring, never a padding or a height. */
+
+/* ---------------------------------------------------------------------------------------------
+   A row, at rest. **One line, a control tall**: its words give way to an ellipsis and never wrap;
+   a row with something under its words is as tall as the two say. Written as the body role: a
+   menu is a list read at a glance, and its rows are not headings.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="menu"][data-part="root"] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  column-gap: var(--space-3);
+  box-sizing: border-box;
+  min-block-size: var(--size-control);
+  padding-block: var(--space-1);
+  padding-inline: calc(var(--space-3) + var(--menu-indent, 0px)) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  cursor: pointer;
+  outline: none;
+}
+
+/* **The row the keyboard or the pointer is on**, and a submenu's row while it is open: the
+   highlight, as in every native menu. */
+[data-scope="menu"][data-part="root"][data-focused]:not([data-disabled]),
+[data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled]),
+[data-scope="menu"][data-part="root"][data-open] {
+  background-color: var(--tab-active);
+}
+
+/* From the keyboard, a ring inside the row as well (`--focus-ring-inset`): a list's rows sit
+   edge to edge and a ring outside would be clipped. */
+[data-scope="menu"][data-part="root"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* **What cannot be undone**, in the colour the window keeps for it (D-1719-3). */
+[data-scope="menu"][data-part="root"][data-variant="danger"] {
+  color: var(--danger-base);
+}
+
+[data-scope="menu"][data-part="root"][data-variant="danger"][data-focused]:not([data-disabled]),
+[data-scope="menu"][data-part="root"][data-variant="danger"][data-hovered]:not([data-disabled]) {
+  background-color: var(--danger-surface);
+}
+
+/* **A row that cannot run**: its words in the faint tier, the tier of disabled words, on no
+   ground. The line under them that says why keeps its own tier: it is the one thing on the row
+   to read. */
+[data-scope="menu"][data-part="root"][data-disabled],
+[data-scope="menu"][data-part="root"][data-unavailable] {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Inside a row.
+   --------------------------------------------------------------------------------------------- */
+
+/* Its words and the one line under them: a column that takes the row's room and gives way
+   before the key or the indicator at the row's end does. */
+[data-scope="menu"][data-part="words"] {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+[data-scope="menu"][data-part="label"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What is under the words is **never cut**: what a row that cannot be undone costs, or why a
+   row cannot run. It wraps inside the menu's width, in the secondary role. */
+[data-scope="menu"][data-part="description"] {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+/* The key that does the same, at the row's end, in the meta role: read last, and stood off from
+   the row's words. */
+[data-scope="menu"][data-part="shortcut"] {
+  flex: none;
+  margin-inline-start: auto;
+  padding-inline-start: var(--space-5);
+  color: var(--text-quiet);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The indicator at a row's end: a toggle's tick, a submenu's arrow. */
+[data-scope="menu"][data-part="indicator"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-inline-start: auto;
+  color: var(--text-muted);
+}
+
+[data-scope="menu"][data-part="shortcut"] + [data-part="indicator"] {
+  margin-inline-start: 0;
+}
+
+[data-scope="menu"][data-part="indicator"] svg {
+  inline-size: var(--font-size-md);
+  block-size: var(--font-size-md);
+}
+
+/* A row's tooltip is anchored to the whole row by a part that draws nothing and takes no
+   pointer (`MenuTip.tsx`). */
+[data-scope="menu"][data-part="tip-anchor"] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A row's tooltip's words (the tooltip family's surface holds them): a sentence or two beside
+   the menu, wrapped. */
+[data-scope="menu"][data-part="tip"] {
+  display: block;
+  max-inline-size: calc(var(--space-8) * 9);
+}

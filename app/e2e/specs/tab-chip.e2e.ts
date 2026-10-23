@@ -217,7 +217,7 @@ async function measured(name: string) {
 
 /** How many task menus are open. */
 async function menus(): Promise<number> {
-  return browser.execute(() => document.querySelectorAll('[role="menu"].tasks-menu').length);
+  return browser.execute(() => document.querySelectorAll('.tasks-menu[data-part="root"]').length);
 }
 
 /**
@@ -559,7 +559,7 @@ describe("the chip a session's tab wears for its tasks", () => {
     });
 
     const seen = await browser.execute(() => {
-      const menu = document.querySelector<HTMLElement>('[role="menu"].tasks-menu');
+      const menu = document.querySelector<HTMLElement>('.tasks-menu[data-part="root"]');
       const chip = document.querySelector<HTMLElement>(".tab-tasks-counts");
       if (!menu || !chip) return null;
       const at = menu.getBoundingClientRect();
@@ -633,7 +633,9 @@ describe("the chip a session's tab wears for its tasks", () => {
     await browser
       .waitUntil(
         async () =>
-          browser.execute(() => document.querySelector('[role="menu"].tasks-menu-ends') !== null),
+          browser.execute(
+            () => document.querySelector('.tasks-menu-ends[data-part="root"]') !== null,
+          ),
         { timeout: 5_000, interval: 50, timeoutMsg: "the ways to end a task never opened" },
       )
       .catch(async (err: unknown) => {
@@ -670,7 +672,7 @@ describe("the chip a session's tab wears for its tasks", () => {
     expect(inside).toBe(true);
     await browser.pause(900);
     const still = await browser.execute(() => ({
-      first: document.querySelector('[role="menu"].tasks-menu:not(.tasks-menu-ends)') !== null,
+      first: document.querySelector('.tasks-menu[data-part="root"]:not(.tasks-menu-ends)') !== null,
       ways: [...document.querySelectorAll('.tasks-menu-ends [role="menuitem"] .name')].map(
         (row) => row.textContent ?? "",
       ),
@@ -807,7 +809,7 @@ describe("the chip a session's tab wears for its tasks", () => {
         timeoutMsg: `at ${width}px resting on the chip opened no menu`,
       });
       const seen = await browser.execute(() => {
-        const menu = document.querySelector<HTMLElement>('[role="menu"].tasks-menu');
+        const menu = document.querySelector<HTMLElement>('.tasks-menu[data-part="root"]');
         const foot = menu?.querySelector<HTMLElement>(".tasks-menu-foot");
         const limits = foot?.querySelector<HTMLElement>(".tasks-menu-limits");
         if (!menu || !foot || !limits) return null;

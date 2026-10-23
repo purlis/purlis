@@ -81,7 +81,7 @@ import { Tooltip } from "./ui/tooltip/Tooltip";
  * the heading and on each row that is about the clone (its changes, its branches' count, its
  * pipeline, an extension's value); the menu is drawn in a portal outside this region, and none
  * of its rows touches the repo the region is reading: they are about where the next chat
- * starts. The keyboard opens it on the row it is on (Shift+F10, `Menus.openFromTheKeyboard`).
+ * starts. The keyboard opens it on the row it is on (Shift+F10, `ui/menu/ContextMenu.tsx`).
  *
  * **The worktree rows under each repo still have none, and that is a decision.** Their verbs
  * exist — `worktree.merge:<repo>/<piece>` and `worktree.remove:<repo>/<piece>`, drawn on the
@@ -284,7 +284,7 @@ export function ChangesView({
 }
 
 /** Shift+F10, or the keyboard's own menu key: what opens a context menu from the keyboard
- *  (`Menus.openFromTheKeyboard`'s two keys). */
+ *  (the two keys `ui/menu/ContextMenu.tsx` opens a menu on). */
 function menuKey(event: KeyboardEvent<HTMLElement>): boolean {
   return event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey);
 }

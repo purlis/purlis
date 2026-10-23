@@ -1167,9 +1167,9 @@ export const plantedTall = { minBlockSize: 32 };
     const controls = sourceFiles(isView).flatMap((file) =>
       controlClasses(readFileSync(join(SRC, file), "utf8")),
     );
-    // Fewer since the field (#2905) and the status items and pills (#2913) became families of
-    // their own.
-    expect(new Set(controls).size).toBeGreaterThan(80);
+    // Fewer since the field (#2905), the status items and pills (#2913) and the menus (#2909)
+    // became families of their own.
+    expect(new Set(controls).size).toBeGreaterThan(70);
     const read = declarations(readFileSync(join(SRC, "App.css"), "utf8")).filter(({ property }) =>
       HEIGHT_PROPERTY.test(property),
     );

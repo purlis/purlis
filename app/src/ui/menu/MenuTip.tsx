@@ -3,13 +3,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import { AnchoredTooltip, onTooltipEscape, TOOLTIP_CLOSE_DELAY } from "../ui/tooltip/Tooltip";
+import { AnchoredTooltip, onTooltipEscape, TOOLTIP_CLOSE_DELAY } from "../tooltip/Tooltip";
 
 /**
- * **What is inside a menu's row** (`docs/ui-primitives.md`, "Menus"): its words, the one line
- * that may stand under them, the key or mark at its end, and its tooltip. The row itself is
- * Radix's `Item`, `CheckboxItem` or `SubTrigger`, a context menu's or a dropdown's, wearing
- * `ui-menu-item`; these are what it holds, so every menu in the window is drawn alike.
+ * **A menu row's tooltip** (`docs/ui-primitives.md`, "Menus", rule 2): what the row does that its
+ * words do not say, beside the menu, once the keyboard or the pointer has rested on the row.
+ * The row itself is the family's `MenuItem`; its words, its key and its mark are drawn by it.
  */
 
 /**
@@ -21,9 +20,9 @@ import { AnchoredTooltip, onTooltipEscape, TOOLTIP_CLOSE_DELAY } from "../ui/too
 export const TIP_AFTER_MS = 600;
 
 /**
- * Whether the keyboard or the pointer has **rested** on a menu's row, and the handlers that
- * tell it. Radix gives a row the keyboard when the pointer comes onto it, so its focus is where
- * the pointer is as well as where the arrows are, and one pair of handlers reads both.
+ * Whether the keyboard or the pointer has **rested** on a menu's row, and the two handlers that
+ * tell it. React Aria gives a row the keyboard when the pointer comes onto it, so its focus is
+ * where the pointer is as well as where the arrows are, and one pair of handlers reads both.
  *
  * `rested` goes false a moment after the row loses the keyboard, unless the pointer has gone
  * onto the row's tooltip to read it (`hold`, WCAG 1.4.13 hoverable), and `wake` makes it false
@@ -113,46 +112,17 @@ export function MenuTip({
   useEffect(() => onTooltipEscape(() => flushSync(onClose)), [onClose]);
   return (
     <>
-      <span ref={anchor} className="ui-menu-tip-anchor" aria-hidden="true" />
+      <span ref={anchor} data-scope="menu" data-part="tip-anchor" aria-hidden="true" />
       <AnchoredTooltip
         anchor={anchor}
         side={side === "right" ? "end" : "start"}
         onPointerEnter={hold?.onPointerEnter}
         onPointerLeave={hold?.onPointerLeave}
       >
-        <span className="ui-menu-tip ui-text-secondary">{children}</span>
+        <span data-scope="menu" data-part="tip" className="ui-text-secondary">
+          {children}
+        </span>
       </AnchoredTooltip>
     </>
   );
-}
-
-/**
- * A row's words, and what may stand under them: what a row that cannot be undone costs, or why
- * a row cannot run. The words are one line and give way to an ellipsis. **What is under them is
- * never cut**: a warning that lost its last words, or a reason a keyboard cannot open, would
- * say less than nothing, so it wraps.
- */
-export function MenuWords({
-  said,
-  under,
-  danger,
-}: {
-  said: string;
-  under?: string;
-  /** In the danger colour, which the row's own class sets: the words wear no role then. */
-  danger?: boolean;
-}) {
-  return (
-    <span className="ui-menu-words">
-      <span className={danger ? "ui-menu-title" : "ui-menu-title ui-text-body"}>{said}</span>
-      {under !== undefined && under !== "" && (
-        <span className="ui-menu-note ui-text-secondary">{under}</span>
-      )}
-    </span>
-  );
-}
-
-/** The key that does what the row does, at the row's end. */
-export function MenuKeys({ children }: { children: string }) {
-  return <span className="ui-menu-keys ui-text-meta">{children}</span>;
 }
