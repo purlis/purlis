@@ -86,6 +86,9 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /** The innermost menu open on the page: a submenu is drawn after the menu it opened from. */
+/** How long a menu may take to go: WebKit draws the next frame late in a busy run. */
+const CLOSES = { timeout: 3_000 };
+
 const openMenu = () => {
   const menus = screen.getAllByRole("menu");
   return menus[menus.length - 1];
@@ -100,7 +103,7 @@ export const FromItsTrigger: Story = {
   play: async ({ canvas, userEvent }) => {
     const trigger = canvas.getByRole("button", { name: "Tab steward 4" });
     await userEvent.tab();
-    await expect(trigger).toHaveFocus();
+    await waitFor(() => expect(trigger).toHaveFocus());
     await userEvent.keyboard("{Enter}");
     const menu = await screen.findByRole("menu", { name: "Tab steward 4" });
     await waitFor(() =>
@@ -109,15 +112,17 @@ export const FromItsTrigger: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     // Restart cannot run, and the arrows go past it to End.
-    await expect(within(menu).getByRole("menuitem", { name: /End/ })).toHaveFocus();
+    await waitFor(() => expect(within(menu).getByRole("menuitem", { name: /End/ })).toHaveFocus());
     await userEvent.keyboard("{ArrowDown}");
-    await expect(within(menu).getByRole("menuitem", { name: /End/ })).toHaveFocus();
+    await waitFor(() => expect(within(menu).getByRole("menuitem", { name: /End/ })).toHaveFocus());
     expectFocusInSight();
     // Typing a letter finds a row by its words (Restart cannot run, and is passed over).
     await userEvent.keyboard("r");
-    await expect(within(menu).getByRole("menuitem", { name: /Rename/ })).toHaveFocus();
+    await waitFor(() =>
+      expect(within(menu).getByRole("menuitem", { name: /Rename/ })).toHaveFocus(),
+    );
     await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), CLOSES);
     await waitFor(() => expect(trigger).toHaveFocus());
     // Open again for the picture, on the row that cannot be undone.
     await userEvent.keyboard("{ArrowUp}");
@@ -136,7 +141,7 @@ export const AToggle: Story = {
     });
     await expect(pinned).toHaveAttribute("aria-checked", "false");
     await userEvent.click(pinned);
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), CLOSES);
     // The keyboard is back on the trigger once the menu has gone.
     await waitFor(() =>
       expect(canvas.getByRole("button", { name: "Tab steward 4" })).toHaveFocus(),
@@ -147,7 +152,7 @@ export const AToggle: Story = {
     });
     await expect(again).toHaveAttribute("aria-checked", "true");
     await userEvent.keyboard("{ArrowDown}");
-    await expect(again).toHaveFocus();
+    await waitFor(() => expect(again).toHaveFocus());
     expectFocusInSight();
   },
 };
@@ -159,7 +164,7 @@ export const ClosedByAClickOutside: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Tab steward 4" }));
     await screen.findByRole("menu");
     await userEvent.click(canvas.getByRole("status"));
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), CLOSES);
   },
   parameters: { screenshot: false },
 };
@@ -225,7 +230,7 @@ export const ARowsMenu: Story = {
   play: async ({ canvas, userEvent }) => {
     const trigger = canvas.getByRole("button", { name: "Reset, move to another file" });
     await userEvent.tab();
-    await expect(trigger).toHaveFocus();
+    await waitFor(() => expect(trigger).toHaveFocus());
     await userEvent.keyboard("{Enter}");
     const menu = await screen.findByRole("menu", { name: "Default profile" });
     // Under its button, lined up with its end.
@@ -290,7 +295,7 @@ export const ASubmenu: Story = {
     await userEvent.keyboard("{ArrowDown}");
     const ask = within(menu).getByRole("menuitem", { name: /Ask/ });
     await expect(ask).toHaveAttribute("aria-haspopup", "menu");
-    await expect(ask).toHaveFocus();
+    await waitFor(() => expect(ask).toHaveFocus());
     await userEvent.keyboard("{ArrowRight}");
     const sub = await screen.findByRole("menu", { name: "Ask" });
     await waitFor(() =>
@@ -339,13 +344,13 @@ export const AContextMenu: Story = {
   play: async ({ canvas, userEvent }) => {
     const row = canvas.getByRole("group", { name: "steward 4" });
     await userEvent.tab();
-    await expect(row).toHaveFocus();
+    await waitFor(() => expect(row).toHaveFocus());
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
     const menu = await screen.findByRole("menu", { name: "Row steward 4" });
     await waitFor(() => expect(within(menu).getByRole("menuitem", { name: /Open/ })).toHaveFocus());
     expectFocusInSight();
     await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), CLOSES);
     await waitFor(() => expect(row).toHaveFocus());
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
     await userEvent.keyboard("{ArrowDown}");
