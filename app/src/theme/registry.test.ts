@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BUILT_IN_ICONS } from "./icons";
-import { BUILT_IN } from "./theme";
+import { BUILT_IN, CLASSIC } from "./theme";
 
 /**
  * The registry's answer to "what has contributed what to this window" has to include the themes
@@ -31,7 +31,11 @@ describe("charter's own themes", () => {
     expect(declared, `BUILT_IN_THEMES was not found in ${CORE}`).not.toBeNull();
 
     const named = [...(declared?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((hit) => hit[1]);
-    expect(named.sort()).toEqual(Object.keys(BUILT_IN).sort());
+    // Each of the window's handed picks but Classic's own id is one the registry names: the
+    // default's dark; Purlis's light the window asks the core for (#3034).
+    for (const id of Object.keys(BUILT_IN).filter((one) => one !== CLASSIC))
+      expect(named, id).toContain(id);
+    expect(named.sort()).toEqual(["purlis-dark", "purlis-light"]);
   });
 });
 

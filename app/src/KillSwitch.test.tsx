@@ -7,6 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { TitleBar } from "./TitleBar";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The kill switch on the title bar** (OV-1, ADR 0071): one control that stops every chat and
@@ -69,8 +70,7 @@ describe("the kill switch", () => {
     core(false);
     render(<TitleBar />);
 
-    expect(await stopControl()).toHaveAttribute(
-      "title",
+    expect(tipOf(await stopControl())).toEqual(
       expect.stringMatching(/every chat and shell purlis started/),
     );
   });
@@ -81,7 +81,7 @@ describe("the kill switch", () => {
 
     // The visible words are the name (WCAG 2.5.3, label in name): a voice user says what they see.
     const rearm = await screen.findByRole("button", { name: "Stopped · Re-arm" });
-    expect(rearm.getAttribute("title")).toMatch(/every chat purlis started is stopped/i);
+    expect(tipOf(rearm)).toMatch(/every chat purlis started is stopped/i);
   });
 
   it("re-arms from the bar, and only then offers the stop again", async () => {

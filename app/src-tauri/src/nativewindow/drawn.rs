@@ -145,7 +145,8 @@ mod tests {
         }
         assert_eq!(byte_of(-0.5), 0);
         assert_eq!(byte_of(1.5), 255);
-        let light = purlis_core::theme::built_in("purlis-light")
+        let light = purlis_core::theme::classic()
+            .of(purlis_core::theme::Appearance::Light)
             .expect("Classic light")
             .native();
         assert_eq!(hex(light.background), "#fcfbf8");

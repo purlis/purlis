@@ -30,6 +30,11 @@ window's third-party notices, generated from the lockfile (`tools/third-party-no
 is adopted **one family per ticket**. Radix stays for the families that have not moved, and is
 removed when the last one has.
 
+Its hooks package, `react-aria`, is a direct dependency too (#2908), for the component layer's
+targets that are not React Aria components (a tooltip's words, a raw control); it is pinned to
+the version `react-aria-components` is built on, so the window holds one copy of its state, and
+`app/src/ui/primitives.lock.test.ts` fails if the two part.
+
 React Aria was chosen for one library that covers every family the spec lists, the tree, the
 table and the combobox included, with press handling that is the same for a pointer, a touch, a
 key and a screen reader, a focus ring that shows only for the keyboard, and state attributes
@@ -83,9 +88,12 @@ error from the ticket that moves its last call site:
   its class names a family that has not moved yet (a tab, a row, a menu's row, a segment, a
   strip's mark, a title-bar chip, a status item, a card, the settings nav), and the old
   `.ui-button*` classes are an error anywhere outside `app/src/ui`;
-- `purlis/field-family` (`<input>`, `<select>`, `<textarea>`), `purlis/dialog-family`
-  (`role="dialog"`) and `purlis/tooltip-family` (a native `title=`) are warnings. The field family
-  moved and its rule is an error, with the select and choice inputs split into rules of their own
+- `purlis/tooltip-family`, an error since #2908: a native `title=` on any element (a frame's,
+  which is its name, aside), a primitive's part or a member of the button family;
+- `purlis/menu-family`, an error since #2909: no element outside `src/ui` says a menu's role or
+  wears the old menu and popover classes, and nothing imports Radix's menus or popover;
+- `purlis/dialog-family` (`role="dialog"`) is a warning. The field family moved and its rule is
+  an error, with the select and choice inputs split into rules of their own
   ([amended 2026-10-22](0104/2026-10-22-the-field-family.md)).
 
 A family's ticket takes its own role and classes out of the button rule's list as it moves.
@@ -116,6 +124,8 @@ after look (`docs/component-stories.md`).
   its wrapper (ADR 0103).
 - `docs/ui-primitives.md` lists the moved families and their props; the settings set and the
   Notice (ADR 0037's amendments) are drawn from the families as they move.
+
+## Amendments
 
 The amendments to this decision are files of their own in [`0104/`](0104/), one per
 amendment, named `<yyyy-mm-dd>-<slug>.md`.

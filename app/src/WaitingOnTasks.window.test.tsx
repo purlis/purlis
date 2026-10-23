@@ -21,6 +21,7 @@ import { cardOf } from "./chatCard.testkit";
 import { forgetThisLaunch } from "./regions";
 import type { Shown } from "./shownState";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A session waiting on its tasks says so, counts them, and is flagged only for what
@@ -500,7 +501,8 @@ describe("a limit, said where it binds (#1498)", () => {
     const line = await screen.findByTestId("at-limit-1");
     expect(line.textContent).toContain("at its task limit (6)");
     // The whole sentence, which says which limit and where it is changed.
-    expect(line.getAttribute("title")).toBe(SAID);
+    // On the words that say which limit binds.
+    expect(tipOf(line.firstElementChild)).toBe(SAID);
     const linked: unknown[] = [];
     const heard = (event: Event) => linked.push((event as CustomEvent).detail);
     window.addEventListener("charter-settings-link", heard);
@@ -530,7 +532,9 @@ describe("a limit, said where it binds (#1498)", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
 
-    expect(menu.querySelector(".tasks-menu-limits")?.textContent).toBe("2 of 6 running");
+    // At the menu's foot, under its rows, on the surface it stands on.
+    const surface = menu.closest('[data-scope="popover"][data-part="root"]');
+    expect(surface?.querySelector(".tasks-menu-limits")?.textContent).toBe("2 of 6 running");
   });
 
   it("says nothing at the limit where no dispatch was refused", async () => {

@@ -6,6 +6,7 @@ import { OctagonX, Play } from "lucide-react";
 import { commands } from "./bindings";
 import { listen } from "./here";
 import { StatusItem } from "./ui/status/StatusItem";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **The kill switch** (OV-1, ADR 0071): stop every chat and shell charter started — in every
@@ -98,24 +99,26 @@ export function KillSwitch() {
         data-stopped={stopped ? "yes" : "no"}
         // Named by what it shows (WCAG 2.5.3, the copy guide's "an aria-label says what the
         // visible label says"): the icon alone needs the sentence as its name, but once thrown
-        // the words "Stopped · Re-arm" are the name and the sentence is the `title`, which a
+        // the words "Stopped · Re-arm" are the name and the sentence is its tooltip, which a
         // screen reader reads as its description (#630).
         aria-label={stopped ? undefined : label}
-        title={label}
+        tooltip={label}
         isDisabled={busy}
         onPress={press}
         // An icon alone while nothing is stopped: the bar's right-hand end never gives way
         // (ADR 0054), and what it spends the project tabs lose in a 1024 px window. Its name is
-        // its `aria-label` and its `title`. Once thrown it says so in words, because a stopped
+        // its `aria-label`, which its tooltip shows. Once thrown it says so in words, because a stopped
         // app must never read as an idle one.
         icon={stopped ? <Play aria-hidden="true" /> : <OctagonX aria-hidden="true" />}
       >
         {stopped ? "Stopped · Re-arm" : undefined}
       </StatusItem>
       {trouble !== undefined && (
-        <span role="alert" className="title-kill-switch-trouble" title={trouble}>
-          {trouble}
-        </span>
+        <Tooltip tip={trouble}>
+          <span role="alert" className="title-kill-switch-trouble">
+            {trouble}
+          </span>
+        </Tooltip>
       )}
     </>
   );

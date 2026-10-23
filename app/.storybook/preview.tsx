@@ -20,9 +20,8 @@
 import "./handed";
 import "../src/styles.css";
 import type { Decorator, Loader, Preview } from "@storybook/react-vite";
-import { themes } from "virtual:purlis-handed";
+import { defaultCell, themes } from "virtual:purlis-handed";
 import {
-  CLASSIC,
   DEFAULT_THEME,
   drawIn,
   drawPerson,
@@ -47,7 +46,7 @@ fetchFacesWith(async (asset) => {
 
 /** The theme `id`'s appearance `appearance`, or its first one when it has none of that id. */
 function appearanceOf(id: string, appearance: string): Theme {
-  const theme = themes[id] ?? themes[CLASSIC];
+  const theme = themes[id] ?? themes[defaultCell.theme];
   return (theme?.[appearance] ?? Object.values(theme ?? {})[0] ?? DEFAULT_THEME) as Theme;
 }
 
@@ -108,7 +107,8 @@ const preview: Preview = {
       toolbar: { title: "Density", items: [...DENSITIES], dynamicTitle: true },
     },
   },
-  initialGlobals: { theme: CLASSIC, appearance: "dark", density: DENSITIES[0] },
+  // The default's cell, as the core names it (`at-creation.json`, #3034): Purlis's dark.
+  initialGlobals: { ...defaultCell, density: DENSITIES[0] },
   parameters: {
     a11y: {
       test: "error",

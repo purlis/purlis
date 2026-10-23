@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { userEvent } from "@testing-library/user-event";
 import { FirstTaskTab, type FirstTaskDoes } from "./FirstTaskTab";
 import { SETTINGS_ACTION, type SettingsActionAsk } from "./settings/links";
+import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * The First task tab on its own (FR-28), for what it reads from the machine and the disk: which
@@ -117,7 +118,7 @@ describe("the First task tab, on this machine (#1698)", () => {
     const codex = within(run1).getByRole("radio", { name: "codex" });
     await waitFor(() => expect(codex).toBeDisabled());
     expect(within(run1).getByText("Codex is not installed on this machine.")).toBeInTheDocument();
-    expect(codex).toHaveAttribute("title", "Codex is not installed on this machine.");
+    expect(await hoverTipOf(codex)).toEqual("Codex is not installed on this machine.");
   });
 
   it("changes nothing when every program is installed", async () => {

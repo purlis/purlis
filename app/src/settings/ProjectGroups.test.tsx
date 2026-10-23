@@ -495,7 +495,7 @@ describe("the theme, in Appearance (charter-app#273)", () => {
     picked: "solarized/Solarized Dark",
     file: "charter.toml",
     draws: "purlis-dark",
-    why: "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in purlis-dark is drawn",
+    why: "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in theme, Purlis, is drawn",
   };
 
   it("offers the built-ins, following the system, and every approved extension's themes", async () => {
@@ -526,8 +526,10 @@ describe("the theme, in Appearance (charter-app#273)", () => {
     await at("Appearance");
 
     const pick = await screen.findByLabelText("Theme");
+    // Settings no longer offers the old ids, and labels a file that holds one (#3034).
     expect(pick).toHaveValue(old);
-    expect(pick).toHaveTextContent(`${now} (built in)`);
+    expect(pick).toHaveTextContent("Purlis dark (old id)");
+    // What the core offers the file is drawn as, labelled by the core.
     expect(pick).toHaveAccessibleDescription(
       new RegExp(`Drawn in this project: ${now} \\(built in\\)`),
     );
@@ -539,7 +541,7 @@ describe("the theme, in Appearance (charter-app#273)", () => {
 
     await waitFor(() =>
       expect(group).toHaveTextContent(
-        "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in purlis-dark is drawn",
+        "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in theme, Purlis, is drawn",
       ),
     );
   });

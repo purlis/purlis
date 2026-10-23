@@ -14,6 +14,11 @@
  *   family's old classes (`ui-button`, `ui-button-primary`, `ui-button-row`, …), whose look the
  *   family draws from its wrapper's attributes. A screen gives a `Button` a place (`className`
  *   for margin, width, order), never a look.
+ * - `purlis/menu-family` (error: the menu, context menu and popover families have moved, #2909):
+ *   no element outside `src/ui` says a menu's role (`menu`, `menuitem`, …) or wears the old menu
+ *   and popover classes (`ui-menu`, `ui-menu-*`, `ui-popover`), and nothing imports Radix's
+ *   menus or popover. A menu is the family's `Menu`, `ContextMenu` or `InlineMenu`
+ *   (`ui/menu/Menu.tsx`), a popover one of `ui/popover/Popover.tsx`'s.
  * - `purlis/field-family` (error: the field family has moved, #2905): a raw `<textarea>`, or a
  *   raw `<input>` a person types in (no `type`, or `text`, `search`, `password`, `url`, `email`,
  *   `tel`, `number`, or a `type` decided at run time), is the family's `TextField` or `TextArea`
@@ -25,7 +30,13 @@
  * - `purlis/choice-family` (warning until the choice families move): a raw checkbox, radio,
  *   slider (`range`) or colour well (`color`) `<input>`.
  * - `purlis/dialog-family` (warning until the dialog family moves): a `role="dialog"`.
- * - `purlis/tooltip-family` (warning until the tooltip family moves): a native `title=`.
+ * - `purlis/tooltip-family` (error: the tooltip family has moved, #2908): a native `title=` on an
+ *   element, a primitive's part (`RadioGroup.Item`), a member of the button or status item
+ *   family, or a house component that hands it on to its element (`handsOn`, set in
+ *   `eslint.config.js`). A hint is the shared tooltip: `<Tooltip tip>` from `ui/tooltip/Tooltip`
+ *   around any element, `tooltip` on a `Button`, a `ToggleButton`, a `StatusItem` or a
+ *   `StatusCell`, and an `IconButton`'s name, which its tooltip shows. A frame's `title` is its
+ *   name, not a tooltip, and stays.
  * - `purlis/panel-family`, `purlis/panel-section-family`, `purlis/empty-state-family` and
  *   `purlis/status-item-family` (errors: these families have moved, #2913): each family's old
  *   classes, and its `data-scope` written by hand, which only its wrapper draws.
@@ -81,9 +92,12 @@ const attributeOf = (node, name) =>
 const classWordsOf = (attribute) =>
   [...classStrings(attribute?.value)].flatMap(([, text]) => text.split(/\s+/)).filter(Boolean);
 
-/** The members of a family that hand a `title` on to their element as a native tooltip: the
- *  button family's, and the status item family's. */
+/** The members of a family whose hint is their `tooltip`, never a `title`: the button family's,
+ *  and the status item family's. */
 const BUTTONS = new Set(["Button", "IconButton", "ToggleButton", "StatusItem", "StatusCell"]);
+
+/** The elements whose `title` is their accessible name, which no tooltip replaces. */
+const TITLED = new Set(["iframe", "frame"]);
 
 const buttonFamily = {
   meta: {
@@ -129,6 +143,89 @@ const buttonFamily = {
         if (classWordsOf(attributeOf(node, "className")).some((word) => classes.includes(word)))
           return;
         context.report({ node, messageId: "raw" });
+      },
+    };
+  },
+};
+
+/** The roles a menu's elements say, which only the menu family writes. */
+const MENU_ROLES = new Set(["menu", "menubar", "menuitem", "menuitemcheckbox", "menuitemradio"]);
+
+/** The old menu and popover classes: `ui-menu`, every `ui-menu-*`, and `ui-popover`. */
+const MENU_CLASS = /(?:^|\s)ui-(?:menu(?:-[\w-]+)?|popover)(?=\s|$)/;
+
+/** Radix's menus and popover, and the window's old wrappers of them. */
+const MENU_IMPORT =
+  /^@radix-ui\/react-(?:dropdown-menu|context-menu|menubar|popover|hover-card)$|(?:^|\/)overlays\/(?:dropdown-menu|context-menu|popover)$/;
+
+/** The words of an answer that grants, anywhere in a label ("Always allow"): no menu row says
+ *  them. Shared with the test that holds every menu's words at run time (`menuModel.test.ts`). */
+export const GRANT_WORDS = /\b(?:allow|accept|trust|grant)\b/i;
+
+/** A child expression that is words (a name, a field, text), not an element drawn in a row. */
+const WORDS = new Set(["Identifier", "MemberExpression", "Literal", "TemplateLiteral"]);
+
+const menuFamily = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "A menu, a context menu or a popover is the shared family, never drawn by hand",
+    },
+    messages: {
+      role: '`role="{{role}}"`: a menu is the menu family\'s `Menu`, `ContextMenu` or `InlineMenu` (`ui/menu/Menu.tsx`), which says its roles itself (docs/ui-primitives.md, "Menus").',
+      oldClass:
+        "`{{word}}` is an old menu or popover class: the families draw themselves from their parts (`ui/menu/Menu.tsx`, `ui/popover/Popover.tsx`).",
+      oldImport:
+        "`{{from}}`: a menu or a popover is drawn from its family in `src/ui` (`ui/menu/Menu.tsx`, `ui/popover/Popover.tsx`).",
+      noTextValue:
+        "A `MenuItem` that draws more than words says them in `textValue`, so typing a letter finds it.",
+      grants:
+        '`{{said}}` grants something: a grant is a button with `variant="grants"`, never a menu row, so its lock and its edge are drawn (ADR 0097 §6).',
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      JSXElement(node) {
+        const open = node.openingElement;
+        if (open.name.type !== "JSXIdentifier" || open.name.name !== "MenuItem") return;
+        const textValue = attributeOf(open, "textValue");
+        const words = node.children
+          .filter((child) => child.type === "JSXText")
+          .map((child) => child.value)
+          .join("")
+          .trim();
+        const onlyWords = node.children.every(
+          (child) =>
+            child.type === "JSXText" ||
+            (child.type === "JSXExpressionContainer" && WORDS.has(child.expression.type)),
+        );
+        if (textValue === undefined && !onlyWords)
+          context.report({ node: open, messageId: "noTextValue" });
+        const said =
+          textValue?.value?.type === "Literal" && typeof textValue.value.value === "string"
+            ? textValue.value.value
+            : words;
+        if (GRANT_WORDS.test(said))
+          context.report({ node: open, messageId: "grants", data: { said } });
+      },
+      ImportDeclaration(node) {
+        if (MENU_IMPORT.test(node.source.value))
+          context.report({ node, messageId: "oldImport", data: { from: node.source.value } });
+      },
+      JSXAttribute(node) {
+        if (node.name.name === "role") {
+          const role = node.value;
+          if (role?.type === "Literal" && MENU_ROLES.has(role.value))
+            context.report({ node, messageId: "role", data: { role: role.value } });
+          return;
+        }
+        if (node.name.name !== "className") return;
+        for (const [at, text] of classStrings(node.value)) {
+          const found = MENU_CLASS.exec(text);
+          if (found)
+            context.report({ node: at, messageId: "oldClass", data: { word: found[0].trim() } });
+        }
       },
     };
   },
@@ -231,16 +328,83 @@ const dialogFamily = unmoved({
   },
 });
 
-const tooltipFamily = unmoved({
-  description: "A tooltip is the shared tooltip once that family moves",
-  message:
-    "A native `title=` tooltip: the shared tooltip replaces it once that family has moved (spec #2897).",
-  test: (node) => {
-    const tag = node.name.name;
-    const title = attributeOf(node, "title");
-    return title && (/^[a-z]/.test(tag) || BUTTONS.has(tag)) ? [title] : [];
+/** The `title` key an object written as a literal holds, if it holds one. */
+const titleKeyOf = (object) =>
+  object?.type === "ObjectExpression"
+    ? object.properties.find(
+        (one) =>
+          one.type === "Property" &&
+          ((one.key.type === "Identifier" && one.key.name === "title") ||
+            (one.key.type === "Literal" && one.key.value === "title")),
+      )
+    : undefined;
+
+/** The object literal a spread hands on: written in place, or a `const` of this scope. */
+function spreadObject(context, spread) {
+  const argument = spread.argument;
+  if (argument.type === "ObjectExpression") return argument;
+  if (argument.type !== "Identifier") return undefined;
+  let scope = context.sourceCode.getScope(spread);
+  while (scope) {
+    const variable = scope.set.get(argument.name);
+    if (variable) {
+      const definition = variable.defs[0];
+      return definition?.type === "Variable" ? definition.node.init : undefined;
+    }
+    scope = scope.upper;
+  }
+  return undefined;
+}
+
+const tooltipFamily = {
+  meta: {
+    type: "problem",
+    docs: { description: "A hint is the shared tooltip, never a native title" },
+    messages: {
+      title:
+        "A native `title=` tooltip: draw the hint with the shared tooltip, `<Tooltip tip>` from `ui/tooltip/Tooltip`, or a button's `tooltip`; an `IconButton`'s tooltip is its `aria-label` (docs/ui-primitives.md).",
+      svgTitle:
+        "An SVG `<title>` is a native tooltip: draw the hint with the shared tooltip around the drawing (`<Tooltip tip>`), and name the drawing with `aria-label` where it needs a name.",
+    },
+    schema: [
+      {
+        type: "object",
+        properties: {
+          // The house components that hand a `title` on to their element as it is.
+          handsOn: { type: "array", items: { type: "string" } },
+        },
+        additionalProperties: false,
+      },
+    ],
   },
-});
+  create(context) {
+    const { handsOn = [] } = context.options[0] ?? {};
+    /** Whether `node`'s element hands a `title` on to the DOM as a native tooltip. */
+    const handsTitleOn = (node) => {
+      if (node.name.type === "JSXMemberExpression") return true;
+      if (node.name.type !== "JSXIdentifier") return false;
+      const tag = node.name.name;
+      if (TITLED.has(tag)) return false;
+      return /^[a-z]/.test(tag) || BUTTONS.has(tag) || handsOn.includes(tag);
+    };
+    return {
+      JSXOpeningElement(node) {
+        if (node.name.type === "JSXIdentifier" && node.name.name === "title") {
+          context.report({ node, messageId: "svgTitle" });
+          return;
+        }
+        if (!handsTitleOn(node)) return;
+        const title = attributeOf(node, "title");
+        if (title) context.report({ node: title, messageId: "title" });
+        // A `title` handed on through a spread of an object written here (`{...shared}`).
+        for (const spread of node.attributes.filter((one) => one.type === "JSXSpreadAttribute")) {
+          const key = titleKeyOf(spreadObject(context, spread));
+          if (key) context.report({ node: key, messageId: "title" });
+        }
+      },
+    };
+  },
+};
 
 /**
  * **A family that has moved** (#2913): its old styling classes are an error outside `src/ui`, and
@@ -340,6 +504,7 @@ export const purlisUi = {
   meta: { name: "purlis-ui" },
   rules: {
     "button-family": buttonFamily,
+    "menu-family": menuFamily,
     "field-family": fieldFamily,
     "select-family": selectFamily,
     "choice-family": choiceFamily,

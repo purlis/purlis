@@ -10,7 +10,13 @@ import { keepTheirOrder } from "./commandOrder";
 import { startTheSwitchClock } from "./switchClock";
 import { watchTheAnswers } from "./answerWatch";
 import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./textSize";
-import { DEFAULT_THEME, drawIn, fetchFacesWith, personInForce } from "./theme/theme";
+import {
+  DEFAULT_THEME,
+  drawIn,
+  fetchFacesWith,
+  holdFacesForTheFirstFrame,
+  personInForce,
+} from "./theme/theme";
 import { sayAppearance } from "./appearance";
 import { fetchFace } from "./theme/faces";
 import { firstFollowsSystem, firstFrameOnce } from "./windowprefs";
@@ -25,6 +31,9 @@ import { drawNatively } from "./theme/native";
 // A theme's fonts are asked for by digest after the frame (`theme/faces.ts`, #2326): the first
 // frame is drawn in each family list's fallback, and nothing waits for a face.
 fetchFacesWith(fetchFace);
+// Its faces wait for the first frame to be on screen (`App.tsx` lets them go), so decoding them
+// is never on the way to it (ADR 0026, #3034).
+holdFacesForTheFirstFrame();
 const first = firstFrameOnce()?.theme ?? DEFAULT_THEME;
 drawIn(first);
 // The window was created in this theme's native appearance and colour (`nativewindow.rs`);

@@ -24,12 +24,12 @@ import {
   inForce,
   onDrawn,
   THEME_ALIASES,
-  CLASSIC,
   type Theme,
 } from "./theme/theme";
 import { forgetProjectThemes } from "./projectTheme";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
 import { aboutThisMachine, sayAboutThisMachine } from "./windowprefs";
+import { PURLIS_LIGHT } from "./theme/handed.testkit";
 
 /**
  * A colour for a theme an extension contributes, taken out of charter's own light theme
@@ -40,7 +40,7 @@ import { aboutThisMachine, sayAboutThisMachine } from "./windowprefs";
  * any value works, so the one that already exists is the one to use. It differs from the dark
  * theme's, which is what these tests need it to do.
  */
-const OTHER = BUILT_IN["purlis-light"].values["surface.base"];
+const OTHER = PURLIS_LIGHT.values["surface.base"];
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -776,12 +776,13 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
   });
 
   it("crossfades a switch to another workspace's theme, and draws the first at once (#2323)", async () => {
-    core({});
+    // `purlis-light` is not handed: the core answers it (#3034).
+    core({ inForce: () => ({ ...KEEPS, theme: PURLIS_LIGHT }) });
     const root = document.documentElement;
     await drawThemeFor(new Set(), "purlis-dark", { plane: "p-1" as PlaneId, workspace: "alpha" });
     expect(root.classList.contains(CROSSFADE)).toBe(false);
     await drawThemeFor(new Set(), "purlis-light", { plane: "p-1" as PlaneId, workspace: "beta" });
-    expect(inForce().name).toBe("purlis-light");
+    await expect.poll(() => inForce()).toEqual(PURLIS_LIGHT);
     expect(root.classList.contains(CROSSFADE)).toBe(true);
     await vi.waitFor(() => expect(root.classList.contains(CROSSFADE)).toBe(false));
   });
@@ -825,14 +826,18 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     const turn = system(false);
     const asked = core({
       inForce: (args) => ({
-        theme: BUILT_IN[args.light === true ? "purlis-light" : "purlis-dark"],
+        // `purlis-light` is not handed: the core answers it (#3034).
+        theme:
+          args.pick === "purlis-light" || args.light === true
+            ? PURLIS_LIGHT
+            : BUILT_IN["purlis-dark"],
         complaints: [],
         follows_system: args.pick === "system",
       }),
     });
     const native = () =>
       asked.filter((call) => call.cmd === "draw_native_window").map((call) => call.args);
-    const light = BUILT_IN["purlis-light"];
+    const light = PURLIS_LIGHT;
     const dark = BUILT_IN["purlis-dark"];
 
     await drawThemeFor(new Set(), "purlis-light");
@@ -858,13 +863,11 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
 
   it("draws a built-in pick at once, from what the window was handed, asking the core nothing", () => {
     const asked = core({});
+    // The default's dark, by its id or the one it had; `purlis-light` asks the core (#3034).
     for (const [pick, drawn] of [
-      ["purlis-light", "purlis-light"],
-      ...Object.entries(THEME_ALIASES),
       ["purlis-dark", "purlis-dark"],
-      // Purlis Classic by its own id draws its first appearance, as the engine answers.
-      [CLASSIC, "purlis-dark"],
-      ["purlis-light", "purlis-light"],
+      ...Object.entries(THEME_ALIASES).filter(([, now]) => now === "purlis-dark"),
+      ["purlis-dark", "purlis-dark"],
     ]) {
       // No `await`: the switch has drawn by the time it returns, so no frame shows the last one.
       void drawThemeFor(new Set(["solarized"]), pick);
@@ -1029,16 +1032,16 @@ describe("the theme in force, as the core's theme engine resolves it (spec #2313
     let following = true;
     core({
       inForce: (asked) => ({
-        theme: BUILT_IN[asked.light === true ? "purlis-light" : "purlis-dark"],
+        theme: asked.light === true ? PURLIS_LIGHT : BUILT_IN["purlis-dark"],
         complaints: [],
         follows_system: following,
       }),
     });
     await drawThemeFor(new Set(), "system");
-    expect(inForce().name).toBe("purlis-light");
+    expect(inForce()).toBe(PURLIS_LIGHT);
 
     turn(false);
-    await expect.poll(() => inForce().name).toBe("purlis-dark");
+    await expect.poll(() => inForce()).toBe(BUILT_IN["purlis-dark"]);
 
     following = false;
     await drawThemeFor(new Set(), "purlis-dark");

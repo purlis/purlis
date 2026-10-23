@@ -461,12 +461,14 @@ describe("the limits' lines and the set's native controls, in the real WebView",
     }, STRIP);
     await browser.waitUntil(
       async () =>
-        browser.execute(() => document.querySelector('[role="menu"].tasks-menu') !== null),
+        browser.execute(() => document.querySelector('.tasks-menu[data-part="root"]') !== null),
       { timeout: 5_000, timeoutMsg: "resting on the chip opened no menu" },
     );
     // The finished task is in the fold: opened in place, as a click on it does.
     await browser.execute(() =>
-      document.querySelector<HTMLElement>('[role="menu"].tasks-menu .tasks-menu-fold')?.click(),
+      document
+        .querySelector<HTMLElement>('.tasks-menu[data-part="root"] .tasks-menu-fold')
+        ?.click(),
     );
     let seen: { words: string[]; cut: string[]; inside: boolean } = {
       words: [],
@@ -476,7 +478,7 @@ describe("the limits' lines and the set's native controls, in the real WebView",
     await browser.waitUntil(
       async () => {
         seen = await browser.execute(() => {
-          const menu = document.querySelector<HTMLElement>('[role="menu"].tasks-menu');
+          const menu = document.querySelector<HTMLElement>('.tasks-menu[data-part="root"]');
           const words = [...(menu?.querySelectorAll<HTMLElement>(".shown-state .word") ?? [])];
           const at = menu?.getBoundingClientRect();
           return {

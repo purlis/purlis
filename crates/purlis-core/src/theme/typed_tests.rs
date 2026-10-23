@@ -12,11 +12,11 @@ use super::vocabulary::{FLAGS, PLATFORM, PLATFORM_DRAWN, TOKENS};
 use super::*;
 
 fn dark() -> &'static ResolvedTheme {
-    built_in("purlis-dark").expect("Classic's dark appearance")
+    classic().first()
 }
 
 fn light() -> &'static ResolvedTheme {
-    built_in("purlis-light").expect("Classic's light appearance")
+    classic().of(Appearance::Light).unwrap()
 }
 
 fn said(resolved: &Resolved) -> Vec<String> {

@@ -2880,5 +2880,59 @@
    ],
    "accent_tinted": true
   }
+ ],
+ "held": [
+  {
+   "token": "accent.base",
+   "held": true
+  },
+  {
+   "token": "accent.surface",
+   "held": true
+  },
+  {
+   "token": "focus.ring",
+   "held": true
+  },
+  {
+   "token": "tab.active",
+   "held": true
+  },
+  {
+   "token": "list.selected",
+   "held": false
+  },
+  {
+   "token": "list.selected-edge",
+   "held": true
+  },
+  {
+   "token": "markdown.link",
+   "held": false
+  },
+  {
+   "token": "chart.1",
+   "held": false
+  },
+  {
+   "token": "layer.workspace",
+   "held": false
+  },
+  {
+   "token": "layer.chat",
+   "held": false
+  },
+  {
+   "token": "layer.selected",
+   "held": false
+  },
+  {
+   "token": "danger.base",
+   "held": true
+  },
+  {
+   "token": "border.strong",
+   "held": true
+  }
  ]
 }

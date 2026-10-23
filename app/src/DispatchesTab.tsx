@@ -44,6 +44,7 @@ import {
 } from "./dispatches";
 import { useWhileShown } from "./whileShown";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** How often the list is read again while a dispatch in it is still running, and the window is
  *  shown. */
@@ -345,8 +346,12 @@ export function DispatchesTab({
                     )}
                   </td>
                   <td>{row.by_person ? `you, from ${row.asker}` : row.asker}</td>
-                  <td title={row.folder ?? undefined}>
-                    {row.place}
+                  <td>
+                    {/* The place's words carry its whole folder; the cell's controls are their
+                        own Tab stops. */}
+                    <Tooltip tip={row.folder ?? undefined}>
+                      <span>{row.place}</span>
+                    </Tooltip>
                     {row.worktree !== null && (
                       <span className="dispatch-worktree" data-standing={row.worktree.standing}>
                         {worktreeSaid(row.worktree)}
@@ -354,7 +359,7 @@ export function DispatchesTab({
                           <Button
                             size="sm"
                             aria-label={`Review changes of ${row.task}`}
-                            title={
+                            tooltip={
                               row.worktree.standing === "kept"
                                 ? "Opens what its own branch changed, with Merge and Discard."
                                 : "Opens what is left of its own branch, with Delete branch where it is merged."
@@ -393,7 +398,11 @@ export function DispatchesTab({
                   <td>{row.outcome}</td>
                   <td>{row.duration}</td>
                   <td>{row.needed_you}</td>
-                  <td title={row.tokens ?? undefined}>{row.cost ?? "not reported"}</td>
+                  <td>
+                    <Tooltip tip={row.tokens ?? undefined}>
+                      <span>{row.cost ?? "not reported"}</span>
+                    </Tooltip>
+                  </td>
                 </tr>
                 {read === row.id && (
                   <tr className="dispatch-read">
@@ -581,33 +590,35 @@ function Task({
   const { open_session: session, session_record: record } = row;
   if (session !== null) {
     return (
-      <button
-        type="button"
-        className="ui-row vault-secret"
-        tabIndex={0}
-        title="Show its chat"
-        onClick={() => onShowChat(session)}
-      >
-        {row.task}
-      </button>
+      <Tooltip tip="Show its chat">
+        <button
+          type="button"
+          className="ui-row vault-secret"
+          tabIndex={0}
+          onClick={() => onShowChat(session)}
+        >
+          {row.task}
+        </button>
+      </Tooltip>
     );
   }
   if (record !== null) {
     return (
-      <button
-        type="button"
-        className="ui-row vault-secret"
-        tabIndex={0}
-        title="Open its session record"
-        onClick={() => onOpenRecord(record, row.task)}
-      >
-        {row.task}
-      </button>
+      <Tooltip tip="Open its session record">
+        <button
+          type="button"
+          className="ui-row vault-secret"
+          tabIndex={0}
+          onClick={() => onOpenRecord(record, row.task)}
+        >
+          {row.task}
+        </button>
+      </Tooltip>
     );
   }
   return (
-    <span className="dispatch-gone" title="Its chat is closed and wrote no session record">
-      {row.task}
-    </span>
+    <Tooltip tip="Its chat is closed and wrote no session record">
+      <span className="dispatch-gone">{row.task}</span>
+    </Tooltip>
   );
 }

@@ -297,7 +297,7 @@ describe("the gears' look", () => {
 
 /**
  * **The context-menu key still opens a tab's menu** (SE-23 review). The menu's trigger is the
- * tab itself and not the cell that holds it and its gear: `Menus.openFromTheKeyboard` opens only
+ * tab itself and not the cell that holds it and its gear: the family's context menu (`ui/menu/ContextMenu.tsx`) opens only
  * when the trigger itself has the keyboard, so a trigger on the cell never opened from it.
  */
 describe("a tab's menu, from the keyboard", () => {

@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useMemo, useState, type ReactNode } from "react";
-import * as Popover from "./overlays/popover";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { HeldPopover } from "./ui/popover/Popover";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import clsx from "clsx";
 import {
@@ -25,6 +25,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { useTabStop } from "./roving";
 import { Button } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * The list a panel is drawn from, and the one the operator asked for by name.
@@ -240,7 +241,7 @@ export function PanelList({
             <Button
               variant="primary"
               isDisabled={!offer.available}
-              title={offer.available ? offer.note : offer.reason}
+              tooltip={offer.available ? offer.note : offer.reason}
               onPress={() => onRun?.(offer.id)}
             >
               {offer.title}
@@ -409,12 +410,11 @@ function Row({
       ) : (
         <Mark className="node-icon" />
       )}
-      <span
-        className={clsx("row-text ui-text-body", row.tone === "default" && "ui-text-strong")}
-        title={hover === undefined ? tooltip : undefined}
-      >
-        {shortened}
-      </span>
+      <Tooltip tip={hover === undefined ? tooltip : undefined}>
+        <span className={clsx("row-text ui-text-body", row.tone === "default" && "ui-text-strong")}>
+          {shortened}
+        </span>
+      </Tooltip>
       {row.note !== null && !titleOnly && (
         <span className="row-note ui-text-meta">{` · ${row.note}`}</span>
       )}
@@ -426,6 +426,8 @@ function Row({
   // `persona.show:<name>` is the same verb the palette and a context menu run (charter-app#174),
   // so the three are one state rather than three that look alike — and running it again on
   // dismissal would re-open what was just closed.
+  /** The row's button, which its card stands beside. */
+  const own = useRef<HTMLButtonElement>(null);
   const opened = (opening: boolean) => {
     onOpen(opening);
     if (opening && row.runs !== null) onRun?.(row.runs);
@@ -433,9 +435,9 @@ function Row({
 
   const inner =
     detail === null && row.runs === null ? (
-      <span className="ui-row row" title={hover}>
-        {body}
-      </span>
+      <Tooltip tip={hover}>
+        <span className="ui-row row">{body}</span>
+      </Tooltip>
     ) : row.runs !== null ? (
       /* **A row that does something is a plain button that does it, and opens no card.** A
          persona's row opens that persona's tab (`persona.show:<name>`, the operator's ruling of
@@ -443,47 +445,55 @@ function Row({
          row as well would be two surfaces for one thing. Its detail, where it has one, is what
          the search reads. A double-click keeps what the first click previewed. */
       <RovingFocusGroup.Item asChild tabStopId={row.key}>
-        <button
-          type="button"
-          className="ui-row row"
-          title={hover}
-          onClick={() => {
-            if (row.runs !== null) onRun?.(row.runs);
-          }}
-          onDoubleClick={() => {
-            if (row.runs !== null) onRun?.(row.runs, true);
-          }}
-        >
-          {body}
-        </button>
+        <Tooltip tip={hover}>
+          <button
+            type="button"
+            className="ui-row row"
+            onClick={() => {
+              if (row.runs !== null) onRun?.(row.runs);
+            }}
+            onDoubleClick={() => {
+              if (row.runs !== null) onRun?.(row.runs, true);
+            }}
+          >
+            {body}
+          </button>
+        </Tooltip>
       </RovingFocusGroup.Item>
     ) : (
-      <Popover.Root open={open} onOpenChange={opened}>
-        <Popover.Trigger asChild>
-          <RovingFocusGroup.Item asChild tabStopId={row.key} active={open}>
-            <button type="button" className="ui-row row" title={hover}>
+      <>
+        <RovingFocusGroup.Item asChild tabStopId={row.key} active={open}>
+          <Tooltip tip={hover}>
+            <button
+              type="button"
+              ref={own}
+              className="ui-row row"
+              aria-haspopup="dialog"
+              aria-expanded={open}
+              onClick={() => opened(!open)}
+            >
               {body}
             </button>
-          </RovingFocusGroup.Item>
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            className="ui-popover row-card"
-            data-testid={`row-detail-${row.key}`}
-            /* `side="left"` is where it opens from in the default arrangement and no more than
-               that: a region MOVES (ADR 0038), and Radix flips to the other side when
-               there is no room, which is what makes naming a side safe. */
-            side="left"
-            align="start"
-            sideOffset={6}
-            collisionPadding={8}
-            aria-label={row.text}
-          >
-            {detail}
-            <Popover.Arrow className="ui-overlay-arrow" />
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+          </Tooltip>
+        </RovingFocusGroup.Item>
+        {/* `side="left"` is where it opens from in the default arrangement and no more than
+            that: a region MOVES (ADR 0038), and the popover flips to the other side when
+            there is no room, which is what makes naming a side safe. */}
+        <HeldPopover
+          triggerRef={own}
+          isOpen={open}
+          onOpenChange={opened}
+          className="row-card"
+          data-testid={`row-detail-${row.key}`}
+          side="left"
+          align="start"
+          offset={6}
+          arrow
+          aria-label={row.text}
+        >
+          {detail}
+        </HeldPopover>
+      </>
     );
 
   // **The extension's own actions, beside the row and never inside its button** (charter-app#341):
@@ -498,7 +508,7 @@ function Row({
             <Button
               size="sm"
               aria-disabled={actsOff !== undefined || undefined}
-              title={actsOff}
+              tooltip={actsOff}
               onPress={actsOff === undefined ? () => onAct(row, action) : undefined}
               className="row-action"
             >

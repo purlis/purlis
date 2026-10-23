@@ -78,9 +78,9 @@ impl ServerHandler for Server {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        // The skill tools (SK-13), only while the `skill-studio` flag lets the plane's skills
-        // into a chat: behind it until its finish line (#2786).
-        let skills: &[chattools::Tool] = if purlis_core::skills::studio_on_here() {
+        // The skill tools (SK-13), only where the project's skills reach this chat: the
+        // `skill-studio` flag, or a project that requires them (#2784).
+        let skills: &[chattools::Tool] = if skills_reach_here() {
             &purlis_core::skilltools::TOOLS
         } else {
             &[]
@@ -137,7 +137,7 @@ impl ServerHandler for Server {
             return Ok(done_with(said, attached));
         }
         // The chat's own skills (SK-13): read, found or loaded, over its own skill set.
-        if purlis_core::skilltools::is_one(name) && purlis_core::skills::studio_on_here() {
+        if purlis_core::skilltools::is_one(name) && skills_reach_here() {
             let name = name.to_owned();
             let args = request.arguments.clone().unwrap_or_default();
             return Ok(done(blocking(move || skill_tool(&name, &args)).await));
@@ -223,6 +223,15 @@ impl ServerHandler for Server {
     }
 }
 
+/// Whether the project's skills reach this chat ([`purlis_core::skills::reach_chats_here`]): the
+/// skill tools are listed and answered only then. Outside a plane, as the flag says.
+fn skills_reach_here() -> bool {
+    match crate::Here::read() {
+        Ok(here) => purlis_core::skills::reach_chats_here(here.plane.root()),
+        Err(_) => purlis_core::skills::studio_on_here(),
+    }
+}
+
 /// What the server tells the harness it is for: its tools, and for a chat on the skills'
 /// `Mcp` route the one line that says how its skills are reached
 /// ([`purlis_core::skilltools::briefing`]): a harness that runs none of purlis's hooks is briefed
@@ -233,8 +242,8 @@ fn instructions() -> String {
                     the person watches (the browser_ tools), and the theme specimen \
                     (theme_preview)."
         .to_owned();
-    if purlis_core::skills::studio_on_here()
-        && let Ok(here) = crate::Here::read()
+    if let Ok(here) = crate::Here::read()
+        && purlis_core::skills::reach_chats_here(here.plane.root())
         && let Some(line) = purlis_core::skilltools::briefing(route_here(&here))
     {
         said.push_str("\n\n");

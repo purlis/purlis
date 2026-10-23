@@ -13,6 +13,7 @@ import { StateShown } from "./StateShown";
 import { useTokensOnHover } from "./tasksUsed";
 import { WaitingTaskWaysContext } from "./waitingTasks";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **A chat's finished tasks, under its row in the Chats section** (#1485).
@@ -110,7 +111,7 @@ export const FinishedTasks = memo(function FinishedTasks({
             </button>
             <Button
               size="sm"
-              title="Takes these rows away, and forgets what these tasks and this chat said to each other. Each brief and report stays on its dispatch record."
+              tooltip="Takes these rows away, and forgets what these tasks and this chat said to each other. Each brief and report stays on its dispatch record."
               onPress={() => onClear(folded.map((task) => task.id))}
               className="finished-clear"
             >
@@ -204,65 +205,60 @@ function FinishedRow({
   const row = (
     <div className="finished-task" data-how={task.how} data-task-id={task.id}>
       <div className="finished-line">
-        <button
-          type="button"
-          className="ui-row ui-tree-row finished-name"
-          tabIndex={0}
-          aria-expanded={shown}
-          title={hover || undefined}
-          onPointerEnter={waits === null ? used.onPointerEnter : undefined}
-          onPointerLeave={waits === null ? used.onPointerLeave : undefined}
-          onClick={() => {
-            // Opened to be read: looked at.
-            if (!shown) onLook?.(task);
-            setShown((was) => !was);
-          }}
-        >
-          {/* Cut short in a narrow sidebar (#1499), and whole here for a pointer that rests on
-              it; a screen reader is told the text. */}
-          <span
-            className="session ui-text-secondary"
-            title={
-              waits === null && used.said !== undefined ? `${task.name}\n${used.said}` : task.name
-            }
+        {/* The row's one hint: its whole name, cut short in a narrow sidebar (#1499), then how
+            it ended, its report's first line and what it used. A screen reader is told the
+            text. */}
+        <Tooltip tip={[task.name, hover].filter((one) => one !== "").join("\n")}>
+          <button
+            type="button"
+            className="ui-row ui-tree-row finished-name"
+            tabIndex={0}
+            aria-expanded={shown}
+            onPointerEnter={waits === null ? used.onPointerEnter : undefined}
+            onPointerLeave={waits === null ? used.onPointerLeave : undefined}
+            onClick={() => {
+              // Opened to be read: looked at.
+              if (!shown) onLook?.(task);
+              setShown((was) => !was);
+            }}
           >
-            {task.name}
-          </span>
-          {/* How it ended, as a chat's row says a state (#1484): **one line, its mark**
+            <span className="session ui-text-secondary">{task.name}</span>
+            {/* How it ended, as a chat's row says a state (#1484): **one line, its mark**
             (#1687, as #1675 made a chat's row), the word the row's to a screen reader and whole
             in its tooltip. The core's own word follows where it says more than that word does
             (blocked), so no end is said less exactly here. */}
-          {state !== undefined && (
-            <>
-              {" "}
-              <StateShown shown={state} markOnly />
-            </>
-          )}
-          {more !== undefined && (
-            <>
-              {" "}
-              <span className="outcome hidden-words">{more}</span>
-            </>
-          )}
-          {task.attempts > 1 && (
-            <>
-              {" "}
-              <span className="outcome hidden-words">tried {task.attempts} times</span>
-            </>
-          )}
-          {/* Its persona's mark at the line's end, as a chat's row has it (DS-11). */}
-          {task.persona === null ? (
-            <SquareTerminal className="node-icon" aria-hidden="true" />
-          ) : (
-            <PersonaMark persona={task.persona} />
-          )}
-        </button>
+            {state !== undefined && (
+              <>
+                {" "}
+                <StateShown shown={state} markOnly />
+              </>
+            )}
+            {more !== undefined && (
+              <>
+                {" "}
+                <span className="outcome hidden-words">{more}</span>
+              </>
+            )}
+            {task.attempts > 1 && (
+              <>
+                {" "}
+                <span className="outcome hidden-words">tried {task.attempts} times</span>
+              </>
+            )}
+            {/* Its persona's mark at the line's end, as a chat's row has it (DS-11). */}
+            {task.persona === null ? (
+              <SquareTerminal className="node-icon" aria-hidden="true" />
+            ) : (
+              <PersonaMark persona={task.persona} />
+            )}
+          </button>
+        </Tooltip>
         {openBrief !== undefined && (
           <Button
             size="sm"
             aria-label={briefTitle(task.name)}
             aria-haspopup="dialog"
-            title="What this task was sent, as it was sent."
+            tooltip="What this task was sent, as it was sent."
             onPress={() => openBrief({ dispatch: task.id, name: task.name })}
             className="finished-brief"
           >
@@ -277,7 +273,7 @@ function FinishedRow({
               size="sm"
               isDisabled={busy}
               aria-label={`Try to start ${task.name} again`}
-              title="Starts it again as the launch tried to. It stays a task of the chat that asked."
+              tooltip="Starts it again as the launch tried to. It stays a task of the chat that asked."
               onPress={() => doing(ways.retry(task).then(() => undefined))}
               className="finished-reopen"
             >
@@ -320,7 +316,7 @@ function FinishedRow({
                 size="sm"
                 isDisabled={busy}
                 aria-label={`End task ${task.name}`}
-                title="Ends the task: the chat that asked is told it failed and why, and it is not tried again. Its conversation can still be reopened as an ordinary chat."
+                tooltip="Ends the task: the chat that asked is told it failed and why, and it is not tried again. Its conversation can still be reopened as an ordinary chat."
                 onPress={() => setEnding(true)}
                 className="finished-clear"
               >
@@ -336,7 +332,7 @@ function FinishedRow({
             aria-disabled={cannot !== undefined || busy || undefined}
             aria-label={`Reopen ${task.name}`}
             aria-description={cannot}
-            title={
+            tooltip={
               cannot ??
               "Resumes its conversation as an ordinary chat with a tab. It is no longer a task: it sends no report, and the chat that asked is not told."
             }
@@ -350,7 +346,7 @@ function FinishedRow({
           <Button
             size="sm"
             aria-label={`${task.branch === null ? "Changes" : "Review changes"} of ${task.name}`}
-            title={
+            tooltip={
               task.branch === null
                 ? "Opens the files this task's edit tools wrote that are still uncommitted. Edits made by a shell command, and what it committed, are not listed."
                 : "Opens what its own branch changed, with Merge and Discard."
@@ -365,7 +361,7 @@ function FinishedRow({
           <Button
             size="sm"
             aria-label={`Clear ${task.name}`}
-            title="Takes this row away, and forgets what this task and its chat said to each other. Its brief and report stay on its dispatch record."
+            tooltip="Takes this row away, and forgets what this task and its chat said to each other. Its brief and report stay on its dispatch record."
             onPress={() => onClear([task.id])}
             className="finished-clear"
           >
@@ -401,7 +397,7 @@ function FinishedRow({
                 <Button
                   size="sm"
                   variant="ghost"
-                  title="Opens what purlis can tell this task changed"
+                  tooltip="Opens what purlis can tell this task changed"
                   onPress={() => onChanges(task)}
                   className="report-changed-link"
                 >

@@ -14,7 +14,7 @@ import { PICKED } from "../wdio.picked.conf.js";
  * (`windowprefs.rs`, `theme::first_frame`), and the page hands the theme it draws on to the core
  * (`theme/native.ts`). What the platform then says the window is drawn in is the answer: its
  * appearance and the background colour it was given (#2760), each read back from the platform.
- * The default theme is Classic's dark one, drawn forced rather than following the system, so a
+ * The default theme is Purlis's dark one, drawn forced rather than following the system, so a
  * pick that never reached the window reads back dark, and in the dark theme's colour, on any
  * runner.
  */
@@ -81,7 +81,8 @@ describe("the native window, on a project that picks a light theme", () => {
         : await browser.execute(() => window.matchMedia("(prefers-contrast: more)").matches);
     const frames = first?.frames ?? [];
     const frame = frames.length === 1 ? frames[0] : frames.find((each) => !!each.more === more);
-    expect(frame?.theme?.name).toBe(PICKED);
+    // `purlis-light` names Purlis's light (#3034).
+    expect([frame?.theme?.name, frame?.theme?.appearance]).toEqual(["Purlis", "light"]);
     const background = frame?.theme?.values?.["window.background"]?.toLowerCase();
     expect(background).toMatch(/^#[0-9a-f]{6}$/);
     let drawn: NativeDrawn | undefined;

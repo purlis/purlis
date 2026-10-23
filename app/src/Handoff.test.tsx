@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * A chat a handoff opened lands on a strip, behind the chat the operator is reading
@@ -125,7 +126,7 @@ describe("a chat a handoff opened, named for its task (charter-app#258)", () => 
     });
 
     await waitFor(() => expect(tabNames()).toEqual(["ide.1", "drop commons"]));
-    expect(tabNamed("drop commons")).toHaveAttribute("title", "↳ from steward 3 · platform-next");
+    expect(tipOf(tabNamed("drop commons"))).toEqual("↳ from steward 3 · platform-next");
   });
 
   it("makes four handoffs from one chat four tabs that can be told apart", async () => {
@@ -168,7 +169,7 @@ describe("a chat a handoff opened, named for its task (charter-app#258)", () => 
     render(<App />);
 
     await waitFor(() => expect(tabNames()).toEqual(["drop commons"]));
-    expect(tabNamed("drop commons")).toHaveAttribute("title", "↳ from steward 3 · platform-next");
+    expect(tipOf(tabNamed("drop commons"))).toEqual("↳ from steward 3 · platform-next");
     expect(document.querySelector(".pane-from")).toHaveTextContent(
       "↳ from steward 3 · platform-next",
     );
@@ -191,7 +192,7 @@ describe("a chat a handoff opened, named for its task (charter-app#258)", () => 
     });
 
     await waitFor(() => expect(tabNames()).toEqual(["ide.1", "check the queue"]));
-    expect(tabNamed("check the queue")).toHaveAttribute("title", "↳ from ide.1 · ide");
+    expect(tipOf(tabNamed("check the queue"))).toEqual("↳ from ide.1 · ide");
     expect(selected()).toEqual(["ide.1"]);
   });
 
@@ -200,7 +201,7 @@ describe("a chat a handoff opened, named for its task (charter-app#258)", () => 
     render(<App />);
 
     await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
-    expect(tabNamed("ide.1")).not.toHaveAttribute("title");
+    expect(tipOf(tabNamed("ide.1"))).toBeNull();
     expect(document.querySelector(".pane-from")).toBeNull();
   });
 });

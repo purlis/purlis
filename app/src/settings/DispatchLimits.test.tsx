@@ -12,6 +12,7 @@ import { SETTINGS_ACTION, type SettingsActionAsk } from "./links";
 import { ReadOnlySaid } from "../ReadOnlyLine";
 import { drawnWith } from "../cascade.testkit";
 import { offeredIn, pickIn } from "../primitives/select.testkit";
+import { hoverTipOf, tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
  * **Settings › Project › Dispatch** (#1439, #1440): the limits table (the project's row, a row
@@ -196,7 +197,7 @@ describe("Settings › Project › Dispatch", () => {
     // The set's Field, as a table's cell (#626): its own name, its help as its tooltip, and a
     // count's keyboard.
     expect(depth.closest(".ui-setting-box")).toHaveAttribute("data-scope", "field");
-    expect(depth).toHaveAttribute("title", "What depth limits.");
+    expect(tipOf(depth)).toEqual("What depth limits.");
     expect(depth).toHaveAttribute("inputmode", "numeric");
     // A persona's limits are not the project's to set.
     expect(screen.queryByLabelText("May dispatch for the project")).not.toBeInTheDocument();
@@ -989,14 +990,17 @@ describe("on a read-only project (#1795)", () => {
 
     const project = await screen.findByLabelText("Depth for the project");
     expect(project).toBeDisabled();
-    expect(project).toHaveAttribute("title", SENTENCE);
+    expect(await hoverTipOf(project)).toEqual(SENTENCE);
     expect(screen.getByLabelText("Depth for the workspace alpha")).toBeDisabled();
     const remove = screen.getByRole("button", {
       name: "Remove the override for the workspace alpha",
     });
-    expect(remove).toBeDisabled();
-    expect(remove).toHaveAttribute("title", SENTENCE);
-    expect(screen.getByRole("button", { name: "Add an override" })).toBeDisabled();
+    expect(remove).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(remove)).toEqual(SENTENCE);
+    expect(screen.getByRole("button", { name: "Add an override" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
 
     const mine = screen.getByLabelText("Depth for me on this machine");
     expect(mine).toBeEnabled();
@@ -1056,19 +1060,17 @@ describe("the limits table's look (DS-9, #1841)", () => {
       within(table).getByRole("columnheader", { name: "Messages per minute" }),
     ).getByText("Messages");
 
-    messages.focus();
-    expect(messages).toHaveFocus();
-    const tip = await screen.findByRole("tooltip");
-    expect(tip).toHaveTextContent("Messages per minute");
-    expect(tip).toHaveTextContent("What messages per minute limits.");
-    await user.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+    const tip = tipOf(messages);
+    expect(tip).toContain("Messages per minute");
+    expect(tip).toContain("What messages per minute limits.");
 
+    // The pointer comes onto the heading from the table.
+    await user.hover(table);
     await user.hover(within(table).getByText("Depth", { selector: "th *" }));
     expect(await screen.findByRole("tooltip")).toHaveTextContent("What depth limits.");
     // The tooltip is the window's one, not the engine's `title` as well.
     for (const heading of within(table).getAllByRole("columnheader"))
-      expect(heading).not.toHaveAttribute("title");
+      expect(tipOf(heading)).toBeNull();
   });
 
   it("draws every box and button in it one control tall, in the shared field and button", async () => {

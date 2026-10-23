@@ -21,13 +21,13 @@
    redraw an overlay, and the surface below is the menu's too. */
 
 /* ---------------------------------------------------------------------------------------------
-   The surface: `.ui-dialog` on a Radix Dialog's or AlertDialog's content, `.ui-popover` on a
-   Popover's, `.ui-tooltip` on a Tooltip's, and `.ui-menu` (`controls.css`) on a menu's.
+   The surface: `.ui-dialog` on a Radix Dialog's or AlertDialog's content, and `.ui-menu`
+   (`controls.css`) on a select's list. A tooltip is its family's own surface
+   (`ui/tooltip/tooltip.css`, #2908), and a popover and a menu are the popover and menu families
+   (`ui/popover/popover.css`, #2909), drawn alike.
    --------------------------------------------------------------------------------------------- */
 
 .ui-dialog,
-.ui-popover,
-.ui-tooltip,
 .ui-menu {
   box-sizing: border-box;
   border: 1px solid var(--border-subtle);
@@ -37,10 +37,9 @@
   box-shadow: var(--elevation-overlay);
 }
 
-/* A dialog and a popover hold words and controls, and are padded alike. A menu is a list whose
-   rows pad themselves, and a tooltip one line: each is inset by its own. */
-.ui-dialog,
-.ui-popover {
+/* A dialog holds words and controls, and is padded as a popover is (`ui/popover/popover.css`). A
+   list is a list whose rows pad themselves: it is inset by its own. */
+.ui-dialog {
   padding: var(--space-6);
 }
 
@@ -48,19 +47,7 @@
   padding-block-end: var(--ui-dialog-padding-end, var(--space-6));
 }
 
-.ui-popover {
-  font-size: var(--font-size-md);
-}
-
-/* A tooltip says one short thing, under the pointer or the keyboard, and takes nothing. */
-.ui-tooltip {
-  padding-block: var(--space-1);
-  padding-inline: var(--space-3);
-  font-size: var(--font-size-sm);
-  pointer-events: none;
-}
-
-/* The point a popover or a tooltip takes from what opened it, in the surface's own ground. */
+/* The point an overlay takes from what opened it, in the surface's own ground. */
 .ui-overlay-arrow {
   fill: var(--surface-overlay);
 }

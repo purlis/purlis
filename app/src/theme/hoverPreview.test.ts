@@ -3,7 +3,8 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ask, putBack, putBackSoon, showing, showWhileOn } from "./hoverPreview";
-import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme";
+import { DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme";
+import { PURLIS_LIGHT } from "./handed.testkit";
 
 /**
  * **A card's theme drawn while it is pointed at, and the person's put back** (#2331): what goes
@@ -11,7 +12,7 @@ import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from ".
  * theme between them, and every follower (a terminal) ends on the theme the window shows.
  */
 
-const LIGHT = BUILT_IN["purlis-light"];
+const LIGHT = PURLIS_LIGHT;
 /** Another theme, as the window would draw one of its own while a card is shown. */
 const OTHER: Theme = { ...DEFAULT_THEME, name: "another" };
 
