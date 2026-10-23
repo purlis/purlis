@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { untilTheStripLists } from "../reading.js";
 import { bringSideBack, putSideAway } from "../sides.js";
+import { tooltipOf } from "../tooltips.js";
 
 /**
  * **charter's status line**, against the real app (`app/src/StatusLine.tsx`).
@@ -191,20 +192,9 @@ describe("the status line", () => {
     expect(directory.replace(/[/\\]+$/, "").endsWith(name)).toBe(true);
 
     // By the keyboard's way in, which opens the same tooltip the pointer does: focused by the
-    // page, since a hover's timing is the driver's. `StatusLine.test.tsx` holds the hover.
-    const focusIt = (on: boolean) =>
-      browser.execute((focus: boolean) => {
-        const item = document.querySelector<HTMLElement>('[data-testid="status-project"]');
-        if (focus) item?.focus();
-        else item?.blur();
-      }, on);
-    await focusIt(true);
-    const tip = await $(".ui-tooltip");
-    await tip.waitForDisplayed({ timeout: 20_000 });
-    expect(await tip.getText()).toContain(directory);
-    // Off it again, so no tooltip stands over the specs after this one.
-    await focusIt(false);
-    await tip.waitForExist({ timeout: 20_000, reverse: true });
+    // page, since a hover's timing is the driver's. `Tooltip.test.tsx` holds the hover. It is
+    // let go again, so no tooltip stands over the specs after this one.
+    expect(await tooltipOf('[data-testid="status-project"]')).toContain(directory);
 
     const onTheBar = await $('header.bar [data-testid="status-project"]');
     expect(await onTheBar.isExisting()).toBe(false);

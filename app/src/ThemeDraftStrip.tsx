@@ -136,13 +136,13 @@ export function ThemeDraftStrip({
         {/* #190: WebKit leaves a button out of the tab sequence without `tabIndex`. */}
         <Button onPress={() => (draft.replaces ? setReplacing(true) : keep())}>Keep</Button>
         <Button
-          title={`Revert every theme draft here at once: ${revertKeySaid()}`}
+          tooltip={`Revert every theme draft here at once: ${revertKeySaid()}`}
           onPress={revert}
         >
           Revert
         </Button>
         <Button
-          title="Hold to see the theme as it was last kept"
+          tooltip="Hold to see the theme as it was last kept"
           onPointerDown={() => compare(true)}
           onPointerUp={() => compare(false)}
           onPointerLeave={() => compare(false)}

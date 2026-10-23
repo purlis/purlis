@@ -23,6 +23,7 @@ import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
 import { GRACE_MS, REST_MS } from "./tabTasks";
 import { stripNamed } from "./test-strips";
+import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A session's tab wears a chip of its tasks, which opens the menu to switch between them**
@@ -748,7 +749,9 @@ describe("what the menu says of the work (#1493, #1494, #1495)", () => {
     const brief = line("talk").querySelector<HTMLElement>('[data-says="Brief of talk"]');
     expect(brief).not.toBeNull();
     // The pointer's button names the keyboard's way to the same panel.
-    expect(brief?.title).toBe("Brief of talk (also in its row's menu in the Chats list)");
+    expect(await hoverTipOf(brief)).toBe(
+      "Brief of talk (also in its row's menu in the Chats list)",
+    );
     press(brief as HTMLElement);
 
     expect(await screen.findByRole("dialog", { name: /Brief of talk/ })).toBeTruthy();
@@ -767,7 +770,9 @@ describe("what the menu says of the work (#1493, #1494, #1495)", () => {
     const answer = line("talk").querySelector<HTMLElement>(`[data-says="Answer talk's question"]`);
     expect(answer).not.toBeNull();
     // The pointer's button names the keyboard's way to the same dialog.
-    expect(answer?.title).toBe("Answer talk's question (also in its row's menu in the Chats list)");
+    expect(await hoverTipOf(answer)).toBe(
+      "Answer talk's question (also in its row's menu in the Chats list)",
+    );
     press(answer as HTMLElement);
 
     const dialog = await screen.findByRole("dialog", { name: "Answer talk's question" });
@@ -1341,9 +1346,11 @@ describe("tasks that have finished", () => {
 
     expect(menu()).not.toBeNull();
     expect(document.activeElement).toBe(line("probe"));
-    expect(screen.getByRole("region", { name: "Report of probe" }).textContent).toBe(
+    // Under its words, and the line's description while it is open.
+    expect(line("probe").querySelector(".tasks-menu-report")?.textContent).toBe(
       "The deploy is red: the image is missing.",
     );
+    expect(line("probe")).toHaveAccessibleDescription(/The deploy is red: the image is missing\./);
     // Nothing was gone to: a finished task has no chat.
     expect(onScreen()).toEqual([1]);
   });

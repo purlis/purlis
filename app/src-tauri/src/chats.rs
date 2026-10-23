@@ -2351,6 +2351,11 @@ impl Chats {
         *lock(&self.asks_moved) = Some(moved);
     }
 
+    /// The pool chat `session` runs on, where it runs on a pool's runner (#2046).
+    pub fn pool_of(&self, session: u32) -> Option<String> {
+        self.sessions.pool_of(session)
+    }
+
     /// This project's asks may have moved for a reason no event of its own says (qw356: a
     /// chat asked the person to remove a workspace, or that question was answered): the window
     /// is told its asks, so it reads the registry again.
@@ -2725,8 +2730,8 @@ impl Chats {
     /// its harness does not take in by itself ([`Harness::skills_reload`]). Its tab offers a
     /// restart on the same conversation. Read from disk each time it is asked.
     pub fn skills_changed(&self) -> Vec<u32> {
-        // The flag once, for every chat: while it is off, no chat gets the plane's skills.
-        if !purlis_core::skills::studio_on_here() {
+        // Asked once, for every chat: where the project's skills reach no chat, none changed.
+        if !purlis_core::skills::reach_chats_here(&self.project) {
             return Vec::new();
         }
         self.skills_changed_while_on()
@@ -3227,7 +3232,7 @@ impl Chats {
             None
         } else {
             purlis_core::hoststart::skills_not_here(
-                purlis_core::skills::studio_on_here(),
+                purlis_core::skills::reach_chats_here(&self.project),
                 &self.project,
                 &self.kit(harness),
                 harness,

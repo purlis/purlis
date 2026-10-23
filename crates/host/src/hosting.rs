@@ -563,6 +563,9 @@ struct State {
     /// How many browsers are starting now (#2611): each holds a place in the device's budget
     /// from its count to its start, so two starts never both take the last one.
     browsers_starting: usize,
+    /// The engine downloads of the browsers starting now, by program (#2207): what
+    /// `cancel_engine_download` cancels.
+    downloads: HashMap<String, crate::browsers::Download>,
 }
 
 /// One subscriber, and whether its link may hear what a chat's sandbox does
@@ -573,6 +576,9 @@ struct Subscriber {
     told: mpsc::Sender<Pushed>,
     confines: bool,
     saves: bool,
+    /// Whether its link knows a browser engine's download (1.37, #2207) and may start a
+    /// browser ([`Power::Browser`]): only such a link is pushed one.
+    downloads: bool,
 }
 
 /// A chat's confinement the host holds (#1999), whose it is, and who may act on it (#2444).
@@ -1163,14 +1169,22 @@ impl Hosting {
             ),
             _ => None,
         };
+        let a_download = matches!(pushed, Pushed::EngineDownload { .. });
         state.subscribers.retain(|subscriber| {
             if hearers
                 .as_ref()
                 .is_some_and(|hearers| !hearers.contains(&subscriber.link))
+                || (a_download && !subscriber.downloads)
             {
                 return !subscriber.told.is_closed();
             }
-            subscriber.told.try_send(pushed.clone()).is_ok()
+            match subscriber.told.try_send(pushed.clone()) {
+                Ok(()) => true,
+                // A download's progress a reader has no room for is passed over: the next one
+                // says more, so it never costs the link its events.
+                Err(mpsc::error::TrySendError::Full(_)) if a_download => true,
+                Err(_) => false,
+            }
         });
     }
 
@@ -1821,11 +1835,12 @@ impl Hosting {
         self.let_through(&start, peer)?;
         // Read before the lock: it may read this machine's store.
         let budget = self.inner.browsers.budget();
-        let (program, at, place) = {
+        let (program, at, place, download) = {
             let mut state = self.state();
             let at = held_at(&state, &start.project, link_of(peer))?;
             let program = match &start.program {
-                Some(id) if state.programs.contains_key(id) => {
+                // A start still downloading its engine holds its id too (#2207).
+                Some(id) if state.programs.contains_key(id) || state.downloads.contains_key(id) => {
                     return Err(Refusal {
                         code: session::MALFORMED.into(),
                         why: format!("this host already holds a program {id}"),
@@ -1841,7 +1856,21 @@ impl Hosting {
                 None => ulid::Ulid::generate().to_string(),
             };
             let place = PlaceInTheBudget::taken(self, &mut state, budget)?;
-            (program, at, place)
+            // Its engine's download, told to the windows as it goes and cancelled by one
+            // (#2207): its id taken under the same hold as the check above.
+            let download = {
+                let telling = self.clone();
+                let of = program.clone();
+                crate::browsers::Download::telling(Arc::new(move |done, total| {
+                    telling.tell(&Pushed::EngineDownload {
+                        program: of.clone(),
+                        done,
+                        total,
+                    });
+                }))
+            };
+            state.downloads.insert(program.clone(), download.clone());
+            (program, at, place, download)
         };
         // Starting an engine forks and waits for it to answer: off the runtime.
         let hosting = self.clone();
@@ -1855,11 +1884,13 @@ impl Hosting {
                 .data_folders()
                 .map_err(crate::browsers::NotStarted::Failed)?
                 .join(&named);
-            match hosting
-                .inner
-                .browsers
-                .start(&data, reach.as_ref(), kept.as_ref())
-            {
+            let started =
+                hosting
+                    .inner
+                    .browsers
+                    .start(&data, reach.as_ref(), kept.as_ref(), &download);
+            hosting.state().downloads.remove(&named);
+            match started {
                 Ok(screen) => Ok((screen, data)),
                 Err(why) => {
                     let _ = std::fs::remove_dir_all(&data);
@@ -3032,6 +3063,12 @@ impl session::Host for Hosting {
                 self.driving(&program, |running| running.take_over().map(driving))
                     .await
             }
+            Command::CancelEngineDownload { program } => {
+                if let Some(download) = self.state().downloads.get(&program) {
+                    download.cancel();
+                }
+                Ok(Answer::Done)
+            }
             Command::HandBack { program } => {
                 self.driving(&program, |running| running.hand_back().map(driving))
                     .await
@@ -3129,6 +3166,8 @@ impl session::Host for Hosting {
                 told,
                 confines: peer.scope().may(Power::Confine),
                 saves: peer.scope().may(Power::Save),
+                downloads: peer.version() >= session::KNOWS_ENGINE_DOWNLOADS
+                    && peer.scope().may(Power::Browser),
             });
             if peer.scope() == Scope::LocalUi {
                 note_a_window(&mut state, link_of(peer));

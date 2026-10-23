@@ -18,8 +18,8 @@ pub use purlis_skills::{
     Argument, At, BUILT_IN_PREFIXES, Budget, Chat, Clash, DIR_IN_BUNDLE, Declared, Effective,
     FromHarness, Given, Grant, HarnessSkills, LOCAL_DIR, LeftOut, Machine, Missing, Narrowing,
     OnMachine, Origin, Outcome, OutsideSkill, Over, Owner, POINTER, PROJECT_DIR, Reason, Reference,
-    Reload, Route, Skill, SkillSet, Spent, Stamp, Switch, beside, declared, grant_of, in_bundle,
-    level_dir, level_shown, listing, named, persona_dir, read, set_grant, share,
+    Reload, Route, Skill, SkillSet, Spent, Stamp, Switch, beside, declared, grant_file, grant_of,
+    in_bundle, level_dir, level_shown, listing, named, persona_dir, read, scan, set_grant, share,
 };
 
 /// Skill runs: the span from the moment a skill starts to the end of the turn (SK-3).
@@ -466,7 +466,7 @@ fn still_held(notes: &std::os::fd::OwnedFd) -> Notes {
 }
 
 #[cfg(unix)]
-mod at;
+pub(crate) mod at;
 
 #[cfg(unix)]
 fn started_at(pid: u32) -> Option<std::time::SystemTime> {
@@ -825,14 +825,14 @@ impl ChatSkills {
 /// its root or in `workspace`, running as `persona`, on `harness`. The window takes one as a chat
 /// starts and again when the project's skills change; where they differ, the chat's harness does
 /// not take the change in by itself ([`Harness::skills_reload`]) and its tab offers a restart.
-/// An empty stamp while the `skill-studio` flag is off, which keeps the plane's skills out.
+/// An empty stamp where the project's skills do not reach its chats ([`reach_chats_here`]).
 pub fn stamp_now(
     plane: &Path,
     workspace: Option<&str>,
     persona: Option<&str>,
     harness: Harness,
 ) -> Stamp {
-    if !studio_on_here() {
+    if !reach_chats_here(plane) {
         return Stamp::default();
     }
     stamp_of(plane, workspace, persona, harness)
@@ -1085,6 +1085,27 @@ fn no_project_skill(name: &str) -> String {
 pub fn share_here(plane: &Path, workspace: Option<&str>, name: &str) -> Result<PathBuf, String> {
     crate::settings::writable(plane)?;
     share(plane, workspace, name)
+}
+
+/// The `requires` feature of a project whose skills the `project-skills` fix moved from
+/// `.claude/skills` into `skills/` (#2784): a build that has it hands every chat the project's
+/// skills by their route, and copies no `.claude/skills` into a clone
+/// ([`crate::doctor::fix::project_skills`]).
+pub const PROJECT_SKILLS_FEATURE: &str = "project-skills";
+
+/// **Whether the project's skills reach the chats of the project at `plane`** (ADR 0099 as
+/// amended 2026-10-22, the dispatcher's ruling on #2784): where `studio`, the Skill studio's
+/// flag, is on, and on every machine once the project requires [`PROJECT_SKILLS_FEATURE`]. The
+/// flag shows the studio; the manifest says where the project's skills live. A project whose
+/// skills moved out of `.claude/skills` gets no copy of it in a clone, so a teammate with the
+/// flag off would otherwise start every chat without them.
+pub fn reach_chats(plane: &Path, studio: bool) -> bool {
+    studio || crate::compat::requires(plane, PROJECT_SKILLS_FEATURE)
+}
+
+/// [`reach_chats`], with this machine's flag ([`studio_on_here`]).
+pub fn reach_chats_here(plane: &Path) -> bool {
+    reach_chats(plane, studio_on_here())
 }
 
 /// The flag the Skill studio's slices land behind until its finish line (#2762, SK-23), and is

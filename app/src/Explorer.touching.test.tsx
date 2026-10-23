@@ -158,9 +158,10 @@ describe("the file a chat is touching", () => {
     expect(markOn("file:svc/one:src")).toBe(said);
     expect(markOnTheBranch()).toBe(said);
     expect(markOn("file:svc/one:README.md")).toBeUndefined();
-    expect(
-      rowOf("file:svc/one:src/lib.rs").querySelector(".touch-mark")?.getAttribute("title"),
-    ).toBe(said);
+    // Its tooltip draws the name it is heard by.
+    expect(rowOf("file:svc/one:src/lib.rs").querySelector(".touch-mark")).toHaveAccessibleName(
+      said,
+    );
 
     // Still there just before the fade, gone after it.
     await act(async () => {

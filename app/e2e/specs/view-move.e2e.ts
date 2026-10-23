@@ -27,12 +27,12 @@ const MENU = '[role="menu"]';
 
 /**
  * **Opens the menu of the view icon `name` in the bar `bar` with the keydown a person's
- * Shift+F10 makes** (#1973), and waits on the icon's own menu state: Radix marks the trigger
- * `data-state="open"` once its menu is up.
+ * Shift+F10 makes** (#1973), and waits on the icon's own menu state: the menu family marks the
+ * element a context menu is open on `data-open` while it is up.
  *
  * **The key is dispatched from the page, to the icon, in the same step that gives the icon the
  * keyboard.** The menu opens only for a Shift+F10 whose target is the icon itself
- * (`Menus.tsx`, `openFromTheKeyboard`). The driver's Shift+F10 cannot be that key: measured on
+ * (`ui/menu/ContextMenu.tsx`). The driver's Shift+F10 cannot be that key: measured on
  * both engines' scenario runs, the WebDriver plugin's F10 reaches the icon with `shiftKey`
  * false, so it opens nothing. And a key sent to whatever has the keyboard a moment later misses
  * whenever the window has moved the keyboard in between — a moved view takes it in a frame of
@@ -48,7 +48,7 @@ async function openMenuOf(bar: string, name: string): Promise<void> {
       browser.execute((css: string) => {
         const tab = document.querySelector<HTMLElement>(css);
         if (tab === null) return false;
-        if (tab.getAttribute("data-state") === "open") return true;
+        if (tab.hasAttribute("data-open")) return true;
         tab.focus();
         if (document.activeElement !== tab) return false;
         tab.dispatchEvent(

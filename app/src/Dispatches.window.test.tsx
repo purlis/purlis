@@ -26,6 +26,7 @@ import type {
 import { forgetShown, windowShown } from "./test-shown";
 import { stripNamed, showThePanel } from "./test-strips";
 import { offeredIn, pickIn } from "./primitives/select.testkit";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The Dispatches tab** (#1452) against the whole window: it is offered from the Sessions
@@ -430,7 +431,7 @@ describe("the Dispatches tab", () => {
     const gone = within(table).getByText("rotate the key");
 
     expect(gone.closest("button")).toBeNull();
-    expect(gone).toHaveAttribute("title", "Its chat is closed and wrote no session record");
+    expect(tipOf(gone)).toEqual("Its chat is closed and wrote no session record");
   });
 
   it("shows a dispatch's brief and report under its row on a press", async () => {
@@ -804,8 +805,7 @@ describe("past tasks (#1510)", () => {
 
     expect(screen.getByText("The queue drains in 4s.")).toBeInTheDocument();
     // Its chat is closed: the row opens the session record it wrote.
-    expect(within(table).getByRole("button", { name: "audit the queue" })).toHaveAttribute(
-      "title",
+    expect(tipOf(within(table).getByRole("button", { name: "audit the queue" }))).toEqual(
       "Open its session record",
     );
   });

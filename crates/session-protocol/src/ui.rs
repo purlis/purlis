@@ -625,6 +625,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Putting a chat's missing-skills Notice away (#2768), on the chat's pane in the person's
     // window, as an MCP failure's is.
     "put_away_chat_skills_missing",
+    // The browser engine's first download, and cancelling it (#2207): the person's, in their
+    // window, of a start their window made.
+    "engine_downloads",
+    "cancel_engine_download",
     // This machine's Docker pools (#2679): adding one runs a container on the person's machine
     // and pairs it with this desktop's key, and removing one removes it, so only their own press
     // in their window does either.
@@ -639,6 +643,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // workspace's code, so only the person's own choice in their window sets it.
     "chats_run_on",
     "set_chats_run_on",
+    // A runner chat's held change to the project (#2046): only the person's press applies it,
+    // and the change whole, for its own tab, is the person's to read.
+    "apply_runner_write",
+    "dismiss_runner_write",
+    "runner_write",
     // Taking a browser over, driving it and handing it back (#2014): what the person types into
     // a page is theirs, and only the window, where they see it, sends it.
     "take_over_browser",

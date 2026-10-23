@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { ApprovePlane } from "./ApprovePlane";
+import { getAllByTip } from "./ui/tooltip/tooltip.testkit";
 
 afterEach(cleanup);
 
@@ -43,7 +44,7 @@ describe("a project's font files in the trust ask", () => {
     expect(said).toContain("Brand.woff2 512 bytes");
     expect(said).not.toContain(DIGEST);
     // The whole digest is there on hover.
-    expect(screen.getAllByTitle(DIGEST)).toHaveLength(2);
+    expect(getAllByTip(DIGEST)).toHaveLength(2);
     expect(said).not.toContain("Nothing purlis can enumerate");
   });
 

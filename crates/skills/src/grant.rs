@@ -128,16 +128,7 @@ pub fn set_grant(folder: &Path, grant: &Grant) -> Result<(), String> {
             first_line(&why.to_string())
         )
     })?;
-    match grant {
-        Grant::Root => {
-            doc.remove(KEY);
-        }
-        Grant::All => doc[KEY] = toml_edit::value("all"),
-        Grant::Only(names) => {
-            let list: toml_edit::Array = names.iter().map(String::as_str).collect();
-            doc[KEY] = toml_edit::value(list);
-        }
-    }
+    put(&mut doc, grant);
     let written = doc.to_string();
     if written.trim().is_empty() {
         return match std::fs::remove_file(&file) {
@@ -154,6 +145,28 @@ pub fn set_grant(folder: &Path, grant: &Grant) -> Result<(), String> {
     temp.persist(&file)
         .map(|_| ())
         .map_err(|why| format!("{name} could not be written ({why}), so nothing changed"))
+}
+
+/// `grant` written into `doc` as its `grant` key: `root`, the default, as no key at all.
+fn put(doc: &mut toml_edit::DocumentMut, grant: &Grant) {
+    match grant {
+        Grant::Root => {
+            doc.remove(KEY);
+        }
+        Grant::All => doc[KEY] = toml_edit::value("all"),
+        Grant::Only(names) => {
+            let list: toml_edit::Array = names.iter().map(String::as_str).collect();
+            doc[KEY] = toml_edit::value(list);
+        }
+    }
+}
+
+/// **The text of a new `<folder>.toml` that holds `grant` and nothing else**, as [`set_grant`]
+/// writes it: for a caller that makes the file itself, new, through its own folder's handle.
+pub fn grant_file(grant: &Grant) -> String {
+    let mut doc = toml_edit::DocumentMut::new();
+    put(&mut doc, grant);
+    doc.to_string()
 }
 
 fn first_line(text: &str) -> &str {

@@ -12,6 +12,7 @@ import { stateClock } from "./stateClock";
 import { REST_MS, type Ended, type Needing } from "./tabTasks";
 import type { TasksUsed } from "./bindings";
 import type { UsedAsk, UsedReader } from "./tasksUsed";
+import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **A tab's chip, drawn alone** (#1487): what it does that the window has no way to bring
@@ -110,6 +111,9 @@ function chip(
 
 const counts = () => screen.getByRole("button", { name: /^Tasks of steward 1/ });
 const menu = () => screen.queryByRole("menu");
+/** The surface the open menu stands on, which holds its footer under its list. */
+const surface = () =>
+  (menu() as HTMLElement).closest('[data-scope="popover"][data-part="root"]') as HTMLElement;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -130,7 +134,7 @@ describe("a tab's chip", () => {
     expect(counts().getAttribute("aria-label")).toBe("Tasks of steward 1: 1 working");
     expect(counts().id).toBe("the-counts");
     // No tooltip of its own: it would come up over the menu the same rest opened.
-    expect(counts().getAttribute("title")).toBeNull();
+    expect(tipOf(counts())).toBeNull();
     // The drawn count is decoration to a screen reader: the name has said it.
     expect(counts().querySelector("[data-count]")?.getAttribute("aria-hidden")).toBe("true");
   });
@@ -257,14 +261,14 @@ describe("a tab's chip", () => {
     expect(menu()).not.toBeNull();
     expect(document.activeElement).toBe(line);
     expect(line.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("region", { name: "Report of probe" }).textContent).toBe(
-      "The deploy is red.",
-    );
+    // Under its words, and the line's description while it is open.
+    expect(line.querySelector(".tasks-menu-report")?.textContent).toBe("The deploy is red.");
+    expect(line).toHaveAccessibleDescription(/The deploy is red\./);
     expect(onShow).not.toHaveBeenCalled();
 
     // And again closes it.
     fireEvent.keyDown(line, { key: "Enter" });
-    expect(screen.queryByRole("region", { name: "Report of probe" })).toBeNull();
+    expect(line.querySelector(".tasks-menu-report")).toBeNull();
     expect(menu()).not.toBeNull();
   });
 
@@ -343,25 +347,30 @@ describe("a tab's chip", () => {
     chip();
     fireEvent.click(counts());
 
-    expect((menu() as HTMLElement).querySelector(".tasks-menu-foot")).toBeNull();
+    expect(surface().querySelector(".tasks-menu-foot")).toBeNull();
   });
 
   it("draws the limits it is handed and what the tasks used at the foot of its menu, under the rows", async () => {
     chip({ limits: "4 of 6 running", used: reader(USED) });
     fireEvent.click(counts());
 
-    const foot = (menu() as HTMLElement).querySelector(".tasks-menu-foot") as HTMLElement;
+    const foot = surface().querySelector(".tasks-menu-foot") as HTMLElement;
     expect(foot.querySelector(".tasks-menu-limits")?.textContent).toBe("4 of 6 running");
     await waitFor(() =>
       expect(foot.querySelector(".tasks-menu-totals")?.textContent).toBe(
         "2 tasks · at least 70k tokens · 6m",
       ),
     );
-    expect(foot.querySelector(".tasks-menu-totals")?.getAttribute("title")).toBe(
-      USED.total?.explained,
-    );
-    // After every row, and not a row: nothing in it is picked.
-    expect((menu() as HTMLElement).lastElementChild).toBe(foot);
+    expect(
+      foot.querySelector(".tasks-menu-totals")
+        ? tipOf(foot.querySelector(".tasks-menu-totals"))
+        : undefined,
+    ).toBe(USED.total?.explained);
+    // After every row, and not a row: under the list, where nothing in it is picked.
+    expect((menu() as HTMLElement).contains(foot)).toBe(false);
+    expect(
+      (menu() as HTMLElement).compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(within(foot).queryByRole("menuitem")).toBeNull();
   });
 });
@@ -404,10 +413,10 @@ describe("what a session's tasks used (#1500)", () => {
     fireEvent.click(counts());
 
     const talk = await screen.findByRole("menuitem", { name: /^talk/ });
-    await waitFor(() => expect(talk.getAttribute("title")).toBe("Tokens: 60k in, 10k out"));
+    await eventually(() => expect(tipOf(talk)).toBe("talk\nTokens: 60k in, 10k out"));
     const report = screen.getByRole("menuitem", { name: /^report/ });
-    expect(report.getAttribute("title")).toBe("Tokens: — (nothing reported)");
-    expect(report.getAttribute("title")).not.toContain("0");
+    expect(tipOf(report)).toBe("report\nTokens: — (nothing reported)");
+    expect(tipOf(report)).not.toContain("0");
   });
 
   it("says nothing of tokens where the window hands it no reader", () => {
@@ -415,6 +424,8 @@ describe("what a session's tasks used (#1500)", () => {
     fireEvent.click(counts());
 
     expect((menu() as HTMLElement).querySelector(".tasks-menu-totals")).toBeNull();
-    expect(screen.getByRole("menuitem", { name: /^talk/ }).getAttribute("title")).toBeNull();
+    // No tokens line: its tooltip only repeats its name, for a pointer where the name is cut
+    // short, and the keyboard's focus opens none.
+    expect(tipOf(screen.getByRole("menuitem", { name: /^talk/ }))).toBeNull();
   });
 });

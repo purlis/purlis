@@ -45,6 +45,7 @@ import type { ForgeAsk } from "./ForgeQuestion";
 type RepoTried = { refused?: string; asksForge?: string };
 import { UnsavedMark } from "./SavingView";
 import { SessionBusNotice } from "./SessionBusNotice";
+import { EngineDownloadNotice } from "./EngineDownloadNotice";
 import { EngineSandboxNotice } from "./EngineSandboxNotice";
 import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
@@ -90,7 +91,7 @@ import { enterSettings } from "./settings/entering";
 import { machineChanged, whenRecentSettled } from "./settings/thisMachine";
 import { useExtensionsOn } from "./extensionsOn";
 import { useProjectTheme } from "./projectTheme";
-import { drawTint } from "./theme/theme";
+import { drawTint, facesAfterTheFirstFrame } from "./theme/theme";
 import { useContributedPanels } from "./Panels";
 import { useTabStop } from "./roving";
 import { closeOnDelete } from "./tabKeys";
@@ -124,6 +125,7 @@ import { noTabs, SETTINGS_TAB_TITLE } from "./tabs";
 import { useTextSizes } from "./textSize";
 import { MAIN, runElsewhere, thisWindow, useOtherWindows, useRunHere } from "./windows";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * Puts the app's own `charter` on a terminal's `PATH`, and answers what the core said — the
@@ -1328,13 +1330,15 @@ function App() {
     let gone = false;
     const frame = requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        if (!gone)
-          void commands
-            .firstFrame()
-            .then((why) => {
-              if (!gone && why) setSlowStart(why);
-            })
-            .catch(() => undefined);
+        if (gone) return;
+        void commands
+          .firstFrame()
+          .then((why) => {
+            if (!gone && why) setSlowStart(why);
+          })
+          .catch(() => undefined);
+        // The first frame is on screen: the theme's faces are asked for now (#3034).
+        facesAfterTheFirstFrame();
       }),
     );
     return () => {
@@ -2096,7 +2100,7 @@ function App() {
                               {/* Right-click is the third reader of the same catalogue
                                   (`Menus.tsx`). `asChild`, and on the tab and not the cell: the
                                   context-menu key opens a menu only on the trigger that has the
-                                  keyboard (`openFromTheKeyboard`), and that is the tab. */}
+                                  keyboard (`ContextMenu`'s keys, `ui/menu/ContextMenu.tsx`), and that is the tab. */}
                               <Menued
                                 on={{ on: "project", plane: project.plane }}
                                 offers={stripFound}
@@ -2107,29 +2111,31 @@ function App() {
                                   tabStopId={project.plane}
                                   active={project.plane === inFront}
                                 >
-                                  <button
-                                    role="tab"
-                                    id={projectTabId(place)}
-                                    aria-selected={project.plane === inFront}
-                                    aria-describedby={sortable.attributes["aria-describedby"]}
-                                    {...sortable.listeners}
-                                    onKeyDown={(event) => {
-                                      // A tab that is up is being carried: its keys are the drag's.
-                                      keepsTheFocus(event, sortable.isDragging);
-                                      sortable.listeners?.onKeyDown?.(event);
-                                      if (!sortable.isDragging)
-                                        closeOnDelete(event, strip.close[at], press);
-                                    }}
-                                    // The path, because two projects can share a directory name and
-                                    // the name is all the tab has room for.
-                                    title={project.plane}
-                                    onClick={() => {
-                                      const offer = strip.switchTo[at];
-                                      if (offer.available) press(offer);
-                                    }}
-                                  >
-                                    {projectMarks(project)}
-                                  </button>
+                                  <Tooltip tip={project.plane}>
+                                    <button
+                                      role="tab"
+                                      id={projectTabId(place)}
+                                      // Its directory, which its tooltip shows: how a scenario
+                                      // learns which project a tab is (as the status line's).
+                                      data-directory={project.plane}
+                                      aria-selected={project.plane === inFront}
+                                      aria-describedby={sortable.attributes["aria-describedby"]}
+                                      {...sortable.listeners}
+                                      onKeyDown={(event) => {
+                                        // A tab that is up is being carried: its keys are the drag's.
+                                        keepsTheFocus(event, sortable.isDragging);
+                                        sortable.listeners?.onKeyDown?.(event);
+                                        if (!sortable.isDragging)
+                                          closeOnDelete(event, strip.close[at], press);
+                                      }}
+                                      onClick={() => {
+                                        const offer = strip.switchTo[at];
+                                        if (offer.available) press(offer);
+                                      }}
+                                    >
+                                      {projectMarks(project)}
+                                    </button>
+                                  </Tooltip>
                                 </RovingFocusGroup.Item>
                               </Menued>
                               {/* Its settings (SE-23, V89i): on the project in front only,
@@ -2279,6 +2285,7 @@ function App() {
         {/* A launch without the session bus, and what that run has not got (charter#746). */}
         <SessionBusNotice chats={ending} />
         {/* Browsers that cannot start for the engine's sandbox, and the ways out (#2835). */}
+        <EngineDownloadNotice />
         <EngineSandboxNotice />
 
         {/* The session host stopped unexpectedly three times in five minutes, and the window's
@@ -2537,7 +2544,7 @@ function App() {
 /**
  * What a project is called on its tab: the directory's own name.
  *
- * Two projects can share one, so the tab carries the whole path as its title and the strip is
+ * Two projects can share one, so the tab carries the whole path as its tooltip and the strip is
  * never the only way to tell them apart. Both separators, because a `PlaneId` is a root as the
  * operating system spells it and Windows spells it with backslashes.
  */

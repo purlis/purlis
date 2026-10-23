@@ -83,7 +83,7 @@ export function PersonaSkillAdd({
         value={written}
         placeholder="Its name, as the Skill studio lists it"
         isDisabled={busy || readOnly !== undefined}
-        title={readOnly}
+        tooltip={readOnly}
         onChange={setWritten}
         data-testid="persona-skill-name"
       />

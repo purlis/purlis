@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { chatMaySettle, SaveIndicator, SavingView } from "./SavingView";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import type { PlaneSaving, RepoSaving, SaveEntry } from "./bindings";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 afterEach(() => {
   cleanup();
@@ -586,9 +587,10 @@ describe("SavingView, with the workspace's repos (charter-app#299)", () => {
     ).toBeTruthy();
     expect(rows[1].textContent).toContain("waiting on its pull request");
     expect(rows[2].textContent).toContain("Off — purlis does not save this repo");
-    expect(
-      (within(rows[2]).getByRole("button", { name: "Save docs" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(within(rows[2]).getByRole("button", { name: "Save docs" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   it("names a GitLab repo's request a merge request, and the column a request when forges differ", async () => {
@@ -792,8 +794,8 @@ describe("saving a read-only project (#826)", () => {
     await screen.findByText("1 changed");
 
     const save = screen.getByRole("button", { name: "Save" });
-    expect(save).toBeDisabled();
-    expect(save).toHaveAttribute("title", SENTENCE);
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(save)).toEqual(SENTENCE);
     await userEvent.click(save);
     expect(asked.some((one) => one.cmd === "save_plane")).toBe(false);
   });
@@ -809,7 +811,7 @@ describe("saving a read-only project (#826)", () => {
       />,
     );
     const save = screen.getByRole("button", { name: "Save the project" });
-    expect(save).toBeDisabled();
-    expect(save).toHaveAttribute("title", SENTENCE);
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    expect(tipOf(save)).toEqual(SENTENCE);
   });
 });

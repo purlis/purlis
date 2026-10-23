@@ -9,6 +9,7 @@ import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import type { PlaneAnswer } from "./bindings";
 import { stripNamed } from "./test-strips";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The panels follow the plane on disk** (charter-app#264).
@@ -476,7 +477,7 @@ describe("a chat running on instructions the plane has changed since (charter#36
     changed(PLANE);
 
     await waitFor(() => expect(mark()).not.toBeNull());
-    expect(mark()).toHaveAttribute("title", expect.stringContaining("CLAUDE.md"));
+    expect(tipOf(mark())).toEqual(expect.stringContaining("CLAUDE.md"));
   });
 
   it("is not a needs-you item: the queue and its counts stay as they were", async () => {

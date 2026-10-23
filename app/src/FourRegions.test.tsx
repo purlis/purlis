@@ -21,6 +21,7 @@ import { GLOBAL } from "./windowprefs";
 import { onAMac } from "./tabKeys";
 import { findStripNamed, showTheExplorer, stripNamed } from "./test-strips";
 import { drawnWith } from "./cascade.testkit";
+import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
  * **The window is four regions** (ADR 0038), against the whole app, because three of
@@ -646,7 +647,7 @@ describe("the four regions", () => {
       sideKey(side);
       await waitFor(() => expect(away(region)).toBe(true));
       // Away, the bar still says how to come back, on the view that would open.
-      expect(tab()).toHaveAttribute("title", expect.stringContaining(`Show the ${view} view`));
+      expect(tipOf(tab())).toEqual(expect.stringContaining(`Show the ${view} view`));
 
       await userEvent.click(tab());
       expect(await screen.findByRole("tabpanel", { name: view })).toBeInTheDocument();

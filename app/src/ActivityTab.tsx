@@ -38,6 +38,7 @@ import { usePretendActivity } from "./e2eActivity";
 import { useReferenceChats } from "./references";
 import { useTasksBelow } from "./TasksBelow";
 import { Button } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** A count as the tab says it: `2,000`. */
 const count = (n: number) => n.toLocaleString("en-US");
@@ -402,27 +403,28 @@ export function ActivityTab({
           const { shown, more } = clipped(line.text);
           const chat = closed(line.from_key) ? (
             <>
-              <span className="activity-gone" title="Its chat is closed">
-                {line.from}
-              </span>
+              <Tooltip tip="Its chat is closed">
+                <span className="activity-gone">{line.from}</span>
+              </Tooltip>
               <span className="activity-absent"> (chat closed)</span>
             </>
           ) : (
-            <button
-              type="button"
-              className="vault-secret"
-              // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
-              tabIndex={0}
-              ref={(node) => {
-                if (node === null) chatControls.current.delete(key);
-                else chatControls.current.set(key, node);
-              }}
-              aria-label={`Show chat ${line.from}`}
-              title="Show its chat"
-              onClick={() => void show(line)}
-            >
-              {line.from}
-            </button>
+            <Tooltip tip="Show its chat">
+              <button
+                type="button"
+                className="vault-secret"
+                // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
+                tabIndex={0}
+                ref={(node) => {
+                  if (node === null) chatControls.current.delete(key);
+                  else chatControls.current.set(key, node);
+                }}
+                aria-label={`Show chat ${line.from}`}
+                onClick={() => void show(line)}
+              >
+                {line.from}
+              </button>
+            </Tooltip>
           );
           return (
             <li
@@ -434,9 +436,11 @@ export function ActivityTab({
               // Each level under the session is set in by one step, up to the deepest a chain goes.
               style={{ paddingInlineStart: `${0.5 + Math.min(depth - 1, 7) * 1.25}rem` }}
             >
-              <time className="activity-at" dateTime={line.at} title={line.at}>
-                {saidAt(line.at)}
-              </time>
+              <Tooltip tip={line.at}>
+                <time className="activity-at" dateTime={line.at}>
+                  {saidAt(line.at)}
+                </time>
+              </Tooltip>
               <span className="activity-kind">
                 {line.outcome === null || line.outcome === line.kind
                   ? line.kind
@@ -446,9 +450,9 @@ export function ActivityTab({
                 {/* purlis's own line, for a task; the person's own brief, from a chat's tab;
                     the person's own answer, in that chat's place; else the chat's. */}
                 {line.by_person && line.kind === "answer" ? (
-                  <strong className="activity-you" title="You answered this in the purlis window">
-                    you
-                  </strong>
+                  <Tooltip tip="You answered this in the purlis window">
+                    <strong className="activity-you">you</strong>
+                  </Tooltip>
                 ) : (
                   <>
                     {line.by_purlis ? "purlis, for " : line.by_person ? "you, from " : ""}
@@ -538,7 +542,7 @@ export function ActivityTab({
                       else answerControls.current.set(key, node);
                     }}
                     aria-label={`Answer ${line.from}'s question`}
-                    title={`${line.from} is paused until this is answered. Your answer reaches it marked as yours.`}
+                    tooltip={`${line.from} is paused until this is answered. Your answer reaches it marked as yours.`}
                     onPress={() => void answer(line)}
                     className="activity-answer"
                   >

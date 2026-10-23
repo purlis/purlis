@@ -93,15 +93,15 @@ fn a_levels_gallery_holds_the_themes_a_choice_there_reaches() {
     let at = |reach| ids(&gallery::cards(&shelf(&folders, reach, &offered))).join(" ");
     assert_eq!(
         at(Reach::Machine),
-        "purlis-classic purlis mine solarized/Solarized Dark"
+        "purlis purlis-classic mine solarized/Solarized Dark"
     );
     assert_eq!(
         at(Reach::Project),
-        "purlis-classic purlis team mine solarized/Solarized Dark"
+        "purlis purlis-classic team mine solarized/Solarized Dark"
     );
     assert_eq!(
         at(Reach::Workspace),
-        "purlis-classic purlis client team mine solarized/Solarized Dark"
+        "purlis purlis-classic client team mine solarized/Solarized Dark"
     );
     // A project keeps to the extensions it has on.
     let none: [String; 0] = [];
@@ -109,7 +109,7 @@ fn a_levels_gallery_holds_the_themes_a_choice_there_reaches() {
         on: On::Only(&none),
         ..shelf(&folders, Reach::Project, &offered)
     });
-    assert_eq!(ids(&kept), ["purlis-classic", "purlis", "team", "mine"]);
+    assert_eq!(ids(&kept), ["purlis", "purlis-classic", "team", "mine"]);
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn a_card_says_its_appearances_options_and_where_it_comes_from() {
     let places = Places::new();
     let folders = places.folders();
     let cards = gallery::cards(&shelf(&folders, Reach::Machine, &[]));
-    let classic = &cards[0];
+    let classic = &cards[1];
     assert_eq!(classic.name, "Purlis Classic");
     assert_eq!(classic.from, From::BuiltIn);
     let tags: Vec<(&str, Appearance)> = classic

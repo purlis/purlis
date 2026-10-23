@@ -162,7 +162,9 @@ describe("the chat strip in the centre column", () => {
     // Ranges, not pixels, read from the core tokens themselves: the chat strip, the editor's
     // tab bar, is at least the chrome height and shorter than a control. The project and
     // workspace rows are not moved to the chrome height yet (their own `min-height` is 2rem),
-    // so they are held to one control height and a pixel of rounding.
+    // so they are held to the larger of one control height and that, and a pixel and a half of
+    // rounding: Purlis's control is 26px, under the rows' 2rem, and its words are set at a
+    // taller line height (#3034).
     const at = await browser.execute(() => {
       const probe = (token: string) => {
         const el = document.createElement("div");
@@ -174,9 +176,15 @@ describe("the chat strip in the centre column", () => {
       };
       const heightOf = (selector: string) =>
         document.querySelector(selector)?.getBoundingClientRect().height ?? Number.NaN;
+      const row = document.createElement("div");
+      row.style.height = "2rem";
+      document.body.append(row);
+      const rowHeight = row.getBoundingClientRect().height;
+      row.remove();
       return {
         chrome: probe("--size-chrome"),
         control: probe("--size-control"),
+        row: rowHeight,
         projects: heightOf('[data-strip="Projects"]'),
         workspaces: heightOf('[data-strip="Workspaces"]'),
         chats: heightOf("header.bar"),
@@ -188,8 +196,8 @@ describe("the chat strip in the centre column", () => {
     // Each strip over its bound, named with its height, so a red run says which one grew.
     const over = [
       ["the chat strip", at.chats, at.control - 0.5],
-      ["the project strip", at.projects, at.control + 1],
-      ["the workspace strip", at.workspaces, at.control + 1],
+      ["the project strip", at.projects, Math.max(at.control, at.row) + 1.5],
+      ["the workspace strip", at.workspaces, Math.max(at.control, at.row) + 1.5],
     ].flatMap(([what, height, most]) =>
       Number(height) <= Number(most) ? [] : [`${what} is ${height}px, over ${most}px`],
     );

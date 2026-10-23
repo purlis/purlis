@@ -352,7 +352,7 @@ export const SkillsChip = memo(function SkillsChip({ session }: { session: numbe
       className="pane-skills"
       data-testid="pane-skills"
       data-over={warning === undefined ? undefined : ""}
-      title={warning === undefined ? said : `${warning} ${said}`}
+      tooltip={warning === undefined ? said : `${warning} ${said}`}
       aria-label={warning === undefined ? said : `${warning} ${said}`}
       icon={
         warning === undefined ? (
