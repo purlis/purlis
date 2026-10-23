@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792732854169,
+  "lastUpdate": 1792735231524,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -22344,6 +22344,48 @@ window.BENCHMARK_DATA = {
             "value": 105.71409750000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.675, 103.672, 105.714, 106.143, 106.434 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d28a607fe79fd15cf63f3e1a25ea2d7d4a10f6bd",
+          "message": "Bump ubuntu in /operator in the operator-image group (#3052)\n\nBumps the operator-image group in /operator with 1 update: ubuntu.\n\n\nUpdates `ubuntu` from `f144425` to `c098726`\n\n---\nupdated-dependencies:\n- dependency-name: ubuntu\n  dependency-version: '26.04'\n  dependency-type: direct:production\n  dependency-group: operator-image\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-23T09:59:04+04:00",
+          "tree_id": "b48a80633bb841eddc93374e76ce895c6146e8b3",
+          "url": "https://github.com/purlis/purlis/commit/d28a607fe79fd15cf63f3e1a25ea2d7d4a10f6bd"
+        },
+        "date": 1792735229514,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4716145,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.460, 0.462, 0.472, 0.476, 0.488 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.383533,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.135, 16.215, 16.384, 16.736, 17.021 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8252795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.216, 101.708, 101.825, 101.925, 101.986 ms"
           }
         ]
       }
