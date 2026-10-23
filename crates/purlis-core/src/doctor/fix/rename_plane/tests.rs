@@ -14,6 +14,9 @@ fn a_skill_reference_is_renamed_and_prose_is_not() {
         "mycharter:x",
         "Charter:handoff",
         "a.charter:x",
+        "ghcr.io/acme/charter:v1",
+        "https://example.com/charter:x",
+        "me@charter:x",
     ] {
         assert_eq!(skill_refs(kept), kept);
     }
@@ -74,4 +77,13 @@ fn only_a_whole_marker_line_is_renamed() {
         )
     );
     assert_eq!(work.touched, [".gitignore"]);
+}
+
+#[test]
+fn nothing_in_a_fenced_code_block_is_a_reference() {
+    let text = "Use charter:handoff.\n```sh\ndocker pull charter:latest\n  echo charter:x\n```\n~~~\ncharter:y\n~~~\nThen charter:secrets.\n";
+    assert_eq!(
+        skill_refs(text),
+        "Use purlis:handoff.\n```sh\ndocker pull charter:latest\n  echo charter:x\n```\n~~~\ncharter:y\n~~~\nThen purlis:secrets.\n"
+    );
 }

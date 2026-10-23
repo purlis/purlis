@@ -5,7 +5,8 @@
 //! large page (twenty thousand rows) reaches the page within the spec's 50 ms for input, every
 //! protection of #2014 kept: the field is blanked before the first key, read after each, and
 //! what was typed is in no later answer. Each key's time, from the window's event to its return
-//! (the key sent and the field read after it), is said on CI.
+//! (the key sent and the field read after it), is said on CI; the first key's, which blanks the
+//! field from the tree around it (#2967), is said and not held to the bound.
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
@@ -59,7 +60,7 @@ fn typing_into_a_field_of_a_large_page_stays_under_fifty_milliseconds_a_key() {
         let mut out = std::io::stdout().lock();
         let _ = writeln!(
             out,
-            "::notice title=key to page on a large page::first key {} ms (it blanks the field), then median {} ms, worst {} ms, over {} keys",
+            "::notice title=key to page on a large page::first key {} ms (it blanks the field from the tree around it), then median {} ms, worst {} ms, over {} keys",
             first.as_millis(),
             median.as_millis(),
             worst.as_millis(),

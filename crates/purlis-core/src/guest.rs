@@ -91,7 +91,37 @@ const COWRITTEN: [&str; 1] = [LOCAL_SETTINGS];
 /// `CLAUDE.md` is deliberately absent: it walks up and is **not** git-bounded, so the plane's
 /// own copy already reaches here, and a mirror would put the plane's instructions inside
 /// somebody else's repository to be read as that repository's.
-const WALKUP_DIRS: [&str; 2] = [".claude/agents", ".claude/skills"];
+///
+/// Every root here is one a checkout's record may name, so a copy purlis made under it is
+/// withdrawn once the project stops having it. [`RETIRED_MIRROR`] is no longer copied once the
+/// project's skills moved into `skills/` ([`mirrors`]).
+const WALKUP_DIRS: [&str; 2] = [".claude/agents", RETIRED_MIRROR];
+
+/// The plane's `.claude/skills`: copied into a checkout only until the `project-skills` fix
+/// moves the project's skills into `skills/` (#2784, ADR 0099), which every chat is handed by its
+/// own route. From then on a checkout gets no copy, and the copies purlis made are withdrawn as
+/// any other copy the project stopped having is, whatever the plane's `.claude/skills` holds:
+/// purlis never writes into a harness's own skills folder for the project's skills again.
+pub(crate) const RETIRED_MIRROR: &str = ".claude/skills";
+
+/// The roots of [`WALKUP_DIRS`] the plane at `plane` is copied from: every one, but
+/// [`RETIRED_MIRROR`] once the project requires [`crate::skills::PROJECT_SKILLS_FEATURE`].
+fn mirrors(plane: &Path) -> Vec<&'static str> {
+    let retired = crate::compat::requires(plane, crate::skills::PROJECT_SKILLS_FEATURE);
+    WALKUP_DIRS
+        .into_iter()
+        .filter(|sub| !(retired && *sub == RETIRED_MIRROR))
+        .collect()
+}
+
+/// Whether the plane at `plane` stopped having the mirrored path `rel`: its file is proved gone
+/// (only "not there" and "a component is not a directory" prove it,
+/// [`crate::worktree::listing::exists`]), or it is under a root the plane is no longer copied
+/// from ([`mirrors`]).
+fn stopped_having(plane: &Path, rel: &str) -> bool {
+    !under(&mirrors(plane), rel)
+        || crate::worktree::listing::exists(&plane.join(rel)) == Some(false)
+}
 
 /// The delimiters of charter's managed block in a checkout's `info/exclude`.
 ///
@@ -345,8 +375,8 @@ pub fn want(plane: &Path) -> BTreeMap<String, String> {
     out
 }
 
-/// The plane's own `.claude/agents` and `.claude/skills`, as text, keyed by their path
-/// relative to the plane.
+/// The plane's own `.claude/agents`, and its `.claude/skills` until the project's skills moved
+/// ([`mirrors`]), as text, keyed by their path relative to the plane.
 ///
 /// A 1:1 mirror of what is on disk, and not a second generator: `.claude/agents/` is
 /// generated from `personas/` by somebody else's generator, so re-deriving it here would
@@ -354,7 +384,7 @@ pub fn want(plane: &Path) -> BTreeMap<String, String> {
 /// and it must not take the whole layer down with it.
 fn mirrored(plane: &Path) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
-    for sub in WALKUP_DIRS {
+    for sub in mirrors(plane) {
         let dir = plane.join(sub);
         // The path ITSELF as well as everything under it: a surface spelled as one FILE at a
         // repository root would otherwise mirror as nothing at all.
@@ -409,7 +439,12 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
 /// Whether `rel` is under one of the plane's mirrored roots ([`WALKUP_DIRS`]), the root
 /// itself included: a surface spelled as one file mirrors as that path.
 fn mirrored_path(rel: &str) -> bool {
-    WALKUP_DIRS.iter().any(|sub| {
+    under(&WALKUP_DIRS, rel)
+}
+
+/// Whether `rel` is one of `roots`, or under one.
+pub(crate) fn under(roots: &[&str], rel: &str) -> bool {
+    roots.iter().any(|sub| {
         rel.strip_prefix(sub)
             .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
     })
@@ -559,7 +594,10 @@ pub(crate) fn note_offered(plane: &Path, want: &BTreeMap<String, String>) {
 /// - **the project does not want it, and its own file is proved gone.** A plane file purlis
 ///   could not read (refused, a link out of the project, not text) mirrors as nothing, and is
 ///   a file somebody is holding, not one the project stopped having. Only "not there" and "a
-///   component is not a directory" prove it gone ([`crate::worktree::listing::exists`]).
+///   component is not a directory" prove it gone ([`crate::worktree::listing::exists`]). A path
+///   under a root the project is no longer copied from (the plane's `.claude/skills` once its
+///   skills moved, [`RETIRED_MIRROR`]) is one it stopped having, whatever is there now
+///   ([`stopped_having`]).
 /// - **the copy is still exactly as written.** Its text is read with no link on the way, the
 ///   file itself included, and must match a digest the record holds. A copy edited since is
 ///   the operator's.
@@ -581,7 +619,7 @@ fn retired_mirrors(
         .paths()
         .filter(|rel| mirrored_path(rel) && !want.contains_key(rel.as_str()))
         .filter(|rel| offered.contains_key(rel.as_str()))
-        .filter(|rel| crate::worktree::listing::exists(&plane.join(rel.as_str())) == Some(false))
+        .filter(|rel| stopped_having(plane, rel))
         .filter(|rel| {
             own_text(tree, rel).is_some_and(|text| {
                 let d = digest(&text);
@@ -626,7 +664,7 @@ fn withdraw_mirrors(
     let gone: Vec<String> = record
         .paths()
         .filter(|rel| mirrored_path(rel) && !want.contains_key(rel.as_str()))
-        .filter(|rel| crate::worktree::listing::exists(&plane.join(rel.as_str())) == Some(false))
+        .filter(|rel| stopped_having(plane, rel))
         .filter(|rel| crate::worktree::listing::exists(&tree.join(rel.as_str())) == Some(false))
         .cloned()
         .collect();

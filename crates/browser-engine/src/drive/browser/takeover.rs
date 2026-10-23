@@ -359,7 +359,10 @@ impl Browser {
                     // the document is asked what has the focus (#2295).
                     match landed_in.or_else(|| self.still_focused(&target)) {
                         Some(focused) => Some((focused.field, focused.read)),
-                        None => match self.blank_focus_in(&target, read.take()) {
+                        None => match self.blank_focus_in(
+                            &target,
+                            read.take().or_else(|| self.first_field_read(&target)),
+                        ) {
                             Ok((field, read)) => {
                                 let read = std::sync::Arc::new(read);
                                 let shows = lock(&self.inner.state)
@@ -770,6 +773,92 @@ impl Browser {
             }
             None => Some((frame, false)),
         }
+    }
+
+    /// The tree around the element that has the focus of the current page's own document, for
+    /// the person's first key into a field of the page (#2967): the element, the nodes around
+    /// it up to the root, its siblings and its children, never the whole page's tree. Only where
+    /// the person has typed into no field of the page yet, since a code typed one character a
+    /// box is kept out whole from the whole tree (#2144); and only where the element is in the
+    /// page's own document, the tree marks it focused, and it holds no frame. `None` otherwise.
+    fn first_field_read(&self, target: &str) -> Option<Vec<FrameAx>> {
+        if lock(&self.typing)
+            .touched
+            .iter()
+            .any(|(page, _)| page == target)
+        {
+            return None;
+        }
+        let (session, name, url) = {
+            let state = lock(&self.inner.state);
+            let page = state.page(target)?;
+            let frame = page.frames.get(target)?;
+            (page.session.clone()?, frame.name.clone(), frame.url.clone())
+        };
+        let backend = self.focused_in(&session, target)?;
+        let around = self
+            .devtools()
+            .call(
+                "Accessibility.getPartialAXTree",
+                json!({ "backendNodeId": backend, "fetchRelatives": true }),
+                Some(&session),
+            )
+            .ok()?;
+        let nodes = around.get("nodes")?.clone();
+        let own = nodes
+            .as_array()?
+            .iter()
+            .find(|node| node["backendDOMNodeId"] == backend)?;
+        let role = own
+            .pointer("/role/value")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let focused = own["properties"].as_array().into_iter().flatten().any(|p| {
+            p["name"] == "focused" && p.pointer("/value/value") == Some(&Value::Bool(true))
+        });
+        if !focused || !self.is_a_field(&session, backend, role) {
+            return None;
+        }
+        Some(vec![FrameAx {
+            id: target.to_owned(),
+            name,
+            url,
+            parent: None,
+            owner: None,
+            nodes,
+        }])
+    }
+
+    /// Whether the element `backend` of `session`'s document is a field a person types into
+    /// (#2967): a text box, search box, combo box or spin button by its role, or an input, a text
+    /// area or an editable element by its tag; and never an element that holds a document of its
+    /// own (a frame, an object, an embed).
+    fn is_a_field(&self, session: &str, backend: i64, role: &str) -> bool {
+        let Ok(described) = self.devtools().call(
+            "DOM.describeNode",
+            json!({ "backendNodeId": backend }),
+            Some(session),
+        ) else {
+            return false;
+        };
+        let node = &described["node"];
+        if !node["frameId"].is_null() || !node["contentDocument"].is_null() {
+            return false;
+        }
+        let name = node["nodeName"]
+            .as_str()
+            .unwrap_or_default()
+            .to_ascii_uppercase();
+        let editable = node["attributes"]
+            .as_array()
+            .into_iter()
+            .flat_map(|pairs| pairs.chunks(2))
+            .any(|pair| {
+                pair[0] == "contenteditable" && pair.get(1).and_then(Value::as_str) != Some("false")
+            });
+        ["textbox", "searchbox", "combobox", "spinbutton"].contains(&role)
+            || ["INPUT", "TEXTAREA"].contains(&name.as_str())
+            || editable
     }
 
     /// Whether the document of `frame` on `session` has an element focused (or one inside a
