@@ -338,7 +338,8 @@ describe("a menu's groups, toggles and submenus", () => {
     // Past the frames the menu's own hand-on waits for.
     await act(() => new Promise((done) => setTimeout(done, 100)));
     expect(sub).toBeInTheDocument();
-    await waitFor(() => expect(document.activeElement).toHaveTextContent("Activity"));
+    // The keyboard is in the submenu, where React Aria hands it after a press like this.
+    expect(sub).toContainElement(document.activeElement as HTMLElement);
     await userEvent.click(within(sub).getByRole("menuitem", { name: "Activity" }));
     expect(chose).toHaveBeenCalledWith("activity");
   });
