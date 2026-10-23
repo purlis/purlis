@@ -627,7 +627,9 @@ fn a_clone_is_sent_on_its_branch_with_its_work_and_its_runner_commits_come_back(
     std::fs::write(world.desktop.join("fix.txt"), "half done\n").unwrap();
     let runner = world.runner_repo();
 
-    let held = send(&world.desktop, &[], &[], &world.scratch(), sent_to(&runner)).unwrap();
+    let (held, left_out) =
+        send(&world.desktop, &[], &[], &world.scratch(), sent_to(&runner)).unwrap();
+    assert_eq!(left_out, Vec::<String>::new());
     assert!(named(&held, "refs/heads/fix").is_some());
     assert_eq!(
         std::fs::read_to_string(runner.join("fix.txt")).unwrap(),
@@ -676,7 +678,7 @@ fn a_folder_that_is_not_a_repository_sends_and_fetches_nothing_and_one_on_no_bra
             "nothing is sent"
         ))
         .unwrap(),
-        Vec::new()
+        (Vec::new(), Vec::new())
     );
     assert_eq!(
         fetch_back(&plain, "builds", &world.scratch(), |_, _| panic!(
@@ -961,4 +963,42 @@ fn a_file_that_vanished_from_disk_after_it_was_staged_is_left_out_of_the_send() 
         "{}",
         staged.out
     );
+}
+
+#[test]
+fn a_name_left_out_is_matched_without_regard_to_case_where_the_repository_ignores_case() {
+    let world = World::new();
+    git(&world.desktop, &["config", "core.ignorecase", "true"]);
+    std::fs::create_dir_all(world.desktop.join("secrets")).unwrap();
+    std::fs::write(world.desktop.join("secrets/plan.txt"), "mine alone\n").unwrap();
+    std::fs::write(world.desktop.join("fix.txt"), "the work\n").unwrap();
+
+    let snapshot = snapshot(&world.desktop, &world.scratch(), &["Secrets".to_owned()])
+        .unwrap()
+        .expect("the work is carried");
+    let listed = git(&world.desktop, &["ls-tree", "-r", "--name-only", &snapshot]);
+    assert!(!listed.contains("secrets/"), "{listed}");
+    assert!(listed.lines().any(|one| one == "fix.txt"), "{listed}");
+}
+
+#[test]
+fn a_tracked_file_the_repository_ignores_is_still_left_out_by_name() {
+    let world = World::new();
+    std::fs::create_dir_all(world.desktop.join("config")).unwrap();
+    commit(&world.desktop, "config/local.yml", "committed: yes\n");
+    commit(&world.desktop, ".gitignore", "config/local.yml\n");
+    std::fs::write(
+        world.desktop.join("config/local.yml"),
+        "changed here: yes\n",
+    )
+    .unwrap();
+
+    let snapshot = snapshot(
+        &world.desktop,
+        &world.scratch(),
+        &["config/local.yml".to_owned()],
+    )
+    .unwrap();
+    // Its change stays here: the snapshot carries nothing else, so there is none.
+    assert_eq!(snapshot, None);
 }
