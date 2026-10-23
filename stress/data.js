@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792756415931,
+  "lastUpdate": 1792759160404,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -6176,6 +6176,42 @@ window.BENCHMARK_DATA = {
             "value": 331.9,
             "unit": "MB",
             "extra": "median of 6 samples: 360.5, 355.6, 338.2, 324.8, 325.7, 217.9 MB; window 170.9 MB, session host 161.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "075b16523af956e732b1cc066eff481d5a56d789",
+          "message": "Bump the site group in /site with 2 updates (#3054)\n\nBumps the site group in /site with 2 updates: [@astrojs/markdown-remark](https://github.com/withastro/astro/tree/HEAD/packages/markdown/remark) and [astro](https://github.com/withastro/astro/tree/HEAD/packages/astro).\n\n\nUpdates `@astrojs/markdown-remark` from 7.3.2 to 7.3.3\n- [Release notes](https://github.com/withastro/astro/releases)\n- [Changelog](https://github.com/withastro/astro/blob/main/packages/markdown/remark/CHANGELOG.md)\n- [Commits](https://github.com/withastro/astro/commits/@astrojs/markdown-remark@7.3.3/packages/markdown/remark)\n\nUpdates `astro` from 7.3.8 to 7.4.1\n- [Release notes](https://github.com/withastro/astro/releases)\n- [Changelog](https://github.com/withastro/astro/blob/main/packages/astro/CHANGELOG.md)\n- [Commits](https://github.com/withastro/astro/commits/astro@7.4.1/packages/astro)\n\n---\nupdated-dependencies:\n- dependency-name: \"@astrojs/markdown-remark\"\n  dependency-version: 7.3.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: site\n- dependency-name: astro\n  dependency-version: 7.4.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: site\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-10-23T15:07:30+04:00",
+          "tree_id": "72210c178120817045a6d34ff92f07c49283763f",
+          "url": "https://github.com/purlis/purlis/commit/075b16523af956e732b1cc066eff481d5a56d789"
+        },
+        "date": 1792759158587,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1060,
+            "unit": "MB",
+            "extra": "median of 3 samples: 872, 1060, 1263 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 382.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 363.4, 405.2, 381.1, 384.2, 385.2, 281 MB; window 206.6 MB, session host 176.8 MB"
           }
         ]
       }
