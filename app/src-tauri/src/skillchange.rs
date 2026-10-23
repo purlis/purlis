@@ -204,14 +204,59 @@ pub(crate) fn skill_templates() -> Vec<SkillTemplate> {
         .collect()
 }
 
-/// **The live lint** of `text`, a `SKILL.md` being edited for the skill `name`: each line the
-/// editor shows, none where a save would be taken.
+/// How much a lint's finding stops, as the editor draws it: the core's `Severity`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillLintLevel {
+    /// The skill is not whole: Save waits until it is.
+    Blocks,
+    /// Worth knowing, and Save does not wait on it.
+    Warns,
+}
+
+/// One line of the live lint (SK-8, #2771).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillLintFinding {
+    pub level: SkillLintLevel,
+    /// What it says, the core's sentence.
+    pub says: String,
+}
+
+/// **The live lint** of `text`, a `SKILL.md` being edited for the skill `name` at `level` of
+/// `plane` (SK-7; SK-8, #2771): each line the editor shows, checked against the project's skills
+/// and this machine's programs. Save waits only on one that blocks.
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn skill_lint(name: String, text: String) -> Vec<String> {
-    purlis_core::skills::check(&text, &name)
-        .iter()
-        .map(ToString::to_string)
+pub(crate) async fn skill_lint(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+    text: String,
+) -> Result<Vec<SkillLintFinding>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("linting the skill", move || {
+        Ok(findings(held.root(), &(&level).into(), &name, &text))
+    })
+    .await
+}
+
+/// [`skill_lint`]'s findings, for the window.
+fn findings(
+    root: &std::path::Path,
+    level: &Level,
+    name: &str,
+    text: &str,
+) -> Vec<SkillLintFinding> {
+    purlis_core::skills::lint(root, level, name, text)
+        .into_iter()
+        .map(|finding| SkillLintFinding {
+            level: match finding.severity {
+                purlis_core::skills::Severity::Blocks => SkillLintLevel::Blocks,
+                purlis_core::skills::Severity::Warns => SkillLintLevel::Warns,
+            },
+            says: finding.to_string(),
+        })
         .collect()
 }
 

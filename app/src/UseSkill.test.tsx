@@ -45,7 +45,6 @@ const BUDGET: SkillBudget = {
   manual: 1,
   most_skills: 30,
   most_chars: 6000,
-  manual_free: true,
   warns: null,
 };
 
@@ -147,12 +146,6 @@ describe("Use skill…", () => {
     expect(budgetShort({ ...BUDGET, warns: "chars" })).toBe("3 of 30 skills, near the budget");
   });
 
-  it("says a manual-only skill is still listed, and counted, where the chat does not leave it out", () => {
-    expect(budgetSaid({ ...BUDGET, manual_free: false })).toBe(
-      "3 skills of 30 · 1,234 of 6,000 characters · 1 manual-only skill still listed on this chat (#2771)",
-    );
-  });
-
   it("says why a chat has nothing to offer, and that it is still reading", () => {
     opened(undefined);
     expect(screen.getByText("Reading this chat's skills…")).toBeTruthy();
@@ -195,14 +188,14 @@ describe("the Skills chip on a chat's pane", () => {
   it("is in the warning look, saying why, for a set near or past the budget", async () => {
     studioOn();
     render(
-      <SkillBudgetsHere.Provider value={{ 4: { ...BUDGET, warns: "chars", manual_free: false } }}>
+      <SkillBudgetsHere.Provider value={{ 4: { ...BUDGET, warns: "chars" } }}>
         <SkillsChip session={4} />
       </SkillBudgetsHere.Provider>,
     );
     const chip = await screen.findByTestId("pane-skills");
     expect(chip.hasAttribute("data-over")).toBe(true);
-    // A manual-only skill still listed is in its count once, with the others.
-    expect(chip.textContent).toBe("3 skills");
+    // A manual-only skill is in the set's count, free in the listing's.
+    expect(chip.textContent).toBe("4 skills");
     expect(chip.getAttribute("aria-label")).toMatch(/descriptions are near or past/);
   });
 

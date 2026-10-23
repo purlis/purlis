@@ -205,14 +205,43 @@ impl HarnessAdapter for ClaudeCode {
 
     /// Claude Code lists skills within 1% of the context window (`skillListingBudgetFraction`),
     /// about 8,000 characters on a 200k-token window for names, descriptions and their lines,
-    /// cutting each description at 1,536 characters and dropping descriptions past the budget,
-    /// and leaves a `disable-model-invocation` skill's description out (2.1.304,
-    /// `settings-reference.md`, `skills.md`).
+    /// cutting each description at 1,536 characters and dropping descriptions past the budget
+    /// (2.1.304, `settings-reference.md`, `skills.md`). It leaves a manual-only skill out itself
+    /// ([`Self::skill_frontmatter`]).
     fn skill_budget(&self) -> crate::skills::Budget {
         crate::skills::Budget {
             per_description: Some(1_536),
-            manual_free: true,
             ..super::SKILL_BUDGET
+        }
+    }
+
+    /// **Claude Code 2.1.304** (`skills.md` "Frontmatter reference", research of 2026-10-20):
+    /// every key a skill may set, a plugin's skills included, and `disable-model-invocation`
+    /// keeps the skill out of the model's choice and its description out of the listing.
+    /// `allowed-tools` and `hooks` are among them, which is why purlis never hands either over
+    /// ([`crate::skills::handed_text`]); `license`, `compatibility` and `metadata` are accepted and
+    /// ignored.
+    fn skill_frontmatter(&self) -> crate::skills::Honours {
+        use crate::skills::Field;
+        crate::skills::Honours {
+            reads: &[
+                Field::WhenToUse,
+                Field::ManualOnly,
+                Field::UserInvocable,
+                Field::AllowedTools,
+                Field::DisallowedTools,
+                Field::Model,
+                Field::Effort,
+                Field::Context,
+                Field::Agent,
+                Field::Hooks,
+                Field::Paths,
+                Field::Shell,
+                Field::Background,
+            ],
+            manual: crate::skills::ManualOnly::Read,
+            // Its own agents (`sub-agents.md`, 2.1.304), which carry no settings of a project's.
+            agents: &["general-purpose", "Explore", "Plan"],
         }
     }
 
