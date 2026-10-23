@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792741117278,
+  "lastUpdate": 1792744185658,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -5998,6 +5998,42 @@ window.BENCHMARK_DATA = {
             "value": 361.9,
             "unit": "MB",
             "extra": "median of 6 samples: 335.2, 388.1, 372.2, 361.3, 362.4, 241.5 MB; window 167.5 MB, session host 198.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "19ef01ff9ae19348bd81a15661b07e2a2b1fcf74",
+          "message": "Cargo.lock: move clipboard-win off a yanked release (#3065)\n\nclipboard-win 5.4.1 is yanked, and cargo-deny denies yanked crates.\n5.4.3 is the patch release after it.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <eyehollow@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-23T11:41:38+04:00",
+          "tree_id": "042167eb9f6d2a391ee2de86e8a8f390637941f7",
+          "url": "https://github.com/purlis/purlis/commit/19ef01ff9ae19348bd81a15661b07e2a2b1fcf74"
+        },
+        "date": 1792744183638,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 969,
+            "unit": "MB",
+            "extra": "median of 3 samples: 930, 969, 1154 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 379,
+            "unit": "MB",
+            "extra": "median of 6 samples: 381, 393.3, 384, 376, 377.1, 266.5 MB; window 174 MB, session host 204.8 MB"
           }
         ]
       }
