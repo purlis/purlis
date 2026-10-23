@@ -20,7 +20,13 @@ import {
   useShownGroup,
   type SettingsActionAsk,
 } from "./links";
-import { offeredIn, pickIn } from "../primitives/select.testkit";
+import {
+  allSelects,
+  findSelectNamed,
+  offeredIn,
+  pickIn,
+  selectNamed,
+} from "../ui/select/select.testkit";
 import { hoverTipOf, tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
@@ -1229,7 +1235,10 @@ describe("with the keyboard, and to a screen reader", () => {
     render(<Table />);
     await table();
 
-    const buttons = screen.getAllByRole("button");
+    // A select is a button that opens a list, named by what it holds and then its own name.
+    const buttons = screen
+      .getAllByRole("button")
+      .filter((one) => !one.matches('[data-scope="select"]'));
     expect(buttons.length).toBeGreaterThan(12);
     for (const button of buttons) {
       const shown = button.textContent ?? "";
@@ -1261,8 +1270,14 @@ describe("with the keyboard, and to a screen reader", () => {
     const user = userEvent.setup();
     // Every button, and the choices of the form that adds a grant (#1465), in the order drawn;
     // a shortened heading's words come first, so their tooltip can be read (DS-9).
-    const controls = [...document.querySelectorAll<HTMLElement>("button, select, .ui-table-tip")];
-    const buttons = screen.getAllByRole("button");
+    const controls = [
+      ...document.querySelectorAll<HTMLElement>(
+        'button, .ui-table-tip, select:not([data-testid="hidden-select-container"] select)',
+      ),
+    ];
+    const buttons = screen
+      .getAllByRole("button")
+      .filter((one) => !one.matches('[data-scope="select"]'));
 
     /** What a stop is called: a control's name, a heading's words. */
     const called = (one: Element | null) => one?.getAttribute("aria-label") ?? one?.textContent;
@@ -1339,7 +1354,7 @@ describe("which workspace a grant holds in", () => {
     id: "in\u001fyou\u001fsteward\u001fdevops\u001frunners",
     workspace: "runners",
   });
-  const workspaceOf = (name: string) => screen.findByRole("combobox", { name });
+  const workspaceOf = (name: string) => findSelectNamed(name);
 
   it("says where each grant holds: any workspace, one workspace, or where one chat's task works", async () => {
     core({
@@ -1365,7 +1380,7 @@ describe("which workspace a grant holds in", () => {
       screen.getByRole("button", { name: "Revoke: this chat's grant for steward to prod in web" }),
     );
     expect(inWeb).toHaveTextContent("In web");
-    expect(within(inWeb).queryByRole("combobox")).toBeNull();
+    expect(allSelects(inWeb)).toEqual([]);
     const atRoot = rowOf(
       screen.getByRole("button", { name: "Revoke: this chat's grant for steward to qa" }),
     );
@@ -1416,7 +1431,7 @@ describe("which workspace a grant holds in", () => {
     const user = userEvent.setup();
     const list = await workspaceOf("Workspace: my grant for steward to devops");
     // The set's select, as a table's cell (#626).
-    expect(list).toHaveClass("ui-field");
+    expect(list).toHaveAttribute("data-scope", "select");
     await pickIn(list, "", user);
     const question = screen.getByRole("group", { name: "Confirm" });
     expect(question).toHaveTextContent(
@@ -1656,7 +1671,7 @@ describe("which workspace a grant holds in", () => {
       name: "Lift: never for steward dispatching to devops",
     });
     expect(rowOf(lift)).toHaveTextContent("Every workspace");
-    expect(within(rowOf(lift)).queryByRole("combobox")).toBeNull();
+    expect(allSelects(rowOf(lift))).toEqual([]);
   });
 });
 
@@ -1750,9 +1765,9 @@ describe("adding a grant (#1465)", () => {
       "A chat nobody is at dispatches only under a grant that already stands: make one here.",
     );
     const user = userEvent.setup();
-    await pickIn(within(form).getByRole("combobox", { name: "Chats running as" }), "steward", user);
+    await pickIn(selectNamed("Chats running as", form), "steward", user);
     // The persona itself is not offered as a target: its own dispatch needs no grant.
-    const to = within(form).getByRole("combobox", { name: "May dispatch to" });
+    const to = selectNamed("May dispatch to", form);
     expect(await offeredIn(to, user)).not.toContain("steward");
     await pickIn(to, "devops", user);
 
@@ -1783,14 +1798,10 @@ describe("adding a grant (#1465)", () => {
     await table();
     const form = screen.getByRole("group", { name: /Add a grant/ });
     const user = userEvent.setup();
-    await pickIn(within(form).getByRole("combobox", { name: "Chats running as" }), "qa", user);
-    await pickIn(within(form).getByRole("combobox", { name: "May dispatch to" }), "devops", user);
-    await pickIn(within(form).getByRole("combobox", { name: "For whom" }), "project", user);
-    await pickIn(
-      within(form).getByRole("combobox", { name: "In which workspace" }),
-      "runners",
-      user,
-    );
+    await pickIn(selectNamed("Chats running as", form), "qa", user);
+    await pickIn(selectNamed("May dispatch to", form), "devops", user);
+    await pickIn(selectNamed("For whom", form), "project", user);
+    await pickIn(selectNamed("In which workspace", form), "runners", user);
 
     const said = await press(
       "Add grant: qa may dispatch to devops, for everyone in this project, in runners",
@@ -1813,12 +1824,12 @@ describe("adding a grant (#1465)", () => {
     render(<Table />);
     await table();
     const form = screen.getByRole("group", { name: /Add a grant/ });
-    const where = within(form).getByRole("combobox", { name: "In which workspace" });
+    const where = selectNamed("In which workspace", form);
     expect(where).toHaveValue("");
     // The prompt is not a choice to go back to; each pick is the set's select (#626).
     await expect(pickIn(where, "choose where it holds")).rejects.toThrow(/out of reach/);
     for (const name of ["Chats running as", "May dispatch to", "For whom", "In which workspace"])
-      expect(within(form).getByRole("combobox", { name })).toHaveClass("ui-field");
+      expect(selectNamed(name, form)).toHaveAttribute("data-scope", "select");
     const add = within(form).getByRole("button", { name: /^Add grant: / });
     expect(add).toBeDisabled();
 
@@ -1866,8 +1877,8 @@ describe("adding a grant (#1465)", () => {
     await table();
     const form = screen.getByRole("group", { name: /Add a grant/ });
     const user = userEvent.setup();
-    const from = within(form).getByRole("combobox", { name: "Chats running as" });
-    const to = within(form).getByRole("combobox", { name: "May dispatch to" });
+    const from = selectNamed("Chats running as", form);
+    const to = selectNamed("May dispatch to", form);
     await pickIn(from, "steward", user);
     await pickIn(to, "qa", user);
     expect(within(form).queryByRole("note")).toBeNull();
@@ -1929,23 +1940,20 @@ describe("on a read-only project (#1759)", () => {
     ).toBeEnabled();
     expect(button("Accept: the project's grant for qa to devops, on this machine")).toBeEnabled();
     expect(button("Allow for me: steward may dispatch to any persona")).toBeEnabled();
-    expect(
-      screen.getByRole("combobox", { name: "Workspace: my grant for steward to devops" }),
-    ).toBeEnabled();
+    expect(selectNamed("Workspace: my grant for steward to devops")).toBeEnabled();
 
     // The project's own: off.
     off(button("Remove for everyone: the project's grant for steward to devops"));
     off(button("Allow for everyone: steward may dispatch to any persona"));
     off(button("Remove for everyone: any persona for qa, in this project"));
-    const theirs = screen.getByRole("combobox", {
-      name: "Workspace: the project's grant for steward to devops",
-    });
-    expect(theirs).toBeDisabled();
+    const theirs = selectNamed("Workspace: the project's grant for steward to devops");
+    // Unavailable, and kept in reach for its reason (#2908).
+    expect(theirs).toHaveAttribute("aria-disabled", "true");
     expect(await hoverTipOf(theirs)).toEqual(SENTENCE);
 
     // Adding one: for me only.
     const form = screen.getByRole("group", { name: /Add a grant/ });
-    const whom = within(form).getByRole("combobox", { name: "For whom" });
+    const whom = selectNamed("For whom", form);
     expect(whom).toHaveValue("you");
     await expect(pickIn(whom, "everyone in this project")).rejects.toThrow(/out of reach/);
   });
@@ -1982,10 +1990,10 @@ describe("on a read-only project (#1759)", () => {
     const { rerender } = render(<Answering />);
     await table();
     const form = screen.getByRole("group", { name: /Add a grant/ });
-    await pickIn(within(form).getByRole("combobox", { name: "For whom" }), "project");
+    await pickIn(selectNamed("For whom", form), "project");
     rerender(<Answering said={SENTENCE} />);
 
-    expect(within(form).getByRole("combobox", { name: "For whom" })).toHaveValue("you");
+    expect(selectNamed("For whom", form)).toHaveValue("you");
     await press(/^Add grant: .* for me on this machine/, "Add grant");
     await waitFor(() => expect(fake.sent("add_dispatch_grant")).toMatchObject([{ level: "you" }]));
   });

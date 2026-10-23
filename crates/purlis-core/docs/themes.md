@@ -285,6 +285,8 @@ an unknown token is.
 | `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`: the surface a popover and a menu stand on), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` |
 | `menu` (since version 6) | `root` (every property: a menu's row), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`: a toggle's tick, a submenu's arrow) | `default`, `danger` (what cannot be undone) |
 | `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle`, `description` and `summary` (`text`), `separator` (`fill`, the rule over the footer) | `dialog`, `alert` |
+| `select` (since version 11) | `root` (every property but `font-weight`: the button that shows what is picked, drawn as the text input's box), `placeholder` (`text`: what it shows while nothing is picked), `chevron` (`text`) | none |
+| `combobox` (since version 11) | `root` (every property but `font-weight`: the box typed in, with its suggestions under it), `chevron` (`text`) | none |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -295,10 +297,18 @@ help to the quiet tier and its error to the danger colour.
 A dialog's size, height, place and rows are the dialog rules', never a theme's: a dialog key for
 its height or its padding is said and left out.
 
+A select's and a combobox's box are drawn as the text input's, so `select.root.border-width` and
+`text-input.root.border-width` together reach every box of a form. Their lists are no part of
+their own: a select's list and a combobox's suggestions stand on the popover's `menu` surface and
+each option is a menu's row, so `menu.root.hover.fill` reaches an option too. A chevron is a mark,
+held at 3:1 as an icon is; the placeholder and the chevron fall back to the quiet tier.
+
 The states are `hover`, `pressed`, `selected` (chosen, or a toggle that is on), `focused` (the
 keyboard is on it; a field whenever it holds the caret), `disabled` and `open`. A family names
 only the states its wrapper marks: the button every one; a text input and a textarea `hover`,
-`focused` and `disabled`; a field's root `disabled` alone; a dialog every one, though none
+`focused` and `disabled`; a select and a combobox `hover`, `focused` (a select from the keyboard, a
+combobox whenever it holds the caret), `disabled` and `open`; a field's root `disabled` alone; a
+dialog every one, though none
 changes its size. A key naming another is said and left
 out.
 

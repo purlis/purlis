@@ -26,7 +26,7 @@ import { SkillRowActions } from "./SkillRowActions";
 import { SkillDrafts } from "./SkillDrafts";
 import { askSkillChat, useSkillDrafts } from "./skillDraftAsks";
 import { SkillSources } from "./SkillSources";
-import { Select } from "./primitives/Select";
+import { Select } from "./ui/select/Select";
 import { Field, SettingRow } from "./settings/components";
 import {
   grantChoices,
@@ -891,7 +891,7 @@ function NewSkill({
       <Select
         aria-label="Starts from"
         value={template}
-        options={templates.map((one) => ({ value: one.id, label: one.label, title: one.about }))}
+        options={templates.map((one) => ({ value: one.id, label: one.label, tooltip: one.about }))}
         onValueChange={(to) => setTemplate(to === "steps" ? "steps" : "blank")}
       />
       <p className="honest" data-testid="skill-new-level">
@@ -1035,7 +1035,7 @@ function LevelPicker({
       aria-label={label}
       value={picker.value}
       placeholder={now === undefined ? "Move to…" : undefined}
-      disabled={disabled}
+      isDisabled={disabled}
       options={picker.options}
       onValueChange={(to) => {
         const level = picker.chosen(to);
@@ -1064,7 +1064,7 @@ function GrantPicker({
     <Select
       aria-label={label}
       value={picker.value}
-      disabled={disabled}
+      isDisabled={disabled}
       options={picker.options}
       onValueChange={(to) => {
         const grant = picker.chosen(to);

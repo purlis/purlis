@@ -125,9 +125,9 @@ interface Common<E extends HTMLElement> extends Handlers<E> {
    *  mark on its item. */
   [data: `data-${string}`]: string | number | boolean | undefined;
   /**
-   * **A box that drives a list of its own** (the palette): its role and the ARIA that ties it to
-   * the list, which the box hands on as they are. The list and its keys stay the caller's until
-   * the combobox family moves (#2906).
+   * **A box that drives a list of its own**: its role and the ARIA that ties it to the list, which
+   * the box hands on as they are. Only the combobox family writes them (`ListComboBox`,
+   * `ui/select/ComboBox`, #2906); `purlis/select-family` refuses a `role="combobox"` anywhere else.
    */
   role?: "combobox";
   "aria-expanded"?: boolean | "true" | "false";

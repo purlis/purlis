@@ -34,7 +34,7 @@ import { endChatsStartedHere, startAChat, type Started } from "../started.js";
  */
 
 const BOX = 'input[aria-label="Search the files"]';
-const SCOPE = '[role="combobox"][aria-label="Where to search"]';
+const SCOPE = '[data-scope="select"][data-part="root"][aria-label="Where to search"]';
 const HITS = '[role="listbox"][aria-label="Search results"]';
 const PICKER = '.search-pick [role="menu"]';
 const NAVIGATION = '[role="tablist"][aria-label="Navigation"]';

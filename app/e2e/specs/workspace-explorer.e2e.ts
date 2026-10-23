@@ -377,10 +377,9 @@ describe("the explorer", () => {
       await view.waitForDisplayed({ timeout: 20_000 });
       const box = await view.$('input[type="search"][aria-label="Search the files"]');
       await box.waitForDisplayed({ timeout: 20_000 });
-      await expect($('[role="combobox"][aria-label="Where to search"]')).toHaveAttribute(
-        "data-value",
-        "branch",
-      );
+      await expect(
+        $('[data-scope="select"][data-part="root"][aria-label="Where to search"]'),
+      ).toHaveAttribute("data-value", "branch");
       await box.click();
       await browser.keys("quokka-sentinel");
 

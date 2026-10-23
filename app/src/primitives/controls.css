@@ -33,66 +33,9 @@
 /* The field is a component family now, drawn from its wrapper's attributes:
    `ui/field/field.css` (#2905, ADR 0104). */
 
-/* ---------------------------------------------------------------------------------------------
-   Select: `.ui-select` on Radix Select's trigger, whose list is a `.ui-menu` of `.ui-menu-item`s.
-   --------------------------------------------------------------------------------------------- */
-
-.ui-select {
-  box-sizing: border-box;
-  block-size: var(--size-control);
-  min-inline-size: 0;
-  padding-block: 0;
-  padding-inline: var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  background-color: var(--surface-sunken);
-  font-size: var(--font-size-base);
-  appearance: none;
-}
-
-/* A select draws its own arrow, two triangles in the text's colour, so no theme names one and
-   a native select and Radix's trigger are the same shape. */
-.ui-select {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding-inline-end: var(--space-7);
-  text-align: start;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  background-image:
-    linear-gradient(45deg, transparent 50%, currentcolor 50%),
-    linear-gradient(135deg, currentcolor 50%, transparent 50%);
-  background-position:
-    calc(100% - var(--space-5)) 50%,
-    calc(100% - var(--space-4)) 50%;
-  background-size: var(--space-2) var(--space-2);
-  background-repeat: no-repeat;
-  cursor: default;
-}
-
-/* Radix's trigger says its value in a span, and a placeholder in a quieter one. */
-.ui-select > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ui-select[data-placeholder] {
-  color: var(--text-quiet);
-}
-
-.ui-select:disabled,
-.ui-select[data-disabled] {
-  opacity: 0.5;
-}
-
-.ui-select:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset);
-}
+/* The select is a component family now, drawn from its wrapper's attributes:
+   `ui/select/select.css` (#2906, ADR 0104). Its list is the popover family's menu surface, and
+   its options the menu family's rows. */
 
 /* ---------------------------------------------------------------------------------------------
    Checkbox `.ui-checkbox` (Radix Checkbox, its indicator inside) and radio `.ui-radio` with
@@ -271,75 +214,4 @@
 .ui-segmented-item:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-inset);
-}
-
-/* ---------------------------------------------------------------------------------------------
-   A select's list: `.ui-menu` on Radix Select's content, `.ui-menu-item` on each option and
-   `.ui-menu-mark` on its tick (`primitives/Select.tsx`). Every menu of the window is the menu
-   family now (`ui/menu/menu.css`, #2909); these classes are the select's alone until the select
-   family moves (#2906).
-   --------------------------------------------------------------------------------------------- */
-
-/* Its ground, border, corner and lift are the overlay surface's (`overlays.css`). **Never taller
-   than the room the window has where it opened**, which Radix measures, and scrolling inside past
-   that; never narrower than a short list reads well at. */
-.ui-menu {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-inline-size: calc(var(--space-8) * 6);
-  overflow-y: auto;
-  padding: var(--space-2);
-  z-index: 10;
-}
-
-/* **Nothing in the list is squeezed**: each option keeps its size, and the list scrolls. */
-.ui-menu > * {
-  flex-shrink: 0;
-}
-
-/* At least as wide as its select and as wide as its longest option, and never taller than the
-   room the window has under or over it, scrolling past that. */
-.ui-select-list {
-  min-inline-size: var(--radix-select-trigger-width);
-  max-block-size: var(--radix-select-content-available-height);
-}
-
-/* An option is one line, a control tall, written as the body role. */
-.ui-menu-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  column-gap: var(--space-3);
-  box-sizing: border-box;
-  min-block-size: var(--size-control);
-  padding-block: var(--space-1);
-  padding-inline: var(--space-3);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-regular);
-  cursor: pointer;
-  /* Radix gives the list its own roving focus; the highlight is the ring. */
-  outline: none;
-}
-
-/* The option the keyboard is on, and the one under the pointer. */
-.ui-menu-item[data-highlighted],
-.ui-menu-item:hover:not([data-disabled]) {
-  background-color: var(--tab-active);
-}
-
-.ui-menu-item[data-disabled] {
-  color: var(--text-faint);
-  cursor: default;
-}
-
-/* The tick at the end of the chosen option. */
-.ui-menu-mark {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  margin-inline-start: auto;
-  color: var(--text-muted);
 }

@@ -27,7 +27,7 @@ import { SaidLink } from "./SaidLink";
 import { FileIcon } from "./FileIcon";
 import { useFileIcons } from "./projectTheme";
 import { iconFor } from "./theme/icons";
-import { TextField } from "./ui/field/Field";
+import { ListComboBox } from "./ui/select/ComboBox";
 
 /**
  * The command palette: every action the window can do, reachable by typing.
@@ -512,21 +512,17 @@ export function Palette({
       <label className="palette-ask" id="palette-ask" htmlFor="palette-query">
         {switcher ? switcherAsk : "Run an action"}
       </label>
-      {/* The field family's box; its rows and their keys are the palette's own until the
-          combobox family moves (#2906). */}
-      <TextField
+      {/* The combobox family's box over the palette's own rows, which it drives (#2906). */}
+      <ListComboBox
         id="palette-query"
         inputRef={box}
         className="palette-query"
         aria-labelledby="palette-ask"
-        role="combobox"
-        aria-expanded="true"
-        aria-controls={
-          [rows.length > 0 && "palette-rows", fileRows.length > 0 && "palette-files"]
-            .filter(Boolean)
-            .join(" ") || undefined
-        }
-        aria-activedescendant={aimedId}
+        controls={[
+          ...(rows.length > 0 ? ["palette-rows"] : []),
+          ...(fileRows.length > 0 ? ["palette-files"] : []),
+        ]}
+        aimed={aimedId}
         placeholder={
           switcher
             ? finding
